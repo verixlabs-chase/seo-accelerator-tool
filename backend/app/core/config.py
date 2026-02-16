@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
     crawl_min_request_interval_seconds: float = 0.2
+    crawl_timeout_seconds: float = 10.0
+    crawl_use_playwright: bool = False
 
 
 @lru_cache

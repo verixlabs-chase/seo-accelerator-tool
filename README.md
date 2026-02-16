@@ -39,6 +39,15 @@ cd backend
 pytest
 ```
 
+Optional JS-rendered crawling:
+
+```powershell
+pip install playwright
+python -m playwright install chromium
+```
+
+Then set `CRAWL_USE_PLAYWRIGHT=true` in `backend/.env`.
+
 Default local seeded user after migrations/startup:
 - `admin@local.dev`
 - `admin123!`

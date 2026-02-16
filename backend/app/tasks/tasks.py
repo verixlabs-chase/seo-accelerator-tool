@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from app.db.session import SessionLocal
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
-from app.services import crawl_service
+from app.services import crawl_metrics, crawl_service
 from app.tasks.celery_app import celery_app
 
 
@@ -56,12 +56,13 @@ def crawl_schedule_campaign(self, campaign_id: str, crawl_run_id: str, tenant_id
     payload = {"campaign_id": campaign_id, "crawl_run_id": crawl_run_id, "tenant_id": tenant_id}
     execution = _start_task_execution(db, tenant_id, "crawl.schedule_campaign", payload)
     try:
-        run = crawl_service.get_run_or_404(db, crawl_run_id)
-        urls = crawl_service.build_batch_urls(run.seed_url, run.crawl_type)
-        crawl_fetch_batch.delay(crawl_run_id=crawl_run_id, batch_urls=urls)
-        result = {"campaign_id": campaign_id, "crawl_run_id": crawl_run_id, "tenant_id": tenant_id, "status": "queued"}
-        _finish_task_execution(db, execution, "success", result)
-        return result
+        with crawl_metrics.stage_timer("crawl.schedule_campaign"):
+            run = crawl_service.get_run_or_404(db, crawl_run_id)
+            urls = crawl_service.build_batch_urls(run.seed_url, run.crawl_type)
+            crawl_fetch_batch.delay(crawl_run_id=crawl_run_id, batch_urls=urls)
+            result = {"campaign_id": campaign_id, "crawl_run_id": crawl_run_id, "tenant_id": tenant_id, "status": "queued"}
+            _finish_task_execution(db, execution, "success", result)
+            return result
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
         _finish_task_execution(db, execution, "failed", {"error": str(exc)})
@@ -81,9 +82,10 @@ def crawl_fetch_batch(self, crawl_run_id: str, batch_urls: list[str]) -> dict:
         {"crawl_run_id": crawl_run_id, "batch_urls": batch_urls},
     )
     try:
-        result = crawl_service.execute_run(db, crawl_run_id=crawl_run_id, provided_urls=batch_urls)
-        _finish_task_execution(db, execution, "success", result)
-        return result
+        with crawl_metrics.stage_timer("crawl.fetch_batch"):
+            result = crawl_service.execute_run(db, crawl_run_id=crawl_run_id, provided_urls=batch_urls)
+            _finish_task_execution(db, execution, "success", result)
+            return result
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
         _finish_task_execution(db, execution, "failed", {"error": str(exc)})
@@ -103,11 +105,12 @@ def crawl_parse_page(self, crawl_run_id: str, url: str, html: str, status_code: 
         {"crawl_run_id": crawl_run_id, "url": url, "status_code": status_code},
     )
     try:
-        result = crawl_service.record_page_result(db, run, url=url, status_code=status_code, html=html)
-        db.flush()
-        payload = {"crawl_run_id": crawl_run_id, "url": url, "page_result_id": result.id}
-        _finish_task_execution(db, execution, "success", payload)
-        return payload
+        with crawl_metrics.stage_timer("crawl.parse_page"):
+            result, _signals = crawl_service.record_page_result(db, run, url=url, status_code=status_code, html=html)
+            db.flush()
+            payload = {"crawl_run_id": crawl_run_id, "url": url, "page_result_id": result.id}
+            _finish_task_execution(db, execution, "success", payload)
+            return payload
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
         _finish_task_execution(db, execution, "failed", {"error": str(exc)})
@@ -127,19 +130,20 @@ def crawl_extract_issues(self, crawl_run_id: str, page_result_id: str) -> dict:
         {"crawl_run_id": crawl_run_id, "page_result_id": page_result_id},
     )
     try:
-        result = (
-            db.query(CrawlPageResult)
-            .filter(CrawlPageResult.id == page_result_id, CrawlPageResult.crawl_run_id == crawl_run_id)
-            .first()
-        )
-        if result is None:
-            payload = {"crawl_run_id": crawl_run_id, "page_result_id": page_result_id, "issues_found": 0}
+        with crawl_metrics.stage_timer("crawl.extract_issues"):
+            result = (
+                db.query(CrawlPageResult)
+                .filter(CrawlPageResult.id == page_result_id, CrawlPageResult.crawl_run_id == crawl_run_id)
+                .first()
+            )
+            if result is None:
+                payload = {"crawl_run_id": crawl_run_id, "page_result_id": page_result_id, "issues_found": 0}
+                _finish_task_execution(db, execution, "success", payload)
+                return payload
+            issues = crawl_service.extract_issues_for_result(db, run, result)
+            payload = {"crawl_run_id": crawl_run_id, "page_result_id": page_result_id, "issues_found": len(issues)}
             _finish_task_execution(db, execution, "success", payload)
             return payload
-        issues = crawl_service.extract_issues_for_result(db, run, result)
-        payload = {"crawl_run_id": crawl_run_id, "page_result_id": page_result_id, "issues_found": len(issues)}
-        _finish_task_execution(db, execution, "success", payload)
-        return payload
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
         _finish_task_execution(db, execution, "failed", {"error": str(exc)})
@@ -159,12 +163,13 @@ def crawl_finalize_run(self, crawl_run_id: str) -> dict:
         {"crawl_run_id": crawl_run_id},
     )
     try:
-        run.status = "complete"
-        if run.finished_at is None:
-            run.finished_at = datetime.now(UTC)
-        payload = {"crawl_run_id": crawl_run_id, "status": run.status}
-        _finish_task_execution(db, execution, "success", payload)
-        return payload
+        with crawl_metrics.stage_timer("crawl.finalize_run"):
+            run.status = "complete"
+            if run.finished_at is None:
+                run.finished_at = datetime.now(UTC)
+            payload = {"crawl_run_id": crawl_run_id, "status": run.status}
+            _finish_task_execution(db, execution, "success", payload)
+            return payload
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
         _finish_task_execution(db, execution, "failed", {"error": str(exc)})

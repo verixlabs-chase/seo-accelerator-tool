@@ -6,7 +6,7 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.schemas.crawl import CrawlRunOut, CrawlScheduleRequest, TechnicalIssueOut
-from app.services import crawl_service
+from app.services import crawl_metrics, crawl_service
 from app.tasks.tasks import crawl_schedule_campaign
 
 router = APIRouter(prefix="/crawl", tags=["crawl"])
@@ -54,3 +54,12 @@ def get_issues(
 ) -> dict:
     issues = crawl_service.list_issues(db, tenant_id=user["tenant_id"], campaign_id=campaign_id, severity=severity)
     return envelope(request, {"items": [TechnicalIssueOut.model_validate(i).model_dump(mode="json") for i in issues]})
+
+
+@router.get("/metrics")
+def get_crawl_metrics(
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+) -> dict:
+    _ = user
+    return envelope(request, crawl_metrics.snapshot())

@@ -1,5 +1,4 @@
 import json
-import re
 import time
 from datetime import UTC, datetime
 from urllib.parse import urljoin, urlparse
@@ -11,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.campaign import Campaign
 from app.models.crawl import CrawlPageResult, CrawlRun, Page, TechnicalIssue
+from app.services import crawl_parser
 
 
 def schedule_crawl(db: Session, tenant_id: str, campaign_id: str, crawl_type: str, seed_url: str) -> CrawlRun:
@@ -63,18 +63,6 @@ def _ensure_page(db: Session, tenant_id: str, campaign_id: str, url: str) -> Pag
     return page
 
 
-def _parse_title(html: str) -> str | None:
-    match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-    if not match:
-        return None
-    value = re.sub(r"\s+", " ", match.group(1)).strip()
-    return value or None
-
-
-def _is_indexable(html: str) -> bool:
-    return "noindex" not in html.lower()
-
-
 def _robots_txt_allows(robots_txt: str, path: str) -> bool:
     lines = [line.strip() for line in robots_txt.splitlines()]
     disallowed_prefixes: list[str] = []
@@ -108,6 +96,31 @@ def _fetch_robots(client: httpx.Client, url: str, cache: dict[str, str]) -> str:
     return cache[key]
 
 
+def _fetch_url(url: str, client: httpx.Client, use_playwright: bool, timeout_seconds: float) -> tuple[int | None, str]:
+    if use_playwright:
+        try:
+            from playwright.sync_api import sync_playwright  # type: ignore
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                response = page.goto(url, wait_until="networkidle", timeout=int(timeout_seconds * 1000))
+                html = page.content()
+                status_code = response.status if response is not None else None
+                browser.close()
+                return status_code, html
+        except Exception:
+            pass
+
+    try:
+        response = client.get(url, timeout=timeout_seconds)
+        status_code = response.status_code
+        html = response.text if "text/html" in response.headers.get("content-type", "") else ""
+        return status_code, html
+    except httpx.HTTPError:
+        return None, ""
+
+
 def build_batch_urls(seed_url: str, crawl_type: str) -> list[str]:
     seed = seed_url.rstrip("/")
     if crawl_type == "delta":
@@ -121,59 +134,46 @@ def record_page_result(
     url: str,
     status_code: int | None,
     html: str,
-) -> CrawlPageResult:
+) -> tuple[CrawlPageResult, dict]:
     page = _ensure_page(db, run.tenant_id, run.campaign_id, url)
     page.last_crawled_at = datetime.now(UTC)
+    signals = crawl_parser.parse_signals(url, html)
     result = CrawlPageResult(
         tenant_id=run.tenant_id,
         campaign_id=run.campaign_id,
         crawl_run_id=run.id,
         page_id=page.id,
         status_code=status_code,
-        is_indexable=1 if _is_indexable(html) else 0,
-        title=_parse_title(html),
+        is_indexable=1 if signals["is_indexable"] else 0,
+        title=signals["title"],
     )
     db.add(result)
     db.flush()
-    return result
+    return result, signals
 
 
-def extract_issues_for_result(db: Session, run: CrawlRun, result: CrawlPageResult) -> list[TechnicalIssue]:
+def extract_issues_for_result(db: Session, run: CrawlRun, result: CrawlPageResult, signals: dict | None = None) -> list[TechnicalIssue]:
     issues: list[TechnicalIssue] = []
-    if result.status_code is None or result.status_code >= 400:
+    if signals is None:
+        signals = {
+            "title": result.title,
+            "canonical": None,
+            "meta_description": None,
+            "h1_count": 0,
+            "internal_links": 0,
+            "is_indexable": bool(result.is_indexable),
+        }
+    taxonomy = crawl_parser.build_issue_taxonomy(result.status_code, signals)
+    for item in taxonomy:
         issues.append(
             TechnicalIssue(
                 tenant_id=run.tenant_id,
                 campaign_id=run.campaign_id,
                 crawl_run_id=run.id,
                 page_id=result.page_id,
-                issue_code="http_error",
-                severity="high",
-                details_json=json.dumps({"status_code": result.status_code}),
-            )
-        )
-    if not result.title:
-        issues.append(
-            TechnicalIssue(
-                tenant_id=run.tenant_id,
-                campaign_id=run.campaign_id,
-                crawl_run_id=run.id,
-                page_id=result.page_id,
-                issue_code="missing_title",
-                severity="medium",
-                details_json="{}",
-            )
-        )
-    if result.is_indexable == 0:
-        issues.append(
-            TechnicalIssue(
-                tenant_id=run.tenant_id,
-                campaign_id=run.campaign_id,
-                crawl_run_id=run.id,
-                page_id=result.page_id,
-                issue_code="non_indexable",
-                severity="high",
-                details_json="{}",
+                issue_code=item["issue_code"],
+                severity=item["severity"],
+                details_json=json.dumps(item["details"]),
             )
         )
     for issue in issues:
@@ -201,6 +201,8 @@ def execute_run(db: Session, crawl_run_id: str, provided_urls: list[str] | None 
     domain_last_hit: dict[str, float] = {}
     robots_cache: dict[str, str] = {}
     min_interval = max(0.0, getattr(settings, "crawl_min_request_interval_seconds", 0.2))
+    use_playwright = bool(getattr(settings, "crawl_use_playwright", False))
+    timeout_seconds = float(getattr(settings, "crawl_timeout_seconds", 10.0))
 
     processed = 0
     with httpx.Client(follow_redirects=True) as client:
@@ -218,20 +220,11 @@ def execute_run(db: Session, crawl_run_id: str, provided_urls: list[str] | None 
                 if sleep_for > 0:
                     time.sleep(sleep_for)
 
-            status_code: int | None = None
-            html = ""
-            try:
-                response = client.get(url, timeout=10.0)
-                status_code = response.status_code
-                html = response.text if "text/html" in response.headers.get("content-type", "") else ""
-            except httpx.HTTPError:
-                status_code = None
-                html = ""
-            finally:
-                domain_last_hit[domain_key] = time.time()
+            status_code, html = _fetch_url(url, client=client, use_playwright=use_playwright, timeout_seconds=timeout_seconds)
+            domain_last_hit[domain_key] = time.time()
 
-            result = record_page_result(db, run, url, status_code, html)
-            extract_issues_for_result(db, run, result)
+            result, signals = record_page_result(db, run, url, status_code, html)
+            extract_issues_for_result(db, run, result, signals)
             processed += 1
 
     run.pages_discovered = processed
@@ -247,4 +240,16 @@ def mark_run_failed(db: Session, crawl_run_id: str, error_message: str) -> None:
         return
     run.status = "failed"
     run.finished_at = datetime.now(UTC)
+    if error_message:
+        db.add(
+            TechnicalIssue(
+                tenant_id=run.tenant_id,
+                campaign_id=run.campaign_id,
+                crawl_run_id=run.id,
+                page_id=None,
+                issue_code="crawl_run_failed",
+                severity="high",
+                details_json=json.dumps({"error": error_message}),
+            )
+        )
     db.commit()
