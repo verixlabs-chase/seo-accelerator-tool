@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from app.db.session import SessionLocal
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
-from app.services import crawl_metrics, crawl_service
+from app.services import crawl_metrics, crawl_service, rank_service
 from app.tasks.celery_app import celery_app
 
 
@@ -176,3 +176,43 @@ def crawl_finalize_run(self, crawl_run_id: str) -> dict:
         raise
     finally:
         db.close()
+
+
+@celery_app.task(name="rank.schedule_window", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def rank_schedule_window(self, campaign_id: str, tenant_id: str, location_code: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "rank.schedule_window",
+        {"campaign_id": campaign_id, "location_code": location_code},
+    )
+    try:
+        result = rank_service.run_snapshot_collection(
+            db,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+            location_code=location_code,
+        )
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="rank.fetch_serp_batch")
+def rank_fetch_serp_batch(campaign_id: str, tenant_id: str, location_code: str) -> dict:
+    return {"campaign_id": campaign_id, "tenant_id": tenant_id, "location_code": location_code, "fetched": True}
+
+
+@celery_app.task(name="rank.normalize_snapshot")
+def rank_normalize_snapshot(snapshot_id: str) -> dict:
+    return {"snapshot_id": snapshot_id, "normalized": True}
+
+
+@celery_app.task(name="rank.compute_deltas")
+def rank_compute_deltas(campaign_id: str, tenant_id: str) -> dict:
+    return {"campaign_id": campaign_id, "tenant_id": tenant_id, "computed": True}
