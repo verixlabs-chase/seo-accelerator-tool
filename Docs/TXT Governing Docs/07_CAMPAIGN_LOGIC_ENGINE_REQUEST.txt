@@ -1,0 +1,18 @@
+Generate CAMPAIGN_LOGIC_ENGINE.md.
+
+Encode 12-month roadmap logic.
+
+Month 1: - Audit - Rank setup - Outreach system build - Technical
+optimization
+
+Month 2: - On-page optimization - GBP optimization - Authority link
+placement
+
+Month 3: - Citation stack (30) - Location page template - Topical
+roadmap - Health check #1
+
+Month 4-12 recurring: - 3 location pages/month - 2 authority
+articles/month - Directory expansion - Link placements - Monthly health
+check - Strategy check - Snapshot report
+
+Define automation triggers and scoring logic.

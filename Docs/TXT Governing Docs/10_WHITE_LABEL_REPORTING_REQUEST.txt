@@ -1,0 +1,9 @@
+Generate WHITE_LABEL_REPORTING_SPEC.md.
+
+Define: - Report structure - Data sources - Branding customization -
+Logo handling - Chart requirements - HTML templating - PDF export -
+Scheduled email delivery
+
+Include sections: - Technical score - Ranking change - Competitor
+comparison - Link growth - Review growth - Content production - Strategy
+recommendations - Next 30-day plan

@@ -1,0 +1,9 @@
+Generate SPRINT_ROADMAP.md.
+
+Define 9 major sprints: 1. Project Scaffold 2. Crawl Engine 3. Rank
+Tracking Engine 4. Competitor Engine 5. Content Engine 6. Local Engine
+7. Authority & Citation 8. Campaign Intelligence 9. Reporting Engine
+
+Each sprint must include: - Objective - Deliverables - Acceptance
+criteria - Database changes - API endpoints added - Tasks added -
+Testing checklist

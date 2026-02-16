@@ -1,0 +1,8 @@
+Generate SCALING_AND_INFRASTRUCTURE.md.
+
+Define: - Horizontal scaling - Worker autoscaling - Database
+partitioning - Read replicas - Proxy rotation infra - Rate limiting -
+Campaign sharding - CDN strategy - PDF generation scaling - Cost
+modeling
+
+Design for 100+ campaigns.

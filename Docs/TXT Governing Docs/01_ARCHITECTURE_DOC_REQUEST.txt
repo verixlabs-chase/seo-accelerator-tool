@@ -1,0 +1,8 @@
+Generate ARCHITECTURE.md.
+
+Include: - High-level system diagram (text-based) - Service separation
+model - Backend architecture - Frontend architecture - Data flow -
+Campaign lifecycle - Docker container layout - Celery worker model -
+Redis role - Reporting pipeline - ASCII diagrams
+
+This must be implementation-grade.

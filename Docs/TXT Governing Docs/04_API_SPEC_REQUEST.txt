@@ -1,0 +1,10 @@
+Generate API_SPECIFICATION.md.
+
+Include: - Authentication routes - Campaign routes - Crawl routes - Rank
+routes - Competitor routes - Content routes - Local SEO routes -
+Authority routes - Citation routes - Reporting routes
+
+For each endpoint define: - Method - Path - Request schema - Response
+schema - Status codes - Background tasks - Auth requirements
+
+Version as /api/v1/

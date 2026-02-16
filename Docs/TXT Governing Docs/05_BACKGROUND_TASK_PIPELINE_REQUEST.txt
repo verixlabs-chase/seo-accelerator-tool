@@ -1,0 +1,7 @@
+Generate BACKGROUND_TASK_PIPELINE.md.
+
+Define: - Celery worker clusters - Queue separation - Retry logic - Task
+chaining - Scheduled tasks - Monthly recurring jobs - SERP scraping
+batching - Crawl scheduling - Rank scheduling - Report automation
+
+Define concurrency and monitoring.

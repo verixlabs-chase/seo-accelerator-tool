@@ -1,0 +1,10 @@
+Generate SERVICE_MODULES.md.
+
+Define modules: 1. Crawl & Technical SEO Engine 2. Rank Tracking Engine
+3. Competitor Intelligence Engine 4. Content Automation Engine 5.
+Internal Linking Intelligence Engine 6. Local SEO Engine 7. Authority &
+Outreach Engine 8. Citation Engine 9. Review Monitoring Engine 10.
+Campaign Intelligence Engine 11. Reporting Engine
+
+For each module define: - Purpose - Internal services - Celery tasks -
+API endpoints - Database dependencies - Failure handling

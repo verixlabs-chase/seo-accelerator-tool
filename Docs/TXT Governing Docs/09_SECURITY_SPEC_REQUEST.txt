@@ -1,0 +1,6 @@
+Generate SECURITY_SPEC.md.
+
+Define: - JWT authentication - Role-based access control - Campaign
+isolation - Rate limiting - Input validation - Audit logging -
+Encryption at rest - Encryption in transit - Backup strategy - Disaster
+recovery

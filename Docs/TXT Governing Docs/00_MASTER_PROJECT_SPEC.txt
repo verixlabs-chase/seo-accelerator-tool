@@ -1,0 +1,25 @@
+You are building the TopDog Local SEO Operating System (LSOS).
+
+This is a production-grade internal SEO execution platform designed to
+replicate and automate a 12-month SEO agency roadmap.
+
+PRIMARY OBJECTIVE: Build a modular Local SEO Operating System that
+executes: - Technical SEO - Rank tracking (geo-specific) - Competitor
+intelligence - Content automation - Internal linking strategy - Local
+SEO monitoring - Citation stack management - Authority outreach CRM -
+Review velocity monitoring - Campaign intelligence - White-label
+reporting
+
+TECH STACK: Backend: - Python 3.11+ - FastAPI - PostgreSQL 16+ - Redis -
+Celery - Playwright - BeautifulSoup - lxml - spaCy
+
+Frontend: - Next.js 14+ - TailwindCSS - React Query - Chart.js or
+Recharts
+
+You must generate foundational .md documentation files in this order: 1.
+ARCHITECTURE.md 2. DATABASE_SCHEMA.md 3. SERVICE_MODULES.md 4.
+API_SPECIFICATION.md 5. BACKGROUND_TASK_PIPELINE.md 6. SPRINT_ROADMAP.md
+7. CAMPAIGN_LOGIC_ENGINE.md 8. SCALING_AND_INFRASTRUCTURE.md 9.
+SECURITY_SPEC.md 10. WHITE_LABEL_REPORTING_SPEC.md
+
+Do not simplify. Design for production scale.

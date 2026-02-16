@@ -1,0 +1,12 @@
+Generate DATABASE_SCHEMA.md.
+
+Define: - All tables - Fields - Data types - Indexes - Foreign keys -
+Partitioning strategy - Multi-tenant isolation - Audit logs
+
+Tables must include: Campaigns, Users, Pages, CrawlRuns, Rankings,
+CompetitorRankings, Backlinks, OutreachCampaigns, OutreachContacts,
+Citations, Reviews, ReviewVelocitySnapshots, ContentAssets,
+KeywordClusters, InternalLinkMap, StrategyRecommendations,
+MonthlyReports
+
+Include ER diagram in text form.
