@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from app.db.session import SessionLocal
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
-from app.services import competitor_service, crawl_metrics, crawl_service, rank_service
+from app.services import competitor_service, content_service, crawl_metrics, crawl_service, rank_service
 from app.tasks.celery_app import celery_app
 
 
@@ -249,5 +249,65 @@ def competitor_compute_gap_scores(campaign_id: str, tenant_id: str) -> dict:
     try:
         gaps = competitor_service.compute_gaps(db, tenant_id=tenant_id, campaign_id=campaign_id)
         return {"campaign_id": campaign_id, "tenant_id": tenant_id, "gap_count": len(gaps)}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="content.generate_plan", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def content_generate_plan(self, tenant_id: str, campaign_id: str, month_number: int) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "content.generate_plan",
+        {"campaign_id": campaign_id, "month_number": month_number},
+    )
+    try:
+        result = content_service.generate_plan(db, tenant_id=tenant_id, campaign_id=campaign_id, month_number=month_number)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="content.run_qc_checks", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def content_run_qc_checks(self, tenant_id: str, asset_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "content.run_qc_checks",
+        {"asset_id": asset_id},
+    )
+    try:
+        result = content_service.run_qc_checks(db, tenant_id=tenant_id, asset_id=asset_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="content.refresh_internal_link_map", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def content_refresh_internal_link_map(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "content.refresh_internal_link_map",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = content_service.refresh_internal_link_map(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
     finally:
         db.close()
