@@ -1,4 +1,5 @@
 from app.models.audit_log import AuditLog
+from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact
 from app.models.campaign import Campaign
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap
@@ -38,4 +39,9 @@ __all__ = [
     "LocalHealthSnapshot",
     "Review",
     "ReviewVelocitySnapshot",
+    "OutreachCampaign",
+    "OutreachContact",
+    "BacklinkOpportunity",
+    "Backlink",
+    "Citation",
 ]

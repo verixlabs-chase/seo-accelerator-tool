@@ -44,6 +44,11 @@ def test_migration_upgrade_and_downgrade():
         assert "local_health_snapshots" in inspector.get_table_names()
         assert "reviews" in inspector.get_table_names()
         assert "review_velocity_snapshots" in inspector.get_table_names()
+        assert "outreach_campaigns" in inspector.get_table_names()
+        assert "outreach_contacts" in inspector.get_table_names()
+        assert "backlink_opportunities" in inspector.get_table_names()
+        assert "backlinks" in inspector.get_table_names()
+        assert "citations" in inspector.get_table_names()
 
         command.downgrade(cfg, "base")
         inspector2 = inspect(engine)

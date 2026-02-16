@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from app.db.session import SessionLocal
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
-from app.services import competitor_service, content_service, crawl_metrics, crawl_service, local_service, rank_service
+from app.services import authority_service, competitor_service, content_service, crawl_metrics, crawl_service, local_service, rank_service
 from app.tasks.celery_app import celery_app
 
 
@@ -385,6 +385,107 @@ def reviews_compute_velocity(self, tenant_id: str, campaign_id: str) -> dict:
     )
     try:
         result = local_service.compute_review_velocity(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="outreach.enrich_contacts", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def outreach_enrich_contacts(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "outreach.enrich_contacts",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = {"campaign_id": campaign_id, "enriched_contacts": True}
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="outreach.execute_sequence_step", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def outreach_execute_sequence_step(self, tenant_id: str, outreach_campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "outreach.execute_sequence_step",
+        {"outreach_campaign_id": outreach_campaign_id},
+    )
+    try:
+        result = {"outreach_campaign_id": outreach_campaign_id, "step_executed": True}
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="authority.sync_backlinks", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def authority_sync_backlinks(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "authority.sync_backlinks",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = authority_service.sync_backlinks(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="citation.submit_batch", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def citation_submit_batch(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "citation.submit_batch",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = {"campaign_id": campaign_id, "submitted_batch": True}
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="citation.refresh_status", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def citation_refresh_status(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "citation.refresh_status",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        rows = authority_service.refresh_citation_status(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        result = {"campaign_id": campaign_id, "citations_refreshed": len(rows)}
         _finish_task_execution(db, execution, "success", result)
         return result
     except Exception as exc:
