@@ -11,6 +11,7 @@ from app.core.passwords import hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models.crawl import CrawlRun, TechnicalIssue  # noqa: F401
 from app.models.role import Role, UserRole
 from app.models.tenant import Tenant
 from app.models.user import User
