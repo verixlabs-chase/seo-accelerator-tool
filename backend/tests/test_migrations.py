@@ -40,6 +40,10 @@ def test_migration_upgrade_and_downgrade():
         assert "editorial_calendar" in inspector.get_table_names()
         assert "internal_link_map" in inspector.get_table_names()
         assert "content_qc_events" in inspector.get_table_names()
+        assert "local_profiles" in inspector.get_table_names()
+        assert "local_health_snapshots" in inspector.get_table_names()
+        assert "reviews" in inspector.get_table_names()
+        assert "review_velocity_snapshots" in inspector.get_table_names()
 
         command.downgrade(cfg, "base")
         inspector2 = inspect(engine)

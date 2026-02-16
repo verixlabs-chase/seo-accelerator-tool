@@ -14,6 +14,7 @@ from app.main import app
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
 from app.models.crawl import CrawlRun, TechnicalIssue  # noqa: F401
+from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot  # noqa: F401
 from app.models.role import Role, UserRole
 from app.models.tenant import Tenant

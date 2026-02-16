@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from app.db.session import SessionLocal
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
-from app.services import competitor_service, content_service, crawl_metrics, crawl_service, rank_service
+from app.services import competitor_service, content_service, crawl_metrics, crawl_service, local_service, rank_service
 from app.tasks.celery_app import celery_app
 
 
@@ -304,6 +304,87 @@ def content_refresh_internal_link_map(self, tenant_id: str, campaign_id: str) ->
     )
     try:
         result = content_service.refresh_internal_link_map(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="local.collect_profile_snapshot", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def local_collect_profile_snapshot(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "local.collect_profile_snapshot",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        profile = local_service.collect_profile_snapshot(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        result = {"campaign_id": campaign_id, "profile_id": profile.id, "map_pack_position": profile.map_pack_position}
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="local.compute_health_score", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def local_compute_health_score(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "local.compute_health_score",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = local_service.compute_health_score(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reviews.ingest", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def reviews_ingest(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reviews.ingest",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = local_service.ingest_reviews(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reviews.compute_velocity", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def reviews_compute_velocity(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reviews.compute_velocity",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = local_service.compute_review_velocity(db, tenant_id=tenant_id, campaign_id=campaign_id)
         _finish_task_execution(db, execution, "success", result)
         return result
     except Exception as exc:
