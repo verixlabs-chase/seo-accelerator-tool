@@ -1,0 +1,78 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: lsos
+      POSTGRES_PASSWORD: lsos
+      POSTGRES_DB: lsos
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: local
+      APP_NAME: LSOS API
+      POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      JWT_SECRET: local-dev-secret
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+
+  worker:
+    build:
+      context: ./backend
+    command: celery -A app.tasks.celery_app.celery_app worker -Q default -l INFO
+    environment:
+      APP_ENV: local
+      POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      JWT_SECRET: local-dev-secret
+    depends_on:
+      - postgres
+      - redis
+      - api
+
+  scheduler:
+    build:
+      context: ./backend
+    command: celery -A app.tasks.celery_app.celery_app beat -l INFO
+    environment:
+      APP_ENV: local
+      POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      JWT_SECRET: local-dev-secret
+    depends_on:
+      - redis
+      - api
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pg_data:
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
