@@ -4,7 +4,17 @@ from datetime import UTC, datetime
 from app.db.session import SessionLocal
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
-from app.services import authority_service, competitor_service, content_service, crawl_metrics, crawl_service, local_service, rank_service
+from app.services import (
+    authority_service,
+    competitor_service,
+    content_service,
+    crawl_metrics,
+    crawl_service,
+    intelligence_service,
+    local_service,
+    rank_service,
+    reporting_service,
+)
 from app.tasks.celery_app import celery_app
 
 
@@ -486,6 +496,179 @@ def citation_refresh_status(self, tenant_id: str, campaign_id: str) -> dict:
     try:
         rows = authority_service.refresh_citation_status(db, tenant_id=tenant_id, campaign_id=campaign_id)
         result = {"campaign_id": campaign_id, "citations_refreshed": len(rows)}
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="intelligence.compute_score", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def intelligence_compute_score(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "intelligence.compute_score",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        score = intelligence_service.compute_score(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        result = {"campaign_id": campaign_id, "score_value": score.score_value}
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="intelligence.detect_anomalies", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def intelligence_detect_anomalies(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "intelligence.detect_anomalies",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = intelligence_service.detect_anomalies(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="campaigns.evaluate_monthly_rules", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def campaigns_evaluate_monthly_rules(self, tenant_id: str, campaign_id: str, month_number: int) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "campaigns.evaluate_monthly_rules",
+        {"campaign_id": campaign_id, "month_number": month_number},
+    )
+    try:
+        result = intelligence_service.evaluate_monthly_rules(db, tenant_id=tenant_id, campaign_id=campaign_id, month_number=month_number)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="campaigns.schedule_monthly_actions", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def campaigns_schedule_monthly_actions(self, tenant_id: str, campaign_id: str, month_number: int) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "campaigns.schedule_monthly_actions",
+        {"campaign_id": campaign_id, "month_number": month_number},
+    )
+    try:
+        result = intelligence_service.schedule_monthly_actions(db, tenant_id=tenant_id, campaign_id=campaign_id, month_number=month_number)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reporting.freeze_window")
+def reporting_freeze_window(tenant_id: str, campaign_id: str, month_number: int) -> dict:
+    return {"tenant_id": tenant_id, "campaign_id": campaign_id, "month_number": month_number, "frozen": True}
+
+
+@celery_app.task(name="reporting.aggregate_kpis", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def reporting_aggregate_kpis(self, tenant_id: str, campaign_id: str, month_number: int) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reporting.aggregate_kpis",
+        {"campaign_id": campaign_id, "month_number": month_number},
+    )
+    try:
+        result = reporting_service.aggregate_kpis(db, tenant_id=tenant_id, campaign_id=campaign_id, month_number=month_number)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reporting.render_html", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def reporting_render_html(self, tenant_id: str, report_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reporting.render_html",
+        {"report_id": report_id},
+    )
+    try:
+        report = reporting_service.get_report(db, tenant_id=tenant_id, report_id=report_id)
+        kpis = json.loads(report.summary_json or "{}")
+        html = reporting_service.render_html(kpis, campaign_name="Campaign")
+        result = {"report_id": report_id, "html_length": len(html)}
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reporting.render_pdf", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def reporting_render_pdf(self, tenant_id: str, report_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reporting.render_pdf",
+        {"report_id": report_id},
+    )
+    try:
+        report = reporting_service.get_report(db, tenant_id=tenant_id, report_id=report_id)
+        kpis = json.loads(report.summary_json or "{}")
+        html = reporting_service.render_html(kpis, campaign_name="Campaign")
+        path = reporting_service.render_pdf_placeholder(html, report_id)
+        result = {"report_id": report_id, "storage_path": path}
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reporting.send_email", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def reporting_send_email(self, tenant_id: str, report_id: str, recipient: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reporting.send_email",
+        {"report_id": report_id, "recipient": recipient},
+    )
+    try:
+        result = reporting_service.deliver_report(db, tenant_id=tenant_id, report_id=report_id, recipient=recipient)
         _finish_task_execution(db, execution, "success", result)
         return result
     except Exception as exc:

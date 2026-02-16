@@ -9,3 +9,4 @@ backend/.env
 frontend/.next/
 frontend/node_modules/
 lsos.db
+backend/generated_reports/
