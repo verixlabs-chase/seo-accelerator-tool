@@ -32,6 +32,10 @@ def test_migration_upgrade_and_downgrade():
         assert "campaign_keywords" in inspector.get_table_names()
         assert "rankings" in inspector.get_table_names()
         assert "ranking_snapshots" in inspector.get_table_names()
+        assert "competitors" in inspector.get_table_names()
+        assert "competitor_rankings" in inspector.get_table_names()
+        assert "competitor_pages" in inspector.get_table_names()
+        assert "competitor_signals" in inspector.get_table_names()
 
         command.downgrade(cfg, "base")
         inspector2 = inspect(engine)

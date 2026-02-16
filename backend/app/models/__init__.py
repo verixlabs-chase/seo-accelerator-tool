@@ -1,5 +1,6 @@
 from app.models.audit_log import AuditLog
 from app.models.campaign import Campaign
+from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
 from app.models.crawl import CrawlPageResult, CrawlRun, Page, TechnicalIssue
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
 from app.models.role import Role, UserRole
@@ -23,4 +24,8 @@ __all__ = [
     "CampaignKeyword",
     "Ranking",
     "RankingSnapshot",
+    "Competitor",
+    "CompetitorRanking",
+    "CompetitorPage",
+    "CompetitorSignal",
 ]

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from app.db.session import SessionLocal
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
-from app.services import crawl_metrics, crawl_service, rank_service
+from app.services import competitor_service, crawl_metrics, crawl_service, rank_service
 from app.tasks.celery_app import celery_app
 
 
@@ -216,3 +216,38 @@ def rank_normalize_snapshot(snapshot_id: str) -> dict:
 @celery_app.task(name="rank.compute_deltas")
 def rank_compute_deltas(campaign_id: str, tenant_id: str) -> dict:
     return {"campaign_id": campaign_id, "tenant_id": tenant_id, "computed": True}
+
+
+@celery_app.task(name="competitor.refresh_baseline")
+def competitor_refresh_baseline(campaign_id: str, tenant_id: str) -> dict:
+    return {"campaign_id": campaign_id, "tenant_id": tenant_id, "baseline_refreshed": True}
+
+
+@celery_app.task(name="competitor.collect_snapshot", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def competitor_collect_snapshot(self, campaign_id: str, tenant_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "competitor.collect_snapshot",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = competitor_service.collect_snapshot(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="competitor.compute_gap_scores")
+def competitor_compute_gap_scores(campaign_id: str, tenant_id: str) -> dict:
+    db = SessionLocal()
+    try:
+        gaps = competitor_service.compute_gaps(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        return {"campaign_id": campaign_id, "tenant_id": tenant_id, "gap_count": len(gaps)}
+    finally:
+        db.close()
