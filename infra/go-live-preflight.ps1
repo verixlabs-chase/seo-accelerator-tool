@@ -18,10 +18,10 @@ function Invoke-Step {
 
 try {
   $root = Split-Path -Parent $PSScriptRoot
-  $isWindows = $env:OS -eq "Windows_NT"
+  $runningOnWindows = $env:OS -eq "Windows_NT"
   $backendDir = Join-Path $root "backend"
   $frontendDir = Join-Path $root "frontend"
-  if ($isWindows) {
+  if ($runningOnWindows) {
     $pythonPath = Join-Path $backendDir ".venv312\Scripts\python.exe"
   } else {
     $pythonPath = Join-Path $backendDir ".venv312/bin/python"
@@ -32,7 +32,7 @@ try {
   try {
     Invoke-Step "Backend Dependency Install" {
       if (-not (Test-Path $pythonPath)) {
-        if ($isWindows) {
+        if ($runningOnWindows) {
           py -3.12 -m venv .venv312
         } else {
           python3 -m venv .venv312
@@ -94,7 +94,7 @@ try {
     $env:NODE_OPTIONS="--max_old_space_size=4096"
 
     Invoke-Step "Frontend Build" {
-      if (-not $isWindows) {
+      if (-not $runningOnWindows) {
         npm run build -- --no-lint
         return
       }
