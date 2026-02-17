@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
-from random import randint, uniform
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.campaign import Campaign
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
+from app.providers import get_rank_provider
 
 
 def _get_campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -45,7 +45,8 @@ def add_keyword(db: Session, tenant_id: str, campaign_id: str, cluster_name: str
 
 
 def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, location_code: str) -> dict:
-    _get_campaign_or_404(db, tenant_id, campaign_id)
+    campaign = _get_campaign_or_404(db, tenant_id, campaign_id)
+    provider = get_rank_provider()
     keywords = (
         db.query(CampaignKeyword)
         .filter(
@@ -59,8 +60,13 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
     month_partition = now.strftime("%Y-%m")
     created = 0
     for kw in keywords:
-        position = randint(1, 100)
-        confidence = round(uniform(0.6, 0.99), 2)
+        snapshot = provider.collect_keyword_snapshot(
+            keyword=kw.keyword,
+            location_code=location_code,
+            target_domain=campaign.domain,
+        )
+        position = int(snapshot["position"])
+        confidence = float(snapshot["confidence"])
         previous = (
             db.query(RankingSnapshot)
             .filter(
@@ -141,4 +147,3 @@ def get_trends(db: Session, tenant_id: str, campaign_id: str) -> list[dict]:
             }
         )
     return trends
-

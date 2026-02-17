@@ -1,5 +1,5 @@
 import re
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 
 def parse_signals(url: str, html: str) -> dict:
@@ -38,6 +38,28 @@ def parse_signals(url: str, html: str) -> dict:
     }
 
 
+def extract_internal_links(current_url: str, html: str, max_links: int = 50) -> list[str]:
+    origin = urlparse(current_url)
+    if not origin.scheme or not origin.netloc:
+        return []
+    pattern = re.compile(r'<a[^>]+href=["\']([^"\']+)["\']', re.IGNORECASE)
+    found: list[str] = []
+    for match in pattern.finditer(html):
+        href = match.group(1).strip()
+        if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+            continue
+        absolute = urljoin(current_url, href)
+        parsed = urlparse(absolute)
+        if parsed.scheme not in {"http", "https"}:
+            continue
+        if parsed.netloc != origin.netloc:
+            continue
+        found.append(absolute)
+        if len(found) >= max_links:
+            break
+    return found
+
+
 def build_issue_taxonomy(status_code: int | None, signals: dict) -> list[dict]:
     issues: list[dict] = []
     if status_code is None or status_code >= 400:
@@ -62,4 +84,3 @@ def build_issue_taxonomy(status_code: int | None, signals: dict) -> list[dict]:
 
 def _issue(code: str, severity: str, details: dict) -> dict:
     return {"issue_code": code, "severity": severity, "details": details}
-

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.models.campaign import Campaign
-from app.models.crawl import CrawlRun, TechnicalIssue
+from app.models.crawl import CrawlFrontierUrl, CrawlRun, TechnicalIssue
 from app.models.user import User
 
 
@@ -104,3 +104,97 @@ def test_crawl_issues_tenant_isolation(client, db_session):
     items = response.json()["data"]["items"]
     assert len(items) == 1
     assert items[0]["issue_code"] == "missing_title"
+
+
+def test_crawl_schedule_enforces_campaign_active_run_limit(client, db_session, monkeypatch):
+    token = _login(client, "a@example.com", "pass-a")
+    campaign = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Quota Campaign", "domain": "quota.com"},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+
+    monkeypatch.setattr(
+        "app.services.crawl_service.get_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "crawl_max_active_runs_per_tenant": 10,
+                "crawl_max_active_runs_per_campaign": 1,
+            },
+        )(),
+    )
+    monkeypatch.setattr("app.api.v1.crawl.crawl_schedule_campaign.delay", lambda **_kwargs: None)
+
+    first = client.post(
+        "/api/v1/crawl/schedule",
+        json={"campaign_id": campaign["id"], "crawl_type": "deep", "seed_url": "https://quota.com"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/api/v1/crawl/schedule",
+        json={"campaign_id": campaign["id"], "crawl_type": "deep", "seed_url": "https://quota.com"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second.status_code == 429
+
+
+def test_crawl_run_progress_endpoint(client, db_session):
+    token = _login(client, "a@example.com", "pass-a")
+    user = db_session.query(User).filter(User.email == "a@example.com").first()
+    assert user is not None
+
+    campaign = Campaign(tenant_id=user.tenant_id, name="Progress Campaign", domain="progress.com")
+    db_session.add(campaign)
+    db_session.flush()
+    run = CrawlRun(
+        tenant_id=user.tenant_id,
+        campaign_id=campaign.id,
+        crawl_type="deep",
+        status="running",
+        seed_url="https://progress.com",
+        pages_discovered=2,
+        created_at=datetime.now(UTC),
+    )
+    db_session.add(run)
+    db_session.flush()
+    db_session.add_all(
+        [
+            CrawlFrontierUrl(
+                tenant_id=user.tenant_id,
+                campaign_id=campaign.id,
+                crawl_run_id=run.id,
+                url="https://progress.com/",
+                normalized_url="https://progress.com/",
+                status="complete",
+                depth=0,
+                attempt_count=1,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            ),
+            CrawlFrontierUrl(
+                tenant_id=user.tenant_id,
+                campaign_id=campaign.id,
+                crawl_run_id=run.id,
+                url="https://progress.com/about",
+                normalized_url="https://progress.com/about",
+                status="pending",
+                depth=1,
+                attempt_count=0,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(f"/api/v1/crawl/runs/{run.id}/progress", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["crawl_run_id"] == run.id
+    assert data["frontier_total"] == 2
+    assert data["frontier_counts"]["complete"] == 1
+    assert data["frontier_counts"]["pending"] == 1

@@ -26,6 +26,26 @@ class Settings(BaseSettings):
     crawl_min_request_interval_seconds: float = 0.2
     crawl_timeout_seconds: float = 10.0
     crawl_use_playwright: bool = False
+    crawl_max_pages_per_run: int = 200
+    crawl_max_discovered_links_per_page: int = 50
+    crawl_frontier_batch_size: int = 25
+    crawl_max_active_runs_per_tenant: int = 5
+    crawl_max_active_runs_per_campaign: int = 2
+    rank_provider_backend: str = "synthetic"
+    local_provider_backend: str = "synthetic"
+    authority_provider_backend: str = "synthetic"
+    rank_provider_http_endpoint: str = ""
+    rank_provider_http_timeout_seconds: float = 15.0
+    rank_provider_http_auth_header: str = ""
+    rank_provider_http_auth_token: str = ""
+    rank_provider_http_keyword_field: str = "keyword"
+    rank_provider_http_location_field: str = "location_code"
+    rank_provider_serpapi_api_key: str = ""
+    rank_provider_serpapi_endpoint: str = "https://serpapi.com/search.json"
+    rank_provider_serpapi_timeout_seconds: float = 15.0
+    rank_provider_serpapi_engine: str = "google"
+    rank_provider_serpapi_default_gl: str = "us"
+    rank_provider_serpapi_default_hl: str = "en"
 
     object_storage_endpoint: str = ""
     object_storage_bucket: str = ""

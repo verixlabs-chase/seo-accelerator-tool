@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
-from random import uniform
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.authority import Backlink, Citation, OutreachCampaign, OutreachContact
 from app.models.campaign import Campaign
+from app.providers import get_authority_provider
 
 
 def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -47,16 +47,19 @@ def sync_backlinks(db: Session, tenant_id: str, campaign_id: str) -> dict:
     _campaign_or_404(db, tenant_id, campaign_id)
     existing = db.query(Backlink).filter(Backlink.tenant_id == tenant_id, Backlink.campaign_id == campaign_id).count()
     if existing == 0:
-        db.add(
-            Backlink(
-                tenant_id=tenant_id,
-                campaign_id=campaign_id,
-                source_url="https://example-partner.com/local-seo-resource",
-                target_url=f"https://{campaign_id}.example.com/",
-                quality_score=round(uniform(0.5, 0.95), 2),
-                status="live",
+        provider = get_authority_provider()
+        backlinks = provider.fetch_backlinks(campaign_id=campaign_id)
+        for item in backlinks:
+            db.add(
+                Backlink(
+                    tenant_id=tenant_id,
+                    campaign_id=campaign_id,
+                    source_url=item["source_url"],
+                    target_url=item["target_url"],
+                    quality_score=float(item["quality_score"]),
+                    status=item.get("status", "live"),
+                )
             )
-        )
         db.commit()
     count = db.query(Backlink).filter(Backlink.tenant_id == tenant_id, Backlink.campaign_id == campaign_id).count()
     return {"campaign_id": campaign_id, "backlinks_synced": count}
@@ -87,12 +90,16 @@ def submit_citation(db: Session, tenant_id: str, campaign_id: str, directory_nam
 
 
 def refresh_citation_status(db: Session, tenant_id: str, campaign_id: str) -> list[Citation]:
+    provider = get_authority_provider()
     rows = db.query(Citation).filter(Citation.tenant_id == tenant_id, Citation.campaign_id == campaign_id).all()
     for row in rows:
-        if row.submission_status == "submitted":
-            row.submission_status = "verified"
-            row.listing_url = f"https://directory.example/{row.directory_name.lower().replace(' ', '-')}"
-            row.updated_at = datetime.now(UTC)
+        payload = provider.refresh_citation_status(
+            campaign_id=campaign_id,
+            directory_name=row.directory_name,
+            current_status=row.submission_status,
+        )
+        row.submission_status = payload["submission_status"]
+        row.listing_url = payload.get("listing_url")
+        row.updated_at = payload.get("updated_at", datetime.now(UTC))
     db.commit()
     return rows
-

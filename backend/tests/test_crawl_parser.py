@@ -24,3 +24,20 @@ def test_parse_signals_and_taxonomy():
     assert "invalid_canonical" in codes
     assert "multiple_h1" in codes
 
+
+def test_extract_internal_links_filters_external_and_special_schemes():
+    html = """
+    <html>
+      <body>
+        <a href="/about">About</a>
+        <a href="https://example.com/contact#team">Contact</a>
+        <a href="https://other.com/page">External</a>
+        <a href="mailto:hello@example.com">Email</a>
+        <a href="javascript:void(0)">Ignore</a>
+      </body>
+    </html>
+    """
+    links = crawl_parser.extract_internal_links("https://example.com/start", html, max_links=10)
+    assert "https://example.com/about" in links
+    assert "https://example.com/contact#team" in links
+    assert all("other.com" not in link for link in links)

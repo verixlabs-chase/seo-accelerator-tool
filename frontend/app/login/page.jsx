@@ -25,6 +25,7 @@ export default function LoginPage() {
       return;
     }
     localStorage.setItem("access_token", json.data.access_token);
+    localStorage.setItem("refresh_token", json.data.refresh_token);
     localStorage.setItem("tenant_id", json.data.user.tenant_id);
     router.push("/dashboard");
   }

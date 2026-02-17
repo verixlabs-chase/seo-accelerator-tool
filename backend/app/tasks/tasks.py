@@ -1,6 +1,9 @@
 import json
 from datetime import UTC, datetime
 
+import httpx
+from celery import Task
+from kombu.exceptions import KombuError
 from app.db.session import SessionLocal
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
@@ -60,6 +63,24 @@ def _finish_task_execution(db, row: TaskExecution, status: str, result: dict) ->
     db.commit()
 
 
+def _is_retryable_error(exc: Exception) -> bool:
+    return isinstance(exc, (httpx.HTTPError, TimeoutError, ConnectionError, OSError, KombuError))
+
+
+def _task_failure_payload(task: Task, exc: Exception) -> dict:
+    current_retry = int(getattr(getattr(task, "request", None), "retries", 0) or 0)
+    max_retries = getattr(task, "max_retries", None)
+    dead_letter = bool(max_retries is not None and current_retry >= int(max_retries))
+    return {
+        "error": str(exc),
+        "error_type": exc.__class__.__name__,
+        "retryable": _is_retryable_error(exc),
+        "current_retry": current_retry,
+        "max_retries": max_retries,
+        "dead_letter": dead_letter,
+    }
+
+
 @celery_app.task(name="crawl.schedule_campaign", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def crawl_schedule_campaign(self, campaign_id: str, crawl_run_id: str, tenant_id: str) -> dict:
     db = SessionLocal()
@@ -68,37 +89,50 @@ def crawl_schedule_campaign(self, campaign_id: str, crawl_run_id: str, tenant_id
     try:
         with crawl_metrics.stage_timer("crawl.schedule_campaign"):
             run = crawl_service.get_run_or_404(db, crawl_run_id)
-            urls = crawl_service.build_batch_urls(run.seed_url, run.crawl_type)
-            crawl_fetch_batch.delay(crawl_run_id=crawl_run_id, batch_urls=urls)
-            result = {"campaign_id": campaign_id, "crawl_run_id": crawl_run_id, "tenant_id": tenant_id, "status": "queued"}
+            seeded = crawl_service.seed_frontier_for_run(db, run)
+            crawl_fetch_batch.delay(crawl_run_id=crawl_run_id)
+            result = {
+                "campaign_id": campaign_id,
+                "crawl_run_id": crawl_run_id,
+                "tenant_id": tenant_id,
+                "status": "queued",
+                "seeded_frontier_urls": seeded,
+            }
             _finish_task_execution(db, execution, "success", result)
             return result
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
-        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
         raise
     finally:
         db.close()
 
 
 @celery_app.task(name="crawl.fetch_batch", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
-def crawl_fetch_batch(self, crawl_run_id: str, batch_urls: list[str]) -> dict:
+def crawl_fetch_batch(self, crawl_run_id: str, batch_urls: list[str] | None = None, batch_size: int | None = None) -> dict:
     db = SessionLocal()
     run = crawl_service.get_run_or_404(db, crawl_run_id)
     execution = _start_task_execution(
         db,
         run.tenant_id,
         "crawl.fetch_batch",
-        {"crawl_run_id": crawl_run_id, "batch_urls": batch_urls},
+        {"crawl_run_id": crawl_run_id, "batch_urls": batch_urls, "batch_size": batch_size},
     )
     try:
         with crawl_metrics.stage_timer("crawl.fetch_batch"):
-            result = crawl_service.execute_run(db, crawl_run_id=crawl_run_id, provided_urls=batch_urls)
+            result = crawl_service.execute_run(
+                db,
+                crawl_run_id=crawl_run_id,
+                provided_urls=batch_urls,
+                batch_size=batch_size,
+            )
+            if batch_urls is None and result.get("status") == "running" and int(result.get("pending_urls", 0)) > 0:
+                crawl_fetch_batch.delay(crawl_run_id=crawl_run_id, batch_size=batch_size)
             _finish_task_execution(db, execution, "success", result)
             return result
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
-        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
         raise
     finally:
         db.close()
@@ -123,7 +157,7 @@ def crawl_parse_page(self, crawl_run_id: str, url: str, html: str, status_code: 
             return payload
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
-        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
         raise
     finally:
         db.close()
@@ -156,7 +190,7 @@ def crawl_extract_issues(self, crawl_run_id: str, page_result_id: str) -> dict:
             return payload
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
-        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
         raise
     finally:
         db.close()
@@ -182,7 +216,7 @@ def crawl_finalize_run(self, crawl_run_id: str) -> dict:
             return payload
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
-        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
         raise
     finally:
         db.close()

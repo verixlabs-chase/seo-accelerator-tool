@@ -37,3 +37,11 @@ class TechnicalIssueOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+class CrawlRunProgressOut(BaseModel):
+    crawl_run_id: str
+    campaign_id: str
+    run_status: str
+    pages_discovered: int
+    frontier_total: int
+    frontier_counts: dict[str, int]

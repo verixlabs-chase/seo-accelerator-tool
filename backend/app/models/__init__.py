@@ -3,7 +3,7 @@ from app.models.authority import Backlink, BacklinkOpportunity, Citation, Outrea
 from app.models.campaign import Campaign
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap
-from app.models.crawl import CrawlPageResult, CrawlRun, Page, TechnicalIssue
+from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
@@ -25,6 +25,7 @@ __all__ = [
     "CrawlRun",
     "CrawlPageResult",
     "TechnicalIssue",
+    "CrawlFrontierUrl",
     "KeywordCluster",
     "CampaignKeyword",
     "Ranking",

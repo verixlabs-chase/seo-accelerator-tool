@@ -27,6 +27,7 @@ def test_migration_upgrade_and_downgrade():
         assert "campaigns" in inspector.get_table_names()
         assert "task_executions" in inspector.get_table_names()
         assert "crawl_runs" in inspector.get_table_names()
+        assert "crawl_frontier_urls" in inspector.get_table_names()
         assert "technical_issues" in inspector.get_table_names()
         assert "keyword_clusters" in inspector.get_table_names()
         assert "campaign_keywords" in inspector.get_table_names()

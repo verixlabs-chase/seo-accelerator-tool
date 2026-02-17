@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Request
-from kombu.exceptions import KombuError
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
@@ -10,6 +9,13 @@ from app.services import rank_service
 from app.tasks.tasks import rank_schedule_window
 
 router = APIRouter(prefix="/rank", tags=["rank"])
+
+
+def _dispatch_rank_schedule(campaign_id: str, tenant_id: str, location_code: str) -> None:
+    try:
+        rank_schedule_window.delay(campaign_id=campaign_id, tenant_id=tenant_id, location_code=location_code)
+    except Exception:
+        return
 
 
 @router.post("/keywords")
@@ -41,6 +47,7 @@ def add_keyword(
 @router.post("/schedule")
 def schedule_rank_collection(
     request: Request,
+    background_tasks: BackgroundTasks,
     body: RankScheduleIn,
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
@@ -51,10 +58,7 @@ def schedule_rank_collection(
         campaign_id=body.campaign_id,
         location_code=body.location_code,
     )
-    try:
-        rank_schedule_window.delay(campaign_id=body.campaign_id, tenant_id=user["tenant_id"], location_code=body.location_code)
-    except KombuError:
-        pass
+    background_tasks.add_task(_dispatch_rank_schedule, body.campaign_id, user["tenant_id"], body.location_code)
     return envelope(request, payload)
 
 
@@ -78,4 +82,3 @@ def get_rank_trends(
 ) -> dict:
     trends = rank_service.get_trends(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     return envelope(request, {"items": trends})
-

@@ -1,12 +1,12 @@
 import json
 from datetime import UTC, datetime, timedelta
-from random import randint, uniform
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.campaign import Campaign
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
+from app.providers import get_local_provider
 
 
 def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -17,6 +17,7 @@ def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
 
 
 def _get_profile_or_create(db: Session, tenant_id: str, campaign_id: str) -> LocalProfile:
+    provider = get_local_provider()
     profile = (
         db.query(LocalProfile)
         .filter(LocalProfile.tenant_id == tenant_id, LocalProfile.campaign_id == campaign_id)
@@ -25,12 +26,13 @@ def _get_profile_or_create(db: Session, tenant_id: str, campaign_id: str) -> Loc
     if profile:
         return profile
     _campaign_or_404(db, tenant_id, campaign_id)
+    seed = provider.bootstrap_profile(campaign_id=campaign_id)
     profile = LocalProfile(
         tenant_id=tenant_id,
         campaign_id=campaign_id,
-        provider="gbp",
-        profile_name="Primary GBP Profile",
-        map_pack_position=randint(1, 20),
+        provider=seed["provider"],
+        profile_name=seed["profile_name"],
+        map_pack_position=int(seed["map_pack_position"]),
     )
     db.add(profile)
     db.commit()
@@ -39,8 +41,10 @@ def _get_profile_or_create(db: Session, tenant_id: str, campaign_id: str) -> Loc
 
 
 def collect_profile_snapshot(db: Session, tenant_id: str, campaign_id: str) -> LocalProfile:
+    provider = get_local_provider()
     profile = _get_profile_or_create(db, tenant_id, campaign_id)
-    profile.map_pack_position = randint(1, 20)
+    snapshot = provider.fetch_profile_snapshot(campaign_id=campaign_id)
+    profile.map_pack_position = int(snapshot["map_pack_position"])
     profile.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(profile)
@@ -50,7 +54,7 @@ def collect_profile_snapshot(db: Session, tenant_id: str, campaign_id: str) -> L
 def compute_health_score(db: Session, tenant_id: str, campaign_id: str) -> dict:
     profile = _get_profile_or_create(db, tenant_id, campaign_id)
     map_pack = profile.map_pack_position or 20
-    score = max(0.0, min(100.0, 100.0 - (map_pack * 3.0) + uniform(-5.0, 5.0)))
+    score = max(0.0, min(100.0, 100.0 - (map_pack * 3.0)))
     snap = LocalHealthSnapshot(
         tenant_id=tenant_id,
         campaign_id=campaign_id,
@@ -82,11 +86,13 @@ def get_latest_health(db: Session, tenant_id: str, campaign_id: str) -> dict:
 
 
 def ingest_reviews(db: Session, tenant_id: str, campaign_id: str) -> dict:
+    provider = get_local_provider()
     profile = _get_profile_or_create(db, tenant_id, campaign_id)
     now = datetime.now(UTC)
     created = 0
-    for i in range(5):
-        external_id = f"{campaign_id}-r-{i}"
+    incoming = provider.fetch_reviews(campaign_id=campaign_id, limit=5)
+    for i, item in enumerate(incoming):
+        external_id = item["external_review_id"]
         existing = (
             db.query(Review)
             .filter(Review.tenant_id == tenant_id, Review.campaign_id == campaign_id, Review.external_review_id == external_id)
@@ -94,8 +100,9 @@ def ingest_reviews(db: Session, tenant_id: str, campaign_id: str) -> dict:
         )
         if existing:
             continue
-        rating = round(uniform(3.0, 5.0), 1)
-        sentiment = "positive" if rating >= 4.0 else "neutral"
+        rating = float(item["rating"])
+        sentiment = item["sentiment"]
+        reviewed_at = item.get("reviewed_at") or (now - timedelta(days=i * 2))
         db.add(
             Review(
                 tenant_id=tenant_id,
@@ -104,8 +111,8 @@ def ingest_reviews(db: Session, tenant_id: str, campaign_id: str) -> dict:
                 external_review_id=external_id,
                 rating=rating,
                 sentiment=sentiment,
-                body=f"Sample review {i}",
-                reviewed_at=now - timedelta(days=i * 2),
+                body=item.get("body", f"Sample review {i}"),
+                reviewed_at=reviewed_at,
             )
         )
         created += 1
@@ -179,4 +186,3 @@ def get_velocity(db: Session, tenant_id: str, campaign_id: str) -> dict:
         "avg_rating_last_30d": snap.avg_rating_last_30d,
         "captured_at": snap.captured_at.isoformat(),
     }
-

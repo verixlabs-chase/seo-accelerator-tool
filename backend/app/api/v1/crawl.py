@@ -1,20 +1,33 @@
-from fastapi import APIRouter, Depends, Query, Request
-from kombu.exceptions import KombuError
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.api.response import envelope
-from app.db.session import get_db
-from app.schemas.crawl import CrawlRunOut, CrawlScheduleRequest, TechnicalIssueOut
+from app.db.session import SessionLocal, get_db
+from app.schemas.crawl import CrawlRunOut, CrawlRunProgressOut, CrawlScheduleRequest, TechnicalIssueOut
 from app.services import crawl_metrics, crawl_service
 from app.tasks.tasks import crawl_schedule_campaign
 
 router = APIRouter(prefix="/crawl", tags=["crawl"])
 
 
+def _dispatch_crawl_schedule(campaign_id: str, crawl_run_id: str, tenant_id: str) -> None:
+    try:
+        crawl_schedule_campaign.delay(campaign_id=campaign_id, crawl_run_id=crawl_run_id, tenant_id=tenant_id)
+    except Exception:
+        db = SessionLocal()
+        try:
+            crawl_service.execute_run(db, crawl_run_id=crawl_run_id)
+        except Exception as exc:
+            crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
+        finally:
+            db.close()
+
+
 @router.post("/schedule")
 def schedule_crawl(
     request: Request,
+    background_tasks: BackgroundTasks,
     body: CrawlScheduleRequest,
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
@@ -26,10 +39,7 @@ def schedule_crawl(
         crawl_type=body.crawl_type,
         seed_url=body.seed_url,
     )
-    try:
-        crawl_schedule_campaign.delay(campaign_id=run.campaign_id, crawl_run_id=run.id, tenant_id=run.tenant_id)
-    except KombuError:
-        pass
+    background_tasks.add_task(_dispatch_crawl_schedule, run.campaign_id, run.id, run.tenant_id)
     return envelope(request, CrawlRunOut.model_validate(run).model_dump(mode="json"))
 
 
@@ -42,6 +52,17 @@ def get_runs(
 ) -> dict:
     runs = crawl_service.list_runs(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     return envelope(request, {"items": [CrawlRunOut.model_validate(r).model_dump(mode="json") for r in runs]})
+
+
+@router.get("/runs/{crawl_run_id}/progress")
+def get_run_progress(
+    request: Request,
+    crawl_run_id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    progress = crawl_service.get_run_progress(db, tenant_id=user["tenant_id"], crawl_run_id=crawl_run_id)
+    return envelope(request, CrawlRunProgressOut.model_validate(progress).model_dump(mode="json"))
 
 
 @router.get("/issues")
