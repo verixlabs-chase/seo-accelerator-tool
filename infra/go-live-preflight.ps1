@@ -28,21 +28,27 @@ try {
   }
   Write-Host "== LSOS Go-Live Preflight ==" -ForegroundColor Cyan
 
-  Push-Location $backendDir
-  try {
-    Invoke-Step "Backend Dependency Install" {
-      if (-not (Test-Path $pythonPath)) {
+  Invoke-Step "Backend Dependency Install" {
+    if (-not (Test-Path $pythonPath)) {
         if ($runningOnWindows) {
-          py -3.12 -m venv .venv312
+            py -3.12 -m venv .venv312
         } else {
-          python3 -m venv .venv312
+            python3 -m venv .venv312
         }
-      }
-
-      $cacheDir = Join-Path $PWD ".pip-cache"
-      & $pythonPath -m pip install --disable-pip-version-check --no-input --cache-dir $cacheDir -r requirements.txt
-      & $pythonPath -m pip install --disable-pip-version-check --no-input pip-audit
     }
+
+    $cacheDir = Join-Path $PWD ".pip-cache"
+
+    # Force pip past vulnerable versions
+    & $pythonPath -m pip install --upgrade "pip>=25.3"
+
+    # Install project dependencies
+    & $pythonPath -m pip install --disable-pip-version-check --no-input --cache-dir $cacheDir -r requirements.txt
+
+    # Install pip-audit
+    & $pythonPath -m pip install --disable-pip-version-check --no-input pip-audit
+}
+
 
     Invoke-Step "Backend Tests" {
       & $pythonPath -m pytest -vv -s
