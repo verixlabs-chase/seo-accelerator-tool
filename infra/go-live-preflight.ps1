@@ -18,22 +18,34 @@ function Invoke-Step {
 
 try {
   $root = Split-Path -Parent $PSScriptRoot
+  $isWindows = $env:OS -eq "Windows_NT"
+  $backendDir = Join-Path $root "backend"
+  $frontendDir = Join-Path $root "frontend"
+  if ($isWindows) {
+    $pythonPath = Join-Path $backendDir ".venv312\Scripts\python.exe"
+  } else {
+    $pythonPath = Join-Path $backendDir ".venv312/bin/python"
+  }
   Write-Host "== LSOS Go-Live Preflight ==" -ForegroundColor Cyan
 
-  Push-Location "$root\backend"
+  Push-Location $backendDir
   try {
-
     Invoke-Step "Backend Dependency Install" {
-      if (-not (Test-Path ".\.venv312\Scripts\python.exe")) {
-        py -3.12 -m venv .venv312
+      if (-not (Test-Path $pythonPath)) {
+        if ($isWindows) {
+          py -3.12 -m venv .venv312
+        } else {
+          python3 -m venv .venv312
+        }
       }
 
-      .\.venv312\Scripts\python.exe -m pip install --disable-pip-version-check --no-input --cache-dir .\.pip-cache -r requirements.txt
-      .\.venv312\Scripts\python.exe -m pip install --disable-pip-version-check --no-input pip-audit
+      $cacheDir = Join-Path $PWD ".pip-cache"
+      & $pythonPath -m pip install --disable-pip-version-check --no-input --cache-dir $cacheDir -r requirements.txt
+      & $pythonPath -m pip install --disable-pip-version-check --no-input pip-audit
     }
 
     Invoke-Step "Backend Tests" {
-      .\.venv312\Scripts\python.exe -m pytest -vv -s
+      & $pythonPath -m pytest -vv -s
     }
 
     Invoke-Step "Backend Vulnerability Scan" {
@@ -49,7 +61,7 @@ try {
       }
 
       try {
-        .\.venv312\Scripts\python.exe -m pip_audit --timeout 20
+        & $pythonPath -m pip_audit --timeout 20
       } finally {
         foreach ($name in $proxyVars) {
           if ($originalProxyValues.ContainsKey($name)) {
@@ -65,15 +77,14 @@ try {
     Pop-Location
   }
 
-  Push-Location "$root\frontend"
+  Push-Location $frontendDir
   try {
-
-    $isWindows = $env:OS -eq "Windows_NT"
     $env:CI="true"
-    $env:NPM_CONFIG_CACHE = "$root\frontend\.npm-cache"
+    $env:NPM_CONFIG_CACHE = Join-Path $frontendDir ".npm-cache"
 
     Invoke-Step "Frontend Install" {
-      if (Test-Path ".\node_modules") {
+      $nodeModulesPath = Join-Path $PWD "node_modules"
+      if (Test-Path $nodeModulesPath) {
         Write-Host "node_modules already present; skipping reinstall to avoid Windows EPERM postinstall lock." -ForegroundColor DarkYellow
       } else {
         npm ci --no-audit --no-fund --prefer-offline --ignore-scripts
