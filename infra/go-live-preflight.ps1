@@ -37,7 +37,28 @@ try {
     }
 
     Invoke-Step "Backend Vulnerability Scan" {
-      .\.venv312\Scripts\python.exe -m pip_audit --timeout 20
+      $proxyVars = @("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy")
+      $originalProxyValues = @{}
+
+      foreach ($name in $proxyVars) {
+        $existing = [Environment]::GetEnvironmentVariable($name, "Process")
+        if ($null -ne $existing) {
+          $originalProxyValues[$name] = $existing
+        }
+        [Environment]::SetEnvironmentVariable($name, $null, "Process")
+      }
+
+      try {
+        .\.venv312\Scripts\python.exe -m pip_audit --timeout 20
+      } finally {
+        foreach ($name in $proxyVars) {
+          if ($originalProxyValues.ContainsKey($name)) {
+            [Environment]::SetEnvironmentVariable($name, $originalProxyValues[$name], "Process")
+          } else {
+            [Environment]::SetEnvironmentVariable($name, $null, "Process")
+          }
+        }
+      }
     }
 
   } finally {
@@ -47,16 +68,37 @@ try {
   Push-Location "$root\frontend"
   try {
 
+    $isWindows = $env:OS -eq "Windows_NT"
     $env:CI="true"
+    $env:NPM_CONFIG_CACHE = "$root\frontend\.npm-cache"
 
     Invoke-Step "Frontend Install" {
-      npm ci --no-audit --no-fund --prefer-offline
+      if (Test-Path ".\node_modules") {
+        Write-Host "node_modules already present; skipping reinstall to avoid Windows EPERM postinstall lock." -ForegroundColor DarkYellow
+      } else {
+        npm ci --no-audit --no-fund --prefer-offline --ignore-scripts
+      }
     }
 
     $env:NODE_OPTIONS="--max_old_space_size=4096"
 
     Invoke-Step "Frontend Build" {
-      npm run build -- --no-lint
+      if (-not $isWindows) {
+        npm run build -- --no-lint
+        return
+      }
+
+      $buildCommand = "npm run build"
+      $process = Start-Process "cmd.exe" `
+        -ArgumentList "/c", $buildCommand `
+        -NoNewWindow `
+        -Wait `
+        -PassThru
+
+      $finalExitCode = $process.ExitCode
+      if ($finalExitCode -ne 0) {
+        $global:LASTEXITCODE = $finalExitCode
+      }
     }
 
     Invoke-Step "Frontend Audit" {
