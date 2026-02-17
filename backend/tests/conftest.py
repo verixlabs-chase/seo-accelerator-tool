@@ -1,15 +1,21 @@
+import os
+os.environ["APP_ENV"] = "test"
+
+# THEN import anything else
 import uuid
 from datetime import UTC, datetime
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import app.db.session as db_session_module
+import app.tasks.tasks as tasks_module
 from app.core.passwords import hash_password
 from app.db.base import Base
 from app.db.session import get_db
+
 from app.main import app
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
@@ -32,7 +38,14 @@ def db_session() -> Session:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
-    test_session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
+    test_session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    test_session = test_session_local()
+
+    # Ensure eager Celery tasks read/write against the same committed test DB.
+    db_session_module.engine = engine
+    db_session_module.SessionLocal = test_session_local
+    tasks_module.SessionLocal = test_session_local
+
     tenant_a = Tenant(id=str(uuid.uuid4()), name="Tenant A", created_at=datetime.now(UTC))
     tenant_b = Tenant(id=str(uuid.uuid4()), name="Tenant B", created_at=datetime.now(UTC))
     role = Role(id="tenant_admin", name="tenant_admin", created_at=datetime.now(UTC))

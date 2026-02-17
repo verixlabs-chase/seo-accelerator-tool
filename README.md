@@ -39,6 +39,20 @@ cd backend
 pytest
 ```
 
+Go-live preflight (runs backend + frontend checks end-to-end):
+
+```powershell
+cd infra
+powershell -ExecutionPolicy Bypass -File .\go-live-preflight.ps1
+```
+
+If your local network/proxy blocks `pip-audit`, run:
+
+```powershell
+cd infra
+powershell -ExecutionPolicy Bypass -File .\go-live-preflight.ps1 -SkipSecurityAudit
+```
+
 Optional JS-rendered crawling:
 
 ```powershell
@@ -57,3 +71,7 @@ Default local seeded user after migrations/startup:
 ```powershell
 docker compose up --build
 ```
+
+Go-live execution docs:
+- `Docs/GO_LIVE_HARDENING_AND_RELEASE_EXECUTION.md`
+- `Docs/PROVIDER_STACK_AND_SETUP_CHECKLIST.md`

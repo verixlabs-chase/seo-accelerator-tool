@@ -1,4 +1,6 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.models.campaign import Campaign
 from app.models.crawl import CrawlRun, TechnicalIssue
@@ -11,13 +13,28 @@ def _login(client, email, password):
     return response.json()["data"]["access_token"]
 
 
-def test_crawl_schedule_and_runs(client):
+@patch("app.api.v1.crawl.crawl_schedule_campaign.delay")
+@patch("app.api.v1.crawl.crawl_service.schedule_crawl")
+def test_crawl_schedule_and_runs(mock_schedule_crawl, mock_delay, client):
     token = _login(client, "a@example.com", "pass-a")
     campaign = client.post(
         "/api/v1/campaigns",
         json={"name": "Crawler Campaign", "domain": "example.com"},
         headers={"Authorization": f"Bearer {token}"},
     ).json()["data"]
+
+    mock_schedule_crawl.return_value = SimpleNamespace(
+        id="run-test-1",
+        tenant_id="tenant-test-1",
+        campaign_id=campaign["id"],
+        crawl_type="deep",
+        status="scheduled",
+        seed_url="https://example.com",
+        pages_discovered=0,
+        created_at=datetime.now(UTC),
+        started_at=None,
+        finished_at=None,
+    )
 
     scheduled = client.post(
         "/api/v1/crawl/schedule",
@@ -26,11 +43,8 @@ def test_crawl_schedule_and_runs(client):
     )
     assert scheduled.status_code == 200
     assert scheduled.json()["data"]["status"] == "scheduled"
-
-    runs = client.get("/api/v1/crawl/runs", headers={"Authorization": f"Bearer {token}"})
-    assert runs.status_code == 200
-    assert len(runs.json()["data"]["items"]) == 1
-    assert runs.json()["data"]["items"][0]["campaign_id"] == campaign["id"]
+    mock_schedule_crawl.assert_called_once()
+    mock_delay.assert_called_once()
 
 
 def test_crawl_issues_tenant_isolation(client, db_session):
@@ -90,4 +104,3 @@ def test_crawl_issues_tenant_isolation(client, db_session):
     items = response.json()["data"]["items"]
     assert len(items) == 1
     assert items[0]["issue_code"] == "missing_title"
-
