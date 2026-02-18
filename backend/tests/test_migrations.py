@@ -5,7 +5,9 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
+
+from app.core.settings import get_settings
 
 
 def test_migration_upgrade_and_downgrade():
@@ -16,15 +18,27 @@ def test_migration_upgrade_and_downgrade():
     try:
         db_path = os.path.join(str(tmp.resolve()), "mig.db")
         dsn = f"sqlite:///{db_path}"
+        os.environ["DATABASE_URL"] = dsn
         os.environ["POSTGRES_DSN"] = dsn
+        get_settings.cache_clear()
 
         cfg = Config("alembic.ini")
         cfg.set_main_option("sqlalchemy.url", dsn)
+        cfg.attributes["connection_url"] = dsn
+
+        print(f"[migrations-test] DATABASE_URL={dsn}")
+        print(f"[migrations-test] alembic-config-url={cfg.get_main_option('sqlalchemy.url')}")
 
         command.upgrade(cfg, "head")
         engine = create_engine(dsn)
         inspector = inspect(engine)
-        assert "campaigns" in inspector.get_table_names()
+        tables = inspector.get_table_names()
+        with engine.connect() as conn:
+            revision = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        print(f"[migrations-test] alembic_revision={revision}")
+        print(f"[migrations-test] table_count={len(tables)}")
+
+        assert "campaigns" in tables, f"campaigns table missing for db={dsn}; tables={tables}"
         assert "task_executions" in inspector.get_table_names()
         assert "crawl_runs" in inspector.get_table_names()
         assert "crawl_frontier_urls" in inspector.get_table_names()
@@ -80,4 +94,7 @@ def test_migration_upgrade_and_downgrade():
         inspector2 = inspect(engine)
         assert "campaigns" not in inspector2.get_table_names()
     finally:
+        get_settings.cache_clear()
+        os.environ.pop("DATABASE_URL", None)
+        os.environ.pop("POSTGRES_DSN", None)
         shutil.rmtree(tmp, ignore_errors=True)

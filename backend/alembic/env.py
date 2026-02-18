@@ -1,3 +1,4 @@
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -8,8 +9,32 @@ from app.db.base import Base
 from app import models  # noqa: F401
 
 config = context.config
-settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.postgres_dsn)
+
+
+def _resolve_sqlalchemy_url() -> tuple[str, str]:
+    explicit_url = config.attributes.get("connection_url")
+    if explicit_url:
+        return str(explicit_url), "config.attributes.connection_url"
+
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url:
+        return database_url, "env.DATABASE_URL"
+
+    postgres_dsn = os.getenv("POSTGRES_DSN", "").strip()
+    if postgres_dsn:
+        return postgres_dsn, "env.POSTGRES_DSN"
+
+    configured = config.get_main_option("sqlalchemy.url")
+    if configured:
+        return configured, "alembic.ini sqlalchemy.url"
+
+    settings = get_settings()
+    return settings.postgres_dsn, "settings.postgres_dsn"
+
+
+resolved_url, url_source = _resolve_sqlalchemy_url()
+config.set_main_option("sqlalchemy.url", resolved_url)
+print(f"[alembic] sqlalchemy.url source={url_source} value={resolved_url}")
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
