@@ -7,6 +7,9 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite:///./test.db
+      POSTGRES_DSN: sqlite:///./test.db
     defaults:
       run:
         working-directory: backend
@@ -17,6 +20,8 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: pip install pip-audit
+      - run: echo "DATABASE_URL=${DATABASE_URL}"
+      - run: alembic upgrade head
       - run: pytest
       - run: pip-audit
 

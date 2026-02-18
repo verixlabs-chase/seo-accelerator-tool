@@ -1,9 +1,14 @@
 import os
 os.environ["APP_ENV"] = "test"
+if os.getenv("DATABASE_URL"):
+    os.environ["POSTGRES_DSN"] = os.environ["DATABASE_URL"]
 
 # THEN import anything else
+import subprocess
+import sys
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -35,6 +40,20 @@ from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEv
 from app.models.role import Role, UserRole
 from app.models.tenant import Tenant
 from app.models.user import User
+
+
+@pytest.fixture(scope="session", autouse=True)
+def apply_migrations() -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    database_url = os.getenv("DATABASE_URL", "").strip() or os.getenv("POSTGRES_DSN", "").strip() or "sqlite:///./test.db"
+    os.environ["DATABASE_URL"] = database_url
+    os.environ["POSTGRES_DSN"] = database_url
+
+    from app.core.settings import get_settings
+
+    get_settings.cache_clear()
+    print(f"[tests] DATABASE_URL={database_url}")
+    subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True, cwd=str(backend_dir))
 
 
 @pytest.fixture()
