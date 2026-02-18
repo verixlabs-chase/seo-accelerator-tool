@@ -58,6 +58,23 @@ def test_migration_upgrade_and_downgrade():
         assert "report_artifacts" in inspector.get_table_names()
         assert "report_delivery_events" in inspector.get_table_names()
         assert "report_template_versions" in inspector.get_table_names()
+        assert "report_schedules" in inspector.get_table_names()
+        assert "reference_library_versions" in inspector.get_table_names()
+        assert "reference_library_artifacts" in inspector.get_table_names()
+        assert "reference_library_validation_runs" in inspector.get_table_names()
+        assert "reference_library_activations" in inspector.get_table_names()
+        assert "page_entities" in inspector.get_table_names()
+        assert "competitor_entities" in inspector.get_table_names()
+        assert "entity_analysis_runs" in inspector.get_table_names()
+        tenant_cols = {col["name"] for col in inspector.get_columns("tenants")}
+        campaign_cols = {col["name"] for col in inspector.get_columns("campaigns")}
+        assert "status" in tenant_cols
+        assert "setup_state" in campaign_cols
+        strategy_cols = {col["name"] for col in inspector.get_columns("strategy_recommendations")}
+        assert "confidence_score" in strategy_cols
+        assert "evidence_json" in strategy_cols
+        assert "risk_tier" in strategy_cols
+        assert "rollback_plan_json" in strategy_cols
 
         command.downgrade(cfg, "base")
         inspector2 = inspect(engine)

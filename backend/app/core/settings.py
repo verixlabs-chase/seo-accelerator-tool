@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     metrics_enabled: bool = False
     otel_exporter_endpoint: str = ""
+    reference_library_loader_enabled: bool = True
+    reference_library_hot_reload_enabled: bool = False
+    reference_library_enforce_validation: bool = True
+    reference_library_seed_path: str = ""
 
     @model_validator(mode="after")
     def validate_production_guardrails(self) -> "Settings":

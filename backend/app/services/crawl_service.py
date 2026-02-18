@@ -11,9 +11,11 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.events import emit_event
 from app.models.campaign import Campaign
 from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
-from app.services import crawl_parser
+from app.providers import get_crawl_adapter
+from app.services import crawl_parser, observability_service
 
 
 def schedule_crawl(db: Session, tenant_id: str, campaign_id: str, crawl_type: str, seed_url: str) -> CrawlRun:
@@ -149,29 +151,9 @@ def _fetch_robots(client: httpx.Client, url: str, cache: dict[str, str]) -> str:
     return cache[key]
 
 
-def _fetch_url(url: str, client: httpx.Client, use_playwright: bool, timeout_seconds: float) -> tuple[int | None, str]:
-    if use_playwright:
-        try:
-            from playwright.sync_api import sync_playwright  # type: ignore
-
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
-                response = page.goto(url, wait_until="networkidle", timeout=int(timeout_seconds * 1000))
-                html = page.content()
-                status_code = response.status if response is not None else None
-                browser.close()
-                return status_code, html
-        except Exception:
-            pass
-
-    try:
-        response = client.get(url, timeout=timeout_seconds)
-        status_code = response.status_code
-        html = response.text if "text/html" in response.headers.get("content-type", "") else ""
-        return status_code, html
-    except httpx.HTTPError:
-        return None, ""
+def _fetch_url(url: str, use_playwright: bool, timeout_seconds: float) -> tuple[int | None, str]:
+    adapter = get_crawl_adapter()
+    return adapter.fetch_url(url=url, timeout_seconds=timeout_seconds, use_playwright=use_playwright)
 
 
 def build_batch_urls(seed_url: str, crawl_type: str) -> list[str]:
@@ -335,7 +317,8 @@ def execute_run(
     raw_urls = provided_urls or []
     max_pages = max(1, int(getattr(settings, "crawl_max_pages_per_run", 200)))
     max_links_per_page = max(1, int(getattr(settings, "crawl_max_discovered_links_per_page", 50)))
-    frontier_batch_size = max(1, int(batch_size or getattr(settings, "crawl_frontier_batch_size", 25)))
+    configured_batch_size = batch_size if batch_size is not None else getattr(settings, "crawl_frontier_batch_size", 25)
+    frontier_batch_size = max(1, int(configured_batch_size))
     should_expand_frontier = run.crawl_type == "deep" and provided_urls is None
 
     frontier: deque[tuple[str, int, CrawlFrontierUrl | None]] = deque()
@@ -387,7 +370,7 @@ def execute_run(
                 if sleep_for > 0:
                     time.sleep(sleep_for)
 
-            status_code, html = _fetch_url(url, client=client, use_playwright=use_playwright, timeout_seconds=timeout_seconds)
+            status_code, html = _fetch_url(url, use_playwright=use_playwright, timeout_seconds=timeout_seconds)
             domain_last_hit[domain_key] = time.time()
 
             result, signals = record_page_result(db, run, url, status_code, html)
@@ -438,6 +421,17 @@ def execute_run(
     if provided_urls is not None or pending_count == 0:
         run.status = "complete"
         run.finished_at = datetime.now(UTC)
+        observability_service.record_crawl_result(failed=False)
+        emit_event(
+            db,
+            tenant_id=run.tenant_id,
+            event_type="crawl.completed",
+            payload={
+                "campaign_id": run.campaign_id,
+                "crawl_run_id": run.id,
+                "processed_urls": processed,
+            },
+        )
     else:
         run.status = "running"
         run.finished_at = None
@@ -457,6 +451,7 @@ def mark_run_failed(db: Session, crawl_run_id: str, error_message: str) -> None:
         return
     run.status = "failed"
     run.finished_at = datetime.now(UTC)
+    observability_service.record_crawl_result(failed=True)
     if error_message:
         db.add(
             TechnicalIssue(

@@ -628,4 +628,57 @@ tenants 1---* audit_logs
 campaigns 1---* audit_logs
 ```
 
+## 16) Planned Extension: Sprint 10 Reference Library Foundation
+
+Documentation-only schema targets for the next phase (not yet implemented as migrations):
+
+### `reference_library_versions`
+- `id UUID PK`
+- `tenant_id UUID NOT NULL`
+- `version VARCHAR(40) NOT NULL`
+- `status VARCHAR(30) NOT NULL` (`draft|validated|active|archived`)
+- `created_by UUID NULL FK -> users(id)`
+- `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
+- `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`
+
+Constraints:
+- `UNIQUE (tenant_id, version)`
+
+### `reference_library_artifacts`
+- `id UUID PK`
+- `tenant_id UUID NOT NULL`
+- `reference_library_version_id UUID NOT NULL FK -> reference_library_versions(id)`
+- `artifact_type VARCHAR(40) NOT NULL` (`metrics|recommendations|diagnostics|validation_rules`)
+- `artifact_uri TEXT NOT NULL`
+- `artifact_sha256 VARCHAR(128) NOT NULL`
+- `schema_version VARCHAR(20) NOT NULL`
+- `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
+
+Constraints:
+- `UNIQUE (tenant_id, reference_library_version_id, artifact_type)`
+
+### `reference_library_validation_runs`
+- `id UUID PK`
+- `tenant_id UUID NOT NULL`
+- `reference_library_version_id UUID NOT NULL FK -> reference_library_versions(id)`
+- `status VARCHAR(30) NOT NULL` (`passed|failed`)
+- `errors_json JSONB NOT NULL DEFAULT '[]'::jsonb`
+- `warnings_json JSONB NOT NULL DEFAULT '[]'::jsonb`
+- `executed_at TIMESTAMPTZ NOT NULL DEFAULT now()`
+
+Indexes:
+- `idx_ref_lib_validation_tenant_executed (tenant_id, executed_at DESC)`
+
+### `reference_library_activations`
+- `id UUID PK`
+- `tenant_id UUID NOT NULL`
+- `reference_library_version_id UUID NOT NULL FK -> reference_library_versions(id)`
+- `activated_by UUID NULL FK -> users(id)`
+- `rollback_from_version VARCHAR(40) NULL`
+- `activation_status VARCHAR(30) NOT NULL` (`queued|active|rolled_back|failed`)
+- `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
+
+Indexes:
+- `idx_ref_lib_activation_tenant_created (tenant_id, created_at DESC)`
+
 This schema is the governing relational model for LSOS.

@@ -31,6 +31,7 @@ Defines the production Celery execution model for LSOS: worker clusters, queue s
  queue.crawl              queue.serp queue.content         queue.reporting
  queue.local              queue.reviews                    queue.intelligence
  queue.outreach           queue.citation                   queue.default
+ queue.reference
                                 |
                                 v
                           queue.deadletter
@@ -47,6 +48,7 @@ Queue intent:
 - `queue.intelligence`: strategy scoring, anomaly detection, recommendations.
 - `queue.reporting`: monthly report assemble/render/export/delivery.
 - `queue.default`: lightweight maintenance and low-latency tasks.
+- `queue.reference`: reference library validation, activation, reload, and rollback flows.
 - `queue.deadletter`: terminal failure sink for operator triage.
 
 ## 4) Worker Cluster Model
@@ -61,6 +63,7 @@ worker-citation     listens: queue.citation
 worker-reviews      listens: queue.reviews
 worker-intelligence listens: queue.intelligence
 worker-reporting    listens: queue.reporting
+worker-reference    listens: queue.reference
 worker-default      listens: queue.default
 ```
 
@@ -113,6 +116,7 @@ queue.citation    max_retries=6  backoff=60s base  max=30m
 queue.reviews     max_retries=5  backoff=30s base  max=20m
 queue.intelligence max_retries=3 backoff=60s base  max=20m
 queue.reporting   max_retries=3  backoff=120s base max=30m
+queue.reference   max_retries=3  backoff=60s base  max=20m
 ```
 
 Dead-letter conditions:
@@ -162,6 +166,14 @@ freeze_reporting_window
  -> render_pdf
  -> store_artifact
  -> send_report_email
+```
+
+4. Reference Library Pipeline
+```text
+reference_library.validate_artifact
+ -> reference_library.activate_version
+ -> reference_library.reload_cache
+ -> emit_campaign_event("reference_library_updated")
 ```
 
 ## 8) Scheduled Jobs
@@ -247,6 +259,7 @@ worker-citation:     replicas=2  concurrency=10  prefetch=2
 worker-reviews:      replicas=2  concurrency=12  prefetch=2
 worker-intelligence: replicas=2  concurrency=6   prefetch=1
 worker-reporting:    replicas=2  concurrency=4   prefetch=1
+worker-reference:    replicas=1  concurrency=2   prefetch=1
 ```
 
 Autoscaling triggers:

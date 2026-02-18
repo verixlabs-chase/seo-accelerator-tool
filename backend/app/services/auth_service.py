@@ -23,6 +23,11 @@ def seed_local_admin(db: Session) -> None:
         role = Role(id="tenant_admin", name="tenant_admin")
         db.add(role)
         db.flush()
+    platform_role = db.query(Role).filter(Role.id == "platform_admin").first()
+    if platform_role is None:
+        platform_role = Role(id="platform_admin", name="platform_admin")
+        db.add(platform_role)
+        db.flush()
 
     user = db.query(User).filter(User.email == "admin@local.dev").first()
     if user is None:
@@ -30,6 +35,7 @@ def seed_local_admin(db: Session) -> None:
         db.add(user)
         db.flush()
         db.add(UserRole(id=str(uuid.uuid4()), user_id=user.id, role_id=role.id))
+        db.add(UserRole(id=str(uuid.uuid4()), user_id=user.id, role_id=platform_role.id))
         db.commit()
 
 

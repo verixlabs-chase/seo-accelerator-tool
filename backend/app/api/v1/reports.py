@@ -4,9 +4,16 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
-from app.schemas.reporting import ReportDeliverIn, ReportGenerateIn, ReportOut
+from app.schemas.reporting import ReportDeliverIn, ReportGenerateIn, ReportOut, ReportScheduleOut, ReportScheduleUpsertIn
 from app.services import reporting_service
-from app.tasks.tasks import reporting_aggregate_kpis, reporting_freeze_window, reporting_render_html, reporting_render_pdf, reporting_send_email
+from app.tasks.tasks import (
+    reporting_aggregate_kpis,
+    reporting_freeze_window,
+    reporting_process_schedule,
+    reporting_render_html,
+    reporting_render_pdf,
+    reporting_send_email,
+)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -24,6 +31,13 @@ def _dispatch_report_generate(tenant_id: str, campaign_id: str, month_number: in
 def _dispatch_report_delivery(tenant_id: str, report_id: str, recipient: str) -> None:
     try:
         reporting_send_email.delay(tenant_id=tenant_id, report_id=report_id, recipient=recipient)
+    except Exception:
+        return
+
+
+def _dispatch_report_schedule(tenant_id: str, campaign_id: str) -> None:
+    try:
+        reporting_process_schedule.delay(tenant_id=tenant_id, campaign_id=campaign_id)
     except Exception:
         return
 
@@ -55,6 +69,40 @@ def list_reports(
 ) -> dict:
     rows = reporting_service.list_reports(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     return envelope(request, {"items": [ReportOut.model_validate(r).model_dump(mode="json") for r in rows]})
+
+
+@router.get("/schedule")
+def get_report_schedule(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    schedule = reporting_service.get_report_schedule(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    if schedule is None:
+        return envelope(request, None)
+    return envelope(request, ReportScheduleOut.model_validate(schedule).model_dump(mode="json"))
+
+
+@router.put("/schedule")
+def put_report_schedule(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    body: ReportScheduleUpsertIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    schedule = reporting_service.upsert_report_schedule(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        cadence=body.cadence,
+        timezone=body.timezone,
+        next_run_at=body.next_run_at,
+        enabled=body.enabled,
+    )
+    background_tasks.add_task(_dispatch_report_schedule, user["tenant_id"], body.campaign_id)
+    return envelope(request, ReportScheduleOut.model_validate(schedule).model_dump(mode="json"))
 
 
 @router.get("/{report_id}")

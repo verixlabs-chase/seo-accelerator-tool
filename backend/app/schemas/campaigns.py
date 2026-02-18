@@ -8,13 +8,17 @@ class CampaignCreateRequest(BaseModel):
     domain: str
 
 
+class CampaignSetupTransitionRequest(BaseModel):
+    target_state: str
+
+
 class CampaignOut(BaseModel):
     id: str
     tenant_id: str
     name: str
     domain: str
     month_number: int
+    setup_state: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
-

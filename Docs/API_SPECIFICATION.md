@@ -1017,8 +1017,121 @@ Auth:
   - outreach campaign/contact creation endpoints
 - `report.generate`:
   - report generation and delivery endpoints
+- `platform.admin`:
+  - reference library validation, activation, and version management endpoints
 
-## 14) Versioning and Compatibility
+## 14) Reference Library Routes
+
+### 14.1 `POST /api/v1/reference-library/validate`
+
+Request:
+```json
+{
+  "version": "1.0.0",
+  "artifacts": {
+    "metrics": "object-or-uri",
+    "recommendations": "object-or-uri"
+  },
+  "strict_mode": true
+}
+```
+
+Response:
+```json
+{
+  "validation_run_id": "uuid",
+  "status": "passed",
+  "errors": [],
+  "warnings": []
+}
+```
+
+Status:
+- `200`, `400`, `403`, `422`
+
+Background tasks:
+- `reference_library.validate_artifact`
+
+Auth:
+- `platform.admin`
+
+### 14.2 `POST /api/v1/reference-library/activate`
+
+Request:
+```json
+{
+  "version": "1.0.0",
+  "reason": "activate validated baseline"
+}
+```
+
+Response:
+```json
+{
+  "activation_id": "uuid",
+  "version": "1.0.0",
+  "status": "queued"
+}
+```
+
+Status:
+- `202`, `400`, `403`, `409`
+
+Background tasks:
+- `reference_library.activate_version`
+- `reference_library.reload_cache`
+
+Auth:
+- `platform.admin`
+
+### 14.3 `GET /api/v1/reference-library/versions`
+
+Query:
+- `status`, `page`, `page_size`
+
+Response:
+```json
+{
+  "items": [
+    {
+      "version": "1.0.0",
+      "status": "validated",
+      "created_at": "2026-02-18T18:00:00Z"
+    }
+  ]
+}
+```
+
+Status:
+- `200`, `403`
+
+Background:
+- none
+
+Auth:
+- `platform.admin`
+
+### 14.4 `GET /api/v1/reference-library/active`
+
+Response:
+```json
+{
+  "version": "1.0.0",
+  "activated_at": "2026-02-18T19:00:00Z",
+  "activated_by": "uuid"
+}
+```
+
+Status:
+- `200`, `403`
+
+Background:
+- none
+
+Auth:
+- `platform.admin`
+
+## 15) Versioning and Compatibility
 
 - Version prefix required: `/api/v1`.
 - Additive changes allowed in `v1`.

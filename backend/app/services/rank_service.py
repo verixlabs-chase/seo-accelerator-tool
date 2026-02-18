@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.events import emit_event
 from app.models.campaign import Campaign
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
 from app.providers import get_rank_provider
@@ -60,13 +61,13 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
     month_partition = now.strftime("%Y-%m")
     created = 0
     for kw in keywords:
-        snapshot = provider.collect_keyword_snapshot(
+        snapshot_payload = provider.collect_keyword_snapshot(
             keyword=kw.keyword,
             location_code=location_code,
             target_domain=campaign.domain,
         )
-        position = int(snapshot["position"])
-        confidence = float(snapshot["confidence"])
+        position = int(snapshot_payload["position"])
+        confidence = float(snapshot_payload["confidence"])
         previous = (
             db.query(RankingSnapshot)
             .filter(
@@ -101,7 +102,7 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
             ranking.confidence = confidence
             ranking.updated_at = now
 
-        snapshot = RankingSnapshot(
+        snapshot_row = RankingSnapshot(
             tenant_id=tenant_id,
             campaign_id=campaign_id,
             keyword_id=kw.id,
@@ -110,8 +111,14 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
             captured_at=now,
             month_partition=month_partition,
         )
-        db.add(snapshot)
+        db.add(snapshot_row)
         created += 1
+    emit_event(
+        db,
+        tenant_id=tenant_id,
+        event_type="rank.snapshot.created",
+        payload={"campaign_id": campaign_id, "location_code": location_code, "snapshots_created": created},
+    )
     db.commit()
     return {"campaign_id": campaign_id, "location_code": location_code, "snapshots_created": created}
 

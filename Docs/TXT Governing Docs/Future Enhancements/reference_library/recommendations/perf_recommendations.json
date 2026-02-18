@@ -1,0 +1,33 @@
+{
+  "_meta": {
+    "purpose": "Performance recommendation catalog",
+    "version": "0.1.0",
+    "generated_at": "2026-02-18T16:35:33.311476"
+  },
+  "recommendations": [
+    {
+      "rec_key": "perf_enable_caching",
+      "impact": "high",
+      "effort": "medium",
+      "risk_tier": 4
+    },
+    {
+      "rec_key": "perf_optimize_hero_image",
+      "impact": "high",
+      "effort": "low",
+      "risk_tier": 2
+    },
+    {
+      "rec_key": "perf_remove_unused_js_css",
+      "impact": "high",
+      "effort": "high",
+      "risk_tier": 4
+    },
+    {
+      "rec_key": "perf_fix_layout_shifts",
+      "impact": "high",
+      "effort": "medium",
+      "risk_tier": 2
+    }
+  ]
+}

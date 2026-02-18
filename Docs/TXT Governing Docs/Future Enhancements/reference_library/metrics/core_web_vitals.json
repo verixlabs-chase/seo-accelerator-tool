@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "purpose": "Core Web Vitals reference data",
+    "version": "0.1.0",
+    "generated_at": "2026-02-18T16:35:33.311476"
+  },
+  "metrics": [
+    {
+      "metric_key": "cwv_lcp",
+      "thresholds": {
+        "good": 2500,
+        "needs_improvement": 4000,
+        "units": "ms"
+      },
+      "recommendations": [
+        "perf_enable_caching",
+        "perf_optimize_hero_image"
+      ]
+    },
+    {
+      "metric_key": "cwv_inp",
+      "thresholds": {
+        "good": 200,
+        "needs_improvement": 500,
+        "units": "ms"
+      },
+      "recommendations": [
+        "perf_remove_unused_js_css"
+      ]
+    },
+    {
+      "metric_key": "cwv_cls",
+      "thresholds": {
+        "good": 0.1,
+        "needs_improvement": 0.25,
+        "units": "score"
+      },
+      "recommendations": [
+        "perf_fix_layout_shifts"
+      ]
+    }
+  ]
+}

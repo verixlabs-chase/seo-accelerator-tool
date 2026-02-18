@@ -15,5 +15,5 @@ class Campaign(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     domain: Mapped[str] = mapped_column(String(320), nullable=False)
     month_number: Mapped[int] = mapped_column(Integer, default=1)
+    setup_state: Mapped[str] = mapped_column(String(30), nullable=False, default="Draft", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-

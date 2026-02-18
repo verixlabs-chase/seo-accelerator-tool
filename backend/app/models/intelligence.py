@@ -16,7 +16,11 @@ class StrategyRecommendation(Base):
     recommendation_type: Mapped[str] = mapped_column(String(120), nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)
-    status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    risk_tier: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    rollback_plan_json: Mapped[str] = mapped_column(Text, nullable=False, default='{"steps":[]}')
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="GENERATED")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
 
 
@@ -55,4 +59,3 @@ class AnomalyEvent(Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")
     details_json: Mapped[str] = mapped_column(Text, default="{}")
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
-

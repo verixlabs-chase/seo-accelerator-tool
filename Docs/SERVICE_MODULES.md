@@ -16,6 +16,7 @@ Module list (authoritative):
 9. Review Monitoring Engine
 10. Campaign Intelligence Engine
 11. Reporting Engine
+12. Reference Library Loader Foundation
 
 ## 2) Module 1: Crawl & Technical SEO Engine
 
@@ -351,5 +352,37 @@ Failure handling:
 - Tenant and campaign ownership validated at module entry.
 - All modules emit structured logs with `tenant_id`, `campaign_id`, `correlation_id`.
 - Dead-letter replay requires privileged permission and audit trail.
+
+## 15) Foundation Module: Reference Library Loader
+
+Purpose:
+- Provide a governed, versioned, execution-agnostic knowledge loader for metrics, thresholds, diagnostics, recommendations, and validation rules.
+
+Internal services:
+- `ReferenceLibrarySourceService`
+- `ReferenceLibraryValidationService`
+- `ReferenceLibraryActivationService`
+- `ReferenceLibraryCacheService`
+
+Celery tasks:
+- `reference_library.validate_artifact`
+- `reference_library.activate_version`
+- `reference_library.reload_cache`
+- `reference_library.rollback_version`
+
+API endpoints:
+- `POST /api/v1/reference-library/validate`
+- `POST /api/v1/reference-library/activate`
+- `GET /api/v1/reference-library/versions`
+- `GET /api/v1/reference-library/active`
+
+Database dependencies:
+- `reference_library_versions`, `reference_library_artifacts`, `reference_library_validation_runs`, `reference_library_activations`, `audit_logs`
+
+Failure handling:
+- Validation failures block activation and emit actionable diagnostics.
+- Activation is atomic with rollback to previously active version.
+- Hot-reload failures preserve last-known-good active version.
+- All mutating operations require RBAC authorization and audit logging.
 
 This document is the governing service-module contract for LSOS.

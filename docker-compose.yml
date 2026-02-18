@@ -11,11 +11,21 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lsos -d lsos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api:
     build:
@@ -24,16 +34,27 @@ services:
     environment:
       APP_ENV: local
       APP_NAME: LSOS API
+      API_V1_PREFIX: /api/v1
       POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       JWT_SECRET: local-dev-secret
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_FROM_EMAIL: no-reply@staging.local
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/readiness', timeout=5)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 8
 
   worker:
     build:
@@ -41,38 +62,67 @@ services:
     command: celery -A app.tasks.celery_app.celery_app worker -Q default -l INFO
     environment:
       APP_ENV: local
+      API_V1_PREFIX: /api/v1
       POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
+      REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       JWT_SECRET: local-dev-secret
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_FROM_EMAIL: no-reply@staging.local
     depends_on:
-      - postgres
-      - redis
-      - api
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import redis; c=redis.Redis(host='redis', port=6379, db=0, socket_timeout=2); c.ping(); assert c.exists('infra:worker:heartbeat') == 1\"",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 6
 
-  scheduler:
+  beat:
     build:
       context: ./backend
     command: celery -A app.tasks.celery_app.celery_app beat -l INFO
     environment:
       APP_ENV: local
+      API_V1_PREFIX: /api/v1
       POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
+      REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       JWT_SECRET: local-dev-secret
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_FROM_EMAIL: no-reply@staging.local
     depends_on:
-      - redis
-      - api
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import redis; c=redis.Redis(host='redis', port=6379, db=0, socket_timeout=2); c.ping(); assert c.exists('infra:scheduler:heartbeat') == 1\"",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 6
 
-  frontend:
-    build:
-      context: ./frontend
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
     ports:
-      - "3000:3000"
-    depends_on:
-      - api
+      - "1025:1025"
+      - "8025:8025"
 
 volumes:
   pg_data:

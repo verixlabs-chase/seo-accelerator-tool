@@ -92,6 +92,7 @@ Domain modules:
 9. Review Monitoring Engine
 10. Campaign Intelligence Engine
 11. Reporting Engine
+12. Reference Library Loader Foundation
 
 Boundary rules:
 - Each module owns its task definitions and business logic.

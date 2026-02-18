@@ -2,12 +2,23 @@ from __future__ import annotations
 
 from functools import lru_cache
 from random import randint, uniform
+import time
 from typing import Protocol
 from urllib.parse import urlparse
 
 import httpx
 
 from app.core.config import get_settings
+from app.providers.proxy import get_proxy_rotation_adapter
+
+
+def _build_http_client(proxy: str | None):
+    if proxy:
+        try:
+            return httpx.Client(proxy=proxy)
+        except TypeError:
+            return httpx.Client()
+    return httpx.Client()
 
 
 class RankProvider(Protocol):
@@ -40,8 +51,25 @@ class HttpJsonRankProvider:
         self.auth_token = auth_token
         self.keyword_field = keyword_field
         self.location_field = location_field
+        self._failure_count = 0
+        self._open_until = 0.0
+
+    def _circuit_open(self) -> bool:
+        return time.time() < self._open_until
+
+    def _record_failure(self) -> None:
+        self._failure_count += 1
+        if self._failure_count >= 5:
+            self._open_until = time.time() + 60
+            self._failure_count = 0
+
+    def _record_success(self) -> None:
+        self._failure_count = 0
+        self._open_until = 0.0
 
     def collect_keyword_snapshot(self, keyword: str, location_code: str, target_domain: str | None = None) -> dict:
+        if self._circuit_open():
+            raise ValueError("Rank provider circuit is open.")
         headers = {"Content-Type": "application/json"}
         if self.auth_header and self.auth_token:
             headers[self.auth_header] = self.auth_token
@@ -51,13 +79,27 @@ class HttpJsonRankProvider:
         }
         if target_domain:
             payload["target_domain"] = target_domain
-        with httpx.Client() as client:
-            response = client.post(
-                self.endpoint,
-                json=payload,
-                headers=headers,
-                timeout=self.timeout_seconds,
-            )
+        proxy = get_proxy_rotation_adapter().next_proxy()
+        attempts = 0
+        response = None
+        while attempts < 3:
+            attempts += 1
+            try:
+                with _build_http_client(proxy) as client:
+                    response = client.post(
+                        self.endpoint,
+                        json=payload,
+                        headers=headers,
+                        timeout=self.timeout_seconds,
+                    )
+                self._record_success()
+                break
+            except Exception:
+                self._record_failure()
+                if attempts < 3:
+                    time.sleep(0.25 * (2 ** (attempts - 1)))
+        if response is None:
+            raise ValueError("Rank provider request failed after retries.")
         response.raise_for_status()
         body = response.json()
         row = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
@@ -89,6 +131,21 @@ class SerpApiRankProvider:
         self.engine = engine
         self.default_gl = default_gl
         self.default_hl = default_hl
+        self._failure_count = 0
+        self._open_until = 0.0
+
+    def _circuit_open(self) -> bool:
+        return time.time() < self._open_until
+
+    def _record_failure(self) -> None:
+        self._failure_count += 1
+        if self._failure_count >= 5:
+            self._open_until = time.time() + 60
+            self._failure_count = 0
+
+    def _record_success(self) -> None:
+        self._failure_count = 0
+        self._open_until = 0.0
 
     @staticmethod
     def _normalize_domain(value: str | None) -> str:
@@ -106,6 +163,8 @@ class SerpApiRankProvider:
         return host
 
     def collect_keyword_snapshot(self, keyword: str, location_code: str, target_domain: str | None = None) -> dict:
+        if self._circuit_open():
+            raise ValueError("SerpAPI provider circuit is open.")
         target_host = self._normalize_domain(target_domain)
         if not target_host:
             raise ValueError("SerpAPI rank provider requires target_domain.")
@@ -118,8 +177,22 @@ class SerpApiRankProvider:
             "hl": self.default_hl,
             "num": 100,
         }
-        with httpx.Client() as client:
-            response = client.get(self.endpoint, params=params, timeout=self.timeout_seconds)
+        proxy = get_proxy_rotation_adapter().next_proxy()
+        attempts = 0
+        response = None
+        while attempts < 3:
+            attempts += 1
+            try:
+                with _build_http_client(proxy) as client:
+                    response = client.get(self.endpoint, params=params, timeout=self.timeout_seconds)
+                self._record_success()
+                break
+            except Exception:
+                self._record_failure()
+                if attempts < 3:
+                    time.sleep(0.25 * (2 ** (attempts - 1)))
+        if response is None:
+            raise ValueError("SerpAPI request failed after retries.")
         response.raise_for_status()
         body = response.json()
         organic = body.get("organic_results", []) if isinstance(body, dict) else []

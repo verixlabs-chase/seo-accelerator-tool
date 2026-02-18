@@ -2,14 +2,28 @@ import json
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.events import emit_event
 from app.models.campaign import Campaign
 from app.models.content import ContentAsset
 from app.models.crawl import TechnicalIssue
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.local import LocalHealthSnapshot
 from app.models.rank import Ranking
+
+RECOMMENDATION_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
+    "DRAFT": {"GENERATED"},
+    "GENERATED": {"VALIDATED", "FAILED", "ARCHIVED"},
+    "VALIDATED": {"APPROVED", "FAILED", "ARCHIVED"},
+    "APPROVED": {"SCHEDULED", "ARCHIVED"},
+    "SCHEDULED": {"EXECUTED", "FAILED", "ROLLED_BACK"},
+    "EXECUTED": {"ROLLED_BACK", "ARCHIVED"},
+    "FAILED": {"ARCHIVED"},
+    "ROLLED_BACK": {"ARCHIVED"},
+    "ARCHIVED": set(),
+}
 
 
 def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -155,6 +169,23 @@ def upsert_recommendations(db: Session, tenant_id: str, campaign_id: str) -> lis
                 recommendation_type="stabilize_foundations",
                 rationale="Composite score is low; prioritize technical fixes and local profile improvements.",
                 confidence=0.82,
+                confidence_score=0.82,
+                evidence_json=json.dumps(
+                    [
+                        "intelligence_score_below_threshold",
+                        "technical_issue_pressure_detected",
+                    ]
+                ),
+                risk_tier=1,
+                rollback_plan_json=json.dumps(
+                    {
+                        "steps": [
+                            "revert_content_changes",
+                            "recompute_score_snapshot",
+                        ]
+                    }
+                ),
+                status="GENERATED",
             )
         )
     else:
@@ -165,12 +196,91 @@ def upsert_recommendations(db: Session, tenant_id: str, campaign_id: str) -> lis
                 recommendation_type="scale_growth_content",
                 rationale="Baseline score is stable; increase content throughput and backlink acquisition velocity.",
                 confidence=0.76,
+                confidence_score=0.76,
+                evidence_json=json.dumps(
+                    [
+                        "intelligence_score_stable",
+                        "growth_capacity_available",
+                    ]
+                ),
+                risk_tier=1,
+                rollback_plan_json=json.dumps(
+                    {
+                        "steps": [
+                            "revert_growth_plan_tasks",
+                            "restore_prior_campaign_plan",
+                        ]
+                    }
+                ),
+                status="GENERATED",
             )
         )
     for rec in recommendations:
+        _validate_recommendation_payload(rec)
+    for rec in recommendations:
         db.add(rec)
+        db.flush()
+        emit_event(
+            db,
+            tenant_id=tenant_id,
+            event_type="recommendation.generated",
+            payload={"campaign_id": campaign_id, "recommendation_id": rec.id, "status": rec.status},
+        )
     db.commit()
     return recommendations
+
+
+def _validate_recommendation_payload(rec: StrategyRecommendation) -> None:
+    if rec.confidence_score < 0.0 or rec.confidence_score > 1.0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="confidence_score must be between 0 and 1")
+    if rec.risk_tier < 0 or rec.risk_tier > 4:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="risk_tier must be between 0 and 4")
+    try:
+        evidence = json.loads(rec.evidence_json or "[]")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="evidence_json must be valid JSON list") from exc
+    if not isinstance(evidence, list) or len(evidence) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="evidence must be a non-empty array")
+    try:
+        rollback_plan = json.loads(rec.rollback_plan_json or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="rollback_plan_json must be valid JSON object") from exc
+    if not isinstance(rollback_plan, dict) or len(rollback_plan) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="rollback_plan must be a non-empty object")
+
+
+def transition_recommendation_state(
+    db: Session,
+    tenant_id: str,
+    campaign_id: str,
+    recommendation_id: str,
+    target_state: str,
+) -> StrategyRecommendation:
+    row = db.get(StrategyRecommendation, recommendation_id)
+    if row is None or row.tenant_id != tenant_id or row.campaign_id != campaign_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+    allowed = RECOMMENDATION_ALLOWED_TRANSITIONS.get(row.status, set())
+    if target_state not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid recommendation transition: {row.status} -> {target_state}",
+        )
+    if target_state in {"APPROVED", "SCHEDULED", "EXECUTED"} and row.status != "VALIDATED" and row.status != "APPROVED" and row.status != "SCHEDULED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Activation blocked: recommendation must be VALIDATED first",
+        )
+    _validate_recommendation_payload(row)
+    row.status = target_state
+    emit_event(
+        db,
+        tenant_id=tenant_id,
+        event_type=f"recommendation.{target_state.lower()}",
+        payload={"campaign_id": campaign_id, "recommendation_id": recommendation_id, "target_state": target_state},
+    )
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def get_latest_score(db: Session, tenant_id: str, campaign_id: str) -> IntelligenceScore:
@@ -195,6 +305,40 @@ def get_recommendations(db: Session, tenant_id: str, campaign_id: str) -> list[S
     if rows:
         return rows
     return upsert_recommendations(db, tenant_id, campaign_id)
+
+
+def get_recommendation_summary(db: Session, tenant_id: str, campaign_id: str) -> dict:
+    _campaign_or_404(db, tenant_id, campaign_id)
+    total = (
+        db.query(func.count(StrategyRecommendation.id))
+        .filter(StrategyRecommendation.tenant_id == tenant_id, StrategyRecommendation.campaign_id == campaign_id)
+        .scalar()
+        or 0
+    )
+    by_state_rows = (
+        db.query(StrategyRecommendation.status, func.count(StrategyRecommendation.id))
+        .filter(StrategyRecommendation.tenant_id == tenant_id, StrategyRecommendation.campaign_id == campaign_id)
+        .group_by(StrategyRecommendation.status)
+        .all()
+    )
+    by_risk_rows = (
+        db.query(StrategyRecommendation.risk_tier, func.count(StrategyRecommendation.id))
+        .filter(StrategyRecommendation.tenant_id == tenant_id, StrategyRecommendation.campaign_id == campaign_id)
+        .group_by(StrategyRecommendation.risk_tier)
+        .all()
+    )
+    avg_confidence = (
+        db.query(func.avg(StrategyRecommendation.confidence_score))
+        .filter(StrategyRecommendation.tenant_id == tenant_id, StrategyRecommendation.campaign_id == campaign_id)
+        .scalar()
+    )
+    return {
+        "campaign_id": campaign_id,
+        "total_count": int(total),
+        "counts_by_state": {str(state): int(count) for state, count in by_state_rows},
+        "counts_by_risk_tier": {str(risk): int(count) for risk, count in by_risk_rows},
+        "average_confidence_score": round(float(avg_confidence), 4) if avg_confidence is not None else 0.0,
+    }
 
 
 def advance_month(db: Session, tenant_id: str, campaign_id: str, override: bool) -> dict:
@@ -223,4 +367,3 @@ def advance_month(db: Session, tenant_id: str, campaign_id: str, override: bool)
     campaign.month_number = min(12, campaign.month_number + 1)
     db.commit()
     return {"campaign_id": campaign.id, "advanced_to_month": campaign.month_number, "override": override}
-

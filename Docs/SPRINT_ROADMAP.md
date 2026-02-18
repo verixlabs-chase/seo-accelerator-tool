@@ -362,3 +362,435 @@ Governance artifacts required before production go-live:
 - `RELEASE_AND_CHANGE_MANAGEMENT.md`
 
 This roadmap is the governing delivery plan for LSOS implementation.
+
+## 13) Future Enhancements Roadmap Integration (V7)
+
+Dependency validation gate (required before "Ready for Implementation"):
+- Event bus exists: Yes (Celery/Redis queue fabric and domain events are defined in architecture and observability specs).
+- Feature flag system exists: Yes (central governance is defined in environment/config spec).
+- Audit logging exists: Yes (`audit_logs` schema and `audit.write_event` workflow are defined).
+- RBAC enforcement exists: Yes (RBAC controls are defined in security and architecture specs).
+- Reference Library loader exists: No (loader contract exists in Future Enhancements specs, but no current loader module/contract is defined in baseline roadmap docs).
+
+Readiness rule:
+- Any EPIC depending on the missing Reference Library loader is `Blocked - Missing Dependency`.
+
+### Phase 4.5 (After Content Automation Engine)
+
+#### EPIC_ENTITY_DOMINANCE
+
+Implementation status:
+- Blocked - Missing Dependency (Reference Library loader)
+
+Objective:
+- Measure semantic authority against competitors using entity extraction and gap scoring.
+
+Dependencies:
+- Crawl Engine outputs
+- Rank/SERP snapshot data
+- Competitor snapshot data
+- Reference Library
+- Event bus
+- Feature flags
+- Audit logging
+- RBAC
+
+Required DB tables:
+- `entity_catalog`
+- `page_entities`
+- `competitor_entities`
+- `entity_dominance_scores`
+- `entity_gap_reports`
+
+Required background jobs:
+- `entity.extract_from_page`
+- `entity.build_campaign_graph`
+- `entity.compute_dominance_score`
+- `entity.generate_gap_report`
+
+Required API endpoints:
+- `GET /api/v1/entity/dominance/score`
+- `GET /api/v1/entity/dominance/gaps`
+- `GET /api/v1/entity/dominance/evidence`
+
+Required feature flags:
+- `entity_dominance.enabled`
+- `entity_dominance.read_only_mode`
+
+Acceptance criteria:
+- Entity extraction runs per URL with tenant-safe writes.
+- Competitor entity overlap and gap scoring are generated.
+- Outputs include `entity_score`, `missing_entities[]`, `confidence_score`, and `evidence[]`.
+- No hardcoded thresholds outside Reference Library.
+
+Risk tier considerations:
+- Tier 0 for insight-only scoring views.
+- Tier 1 for draft recommendations derived from dominance gaps.
+- Tier 2+ blocked until Reference Library loader is implemented and validated.
+
+### Phase 6 (Inside Campaign Intelligence)
+
+#### EPIC_LOCAL_AUTHORITY_SCORE
+
+Implementation status:
+- Blocked - Missing Dependency (Reference Library loader)
+
+Objective:
+- Produce a configurable, versioned composite 0-100 local authority score with explainable breakdowns.
+
+Dependencies:
+- Campaign Intelligence scoring pipeline
+- Technical score signals
+- SERP footprint signals
+- Link/review/citation velocity signals
+- Entity dominance signals
+- Reference Library
+- Event bus
+- Feature flags
+- Audit logging
+- RBAC
+
+Required DB tables:
+- `local_authority_model_versions`
+- `local_authority_weights`
+- `local_authority_scores`
+- `local_authority_score_components`
+
+Required background jobs:
+- `authority.compute_local_score`
+- `authority.apply_model_version`
+- `authority.compute_local_score_deltas`
+
+Required API endpoints:
+- `GET /api/v1/intelligence/local-authority/score`
+- `GET /api/v1/intelligence/local-authority/breakdown`
+- `GET /api/v1/intelligence/local-authority/history`
+
+Required feature flags:
+- `campaign_intelligence.local_authority_score`
+- `campaign_intelligence.local_authority_score_v2`
+
+Acceptance criteria:
+- Weighted scoring is configurable and versioned.
+- Score outputs include value, component breakdown, delta, and confidence.
+- Deterministic recomputation for fixed inputs and model version.
+- AI-derived recommendations include evidence and risk tier.
+
+Risk tier considerations:
+- Tier 0 for score visibility.
+- Tier 1 for draft strategy recommendations.
+- Tier 2+ only after Reference Library loader and approval workflows are active.
+
+### Phase 6.5 (After Rank Tracking Enhancements)
+
+#### EPIC_SERP_FOOTPRINT
+
+Implementation status:
+- Blocked - Missing Dependency (Reference Library loader)
+
+Objective:
+- Quantify SERP occupation across organic, local pack, snippet, video, and image features.
+
+Dependencies:
+- Rank tracking snapshots
+- SERP HTML capture pipeline
+- Competitor tracking signals
+- Reference Library
+- Event bus
+- Feature flags
+- Audit logging
+- RBAC
+
+Required DB tables:
+- `serp_feature_snapshots`
+- `serp_footprint_scores`
+- `serp_feature_presence_map`
+- `serp_competitor_overlap`
+
+Required background jobs:
+- `serp.extract_features`
+- `serp.compute_footprint_score`
+- `serp.compute_competitor_overlap`
+
+Required API endpoints:
+- `GET /api/v1/rank/serp-footprint/score`
+- `GET /api/v1/rank/serp-footprint/features`
+- `GET /api/v1/rank/serp-footprint/overlap`
+
+Required feature flags:
+- `rank_tracking.serp_footprint`
+- `rank_tracking.serp_footprint_advanced_features`
+
+Acceptance criteria:
+- SERP feature extraction works on captured HTML snapshots.
+- Footprint percentages are available by keyword group.
+- Outputs include footprint score, presence map, and competitor overlap.
+- Evidence and confidence are included in recommendation payloads.
+
+Risk tier considerations:
+- Tier 0 for observational analytics.
+- Tier 1 for draft prioritization recommendations.
+- Tier 2 blocked pending Reference Library loader and signal calibration.
+
+### Phase 7 (Post-Stability / After V1 Release)
+
+#### EPIC_REVENUE_ATTRIBUTION
+
+Implementation status:
+- Blocked - Missing Dependency (Reference Library loader)
+
+Objective:
+- Attribute ranking/page performance to revenue outcomes for ROI analysis.
+
+Dependencies:
+- Rank tracking history
+- Content/page performance history
+- Session tracking and call ingestion
+- Campaign Intelligence reporting
+- Reference Library
+- Event bus
+- Feature flags
+- Audit logging
+- RBAC
+
+Required DB tables:
+- `attribution_sessions`
+- `attribution_touchpoints`
+- `revenue_events`
+- `revenue_attribution_models`
+- `revenue_attribution_results`
+
+Required background jobs:
+- `attribution.ingest_sessions`
+- `attribution.ingest_calls`
+- `attribution.map_revenue_events`
+- `attribution.compute_revenue_by_page`
+- `attribution.compute_roi_by_cluster`
+
+Required API endpoints:
+- `GET /api/v1/attribution/revenue-by-page`
+- `GET /api/v1/attribution/revenue-by-keyword`
+- `GET /api/v1/attribution/roi-by-cluster`
+
+Required feature flags:
+- `attribution.revenue_engine`
+- `attribution.call_ingestion`
+
+Acceptance criteria:
+- Revenue-linked datasets are encrypted at rest/in transit.
+- Revenue-by-page/keyword/cluster outputs are produced with deltas.
+- Attribution model version is tracked for reproducibility.
+- Recommendation outputs include confidence and evidence arrays.
+
+Risk tier considerations:
+- Tier 0 for reporting-only views.
+- Tier 1 for draft optimization suggestions.
+- Tier 3 for high-impact budget reallocation recommendations with approval.
+
+#### EPIC_PREDICTIVE_RANK
+
+Implementation status:
+- Blocked - Missing Dependency (Reference Library loader)
+
+Objective:
+- Forecast ranking trajectory using probabilistic models and velocity signals.
+
+Dependencies:
+- Rank history and deltas
+- Competitor movement signals
+- Campaign milestone events
+- Reference Library
+- Event bus
+- Feature flags
+- Audit logging
+- RBAC
+
+Required DB tables:
+- `rank_forecast_models`
+- `rank_forecast_runs`
+- `rank_forecast_outputs`
+- `rank_forecast_evidence`
+
+Required background jobs:
+- `predictive_rank.train_model`
+- `predictive_rank.generate_forecast`
+- `predictive_rank.validate_forecast_accuracy`
+
+Required API endpoints:
+- `GET /api/v1/predictive-rank/curve`
+- `GET /api/v1/predictive-rank/confidence`
+- `GET /api/v1/predictive-rank/time-to-top`
+
+Required feature flags:
+- `predictive_rank.enabled`
+- `predictive_rank.model_v2`
+
+Acceptance criteria:
+- Forecast includes predicted curve, confidence interval, and time-to-top estimate.
+- Model outputs are evidence-backed and reproducible by model version.
+- No deterministic "guaranteed rank" outputs are exposed.
+
+Risk tier considerations:
+- Tier 0 for forecast visibility.
+- Tier 1 for draft planning recommendations.
+- Tier 2 for recommended execution plans requiring human review.
+
+#### EPIC_AI_CONVERSION_LAYER
+
+Implementation status:
+- Blocked - Missing Dependency (Reference Library loader)
+
+Objective:
+- Improve conversion outcomes using behavioral insights and governed A/B experimentation.
+
+Dependencies:
+- Reporting and attribution metrics
+- UX/event telemetry
+- Experimentation framework
+- Reference Library
+- Event bus
+- Feature flags
+- Audit logging
+- RBAC
+
+Required DB tables:
+- `conversion_experiments`
+- `conversion_variants`
+- `conversion_events`
+- `conversion_experiment_results`
+- `conversion_recommendations`
+
+Required background jobs:
+- `conversion.evaluate_variant_performance`
+- `conversion.compute_conversion_delta`
+- `conversion.generate_ux_insights`
+
+Required API endpoints:
+- `POST /api/v1/conversion/experiments`
+- `GET /api/v1/conversion/experiments/{id}/results`
+- `GET /api/v1/conversion/insights`
+
+Required feature flags:
+- `conversion.ai_layer`
+- `conversion.ab_testing`
+
+Acceptance criteria:
+- No automatic layout changes without approval controls.
+- All tests and recommendation events are fully logged.
+- Outputs include `ux_insights`, `ab_test_results`, and `conversion_delta`.
+- Recommendation payloads include confidence, evidence, and risk tier.
+
+Risk tier considerations:
+- Tier 1 for draft test plans.
+- Tier 2 for low-risk content/CTA experiments.
+- Tier 3 for broad UX changes requiring explicit approval.
+
+#### EPIC_AUTONOMOUS_OUTREACH
+
+Implementation status:
+- Blocked - Missing Dependency (Reference Library loader)
+
+Objective:
+- Semi-automate prospecting and outreach with AI-assisted classification under strict approval controls.
+
+Dependencies:
+- Authority/outreach CRM data
+- Citation/backlink state
+- AI recommendation governance schema
+- Reference Library
+- Event bus
+- Feature flags
+- Audit logging
+- RBAC
+
+Required DB tables:
+- `outreach_prospect_queue`
+- `outreach_message_drafts`
+- `outreach_reply_classifications`
+- `outreach_automation_runs`
+
+Required background jobs:
+- `outreach.rank_prospects`
+- `outreach.generate_draft_message`
+- `outreach.classify_reply`
+- `outreach.sync_response_state`
+
+Required API endpoints:
+- `GET /api/v1/outreach/autonomous/prospects`
+- `GET /api/v1/outreach/autonomous/drafts`
+- `POST /api/v1/outreach/autonomous/{id}/approve-send`
+- `GET /api/v1/outreach/autonomous/replies`
+
+Required feature flags:
+- `outreach.autonomous_agent`
+- `outreach.autonomous_send_enabled`
+
+Acceptance criteria:
+- Draft-only mode is default.
+- Manual approval is required before sends.
+- Outputs include prospect queue, drafted messages, and reply classification.
+- All agent decisions and send approvals are audit logged.
+
+Risk tier considerations:
+- Tier 1 for draft generation/classification.
+- Tier 2 for limited, approved sending workflows.
+- Tier 3 for scaled automated sending (approval-gated).
+
+## 14) Next Phase Activation: Sprint 10 - Reference Library Foundation
+
+Objective:
+- Implement the minimum shared foundation that unlocks all Future Enhancements EPICs without modifying existing Phase 1-9 production behavior.
+
+Scope:
+- Deliver a Reference Library loader contract with version pinning, schema validation, and hot-reload safety controls.
+- Deliver governance-safe Recommendation payload schema conformance checks.
+- Deliver audit and RBAC controls for library management operations.
+
+Deliverables:
+- Reference Library artifact contract (`metrics`, `thresholds`, `diagnostics`, `recommendations`, `validation_rules`).
+- Loader lifecycle contract (load, validate, activate, rollback to previous version).
+- Version manifest and activation state model.
+- Admin/API contracts for validation and controlled activation.
+- Queue jobs for async validation and publish-safe cache refresh.
+
+Acceptance criteria:
+- Loader can resolve active library version per environment and tenant scope policy.
+- Library schema validation runs in CI and runtime pre-activation checks.
+- Activation/deactivation operations are RBAC-protected and audit logged.
+- No hardcoded thresholds are introduced into service modules.
+- Existing Phase 1-9 services run unchanged when loader is disabled.
+
+Database changes:
+- Add tables: `reference_library_versions`, `reference_library_artifacts`, `reference_library_validation_runs`, `reference_library_activations`.
+
+API endpoints added:
+- `POST /api/v1/reference-library/validate`
+- `POST /api/v1/reference-library/activate`
+- `GET /api/v1/reference-library/versions`
+- `GET /api/v1/reference-library/active`
+
+Tasks added:
+- `reference_library.validate_artifact`
+- `reference_library.activate_version`
+- `reference_library.reload_cache`
+- `reference_library.rollback_version`
+
+Feature flags:
+- `reference_library.loader_enabled`
+- `reference_library.hot_reload_enabled`
+- `reference_library.enforce_validation`
+
+Risk tier considerations:
+- Tier 0 for read-only version visibility.
+- Tier 1 for draft validation runs.
+- Tier 2 for activation in staging/production with approval and rollback plan.
+
+Post-sprint dependency re-check:
+- Event bus exists: required and already present.
+- Feature flag system exists: required and already present.
+- Audit logging exists: required and already present.
+- RBAC enforcement exists: required and already present.
+- Reference Library loader exists: must be set to present after Sprint 10 DoD.
+
+Unlock result:
+- On Sprint 10 completion, reclassify Future Enhancements EPICs from `Blocked - Missing Dependency` to `Ready for Implementation` (phase order preserved: 4.5 -> 6 -> 6.5 -> 7).

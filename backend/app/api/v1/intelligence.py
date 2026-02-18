@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
-from app.schemas.intelligence import AdvanceMonthIn, IntelligenceScoreOut, RecommendationOut
+from app.schemas.intelligence import AdvanceMonthIn, IntelligenceScoreOut, RecommendationOut, RecommendationTransitionIn
 from app.services import intelligence_service
 from app.tasks.tasks import (
     campaigns_evaluate_monthly_rules,
@@ -49,6 +49,25 @@ def get_intelligence_recommendations(
     return envelope(request, {"items": [RecommendationOut.model_validate(r).model_dump(mode="json") for r in recs]})
 
 
+@intelligence_router.post("/recommendations/{recommendation_id}/transition")
+def transition_recommendation(
+    request: Request,
+    recommendation_id: str,
+    body: RecommendationTransitionIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = intelligence_service.transition_recommendation_state(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+        recommendation_id=recommendation_id,
+        target_state=body.target_state,
+    )
+    return envelope(request, RecommendationOut.model_validate(row).model_dump(mode="json"))
+
+
 @campaign_intelligence_router.post("/campaigns/{campaign_id}/advance-month")
 def advance_campaign_month(
     request: Request,
@@ -69,4 +88,3 @@ def advance_campaign_month(
     except KombuError:
         pass
     return envelope(request, result)
-

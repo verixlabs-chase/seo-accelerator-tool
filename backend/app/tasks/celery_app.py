@@ -1,16 +1,61 @@
+from __future__ import annotations
+
+import threading
+import time
+
 from celery import Celery
 from celery.app.task import Task
+from celery.signals import beat_init, heartbeat_sent, worker_ready
 
 from app.core.config import get_settings
+from app.db.redis_client import get_redis_client
+from app.services.infra_service import SCHEDULER_HEARTBEAT_KEY, WORKER_HEARTBEAT_KEY
 
 settings = get_settings()
+_scheduler_heartbeat_started = False
+
+
+def _publish_heartbeat(key: str) -> None:
+    client = get_redis_client()
+    if client is None:
+        return
+    client.setex(key, 120, str(int(time.time())))
+
+
+@worker_ready.connect
+def _worker_ready_heartbeat(**_kwargs) -> None:
+    _publish_heartbeat(WORKER_HEARTBEAT_KEY)
+
+
+@heartbeat_sent.connect
+def _worker_heartbeat_sent(**_kwargs) -> None:
+    _publish_heartbeat(WORKER_HEARTBEAT_KEY)
+
+
+@beat_init.connect
+def _scheduler_heartbeat_loop(**_kwargs) -> None:
+    global _scheduler_heartbeat_started
+    if _scheduler_heartbeat_started:
+        return
+    _scheduler_heartbeat_started = True
+
+    def _loop() -> None:
+        while True:
+            _publish_heartbeat(SCHEDULER_HEARTBEAT_KEY)
+            time.sleep(30)
+
+    thread = threading.Thread(target=_loop, name="scheduler-heartbeat", daemon=True)
+    thread.start()
 
 
 def create_celery_app() -> Celery:
     is_test_env = settings.app_env.lower() == "test"
+    if not is_test_env:
+        # Fail fast when Redis is unavailable in non-test environments.
+        get_redis_client()
 
     class LSOSTask(Task):
-        def retry(self, *args, **kwargs):  # type: ignore[override]
+        def retry(self, *args, **kwargs):
             if is_test_env:
                 exc = kwargs.get("exc")
                 if exc is not None:

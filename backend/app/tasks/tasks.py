@@ -13,8 +13,11 @@ from app.services import (
     content_service,
     crawl_metrics,
     crawl_service,
+    entity_service,
     intelligence_service,
     local_service,
+    observability_service,
+    reference_library_service,
     rank_service,
     reporting_service,
 )
@@ -44,6 +47,7 @@ def audit_write_event(event_type: str, tenant_id: str, actor_user_id: str | None
 
 
 def _start_task_execution(db, tenant_id: str, task_name: str, payload: dict) -> TaskExecution:
+    observability_service.record_task_started(payload)
     row = TaskExecution(
         tenant_id=tenant_id,
         task_name=task_name,
@@ -57,14 +61,28 @@ def _start_task_execution(db, tenant_id: str, task_name: str, payload: dict) -> 
 
 
 def _finish_task_execution(db, row: TaskExecution, status: str, result: dict) -> None:
+    observability_service.record_task_finished(success=status == "success")
     row.status = status
-    row.result_json = json.dumps(result)
+    row.result_json = json.dumps(result, default=str)
     row.updated_at = datetime.now(UTC)
     db.commit()
 
 
 def _is_retryable_error(exc: Exception) -> bool:
     return isinstance(exc, (httpx.HTTPError, TimeoutError, ConnectionError, OSError, KombuError))
+
+
+def _reason_code(exc: Exception) -> str:
+    name = exc.__class__.__name__.lower()
+    if "timeout" in name:
+        return "timeout"
+    if "connect" in name or "connection" in name:
+        return "connection_error"
+    if "http" in name:
+        return "upstream_http_error"
+    if "kombu" in name:
+        return "queue_broker_error"
+    return "internal_error"
 
 
 def _task_failure_payload(task: Task, exc: Exception) -> dict:
@@ -74,6 +92,7 @@ def _task_failure_payload(task: Task, exc: Exception) -> dict:
     return {
         "error": str(exc),
         "error_type": exc.__class__.__name__,
+        "reason_code": _reason_code(exc),
         "retryable": _is_retryable_error(exc),
         "current_retry": current_retry,
         "max_retries": max_retries,
@@ -241,7 +260,7 @@ def rank_schedule_window(self, campaign_id: str, tenant_id: str, location_code: 
         _finish_task_execution(db, execution, "success", result)
         return result
     except Exception as exc:
-        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
         raise
     finally:
         db.close()
@@ -706,7 +725,142 @@ def reporting_send_email(self, tenant_id: str, report_id: str, recipient: str) -
         _finish_task_execution(db, execution, "success", result)
         return result
     except Exception as exc:
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reporting.process_schedule", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def reporting_process_schedule(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reporting.process_schedule",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = reporting_service.run_due_report_schedule(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        retry_state = reporting_service.mark_schedule_attempt_failure(db, tenant_id=tenant_id, campaign_id=campaign_id, error_message=str(exc))
+        _finish_task_execution(db, execution, "failed", retry_state)
+        if retry_state.get("should_retry"):
+            raise
+        return retry_state
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reference_library.validate_artifact", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def reference_library_validate_artifact(
+    self,
+    tenant_id: str,
+    actor_user_id: str,
+    version: str,
+    artifacts: dict | None = None,
+    strict_mode: bool = True,
+) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reference_library.validate_artifact",
+        {"version": version, "strict_mode": strict_mode},
+    )
+    try:
+        result = reference_library_service.validate_version(
+            db,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            version=version,
+            artifacts=artifacts,
+            strict_mode=strict_mode,
+        )
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
         _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reference_library.activate_version", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def reference_library_activate_version(self, tenant_id: str, actor_user_id: str, version: str, reason: str | None = None) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reference_library.activate_version",
+        {"version": version, "reason": reason or ""},
+    )
+    try:
+        result = reference_library_service.activate_version(
+            db,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            version=version,
+            reason=reason,
+        )
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="reference_library.reload_cache")
+def reference_library_reload_cache(tenant_id: str, version: str) -> dict:
+    return {"tenant_id": tenant_id, "version": version, "cache_reloaded": True}
+
+
+@celery_app.task(name="reference_library.rollback_version", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def reference_library_rollback_version(self, tenant_id: str, actor_user_id: str, version: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reference_library.rollback_version",
+        {"version": version},
+    )
+    try:
+        result = reference_library_service.activate_version(
+            db,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            version=version,
+            reason="rollback",
+        )
+        payload = {"rolled_back_to": result["version"], "status": result["status"], "activation_id": result["activation_id"]}
+        _finish_task_execution(db, execution, "success", payload)
+        return payload
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", {"error": str(exc)})
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="entity.analyze_campaign", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def entity_analyze_campaign(self, tenant_id: str, campaign_id: str) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "entity.analyze_campaign",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = entity_service.run_entity_analysis(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
         raise
     finally:
         db.close()
