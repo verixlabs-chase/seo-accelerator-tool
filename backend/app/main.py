@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import inspect
 
 from app.api.response import exception_envelope
-from app.api.v1.router import api_router
+from app.api.v1.router import control_plane_api_router, tenant_api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, request_context_middleware
 from app.db.redis_client import get_redis_client
@@ -44,7 +44,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.middleware("http")(request_context_middleware)
-app.include_router(api_router, prefix=settings.api_v1_prefix)
+app.include_router(tenant_api_router, prefix=settings.api_v1_prefix)
+app.include_router(control_plane_api_router, prefix=settings.api_v1_prefix)
 
 
 @app.exception_handler(HTTPException)

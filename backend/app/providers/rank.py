@@ -7,9 +7,11 @@ from typing import Protocol
 from urllib.parse import urlparse
 
 import httpx
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.providers.proxy import get_proxy_rotation_adapter
+from app.services.provider_credentials_service import resolve_provider_credentials
 
 
 def _build_http_client(proxy: str | None):
@@ -215,22 +217,21 @@ def get_rank_provider() -> RankProvider:
     backend = getattr(settings, "rank_provider_backend", "synthetic").strip().lower()
     if backend == "synthetic":
         return SyntheticRankProvider()
-    if backend == "http_json":
-        endpoint = getattr(settings, "rank_provider_http_endpoint", "").strip()
-        if not endpoint:
-            raise ValueError("rank_provider_http_endpoint is required for rank_provider_backend=http_json.")
-        return HttpJsonRankProvider(
-            endpoint=endpoint,
-            timeout_seconds=float(getattr(settings, "rank_provider_http_timeout_seconds", 15.0)),
-            auth_header=getattr(settings, "rank_provider_http_auth_header", "").strip(),
-            auth_token=getattr(settings, "rank_provider_http_auth_token", "").strip(),
-            keyword_field=getattr(settings, "rank_provider_http_keyword_field", "keyword").strip(),
-            location_field=getattr(settings, "rank_provider_http_location_field", "location_code").strip(),
-        )
+    if backend in {"http_json", "serpapi"}:
+        raise ValueError("Credentialed rank providers require organization-scoped resolution.")
+    raise ValueError(f"Unsupported rank provider backend: {backend}")
+
+
+def get_rank_provider_for_organization(db: Session, organization_id: str) -> RankProvider:
+    settings = get_settings()
+    backend = getattr(settings, "rank_provider_backend", "synthetic").strip().lower()
+    if backend == "synthetic":
+        return SyntheticRankProvider()
     if backend == "serpapi":
-        api_key = getattr(settings, "rank_provider_serpapi_api_key", "").strip()
+        resolved = resolve_provider_credentials(db, organization_id, "dataforseo")
+        api_key = str(resolved.get("api_key", "")).strip()
         if not api_key:
-            raise ValueError("rank_provider_serpapi_api_key is required for rank_provider_backend=serpapi.")
+            raise ValueError("rank provider requires configured api_key.")
         return SerpApiRankProvider(
             api_key=api_key,
             endpoint=getattr(settings, "rank_provider_serpapi_endpoint", "https://serpapi.com/search.json").strip(),
@@ -238,5 +239,20 @@ def get_rank_provider() -> RankProvider:
             engine=getattr(settings, "rank_provider_serpapi_engine", "google").strip(),
             default_gl=getattr(settings, "rank_provider_serpapi_default_gl", "us").strip(),
             default_hl=getattr(settings, "rank_provider_serpapi_default_hl", "en").strip(),
+        )
+    if backend == "http_json":
+        endpoint = getattr(settings, "rank_provider_http_endpoint", "").strip()
+        if not endpoint:
+            raise ValueError("rank_provider_http_endpoint is required for rank_provider_backend=http_json.")
+        resolved = resolve_provider_credentials(db, organization_id, "rank_http")
+        auth_token = str(resolved.get("auth_token", "")).strip()
+        auth_header = str(resolved.get("auth_header", "")).strip() or getattr(settings, "rank_provider_http_auth_header", "").strip()
+        return HttpJsonRankProvider(
+            endpoint=endpoint,
+            timeout_seconds=float(getattr(settings, "rank_provider_http_timeout_seconds", 15.0)),
+            auth_header=auth_header,
+            auth_token=auth_token,
+            keyword_field=getattr(settings, "rank_provider_http_keyword_field", "keyword").strip(),
+            location_field=getattr(settings, "rank_provider_http_location_field", "location_code").strip(),
         )
     raise ValueError(f"Unsupported rank provider backend: {backend}")

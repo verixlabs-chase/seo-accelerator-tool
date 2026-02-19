@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from typing import Callable
+
 import redis
 from redis.backoff import NoBackoff
 from redis.retry import Retry
@@ -28,7 +30,7 @@ def _healthcheck_redis_client() -> redis.Redis | None:
     )
 
 
-def _run_redis_probe(probe: callable) -> bool:
+def _run_redis_probe(probe: Callable[[], bool]) -> bool:
     future = _REDIS_PROBE_EXECUTOR.submit(probe)
     try:
         return bool(future.result(timeout=REDIS_HEALTHCHECK_TIMEOUT_SECONDS))
@@ -67,7 +69,10 @@ def worker_active() -> bool:
             return False
         if client.exists(WORKER_HEARTBEAT_KEY) != 1:
             return False
-        return int(client.ttl(WORKER_HEARTBEAT_KEY)) > 0
+        ttl = client.ttl(WORKER_HEARTBEAT_KEY)
+        if not isinstance(ttl, int):
+            return False
+        return ttl > 0
 
     return _run_redis_probe(_probe)
 

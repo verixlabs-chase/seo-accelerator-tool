@@ -794,3 +794,59 @@ Post-sprint dependency re-check:
 
 Unlock result:
 - On Sprint 10 completion, reclassify Future Enhancements EPICs from `Blocked - Missing Dependency` to `Ready for Implementation` (phase order preserved: 4.5 -> 6 -> 6.5 -> 7).
+
+## 16) Future Enhancements Wave 1 (New Docs `01`-`10`)
+
+Integration policy for this section:
+- Documentation-only incorporation (no active runtime changes).
+- Additive delivery only; no mutation of existing Phase 1-10 contracts.
+- Every item requires feature flags and explicit rollout gates.
+
+### Planned Enhancements and Placement
+
+1. `01_ROI_Attribution_Engine.md`
+- Placement: Phase 7+ (aligned with `EPIC_REVENUE_ATTRIBUTION`)
+- Mode: `Planned`, dependency-gated by Reference Library and governance controls.
+
+2. `02_SEO_Command_Center.md`
+- Placement: Phase 7+ (cross-module executive surface)
+- Mode: `Planned`, read-only aggregation first.
+
+3. `03_Organization_Subaccount_Model.md`
+- Placement: Phase 7+ Platform Expansion
+- Mode: `Planned`, additive org/subaccount model over existing tenant model.
+
+4. `04_Native_CMS_Publishing.md`
+- Placement: Phase 7+ Content Execution Expansion
+- Mode: `Planned`, draft/review/approval workflow first.
+
+5. `05_Link_Risk_Scoring.md`
+- Placement: Phase 7+ Authority Intelligence Expansion
+- Mode: `Planned`, scoring-only first release.
+
+6. `06_Margin_Dashboard.md`
+- Placement: Phase 7+ Financial Intelligence Expansion
+- Mode: `Planned`, internal analytics only.
+
+7. `07_SEO_Playbook_Engine.md`
+- Placement: Phase 7+ Campaign Orchestration Expansion
+- Mode: `Planned`, opt-in automation paths only.
+
+8. `08_Multi_Location_Intelligence.md`
+- Placement: Phase 7+ Local SEO Expansion
+- Mode: `Planned`, aggregated location cluster analytics.
+
+9. `09_Executive_Auto_Reports.md`
+- Placement: Phase 7+ Reporting Expansion
+- Mode: `Planned`, template-versioned and tenant-opt-in.
+
+10. `10_Provider_Health_Dashboard.md`
+- Placement: Phase 7+ Operations Expansion
+- Mode: `Planned`, read-only provider telemetry surface first.
+
+### Non-Breaking Guardrails
+
+- No existing endpoint behavior changes in this wave.
+- No cross-module direct DB coupling introduced.
+- No removal or renaming of current Phase 1-10 tasks/endpoints.
+- New functionality activates only under explicit feature flags.

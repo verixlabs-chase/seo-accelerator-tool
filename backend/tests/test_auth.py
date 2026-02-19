@@ -3,13 +3,13 @@ def test_login_and_refresh_and_me(client):
     assert login_res.status_code == 200
     payload = login_res.json()["data"]
     assert payload["token_type"] == "bearer"
-    assert payload["user"]["roles"] == ["tenant_admin"]
+    assert payload["user"]["org_role"] == "org_admin"
+    assert "tenant_admin" in payload["user"]["roles"]
 
     me_res = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {payload['access_token']}"})
     assert me_res.status_code == 200
-    assert me_res.json()["data"]["tenant_id"] == payload["user"]["tenant_id"]
+    assert me_res.json()["data"]["organization_id"] == payload["user"]["organization_id"]
 
     refresh_res = client.post("/api/v1/auth/refresh", json={"refresh_token": payload["refresh_token"]})
     assert refresh_res.status_code == 200
     assert refresh_res.json()["data"]["access_token"]
-

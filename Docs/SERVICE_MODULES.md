@@ -386,3 +386,50 @@ Failure handling:
 - All mutating operations require RBAC authorization and audit logging.
 
 This document is the governing service-module contract for LSOS.
+
+## 16) Planned Future Enhancement Modules (Docs `01`-`10`)
+
+Status for all modules below:
+- `Planned` (documentation only, not active runtime contracts)
+- `Feature-flag required`
+- `No change to existing Modules 1-12 behavior until enabled`
+
+13. ROI Attribution Engine (`01_ROI_Attribution_Engine.md`)
+- Purpose: Revenue attribution by keyword cluster/campaign with reproducible model versions.
+- Planned APIs: `GET /api/v1/roi/summary`
+
+14. SEO Command Center (`02_SEO_Command_Center.md`)
+- Purpose: Unified executive surface across health, rank, entity, ROI, provider stability.
+- Planned APIs: `GET /api/v1/dashboard/command-center`
+
+15. Organization and Subaccount Model (`03_Organization_Subaccount_Model.md`)
+- Purpose: Agency-level org/subaccount hierarchy and quota-aware RBAC.
+- Planned APIs: `POST /api/v1/orgs`, `POST /api/v1/orgs/{id}/subaccounts`, `GET /api/v1/orgs/{id}/usage`
+
+16. Native CMS Publishing (`04_Native_CMS_Publishing.md`)
+- Purpose: Direct CMS publishing adapters (starting with WordPress).
+- Planned APIs: `POST /api/v1/content/publish`, `GET /api/v1/content/status`
+
+17. Link Risk Scoring Engine (`05_Link_Risk_Scoring.md`)
+- Purpose: Toxic backlink risk scoring and disavow candidate generation.
+- Planned outputs: Toxic list, risk index, disavow export.
+
+18. Margin Dashboard (`06_Margin_Dashboard.md`)
+- Purpose: Campaign-level cost/revenue margin intelligence.
+- Planned APIs: `GET /api/v1/margin/summary`
+
+19. SEO Playbook Engine (`07_SEO_Playbook_Engine.md`)
+- Purpose: Template-driven, SLA-aware execution playbooks.
+- Planned APIs: `POST /api/v1/playbooks/apply`, `GET /api/v1/playbooks/status`
+
+20. Multi-Location Intelligence (`08_Multi_Location_Intelligence.md`)
+- Purpose: Aggregated local SEO performance across grouped locations.
+- Planned APIs: `GET /api/v1/locations/summary`
+
+21. Executive Auto Reports (`09_Executive_Auto_Reports.md`)
+- Purpose: Branded executive narrative reports with schedule automation.
+- Planned APIs: `POST /api/v1/reports/executive`
+
+22. Provider Health Dashboard (`10_Provider_Health_Dashboard.md`)
+- Purpose: Provider stability/latency/error/quota visibility.
+- Planned APIs: `GET /api/v1/provider-health/summary`
