@@ -1,0 +1,19 @@
+
+> lsos-frontend@0.1.0 dev
+> next dev -p 3000
+
+   ▲ Next.js 15.5.12
+   - Local:        http://localhost:3000
+   - Network:      http://10.0.0.102:3000
+
+ ✓ Starting...
+ ✓ Ready in 1189ms
+ ✓ Compiled /login in 472ms (531 modules)
+ GET /login 200 in 677ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 564ms (538 modules)
+ GET /dashboard 200 in 895ms
+ GET /login 200 in 130ms
+ GET /dashboard 200 in 21ms
+ GET /dashboard 200 in 169ms
+[?25h

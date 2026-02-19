@@ -35,6 +35,24 @@ def test_migration_upgrade_and_downgrade():
         tables = inspector.get_table_names()
         with engine.connect() as conn:
             revision = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            enterprise_sponsored_org = conn.execute(
+                text(
+                    "SELECT id, plan_type, billing_mode FROM organizations "
+                    "WHERE plan_type='enterprise' AND billing_mode='platform_sponsored' LIMIT 1"
+                )
+            ).first()
+            assert enterprise_sponsored_org is not None
+            org_policy = conn.execute(
+                text(
+                    "SELECT credential_mode FROM provider_policies "
+                    "WHERE organization_id=:org_id AND provider_name='dataforseo'"
+                ),
+                {"org_id": enterprise_sponsored_org[0]},
+            ).first()
+            assert org_policy is not None
+            assert enterprise_sponsored_org[1] == "enterprise"
+            assert enterprise_sponsored_org[2] == "platform_sponsored"
+            assert org_policy[0] == "byo_required"
         print(f"[migrations-test] alembic_revision={revision}")
         print(f"[migrations-test] table_count={len(tables)}")
 
@@ -80,8 +98,39 @@ def test_migration_upgrade_and_downgrade():
         assert "page_entities" in inspector.get_table_names()
         assert "competitor_entities" in inspector.get_table_names()
         assert "entity_analysis_runs" in inspector.get_table_names()
-        tenant_cols = {col["name"] for col in inspector.get_columns("tenants")}
+        assert "provider_health_states" in inspector.get_table_names()
+        assert "provider_quota_states" in inspector.get_table_names()
+        assert "provider_execution_metrics" in inspector.get_table_names()
+        assert "organizations" in inspector.get_table_names()
+        assert "provider_policies" in inspector.get_table_names()
+        assert "organization_provider_credentials" in inspector.get_table_names()
+        assert "platform_provider_credentials" in inspector.get_table_names()
+        assert "sub_accounts" in inspector.get_table_names()
+        org_cols = {col["name"] for col in inspector.get_columns("organizations")}
+        assert "plan_type" in org_cols
+        assert "billing_mode" in org_cols
+        policy_cols = {col["name"] for col in inspector.get_columns("provider_policies")}
+        assert "credential_mode" in policy_cols
+        org_cred_cols = {col["name"] for col in inspector.get_columns("organization_provider_credentials")}
+        platform_cred_cols = {col["name"] for col in inspector.get_columns("platform_provider_credentials")}
+        assert "encrypted_secret_blob" in org_cred_cols
+        assert "key_reference" in org_cred_cols
+        assert "key_version" in org_cred_cols
+        assert "encrypted_secret_blob" in platform_cred_cols
+        assert "key_reference" in platform_cred_cols
+        assert "key_version" in platform_cred_cols
+        sub_account_cols = {col["name"] for col in inspector.get_columns("sub_accounts")}
+        assert "organization_id" in sub_account_cols
+        assert "name" in sub_account_cols
+        assert "status" in sub_account_cols
         campaign_cols = {col["name"] for col in inspector.get_columns("campaigns")}
+        report_schedule_cols = {col["name"] for col in inspector.get_columns("report_schedules")}
+        metric_cols = {col["name"] for col in inspector.get_columns("provider_execution_metrics")}
+        assert "sub_account_id" in campaign_cols
+        assert "sub_account_id" in report_schedule_cols
+        assert "sub_account_id" in metric_cols
+
+        tenant_cols = {col["name"] for col in inspector.get_columns("tenants")}
         assert "status" in tenant_cols
         assert "setup_state" in campaign_cols
         strategy_cols = {col["name"] for col in inspector.get_columns("strategy_recommendations")}

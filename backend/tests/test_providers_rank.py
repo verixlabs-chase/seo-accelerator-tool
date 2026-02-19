@@ -98,8 +98,12 @@ def test_get_rank_provider_http_json_backend(monkeypatch):
             },
         )(),
     )
-    provider = rank.get_rank_provider()
-    assert isinstance(provider, rank.HttpJsonRankProvider)
+    try:
+        rank.get_rank_provider()
+    except ValueError as exc:
+        assert "organization-scoped" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for credentialed backend without organization scope.")
     rank.get_rank_provider.cache_clear()
 
 
@@ -145,6 +149,10 @@ def test_get_rank_provider_serpapi_backend(monkeypatch):
             },
         )(),
     )
-    provider = rank.get_rank_provider()
-    assert isinstance(provider, rank.SerpApiRankProvider)
+    try:
+        rank.get_rank_provider()
+    except ValueError as exc:
+        assert "organization-scoped" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for credentialed backend without organization scope.")
     rank.get_rank_provider.cache_clear()

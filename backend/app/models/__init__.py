@@ -7,6 +7,14 @@ from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, 
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
+from app.models.organization import Organization
+from app.models.organization_membership import OrganizationMembership
+from app.models.organization_provider_credential import OrganizationProviderCredential
+from app.models.provider_health import ProviderHealthState
+from app.models.provider_metric import ProviderExecutionMetric
+from app.models.provider_policy import ProviderPolicy
+from app.models.provider_quota import ProviderQuotaState
+from app.models.platform_provider_credential import PlatformProviderCredential
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
 from app.models.reference_library import (
     ReferenceLibraryActivation,
@@ -16,6 +24,7 @@ from app.models.reference_library import (
 )
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent, ReportSchedule, ReportTemplateVersion
 from app.models.role import Role, UserRole
+from app.models.sub_account import SubAccount
 from app.models.task_execution import TaskExecution
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -25,6 +34,7 @@ __all__ = [
     "User",
     "Role",
     "UserRole",
+    "SubAccount",
     "Campaign",
     "AuditLog",
     "TaskExecution",
@@ -56,6 +66,14 @@ __all__ = [
     "LocalHealthSnapshot",
     "Review",
     "ReviewVelocitySnapshot",
+    "Organization",
+    "OrganizationMembership",
+    "OrganizationProviderCredential",
+    "PlatformProviderCredential",
+    "ProviderHealthState",
+    "ProviderPolicy",
+    "ProviderQuotaState",
+    "ProviderExecutionMetric",
     "OutreachCampaign",
     "OutreachContact",
     "BacklinkOpportunity",

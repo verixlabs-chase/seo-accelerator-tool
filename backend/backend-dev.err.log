@@ -1,0 +1,49 @@
+INFO:     Started server process [30016]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+{"event": "request.started", "request_id": "9cc84e63-7a75-45c7-8f85-2484a1a7a20d", "tenant_id": null, "method": "GET", "path": "/api/v1/health"}
+{"event": "request.finished", "request_id": "9cc84e63-7a75-45c7-8f85-2484a1a7a20d", "tenant_id": null, "status_code": 200}
+{"event": "request.started", "request_id": "3d85286c-6bcd-4299-b2e2-cc47a9d2ff08", "tenant_id": null, "method": "GET", "path": "/api/v1/auth/me"}
+{"event": "request.finished", "request_id": "3d85286c-6bcd-4299-b2e2-cc47a9d2ff08", "tenant_id": "864cc9bc-cc02-4236-bc92-595a24b343f7", "status_code": 200}
+{"event": "request.started", "request_id": "1a458c82-f58d-4afc-940e-2346722c3281", "tenant_id": null, "method": "GET", "path": "/api/v1/campaigns"}
+{"event": "request.finished", "request_id": "1a458c82-f58d-4afc-940e-2346722c3281", "tenant_id": "864cc9bc-cc02-4236-bc92-595a24b343f7", "status_code": 200}
+{"event": "request.started", "request_id": "f5034dbf-b88b-4f71-afa8-1ad1f7de8960", "tenant_id": null, "method": "GET", "path": "/api/v1/crawl/runs"}
+{"event": "request.finished", "request_id": "f5034dbf-b88b-4f71-afa8-1ad1f7de8960", "tenant_id": "864cc9bc-cc02-4236-bc92-595a24b343f7", "status_code": 200}
+{"event": "request.started", "request_id": "0424118b-2ab6-42ef-81e4-1adc6e7a36d8", "tenant_id": null, "method": "GET", "path": "/api/v1/rank/trends"}
+{"event": "request.finished", "request_id": "0424118b-2ab6-42ef-81e4-1adc6e7a36d8", "tenant_id": "864cc9bc-cc02-4236-bc92-595a24b343f7", "status_code": 200}
+{"event": "request.started", "request_id": "d2e97dcf-a602-4aa2-ba36-6b4764e627d9", "tenant_id": null, "method": "GET", "path": "/api/v1/reports"}
+{"event": "request.finished", "request_id": "d2e97dcf-a602-4aa2-ba36-6b4764e627d9", "tenant_id": "864cc9bc-cc02-4236-bc92-595a24b343f7", "status_code": 200}
+{"event": "request.started", "request_id": "f8e42240-3c2f-4fc9-acf3-2c1f42b799a7", "tenant_id": null, "method": "OPTIONS", "path": "/api/v1/reports/generate"}
+{"event": "request.finished", "request_id": "f8e42240-3c2f-4fc9-acf3-2c1f42b799a7", "tenant_id": null, "status_code": 200}
+{"event": "request.started", "request_id": "338f2a9f-29a5-4dab-b97a-8eccc6bc07ad", "tenant_id": null, "method": "POST", "path": "/api/v1/reports/generate"}
+{"event": "request.finished", "request_id": "338f2a9f-29a5-4dab-b97a-8eccc6bc07ad", "tenant_id": "864cc9bc-cc02-4236-bc92-595a24b343f7", "status_code": 200}
+{"event": "request.started", "request_id": "d48adbe1-3978-4c91-b860-c41a5297181d", "tenant_id": null, "method": "GET", "path": "/api/v1/crawl/runs"}
+{"event": "request.finished", "request_id": "d48adbe1-3978-4c91-b860-c41a5297181d", "tenant_id": "864cc9bc-cc02-4236-bc92-595a24b343f7", "status_code": 200}
+{"event": "request.started", "request_id": "ec5c0d7a-80ce-4bcd-b94b-1d4dbc83b25c", "tenant_id": null, "method": "GET", "path": "/api/v1/rank/trends"}
+{"event": "request.finished", "request_id": "ec5c0d7a-80ce-4bcd-b94b-1d4dbc83b25c", "tenant_id": "864cc9bc-cc02-4236-bc92-595a24b343f7", "status_code": 200}
+{"event": "request.started", "request_id": "3504be53-8dd3-4905-b14c-9824eb09a2c1", "tenant_id": null, "method": "GET", "path": "/api/v1/reports"}
+{"event": "request.finished", "request_id": "3504be53-8dd3-4905-b14c-9824eb09a2c1", "tenant_id": "864cc9bc-cc02-4236-bc92-595a24b343f7", "status_code": 200}
+Connection to Redis lost: Retry (0/20) now.
+Connection to Redis lost: Retry (1/20) in 1.00 second.
+Connection to Redis lost: Retry (2/20) in 1.00 second.
+Connection to Redis lost: Retry (3/20) in 1.00 second.
+Connection to Redis lost: Retry (4/20) in 1.00 second.
+Connection to Redis lost: Retry (5/20) in 1.00 second.
+Connection to Redis lost: Retry (6/20) in 1.00 second.
+Connection to Redis lost: Retry (7/20) in 1.00 second.
+Connection to Redis lost: Retry (8/20) in 1.00 second.
+Connection to Redis lost: Retry (9/20) in 1.00 second.
+Connection to Redis lost: Retry (10/20) in 1.00 second.
+Connection to Redis lost: Retry (11/20) in 1.00 second.
+Connection to Redis lost: Retry (12/20) in 1.00 second.
+Connection to Redis lost: Retry (13/20) in 1.00 second.
+Connection to Redis lost: Retry (14/20) in 1.00 second.
+Connection to Redis lost: Retry (15/20) in 1.00 second.
+Connection to Redis lost: Retry (16/20) in 1.00 second.
+Connection to Redis lost: Retry (17/20) in 1.00 second.
+Connection to Redis lost: Retry (18/20) in 1.00 second.
+Connection to Redis lost: Retry (19/20) in 1.00 second.
+
+Retry limit exceeded while trying to reconnect to the Celery redis result store backend. The Celery application must be restarted.
+

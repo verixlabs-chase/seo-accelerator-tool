@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     rank_provider_backend: str = "synthetic"
     local_provider_backend: str = "synthetic"
     authority_provider_backend: str = "synthetic"
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = ""
+    google_oauth_scope: str = "https://www.googleapis.com/auth/business.manage"
+    google_oauth_auth_endpoint: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    google_oauth_token_endpoint: str = "https://oauth2.googleapis.com/token"
+    google_oauth_state_ttl_seconds: int = 600
+    google_oauth_http_timeout_seconds: float = 15.0
+    google_oauth_access_token_skew_seconds: int = 60
     rank_provider_http_endpoint: str = ""
     rank_provider_http_timeout_seconds: float = 15.0
     rank_provider_http_auth_header: str = ""
@@ -46,7 +55,6 @@ class Settings(BaseSettings):
     rank_provider_serpapi_engine: str = "google"
     rank_provider_serpapi_default_gl: str = "us"
     rank_provider_serpapi_default_hl: str = "en"
-
     object_storage_endpoint: str = ""
     object_storage_bucket: str = ""
     object_storage_access_key: str = ""

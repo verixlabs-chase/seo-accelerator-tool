@@ -1131,7 +1131,437 @@ Background:
 Auth:
 - `platform.admin`
 
-## 15) Versioning and Compatibility
+## 15) Google OAuth Infrastructure Contract
+
+Scope:
+- Infrastructure-only OAuth wiring for organization-scoped Google credentials.
+- No reporting, SEO execution, Search Console, GA, or provider task execution is triggered by these routes.
+
+### 15.1 `POST /api/v1/organizations/{organization_id}/providers/google/oauth/start`
+
+Purpose:
+- Create a Google OAuth authorization URL and a signed `state` bound to the authenticated user and `organization_id`.
+
+Required role(s):
+- `org_owner` or `org_admin` in active membership for the same `organization_id`.
+
+Org scoping behavior:
+- Path `organization_id` must match authenticated user organization context.
+- Mismatch returns `403` with reason code `organization_scope_mismatch`.
+
+Request schema:
+- Body: none
+
+Query parameters:
+- none
+
+Success response envelope (`200`):
+```json
+{
+  "data": {
+    "organization_id": "uuid",
+    "provider_name": "google",
+    "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth?...",
+    "state": "signed-jwt-state"
+  },
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid"
+  },
+  "error": null
+}
+```
+
+Full error response examples:
+
+`403 organization_scope_mismatch`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_403",
+      "message": "Organization context does not match request scope.",
+      "details": {
+        "message": "Organization context does not match request scope.",
+        "reason_code": "organization_scope_mismatch"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 403
+  }
+}
+```
+
+`409 oauth_provider_not_configured`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_409",
+      "message": "Google OAuth is not configured: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI",
+      "details": {
+        "message": "Google OAuth is not configured: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI",
+        "reason_code": "oauth_provider_not_configured"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 409
+  }
+}
+```
+
+Stable reason_code list (explicit, exhaustive for this endpoint):
+- `organization_scope_mismatch`
+- `oauth_provider_not_configured`
+
+### 15.2 `GET /api/v1/organizations/{organization_id}/providers/google/oauth/callback`
+
+Purpose:
+- Validate signed `state`, exchange Google authorization `code` for access/refresh tokens, and persist org-scoped encrypted OAuth credentials (`auth_mode="oauth2"`).
+
+Required role(s):
+- `org_owner` or `org_admin` in active membership for the same `organization_id`.
+
+Org scoping behavior:
+- Path `organization_id` must match authenticated user organization context.
+- Signed `state.organization_id` and `state.user_id` must match path/user context.
+- Cross-org or cross-user callback attempts are rejected.
+
+Request schema:
+- Body: none
+
+Query parameters:
+- `code` (required, non-empty string)
+- `state` (required, non-empty signed token)
+
+Success response envelope (`200`):
+```json
+{
+  "data": {
+    "organization_id": "uuid",
+    "provider_name": "google",
+    "auth_mode": "oauth2",
+    "connected": true,
+    "updated_at": "2026-02-19T12:34:56.000000+00:00"
+  },
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid"
+  },
+  "error": null
+}
+```
+
+Full error response examples:
+
+`400 oauth_state_invalid`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_400",
+      "message": "Google OAuth state is invalid.",
+      "details": {
+        "message": "Google OAuth state is invalid.",
+        "reason_code": "oauth_state_invalid"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 400
+  }
+}
+```
+
+`400 oauth_state_expired`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_400",
+      "message": "Google OAuth state expired.",
+      "details": {
+        "message": "Google OAuth state expired.",
+        "reason_code": "oauth_state_expired"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 400
+  }
+}
+```
+
+`400 oauth_state_org_mismatch`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_400",
+      "message": "Google OAuth state organization mismatch.",
+      "details": {
+        "message": "Google OAuth state organization mismatch.",
+        "reason_code": "oauth_state_org_mismatch"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 400
+  }
+}
+```
+
+`400 oauth_state_user_mismatch`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_400",
+      "message": "Google OAuth state user mismatch.",
+      "details": {
+        "message": "Google OAuth state user mismatch.",
+        "reason_code": "oauth_state_user_mismatch"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 400
+  }
+}
+```
+
+`403 organization_scope_mismatch`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_403",
+      "message": "Organization context does not match request scope.",
+      "details": {
+        "message": "Organization context does not match request scope.",
+        "reason_code": "organization_scope_mismatch"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 403
+  }
+}
+```
+
+`409 oauth_provider_not_configured`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_409",
+      "message": "Google OAuth is not configured: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI",
+      "details": {
+        "message": "Google OAuth is not configured: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI",
+        "reason_code": "oauth_provider_not_configured"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 409
+  }
+}
+```
+
+`409 oauth_refresh_token_required`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_409",
+      "message": "Google OAuth refresh token required.",
+      "details": {
+        "message": "Google OAuth refresh token required.",
+        "reason_code": "oauth_refresh_token_required"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 409
+  }
+}
+```
+
+`502 oauth_exchange_failed`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_502",
+      "message": "Google OAuth code exchange failed.",
+      "details": {
+        "message": "Google OAuth code exchange failed.",
+        "reason_code": "oauth_exchange_failed"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 502
+  }
+}
+```
+
+`502 oauth_token_response_invalid`
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_502",
+      "message": "Google OAuth token response is invalid.",
+      "details": {
+        "message": "Google OAuth token response is invalid.",
+        "reason_code": "oauth_token_response_invalid"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 502
+  }
+}
+```
+
+`409 master_key_missing` (encryption failure during credential persistence)
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "http_409",
+      "message": "PLATFORM_MASTER_KEY is required for credential encryption.",
+      "details": {
+        "message": "PLATFORM_MASTER_KEY is required for credential encryption.",
+        "reason_code": "master_key_missing"
+      }
+    }
+  ],
+  "meta": {
+    "request_id": "uuid",
+    "tenant_id": "uuid",
+    "status_code": 409
+  }
+}
+```
+
+Stable reason_code list (explicit, exhaustive for this endpoint):
+- `organization_scope_mismatch`
+- `oauth_state_invalid`
+- `oauth_state_expired`
+- `oauth_state_org_mismatch`
+- `oauth_state_user_mismatch`
+- `oauth_provider_not_configured`
+- `oauth_exchange_failed`
+- `oauth_token_response_invalid`
+- `oauth_refresh_token_required`
+- `master_key_missing`
+- `master_key_invalid`
+
+### 15.3 Security Notes
+
+- `state` is signed using server JWT configuration and contains:
+  - `type=google_oauth_state`
+  - `organization_id`
+  - `user_id`
+  - `nonce`
+  - `iat` / `exp` (TTL-bound)
+- CSRF mitigation:
+  - Callback requires signed state validation.
+  - Callback additionally binds state to authenticated user and org context.
+- Replay protection:
+  - Bounded by short state TTL and org/user binding.
+  - State is not persisted server-side for one-time invalidation in this phase.
+- No secrets are returned in API responses.
+- No plaintext token persistence is allowed.
+
+### 15.4 Credential Storage Model
+
+- Storage target:
+  - `organization_provider_credentials` only (org-scoped).
+- Provider key:
+  - `provider_name="google"`.
+- Auth mode:
+  - `auth_mode="oauth2"`.
+- Encryption:
+  - Envelope encryption via AES-256-GCM payload encryption + encrypted DEK.
+  - DEK is encrypted with `PLATFORM_MASTER_KEY`.
+  - Persisted fields are encrypted blob + key metadata (`key_reference`, `key_version`).
+- Plaintext token material is never persisted to DB rows.
+
+### 15.5 Refresh-on-Demand Behavior
+
+- Trigger location:
+  - `app/services/provider_credentials_service.py` during `resolve_provider_credentials(...)`.
+- Trigger condition:
+  - Selected credential has `auth_mode="oauth2"` and provider is `google`, and access token is missing/expired (with configured skew window).
+- Refresh action:
+  - Use stored `refresh_token` against Google token endpoint.
+  - Merge updated token payload.
+  - Re-encrypt and persist updated credential blob.
+- If refresh fails:
+  - Resolution fails with stable OAuth reason code (`oauth_refresh_failed`, `oauth_token_response_invalid`, or `oauth_refresh_token_required`).
+
+### 15.6 Failure Semantics
+
+- OAuth start failure:
+  - No credential row mutation.
+- OAuth callback pre-exchange failures (scope/state validation):
+  - No credential row mutation.
+- OAuth callback exchange failures:
+  - No credential row mutation.
+- OAuth callback storage/encryption failures:
+  - No plaintext persistence; encrypted row update is not successfully committed.
+- Refresh-on-demand failures:
+  - Existing stored credentials remain as last committed encrypted version.
+
+### 15.7 OAuth Invariants
+
+- No provider execution logic is triggered during OAuth start.
+- Tokens are stored organization-scoped only.
+- No cross-organization token reuse is allowed.
+- Refresh token is never returned in API responses.
+- Expired access token auto-refresh occurs only in the credential resolution path.
+- Missing refresh token yields `oauth_refresh_token_required`.
+
+## 16) Versioning and Compatibility
 
 - Version prefix required: `/api/v1`.
 - Additive changes allowed in `v1`.
@@ -1140,3 +1570,32 @@ Auth:
   - announce for at least 2 release cycles before removal.
 
 This document is the governing API contract for LSOS.
+
+## 17) Planned Future Enhancement Routes (Docs `01`-`10`)
+
+Policy:
+- Routes below are planned contracts only.
+- No active implementation is implied by this section.
+- Existing `/api/v1` routes remain unchanged.
+- Activation requires feature flags, dependency checks, and rollout approvals.
+
+Planned endpoints:
+- `GET /api/v1/roi/summary?campaign_id=...` (ROI Attribution Engine)
+- `GET /api/v1/dashboard/command-center?campaign_id=...` (SEO Command Center)
+- `POST /api/v1/orgs` (Organization and Subaccount Model)
+- `POST /api/v1/orgs/{id}/subaccounts` (Organization and Subaccount Model)
+- `GET /api/v1/orgs/{id}/usage` (Organization and Subaccount Model)
+- `POST /api/v1/content/publish` (Native CMS Publishing)
+- `GET /api/v1/content/status` (Native CMS Publishing)
+- `GET /api/v1/margin/summary` (Margin Dashboard)
+- `POST /api/v1/playbooks/apply` (SEO Playbook Engine)
+- `GET /api/v1/playbooks/status` (SEO Playbook Engine)
+- `GET /api/v1/locations/summary` (Multi-Location Intelligence)
+- `POST /api/v1/reports/executive` (Executive Auto Reports)
+- `GET /api/v1/provider-health/summary` (Provider Health Dashboard)
+
+Planned non-HTTP outputs:
+- Link Risk Scoring Engine (`05_Link_Risk_Scoring.md`) primarily produces risk artifacts:
+  - toxic backlink list
+  - risk index
+  - disavow export file

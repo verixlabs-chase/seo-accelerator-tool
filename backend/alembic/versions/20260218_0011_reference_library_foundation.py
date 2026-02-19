@@ -107,21 +107,29 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_reference_library_activations_created_at", table_name="reference_library_activations")
-    op.drop_index("ix_ref_lib_activations_version_id", table_name="reference_library_activations")
-    op.drop_index("ix_reference_library_activations_tenant_id", table_name="reference_library_activations")
+    _drop_index_if_exists("ix_reference_library_activations_created_at", "reference_library_activations")
+    _drop_index_if_exists("ix_ref_lib_activations_version_id", "reference_library_activations")
+    _drop_index_if_exists("ix_reference_library_activations_tenant_id", "reference_library_activations")
     op.drop_table("reference_library_activations")
 
-    op.drop_index("ix_reference_library_validation_runs_executed_at", table_name="reference_library_validation_runs")
-    op.drop_index("ix_ref_lib_validation_runs_version_id", table_name="reference_library_validation_runs")
-    op.drop_index("ix_reference_library_validation_runs_tenant_id", table_name="reference_library_validation_runs")
+    _drop_index_if_exists("ix_reference_library_validation_runs_executed_at", "reference_library_validation_runs")
+    _drop_index_if_exists("ix_ref_lib_validation_runs_version_id", "reference_library_validation_runs")
+    _drop_index_if_exists("ix_reference_library_validation_runs_tenant_id", "reference_library_validation_runs")
     op.drop_table("reference_library_validation_runs")
 
-    op.drop_index("ix_reference_library_artifacts_created_at", table_name="reference_library_artifacts")
-    op.drop_index("ix_ref_lib_artifacts_version_id", table_name="reference_library_artifacts")
-    op.drop_index("ix_reference_library_artifacts_tenant_id", table_name="reference_library_artifacts")
+    _drop_index_if_exists("ix_reference_library_artifacts_created_at", "reference_library_artifacts")
+    _drop_index_if_exists("ix_ref_lib_artifacts_version_id", "reference_library_artifacts")
+    _drop_index_if_exists("ix_reference_library_artifacts_tenant_id", "reference_library_artifacts")
     op.drop_table("reference_library_artifacts")
 
-    op.drop_index("ix_reference_library_versions_updated_at", table_name="reference_library_versions")
-    op.drop_index("ix_reference_library_versions_tenant_id", table_name="reference_library_versions")
+    _drop_index_if_exists("ix_reference_library_versions_updated_at", "reference_library_versions")
+    _drop_index_if_exists("ix_reference_library_versions_tenant_id", "reference_library_versions")
     op.drop_table("reference_library_versions")
+
+
+def _drop_index_if_exists(index_name: str, table_name: str) -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing = {idx.get("name") for idx in inspector.get_indexes(table_name)}
+    if index_name in existing:
+        op.drop_index(index_name, table_name=table_name)

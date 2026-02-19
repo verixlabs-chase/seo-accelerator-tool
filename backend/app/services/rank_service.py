@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app.events import emit_event
 from app.models.campaign import Campaign
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
-from app.providers import get_rank_provider
+from app.providers import get_rank_provider_for_organization
+from app.services.provider_credentials_service import ProviderCredentialConfigurationError
 
 
 def _get_campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -47,7 +48,16 @@ def add_keyword(db: Session, tenant_id: str, campaign_id: str, cluster_name: str
 
 def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, location_code: str) -> dict:
     campaign = _get_campaign_or_404(db, tenant_id, campaign_id)
-    provider = get_rank_provider()
+    try:
+        provider = get_rank_provider_for_organization(db, tenant_id)
+    except ProviderCredentialConfigurationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={
+                "message": str(exc),
+                "reason_code": exc.reason_code,
+            },
+        ) from exc
     keywords = (
         db.query(CampaignKeyword)
         .filter(
