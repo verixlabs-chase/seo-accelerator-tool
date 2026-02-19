@@ -1,5 +1,6 @@
 __pycache__/
 .pytest_cache/
+.mypy_cache/
 .venv/
 backend/.venv312/
 .pip-audit-cache/
@@ -10,6 +11,11 @@ backend/.pip-cache/
 *.db
 backend/.env
 frontend/.next/
+frontend/.npm-cache/
 frontend/node_modules/
+node_modules/
+build/
+dist/
+out/
 lsos.db
 backend/generated_reports/
