@@ -6,6 +6,9 @@ if os.getenv("DATABASE_URL"):
 # THEN import anything else
 import subprocess
 import sys
+import shutil
+import tempfile
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Generator
@@ -14,12 +17,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 import app.db.session as db_session_module
 import app.tasks.tasks as tasks_module
 from app.core.passwords import hash_password
-from app.db.base import Base
 from app.db.session import get_db
 
 from app.main import app
@@ -53,9 +54,11 @@ from app.models.user import User
 
 
 @pytest.fixture(scope="session", autouse=True)
-def apply_migrations() -> Generator[None, None, None]:
+def apply_migrations() -> Generator[Path, None, None]:
     backend_dir = Path(__file__).resolve().parents[1]
-    database_url = os.getenv("DATABASE_URL", "").strip() or os.getenv("POSTGRES_DSN", "").strip() or "sqlite:///./test.db"
+    temp_dir = Path(tempfile.mkdtemp(prefix="pytest-db-", dir=str(backend_dir)))
+    template_db_path = temp_dir / "template.sqlite3"
+    database_url = f"sqlite:///{template_db_path.as_posix()}"
     os.environ["DATABASE_URL"] = database_url
     os.environ["POSTGRES_DSN"] = database_url
 
@@ -64,17 +67,19 @@ def apply_migrations() -> Generator[None, None, None]:
     get_settings.cache_clear()
     print(f"[tests] DATABASE_URL={database_url}")
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True, cwd=str(backend_dir))
-    yield
+    yield template_db_path
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.fixture()
-def db_session() -> Generator[Session, None, None]:
+def db_session(apply_migrations: Path) -> Generator[Session, None, None]:
+    test_db_path = apply_migrations.parent / f"{uuid.uuid4().hex}.sqlite3"
+    shutil.copy2(apply_migrations, test_db_path)
+    database_url = f"sqlite:///{test_db_path.as_posix()}"
     engine = create_engine(
-        "sqlite:///:memory:",
+        database_url,
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
     )
-    Base.metadata.create_all(bind=engine)
     test_session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     test_session = test_session_local()
 
@@ -272,6 +277,13 @@ def db_session() -> Generator[Session, None, None]:
     test_session.commit()
     yield test_session
     test_session.close()
+    engine.dispose()
+    for _ in range(5):
+        try:
+            test_db_path.unlink(missing_ok=True)
+            break
+        except PermissionError:
+            time.sleep(0.05)
 
 
 @pytest.fixture()
