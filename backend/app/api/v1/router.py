@@ -16,6 +16,7 @@ from app.api.v1 import (
     platform_control,
     provider_credentials,
     provider_health,
+    provider_metrics,
     rank,
     recommendations,
     reference_library,
@@ -40,6 +41,7 @@ tenant_api_router.include_router(local.local_router)
 tenant_api_router.include_router(local.reviews_router)
 tenant_api_router.include_router(provider_credentials.tenant_router)
 tenant_api_router.include_router(provider_health.router)
+tenant_api_router.include_router(provider_metrics.router)
 tenant_api_router.include_router(authority.authority_router)
 tenant_api_router.include_router(authority.citations_router)
 tenant_api_router.include_router(intelligence.intelligence_router)

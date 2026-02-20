@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Request
+from datetime import UTC, datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
@@ -8,7 +10,9 @@ from app.events import emit_event
 from app.models.campaign import Campaign
 from app.models.sub_account import SubAccount
 from app.models.tenant import Tenant
+from app.schemas.campaign_dashboard import CampaignDashboardOut
 from app.schemas.campaigns import CampaignCreateRequest, CampaignOut, CampaignSetupTransitionRequest
+from app.services.campaign_dashboard_service import build_campaign_dashboard
 from app.services import lifecycle_service
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -113,3 +117,45 @@ def transition_campaign_setup_state(
         target_state=body.target_state,
     )
     return envelope(request, CampaignOut.model_validate(row).model_dump(mode="json"))
+
+
+@router.get("/{id}/dashboard")
+def get_campaign_dashboard(
+    request: Request,
+    id: str,
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.tenant_id == user["tenant_id"]).first()
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+
+    normalized_date_to = _as_utc(date_to) or datetime.now(UTC)
+    normalized_date_from = _as_utc(date_from) or (normalized_date_to - timedelta(days=30))
+    if normalized_date_from > normalized_date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "date_from must be less than or equal to date_to.",
+                "reason_code": "invalid_date_range",
+            },
+        )
+
+    payload = build_campaign_dashboard(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=id,
+        date_from=normalized_date_from,
+        date_to=normalized_date_to,
+    )
+    return envelope(request, CampaignDashboardOut.model_validate(payload).model_dump(mode="json"))
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

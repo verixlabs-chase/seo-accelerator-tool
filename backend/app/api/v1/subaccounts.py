@@ -11,6 +11,7 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.models.sub_account import SubAccount
 from app.schemas.sub_account import SubAccountCreateIn, SubAccountOut, SubAccountPatchIn
+from app.services.subaccount_dashboard_service import build_subaccount_dashboard
 
 
 ALLOWED_SUBACCOUNT_STATUS = {"active", "suspended", "archived"}
@@ -99,6 +100,36 @@ def patch_subaccount(
         ) from exc
     db.refresh(row)
     return envelope(request, {"subaccount": SubAccountOut.model_validate(row).model_dump(mode="json")})
+
+
+@router.get("/subaccounts/{id}/dashboard")
+def get_subaccount_dashboard(
+    request: Request,
+    id: str,
+    user: dict = Depends(require_org_role({"org_owner", "org_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    org_id = user.get("organization_id")
+    if not isinstance(org_id, str):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization context required")
+    row = (
+        db.query(SubAccount)
+        .filter(
+            SubAccount.id == id,
+            SubAccount.organization_id == org_id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SubAccount not found")
+
+    payload = build_subaccount_dashboard(
+        db,
+        tenant_id=org_id,
+        sub_account_id=row.id,
+        window_days=30,
+    )
+    return envelope(request, payload)
 
 
 def _assert_org_scope(user: dict, org_id: str) -> None:
