@@ -287,6 +287,7 @@ def test_google_provider_execution_persists_telemetry(db_session, monkeypatch) -
         operation="search_console_query",
         payload={
             "tenant_id": "tenant-telemetry",
+            "sub_account_id": "sub-telemetry",
             "organization_id": "org-1",
             "site_url": "sc-domain:example.com",
             "start_date": "2026-01-01",
@@ -300,4 +301,5 @@ def test_google_provider_execution_persists_telemetry(db_session, monkeypatch) -
     metric = db_session.query(ProviderExecutionMetric).filter(ProviderExecutionMetric.provider_name == "google_search_console").first()
     assert metric is not None
     assert metric.outcome == "success"
+    assert metric.sub_account_id == "sub-telemetry"
     assert metric.reason_code is None

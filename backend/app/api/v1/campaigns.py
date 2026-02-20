@@ -6,6 +6,7 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.events import emit_event
 from app.models.campaign import Campaign
+from app.models.sub_account import SubAccount
 from app.models.tenant import Tenant
 from app.schemas.campaigns import CampaignCreateRequest, CampaignOut, CampaignSetupTransitionRequest
 from app.services import lifecycle_service
@@ -31,14 +32,50 @@ def create_campaign(
                 "details": {},
             },
         )
-    campaign = Campaign(tenant_id=user["tenant_id"], name=body.name, domain=body.domain)
+    sub_account_id = body.sub_account_id
+    if sub_account_id is not None:
+        sub_account = (
+            db.query(SubAccount)
+            .filter(
+                SubAccount.id == sub_account_id,
+                SubAccount.organization_id == user["organization_id"],
+            )
+            .first()
+        )
+        if sub_account is None:
+            return envelope(
+                request,
+                None,
+                {
+                    "code": "subaccount_not_found",
+                    "message": "SubAccount not found in organization scope.",
+                    "details": {"sub_account_id": sub_account_id},
+                },
+            )
+        if sub_account.status != "active":
+            return envelope(
+                request,
+                None,
+                {
+                    "code": "subaccount_inactive",
+                    "message": "SubAccount must be active to attach new campaigns.",
+                    "details": {"sub_account_id": sub_account_id, "status": sub_account.status},
+                },
+            )
+
+    campaign = Campaign(
+        tenant_id=user["tenant_id"],
+        sub_account_id=sub_account_id,
+        name=body.name,
+        domain=body.domain,
+    )
     db.add(campaign)
     db.flush()
     emit_event(
         db,
         tenant_id=user["tenant_id"],
         event_type="campaign.created",
-        payload={"campaign_id": campaign.id, "setup_state": campaign.setup_state},
+        payload={"campaign_id": campaign.id, "setup_state": campaign.setup_state, "sub_account_id": campaign.sub_account_id},
     )
     db.commit()
     db.refresh(campaign)

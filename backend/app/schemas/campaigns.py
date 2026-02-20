@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class CampaignCreateRequest(BaseModel):
     name: str
     domain: str
+    sub_account_id: str | None = None
 
 
 class CampaignSetupTransitionRequest(BaseModel):
@@ -15,6 +16,7 @@ class CampaignSetupTransitionRequest(BaseModel):
 class CampaignOut(BaseModel):
     id: str
     tenant_id: str
+    sub_account_id: str | None
     name: str
     domain: str
     month_number: int

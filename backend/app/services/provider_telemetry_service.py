@@ -34,6 +34,7 @@ class ProviderTelemetryService:
         self,
         *,
         tenant_id: str,
+        sub_account_id: str | None = None,
         provider_name: str,
         capability: str,
         operation: str,
@@ -57,6 +58,7 @@ class ProviderTelemetryService:
             metric = ProviderExecutionMetric(
                 id=str(uuid.uuid4()),
                 tenant_id=tenant_id,
+                sub_account_id=sub_account_id,
                 environment=environment,
                 task_execution_id=task_execution_id,
                 provider_name=provider_name,

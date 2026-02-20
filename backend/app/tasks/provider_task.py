@@ -64,6 +64,7 @@ class CeleryProviderTask(Task):
         started_at = time.perf_counter()
         attempt_number = 0
         tenant_id = self._extract_tenant_id(request)
+        sub_account_id = self._extract_sub_account_id(request)
         capability = self._resolve_capability(provider=provider, request=request)
         provider_version = self._resolve_provider_version(provider)
 
@@ -75,6 +76,7 @@ class CeleryProviderTask(Task):
                 result = self._invoke_with_timeout(provider=provider, request=request, started_at=started_at)
                 self._record_execution_metric(
                     tenant_id=tenant_id,
+                    sub_account_id=sub_account_id,
                     request=request,
                     idempotency_key=idempotency_key,
                     capability=capability,
@@ -91,6 +93,7 @@ class CeleryProviderTask(Task):
                 provider_error = classify_provider_error(exc)
                 self._record_execution_metric(
                     tenant_id=tenant_id,
+                    sub_account_id=sub_account_id,
                     request=request,
                     idempotency_key=idempotency_key,
                     capability=capability,
@@ -151,6 +154,7 @@ class CeleryProviderTask(Task):
                 dead_letter_hook(self._dead_letter_payload(request=request, idempotency_key=idempotency_key, result=failed_result))
                 self._record_execution_metric(
                     tenant_id=tenant_id,
+                    sub_account_id=sub_account_id,
                     request=request,
                     idempotency_key=idempotency_key,
                     capability=capability,
@@ -184,6 +188,7 @@ class CeleryProviderTask(Task):
                 dead_letter_hook(self._dead_letter_payload(request=request, idempotency_key=idempotency_key, result=failed_result))
                 self._record_execution_metric(
                     tenant_id=tenant_id,
+                    sub_account_id=sub_account_id,
                     request=request,
                     idempotency_key=idempotency_key,
                     capability=capability,
@@ -274,10 +279,17 @@ class CeleryProviderTask(Task):
             return tenant_id
         return "system"
 
+    def _extract_sub_account_id(self, request: ProviderExecutionRequest) -> str | None:
+        sub_account_id = request.payload.get("sub_account_id")
+        if isinstance(sub_account_id, str) and sub_account_id:
+            return sub_account_id
+        return None
+
     def _record_execution_metric(
         self,
         *,
         tenant_id: str,
+        sub_account_id: str | None,
         request: ProviderExecutionRequest,
         idempotency_key: str,
         capability: str,
@@ -292,6 +304,7 @@ class CeleryProviderTask(Task):
         self._with_telemetry_service(
             lambda telemetry: telemetry.record_execution_metric(
                 tenant_id=tenant_id,
+                sub_account_id=sub_account_id,
                 provider_name=self.provider_name,
                 provider_version=provider_version,
                 capability=capability,
