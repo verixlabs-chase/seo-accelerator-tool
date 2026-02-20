@@ -18,6 +18,11 @@ class ProviderExecutionMetric(Base):
         nullable=True,
         index=True,
     )
+    campaign_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("campaigns.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     environment: Mapped[str] = mapped_column(String(20), nullable=False, default="production")
     task_execution_id: Mapped[str | None] = mapped_column(
         String(36),

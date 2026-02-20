@@ -45,6 +45,7 @@ def _insert_metric(
     db_session,
     *,
     tenant_id: str,
+    campaign_id: str | None,
     task_execution_id: str,
     outcome: str,
     provider_name: str,
@@ -58,6 +59,7 @@ def _insert_metric(
             id=str(uuid.uuid4()),
             tenant_id=tenant_id,
             sub_account_id=None,
+            campaign_id=campaign_id,
             environment="production",
             task_execution_id=task_execution_id,
             provider_name=provider_name,
@@ -92,6 +94,7 @@ def test_campaign_dashboard_isolation_by_campaign(client, db_session) -> None:
     _insert_metric(
         db_session,
         tenant_id=tenant_id,
+        campaign_id=campaign_a["id"],
         task_execution_id=exec_a,
         outcome="success",
         provider_name="google_search_console",
@@ -102,6 +105,7 @@ def test_campaign_dashboard_isolation_by_campaign(client, db_session) -> None:
     _insert_metric(
         db_session,
         tenant_id=tenant_id,
+        campaign_id=campaign_b["id"],
         task_execution_id=exec_b,
         outcome="failed",
         provider_name="google_places",
@@ -146,9 +150,9 @@ def test_campaign_dashboard_date_filtering(client, db_session) -> None:
     exec_before = _insert_task_execution(db_session, tenant_id=tenant_id, campaign_id=campaign["id"], created_at=before)
     exec_after = _insert_task_execution(db_session, tenant_id=tenant_id, campaign_id=campaign["id"], created_at=after)
 
-    _insert_metric(db_session, tenant_id=tenant_id, task_execution_id=exec_inside, outcome="success", provider_name="gsc", capability="perf", duration_ms=100, created_at=inside)
-    _insert_metric(db_session, tenant_id=tenant_id, task_execution_id=exec_before, outcome="success", provider_name="gsc", capability="perf", duration_ms=120, created_at=before)
-    _insert_metric(db_session, tenant_id=tenant_id, task_execution_id=exec_after, outcome="success", provider_name="gsc", capability="perf", duration_ms=140, created_at=after)
+    _insert_metric(db_session, tenant_id=tenant_id, campaign_id=campaign["id"], task_execution_id=exec_inside, outcome="success", provider_name="gsc", capability="perf", duration_ms=100, created_at=inside)
+    _insert_metric(db_session, tenant_id=tenant_id, campaign_id=campaign["id"], task_execution_id=exec_before, outcome="success", provider_name="gsc", capability="perf", duration_ms=120, created_at=before)
+    _insert_metric(db_session, tenant_id=tenant_id, campaign_id=campaign["id"], task_execution_id=exec_after, outcome="success", provider_name="gsc", capability="perf", duration_ms=140, created_at=after)
 
     response = client.get(
         f"/api/v1/campaigns/{campaign['id']}/dashboard",
@@ -174,6 +178,7 @@ def test_campaign_dashboard_last_10_failures_pagination(client, db_session) -> N
         _insert_metric(
             db_session,
             tenant_id=tenant_id,
+            campaign_id=campaign["id"],
             task_execution_id=execution_id,
             outcome="failed",
             provider_name="google_places",
@@ -237,6 +242,7 @@ def test_campaign_dashboard_aggregation_math(client, db_session) -> None:
         _insert_metric(
             db_session,
             tenant_id=tenant_id,
+            campaign_id=campaign["id"],
             task_execution_id=execution_id,
             outcome=outcome,
             provider_name=provider,

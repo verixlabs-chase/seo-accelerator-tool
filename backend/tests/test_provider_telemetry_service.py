@@ -15,6 +15,7 @@ def test_provider_telemetry_persistence(db_session) -> None:
     telemetry.record_execution_metric(
         tenant_id=tenant.id,
         sub_account_id="sub-1",
+        campaign_id="campaign-1",
         provider_name="rank",
         provider_version="1.0.0",
         capability="rank_snapshot",
@@ -61,6 +62,7 @@ def test_provider_telemetry_persistence(db_session) -> None:
 
     assert metric.provider_name == "rank"
     assert metric.sub_account_id == "sub-1"
+    assert metric.campaign_id == "campaign-1"
     assert metric.operation == "unknown"
     assert health.capability == "rank_snapshot"
     assert quota.remaining_count == 900

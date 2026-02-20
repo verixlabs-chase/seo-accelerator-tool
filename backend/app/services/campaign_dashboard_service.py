@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from math import ceil
 
 from sqlalchemy.orm import Session
 
 from app.models.provider_metric import ProviderExecutionMetric
-from app.models.task_execution import TaskExecution
 
 
 FAILURE_OUTCOMES = {"failed", "dead_letter"}
@@ -24,35 +22,17 @@ def build_campaign_dashboard(
     window_end = _as_utc(date_to) or datetime.now(UTC)
     window_start = _as_utc(date_from) or (window_end - timedelta(days=30))
 
-    base_rows = (
+    rows = (
         db.query(ProviderExecutionMetric)
         .filter(
             ProviderExecutionMetric.tenant_id == tenant_id,
+            ProviderExecutionMetric.campaign_id == campaign_id,
             ProviderExecutionMetric.created_at >= window_start,
             ProviderExecutionMetric.created_at <= window_end,
         )
         .order_by(ProviderExecutionMetric.created_at.desc(), ProviderExecutionMetric.id.desc())
         .all()
     )
-
-    task_ids = list({row.task_execution_id for row in base_rows if row.task_execution_id is not None})
-    campaign_by_task_id: dict[str, str] = {}
-    if task_ids:
-        task_rows = (
-            db.query(TaskExecution)
-            .filter(
-                TaskExecution.tenant_id == tenant_id,
-                TaskExecution.id.in_(task_ids),
-            )
-            .all()
-        )
-        campaign_by_task_id = {row.id: _campaign_id_from_payload(row.payload_json) for row in task_rows}
-
-    rows = [
-        row
-        for row in base_rows
-        if row.task_execution_id is not None and campaign_by_task_id.get(row.task_execution_id) == campaign_id
-    ]
 
     total_calls = len(rows)
     success_count = sum(1 for row in rows if row.outcome == "success")
@@ -102,17 +82,6 @@ def build_campaign_dashboard(
             },
         },
     }
-
-
-def _campaign_id_from_payload(payload_json: str) -> str:
-    try:
-        payload = json.loads(payload_json)
-    except Exception:  # noqa: BLE001
-        return ""
-    if not isinstance(payload, dict):
-        return ""
-    campaign_id = payload.get("campaign_id")
-    return campaign_id if isinstance(campaign_id, str) else ""
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

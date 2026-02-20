@@ -137,18 +137,20 @@ def test_provider_task_passes_sub_account_id_into_telemetry(monkeypatch) -> None
     task = _ProviderTask()
     req = ProviderExecutionRequest(
         operation="snapshot",
-        payload={"tenant_id": "tenant-a", "sub_account_id": "sub-123", "keyword": "seo-sub"},
+        payload={"tenant_id": "tenant-a", "campaign_id": "camp-789", "sub_account_id": "sub-123", "keyword": "seo-sub"},
     )
     provider = _StubProvider([ProviderExecutionResult(success=True, latency_ms=12, raw_payload={"ok": True})])
-    observed: dict[str, str | None] = {"sub_account_id": None}
+    observed: dict[str, str | None] = {"sub_account_id": None, "campaign_id": None}
 
     from app.services.provider_telemetry_service import ProviderTelemetryService
 
     def _record_metric(self, **kwargs):  # noqa: ANN001
         observed["sub_account_id"] = kwargs.get("sub_account_id")
+        observed["campaign_id"] = kwargs.get("campaign_id")
 
     monkeypatch.setattr(ProviderTelemetryService, "record_execution_metric", _record_metric)
 
     result = task.run_provider_call(provider=provider, request=req)
     assert result.success is True
     assert observed["sub_account_id"] == "sub-123"
+    assert observed["campaign_id"] == "camp-789"

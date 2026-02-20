@@ -65,6 +65,7 @@ class CeleryProviderTask(Task):
         attempt_number = 0
         tenant_id = self._extract_tenant_id(request)
         sub_account_id = self._extract_sub_account_id(request)
+        campaign_id = self._extract_campaign_id(request)
         capability = self._resolve_capability(provider=provider, request=request)
         provider_version = self._resolve_provider_version(provider)
 
@@ -77,6 +78,7 @@ class CeleryProviderTask(Task):
                 self._record_execution_metric(
                     tenant_id=tenant_id,
                     sub_account_id=sub_account_id,
+                    campaign_id=campaign_id,
                     request=request,
                     idempotency_key=idempotency_key,
                     capability=capability,
@@ -94,6 +96,7 @@ class CeleryProviderTask(Task):
                 self._record_execution_metric(
                     tenant_id=tenant_id,
                     sub_account_id=sub_account_id,
+                    campaign_id=campaign_id,
                     request=request,
                     idempotency_key=idempotency_key,
                     capability=capability,
@@ -155,6 +158,7 @@ class CeleryProviderTask(Task):
                 self._record_execution_metric(
                     tenant_id=tenant_id,
                     sub_account_id=sub_account_id,
+                    campaign_id=campaign_id,
                     request=request,
                     idempotency_key=idempotency_key,
                     capability=capability,
@@ -189,6 +193,7 @@ class CeleryProviderTask(Task):
                 self._record_execution_metric(
                     tenant_id=tenant_id,
                     sub_account_id=sub_account_id,
+                    campaign_id=campaign_id,
                     request=request,
                     idempotency_key=idempotency_key,
                     capability=capability,
@@ -285,11 +290,18 @@ class CeleryProviderTask(Task):
             return sub_account_id
         return None
 
+    def _extract_campaign_id(self, request: ProviderExecutionRequest) -> str | None:
+        campaign_id = request.payload.get("campaign_id")
+        if isinstance(campaign_id, str) and campaign_id:
+            return campaign_id
+        return None
+
     def _record_execution_metric(
         self,
         *,
         tenant_id: str,
         sub_account_id: str | None,
+        campaign_id: str | None,
         request: ProviderExecutionRequest,
         idempotency_key: str,
         capability: str,
@@ -305,6 +317,7 @@ class CeleryProviderTask(Task):
             lambda telemetry: telemetry.record_execution_metric(
                 tenant_id=tenant_id,
                 sub_account_id=sub_account_id,
+                campaign_id=campaign_id,
                 provider_name=self.provider_name,
                 provider_version=provider_version,
                 capability=capability,

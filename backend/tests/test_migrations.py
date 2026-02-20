@@ -126,9 +126,12 @@ def test_migration_upgrade_and_downgrade():
         campaign_cols = {col["name"] for col in inspector.get_columns("campaigns")}
         report_schedule_cols = {col["name"] for col in inspector.get_columns("report_schedules")}
         metric_cols = {col["name"] for col in inspector.get_columns("provider_execution_metrics")}
+        metric_indexes = {idx["name"] for idx in inspector.get_indexes("provider_execution_metrics")}
         assert "sub_account_id" in campaign_cols
         assert "sub_account_id" in report_schedule_cols
         assert "sub_account_id" in metric_cols
+        assert "campaign_id" in metric_cols
+        assert "ix_provider_execution_metrics_tenant_campaign_created_at" in metric_indexes
 
         tenant_cols = {col["name"] for col in inspector.get_columns("tenants")}
         assert "status" in tenant_cols
