@@ -29,7 +29,8 @@ services:
 
   api:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     environment:
       APP_ENV: local
@@ -58,7 +59,8 @@ services:
 
   worker:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     command: celery -A app.tasks.celery_app.celery_app worker -Q default -l INFO
     environment:
       APP_ENV: local
@@ -90,7 +92,8 @@ services:
 
   beat:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     command: celery -A app.tasks.celery_app.celery_app beat -l INFO
     environment:
       APP_ENV: local
