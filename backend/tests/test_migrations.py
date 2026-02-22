@@ -101,6 +101,7 @@ def test_migration_upgrade_and_downgrade():
         assert "provider_health_states" in inspector.get_table_names()
         assert "provider_quota_states" in inspector.get_table_names()
         assert "provider_execution_metrics" in inspector.get_table_names()
+        assert "portfolio_usage_daily" in inspector.get_table_names()
         assert "organizations" in inspector.get_table_names()
         assert "provider_policies" in inspector.get_table_names()
         assert "organization_provider_credentials" in inspector.get_table_names()

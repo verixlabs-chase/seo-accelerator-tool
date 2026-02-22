@@ -17,6 +17,7 @@ from app.services import (
     intelligence_service,
     local_service,
     observability_service,
+    portfolio_usage_service,
     reference_library_service,
     rank_service,
     reporting_service,
@@ -750,6 +751,26 @@ def reporting_process_schedule(self, tenant_id: str, campaign_id: str) -> dict:
         if retry_state.get("should_retry"):
             raise
         return retry_state
+    finally:
+        db.close()
+
+
+@celery_app.task(name="portfolio_usage.rollup_incremental", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def portfolio_usage_rollup_incremental(self, through_date: str | None = None) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        "system",
+        "portfolio_usage.rollup_incremental",
+        {"through_date": through_date},
+    )
+    try:
+        result = portfolio_usage_service.rollup_portfolio_usage_incremental(db=db, through_date=through_date)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
+        raise
     finally:
         db.close()
 

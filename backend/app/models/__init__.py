@@ -7,9 +7,15 @@ from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, 
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
+from app.models.location import Location
+from app.models.fleet_job import FleetJob
+from app.models.fleet_job_item import FleetJobItem
 from app.models.organization import Organization
 from app.models.organization_membership import OrganizationMembership
 from app.models.organization_provider_credential import OrganizationProviderCredential
+from app.models.portfolio import Portfolio
+from app.models.portfolio_usage_daily import PortfolioUsageDaily
+from app.models.portfolio_policy import PortfolioPolicy
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_metric import ProviderExecutionMetric
 from app.models.provider_policy import ProviderPolicy
@@ -66,6 +72,12 @@ __all__ = [
     "LocalHealthSnapshot",
     "Review",
     "ReviewVelocitySnapshot",
+    "Portfolio",
+    "PortfolioUsageDaily",
+    "Location",
+    "PortfolioPolicy",
+    "FleetJob",
+    "FleetJobItem",
     "Organization",
     "OrganizationMembership",
     "OrganizationProviderCredential",
