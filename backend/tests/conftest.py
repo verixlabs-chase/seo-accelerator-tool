@@ -15,7 +15,7 @@ from typing import Generator
 from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.db.session as db_session_module
@@ -23,7 +23,6 @@ import app.tasks.tasks as tasks_module
 from app.core.passwords import hash_password
 from app.db.session import get_db
 
-from app.main import app
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
@@ -67,8 +66,38 @@ def apply_migrations() -> Generator[Path, None, None]:
     get_settings.cache_clear()
     print(f"[tests] DATABASE_URL={database_url}")
     subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True, cwd=str(backend_dir))
+    # Keep SQLite fast-lane aligned with migration head by asserting required tables exist.
+    verification_engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    try:
+        has_crawl_runs = inspect(verification_engine).has_table("crawl_runs")
+    finally:
+        verification_engine.dispose()
+    if not has_crawl_runs:
+        raise RuntimeError("Alembic migration parity check failed; missing table: crawl_runs")
     yield template_db_path
     shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def bind_module_session_factories(apply_migrations: Path) -> Generator[None, None, None]:
+    database_url = f"sqlite:///{apply_migrations.as_posix()}"
+    bootstrap_engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    bootstrap_session_local = sessionmaker(bind=bootstrap_engine, autocommit=False, autoflush=False)
+
+    # Bind module-level SessionLocal references before app/router imports.
+    db_session_module.engine = bootstrap_engine
+    db_session_module.SessionLocal = bootstrap_session_local
+    tasks_module.SessionLocal = bootstrap_session_local
+
+    import app.api.v1.crawl as crawl_api_module
+
+    crawl_api_module.SessionLocal = bootstrap_session_local
+
+    # Import app after rebinding to avoid stale SessionLocal capture in route modules.
+    import app.main  # noqa: F401
+
+    yield
+    bootstrap_engine.dispose()
 
 
 @pytest.fixture()
@@ -87,6 +116,9 @@ def db_session(apply_migrations: Path) -> Generator[Session, None, None]:
     db_session_module.engine = engine
     db_session_module.SessionLocal = test_session_local
     tasks_module.SessionLocal = test_session_local
+    import app.api.v1.crawl as crawl_api_module
+
+    crawl_api_module.SessionLocal = test_session_local
 
     tenant_a = Tenant(id=str(uuid.uuid4()), name="Tenant A", created_at=datetime.now(UTC))
     tenant_b = Tenant(id=str(uuid.uuid4()), name="Tenant B", created_at=datetime.now(UTC))
@@ -288,6 +320,8 @@ def db_session(apply_migrations: Path) -> Generator[Session, None, None]:
 
 @pytest.fixture()
 def client(db_session: Session) -> Generator[TestClient, None, None]:
+    from app.main import app
+
     def _override_get_db():
         yield db_session
 
