@@ -25,12 +25,20 @@ def get_intelligence_score(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    score = intelligence_service.compute_score(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     try:
-        intelligence_compute_score.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        task = intelligence_compute_score.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
-        pass
-    return envelope(request, IntelligenceScoreOut.model_validate(score).model_dump(mode="json"))
+        task = None
+    score = intelligence_service.get_latest_score(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    score_payload = IntelligenceScoreOut.model_validate(score).model_dump(mode="json")
+    return envelope(
+        request,
+        {
+            "job_id": task.id if task is not None else None,
+            "score_value": score_payload["score_value"],
+            "latest_score": score_payload,
+        },
+    )
 
 
 @intelligence_router.get("/recommendations")
@@ -40,13 +48,18 @@ def get_intelligence_recommendations(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    intelligence_service.detect_anomalies(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    recs = intelligence_service.get_recommendations(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     try:
-        intelligence_detect_anomalies.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        task = intelligence_detect_anomalies.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
-        pass
-    return envelope(request, {"items": [RecommendationOut.model_validate(r).model_dump(mode="json") for r in recs]})
+        task = None
+    recs = intelligence_service.get_recommendations(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    return envelope(
+        request,
+        {
+            "job_id": task.id if task is not None else None,
+            "items": [RecommendationOut.model_validate(r).model_dump(mode="json") for r in recs],
+        },
+    )
 
 
 @intelligence_router.post("/recommendations/{recommendation_id}/transition")

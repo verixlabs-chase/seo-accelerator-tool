@@ -7,11 +7,17 @@ from urllib.parse import urlencode
 
 import jwt
 import requests  # type: ignore[import-untyped]
+from sqlalchemy.orm import Session
 
+from app.core.crypto import CredentialCryptoError, decrypt_payload, encrypt_payload
 from app.core.settings import get_settings
+from app.models.organization import Organization
+from app.models.organization_oauth_client import OrganizationOAuthClient
 
 
 GOOGLE_PROVIDER_NAME = "google"
+GOOGLE_OAUTH_SCOPE_TARGET_GSC = "gsc"
+GOOGLE_OAUTH_SCOPE_TARGET_GBP = "gbp"
 
 
 class GoogleOAuthError(RuntimeError):
@@ -21,15 +27,25 @@ class GoogleOAuthError(RuntimeError):
         self.status_code = status_code
 
 
-def build_google_oauth_authorization_url(*, organization_id: str, user_id: str) -> tuple[str, str]:
+def build_google_oauth_authorization_url(
+    *,
+    organization_id: str,
+    user_id: str,
+    scope_target: str = GOOGLE_OAUTH_SCOPE_TARGET_GSC,
+    db: Session | None = None,
+) -> tuple[str, str]:
     settings = get_settings()
-    _require_google_oauth_configuration()
+    client_id, _client_secret = _resolve_google_oauth_client_credentials(
+        organization_id=organization_id,
+        db=db,
+    )
     state = create_google_oauth_state(organization_id=organization_id, user_id=user_id)
+    redirect_uri = _build_google_oauth_redirect_uri(organization_id)
     params = {
-        "client_id": settings.google_oauth_client_id,
-        "redirect_uri": settings.google_oauth_redirect_uri,
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": settings.google_oauth_scope,
+        "scope": _resolve_google_oauth_scope(scope_target),
         "access_type": "offline",
         "prompt": "consent",
         "include_granted_scopes": "true",
@@ -92,17 +108,21 @@ def validate_google_oauth_state(state: str) -> dict[str, Any]:
     return payload
 
 
-def exchange_google_authorization_code(code: str) -> dict[str, Any]:
+def exchange_google_authorization_code(*, code: str, organization_id: str, db: Session | None = None) -> dict[str, Any]:
     settings = get_settings()
-    _require_google_oauth_configuration()
+    client_id, client_secret = _resolve_google_oauth_client_credentials(
+        organization_id=organization_id,
+        db=db,
+    )
+    redirect_uri = _build_google_oauth_redirect_uri(organization_id)
     try:
         response = requests.post(
             settings.google_oauth_token_endpoint,
             data={
                 "code": code,
-                "client_id": settings.google_oauth_client_id,
-                "client_secret": settings.google_oauth_client_secret,
-                "redirect_uri": settings.google_oauth_redirect_uri,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
             },
             timeout=settings.google_oauth_http_timeout_seconds,
@@ -122,9 +142,17 @@ def exchange_google_authorization_code(code: str) -> dict[str, Any]:
     return _normalize_token_payload(response, require_refresh_token=True)
 
 
-def refresh_google_access_token(refresh_token: str) -> dict[str, Any]:
+def refresh_google_access_token(
+    refresh_token: str,
+    *,
+    organization_id: str | None = None,
+    db: Session | None = None,
+) -> dict[str, Any]:
     settings = get_settings()
-    _require_google_oauth_configuration()
+    client_id, client_secret = _resolve_google_oauth_client_credentials(
+        organization_id=organization_id,
+        db=db,
+    )
     if not refresh_token.strip():
         raise GoogleOAuthError(
             "Google OAuth refresh token required.",
@@ -136,8 +164,8 @@ def refresh_google_access_token(refresh_token: str) -> dict[str, Any]:
             settings.google_oauth_token_endpoint,
             data={
                 "refresh_token": refresh_token,
-                "client_id": settings.google_oauth_client_id,
-                "client_secret": settings.google_oauth_client_secret,
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "grant_type": "refresh_token",
             },
             timeout=settings.google_oauth_http_timeout_seconds,
@@ -225,18 +253,133 @@ def _normalize_token_payload(response: requests.Response, *, require_refresh_tok
     return normalized
 
 
-def _require_google_oauth_configuration() -> None:
+def _build_google_oauth_redirect_uri(organization_id: str) -> str:
     settings = get_settings()
+    base_url = settings.public_base_url.rstrip("/")
+    return f"{base_url}/api/v1/organizations/{organization_id}/providers/google/oauth/callback"
+
+
+def upsert_organization_google_oauth_client(
+    db: Session,
+    *,
+    organization_id: str,
+    client_id: str,
+    client_secret: str,
+) -> OrganizationOAuthClient:
+    if db.query(Organization.id).filter(Organization.id == organization_id).first() is None:
+        raise GoogleOAuthError(
+            "Organization not found.",
+            reason_code="organization_not_found",
+            status_code=404,
+        )
+    normalized_client_id = client_id.strip()
+    normalized_client_secret = client_secret.strip()
+    _require_google_oauth_configuration(client_id=normalized_client_id, client_secret=normalized_client_secret)
+
+    row = (
+        db.query(OrganizationOAuthClient)
+        .filter(
+            OrganizationOAuthClient.organization_id == organization_id,
+            OrganizationOAuthClient.provider_name == GOOGLE_PROVIDER_NAME,
+        )
+        .first()
+    )
+    now = datetime.now(UTC)
+    encrypted_secret_blob, key_reference, key_version = _encrypt_payload(
+        {"client_id": normalized_client_id, "client_secret": normalized_client_secret}
+    )
+    if row is None:
+        row = OrganizationOAuthClient(
+            id=str(uuid.uuid4()),
+            organization_id=organization_id,
+            provider_name=GOOGLE_PROVIDER_NAME,
+            encrypted_secret_blob=encrypted_secret_blob,
+            key_reference=key_reference,
+            key_version=key_version,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(row)
+    else:
+        row.encrypted_secret_blob = encrypted_secret_blob
+        row.key_reference = key_reference
+        row.key_version = key_version
+        row.updated_at = now
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _resolve_google_oauth_client_credentials(
+    *,
+    organization_id: str | None = None,
+    db: Session | None = None,
+) -> tuple[str, str]:
+    settings = get_settings()
+    if db is not None and organization_id is not None:
+        row = (
+            db.query(OrganizationOAuthClient)
+            .filter(
+                OrganizationOAuthClient.organization_id == organization_id,
+                OrganizationOAuthClient.provider_name == GOOGLE_PROVIDER_NAME,
+            )
+            .first()
+        )
+        if row is not None:
+            payload = _decrypt_payload(row.encrypted_secret_blob)
+            client_id = str(payload.get("client_id", "")).strip()
+            client_secret = str(payload.get("client_secret", "")).strip()
+            _require_google_oauth_configuration(client_id=client_id, client_secret=client_secret)
+            return client_id, client_secret
+
+    client_id = settings.google_oauth_client_id.strip()
+    client_secret = settings.google_oauth_client_secret.strip()
+    _require_google_oauth_configuration(client_id=client_id, client_secret=client_secret)
+    return client_id, client_secret
+
+
+def _require_google_oauth_configuration(*, client_id: str, client_secret: str) -> None:
     missing: list[str] = []
-    if not settings.google_oauth_client_id.strip():
+    if not client_id:
         missing.append("GOOGLE_OAUTH_CLIENT_ID")
-    if not settings.google_oauth_client_secret.strip():
+    if not client_secret:
         missing.append("GOOGLE_OAUTH_CLIENT_SECRET")
-    if not settings.google_oauth_redirect_uri.strip():
-        missing.append("GOOGLE_OAUTH_REDIRECT_URI")
     if missing:
         raise GoogleOAuthError(
             f"Google OAuth is not configured: {', '.join(missing)}",
             reason_code="oauth_provider_not_configured",
+            status_code=409,
+        )
+
+
+def _resolve_google_oauth_scope(scope_target: str) -> str:
+    settings = get_settings()
+    normalized_target = scope_target.strip().lower()
+    if normalized_target == GOOGLE_OAUTH_SCOPE_TARGET_GSC:
+        return settings.google_oauth_scope_gsc
+    if normalized_target == GOOGLE_OAUTH_SCOPE_TARGET_GBP:
+        return settings.google_oauth_scope_gbp
+    # Backward-compatible fallback for callers that still rely on the legacy single scope setting.
+    return settings.google_oauth_scope
+
+
+def _encrypt_payload(data: dict[str, Any]) -> tuple[str, str, str]:
+    try:
+        return encrypt_payload(data)
+    except CredentialCryptoError as exc:
+        raise GoogleOAuthError(
+            str(exc),
+            reason_code=exc.reason_code,
+            status_code=409,
+        ) from exc
+
+
+def _decrypt_payload(encrypted_secret_blob: str) -> dict[str, Any]:
+    try:
+        return decrypt_payload(encrypted_secret_blob)
+    except CredentialCryptoError:
+        raise GoogleOAuthError(
+            "Google OAuth client config is invalid.",
+            reason_code="oauth_client_config_invalid",
             status_code=409,
         )

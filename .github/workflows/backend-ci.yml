@@ -1,0 +1,47 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  backend-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker Compose Build
+        run: docker compose build
+
+      - name: Run Tests
+        run: docker compose run --rm test-runner
+
+      - name: Run Lint
+        run: docker compose run --rm test-runner ruff check .
+
+      - name: Validate Production Config
+        env:
+          APP_ENV: production
+          JWT_SECRET: this-is-a-ci-validation-secret-with-32-chars
+          PLATFORM_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          PUBLIC_BASE_URL: https://ci.example.com
+          POSTGRES_DSN: postgresql://user:pass@db:5432/app
+          OBJECT_STORAGE_ENDPOINT: https://storage.example.com
+          OBJECT_STORAGE_BUCKET: ci-bucket
+          OBJECT_STORAGE_ACCESS_KEY: ci-access
+          OBJECT_STORAGE_SECRET_KEY: ci-secret
+          SMTP_HOST: smtp.example.com
+          SMTP_USERNAME: ci-user
+          SMTP_PASSWORD: ci-password
+          SMTP_FROM_EMAIL: noreply@example.com
+          OTEL_EXPORTER_ENDPOINT: https://otel.example.com
+          GOOGLE_OAUTH_CLIENT_ID: ci-client-id
+          GOOGLE_OAUTH_CLIENT_SECRET: ci-client-secret
+        run: docker compose run --rm api python scripts/validate_production_config.py

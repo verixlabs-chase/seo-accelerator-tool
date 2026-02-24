@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Fleet job orchestration service for portfolio-scoped execution.
 
 This module is the service-layer control plane for Fleet execution. It creates
@@ -27,12 +25,14 @@ Retry/session/queue/telemetry notes:
 - Queue routing uses deterministic portfolio hashing to shard onto queue names
   derived from job type.
 - This module does not write telemetry records directly; live provider execution
-  delegates to provider-task infrastructure, which may emit provider telemetry.
+delegates to provider-task infrastructure, which may emit provider telemetry.
 """
+
+from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
-import hashlib
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import func
@@ -49,23 +49,19 @@ from app.models.portfolio import Portfolio
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_search_console import SearchConsoleProviderAdapter
 from app.providers.retry import RetryPolicy
+from app.services.provider_credentials_service import (
+    ProviderCredentialConfigurationError,
+    get_organization_provider_credentials,
+    resolve_provider_credentials,
+)
 from app.tasks.provider_task import CeleryProviderTask
 
 
 FLEET_PORTFOLIO_CONCURRENCY_CAP = 5
-FLEET_QUEUE_SHARDS = 16
 FLEET_TOKEN_BUCKET_LIMIT = 50
 FLEET_TOKEN_BUCKET_WINDOW_SECONDS = 60
 FLEET_CIRCUIT_BREAKER_THRESHOLD = 5
 FLEET_PROVIDER_CALL_SEARCH_CONSOLE = "google_search_console_query"
-
-FLEET_BASE_QUEUE_BY_JOB_TYPE: dict[str, str] = {
-    "onboard": "queue.fleet.onboard",
-    "schedule": "queue.fleet.schedule",
-    "pause": "queue.fleet.pause_resume",
-    "resume": "queue.fleet.pause_resume",
-    "remediate": "queue.fleet.remediate",
-}
 
 FLEET_JOB_TRANSITIONS: dict[str, set[str]] = {
     FleetJobStatus.QUEUED.value: {FleetJobStatus.RUNNING.value},
@@ -92,6 +88,21 @@ class _FleetSearchConsoleTask(CeleryProviderTask):
     retry_policy = RetryPolicy(max_attempts=3, base_delay_seconds=0.25, max_delay_seconds=2.0, jitter_ratio=0.0)
 
 
+class FleetSearchConsoleValidationError(RuntimeError):
+    def __init__(self, *, reason_code: str, message: str, details: dict | None = None) -> None:
+        self.reason_code = reason_code
+        self.message = message
+        self.details = details or {}
+        super().__init__(f"{reason_code}: {message} | details={self.details}")
+
+    def as_payload(self) -> dict:
+        return {
+            "reason_code": self.reason_code,
+            "message": self.message,
+            "details": self.details,
+        }
+
+
 def create_onboard_job(
     *,
     db: Session,
@@ -100,7 +111,7 @@ def create_onboard_job(
     user_id: str | None,
     idempotency_key: str,
     item_seeds: list[dict],
-) -> tuple[FleetJob, bool]:
+) -> str:
     """Create or reuse a portfolio-scoped Fleet onboard job.
 
     Responsibility: validate/create onboard job + queued items through shared
@@ -111,10 +122,9 @@ def create_onboard_job(
     items after commit.
     Transactions: participates in caller session; commits occur in bulk creator.
     Failure modes: raises HTTP 4xx for invalid scope/payload or conflicts.
-    Idempotency: strong by `(organization, portfolio, job_type, idempotency_key)`;
-    returns existing job with `created=False` when repeated.
+    Idempotency: strong by `(organization, portfolio, job_type, idempotency_key)`.
     """
-    return _create_bulk_job(
+    fleet_job, _created = _create_bulk_job(
         db=db,
         organization_id=organization_id,
         portfolio_id=portfolio_id,
@@ -123,6 +133,7 @@ def create_onboard_job(
         item_seeds=item_seeds,
         job_type="onboard",
     )
+    return str(fleet_job.id)
 
 
 def create_schedule_job(
@@ -272,17 +283,16 @@ def enqueue_pending_items_for_portfolio(*, db: Session, organization_id: str, po
     """Dispatch queued Fleet items for a portfolio up to concurrency capacity.
 
     Responsibility: compute available in-flight slots, select oldest queued items,
-    and enqueue tasks onto deterministic shard queues.
+    and enqueue tasks onto the default worker queue.
     Inputs: caller-managed DB session and portfolio scope identifiers.
-    Side effects: submits Celery tasks (`process_fleet_job_item`) to queue names
-    from `build_fleet_queue_name`; no row status changes are made here.
+    Side effects: submits Celery tasks (`process_fleet_job_item_task`) on queue
+    `default`; no row status changes are made here.
     Transactions: performs read queries only; does not commit by itself.
     Failure modes: HTTP 404 when portfolio missing; task broker failures propagate.
     Idempotency: effectively at-least-once dispatch if called repeatedly before
     workers transition item state; lock-and-status checks in processors prevent
     duplicate processing effects.
-    Queue routing: base queue derives from job type and shard is stable hash of
-    `portfolio_id` modulo `FLEET_QUEUE_SHARDS`.
+    Queue routing: all Fleet item tasks are routed to queue `default`.
     """
     _portfolio_or_404(db=db, organization_id=organization_id, portfolio_id=portfolio_id)
     running_count = (
@@ -320,12 +330,12 @@ def enqueue_pending_items_for_portfolio(*, db: Session, organization_id: str, po
     if get_settings().app_env.lower() == "test":
         return 0
 
-    from app.tasks.fleet_tasks import process_fleet_job_item
+    from app.tasks.tasks import process_fleet_job_item_task
+
 
     dispatched = 0
     for item in items:
-        queue_name = build_fleet_queue_name(job_type=item.fleet_job.job_type, portfolio_id=item.fleet_job.portfolio_id)
-        process_fleet_job_item.apply_async(args=[item.id], queue=queue_name)
+        process_fleet_job_item_task.apply_async(args=[item.id], queue="default")
         dispatched += 1
     return dispatched
 
@@ -635,31 +645,31 @@ def _resolve_item_payload(*, job: FleetJob, item: FleetJobItem) -> dict:
     if not isinstance(payload, dict):
         return {}
     raw_payload = payload.get("payload", payload)
-    return raw_payload if isinstance(raw_payload, dict) else {}
+    if not isinstance(raw_payload, dict):
+        return {}
+    return _normalize_fleet_payload(raw_payload)
+
+
+def _normalize_fleet_payload(payload: dict) -> dict:
+    normalized = dict(payload)
+    rename_map = {
+        "startDate": "start_date",
+        "endDate": "end_date",
+        "rowLimit": "row_limit",
+        "siteUrl": "site_url",
+    }
+    for source_key, target_key in rename_map.items():
+        if target_key not in normalized and source_key in normalized:
+            normalized[target_key] = normalized[source_key]
+    return normalized
 
 
 def _run_search_console_live_call(*, job: FleetJob, item: FleetJobItem, payload: dict) -> None:
-    site_url = str(payload.get("site_url", "")).strip()
-    start_date = str(payload.get("start_date", "")).strip()
-    end_date = str(payload.get("end_date", "")).strip()
-    if not site_url or not start_date or not end_date:
-        raise RuntimeError("site_url, start_date, and end_date are required for live Search Console fleet execution.")
-
-    request_payload: dict = {
-        "tenant_id": job.organization_id,
-        "organization_id": job.organization_id,
-        "campaign_id": payload.get("campaign_id"),
-        "sub_account_id": payload.get("sub_account_id"),
-        "site_url": site_url,
-        "start_date": start_date,
-        "end_date": end_date,
-        "dimensions": payload.get("dimensions", ["query"]),
-        "row_limit": int(payload.get("row_limit", 100)),
-    }
-    timeout_budget_ms = payload.get("timeout_budget_ms")
-    if timeout_budget_ms is not None:
-        request_payload["timeout_budget_ms"] = timeout_budget_ms
-
+    request_payload = _build_validated_search_console_request_payload(
+        payload=payload,
+        organization_id=str(job.organization_id),
+        fleet_job_item_id=str(item.id),
+    )
     request = ProviderExecutionRequest(
         operation="search_console_query",
         correlation_id=f"fleet:{job.id}:{item.id}",
@@ -667,6 +677,24 @@ def _run_search_console_live_call(*, job: FleetJob, item: FleetJobItem, payload:
     )
     provider_db = SessionLocal()
     try:
+        try:
+            credentials = resolve_provider_credentials(
+                provider_db,
+                str(job.organization_id),
+                "google",
+                required_credential_mode="byo_required",
+                require_org_oauth=True,
+            )
+        except ProviderCredentialConfigurationError as exc:
+            raise FleetSearchConsoleValidationError(
+                reason_code=exc.reason_code,
+                message=str(exc),
+                details={"fleet_job_item_id": str(item.id), "organization_id": str(job.organization_id)},
+            ) from exc
+        _validate_search_console_credentials(
+            credentials=credentials,
+            fleet_job_item_id=str(item.id),
+        )
         provider = SearchConsoleProviderAdapter(
             db=provider_db,
             retry_policy=RetryPolicy(max_attempts=1, jitter_ratio=0.0),
@@ -678,6 +706,120 @@ def _run_search_console_live_call(*, job: FleetJob, item: FleetJobItem, payload:
             raise RuntimeError(f"Search Console provider execution failed ({reason}).")
     finally:
         provider_db.close()
+
+
+def _build_validated_search_console_request_payload(
+    *,
+    payload: dict,
+    organization_id: str,
+    fleet_job_item_id: str,
+) -> dict:
+    site_url = str(payload.get("site_url", "")).strip()
+    start_date = str(payload.get("start_date", "")).strip()
+    end_date = str(payload.get("end_date", "")).strip()
+    missing_fields = [name for name, value in {"site_url": site_url, "start_date": start_date, "end_date": end_date}.items() if not value]
+    if missing_fields:
+        raise FleetSearchConsoleValidationError(
+            reason_code="fleet_gsc_missing_payload_fields",
+            message="Missing required payload fields for Search Console fleet execution.",
+            details={"missing_fields": missing_fields, "fleet_job_item_id": fleet_job_item_id},
+        )
+    try:
+        row_limit = int(payload.get("row_limit", 100))
+    except (TypeError, ValueError) as exc:
+        raise FleetSearchConsoleValidationError(
+            reason_code="fleet_gsc_invalid_row_limit",
+            message="row_limit must be numeric.",
+            details={"fleet_job_item_id": fleet_job_item_id},
+        ) from exc
+    if row_limit <= 0:
+        raise FleetSearchConsoleValidationError(
+            reason_code="fleet_gsc_invalid_row_limit",
+            message="row_limit must be greater than 0.",
+            details={"fleet_job_item_id": fleet_job_item_id},
+        )
+    request_payload: dict = {
+        "tenant_id": organization_id,
+        "organization_id": organization_id,
+        "campaign_id": payload.get("campaign_id"),
+        "sub_account_id": payload.get("sub_account_id"),
+        "site_url": site_url,
+        "start_date": start_date,
+        "end_date": end_date,
+        "dimensions": payload.get("dimensions", ["query"]),
+        "row_limit": row_limit,
+    }
+    timeout_budget_ms = payload.get("timeout_budget_ms")
+    if timeout_budget_ms is not None:
+        request_payload["timeout_budget_ms"] = timeout_budget_ms
+    return request_payload
+
+
+def _validate_search_console_credentials(*, credentials: dict, fleet_job_item_id: str) -> None:
+    access_token = str(credentials.get("access_token", "")).strip()
+    if not access_token:
+        raise FleetSearchConsoleValidationError(
+            reason_code="fleet_gsc_access_token_missing",
+            message="Google OAuth access token missing for Search Console execution.",
+            details={"fleet_job_item_id": fleet_job_item_id},
+        )
+    expected_scope = get_settings().google_oauth_scope_gsc.strip()
+    granted_scope = str(credentials.get("scope", "")).strip()
+    if expected_scope and expected_scope not in granted_scope.split():
+        raise FleetSearchConsoleValidationError(
+            reason_code="fleet_gsc_scope_missing",
+            message="Google OAuth scope missing for Search Console execution.",
+            details={
+                "required_scope": expected_scope,
+                "granted_scope": granted_scope,
+                "fleet_job_item_id": fleet_job_item_id,
+            },
+        )
+
+
+def test_gsc_fleet_validation(org_id: UUID) -> dict:
+    mock_payload = {
+        "site_url": "https://example.com",
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-07",
+        "row_limit": 5,
+        "dimensions": ["query"],
+    }
+    normalized_payload = _normalize_fleet_payload(mock_payload)
+    request_payload = _build_validated_search_console_request_payload(
+        payload=normalized_payload,
+        organization_id=str(org_id),
+        fleet_job_item_id="dry-run-validation",
+    )
+    db = SessionLocal()
+    try:
+        try:
+            credentials = get_organization_provider_credentials(db, str(org_id), "google")
+        except ProviderCredentialConfigurationError as exc:
+            raise FleetSearchConsoleValidationError(
+                reason_code=exc.reason_code,
+                message=str(exc),
+                details={"organization_id": str(org_id)},
+            ) from exc
+        if not credentials:
+            raise FleetSearchConsoleValidationError(
+                reason_code="org_oauth_credential_required",
+                message="Organization OAuth credential required for provider 'google'.",
+                details={"organization_id": str(org_id)},
+            )
+        _validate_search_console_credentials(
+            credentials=credentials,
+            fleet_job_item_id="dry-run-validation",
+        )
+        # Intentionally stop here for dry-run harness: no provider call and no HTTP request.
+        return {
+            "status": "ok",
+            "organization_id": str(org_id),
+            "request_payload": request_payload,
+            "network_call_skipped": True,
+        }
+    finally:
+        db.close()
 
 
 def _token_bucket_allow(client, key: str) -> bool:
@@ -722,27 +864,6 @@ def _breaker_record_success(client, key: str) -> None:
         client.delete(key)
     except Exception:  # noqa: BLE001
         return
-
-
-def build_fleet_queue_name(*, job_type: str, portfolio_id: str) -> str:
-    """Compute deterministic Celery queue name for a Fleet job type and portfolio.
-
-    Responsibility: map job type to base queue and assign stable shard suffix.
-    Inputs: fleet job type and portfolio id.
-    Side effects: none.
-    Transactions: pure function, no session interaction.
-    Failure modes: HTTP 400 for unknown job type.
-    Idempotency: deterministic and idempotent for identical inputs.
-    Queue routing: `sha256(portfolio_id)` first 8 hex chars modulo
-    `FLEET_QUEUE_SHARDS` to keep all portfolio jobs on a stable shard.
-    """
-    normalized_job_type = _normalize_enum_value(job_type)
-    base_queue = FLEET_BASE_QUEUE_BY_JOB_TYPE.get(normalized_job_type)
-    if base_queue is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown fleet job type")
-    digest = hashlib.sha256(portfolio_id.encode("utf-8")).hexdigest()
-    shard = int(digest[:8], 16) % FLEET_QUEUE_SHARDS
-    return f"{base_queue}.shard{shard}"
 
 
 def _refresh_job_counters(*, db: Session, job: FleetJob) -> None:

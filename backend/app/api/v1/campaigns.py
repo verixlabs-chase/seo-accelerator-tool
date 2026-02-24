@@ -43,6 +43,13 @@ def create_campaign(
                 "details": {},
             },
         )
+    organization_id = user.get("organization_id")
+    if not isinstance(organization_id, str) or not organization_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization context required")
+    organization = db.query(Organization).filter(Organization.id == organization_id).first()
+    if organization is None or organization.id != user["tenant_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization scope mismatch")
+
     sub_account_id = body.sub_account_id
     if sub_account_id is not None:
         sub_account = (
@@ -76,6 +83,7 @@ def create_campaign(
 
     campaign = Campaign(
         tenant_id=user["tenant_id"],
+        organization_id=organization_id,
         sub_account_id=sub_account_id,
         name=body.name,
         domain=body.domain,

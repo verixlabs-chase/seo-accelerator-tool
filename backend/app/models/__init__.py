@@ -11,6 +11,7 @@ from app.models.location import Location
 from app.models.fleet_job import FleetJob
 from app.models.fleet_job_item import FleetJobItem
 from app.models.organization import Organization
+from app.models.organization_oauth_client import OrganizationOAuthClient
 from app.models.organization_membership import OrganizationMembership
 from app.models.organization_provider_credential import OrganizationProviderCredential
 from app.models.portfolio import Portfolio
@@ -79,6 +80,7 @@ __all__ = [
     "FleetJob",
     "FleetJobItem",
     "Organization",
+    "OrganizationOAuthClient",
     "OrganizationMembership",
     "OrganizationProviderCredential",
     "PlatformProviderCredential",

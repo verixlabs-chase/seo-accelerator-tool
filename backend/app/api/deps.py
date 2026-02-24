@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_token
@@ -12,6 +13,7 @@ from app.models.user import User
 _PLATFORM_ROLE_ORDER = {"platform_admin": 1, "platform_owner": 2}
 _ORG_ROLE_ORDER = {"org_user": 1, "org_admin": 2, "org_owner": 3}
 _LEGACY_TO_ORG_ROLE = {"tenant_admin": "org_admin"}
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 def _effective_roles(org_role: str | None, platform_role: str | None) -> list[str]:
@@ -27,12 +29,11 @@ def _effective_roles(org_role: str | None, platform_role: str | None) -> list[st
 
 def get_current_user(
     request: Request,
-    authorization: str = Header(default=""),
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> dict:
-    if not authorization.startswith("Bearer "):
+    if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
-    token = authorization.replace("Bearer ", "", 1).strip()
     payload = decode_token(token)
     if payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
@@ -72,6 +73,7 @@ def get_current_user(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid organization role context")
 
     request.state.tenant_id = organization_id
+    request.state.organization_id = organization_id
     return {
         "id": user.id,
         "user_id": user.id,

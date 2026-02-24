@@ -20,7 +20,10 @@ from app.providers.errors import (
     ProviderTimeoutError,
 )
 from app.providers.execution_types import ProviderExecutionRequest
-from app.services.provider_credentials_service import resolve_provider_credentials
+from app.services.provider_credentials_service import (
+    ProviderCredentialConfigurationError,
+    resolve_provider_credentials,
+)
 
 
 @dataclass(frozen=True)
@@ -62,10 +65,17 @@ class SearchConsoleProviderAdapter(ProviderBase):
                 "organization_id, site_url, start_date, and end_date are required for Search Console calls."
             )
 
-        credentials = resolve_provider_credentials(self._db, organization_id, "google")
+        try:
+            credentials = _resolve_google_credentials(self._db, organization_id)
+        except ProviderCredentialConfigurationError as exc:
+            raise ProviderAuthError(str(exc)) from exc
         access_token = str(credentials.get("access_token", "")).strip()
         if not access_token:
             raise ProviderAuthError("Google OAuth access token missing for Search Console provider.")
+        expected_scope = get_settings().google_oauth_scope_gsc
+        granted_scope = str(credentials.get("scope", "")).strip()
+        if expected_scope and granted_scope and expected_scope not in granted_scope.split():
+            raise ProviderAuthError("Google OAuth scope missing for Search Console provider.")
 
         dimensions = payload.get("dimensions", ["query"])
         if not isinstance(dimensions, list):
@@ -149,6 +159,20 @@ def _resolve_timeout_seconds(payload: dict[str, Any], default_timeout_seconds: f
     if timeout_budget_seconds <= 0:
         raise ProviderBadRequestError("timeout_budget_ms must be greater than 0.")
     return min(default_timeout_seconds, timeout_budget_seconds)
+
+
+def _resolve_google_credentials(db: Session, organization_id: str) -> dict[str, Any]:
+    try:
+        return resolve_provider_credentials(
+            db,
+            organization_id,
+            "google",
+            required_credential_mode="byo_required",
+            require_org_oauth=True,
+        )
+    except TypeError:
+        # Backward compatibility for tests that monkeypatch a legacy 3-arg resolver.
+        return resolve_provider_credentials(db, organization_id, "google")
 
 
 def _raise_for_google_error(response: httpx.Response, *, service_name: str) -> None:

@@ -885,3 +885,10 @@ def entity_analyze_campaign(self, tenant_id: str, campaign_id: str) -> dict:
         raise
     finally:
         db.close()
+
+@celery_app.task(name="fleet.process_fleet_job_item_task")
+def process_fleet_job_item_task(fleet_job_item_id: str):
+    from app.services.fleet_service import process_fleet_job_item_with_new_session
+
+    return process_fleet_job_item_with_new_session(fleet_job_item_id)
+    

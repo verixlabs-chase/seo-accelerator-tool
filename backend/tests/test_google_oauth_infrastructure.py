@@ -4,8 +4,15 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from app.models.organization import Organization
+from app.models.organization_oauth_client import OrganizationOAuthClient
 from app.models.organization_provider_credential import OrganizationProviderCredential
-from app.services.google_oauth_service import GoogleOAuthError, create_google_oauth_state, validate_google_oauth_state
+from app.services.google_oauth_service import (
+    GoogleOAuthError,
+    build_google_oauth_authorization_url,
+    create_google_oauth_state,
+    upsert_organization_google_oauth_client,
+    validate_google_oauth_state,
+)
 from app.services.provider_credentials_service import (
     ProviderCredentialConfigurationError,
     get_organization_provider_credentials,
@@ -23,7 +30,7 @@ def _oauth_env(monkeypatch) -> None:
     monkeypatch.setenv("PLATFORM_MASTER_KEY", MASTER_KEY_B64)
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client-id")
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "client-secret")
-    monkeypatch.setenv("GOOGLE_OAUTH_REDIRECT_URI", "https://example.com/oauth/google/callback")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://example.com")
     monkeypatch.setenv("GOOGLE_OAUTH_AUTH_ENDPOINT", "https://accounts.google.com/o/oauth2/v2/auth")
     monkeypatch.setenv("GOOGLE_OAUTH_TOKEN_ENDPOINT", "https://oauth2.googleapis.com/token")
     monkeypatch.setenv("GOOGLE_OAUTH_SCOPE", "https://www.googleapis.com/auth/business.manage")
@@ -86,7 +93,7 @@ def test_google_oauth_callback_stores_encrypted_org_credentials(client, db_sessi
 
     monkeypatch.setattr(
         "app.api.v1.google_oauth.exchange_google_authorization_code",
-        lambda _code: {
+        lambda *, code, organization_id, db: {
             "access_token": "access-secret",
             "refresh_token": "refresh-secret",
             "expires_in": 3600,
@@ -144,7 +151,7 @@ def test_google_oauth_callback_exchange_failure_returns_reason_code(client, monk
     user = _me(client, token)
     state = create_google_oauth_state(organization_id=organization_id, user_id=user["id"])
 
-    def _raise(_code: str) -> dict:
+    def _raise(*, code: str, organization_id: str, db) -> dict:
         raise GoogleOAuthError("Google exchange failed", reason_code="oauth_exchange_failed", status_code=502)
 
     monkeypatch.setattr("app.api.v1.google_oauth.exchange_google_authorization_code", _raise)
@@ -157,6 +164,45 @@ def test_google_oauth_callback_exchange_failure_returns_reason_code(client, monk
     assert response.status_code == 502
     details = response.json()["errors"][0]["details"]
     assert details["reason_code"] == "oauth_exchange_failed"
+
+
+def test_google_oauth_authorization_url_prefers_org_client_override(db_session) -> None:
+    organization_id = "33333333-3333-3333-3333-333333333333"
+    _create_org(db_session, organization_id, "Org Google OAuth Client Override")
+    upsert_organization_google_oauth_client(
+        db_session,
+        organization_id=organization_id,
+        client_id="org-client-id",
+        client_secret="org-client-secret",
+    )
+    url, _state = build_google_oauth_authorization_url(
+        organization_id=organization_id,
+        user_id="user-1",
+        db=db_session,
+    )
+    query = parse_qs(urlparse(url).query)
+    assert query["client_id"][0] == "org-client-id"
+
+
+def test_google_oauth_client_endpoint_encrypts_client_secret(client, db_session) -> None:
+    token, organization_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    response = client.put(
+        f"/api/v1/organizations/{organization_id}/providers/google/oauth/client",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"client_id": "org-client-id-2", "client_secret": "org-client-secret-2"},
+    )
+    assert response.status_code == 200
+    row = (
+        db_session.query(OrganizationOAuthClient)
+        .filter(
+            OrganizationOAuthClient.organization_id == organization_id,
+            OrganizationOAuthClient.provider_name == "google",
+        )
+        .first()
+    )
+    assert row is not None
+    assert "org-client-id-2" not in row.encrypted_secret_blob
+    assert "org-client-secret-2" not in row.encrypted_secret_blob
 
 
 def test_resolver_refreshes_expired_google_oauth_credentials(db_session, monkeypatch) -> None:
@@ -187,7 +233,7 @@ def test_resolver_refreshes_expired_google_oauth_credentials(db_session, monkeyp
 
     monkeypatch.setattr(
         "app.services.provider_credentials_service.refresh_google_access_token",
-        lambda _refresh_token: {
+        lambda _refresh_token, organization_id, db: {
             "access_token": "new-access",
             "expires_in": 3600,
             "expires_at": 2000000000,

@@ -36,11 +36,15 @@ services:
       APP_ENV: local
       APP_NAME: LSOS API
       API_V1_PREFIX: /api/v1
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
       POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
-      JWT_SECRET: local-dev-secret
+      JWT_SECRET: ${JWT_SECRET}
+      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
       SMTP_FROM_EMAIL: no-reply@staging.local
@@ -65,11 +69,15 @@ services:
     environment:
       APP_ENV: local
       API_V1_PREFIX: /api/v1
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
       POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
-      JWT_SECRET: local-dev-secret
+      JWT_SECRET: ${JWT_SECRET}
+      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
       SMTP_FROM_EMAIL: no-reply@staging.local
@@ -90,6 +98,33 @@ services:
       timeout: 5s
       retries: 6
 
+  test-runner:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: pytest -q backend/tests
+    environment:
+      APP_ENV: test
+      APP_NAME: LSOS API
+      API_V1_PREFIX: /api/v1
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
+      POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      JWT_SECRET: ${JWT_SECRET}
+      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_FROM_EMAIL: no-reply@staging.local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   beat:
     build:
       context: .
@@ -98,11 +133,15 @@ services:
     environment:
       APP_ENV: local
       API_V1_PREFIX: /api/v1
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
       POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
-      JWT_SECRET: local-dev-secret
+      JWT_SECRET: ${JWT_SECRET}
+      PLATFORM_MASTER_KEY: ${PLATFORM_MASTER_KEY}
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
       SMTP_FROM_EMAIL: no-reply@staging.local

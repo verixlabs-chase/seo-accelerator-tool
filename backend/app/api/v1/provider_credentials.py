@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.services.audit_service import write_audit_log
 from app.services.provider_credentials_service import (
+    ProviderCredentialConfigurationError,
     upsert_organization_provider_credentials,
     upsert_platform_provider_credentials,
     upsert_provider_policy,
@@ -68,16 +69,30 @@ def upsert_organization_credentials(
     organization_id: str,
     provider_name: str,
     body: ProviderCredentialUpsertIn,
-    _user: dict = Depends(require_org_role({"org_owner", "org_admin"})),
+    user: dict = Depends(require_org_role({"org_owner", "org_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = upsert_organization_provider_credentials(
-        db,
-        organization_id=organization_id,
-        provider_name=provider_name,
-        auth_mode=body.auth_mode,
-        credentials=body.credentials,
-    )
+    if user.get("organization_id") != organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "Organization context does not match request scope.",
+                "reason_code": "organization_scope_mismatch",
+            },
+        )
+    try:
+        row = upsert_organization_provider_credentials(
+            db,
+            organization_id=organization_id,
+            provider_name=provider_name,
+            auth_mode=body.auth_mode,
+            credentials=body.credentials,
+        )
+    except ProviderCredentialConfigurationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
     return envelope(
         request,
         {
@@ -98,12 +113,18 @@ def upsert_policy(
     user: dict = Depends(require_platform_owner()),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = upsert_provider_policy(
-        db,
-        organization_id=organization_id,
-        provider_name=provider_name,
-        credential_mode=body.credential_mode,
-    )
+    try:
+        row = upsert_provider_policy(
+            db,
+            organization_id=organization_id,
+            provider_name=provider_name,
+            credential_mode=body.credential_mode,
+        )
+    except ProviderCredentialConfigurationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
     write_audit_log(
         db,
         tenant_id=organization_id,

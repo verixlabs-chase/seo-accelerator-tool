@@ -19,18 +19,19 @@ def get_local_health(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    profile = local_service.collect_profile_snapshot(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    payload = local_service.compute_health_score(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     try:
-        local_collect_profile_snapshot.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
-        local_compute_health_score.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        snapshot_task = local_collect_profile_snapshot.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        score_task = local_compute_health_score.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
-        pass
+        snapshot_task = None
+        score_task = None
+    latest_health = local_service.get_latest_health(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     return envelope(
         request,
         {
-            **payload,
-            "map_pack_position": profile.map_pack_position,
+            **latest_health,
+            "job_id": score_task.id if score_task is not None else None,
+            "snapshot_job_id": snapshot_task.id if snapshot_task is not None else None,
         },
     )
 
@@ -61,13 +62,19 @@ def get_reviews(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    ingest_summary = local_service.ingest_reviews(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     try:
-        reviews_ingest.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        task = reviews_ingest.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
-        pass
+        task = None
     reviews = local_service.get_reviews(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    return envelope(request, {"summary": ingest_summary, "items": reviews})
+    return envelope(
+        request,
+        {
+            "campaign_id": campaign_id,
+            "job_id": task.id if task is not None else None,
+            "items": reviews,
+        },
+    )
 
 
 @reviews_router.get("/velocity")
@@ -77,11 +84,18 @@ def get_review_velocity(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    local_service.ingest_reviews(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    velocity = local_service.compute_review_velocity(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     try:
-        reviews_compute_velocity.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        ingest_task = reviews_ingest.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        velocity_task = reviews_compute_velocity.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
-        pass
-    return envelope(request, velocity)
-
+        ingest_task = None
+        velocity_task = None
+    velocity = local_service.get_velocity(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    return envelope(
+        request,
+        {
+            **velocity,
+            "job_id": velocity_task.id if velocity_task is not None else None,
+            "ingest_job_id": ingest_task.id if ingest_task is not None else None,
+        },
+    )

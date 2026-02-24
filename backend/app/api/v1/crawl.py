@@ -1,11 +1,12 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import SessionLocal, get_db
 from app.schemas.crawl import CrawlRunOut, CrawlRunProgressOut, CrawlScheduleRequest, TechnicalIssueOut
-from app.services import crawl_metrics, crawl_service
+from app.services import crawl_metrics, crawl_service, infra_service
 from app.tasks.tasks import crawl_schedule_campaign
 
 router = APIRouter(prefix="/crawl", tags=["crawl"])
@@ -32,6 +33,18 @@ def schedule_crawl(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
+    if infra_service.queue_backpressure_active("crawl"):
+        return JSONResponse(
+            status_code=503,
+            content=envelope(
+                request,
+                data=None,
+                error={
+                    "message": "System under load",
+                    "details": {"reason_code": "queue_backpressure_active"},
+                },
+            ),
+        )
     run = crawl_service.schedule_crawl(
         db,
         tenant_id=user["tenant_id"],

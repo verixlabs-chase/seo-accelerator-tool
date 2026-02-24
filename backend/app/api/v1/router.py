@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.core.config import get_settings
 from app.api.v1 import (
     auth,
     authority,
@@ -7,6 +8,7 @@ from app.api.v1 import (
     competitors,
     content,
     crawl,
+    debug_live_validation,
     dashboard,
     entity,
     google_oauth,
@@ -26,11 +28,14 @@ from app.api.v1 import (
 )
 
 tenant_api_router = APIRouter()
+settings = get_settings()
 tenant_api_router.include_router(health.router)
 tenant_api_router.include_router(tenants.router)
 tenant_api_router.include_router(auth.router)
 tenant_api_router.include_router(campaigns.router)
 tenant_api_router.include_router(crawl.router)
+if settings.app_env.lower() != "production":
+    tenant_api_router.include_router(debug_live_validation.router)
 tenant_api_router.include_router(entity.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
 tenant_api_router.include_router(rank.router)
