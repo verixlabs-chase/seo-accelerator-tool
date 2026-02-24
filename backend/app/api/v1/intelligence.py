@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
-from app.models.intelligence import IntelligenceScore, StrategyRecommendation
 from app.schemas.intelligence import AdvanceMonthIn, IntelligenceScoreOut, RecommendationOut, RecommendationTransitionIn
 from app.services import intelligence_service
 from app.tasks.tasks import (

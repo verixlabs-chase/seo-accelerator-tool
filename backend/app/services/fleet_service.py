@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Fleet job orchestration service for portfolio-scoped execution.
 
 This module is the service-layer control plane for Fleet execution. It creates
@@ -27,8 +25,10 @@ Retry/session/queue/telemetry notes:
 - Queue routing uses deterministic portfolio hashing to shard onto queue names
   derived from job type.
 - This module does not write telemetry records directly; live provider execution
-  delegates to provider-task infrastructure, which may emit provider telemetry.
+delegates to provider-task infrastructure, which may emit provider telemetry.
 """
+
+from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime

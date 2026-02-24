@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
-from app.models.local import ReviewVelocitySnapshot
 from app.services import local_service
 from app.tasks.tasks import local_collect_profile_snapshot, local_compute_health_score, reviews_compute_velocity, reviews_ingest
 
@@ -91,15 +90,6 @@ def get_review_velocity(
     except KombuError:
         ingest_task = None
         velocity_task = None
-    velocity_snapshot = (
-        db.query(ReviewVelocitySnapshot)
-        .filter(
-            ReviewVelocitySnapshot.tenant_id == user["tenant_id"],
-            ReviewVelocitySnapshot.campaign_id == campaign_id,
-        )
-        .order_by(ReviewVelocitySnapshot.captured_at.desc())
-        .first()
-    )
     velocity = local_service.get_velocity(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     return envelope(
         request,
