@@ -14,7 +14,7 @@ from sqlalchemy import inspect
 
 from app.api.response import exception_envelope
 from app.api.v1 import google_oauth
-from app.api.v1.router import control_plane_api_router, tenant_api_router
+from app.api.v1.router import build_control_plane_api_router, build_tenant_api_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
 from app.core.metrics import render_metrics
@@ -27,6 +27,7 @@ from app.core.middleware import (
 )
 from app.core.tracing import setup_tracing
 from app.db.redis_client import get_redis_client
+from app.governance.startup_invariants import run_startup_invariants
 import app.db.session as db_session
 from app.services.auth_service import seed_local_admin
 
@@ -97,11 +98,12 @@ def _emit_statelessness_warnings() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    run_startup_invariants(runtime="api")
     _emit_statelessness_warnings()
     if settings.app_env.lower() != "test":
         # Fail startup loudly when Redis is unavailable.
         get_redis_client()
-    if not inspect(db_session.engine).has_table("users"):
+    if not inspect(db_session.get_engine()).has_table("users"):
         yield
     else:
         db = db_session.SessionLocal()
@@ -132,8 +134,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 setup_tracing(app, otel_exporter_endpoint=settings.otel_exporter_endpoint)
-app.include_router(tenant_api_router, prefix=settings.api_v1_prefix)
-app.include_router(control_plane_api_router, prefix=settings.api_v1_prefix)
+app.include_router(build_tenant_api_router(settings.app_env), prefix=settings.api_v1_prefix)
+app.include_router(build_control_plane_api_router(), prefix=settings.api_v1_prefix)
 app.include_router(google_oauth.public_router, prefix=settings.api_v1_prefix)
 
 if settings.metrics_enabled:

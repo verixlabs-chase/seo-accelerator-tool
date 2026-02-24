@@ -15,6 +15,7 @@ from app.services import (
     crawl_service,
     entity_service,
     intelligence_service,
+    idempotency_service,
     local_service,
     observability_service,
     portfolio_usage_service,
@@ -45,6 +46,30 @@ def audit_write_event(event_type: str, tenant_id: str, actor_user_id: str | None
             "payload": payload or {},
         }
     )
+
+
+@celery_app.task(name="governance.recover_stale_strategy_executions", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def governance_recover_stale_strategy_executions(self, timeout_seconds: int = 900, batch_size: int = 100) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        "system",
+        "governance.recover_stale_strategy_executions",
+        {"timeout_seconds": timeout_seconds, "batch_size": batch_size},
+    )
+    try:
+        result = idempotency_service.recover_stale_running_executions(
+            db,
+            timeout_seconds=timeout_seconds,
+            batch_size=batch_size,
+        )
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
+        raise
+    finally:
+        db.close()
 
 
 def _start_task_execution(db, tenant_id: str, task_name: str, payload: dict) -> TaskExecution:

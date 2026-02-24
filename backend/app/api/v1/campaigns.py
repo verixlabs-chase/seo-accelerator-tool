@@ -18,8 +18,8 @@ from app.schemas.campaigns import CampaignCreateRequest, CampaignOut, CampaignSe
 from app.services.campaign_dashboard_service import build_campaign_dashboard
 from app.services.campaign_performance_service import build_campaign_performance_summary, build_campaign_performance_trend
 from app.services.feature_gate_service import assert_feature_available
-from app.services.strategy_engine.engine import build_campaign_strategy
 from app.services.strategy_engine.schemas import CampaignStrategyOut, StrategyWindow
+from app.services.strategy_build_service import build_campaign_strategy_idempotent
 from app.services import lifecycle_service
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -327,7 +327,9 @@ def get_campaign_strategy(
     plan_type = org.plan_type.strip().lower()
     tier = "enterprise" if plan_type == "enterprise" else "pro"
 
-    payload = build_campaign_strategy(
+    payload = build_campaign_strategy_idempotent(
+        db,
+        tenant_id=user["tenant_id"],
         campaign_id=campaign.id,
         window=StrategyWindow(date_from=summary_date_from, date_to=summary_date_to),
         raw_signals={},

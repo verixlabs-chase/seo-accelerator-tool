@@ -5,27 +5,27 @@ from app.services import infra_service, observability_service
 
 from app.api.response import envelope
 
-router = APIRouter(tags=["ops"])
-settings = get_settings()
+router = APIRouter(tags=['ops'])
 
 
-@router.get("/health")
+@router.get('/health')
 def health(request: Request) -> dict:
-    payload: dict[str, str] = {"status": "ok"}
+    settings = get_settings()
+    payload: dict[str, str] = {'status': 'ok'}
     if settings.rate_limit_enabled:
-        payload["redis_status"] = "ok" if infra_service.redis_connected() else "unavailable"
+        payload['redis_status'] = 'ok' if infra_service.redis_connected() else 'unavailable'
     queue_status = infra_service.celery_queue_status()
     return envelope(
         request,
         {
             **payload,
-            "active_queues": queue_status["active_queues"],
-            "worker_count_per_queue": queue_status["worker_count_per_queue"],
+            'active_queues': queue_status['active_queues'],
+            'worker_count_per_queue': queue_status['worker_count_per_queue'],
         },
     )
 
 
-@router.get("/health/readiness")
+@router.get('/health/readiness')
 def readiness(request: Request) -> dict:
     db_ok = infra_service.db_connected()
     redis_ok = infra_service.redis_connected()
@@ -39,23 +39,23 @@ def readiness(request: Request) -> dict:
     return envelope(
         request,
         {
-            "status": "ready" if overall_ok else "degraded",
-            "dependencies": {
-                "database": db_ok,
-                "redis": redis_ok,
-                "worker_heartbeat": worker_ok,
-                "scheduler_heartbeat": scheduler_ok,
+            'status': 'ready' if overall_ok else 'degraded',
+            'dependencies': {
+                'database': db_ok,
+                'redis': redis_ok,
+                'worker_heartbeat': worker_ok,
+                'scheduler_heartbeat': scheduler_ok,
             },
         },
     )
 
 
-@router.get("/health/metrics")
+@router.get('/health/metrics')
 def health_metrics(request: Request) -> dict:
     return envelope(request, observability_service.snapshot())
 
 
-@router.get("/infra/status")
+@router.get('/infra/status')
 def infra_status(request: Request) -> dict:
     redis_ok = infra_service.redis_connected()
     worker_ok = infra_service.worker_active() if redis_ok else False
@@ -63,11 +63,11 @@ def infra_status(request: Request) -> dict:
     return envelope(
         request,
         {
-            "redis": "connected" if redis_ok else "not connected",
-            "worker": "active" if worker_ok else "inactive",
-            "scheduler": "active" if scheduler_ok else "inactive",
-            "db": "connected" if infra_service.db_connected() else "not connected",
-            "proxy": "configured" if infra_service.proxy_configured() else "not configured",
-            "smtp": "configured" if infra_service.smtp_configured() else "not configured",
+            'redis': 'connected' if redis_ok else 'not connected',
+            'worker': 'active' if worker_ok else 'inactive',
+            'scheduler': 'active' if scheduler_ok else 'inactive',
+            'db': 'connected' if infra_service.db_connected() else 'not connected',
+            'proxy': 'configured' if infra_service.proxy_configured() else 'not configured',
+            'smtp': 'configured' if infra_service.smtp_configured() else 'not configured',
         },
     )
