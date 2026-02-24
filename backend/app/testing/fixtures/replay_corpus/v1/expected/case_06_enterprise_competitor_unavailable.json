@@ -1,0 +1,60 @@
+{
+  "campaign_id": "campaign_replay_006",
+  "detected_scenarios": [
+    "competitor_data_unavailable"
+  ],
+  "executive_summary": {
+    "dominant_score_dimension": "technical_health_score",
+    "primary_issue_category": "system",
+    "recommended_focus_area": "improve_core_technical_reliability",
+    "strategic_theme": "technical_stability",
+    "summary_confidence": 0.275,
+    "top_priority_scenario": "competitor_data_unavailable"
+  },
+  "meta": {
+    "engine_version": "phase2-controlled-scope",
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "tier": "enterprise",
+    "total_scenarios_detected": 1
+  },
+  "recommendations": [
+    {
+      "authoritative_sources": [
+        "https://example.com/citations/gbp-reviews"
+      ],
+      "confidence": 0.55,
+      "diagnosis": "Competitor data is unavailable for enterprise diagnostics.",
+      "evidence": [
+        {
+          "comparative_value": 2.0,
+          "comparator": "<",
+          "signal_name": "competitor_signal_count",
+          "signal_value": 1.0,
+          "threshold_reference": "COMPETITOR_REQUIRED_SIGNAL_MIN_COUNT",
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ],
+      "expected_outcome": "Competitor diagnostic coverage restored.",
+      "impact_level": "low",
+      "priority_score": 0.0165,
+      "recommended_actions": [
+        "Verify competitor data ingestion coverage.",
+        "Backfill missing competitor signal sources."
+      ],
+      "root_cause": "Required competitor signals were not present in the analysis window.",
+      "scenario_id": "competitor_data_unavailable"
+    }
+  ],
+  "strategic_scores": {
+    "competitive_pressure_score": 50.0,
+    "local_authority_score": 50.0,
+    "opportunity_index": 0.7563,
+    "risk_index": 0.55,
+    "strategy_score": 50.0413,
+    "technical_health_score": 50.0
+  },
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  }
+}
