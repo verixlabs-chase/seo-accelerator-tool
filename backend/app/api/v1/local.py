@@ -26,10 +26,11 @@ def get_local_health(
     except KombuError:
         snapshot_task = None
         score_task = None
+    latest_health = local_service.get_latest_health(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     return envelope(
         request,
         {
-            "campaign_id": campaign_id,
+            **latest_health,
             "job_id": score_task.id if score_task is not None else None,
             "snapshot_job_id": snapshot_task.id if snapshot_task is not None else None,
         },
@@ -99,20 +100,11 @@ def get_review_velocity(
         .order_by(ReviewVelocitySnapshot.captured_at.desc())
         .first()
     )
+    velocity = local_service.get_velocity(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     return envelope(
         request,
         {
-            "campaign_id": campaign_id,
-            "velocity": (
-                {
-                    "profile_id": velocity_snapshot.profile_id,
-                    "reviews_last_30d": velocity_snapshot.reviews_last_30d,
-                    "avg_rating_last_30d": velocity_snapshot.avg_rating_last_30d,
-                    "captured_at": velocity_snapshot.captured_at.isoformat(),
-                }
-                if velocity_snapshot is not None
-                else None
-            ),
+            **velocity,
             "job_id": velocity_task.id if velocity_task is not None else None,
             "ingest_job_id": ingest_task.id if ingest_task is not None else None,
         },

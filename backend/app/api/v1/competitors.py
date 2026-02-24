@@ -52,7 +52,15 @@ def get_snapshots(
     except KombuError:
         task = None
     snapshots = competitor_service.list_snapshots(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    return envelope(request, {"job_id": task.id if task is not None else None, "items": snapshots})
+    snapshots_collected = len({str(item.get("competitor_id", "")) for item in snapshots if item.get("competitor_id")})
+    return envelope(
+        request,
+        {
+            "job_id": task.id if task is not None else None,
+            "summary": {"snapshots_collected": snapshots_collected},
+            "items": snapshots,
+        },
+    )
 
 
 @router.get("/gaps")

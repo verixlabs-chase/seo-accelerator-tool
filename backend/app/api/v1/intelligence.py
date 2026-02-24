@@ -30,17 +30,14 @@ def get_intelligence_score(
         task = intelligence_compute_score.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
         task = None
-    score = (
-        db.query(IntelligenceScore)
-        .filter(IntelligenceScore.tenant_id == user["tenant_id"], IntelligenceScore.campaign_id == campaign_id)
-        .order_by(IntelligenceScore.captured_at.desc())
-        .first()
-    )
+    score = intelligence_service.get_latest_score(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    score_payload = IntelligenceScoreOut.model_validate(score).model_dump(mode="json")
     return envelope(
         request,
         {
             "job_id": task.id if task is not None else None,
-            "latest_score": IntelligenceScoreOut.model_validate(score).model_dump(mode="json") if score is not None else None,
+            "score_value": score_payload["score_value"],
+            "latest_score": score_payload,
         },
     )
 
@@ -56,12 +53,7 @@ def get_intelligence_recommendations(
         task = intelligence_detect_anomalies.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
         task = None
-    recs = (
-        db.query(StrategyRecommendation)
-        .filter(StrategyRecommendation.tenant_id == user["tenant_id"], StrategyRecommendation.campaign_id == campaign_id)
-        .order_by(StrategyRecommendation.created_at.desc())
-        .all()
-    )
+    recs = intelligence_service.get_recommendations(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     return envelope(
         request,
         {

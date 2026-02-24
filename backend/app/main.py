@@ -101,7 +101,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     if settings.app_env.lower() != "test":
         # Fail startup loudly when Redis is unavailable.
         get_redis_client()
-    if not inspect(db_session.engine).has_table("users"):
+    if not inspect(db_session.get_engine()).has_table("users"):
         yield
     else:
         db = db_session.SessionLocal()

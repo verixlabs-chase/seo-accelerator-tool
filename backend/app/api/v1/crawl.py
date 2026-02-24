@@ -1,4 +1,5 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
@@ -33,9 +34,16 @@ def schedule_crawl(
     db: Session = Depends(get_db),
 ) -> dict:
     if infra_service.queue_backpressure_active("crawl"):
-        raise HTTPException(
+        return JSONResponse(
             status_code=503,
-            detail={"message": "System under load", "reason_code": "queue_backpressure_active"},
+            content=envelope(
+                request,
+                data=None,
+                error={
+                    "message": "System under load",
+                    "details": {"reason_code": "queue_backpressure_active"},
+                },
+            ),
         )
     run = crawl_service.schedule_crawl(
         db,

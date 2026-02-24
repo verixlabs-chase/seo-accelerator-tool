@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse
 from kombu.exceptions import KombuError
 from sqlalchemy.orm import Session
 
@@ -68,9 +69,16 @@ def get_content_plan(
     db: Session = Depends(get_db),
 ) -> dict:
     if infra_service.queue_backpressure_active("content"):
-        raise HTTPException(
+        return JSONResponse(
             status_code=503,
-            detail={"message": "System under load", "reason_code": "queue_backpressure_active"},
+            content=envelope(
+                request,
+                data=None,
+                error={
+                    "message": "System under load",
+                    "details": {"reason_code": "queue_backpressure_active"},
+                },
+            ),
         )
     try:
         task = content_generate_plan.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id, month_number=month_number)

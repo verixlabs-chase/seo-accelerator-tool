@@ -135,7 +135,7 @@ def get_citation_status(
     rows = (
         db.query(Citation)
         .filter(Citation.tenant_id == user["tenant_id"], Citation.campaign_id == campaign_id)
-        .order_by(Citation.created_at.desc())
+        .order_by(Citation.updated_at.desc())
         .all()
     )
     return envelope(
