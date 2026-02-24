@@ -27,6 +27,9 @@ jobs:
 
   deterministic-replay-gate:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite:///./test.db
+      POSTGRES_DSN: sqlite:///./test.db
     defaults:
       run:
         working-directory: backend
