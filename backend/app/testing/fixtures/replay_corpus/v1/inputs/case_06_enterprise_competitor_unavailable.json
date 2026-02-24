@@ -1,0 +1,13 @@
+{
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "raw_signals": {
+    "impressions": 900,
+    "ctr": 0.031,
+    "competitor_review_count": 20,
+    "review_count": 19
+  },
+  "tier": "enterprise"
+}

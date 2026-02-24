@@ -1,0 +1,20 @@
+{
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "raw_signals": {
+    "impressions": 3200,
+    "avg_position": 2.9,
+    "ctr": 0.047,
+    "review_velocity": 2.4,
+    "review_response_rate": 0.72,
+    "lcp": 1.9,
+    "cls": 0.07,
+    "inp": 132,
+    "ttfb": 520,
+    "position_delta": 0.6,
+    "traffic_growth_percent": 0.04
+  },
+  "tier": "pro"
+}

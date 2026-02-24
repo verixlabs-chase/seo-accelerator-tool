@@ -1,0 +1,14 @@
+{
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "raw_signals": {
+    "impressions": 15000,
+    "avg_position": 4.6,
+    "ctr": 0.011,
+    "sessions": 2100,
+    "conversions": 95
+  },
+  "tier": "pro"
+}

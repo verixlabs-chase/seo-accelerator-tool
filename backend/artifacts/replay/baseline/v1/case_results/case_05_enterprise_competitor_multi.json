@@ -1,0 +1,37 @@
+{
+  "build_hash": "86e444e99422c65534ba4422c036100c1efe59bd0b90c61b2253fb8c21b6bdb8",
+  "campaign_id": "campaign_replay_005",
+  "case_id": "case_05_enterprise_competitor_multi",
+  "confidence_bands": [
+    "high",
+    "medium",
+    "medium",
+    "medium",
+    "medium",
+    "medium",
+    "medium",
+    "medium"
+  ],
+  "expected_ref": "expected/case_05_enterprise_competitor_multi.json",
+  "input_hash": "1122a53285b5c9de06da438c381ce112d577d0ab7521739fe2ea11bd4d30b1d2",
+  "input_ref": "inputs/case_05_enterprise_competitor_multi.json",
+  "output_hash": "9de42e6a8f179f374314d733064db7b94dcf152a8cabbc7012790134cb6c5787",
+  "recommendation_ordering": [
+    "high_visibility_low_ctr",
+    "ranking_decline_detected",
+    "competitive_position_gap",
+    "competitive_snippet_disadvantage",
+    "gbp_low_review_velocity",
+    "low_review_velocity_vs_competitors",
+    "gbp_low_review_response_rate",
+    "competitor_reputation_gap"
+  ],
+  "tenant_id": "tenant_replay_v1",
+  "version_fingerprint": "a4bf86c56b25391dd77c8b9f29303be22f38aab076484c6d2e827b6c427816a9",
+  "version_tuple": {
+    "engine_version": "phase2-controlled-scope",
+    "registry_version": "scenario-registry-v1",
+    "signal_schema_version": "signals-v1",
+    "threshold_bundle_version": "v1.0.0"
+  }
+}

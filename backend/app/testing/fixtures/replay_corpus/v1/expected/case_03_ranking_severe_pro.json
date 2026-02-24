@@ -1,0 +1,68 @@
+{
+  "campaign_id": "campaign_replay_003",
+  "detected_scenarios": [
+    "ranking_decline_detected"
+  ],
+  "executive_summary": {
+    "dominant_score_dimension": "strategy_score",
+    "primary_issue_category": "organic",
+    "recommended_focus_area": "maintain_balanced_program_execution",
+    "strategic_theme": "balanced_execution",
+    "summary_confidence": 0.425,
+    "top_priority_scenario": "ranking_decline_detected"
+  },
+  "meta": {
+    "engine_version": "phase2-controlled-scope",
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "tier": "pro",
+    "total_scenarios_detected": 1
+  },
+  "recommendations": [
+    {
+      "authoritative_sources": [
+        "https://example.com/citations/search-titles-guidance"
+      ],
+      "confidence": 0.85,
+      "diagnosis": "Ranking decline detected with supporting performance loss.",
+      "evidence": [
+        {
+          "comparative_value": 6.0,
+          "comparator": ">=",
+          "signal_name": "position_delta",
+          "signal_value": 8.0,
+          "threshold_reference": "RANKING_SEVERE_POSITION_DROP_THRESHOLD",
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "comparative_value": -0.2,
+          "comparator": "<=",
+          "signal_name": "traffic_growth_percent",
+          "signal_value": -0.31,
+          "threshold_reference": "RANKING_SEVERE_TRAFFIC_DECLINE_THRESHOLD",
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ],
+      "expected_outcome": "Stabilized or recovered rankings and traffic.",
+      "impact_level": "high",
+      "priority_score": 0.51,
+      "recommended_actions": [
+        "Audit recently declining pages and query clusters.",
+        "Prioritize on-page refresh for affected assets."
+      ],
+      "root_cause": "Visibility erosion is impacting organic traffic trends.",
+      "scenario_id": "ranking_decline_detected"
+    }
+  ],
+  "strategic_scores": {
+    "competitive_pressure_score": null,
+    "local_authority_score": 50.0,
+    "opportunity_index": 21.675,
+    "risk_index": 51.0,
+    "strategy_score": 44.135,
+    "technical_health_score": 50.0
+  },
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  }
+}
