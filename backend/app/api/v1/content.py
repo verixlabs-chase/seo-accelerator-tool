@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from kombu.exceptions import KombuError
 from sqlalchemy.orm import Session
 
@@ -7,7 +7,7 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.models.content import ContentAsset
 from app.schemas.content import ContentAssetCreateIn, ContentAssetOut, ContentAssetUpdateIn
-from app.services import content_service
+from app.services import content_service, infra_service
 from app.tasks.tasks import content_generate_plan, content_refresh_internal_link_map, content_run_qc_checks
 
 content_router = APIRouter(prefix="/content", tags=["content"])
@@ -67,16 +67,20 @@ def get_content_plan(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    plan_summary = content_service.generate_plan(db, tenant_id=user["tenant_id"], campaign_id=campaign_id, month_number=month_number)
+    if infra_service.queue_backpressure_active("content"):
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "System under load", "reason_code": "queue_backpressure_active"},
+        )
     try:
-        content_generate_plan.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id, month_number=month_number)
+        task = content_generate_plan.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id, month_number=month_number)
     except KombuError:
-        pass
+        task = None
     items = content_service.get_plan(db, tenant_id=user["tenant_id"], campaign_id=campaign_id, month_number=month_number)
     return envelope(
         request,
         {
-            "summary": plan_summary,
+            "job_id": task.id if task is not None else None,
             "items": [ContentAssetOut.model_validate(i).model_dump(mode="json") for i in items],
         },
     )

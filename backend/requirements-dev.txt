@@ -1,3 +1,5 @@
 -r requirements.txt
-ruff
-mypy
+pytest==8.4.2
+ruff==0.13.1
+mypy==1.18.2
+coverage==7.13.4

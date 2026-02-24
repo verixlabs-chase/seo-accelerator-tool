@@ -105,7 +105,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_provider_execution_metrics_tenant_id", "provider_execution_metrics", ["tenant_id"])
     op.create_index(
-        "ix_provider_execution_metrics_tenant_provider_capability_created_at",
+        "ix_pem_tenant_provider_cap_created",
         "provider_execution_metrics",
         ["tenant_id", "provider_name", "capability", "created_at"],
     )
@@ -125,7 +125,7 @@ def downgrade() -> None:
     op.drop_index("ix_provider_execution_metrics_correlation_id", table_name="provider_execution_metrics")
     op.drop_index("ix_provider_execution_metrics_tenant_outcome_created_at", table_name="provider_execution_metrics")
     op.drop_index(
-        "ix_provider_execution_metrics_tenant_provider_capability_created_at",
+        "ix_pem_tenant_provider_cap_created",
         table_name="provider_execution_metrics",
     )
     op.drop_index("ix_provider_execution_metrics_tenant_id", table_name="provider_execution_metrics")

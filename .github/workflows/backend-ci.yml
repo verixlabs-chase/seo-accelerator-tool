@@ -1,0 +1,30 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  backend-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker Compose Build
+        run: docker compose build
+
+      - name: Run Tests
+        run: docker compose run --rm test-runner
+
+      - name: Run Lint
+        run: docker compose run --rm api ruff check backend
+
+      - name: Validate Production Config
+        run: docker compose run --rm api python backend/scripts/validate_production_config.py

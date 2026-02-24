@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
+from app.models.intelligence import IntelligenceScore, StrategyRecommendation
 from app.schemas.intelligence import AdvanceMonthIn, IntelligenceScoreOut, RecommendationOut, RecommendationTransitionIn
 from app.services import intelligence_service
 from app.tasks.tasks import (
@@ -25,12 +26,23 @@ def get_intelligence_score(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    score = intelligence_service.compute_score(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     try:
-        intelligence_compute_score.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        task = intelligence_compute_score.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
-        pass
-    return envelope(request, IntelligenceScoreOut.model_validate(score).model_dump(mode="json"))
+        task = None
+    score = (
+        db.query(IntelligenceScore)
+        .filter(IntelligenceScore.tenant_id == user["tenant_id"], IntelligenceScore.campaign_id == campaign_id)
+        .order_by(IntelligenceScore.captured_at.desc())
+        .first()
+    )
+    return envelope(
+        request,
+        {
+            "job_id": task.id if task is not None else None,
+            "latest_score": IntelligenceScoreOut.model_validate(score).model_dump(mode="json") if score is not None else None,
+        },
+    )
 
 
 @intelligence_router.get("/recommendations")
@@ -40,13 +52,23 @@ def get_intelligence_recommendations(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    intelligence_service.detect_anomalies(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    recs = intelligence_service.get_recommendations(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     try:
-        intelligence_detect_anomalies.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        task = intelligence_detect_anomalies.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
-        pass
-    return envelope(request, {"items": [RecommendationOut.model_validate(r).model_dump(mode="json") for r in recs]})
+        task = None
+    recs = (
+        db.query(StrategyRecommendation)
+        .filter(StrategyRecommendation.tenant_id == user["tenant_id"], StrategyRecommendation.campaign_id == campaign_id)
+        .order_by(StrategyRecommendation.created_at.desc())
+        .all()
+    )
+    return envelope(
+        request,
+        {
+            "job_id": task.id if task is not None else None,
+            "items": [RecommendationOut.model_validate(r).model_dump(mode="json") for r in recs],
+        },
+    )
 
 
 @intelligence_router.post("/recommendations/{recommendation_id}/transition")

@@ -1,15 +1,28 @@
 from fastapi import APIRouter, Request
 
+from app.core.config import get_settings
 from app.services import infra_service, observability_service
 
 from app.api.response import envelope
 
 router = APIRouter(tags=["ops"])
+settings = get_settings()
 
 
 @router.get("/health")
 def health(request: Request) -> dict:
-    return envelope(request, {"status": "ok"})
+    payload: dict[str, str] = {"status": "ok"}
+    if settings.rate_limit_enabled:
+        payload["redis_status"] = "ok" if infra_service.redis_connected() else "unavailable"
+    queue_status = infra_service.celery_queue_status()
+    return envelope(
+        request,
+        {
+            **payload,
+            "active_queues": queue_status["active_queues"],
+            "worker_count_per_queue": queue_status["worker_count_per_queue"],
+        },
+    )
 
 
 @router.get("/health/readiness")

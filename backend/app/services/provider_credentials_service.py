@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-import base64
-import json
-import os
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy.orm import Session
 
+from app.core.crypto import CredentialCryptoError, decrypt_payload, encrypt_payload
 from app.core.settings import get_settings
+from app.models.organization import Organization
 from app.models.organization_provider_credential import OrganizationProviderCredential
 from app.models.platform_provider_credential import PlatformProviderCredential
 from app.models.provider_policy import ProviderPolicy
@@ -26,10 +22,14 @@ class ProviderCredentialConfigurationError(RuntimeError):
         self.status_code = status_code
 
 
-_AES_GCM_NONCE_BYTES = 12
-
-
-def resolve_provider_credentials(db: Session, organization_id: str, provider_name: str) -> dict[str, Any]:
+def resolve_provider_credentials(
+    db: Session,
+    organization_id: str,
+    provider_name: str,
+    *,
+    required_credential_mode: str | None = None,
+    require_org_oauth: bool = False,
+) -> dict[str, Any]:
     policy = (
         db.query(ProviderPolicy)
         .filter(
@@ -38,14 +38,29 @@ def resolve_provider_credentials(db: Session, organization_id: str, provider_nam
         )
         .first()
     )
-    credential_mode = policy.credential_mode if policy is not None else "platform"
+    credential_mode = policy.credential_mode if policy is not None else (required_credential_mode or "platform")
 
     platform_row = _get_platform_provider_credential_row(db, provider_name)
     org_row = _get_organization_provider_credential_row(db, organization_id, provider_name)
     selected_row: OrganizationProviderCredential | PlatformProviderCredential | None = None
-    if credential_mode == "platform":
+    if require_org_oauth:
+        if org_row is None:
+            raise ProviderCredentialConfigurationError(
+                f"Organization OAuth credential required for provider '{provider_name}'.",
+                reason_code="org_oauth_credential_required",
+                status_code=409,
+            )
+        if org_row.auth_mode != "oauth2":
+            raise ProviderCredentialConfigurationError(
+                f"Organization OAuth credential required for provider '{provider_name}'.",
+                reason_code="org_oauth_credential_required",
+                status_code=409,
+            )
+        selected_row = org_row
+    elif credential_mode == "platform":
         selected_row = platform_row
     elif credential_mode == "byo_optional":
+        # Prefer org credential when present so tenant-specific OAuth does not fall back to platform.
         selected_row = org_row if org_row is not None else platform_row
     elif credential_mode == "byo_required":
         if org_row is not None:
@@ -84,6 +99,7 @@ def upsert_provider_policy(
     provider_name: str,
     credential_mode: str,
 ) -> ProviderPolicy:
+    _require_organization_exists(db, organization_id)
     row = (
         db.query(ProviderPolicy)
         .filter(
@@ -119,6 +135,7 @@ def upsert_organization_provider_credentials(
     auth_mode: str,
     credentials: dict[str, Any],
 ) -> OrganizationProviderCredential:
+    _require_organization_exists(db, organization_id)
     row = (
         db.query(OrganizationProviderCredential)
         .filter(
@@ -151,6 +168,16 @@ def upsert_organization_provider_credentials(
     db.commit()
     db.refresh(row)
     return row
+
+
+def _require_organization_exists(db: Session, organization_id: str) -> None:
+    org = db.query(Organization.id).filter(Organization.id == organization_id).first()
+    if org is None:
+        raise ProviderCredentialConfigurationError(
+            "Organization not found.",
+            reason_code="organization_not_found",
+            status_code=404,
+        )
 
 
 def upsert_platform_provider_credentials(
@@ -245,7 +272,11 @@ def _refresh_oauth2_credentials_if_needed(
         )
 
     try:
-        refreshed = refresh_google_access_token(refresh_token)
+        refreshed = refresh_google_access_token(
+            refresh_token,
+            organization_id=(row.organization_id if isinstance(row, OrganizationProviderCredential) else None),
+            db=db,
+        )
     except GoogleOAuthError as exc:
         raise ProviderCredentialConfigurationError(
             str(exc),
@@ -281,124 +312,23 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
-def _encrypt_payload(data: dict[str, Any]) -> tuple[str, str, str]:
-    plaintext = json.dumps(data, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    dek = os.urandom(32)
-    payload_iv, payload_ciphertext = _aes256_gcm_encrypt(plaintext, dek)
-
-    master_key = _get_master_key()
-    dek_iv, encrypted_dek = _aes256_gcm_encrypt(dek, master_key)
-
-    blob = {
-        "alg": "AES-256-GCM",
-        "ciphertext_b64": _b64e(payload_ciphertext),
-        "payload_iv_b64": _b64e(payload_iv),
-        "encrypted_dek_b64": _b64e(encrypted_dek),
-        "dek_iv_b64": _b64e(dek_iv),
-    }
-    key_reference = os.getenv("CREDENTIAL_MASTER_KEY_REFERENCE", "env:PLATFORM_MASTER_KEY")
-    key_version = os.getenv("CREDENTIAL_MASTER_KEY_VERSION", "v1")
-    return json.dumps(blob, separators=(",", ":"), sort_keys=True), key_reference, key_version
-
-
 def _decrypt_payload(encrypted_secret_blob: str) -> dict[str, Any]:
-    payload = json.loads(encrypted_secret_blob)
-    if not isinstance(payload, dict):
-        raise ProviderCredentialConfigurationError(
-            "Credential payload must be a JSON object.",
-            reason_code="invalid_credential_payload",
-            status_code=400,
-        )
     try:
-        encrypted_dek = _b64d(str(payload["encrypted_dek_b64"]))
-        dek_iv = _b64d(str(payload["dek_iv_b64"]))
-        payload_iv = _b64d(str(payload["payload_iv_b64"]))
-        ciphertext = _b64d(str(payload["ciphertext_b64"]))
-    except Exception as exc:  # noqa: BLE001
+        return decrypt_payload(encrypted_secret_blob)
+    except CredentialCryptoError as exc:
         raise ProviderCredentialConfigurationError(
-            "Credential payload is not decryptable.",
-            reason_code="invalid_credential_payload",
+            str(exc),
+            reason_code=exc.reason_code,
             status_code=400,
         ) from exc
 
-    algorithm = str(payload.get("alg", "AES-256-CBC"))
-    master_key = _get_master_key()
-    try:
-        if algorithm == "AES-256-GCM":
-            dek = _aes256_gcm_decrypt(encrypted_dek, master_key, dek_iv)
-            plaintext = _aes256_gcm_decrypt(ciphertext, dek, payload_iv)
-        elif algorithm == "AES-256-CBC":
-            dek = _aes256_cbc_decrypt(encrypted_dek, master_key, dek_iv)
-            plaintext = _aes256_cbc_decrypt(ciphertext, dek, payload_iv)
-        else:
-            raise ProviderCredentialConfigurationError(
-                f"Unsupported credential algorithm '{algorithm}'.",
-                reason_code="invalid_credential_payload",
-                status_code=400,
-            )
-    except ProviderCredentialConfigurationError:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise ProviderCredentialConfigurationError(
-            "Credential payload is not decryptable.",
-            reason_code="invalid_credential_payload",
-            status_code=400,
-        ) from exc
-    parsed = json.loads(plaintext.decode("utf-8"))
-    if not isinstance(parsed, dict):
-        raise ProviderCredentialConfigurationError(
-            "Credential payload must be a JSON object.",
-            reason_code="invalid_credential_payload",
-            status_code=400,
-        )
-    return parsed
 
-
-def _get_master_key() -> bytes:
-    raw = os.getenv("PLATFORM_MASTER_KEY", "").strip()
-    if not raw:
-        raise ProviderCredentialConfigurationError(
-            "PLATFORM_MASTER_KEY is required for credential encryption.",
-            reason_code="master_key_missing",
-            status_code=409,
-        )
+def _encrypt_payload(data: dict[str, Any]) -> tuple[str, str, str]:
     try:
-        key = base64.b64decode(raw)
-    except Exception as exc:  # noqa: BLE001
+        return encrypt_payload(data)
+    except CredentialCryptoError as exc:
         raise ProviderCredentialConfigurationError(
-            "PLATFORM_MASTER_KEY must be valid base64.",
-            reason_code="master_key_invalid",
+            str(exc),
+            reason_code=exc.reason_code,
             status_code=409,
         ) from exc
-    if len(key) != 32:
-        raise ProviderCredentialConfigurationError(
-            "PLATFORM_MASTER_KEY must decode to 32 bytes for AES-256.",
-            reason_code="master_key_invalid",
-            status_code=409,
-        )
-    return key
-
-
-def _b64e(raw: bytes) -> str:
-    return base64.b64encode(raw).decode("ascii")
-
-
-def _b64d(raw: str) -> bytes:
-    return base64.b64decode(raw.encode("ascii"))
-
-
-def _aes256_gcm_encrypt(plaintext: bytes, key: bytes) -> tuple[bytes, bytes]:
-    nonce = os.urandom(_AES_GCM_NONCE_BYTES)
-    ciphertext = AESGCM(key).encrypt(nonce, plaintext, None)
-    return nonce, ciphertext
-
-
-def _aes256_gcm_decrypt(ciphertext: bytes, key: bytes, nonce: bytes) -> bytes:
-    return AESGCM(key).decrypt(nonce, ciphertext, None)
-
-
-def _aes256_cbc_decrypt(ciphertext: bytes, key: bytes, iv: bytes) -> bytes:
-    decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
-    padded = decryptor.update(ciphertext) + decryptor.finalize()
-    unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
-    return unpadder.update(padded) + unpadder.finalize()

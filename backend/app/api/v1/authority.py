@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
+from app.models.authority import Citation
 from app.schemas.authority import BacklinkOut, CitationSubmissionIn, OutreachCampaignIn, OutreachContactIn
 from app.services import authority_service
 from app.tasks.tasks import (
@@ -78,13 +79,18 @@ def get_backlinks(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    authority_service.sync_backlinks(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     try:
-        authority_sync_backlinks.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        task = authority_sync_backlinks.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
-        pass
+        task = None
     rows = authority_service.list_backlinks(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    return envelope(request, {"items": [BacklinkOut.model_validate(row).model_dump(mode="json") for row in rows]})
+    return envelope(
+        request,
+        {
+            "job_id": task.id if task is not None else None,
+            "items": [BacklinkOut.model_validate(row).model_dump(mode="json") for row in rows],
+        },
+    )
 
 
 @citations_router.post("/submissions")
@@ -122,14 +128,20 @@ def get_citation_status(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    rows = authority_service.refresh_citation_status(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     try:
-        citation_refresh_status.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        task = citation_refresh_status.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
-        pass
+        task = None
+    rows = (
+        db.query(Citation)
+        .filter(Citation.tenant_id == user["tenant_id"], Citation.campaign_id == campaign_id)
+        .order_by(Citation.created_at.desc())
+        .all()
+    )
     return envelope(
         request,
         {
+            "job_id": task.id if task is not None else None,
             "items": [
                 {
                     "id": row.id,
@@ -141,4 +153,3 @@ def get_citation_status(
             ]
         },
     )
-

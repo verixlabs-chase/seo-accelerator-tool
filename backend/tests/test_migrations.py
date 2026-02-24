@@ -105,6 +105,7 @@ def test_migration_upgrade_and_downgrade():
         assert "organizations" in inspector.get_table_names()
         assert "provider_policies" in inspector.get_table_names()
         assert "organization_provider_credentials" in inspector.get_table_names()
+        assert "organization_oauth_clients" in inspector.get_table_names()
         assert "platform_provider_credentials" in inspector.get_table_names()
         assert "sub_accounts" in inspector.get_table_names()
         org_cols = {col["name"] for col in inspector.get_columns("organizations")}
@@ -113,6 +114,7 @@ def test_migration_upgrade_and_downgrade():
         policy_cols = {col["name"] for col in inspector.get_columns("provider_policies")}
         assert "credential_mode" in policy_cols
         org_cred_cols = {col["name"] for col in inspector.get_columns("organization_provider_credentials")}
+        org_oauth_client_cols = {col["name"] for col in inspector.get_columns("organization_oauth_clients")}
         platform_cred_cols = {col["name"] for col in inspector.get_columns("platform_provider_credentials")}
         assert "encrypted_secret_blob" in org_cred_cols
         assert "key_reference" in org_cred_cols
@@ -120,6 +122,9 @@ def test_migration_upgrade_and_downgrade():
         assert "encrypted_secret_blob" in platform_cred_cols
         assert "key_reference" in platform_cred_cols
         assert "key_version" in platform_cred_cols
+        assert "encrypted_secret_blob" in org_oauth_client_cols
+        assert "key_reference" in org_oauth_client_cols
+        assert "key_version" in org_oauth_client_cols
         sub_account_cols = {col["name"] for col in inspector.get_columns("sub_accounts")}
         assert "organization_id" in sub_account_cols
         assert "name" in sub_account_cols
