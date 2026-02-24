@@ -1,0 +1,19 @@
+{
+  "build_hash": "6c94442590a3d48dd9c5ac0c4365eeba8c7e5a1819fb1bb6c91689cb56010082",
+  "campaign_id": "campaign_replay_008",
+  "case_id": "case_08_clean_pro",
+  "confidence_bands": [],
+  "expected_ref": "expected/case_08_clean_pro.json",
+  "input_hash": "7cc046cc2b7c36717b6478d94cbbc3fd0a98f0f21198b496cc77c8629e265806",
+  "input_ref": "inputs/case_08_clean_pro.json",
+  "output_hash": "86c8a54d6d1bb50b37f7da9b9756926ba9bf057b9532d899b198b84f62c0db78",
+  "recommendation_ordering": [],
+  "tenant_id": "tenant_replay_v1",
+  "version_fingerprint": "a4bf86c56b25391dd77c8b9f29303be22f38aab076484c6d2e827b6c427816a9",
+  "version_tuple": {
+    "engine_version": "phase2-controlled-scope",
+    "registry_version": "scenario-registry-v1",
+    "signal_schema_version": "signals-v1",
+    "threshold_bundle_version": "v1.0.0"
+  }
+}

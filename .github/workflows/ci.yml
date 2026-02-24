@@ -25,6 +25,55 @@ jobs:
       - run: pytest
       - run: pip-audit
 
+  deterministic-replay-gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect replay-sensitive changes
+        id: replay_changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            replay_required:
+              - 'backend/app/services/strategy_engine/**'
+              - 'backend/app/services/intelligence_service.py'
+              - 'backend/app/services/**/*readiness*.py'
+              - 'backend/app/services/**/*confidence*cap*.py'
+              - 'backend/app/models/intelligence.py'
+              - 'backend/scripts/replay/**'
+
+      - name: Setup Python
+        if: steps.replay_changes.outputs.replay_required == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend requirements
+        if: steps.replay_changes.outputs.replay_required == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Apply migrations
+        if: steps.replay_changes.outputs.replay_required == 'true'
+        run: alembic upgrade head
+
+      - name: Run deterministic replay
+        if: steps.replay_changes.outputs.replay_required == 'true'
+        run: >-
+          python scripts/replay/run_replay.py
+          --manifest app/testing/fixtures/replay_corpus/v1/manifest.json
+          --report artifacts/replay/ci/replay_report.json
+          --executor app.governance.replay.executor_strategy_engine:execute_case
+
+      - name: Replay gate not required
+        if: steps.replay_changes.outputs.replay_required != 'true'
+        run: echo "Replay-sensitive paths unchanged; skipping deterministic replay gate."
+
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

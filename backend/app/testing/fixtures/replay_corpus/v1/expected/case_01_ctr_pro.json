@@ -1,0 +1,76 @@
+{
+  "campaign_id": "campaign_replay_001",
+  "detected_scenarios": [
+    "high_visibility_low_ctr"
+  ],
+  "executive_summary": {
+    "dominant_score_dimension": "strategy_score",
+    "primary_issue_category": "organic",
+    "recommended_focus_area": "maintain_balanced_program_execution",
+    "strategic_theme": "balanced_execution",
+    "summary_confidence": 0.425,
+    "top_priority_scenario": "high_visibility_low_ctr"
+  },
+  "meta": {
+    "engine_version": "phase2-controlled-scope",
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "tier": "pro",
+    "total_scenarios_detected": 1
+  },
+  "recommendations": [
+    {
+      "authoritative_sources": [
+        "https://example.com/citations/search-titles-guidance"
+      ],
+      "confidence": 0.85,
+      "diagnosis": "High SERP visibility with underperforming click-through rate.",
+      "evidence": [
+        {
+          "comparative_value": 1000.0,
+          "comparator": ">=",
+          "signal_name": "impressions",
+          "signal_value": 15000.0,
+          "threshold_reference": "HIGH_IMPRESSIONS_THRESHOLD",
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "comparative_value": 4.6,
+          "comparator": "between",
+          "signal_name": "avg_position",
+          "signal_value": 4.6,
+          "threshold_reference": "CTR_POSITION_MIN_THRESHOLD/CTR_POSITION_MAX_THRESHOLD",
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "comparative_value": 0.02,
+          "comparator": "<=",
+          "signal_name": "ctr",
+          "signal_value": 0.011,
+          "threshold_reference": "CTR_LOW_THRESHOLD",
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ],
+      "expected_outcome": "Improved CTR at existing ranking positions.",
+      "impact_level": "high",
+      "priority_score": 0.544,
+      "recommended_actions": [
+        "Rewrite title and meta description for intent clarity.",
+        "Align snippet language with high-converting query modifiers."
+      ],
+      "root_cause": "Snippet and intent alignment are weaker than ranking position suggests.",
+      "scenario_id": "high_visibility_low_ctr"
+    }
+  ],
+  "strategic_scores": {
+    "competitive_pressure_score": null,
+    "local_authority_score": 50.0,
+    "opportunity_index": 23.12,
+    "risk_index": 54.4,
+    "strategy_score": 43.744,
+    "technical_health_score": 50.0
+  },
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  }
+}

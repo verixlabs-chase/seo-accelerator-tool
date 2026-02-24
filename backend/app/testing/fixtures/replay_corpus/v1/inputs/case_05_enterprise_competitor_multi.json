@@ -1,0 +1,22 @@
+{
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "raw_signals": {
+    "impressions": 21000,
+    "avg_position": 7.1,
+    "ctr": 0.009,
+    "competitor_ctr_estimate": 0.041,
+    "review_velocity": 1.1,
+    "review_response_rate": 0.25,
+    "review_count": 120,
+    "competitor_review_count": 235,
+    "avg_rating": 4.0,
+    "competitor_rating": 4.6,
+    "competitor_avg_position": 2.8,
+    "position_delta": 3.2,
+    "traffic_growth_percent": -0.08
+  },
+  "tier": "enterprise"
+}

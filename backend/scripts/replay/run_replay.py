@@ -17,9 +17,6 @@ if str(ROOT) not in sys.path:
 from app.governance.replay.comparator import compare_confidence_bands, compare_hashes, compare_ordering, diff_payload
 from app.governance.replay.schema import DriftEvent, ReplayCase, ReplayReport
 
-# Usage:
-#   python scripts/replay/run_replay.py --manifest app/testing/fixtures/replay_corpus/v1/manifest.json --report artifacts/replay/nightly/20260224/report.json --executor app.governance.replay.executor_adapter:execute_case
-
 _VOLATILE_KEYS = {
     "generated_at",
     "request_id",
@@ -37,7 +34,10 @@ def _lock_deterministic_environment() -> None:
     os.environ["TZ"] = "UTC"
     if hasattr(__import__("time"), "tzset"):
         __import__("time").tzset()
-    locale.setlocale(locale.LC_ALL, "C")
+    try:
+        locale.setlocale(locale.LC_ALL, "C.UTF-8")
+    except locale.Error:
+        locale.setlocale(locale.LC_ALL, "C")
     random.seed(0)
     os.environ.setdefault("PYTHONHASHSEED", "0")
 
@@ -105,9 +105,29 @@ def _band(value: float) -> str:
     return "low"
 
 
+def _validate_corpus(manifest_path: Path, manifest: dict[str, Any]) -> None:
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Replay corpus manifest missing: {manifest_path}")
+
+    cases = manifest.get("cases", [])
+    if not isinstance(cases, list) or len(cases) == 0:
+        raise RuntimeError("Replay corpus must include at least one case")
+
+    case_dir = manifest_path.parent
+    for item in cases:
+        input_ref = case_dir / item["input_ref"]
+        expected_ref = case_dir / item["expected_ref"]
+        if not input_ref.exists():
+            raise FileNotFoundError(f"Replay case input missing: {input_ref}")
+        if not expected_ref.exists():
+            raise FileNotFoundError(f"Replay case expected output missing: {expected_ref}")
+
+
 def run_replay(manifest_path: Path, *, executor: ExecutorAdapter) -> ReplayReport:
     _lock_deterministic_environment()
     manifest = _load_manifest(manifest_path)
+    _validate_corpus(manifest_path, manifest)
+
     corpus_version = str(manifest.get("corpus_version", "unknown"))
     cases = manifest.get("cases", [])
     drift_events: list[DriftEvent] = []
@@ -208,10 +228,31 @@ def main() -> int:
     report_path = Path(args.report).resolve()
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    executor = _load_executor(args.executor)
-    report = run_replay(manifest_path, executor=executor)
-    report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    try:
+        executor = _load_executor(args.executor)
+        report = run_replay(manifest_path, executor=executor)
+    except Exception as exc:
+        error_report = {
+            "corpus_version": "unknown",
+            "total_cases": 0,
+            "passed_cases": 0,
+            "failed_cases": 1,
+            "drift_events": [
+                {
+                    "case_id": "_bootstrap_",
+                    "tenant_id": "_bootstrap_",
+                    "campaign_id": "_bootstrap_",
+                    "drift_type": "payload",
+                    "expected": "valid_replay_corpus",
+                    "actual": str(exc),
+                    "diff": None,
+                }
+            ],
+        }
+        report_path.write_text(json.dumps(error_report, indent=2), encoding="utf-8")
+        return 1
 
+    report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     return 1 if report.failed_cases > 0 else 0
 
 

@@ -1,0 +1,87 @@
+{
+  "campaign_id": "campaign_replay_004",
+  "detected_scenarios": [
+    "gbp_low_review_velocity",
+    "gbp_low_review_response_rate"
+  ],
+  "executive_summary": {
+    "dominant_score_dimension": "technical_health_score",
+    "primary_issue_category": "gbp",
+    "recommended_focus_area": "improve_core_technical_reliability",
+    "strategic_theme": "technical_stability",
+    "summary_confidence": 0.6,
+    "top_priority_scenario": "gbp_low_review_velocity"
+  },
+  "meta": {
+    "engine_version": "phase2-controlled-scope",
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "tier": "pro",
+    "total_scenarios_detected": 2
+  },
+  "recommendations": [
+    {
+      "authoritative_sources": [
+        "https://example.com/citations/gbp-reviews"
+      ],
+      "confidence": 0.7,
+      "diagnosis": "Google Business Profile review acquisition velocity is low.",
+      "evidence": [
+        {
+          "comparative_value": 2.0,
+          "comparator": "<",
+          "signal_name": "review_velocity",
+          "signal_value": 0.9,
+          "threshold_reference": "GBP_REVIEW_VELOCITY_THRESHOLD",
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ],
+      "expected_outcome": "Improved review growth velocity.",
+      "impact_level": "medium",
+      "priority_score": 0.24499999999999997,
+      "recommended_actions": [
+        "Implement post-service review request workflow.",
+        "Increase review request coverage across touchpoints."
+      ],
+      "root_cause": "Insufficient review request cadence and follow-up.",
+      "scenario_id": "gbp_low_review_velocity"
+    },
+    {
+      "authoritative_sources": [
+        "https://example.com/citations/gbp-reviews"
+      ],
+      "confidence": 0.7,
+      "diagnosis": "Review response rate is below target.",
+      "evidence": [
+        {
+          "comparative_value": 0.6,
+          "comparator": "<",
+          "signal_name": "review_response_rate",
+          "signal_value": 0.34,
+          "threshold_reference": "GBP_REVIEW_RESPONSE_RATE_THRESHOLD",
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ],
+      "expected_outcome": "Higher response coverage and trust signals.",
+      "impact_level": "medium",
+      "priority_score": 0.22749999999999998,
+      "recommended_actions": [
+        "Create review-response SLA and ownership.",
+        "Use weekly response backlog reviews."
+      ],
+      "root_cause": "Reputation operations are not consistently responding to reviews.",
+      "scenario_id": "gbp_low_review_response_rate"
+    }
+  ],
+  "strategic_scores": {
+    "competitive_pressure_score": null,
+    "local_authority_score": 84.2284,
+    "opportunity_index": 11.0401,
+    "risk_index": 15.7716,
+    "strategy_score": 55.8994,
+    "technical_health_score": 50.0
+  },
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  }
+}

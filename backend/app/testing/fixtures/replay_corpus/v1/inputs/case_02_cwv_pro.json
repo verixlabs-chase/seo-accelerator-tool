@@ -1,0 +1,14 @@
+{
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "raw_signals": {
+    "lcp": 4.2,
+    "cls": 0.26,
+    "inp": 360,
+    "ttfb": 1450,
+    "sessions": 1250
+  },
+  "tier": "pro"
+}
