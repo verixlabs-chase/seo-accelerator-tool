@@ -34,7 +34,7 @@ jobs:
       PYTHONHASHSEED: "0"
       LC_ALL: C.UTF-8
       LANG: C.UTF-8
-      BASELINE_MANIFEST_SHA256: "1d32ad9f59e82bbb59d791b58531f39a7b1bf686b2e753cf6250d49b415e6a30"
+      BASELINE_MANIFEST_SHA256: "146adaa9cc23efffe02041855c5addf2cd55637646cdea4474ba6372e1c42118"
     defaults:
       run:
         working-directory: backend
