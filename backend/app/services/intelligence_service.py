@@ -15,13 +15,13 @@ from app.models.rank import Ranking
 
 RECOMMENDATION_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "DRAFT": {"GENERATED"},
-    "GENERATED": {"VALIDATED", " FAILED", "ARCHIVED"},
-    "VALIDATED": {"APPROVED", " FAILED", "ARCHIVED"},
+    "GENERATED": {"VALIDATED", "FAILED", "ARCHIVED"},
+    "VALIDATED": {"APPROVED", "FAILED", "ARCHIVED"},
     "APPROVED": {"SCHEDULED", "ARCHIVED"},
-    "SCHEDULED": {" EXECUTED", " FAILED", " ROLLED_BACK"},
-    ' EXECUTED': set(),
-    ' FAILED': set(),
-    ' ROLLED_BACK': set(),
+    "SCHEDULED": {"EXECUTED", "FAILED", "ROLLED_BACK"},
+    "EXECUTED": set(),
+    "FAILED": set(),
+    "ROLLED_BACK": set(),
     "ARCHIVED": set(),
 }
 
