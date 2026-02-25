@@ -19,3 +19,5 @@ dist/
 out/
 lsos.db
 backend/generated_reports/
+
+backend/artifacts/replay/ci/
