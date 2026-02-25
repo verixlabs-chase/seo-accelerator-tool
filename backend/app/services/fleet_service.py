@@ -34,6 +34,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from uuid import UUID
 
+from celery import current_app
 from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -285,8 +286,8 @@ def enqueue_pending_items_for_portfolio(*, db: Session, organization_id: str, po
     Responsibility: compute available in-flight slots, select oldest queued items,
     and enqueue tasks onto the default worker queue.
     Inputs: caller-managed DB session and portfolio scope identifiers.
-    Side effects: submits Celery tasks (`process_fleet_job_item_task`) on queue
-    `default`; no row status changes are made here.
+    Side effects: submits Celery tasks (`fleet.process_fleet_job_item_task`) on
+    queue `default`; no row status changes are made here.
     Transactions: performs read queries only; does not commit by itself.
     Failure modes: HTTP 404 when portfolio missing; task broker failures propagate.
     Idempotency: effectively at-least-once dispatch if called repeatedly before
@@ -330,12 +331,10 @@ def enqueue_pending_items_for_portfolio(*, db: Session, organization_id: str, po
     if get_settings().app_env.lower() == "test":
         return 0
 
-    from app.tasks.tasks import process_fleet_job_item_task
-
 
     dispatched = 0
     for item in items:
-        process_fleet_job_item_task.apply_async(args=[item.id], queue="default")
+        current_app.send_task("fleet.process_fleet_job_item_task", args=[item.id], queue="default")
         dispatched += 1
     return dispatched
 

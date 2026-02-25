@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,7 +32,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Align snippet language with high-converting query modifiers.",
         ],
         expected_outcome="Improved CTR at existing ranking positions.",
-        authoritative_sources=["https://example.com/citations/search-titles-guidance"],
+        authoritative_sources=["https://developers.google.com/search/docs/appearance/title-link"],
         confidence_weight=0.8,
         impact_weight=0.8,
         impact_level="high",
@@ -49,7 +49,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Introduce stronger value proposition language in metadata.",
         ],
         expected_outcome="Reduced CTR gap versus competitors.",
-        authoritative_sources=["https://example.com/citations/search-titles-guidance"],
+        authoritative_sources=["https://developers.google.com/search/docs/appearance/title-link"],
         confidence_weight=0.7,
         impact_weight=0.7,
         impact_level="medium",
@@ -66,7 +66,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Optimize server response and critical rendering path.",
         ],
         expected_outcome="CWV compliance and improved technical quality.",
-        authoritative_sources=["https://example.com/citations/core-web-vitals"],
+        authoritative_sources=["https://web.dev/articles/vitals"],
         confidence_weight=0.8,
         impact_weight=0.8,
         impact_level="high",
@@ -83,7 +83,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Prioritize on-page refresh for affected assets.",
         ],
         expected_outcome="Stabilized or recovered rankings and traffic.",
-        authoritative_sources=["https://example.com/citations/search-titles-guidance"],
+        authoritative_sources=["https://developers.google.com/search/docs/appearance/title-link"],
         confidence_weight=0.75,
         impact_weight=0.75,
         impact_level="high",
@@ -100,7 +100,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Increase review request coverage across touchpoints.",
         ],
         expected_outcome="Improved review growth velocity.",
-        authoritative_sources=["https://example.com/citations/gbp-reviews"],
+        authoritative_sources=["https://support.google.com/business/answer/3474122"],
         confidence_weight=0.7,
         impact_weight=0.7,
         impact_level="medium",
@@ -117,7 +117,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Use weekly response backlog reviews.",
         ],
         expected_outcome="Higher response coverage and trust signals.",
-        authoritative_sources=["https://example.com/citations/gbp-reviews"],
+        authoritative_sources=["https://support.google.com/business/answer/3474122"],
         confidence_weight=0.7,
         impact_weight=0.65,
         impact_level="medium",
@@ -134,7 +134,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Prioritize reputation campaigns in high-value locations.",
         ],
         expected_outcome="Narrowed review-count and visibility disadvantage.",
-        authoritative_sources=["https://example.com/citations/gbp-reviews"],
+        authoritative_sources=["https://support.google.com/business/answer/3474122"],
         confidence_weight=0.7,
         impact_weight=0.7,
         impact_level="medium",
@@ -151,7 +151,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Backfill missing competitor signal sources.",
         ],
         expected_outcome="Competitor diagnostic coverage restored.",
-        authoritative_sources=["https://example.com/citations/gbp-reviews"],
+        authoritative_sources=["https://support.google.com/business/answer/3474122"],
         confidence_weight=0.55,
         impact_weight=0.3,
         impact_level="low",
@@ -168,7 +168,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Address recurring negative feedback themes.",
         ],
         expected_outcome="Improved rating parity versus competitors.",
-        authoritative_sources=["https://example.com/citations/gbp-reviews"],
+        authoritative_sources=["https://support.google.com/business/answer/3474122"],
         confidence_weight=0.7,
         impact_weight=0.6,
         impact_level="medium",
@@ -185,7 +185,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             "Tighten SERP intent match and internal linking support.",
         ],
         expected_outcome="Reduced competitive ranking gap.",
-        authoritative_sources=["https://example.com/citations/search-titles-guidance"],
+        authoritative_sources=["https://developers.google.com/search/docs/appearance/title-link"],
         confidence_weight=0.7,
         impact_weight=0.7,
         impact_level="medium",
@@ -194,3 +194,4 @@ SCENARIOS: list[ScenarioDefinition] = [
 ]
 
 SCENARIO_INDEX: dict[str, ScenarioDefinition] = {scenario.scenario_id: scenario for scenario in SCENARIOS}
+

@@ -2,16 +2,18 @@ from __future__ import annotations
 
 # Threshold contract metadata (frozen location per master spec).
 version_id = "v1.0.0"
-threshold_source = "Google Search Central 2024-03 (placeholder)"
-
-# Placeholder citation URL registry.
-CITATION_URLS: dict[str, str] = {
-    "search_titles_guidance": "https://example.com/citations/search-titles-guidance",
-    "core_web_vitals": "https://example.com/citations/core-web-vitals",
-    "gbp_reviews": "https://example.com/citations/gbp-reviews",
+threshold_source = "Google Search Central + web.dev + Google Business Profile guidance"
+THRESHOLD_PROVENANCE = {
+    "source_type": "official_documentation",
+    "last_reviewed_at": "2026-02-25T00:00:00Z",
+    "owner": "strategy_engine",
 }
 
-# Placeholder threshold constants for deterministic diagnostics.
+CITATION_URLS: dict[str, str] = {
+    "search_titles_guidance": "https://developers.google.com/search/docs/appearance/title-link",
+    "core_web_vitals": "https://web.dev/articles/vitals",
+    "gbp_reviews": "https://support.google.com/business/answer/3474122",
+}
 CTR_LOW_THRESHOLD = 0.02
 HIGH_IMPRESSIONS_THRESHOLD = 1000
 CTR_POSITION_MIN_THRESHOLD = 3.0

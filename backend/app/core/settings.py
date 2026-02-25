@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     rank_provider_backend: str = "synthetic"
     local_provider_backend: str = "synthetic"
     authority_provider_backend: str = "synthetic"
+    competitor_provider_backend: str = "dataset"
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
     google_oauth_scope: str = "https://www.googleapis.com/auth/business.manage"
@@ -148,7 +149,15 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     if os.getenv("APP_ENV", "").lower() == "test":
-        from app.core.test_settings import TestSettings
-
-        return TestSettings()
+        return Settings(
+            app_env="test",
+            public_base_url=os.getenv("PUBLIC_BASE_URL", "http://testserver"),
+            jwt_secret=os.getenv("JWT_SECRET", "test-jwt-secret-32-characters-minimum"),
+            platform_master_key=os.getenv("PLATFORM_MASTER_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+            celery_task_always_eager=True,
+            celery_task_eager_propagates=True,
+            celery_broker_url="memory://",
+            celery_result_backend="cache+memory://",
+            competitor_provider_backend="fixture",
+        )
     return Settings()

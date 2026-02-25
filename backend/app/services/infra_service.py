@@ -11,9 +11,7 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.metrics import active_workers, queue_depth
 from app.db.session import SessionLocal
-
-WORKER_HEARTBEAT_KEY = "infra:worker:heartbeat"
-SCHEDULER_HEARTBEAT_KEY = "infra:scheduler:heartbeat"
+from app.infra.contracts import SCHEDULER_HEARTBEAT_KEY, WORKER_HEARTBEAT_KEY, inspect_active_queues
 REDIS_HEALTHCHECK_TIMEOUT_SECONDS = 0.2
 _REDIS_PROBE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="infra-redis-probe")
 _BACKPRESSURE_WORKLOAD_QUEUES: dict[str, str] = {
@@ -116,10 +114,7 @@ def smtp_configured() -> bool:
 
 def celery_queue_status() -> dict[str, object]:
     try:
-        from app.tasks.celery_app import celery_app
-
-        inspector = celery_app.control.inspect(timeout=0.5)
-        active = inspector.active_queues() or {}
+        active = inspect_active_queues(timeout_seconds=0.5) or {}
     except Exception:
         return {"active_queues": [], "worker_count_per_queue": {}}
 

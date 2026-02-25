@@ -21,6 +21,14 @@ class StrategyRecommendation(Base):
     risk_tier: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     rollback_plan_json: Mapped[str] = mapped_column(Text, nullable=False, default='{"steps":[]}')
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="GENERATED")
+    engine_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    threshold_bundle_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    registry_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    signal_schema_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    output_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    build_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
 
 

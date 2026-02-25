@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
-from random import randint, uniform
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.campaign import Campaign
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
+from app.providers import get_competitor_provider_for_organization
 
 
 def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -36,15 +36,39 @@ def list_competitors(db: Session, tenant_id: str, campaign_id: str) -> list[Comp
 def collect_snapshot(db: Session, tenant_id: str, campaign_id: str) -> dict:
     _campaign_or_404(db, tenant_id, campaign_id)
     competitors = list_competitors(db, tenant_id, campaign_id)
+    if not competitors:
+        return {"campaign_id": campaign_id, "status": "no_data", "reason_code": "no_competitors", "snapshots_collected": 0}
+    try:
+        provider = get_competitor_provider_for_organization(db, tenant_id)
+    except ValueError:
+        return {
+            "campaign_id": campaign_id,
+            "status": "provider_unavailable",
+            "reason_code": "provider_unavailable",
+            "snapshots_collected": 0,
+        }
+
     now = datetime.now(UTC)
+    created = 0
+    missing_competitors = 0
     for comp in competitors:
+        payload = provider.collect_competitor_snapshot(
+            db=db,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+            competitor_id=comp.id,
+            domain=comp.domain,
+        )
+        if payload is None:
+            missing_competitors += 1
+            continue
         db.add(
             CompetitorRanking(
                 tenant_id=tenant_id,
                 campaign_id=campaign_id,
                 competitor_id=comp.id,
-                keyword="best local seo agency",
-                position=randint(1, 100),
+                keyword=str(payload["keyword"]),
+                position=int(payload["position"]),
                 captured_at=now,
             )
         )
@@ -53,8 +77,8 @@ def collect_snapshot(db: Session, tenant_id: str, campaign_id: str) -> dict:
                 tenant_id=tenant_id,
                 campaign_id=campaign_id,
                 competitor_id=comp.id,
-                url=f"https://{comp.domain}/services",
-                visibility_score=round(uniform(0.1, 1.0), 2),
+                url=str(payload["url"]),
+                visibility_score=float(payload["visibility_score"]),
                 captured_at=now,
             )
         )
@@ -63,14 +87,28 @@ def collect_snapshot(db: Session, tenant_id: str, campaign_id: str) -> dict:
                 tenant_id=tenant_id,
                 campaign_id=campaign_id,
                 competitor_id=comp.id,
-                signal_key="content_velocity",
-                signal_value="weekly",
-                score=round(uniform(0.1, 1.0), 2),
+                signal_key=str(payload["signal_key"]),
+                signal_value=str(payload["signal_value"]),
+                score=float(payload["signal_score"]),
                 captured_at=now,
             )
         )
+        created += 1
     db.commit()
-    return {"campaign_id": campaign_id, "snapshots_collected": len(competitors)}
+    if created == 0:
+        return {
+            "campaign_id": campaign_id,
+            "status": "no_data",
+            "reason_code": "dataset_unavailable",
+            "snapshots_collected": 0,
+            "missing_competitors": missing_competitors,
+        }
+    return {
+        "campaign_id": campaign_id,
+        "status": "success",
+        "snapshots_collected": created,
+        "missing_competitors": missing_competitors,
+    }
 
 
 def list_snapshots(db: Session, tenant_id: str, campaign_id: str) -> list[dict]:
@@ -118,4 +156,3 @@ def compute_gaps(db: Session, tenant_id: str, campaign_id: str) -> list[dict]:
             }
         )
     return gaps
-

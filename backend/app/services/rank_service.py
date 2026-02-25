@@ -58,6 +58,14 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
                 "reason_code": exc.reason_code,
             },
         ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": str(exc),
+                "reason_code": "provider_unavailable",
+            },
+        ) from exc
     keywords = (
         db.query(CampaignKeyword)
         .filter(
@@ -131,6 +139,49 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
     )
     db.commit()
     return {"campaign_id": campaign_id, "location_code": location_code, "snapshots_created": created}
+
+
+def normalize_snapshot(db: Session, snapshot_id: str) -> dict:
+    snapshot = db.get(RankingSnapshot, snapshot_id)
+    if snapshot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ranking snapshot not found")
+    snapshot.position = max(1, int(snapshot.position))
+    snapshot.confidence = round(max(0.0, min(float(snapshot.confidence), 1.0)), 2)
+    db.commit()
+    return {"snapshot_id": snapshot.id, "normalized": True}
+
+
+def recompute_deltas(db: Session, tenant_id: str, campaign_id: str) -> dict:
+    rankings = (
+        db.query(Ranking)
+        .filter(Ranking.tenant_id == tenant_id, Ranking.campaign_id == campaign_id)
+        .all()
+    )
+    updated = 0
+    for row in rankings:
+        latest_two = (
+            db.query(RankingSnapshot)
+            .filter(
+                RankingSnapshot.tenant_id == tenant_id,
+                RankingSnapshot.campaign_id == campaign_id,
+                RankingSnapshot.keyword_id == row.keyword_id,
+            )
+            .order_by(RankingSnapshot.captured_at.desc())
+            .limit(2)
+            .all()
+        )
+        if not latest_two:
+            continue
+        current = latest_two[0]
+        previous = latest_two[1] if len(latest_two) > 1 else None
+        row.current_position = current.position
+        row.previous_position = previous.position if previous else None
+        row.delta = (row.previous_position - row.current_position) if row.previous_position is not None else None
+        row.confidence = current.confidence
+        row.updated_at = datetime.now(UTC)
+        updated += 1
+    db.commit()
+    return {"campaign_id": campaign_id, "tenant_id": tenant_id, "rankings_recomputed": updated}
 
 
 def get_snapshots(db: Session, tenant_id: str, campaign_id: str) -> list[RankingSnapshot]:

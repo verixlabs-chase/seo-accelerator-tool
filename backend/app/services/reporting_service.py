@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -15,6 +16,7 @@ from app.models.local import ReviewVelocitySnapshot
 from app.models.rank import RankingSnapshot
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent, ReportSchedule
 from app.providers import get_email_adapter
+from app.services.strategy_engine.thresholds import version_id as strategy_threshold_version
 
 REPORT_SCHEDULE_MAX_RETRIES = 3
 
@@ -69,11 +71,64 @@ def render_html(kpis: dict, campaign_name: str) -> str:
 """.strip()
 
 
-def render_pdf_placeholder(html: str, report_id: str) -> str:
+def _pdf_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _build_simple_pdf(lines: list[str]) -> bytes:
+    content_lines = ["BT", "/F1 12 Tf", "50 780 Td", "14 TL"]
+    for idx, line in enumerate(lines):
+        escaped = _pdf_escape(line[:220])
+        if idx == 0:
+            content_lines.append(f"({_pdf_escape(line[:220])}) Tj")
+        else:
+            content_lines.append(f"T* ({escaped}) Tj")
+    content_lines.append("ET")
+    stream = "\n".join(content_lines).encode("latin-1", errors="replace")
+
+    objects = [
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
+        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n",
+        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
+        b"5 0 obj << /Length " + str(len(stream)).encode("ascii") + b" >> stream\n" + stream + b"\nendstream endobj\n",
+    ]
+    header = b"%PDF-1.4\n"
+    xref_offsets = [0]
+    body = b""
+    offset = len(header)
+    for obj in objects:
+        xref_offsets.append(offset)
+        body += obj
+        offset += len(obj)
+    xref_pos = len(header) + len(body)
+    xref = [f"xref\n0 {len(xref_offsets)}\n".encode("ascii"), b"0000000000 65535 f \n"]
+    for pos in xref_offsets[1:]:
+        xref.append(f"{pos:010d} 00000 n \n".encode("ascii"))
+    trailer = f"trailer << /Size {len(xref_offsets)} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode("ascii")
+    return header + body + b"".join(xref) + trailer
+
+
+def render_pdf_report(kpis: dict, report_id: str, campaign_name: str) -> str:
     out_dir = Path("generated_reports")
     out_dir.mkdir(exist_ok=True)
-    path = out_dir / f"{report_id}.pdf.txt"
-    path.write_text(f"PDF_PLACEHOLDER\n\n{html}", encoding="utf-8")
+    path = out_dir / f"{report_id}.pdf"
+    metadata = {
+        "report_id": report_id,
+        "strategy_profile_version": strategy_threshold_version,
+        "version_hash": sha256(f"{strategy_threshold_version}:{json.dumps(kpis, sort_keys=True)}".encode("utf-8")).hexdigest(),
+    }
+    lines = [
+        f"{campaign_name} - Month {kpis['month_number']} Report",
+        f"Rank Snapshots: {kpis['rank_snapshots']}",
+        f"Technical Issues: {kpis['technical_issues']}",
+        f"Intelligence Score: {kpis['intelligence_score']}",
+        f"Reviews (30d): {kpis['reviews_last_30d']}",
+        f"Avg Rating (30d): {kpis['avg_rating_last_30d']}",
+        f"Strategy Version: {metadata['strategy_profile_version']}",
+        f"Version Hash: {metadata['version_hash']}",
+    ]
+    path.write_bytes(_build_simple_pdf(lines))
     return str(path)
 
 
@@ -98,7 +153,7 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
         artifact_type="html",
         storage_path=f"inline://{report.id}.html",
     )
-    pdf_path = render_pdf_placeholder(html, report.id)
+    pdf_path = render_pdf_report(kpis, report.id, campaign.name)
     pdf_artifact = ReportArtifact(
         tenant_id=tenant_id,
         campaign_id=campaign_id,

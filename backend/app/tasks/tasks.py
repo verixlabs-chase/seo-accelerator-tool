@@ -5,6 +5,7 @@ import httpx
 from celery import Task
 from kombu.exceptions import KombuError
 from app.db.session import SessionLocal
+from app.models.campaign import Campaign
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
 from app.services import (
@@ -15,6 +16,7 @@ from app.services import (
     crawl_service,
     entity_service,
     intelligence_service,
+    idempotency_service,
     local_service,
     observability_service,
     portfolio_usage_service,
@@ -45,6 +47,30 @@ def audit_write_event(event_type: str, tenant_id: str, actor_user_id: str | None
             "payload": payload or {},
         }
     )
+
+
+@celery_app.task(name="governance.recover_stale_strategy_executions", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def governance_recover_stale_strategy_executions(self, timeout_seconds: int = 900, batch_size: int = 100) -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        "system",
+        "governance.recover_stale_strategy_executions",
+        {"timeout_seconds": timeout_seconds, "batch_size": batch_size},
+    )
+    try:
+        result = idempotency_service.recover_stale_running_executions(
+            db,
+            timeout_seconds=timeout_seconds,
+            batch_size=batch_size,
+        )
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
+        raise
+    finally:
+        db.close()
 
 
 def _start_task_execution(db, tenant_id: str, task_name: str, payload: dict) -> TaskExecution:
@@ -269,22 +295,75 @@ def rank_schedule_window(self, campaign_id: str, tenant_id: str, location_code: 
 
 @celery_app.task(name="rank.fetch_serp_batch")
 def rank_fetch_serp_batch(campaign_id: str, tenant_id: str, location_code: str) -> dict:
-    return {"campaign_id": campaign_id, "tenant_id": tenant_id, "location_code": location_code, "fetched": True}
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "rank.fetch_serp_batch",
+        {"campaign_id": campaign_id, "location_code": location_code},
+    )
+    try:
+        result = rank_service.run_snapshot_collection(
+            db,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+            location_code=location_code,
+        )
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    finally:
+        db.close()
 
 
 @celery_app.task(name="rank.normalize_snapshot")
 def rank_normalize_snapshot(snapshot_id: str) -> dict:
-    return {"snapshot_id": snapshot_id, "normalized": True}
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        "system",
+        "rank.normalize_snapshot",
+        {"snapshot_id": snapshot_id},
+    )
+    try:
+        result = rank_service.normalize_snapshot(db, snapshot_id=snapshot_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    finally:
+        db.close()
 
 
 @celery_app.task(name="rank.compute_deltas")
 def rank_compute_deltas(campaign_id: str, tenant_id: str) -> dict:
-    return {"campaign_id": campaign_id, "tenant_id": tenant_id, "computed": True}
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "rank.compute_deltas",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = rank_service.recompute_deltas(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    finally:
+        db.close()
 
 
 @celery_app.task(name="competitor.refresh_baseline")
 def competitor_refresh_baseline(campaign_id: str, tenant_id: str) -> dict:
-    return {"campaign_id": campaign_id, "tenant_id": tenant_id, "baseline_refreshed": True}
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "competitor.refresh_baseline",
+        {"campaign_id": campaign_id},
+    )
+    try:
+        result = competitor_service.collect_snapshot(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    finally:
+        db.close()
 
 
 @celery_app.task(name="competitor.collect_snapshot", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
@@ -468,7 +547,7 @@ def outreach_enrich_contacts(self, tenant_id: str, campaign_id: str) -> dict:
         {"campaign_id": campaign_id},
     )
     try:
-        result = {"campaign_id": campaign_id, "enriched_contacts": True}
+        result = authority_service.enrich_outreach_contacts(db, tenant_id=tenant_id, campaign_id=campaign_id)
         _finish_task_execution(db, execution, "success", result)
         return result
     except Exception as exc:
@@ -488,7 +567,11 @@ def outreach_execute_sequence_step(self, tenant_id: str, outreach_campaign_id: s
         {"outreach_campaign_id": outreach_campaign_id},
     )
     try:
-        result = {"outreach_campaign_id": outreach_campaign_id, "step_executed": True}
+        result = authority_service.execute_outreach_sequence_step(
+            db,
+            tenant_id=tenant_id,
+            outreach_campaign_id=outreach_campaign_id,
+        )
         _finish_task_execution(db, execution, "success", result)
         return result
     except Exception as exc:
@@ -528,7 +611,7 @@ def citation_submit_batch(self, tenant_id: str, campaign_id: str) -> dict:
         {"campaign_id": campaign_id},
     )
     try:
-        result = {"campaign_id": campaign_id, "submitted_batch": True}
+        result = authority_service.submit_citation_batch(db, tenant_id=tenant_id, campaign_id=campaign_id)
         _finish_task_execution(db, execution, "success", result)
         return result
     except Exception as exc:
@@ -642,7 +725,20 @@ def campaigns_schedule_monthly_actions(self, tenant_id: str, campaign_id: str, m
 
 @celery_app.task(name="reporting.freeze_window")
 def reporting_freeze_window(tenant_id: str, campaign_id: str, month_number: int) -> dict:
-    return {"tenant_id": tenant_id, "campaign_id": campaign_id, "month_number": month_number, "frozen": True}
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        tenant_id,
+        "reporting.freeze_window",
+        {"campaign_id": campaign_id, "month_number": month_number},
+    )
+    try:
+        report = reporting_service.generate_report(db, tenant_id=tenant_id, campaign_id=campaign_id, month_number=month_number)
+        result = {"tenant_id": tenant_id, "campaign_id": campaign_id, "month_number": month_number, "frozen": True, "report_id": report.id}
+        _finish_task_execution(db, execution, "success", result)
+        return result
+    finally:
+        db.close()
 
 
 @celery_app.task(name="reporting.aggregate_kpis", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
@@ -700,8 +796,9 @@ def reporting_render_pdf(self, tenant_id: str, report_id: str) -> dict:
     try:
         report = reporting_service.get_report(db, tenant_id=tenant_id, report_id=report_id)
         kpis = json.loads(report.summary_json or "{}")
-        html = reporting_service.render_html(kpis, campaign_name="Campaign")
-        path = reporting_service.render_pdf_placeholder(html, report_id)
+        campaign = db.get(Campaign, report.campaign_id) if report.campaign_id else None
+        campaign_name = campaign.name if campaign is not None else "Campaign"
+        path = reporting_service.render_pdf_report(kpis, report_id, campaign_name=campaign_name)
         result = {"report_id": report_id, "storage_path": path}
         _finish_task_execution(db, execution, "success", result)
         return result
@@ -888,7 +985,5 @@ def entity_analyze_campaign(self, tenant_id: str, campaign_id: str) -> dict:
 
 @celery_app.task(name="fleet.process_fleet_job_item_task")
 def process_fleet_job_item_task(fleet_job_item_id: str):
-    from app.services.fleet_service import process_fleet_job_item_with_new_session
-
-    return process_fleet_job_item_with_new_session(fleet_job_item_id)
+    return fleet_service.process_fleet_job_item_with_new_session(fleet_job_item_id)
     

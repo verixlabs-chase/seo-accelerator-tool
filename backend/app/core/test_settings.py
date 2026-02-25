@@ -11,6 +11,7 @@ class TestSettings(Settings):
     celery_task_eager_propagates: bool = True
     celery_broker_url: str = "memory://"
     celery_result_backend: str = "cache+memory://"
+    competitor_provider_backend: str = "fixture"
 
     @model_validator(mode="before")
     @classmethod

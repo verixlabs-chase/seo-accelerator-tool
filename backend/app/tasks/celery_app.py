@@ -12,12 +12,15 @@ from kombu import Queue
 from app.core.config import get_settings
 from app.core.metrics import celery_task_duration_seconds, tasks_in_progress
 from app.db.redis_client import get_redis_client
-from app.services.infra_service import SCHEDULER_HEARTBEAT_KEY, WORKER_HEARTBEAT_KEY
+from app.governance.startup_invariants import run_startup_invariants
+from app.infra.contracts import SCHEDULER_HEARTBEAT_KEY, WORKER_HEARTBEAT_KEY
+from app.services.queue_admission_service import admit_enqueue
 
 settings = get_settings()
 _scheduler_heartbeat_started = False
 _task_start_lock = threading.Lock()
 _task_started_at: dict[str, float] = {}
+_RETRY_SCHEDULE_SECONDS = (5, 15, 60, 300, 900)
 
 
 def _queue_for_task_name(task_name: str | None) -> str:
@@ -78,6 +81,7 @@ def _scheduler_heartbeat_loop(**_kwargs) -> None:
     if _scheduler_heartbeat_started:
         return
     _scheduler_heartbeat_started = True
+    run_startup_invariants(runtime="celery-beat")
 
     def _loop() -> None:
         while True:
@@ -117,11 +121,33 @@ def _record_task_duration(task_id=None, task=None, **_kwargs) -> None:
 def create_celery_app() -> Celery:
     is_test_env = settings.app_env.lower() == "test"
     if not is_test_env:
+        run_startup_invariants(runtime=os.getenv("CELERY_RUNTIME", "celery-worker"))
         # Fail fast when Redis is unavailable in non-test environments.
         get_redis_client()
 
     class LSOSTask(Task):
+        def apply_async(self, args=None, kwargs=None, task_id=None, producer=None, link=None, link_error=None, **options):
+            call_kwargs = kwargs or {}
+            queue_name = str(options.get("queue") or _queue_for_task_name(getattr(self, "name", None)))
+            tenant_id = str(call_kwargs.get("tenant_id", "system"))
+            decision = admit_enqueue(tenant_id=tenant_id, queue_name=queue_name)
+            if not decision.allowed:
+                raise RuntimeError(f"enqueue_rejected:{decision.reason}")
+            return super().apply_async(
+                args=args,
+                kwargs=kwargs,
+                task_id=task_id,
+                producer=producer,
+                link=link,
+                link_error=link_error,
+                **options,
+            )
+
         def retry(self, *args, **kwargs):
+            retry_count = int(getattr(getattr(self, "request", None), "retries", 0) or 0)
+            if "countdown" not in kwargs:
+                idx = min(retry_count, len(_RETRY_SCHEDULE_SECONDS) - 1)
+                kwargs["countdown"] = _RETRY_SCHEDULE_SECONDS[idx]
             if is_test_env:
                 exc = kwargs.get("exc")
                 if exc is not None:

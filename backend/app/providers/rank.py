@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from random import randint, uniform
+from hashlib import sha256
 import time
 from typing import Protocol
 from urllib.parse import urlparse
@@ -29,10 +29,23 @@ class RankProvider(Protocol):
 
 
 class SyntheticRankProvider:
+    @staticmethod
+    def _stable_int(seed: str, minimum: int, maximum: int) -> int:
+        span = max(1, maximum - minimum + 1)
+        digest = sha256(seed.encode("utf-8")).digest()
+        return minimum + (int.from_bytes(digest[:8], "big") % span)
+
+    @staticmethod
+    def _stable_confidence(seed: str) -> float:
+        digest = sha256(seed.encode("utf-8")).digest()
+        scaled = int.from_bytes(digest[8:16], "big") / float(2**64)
+        return round(0.6 + (scaled * 0.39), 2)
+
     def collect_keyword_snapshot(self, keyword: str, location_code: str, target_domain: str | None = None) -> dict:  # noqa: ARG002
+        seed = f"{keyword.lower().strip()}|{location_code.lower().strip()}|{(target_domain or '').lower().strip()}"
         return {
-            "position": randint(1, 100),
-            "confidence": round(uniform(0.6, 0.99), 2),
+            "position": self._stable_int(seed, 1, 100),
+            "confidence": self._stable_confidence(seed),
         }
 
 
@@ -216,6 +229,8 @@ def get_rank_provider() -> RankProvider:
     settings = get_settings()
     backend = getattr(settings, "rank_provider_backend", "synthetic").strip().lower()
     if backend == "synthetic":
+        if getattr(settings, "app_env", "").strip().lower() != "test":
+            raise ValueError("Synthetic rank provider is fixture-only and unavailable outside APP_ENV=test.")
         return SyntheticRankProvider()
     if backend in {"http_json", "serpapi"}:
         raise ValueError("Credentialed rank providers require organization-scoped resolution.")
@@ -226,6 +241,8 @@ def get_rank_provider_for_organization(db: Session, organization_id: str) -> Ran
     settings = get_settings()
     backend = getattr(settings, "rank_provider_backend", "synthetic").strip().lower()
     if backend == "synthetic":
+        if getattr(settings, "app_env", "").strip().lower() != "test":
+            raise ValueError("rank_provider_unavailable: synthetic backend is allowed only in test fixture mode.")
         return SyntheticRankProvider()
     if backend == "serpapi":
         resolved = resolve_provider_credentials(db, organization_id, "dataforseo")
