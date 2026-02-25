@@ -8,14 +8,10 @@ import os
 from pathlib import Path
 import random
 import sys
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from app.governance.replay.comparator import compare_confidence_bands, compare_hashes, compare_ordering, diff_payload
-from app.governance.replay.schema import DriftEvent, ReplayCase, ReplayReport
+if TYPE_CHECKING:
+    from app.governance.replay.schema import ReplayCase, ReplayReport
 
 _VOLATILE_KEYS = {
     "generated_at",
@@ -27,7 +23,30 @@ _VOLATILE_KEYS = {
 }
 
 
-ExecutorAdapter = Callable[[ReplayCase], dict[str, Any]]
+ExecutorAdapter = Callable[["ReplayCase"], dict[str, Any]]
+
+
+def _bootstrap_script_path() -> None:
+    # Allow direct script execution from backend/scripts/replay.
+    # Module execution (python -m scripts.replay.run_replay) does not require this.
+    root = Path(__file__).resolve().parents[2]
+    root_str = str(root)
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
+
+
+def _load_replay_dependencies() -> tuple[Any, Any, Any, Any, Any, Any, Any]:
+    comparator = importlib.import_module("app.governance.replay.comparator")
+    schema = importlib.import_module("app.governance.replay.schema")
+    return (
+        comparator.compare_confidence_bands,
+        comparator.compare_hashes,
+        comparator.compare_ordering,
+        comparator.diff_payload,
+        schema.DriftEvent,
+        schema.ReplayCase,
+        schema.ReplayReport,
+    )
 
 
 def _lock_deterministic_environment() -> None:
@@ -123,14 +142,24 @@ def _validate_corpus(manifest_path: Path, manifest: dict[str, Any]) -> None:
             raise FileNotFoundError(f"Replay case expected output missing: {expected_ref}")
 
 
-def run_replay(manifest_path: Path, *, executor: ExecutorAdapter) -> ReplayReport:
+def run_replay(manifest_path: Path, *, executor: ExecutorAdapter) -> "ReplayReport":
     _lock_deterministic_environment()
+    (
+        compare_confidence_bands,
+        compare_hashes,
+        compare_ordering,
+        diff_payload,
+        DriftEvent,
+        ReplayCase,
+        ReplayReport,
+    ) = _load_replay_dependencies()
+
     manifest = _load_manifest(manifest_path)
     _validate_corpus(manifest_path, manifest)
 
     corpus_version = str(manifest.get("corpus_version", "unknown"))
     cases = manifest.get("cases", [])
-    drift_events: list[DriftEvent] = []
+    drift_events: list[Any] = []
 
     for item in cases:
         case_dir = manifest_path.parent
@@ -257,4 +286,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _bootstrap_script_path()
     raise SystemExit(main())

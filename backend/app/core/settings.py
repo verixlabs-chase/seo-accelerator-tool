@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = False
     queue_backpressure_threshold: int = 100
     queue_backpressure_enabled: bool = False
+    shadow_replay_enabled: bool = True
+    shadow_replay_backpressure_disable: bool = True
+    shadow_replay_max_concurrency: int = 4
     otel_exporter_endpoint: str = ""
     reference_library_loader_enabled: bool = True
     reference_library_hot_reload_enabled: bool = False
