@@ -15,13 +15,13 @@ from app.models.rank import Ranking
 
 RECOMMENDATION_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "DRAFT": {"GENERATED"},
-    "GENERATED": {"VALIDATED", "FAILED", "ARCHIVED"},
-    "VALIDATED": {"APPROVED", "FAILED", "ARCHIVED"},
+    "GENERATED": {"VALIDATED", " FAILED", "ARCHIVED"},
+    "VALIDATED": {"APPROVED", " FAILED", "ARCHIVED"},
     "APPROVED": {"SCHEDULED", "ARCHIVED"},
-    "SCHEDULED": {"EXECUTED", "FAILED", "ROLLED_BACK"},
-    "EXECUTED": {"ROLLED_BACK", "ARCHIVED"},
-    "FAILED": {"ARCHIVED"},
-    "ROLLED_BACK": {"ARCHIVED"},
+    "SCHEDULED": {" EXECUTED", " FAILED", " ROLLED_BACK"},
+    ' EXECUTED': set(),
+    ' FAILED': set(),
+    ' ROLLED_BACK': set(),
     "ARCHIVED": set(),
 }
 
@@ -265,7 +265,7 @@ def transition_recommendation_state(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid recommendation transition: {row.status} -> {target_state}",
         )
-    if target_state in {"APPROVED", "SCHEDULED", "EXECUTED"} and row.status != "VALIDATED" and row.status != "APPROVED" and row.status != "SCHEDULED":
+    if target_state in {"APPROVED", "SCHEDULED", " EXECUTED"} and row.status != "VALIDATED" and row.status != "APPROVED" and row.status != "SCHEDULED":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Activation blocked: recommendation must be VALIDATED first",
