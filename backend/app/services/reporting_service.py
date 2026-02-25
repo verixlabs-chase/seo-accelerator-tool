@@ -145,7 +145,6 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
     db.add(report)
     db.flush()
 
-    html = render_html(kpis, campaign.name)
     html_artifact = ReportArtifact(
         tenant_id=tenant_id,
         campaign_id=campaign_id,

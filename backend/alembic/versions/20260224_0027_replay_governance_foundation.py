@@ -90,11 +90,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_threshold_bundles_status", "threshold_bundles", ["status"], unique=False)
 
-    op.create_unique_constraint(
-        "uq_strategy_recommendations_idempotency",
-        "strategy_recommendations",
-        ["tenant_id", "campaign_id", "idempotency_key"],
-    )
+    with op.batch_alter_table("strategy_recommendations") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_strategy_recommendations_idempotency",
+            ["tenant_id", "campaign_id", "idempotency_key"],
+        )
 
     dialect = bind.dialect.name.lower()
     if dialect == "postgresql":
@@ -146,7 +146,8 @@ def downgrade() -> None:
     else:
         op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability;")
 
-    op.drop_constraint("uq_strategy_recommendations_idempotency", "strategy_recommendations", type_="unique")
+    with op.batch_alter_table("strategy_recommendations") as batch_op:
+        batch_op.drop_constraint("uq_strategy_recommendations_idempotency", type_="unique")
 
     op.drop_index("ix_threshold_bundles_status", table_name="threshold_bundles")
     op.drop_table("threshold_bundles")

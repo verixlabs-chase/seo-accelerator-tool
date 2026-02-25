@@ -15,6 +15,7 @@ from app.services import (
     crawl_metrics,
     crawl_service,
     entity_service,
+    fleet_service,
     intelligence_service,
     idempotency_service,
     local_service,

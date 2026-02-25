@@ -16,7 +16,6 @@ from app.governance.startup_invariants import run_startup_invariants
 from app.infra.contracts import SCHEDULER_HEARTBEAT_KEY, WORKER_HEARTBEAT_KEY
 from app.services.queue_admission_service import admit_enqueue
 
-settings = get_settings()
 _scheduler_heartbeat_started = False
 _task_start_lock = threading.Lock()
 _task_started_at: dict[str, float] = {}
@@ -119,6 +118,7 @@ def _record_task_duration(task_id=None, task=None, **_kwargs) -> None:
 
 
 def create_celery_app() -> Celery:
+    settings = get_settings()
     is_test_env = settings.app_env.lower() == "test"
     if not is_test_env:
         run_startup_invariants(runtime=os.getenv("CELERY_RUNTIME", "celery-worker"))

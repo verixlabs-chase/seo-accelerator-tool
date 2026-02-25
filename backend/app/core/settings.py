@@ -1,6 +1,7 @@
 import os
 import base64
 import binascii
+import sys
 from functools import lru_cache
 from urllib.parse import urlparse
 
@@ -148,12 +149,21 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    if os.getenv("APP_ENV", "").lower() == "test":
+    app_env = os.getenv("APP_ENV", "").lower()
+    is_pytest_runtime = "pytest" in sys.modules
+    if app_env == "test" or (not app_env and is_pytest_runtime):
+        def _env_or_default(name: str, default: str) -> str:
+            value = os.getenv(name)
+            if value is None:
+                return default
+            stripped = value.strip()
+            return stripped if stripped else default
+
         return Settings(
             app_env="test",
-            public_base_url=os.getenv("PUBLIC_BASE_URL", "http://testserver"),
-            jwt_secret=os.getenv("JWT_SECRET", "test-jwt-secret-32-characters-minimum"),
-            platform_master_key=os.getenv("PLATFORM_MASTER_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+            public_base_url=_env_or_default("PUBLIC_BASE_URL", "http://testserver"),
+            jwt_secret=_env_or_default("JWT_SECRET", "test-secret-key"),
+            platform_master_key=_env_or_default("PLATFORM_MASTER_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
             celery_task_always_eager=True,
             celery_task_eager_propagates=True,
             celery_broker_url="memory://",

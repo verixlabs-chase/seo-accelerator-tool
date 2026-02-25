@@ -48,8 +48,25 @@ def upgrade() -> None:
         op.execute(
             """
             ALTER TABLE strategy_recommendations
+            ALTER COLUMN status DROP DEFAULT
+            """
+        )
+        op.execute(
+            """
+            ALTER TABLE strategy_recommendations
             ALTER COLUMN status TYPE strategy_recommendation_status
-            USING status::strategy_recommendation_status
+            USING (
+                CASE
+                    WHEN status IN ('FINAL', 'final') THEN 'ARCHIVED'
+                    ELSE upper(status)
+                END
+            )::strategy_recommendation_status
+            """
+        )
+        op.execute(
+            """
+            ALTER TABLE strategy_recommendations
+            ALTER COLUMN status SET DEFAULT 'GENERATED'::strategy_recommendation_status
             """
         )
     else:
@@ -60,7 +77,10 @@ def upgrade() -> None:
                 pass
             batch_op.create_check_constraint("ck_strategy_recommendations_status_values", f"status IN ({_ALLOWED_STATES})")
 
-    op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability ON strategy_recommendations")
+    if dialect == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability ON strategy_recommendations")
+    else:
+        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability")
 
     if dialect == "postgresql":
         op.execute(
@@ -213,7 +233,10 @@ def downgrade() -> None:
     bind = op.get_bind()
     dialect = bind.dialect.name.lower()
 
-    op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability ON strategy_recommendations")
+    if dialect == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability ON strategy_recommendations")
+    else:
+        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability")
 
     if dialect == "postgresql":
         op.execute("DROP FUNCTION IF EXISTS governed_override_strategy_recommendation(TEXT, TEXT, TEXT, strategy_recommendation_status, TEXT)")
