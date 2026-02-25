@@ -1,0 +1,27 @@
+{
+  "build_hash": "7eeff45be12e2ebdfc11f7359855d5690a1c03852c02232c4037476104371239",
+  "campaign_id": "campaign_replay_007",
+  "case_id": "case_07_mixed_moderate_pro",
+  "confidence_bands": [
+    "medium",
+    "medium",
+    "medium"
+  ],
+  "expected_ref": "expected/case_07_mixed_moderate_pro.json",
+  "input_hash": "fba0e4dd79c878860fe1672471e208da65b21aa92660bf5095c6fe03551e56bd",
+  "input_ref": "inputs/case_07_mixed_moderate_pro.json",
+  "output_hash": "84804366f65781229d11c85b87cafa115eb07d54efd9fd38ea487fea58910ba4",
+  "recommendation_ordering": [
+    "ranking_decline_detected",
+    "gbp_low_review_velocity",
+    "gbp_low_review_response_rate"
+  ],
+  "tenant_id": "tenant_replay_v1",
+  "version_fingerprint": "a4bf86c56b25391dd77c8b9f29303be22f38aab076484c6d2e827b6c427816a9",
+  "version_tuple": {
+    "engine_version": "phase2-controlled-scope",
+    "registry_version": "scenario-registry-v1",
+    "signal_schema_version": "signals-v1",
+    "threshold_bundle_version": "v1.0.0"
+  }
+}

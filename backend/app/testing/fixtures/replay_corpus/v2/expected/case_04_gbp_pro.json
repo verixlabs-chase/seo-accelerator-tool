@@ -1,0 +1,87 @@
+{
+  "campaign_id": "campaign_replay_004",
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "detected_scenarios": [
+    "gbp_low_review_velocity",
+    "gbp_low_review_response_rate"
+  ],
+  "recommendations": [
+    {
+      "scenario_id": "gbp_low_review_velocity",
+      "priority_score": 0.24499999999999997,
+      "diagnosis": "Google Business Profile review acquisition velocity is low.",
+      "root_cause": "Insufficient review request cadence and follow-up.",
+      "recommended_actions": [
+        "Implement post-service review request workflow.",
+        "Increase review request coverage across touchpoints."
+      ],
+      "expected_outcome": "Improved review growth velocity.",
+      "authoritative_sources": [
+        "https://support.google.com/business/answer/3474122"
+      ],
+      "confidence": 0.7,
+      "impact_level": "medium",
+      "evidence": [
+        {
+          "signal_name": "review_velocity",
+          "signal_value": 0.9,
+          "threshold_reference": "GBP_REVIEW_VELOCITY_THRESHOLD",
+          "comparator": "<",
+          "comparative_value": 2.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "scenario_id": "gbp_low_review_response_rate",
+      "priority_score": 0.22749999999999998,
+      "diagnosis": "Review response rate is below target.",
+      "root_cause": "Reputation operations are not consistently responding to reviews.",
+      "recommended_actions": [
+        "Create review-response SLA and ownership.",
+        "Use weekly response backlog reviews."
+      ],
+      "expected_outcome": "Higher response coverage and trust signals.",
+      "authoritative_sources": [
+        "https://support.google.com/business/answer/3474122"
+      ],
+      "confidence": 0.7,
+      "impact_level": "medium",
+      "evidence": [
+        {
+          "signal_name": "review_response_rate",
+          "signal_value": 0.34,
+          "threshold_reference": "GBP_REVIEW_RESPONSE_RATE_THRESHOLD",
+          "comparator": "<",
+          "comparative_value": 0.6,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    }
+  ],
+  "strategic_scores": {
+    "strategy_score": 55.8994,
+    "technical_health_score": 50.0,
+    "competitive_pressure_score": null,
+    "local_authority_score": 84.2284,
+    "risk_index": 15.7716,
+    "opportunity_index": 11.0401
+  },
+  "executive_summary": {
+    "primary_issue_category": "gbp",
+    "top_priority_scenario": "gbp_low_review_velocity",
+    "dominant_score_dimension": "technical_health_score",
+    "strategic_theme": "technical_stability",
+    "recommended_focus_area": "improve_core_technical_reliability",
+    "summary_confidence": 0.6
+  },
+  "meta": {
+    "total_scenarios_detected": 2,
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "engine_version": "phase2-controlled-scope",
+    "tier": "pro"
+  }
+}

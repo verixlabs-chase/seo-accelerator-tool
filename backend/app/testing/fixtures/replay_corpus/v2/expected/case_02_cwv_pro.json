@@ -1,0 +1,84 @@
+{
+  "campaign_id": "campaign_replay_002",
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "detected_scenarios": [
+    "core_web_vitals_failure"
+  ],
+  "recommendations": [
+    {
+      "scenario_id": "core_web_vitals_failure",
+      "priority_score": 0.6842800250000001,
+      "diagnosis": "Core Web Vitals exceed acceptable thresholds.",
+      "root_cause": "Page performance bottlenecks are degrading UX metrics.",
+      "recommended_actions": [
+        "Reduce render-blocking resources.",
+        "Optimize server response and critical rendering path."
+      ],
+      "expected_outcome": "CWV compliance and improved technical quality.",
+      "authoritative_sources": [
+        "https://web.dev/articles/vitals"
+      ],
+      "confidence": 0.950125,
+      "impact_level": "high",
+      "evidence": [
+        {
+          "signal_name": "lcp",
+          "signal_value": 4.2,
+          "threshold_reference": "LCP_THRESHOLD_SECONDS",
+          "comparator": ">",
+          "comparative_value": 2.5,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "cls",
+          "signal_value": 0.26,
+          "threshold_reference": "CLS_THRESHOLD",
+          "comparator": ">",
+          "comparative_value": 0.1,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "inp",
+          "signal_value": 360.0,
+          "threshold_reference": "INP_THRESHOLD_MS",
+          "comparator": ">",
+          "comparative_value": 200.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "ttfb",
+          "signal_value": 1450.0,
+          "threshold_reference": "TTFB_THRESHOLD_MS",
+          "comparator": ">",
+          "comparative_value": 800.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    }
+  ],
+  "strategic_scores": {
+    "strategy_score": 39.1303,
+    "technical_health_score": 31.572,
+    "competitive_pressure_score": null,
+    "local_authority_score": 50.0,
+    "risk_index": 68.428,
+    "opportunity_index": 32.5076
+  },
+  "executive_summary": {
+    "primary_issue_category": "technical",
+    "top_priority_scenario": "core_web_vitals_failure",
+    "dominant_score_dimension": "technical_health_score",
+    "strategic_theme": "technical_stability",
+    "recommended_focus_area": "improve_core_technical_reliability",
+    "summary_confidence": 0.4751
+  },
+  "meta": {
+    "total_scenarios_detected": 1,
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "engine_version": "phase2-controlled-scope",
+    "tier": "pro"
+  }
+}

@@ -34,7 +34,7 @@ jobs:
       PYTHONHASHSEED: "0"
       LC_ALL: C.UTF-8
       LANG: C.UTF-8
-      BASELINE_MANIFEST_SHA256: "34a9f980e67c525bb8e04b3c29e60bb0f003b3b0eee01ec246a6fad9f603c059"
+      BASELINE_MANIFEST_SHA256: "1d32ad9f59e82bbb59d791b58531f39a7b1bf686b2e753cf6250d49b415e6a30"
     defaults:
       run:
         working-directory: backend
@@ -59,8 +59,10 @@ jobs:
               - 'backend/scripts/replay/**'
               - 'backend/app/testing/fixtures/replay_corpus/**'
               - 'backend/artifacts/replay/baseline/v1/**'
+              - 'backend/artifacts/replay/baseline/v2/**'
             baseline_locked:
               - 'backend/artifacts/replay/baseline/v1/**'
+              - 'backend/artifacts/replay/baseline/v2/**'
 
       - name: Setup Python
         if: steps.replay_changes.outputs.replay_required == 'true' || steps.replay_changes.outputs.baseline_locked == 'true'
@@ -72,7 +74,7 @@ jobs:
         if: steps.replay_changes.outputs.replay_required == 'true' || steps.replay_changes.outputs.baseline_locked == 'true'
         run: >-
           python scripts/replay/verify_baseline_manifest_hash.py
-          --manifest artifacts/replay/baseline/v1/manifest.json
+          --manifest artifacts/replay/baseline/v2/manifest.json
           --expected-sha256 ${BASELINE_MANIFEST_SHA256}
 
       - name: Install backend requirements
@@ -87,7 +89,7 @@ jobs:
         if: steps.replay_changes.outputs.replay_required == 'true'
         run: >-
           python scripts/replay/run_replay.py
-          --manifest app/testing/fixtures/replay_corpus/v1/manifest.json
+          --manifest app/testing/fixtures/replay_corpus/v2/manifest.json
           --report artifacts/replay/ci/replay_report.json
           --executor app.governance.replay.executor_strategy_engine:execute_case
 

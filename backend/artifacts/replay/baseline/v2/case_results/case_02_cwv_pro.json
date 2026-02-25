@@ -1,0 +1,23 @@
+{
+  "build_hash": "6a59f9be767ce07c3cabe65eeea126b404d3fc502a42832e96c529c1538e73d6",
+  "campaign_id": "campaign_replay_002",
+  "case_id": "case_02_cwv_pro",
+  "confidence_bands": [
+    "high"
+  ],
+  "expected_ref": "expected/case_02_cwv_pro.json",
+  "input_hash": "ee547d010eff366055794dee993c7ed5a05e5f6089dbb9703ddfd5d88c14cdff",
+  "input_ref": "inputs/case_02_cwv_pro.json",
+  "output_hash": "aa639eba821fb707d821b3c7618350dac09ade11211a6e4849be6e8bff420c2f",
+  "recommendation_ordering": [
+    "core_web_vitals_failure"
+  ],
+  "tenant_id": "tenant_replay_v1",
+  "version_fingerprint": "a4bf86c56b25391dd77c8b9f29303be22f38aab076484c6d2e827b6c427816a9",
+  "version_tuple": {
+    "engine_version": "phase2-controlled-scope",
+    "registry_version": "scenario-registry-v1",
+    "signal_schema_version": "signals-v1",
+    "threshold_bundle_version": "v1.0.0"
+  }
+}

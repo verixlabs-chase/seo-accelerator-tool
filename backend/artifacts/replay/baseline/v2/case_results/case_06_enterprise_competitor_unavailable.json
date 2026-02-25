@@ -1,0 +1,23 @@
+{
+  "build_hash": "f74154c6a18788b25223014252bb619df9cc20eb9a304c06f2ecc3bc492b14cf",
+  "campaign_id": "campaign_replay_006",
+  "case_id": "case_06_enterprise_competitor_unavailable",
+  "confidence_bands": [
+    "low"
+  ],
+  "expected_ref": "expected/case_06_enterprise_competitor_unavailable.json",
+  "input_hash": "8eec9e1fd4e9a05a6b58d0f7a4eb1e42ac60ccfa9f9a03b22e16bdab50f90fce",
+  "input_ref": "inputs/case_06_enterprise_competitor_unavailable.json",
+  "output_hash": "6a87634fe5a7f4813b720f16c04e204e2f272ce8190a1b7a638e1d5ce83437ad",
+  "recommendation_ordering": [
+    "competitor_data_unavailable"
+  ],
+  "tenant_id": "tenant_replay_v1",
+  "version_fingerprint": "a4bf86c56b25391dd77c8b9f29303be22f38aab076484c6d2e827b6c427816a9",
+  "version_tuple": {
+    "engine_version": "phase2-controlled-scope",
+    "registry_version": "scenario-registry-v1",
+    "signal_schema_version": "signals-v1",
+    "threshold_bundle_version": "v1.0.0"
+  }
+}

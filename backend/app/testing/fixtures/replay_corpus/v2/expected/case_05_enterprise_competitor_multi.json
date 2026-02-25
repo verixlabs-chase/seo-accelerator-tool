@@ -1,0 +1,289 @@
+{
+  "campaign_id": "campaign_replay_005",
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "detected_scenarios": [
+    "high_visibility_low_ctr",
+    "ranking_decline_detected",
+    "competitive_position_gap",
+    "competitive_snippet_disadvantage",
+    "gbp_low_review_velocity",
+    "low_review_velocity_vs_competitors",
+    "gbp_low_review_response_rate",
+    "competitor_reputation_gap"
+  ],
+  "recommendations": [
+    {
+      "scenario_id": "high_visibility_low_ctr",
+      "priority_score": 0.544,
+      "diagnosis": "High SERP visibility with underperforming click-through rate.",
+      "root_cause": "Snippet and intent alignment are weaker than ranking position suggests.",
+      "recommended_actions": [
+        "Rewrite title and meta description for intent clarity.",
+        "Align snippet language with high-converting query modifiers."
+      ],
+      "expected_outcome": "Improved CTR at existing ranking positions.",
+      "authoritative_sources": [
+        "https://developers.google.com/search/docs/appearance/title-link"
+      ],
+      "confidence": 0.85,
+      "impact_level": "high",
+      "evidence": [
+        {
+          "signal_name": "impressions",
+          "signal_value": 21000.0,
+          "threshold_reference": "HIGH_IMPRESSIONS_THRESHOLD",
+          "comparator": ">=",
+          "comparative_value": 1000.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "avg_position",
+          "signal_value": 7.1,
+          "threshold_reference": "CTR_POSITION_MIN_THRESHOLD/CTR_POSITION_MAX_THRESHOLD",
+          "comparator": "between",
+          "comparative_value": 7.1,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "ctr",
+          "signal_value": 0.009,
+          "threshold_reference": "CTR_LOW_THRESHOLD",
+          "comparator": "<=",
+          "comparative_value": 0.02,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "scenario_id": "ranking_decline_detected",
+      "priority_score": 0.26249999999999996,
+      "diagnosis": "Ranking decline detected with supporting performance loss.",
+      "root_cause": "Visibility erosion is impacting organic traffic trends.",
+      "recommended_actions": [
+        "Audit recently declining pages and query clusters.",
+        "Prioritize on-page refresh for affected assets."
+      ],
+      "expected_outcome": "Stabilized or recovered rankings and traffic.",
+      "authoritative_sources": [
+        "https://developers.google.com/search/docs/appearance/title-link"
+      ],
+      "confidence": 0.7,
+      "impact_level": "high",
+      "evidence": [
+        {
+          "signal_name": "position_delta",
+          "signal_value": 3.2,
+          "threshold_reference": "RANKING_POSITION_DROP_THRESHOLD",
+          "comparator": ">=",
+          "comparative_value": 2.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "traffic_growth_percent",
+          "signal_value": -0.08,
+          "threshold_reference": "RANKING_TRAFFIC_DECLINE_THRESHOLD",
+          "comparator": "<=",
+          "comparative_value": -0.05,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "scenario_id": "competitive_position_gap",
+      "priority_score": 0.24499999999999997,
+      "diagnosis": "Competitors hold a stronger average ranking position.",
+      "root_cause": "Competitive content/authority signals are outperforming target pages.",
+      "recommended_actions": [
+        "Prioritize pages with largest position gaps for refresh.",
+        "Tighten SERP intent match and internal linking support."
+      ],
+      "expected_outcome": "Reduced competitive ranking gap.",
+      "authoritative_sources": [
+        "https://developers.google.com/search/docs/appearance/title-link"
+      ],
+      "confidence": 0.7,
+      "impact_level": "medium",
+      "evidence": [
+        {
+          "signal_name": "avg_position",
+          "signal_value": 7.1,
+          "threshold_reference": "COMPETITOR_POSITION_GAP_THRESHOLD",
+          "comparator": ">",
+          "comparative_value": 2.8,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "scenario_id": "competitive_snippet_disadvantage",
+      "priority_score": 0.24499999999999997,
+      "diagnosis": "Competitor snippets outperform campaign CTR at comparable visibility.",
+      "root_cause": "Competitive snippet structure is stronger for target queries.",
+      "recommended_actions": [
+        "Benchmark top competitor snippets and adjust copy structure.",
+        "Introduce stronger value proposition language in metadata."
+      ],
+      "expected_outcome": "Reduced CTR gap versus competitors.",
+      "authoritative_sources": [
+        "https://developers.google.com/search/docs/appearance/title-link"
+      ],
+      "confidence": 0.7,
+      "impact_level": "medium",
+      "evidence": [
+        {
+          "signal_name": "ctr",
+          "signal_value": 0.009,
+          "threshold_reference": "CTR_COMPETITOR_GAP_THRESHOLD",
+          "comparator": "<",
+          "comparative_value": 0.041,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "competitor_ctr_estimate",
+          "signal_value": 0.041,
+          "threshold_reference": "CTR_COMPETITOR_GAP_THRESHOLD",
+          "comparator": "-",
+          "comparative_value": 0.015,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "scenario_id": "gbp_low_review_velocity",
+      "priority_score": 0.24499999999999997,
+      "diagnosis": "Google Business Profile review acquisition velocity is low.",
+      "root_cause": "Insufficient review request cadence and follow-up.",
+      "recommended_actions": [
+        "Implement post-service review request workflow.",
+        "Increase review request coverage across touchpoints."
+      ],
+      "expected_outcome": "Improved review growth velocity.",
+      "authoritative_sources": [
+        "https://support.google.com/business/answer/3474122"
+      ],
+      "confidence": 0.7,
+      "impact_level": "medium",
+      "evidence": [
+        {
+          "signal_name": "review_velocity",
+          "signal_value": 1.1,
+          "threshold_reference": "GBP_REVIEW_VELOCITY_THRESHOLD",
+          "comparator": "<",
+          "comparative_value": 2.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "scenario_id": "low_review_velocity_vs_competitors",
+      "priority_score": 0.24499999999999997,
+      "diagnosis": "Review footprint lags competitor baseline.",
+      "root_cause": "Competitors are accumulating social proof faster.",
+      "recommended_actions": [
+        "Increase review request volume for completed jobs.",
+        "Prioritize reputation campaigns in high-value locations."
+      ],
+      "expected_outcome": "Narrowed review-count and visibility disadvantage.",
+      "authoritative_sources": [
+        "https://support.google.com/business/answer/3474122"
+      ],
+      "confidence": 0.7,
+      "impact_level": "medium",
+      "evidence": [
+        {
+          "signal_name": "review_count",
+          "signal_value": 120.0,
+          "threshold_reference": "GBP_COMPETITOR_REVIEW_COUNT_GAP_THRESHOLD",
+          "comparator": "<",
+          "comparative_value": 235.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "competitor_review_count",
+          "signal_value": 235.0,
+          "threshold_reference": "GBP_COMPETITOR_REVIEW_COUNT_GAP_THRESHOLD",
+          "comparator": "-",
+          "comparative_value": 25.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "scenario_id": "gbp_low_review_response_rate",
+      "priority_score": 0.22749999999999998,
+      "diagnosis": "Review response rate is below target.",
+      "root_cause": "Reputation operations are not consistently responding to reviews.",
+      "recommended_actions": [
+        "Create review-response SLA and ownership.",
+        "Use weekly response backlog reviews."
+      ],
+      "expected_outcome": "Higher response coverage and trust signals.",
+      "authoritative_sources": [
+        "https://support.google.com/business/answer/3474122"
+      ],
+      "confidence": 0.7,
+      "impact_level": "medium",
+      "evidence": [
+        {
+          "signal_name": "review_response_rate",
+          "signal_value": 0.25,
+          "threshold_reference": "GBP_REVIEW_RESPONSE_RATE_THRESHOLD",
+          "comparator": "<",
+          "comparative_value": 0.6,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "scenario_id": "competitor_reputation_gap",
+      "priority_score": 0.21,
+      "diagnosis": "Competitors hold a stronger rating profile.",
+      "root_cause": "Average rating performance trails local competitive baseline.",
+      "recommended_actions": [
+        "Improve review quality workflows.",
+        "Address recurring negative feedback themes."
+      ],
+      "expected_outcome": "Improved rating parity versus competitors.",
+      "authoritative_sources": [
+        "https://support.google.com/business/answer/3474122"
+      ],
+      "confidence": 0.7,
+      "impact_level": "medium",
+      "evidence": [
+        {
+          "signal_name": "avg_rating",
+          "signal_value": 4.0,
+          "threshold_reference": "COMPETITOR_RATING_GAP_THRESHOLD",
+          "comparator": "<",
+          "comparative_value": 4.6,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    }
+  ],
+  "strategic_scores": {
+    "strategy_score": 61.5943,
+    "technical_health_score": 50.0,
+    "competitive_pressure_score": 15.2564,
+    "local_authority_score": 84.0366,
+    "risk_index": 23.6553,
+    "opportunity_index": 12.8468
+  },
+  "executive_summary": {
+    "primary_issue_category": "organic",
+    "top_priority_scenario": "high_visibility_low_ctr",
+    "dominant_score_dimension": "technical_health_score",
+    "strategic_theme": "technical_stability",
+    "recommended_focus_area": "improve_core_technical_reliability",
+    "summary_confidence": 0.8625
+  },
+  "meta": {
+    "total_scenarios_detected": 8,
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "engine_version": "phase2-controlled-scope",
+    "tier": "enterprise"
+  }
+}

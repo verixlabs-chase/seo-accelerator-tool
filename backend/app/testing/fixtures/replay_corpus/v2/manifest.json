@@ -1,0 +1,109 @@
+{
+  "corpus_version": "v2",
+  "cases": [
+    {
+      "case_id": "case_01_ctr_pro",
+      "tenant_id": "tenant_replay_v1",
+      "campaign_id": "campaign_replay_001",
+      "input_ref": "inputs/case_01_ctr_pro.json",
+      "expected_ref": "expected/case_01_ctr_pro.json",
+      "version_tuple": {
+        "engine_version": "phase2-controlled-scope",
+        "threshold_bundle_version": "v1.0.0",
+        "registry_version": "scenario-registry-v1",
+        "signal_schema_version": "signals-v1"
+      }
+    },
+    {
+      "case_id": "case_02_cwv_pro",
+      "tenant_id": "tenant_replay_v1",
+      "campaign_id": "campaign_replay_002",
+      "input_ref": "inputs/case_02_cwv_pro.json",
+      "expected_ref": "expected/case_02_cwv_pro.json",
+      "version_tuple": {
+        "engine_version": "phase2-controlled-scope",
+        "threshold_bundle_version": "v1.0.0",
+        "registry_version": "scenario-registry-v1",
+        "signal_schema_version": "signals-v1"
+      }
+    },
+    {
+      "case_id": "case_03_ranking_severe_pro",
+      "tenant_id": "tenant_replay_v1",
+      "campaign_id": "campaign_replay_003",
+      "input_ref": "inputs/case_03_ranking_severe_pro.json",
+      "expected_ref": "expected/case_03_ranking_severe_pro.json",
+      "version_tuple": {
+        "engine_version": "phase2-controlled-scope",
+        "threshold_bundle_version": "v1.0.0",
+        "registry_version": "scenario-registry-v1",
+        "signal_schema_version": "signals-v1"
+      }
+    },
+    {
+      "case_id": "case_04_gbp_pro",
+      "tenant_id": "tenant_replay_v1",
+      "campaign_id": "campaign_replay_004",
+      "input_ref": "inputs/case_04_gbp_pro.json",
+      "expected_ref": "expected/case_04_gbp_pro.json",
+      "version_tuple": {
+        "engine_version": "phase2-controlled-scope",
+        "threshold_bundle_version": "v1.0.0",
+        "registry_version": "scenario-registry-v1",
+        "signal_schema_version": "signals-v1"
+      }
+    },
+    {
+      "case_id": "case_05_enterprise_competitor_multi",
+      "tenant_id": "tenant_replay_v1",
+      "campaign_id": "campaign_replay_005",
+      "input_ref": "inputs/case_05_enterprise_competitor_multi.json",
+      "expected_ref": "expected/case_05_enterprise_competitor_multi.json",
+      "version_tuple": {
+        "engine_version": "phase2-controlled-scope",
+        "threshold_bundle_version": "v1.0.0",
+        "registry_version": "scenario-registry-v1",
+        "signal_schema_version": "signals-v1"
+      }
+    },
+    {
+      "case_id": "case_06_enterprise_competitor_unavailable",
+      "tenant_id": "tenant_replay_v1",
+      "campaign_id": "campaign_replay_006",
+      "input_ref": "inputs/case_06_enterprise_competitor_unavailable.json",
+      "expected_ref": "expected/case_06_enterprise_competitor_unavailable.json",
+      "version_tuple": {
+        "engine_version": "phase2-controlled-scope",
+        "threshold_bundle_version": "v1.0.0",
+        "registry_version": "scenario-registry-v1",
+        "signal_schema_version": "signals-v1"
+      }
+    },
+    {
+      "case_id": "case_07_mixed_moderate_pro",
+      "tenant_id": "tenant_replay_v1",
+      "campaign_id": "campaign_replay_007",
+      "input_ref": "inputs/case_07_mixed_moderate_pro.json",
+      "expected_ref": "expected/case_07_mixed_moderate_pro.json",
+      "version_tuple": {
+        "engine_version": "phase2-controlled-scope",
+        "threshold_bundle_version": "v1.0.0",
+        "registry_version": "scenario-registry-v1",
+        "signal_schema_version": "signals-v1"
+      }
+    },
+    {
+      "case_id": "case_08_clean_pro",
+      "tenant_id": "tenant_replay_v1",
+      "campaign_id": "campaign_replay_008",
+      "input_ref": "inputs/case_08_clean_pro.json",
+      "expected_ref": "expected/case_08_clean_pro.json",
+      "version_tuple": {
+        "engine_version": "phase2-controlled-scope",
+        "threshold_bundle_version": "v1.0.0",
+        "registry_version": "scenario-registry-v1",
+        "signal_schema_version": "signals-v1"
+      }
+    }
+  ]
+}

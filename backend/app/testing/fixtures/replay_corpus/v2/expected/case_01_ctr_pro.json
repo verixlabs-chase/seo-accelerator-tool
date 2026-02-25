@@ -1,0 +1,76 @@
+{
+  "campaign_id": "campaign_replay_001",
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "detected_scenarios": [
+    "high_visibility_low_ctr"
+  ],
+  "recommendations": [
+    {
+      "scenario_id": "high_visibility_low_ctr",
+      "priority_score": 0.544,
+      "diagnosis": "High SERP visibility with underperforming click-through rate.",
+      "root_cause": "Snippet and intent alignment are weaker than ranking position suggests.",
+      "recommended_actions": [
+        "Rewrite title and meta description for intent clarity.",
+        "Align snippet language with high-converting query modifiers."
+      ],
+      "expected_outcome": "Improved CTR at existing ranking positions.",
+      "authoritative_sources": [
+        "https://developers.google.com/search/docs/appearance/title-link"
+      ],
+      "confidence": 0.85,
+      "impact_level": "high",
+      "evidence": [
+        {
+          "signal_name": "impressions",
+          "signal_value": 15000.0,
+          "threshold_reference": "HIGH_IMPRESSIONS_THRESHOLD",
+          "comparator": ">=",
+          "comparative_value": 1000.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "avg_position",
+          "signal_value": 4.6,
+          "threshold_reference": "CTR_POSITION_MIN_THRESHOLD/CTR_POSITION_MAX_THRESHOLD",
+          "comparator": "between",
+          "comparative_value": 4.6,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "ctr",
+          "signal_value": 0.011,
+          "threshold_reference": "CTR_LOW_THRESHOLD",
+          "comparator": "<=",
+          "comparative_value": 0.02,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    }
+  ],
+  "strategic_scores": {
+    "strategy_score": 43.744,
+    "technical_health_score": 50.0,
+    "competitive_pressure_score": null,
+    "local_authority_score": 50.0,
+    "risk_index": 54.4,
+    "opportunity_index": 23.12
+  },
+  "executive_summary": {
+    "primary_issue_category": "organic",
+    "top_priority_scenario": "high_visibility_low_ctr",
+    "dominant_score_dimension": "strategy_score",
+    "strategic_theme": "balanced_execution",
+    "recommended_focus_area": "maintain_balanced_program_execution",
+    "summary_confidence": 0.425
+  },
+  "meta": {
+    "total_scenarios_detected": 1,
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "engine_version": "phase2-controlled-scope",
+    "tier": "pro"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "raw_signals": {
+    "review_velocity": 0.9,
+    "review_response_rate": 0.34,
+    "review_count": 84,
+    "profile_views": 980
+  },
+  "tier": "pro"
+}

@@ -1,0 +1,60 @@
+{
+  "campaign_id": "campaign_replay_006",
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "detected_scenarios": [
+    "competitor_data_unavailable"
+  ],
+  "recommendations": [
+    {
+      "scenario_id": "competitor_data_unavailable",
+      "priority_score": 0.0165,
+      "diagnosis": "Competitor data is unavailable for enterprise diagnostics.",
+      "root_cause": "Required competitor signals were not present in the analysis window.",
+      "recommended_actions": [
+        "Verify competitor data ingestion coverage.",
+        "Backfill missing competitor signal sources."
+      ],
+      "expected_outcome": "Competitor diagnostic coverage restored.",
+      "authoritative_sources": [
+        "https://support.google.com/business/answer/3474122"
+      ],
+      "confidence": 0.55,
+      "impact_level": "low",
+      "evidence": [
+        {
+          "signal_name": "competitor_signal_count",
+          "signal_value": 1.0,
+          "threshold_reference": "COMPETITOR_REQUIRED_SIGNAL_MIN_COUNT",
+          "comparator": "<",
+          "comparative_value": 2.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    }
+  ],
+  "strategic_scores": {
+    "strategy_score": 50.0413,
+    "technical_health_score": 50.0,
+    "competitive_pressure_score": 50.0,
+    "local_authority_score": 50.0,
+    "risk_index": 0.55,
+    "opportunity_index": 0.7563
+  },
+  "executive_summary": {
+    "primary_issue_category": "system",
+    "top_priority_scenario": "competitor_data_unavailable",
+    "dominant_score_dimension": "technical_health_score",
+    "strategic_theme": "technical_stability",
+    "recommended_focus_area": "improve_core_technical_reliability",
+    "summary_confidence": 0.275
+  },
+  "meta": {
+    "total_scenarios_detected": 1,
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "engine_version": "phase2-controlled-scope",
+    "tier": "enterprise"
+  }
+}

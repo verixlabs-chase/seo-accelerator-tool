@@ -1,0 +1,25 @@
+{
+  "build_hash": "9c8c32515840d06fb9030c3a8803fce84bb739cc32de1d35482362d08774ee19",
+  "campaign_id": "campaign_replay_004",
+  "case_id": "case_04_gbp_pro",
+  "confidence_bands": [
+    "medium",
+    "medium"
+  ],
+  "expected_ref": "expected/case_04_gbp_pro.json",
+  "input_hash": "d0a0786e65af78e23fb8c3f8c4e0cdc8a02d888fa94a030fb0dac7a532e8c047",
+  "input_ref": "inputs/case_04_gbp_pro.json",
+  "output_hash": "a4a863e20a6c09ba6d46c9f1d6adaede7124c55e0c4cb06bb321ae9b314c06cf",
+  "recommendation_ordering": [
+    "gbp_low_review_velocity",
+    "gbp_low_review_response_rate"
+  ],
+  "tenant_id": "tenant_replay_v1",
+  "version_fingerprint": "a4bf86c56b25391dd77c8b9f29303be22f38aab076484c6d2e827b6c427816a9",
+  "version_tuple": {
+    "engine_version": "phase2-controlled-scope",
+    "registry_version": "scenario-registry-v1",
+    "signal_schema_version": "signals-v1",
+    "threshold_bundle_version": "v1.0.0"
+  }
+}

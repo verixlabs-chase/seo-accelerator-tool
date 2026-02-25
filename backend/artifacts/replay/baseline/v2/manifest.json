@@ -1,0 +1,63 @@
+{
+  "case_count": 8,
+  "cases": [
+    {
+      "build_hash": "244aa6beaac7cc1df1cbe268c24ba80ddb5d4785ad6c3afa3b4e92c1f7f355fe",
+      "case_id": "case_01_ctr_pro",
+      "case_result_ref": "case_results/case_01_ctr_pro.json",
+      "input_hash": "9c332043007ca74d89709ade9e32d6c310c8f5eba419dc96c1ea3d5c724a6e40",
+      "output_hash": "4f5b448d55a779ffb00e10451def8752b4de0f8fccc43540f11ce211c89bb576"
+    },
+    {
+      "build_hash": "6a59f9be767ce07c3cabe65eeea126b404d3fc502a42832e96c529c1538e73d6",
+      "case_id": "case_02_cwv_pro",
+      "case_result_ref": "case_results/case_02_cwv_pro.json",
+      "input_hash": "ee547d010eff366055794dee993c7ed5a05e5f6089dbb9703ddfd5d88c14cdff",
+      "output_hash": "aa639eba821fb707d821b3c7618350dac09ade11211a6e4849be6e8bff420c2f"
+    },
+    {
+      "build_hash": "ee2eebd0c584159ad5b86b951ba7667c4d62a88756641ce7953b14d619431be5",
+      "case_id": "case_03_ranking_severe_pro",
+      "case_result_ref": "case_results/case_03_ranking_severe_pro.json",
+      "input_hash": "cb613774a258df2f21dbef03015c81c683feef125a4fe8fa536048cdd4f51ea3",
+      "output_hash": "ffc1ab2c76ffe24df7971435f0e648e7fc28d16c21928245a5cbdf7fe76403e5"
+    },
+    {
+      "build_hash": "9c8c32515840d06fb9030c3a8803fce84bb739cc32de1d35482362d08774ee19",
+      "case_id": "case_04_gbp_pro",
+      "case_result_ref": "case_results/case_04_gbp_pro.json",
+      "input_hash": "d0a0786e65af78e23fb8c3f8c4e0cdc8a02d888fa94a030fb0dac7a532e8c047",
+      "output_hash": "a4a863e20a6c09ba6d46c9f1d6adaede7124c55e0c4cb06bb321ae9b314c06cf"
+    },
+    {
+      "build_hash": "108e7698a038fc55c6db9248a5ad63038405fdb07a53b6c6c4697ec87822acd6",
+      "case_id": "case_05_enterprise_competitor_multi",
+      "case_result_ref": "case_results/case_05_enterprise_competitor_multi.json",
+      "input_hash": "1122a53285b5c9de06da438c381ce112d577d0ab7521739fe2ea11bd4d30b1d2",
+      "output_hash": "5a071d15155af66436a68c97cfbdc4a738518207a8f497b4921331b242c8a711"
+    },
+    {
+      "build_hash": "f74154c6a18788b25223014252bb619df9cc20eb9a304c06f2ecc3bc492b14cf",
+      "case_id": "case_06_enterprise_competitor_unavailable",
+      "case_result_ref": "case_results/case_06_enterprise_competitor_unavailable.json",
+      "input_hash": "8eec9e1fd4e9a05a6b58d0f7a4eb1e42ac60ccfa9f9a03b22e16bdab50f90fce",
+      "output_hash": "6a87634fe5a7f4813b720f16c04e204e2f272ce8190a1b7a638e1d5ce83437ad"
+    },
+    {
+      "build_hash": "7eeff45be12e2ebdfc11f7359855d5690a1c03852c02232c4037476104371239",
+      "case_id": "case_07_mixed_moderate_pro",
+      "case_result_ref": "case_results/case_07_mixed_moderate_pro.json",
+      "input_hash": "fba0e4dd79c878860fe1672471e208da65b21aa92660bf5095c6fe03551e56bd",
+      "output_hash": "84804366f65781229d11c85b87cafa115eb07d54efd9fd38ea487fea58910ba4"
+    },
+    {
+      "build_hash": "6c94442590a3d48dd9c5ac0c4365eeba8c7e5a1819fb1bb6c91689cb56010082",
+      "case_id": "case_08_clean_pro",
+      "case_result_ref": "case_results/case_08_clean_pro.json",
+      "input_hash": "7cc046cc2b7c36717b6478d94cbbc3fd0a98f0f21198b496cc77c8629e265806",
+      "output_hash": "86c8a54d6d1bb50b37f7da9b9756926ba9bf057b9532d899b198b84f62c0db78"
+    }
+  ],
+  "corpus_version": "v2",
+  "generated_at": "2026-02-25T22:31:25.097976+00:00"
+}

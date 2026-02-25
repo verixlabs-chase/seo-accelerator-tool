@@ -1,0 +1,68 @@
+{
+  "campaign_id": "campaign_replay_003",
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "detected_scenarios": [
+    "ranking_decline_detected"
+  ],
+  "recommendations": [
+    {
+      "scenario_id": "ranking_decline_detected",
+      "priority_score": 0.51,
+      "diagnosis": "Ranking decline detected with supporting performance loss.",
+      "root_cause": "Visibility erosion is impacting organic traffic trends.",
+      "recommended_actions": [
+        "Audit recently declining pages and query clusters.",
+        "Prioritize on-page refresh for affected assets."
+      ],
+      "expected_outcome": "Stabilized or recovered rankings and traffic.",
+      "authoritative_sources": [
+        "https://developers.google.com/search/docs/appearance/title-link"
+      ],
+      "confidence": 0.85,
+      "impact_level": "high",
+      "evidence": [
+        {
+          "signal_name": "position_delta",
+          "signal_value": 8.0,
+          "threshold_reference": "RANKING_SEVERE_POSITION_DROP_THRESHOLD",
+          "comparator": ">=",
+          "comparative_value": 6.0,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        },
+        {
+          "signal_name": "traffic_growth_percent",
+          "signal_value": -0.31,
+          "threshold_reference": "RANKING_SEVERE_TRAFFIC_DECLINE_THRESHOLD",
+          "comparator": "<=",
+          "comparative_value": -0.2,
+          "window_reference": "2026-01-01T00:00:00+00:00__2026-01-31T00:00:00+00:00"
+        }
+      ]
+    }
+  ],
+  "strategic_scores": {
+    "strategy_score": 44.135,
+    "technical_health_score": 50.0,
+    "competitive_pressure_score": null,
+    "local_authority_score": 50.0,
+    "risk_index": 51.0,
+    "opportunity_index": 21.675
+  },
+  "executive_summary": {
+    "primary_issue_category": "organic",
+    "top_priority_scenario": "ranking_decline_detected",
+    "dominant_score_dimension": "strategy_score",
+    "strategic_theme": "balanced_execution",
+    "recommended_focus_area": "maintain_balanced_program_execution",
+    "summary_confidence": 0.425
+  },
+  "meta": {
+    "total_scenarios_detected": 1,
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "engine_version": "phase2-controlled-scope",
+    "tier": "pro"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "campaign_id": "campaign_replay_008",
+  "window": {
+    "date_from": "2026-01-01T00:00:00Z",
+    "date_to": "2026-01-31T00:00:00Z"
+  },
+  "detected_scenarios": [],
+  "recommendations": [],
+  "strategic_scores": {
+    "strategy_score": 50.0,
+    "technical_health_score": 50.0,
+    "competitive_pressure_score": null,
+    "local_authority_score": 50.0,
+    "risk_index": 50.0,
+    "opportunity_index": 50.0
+  },
+  "executive_summary": {
+    "primary_issue_category": "neutral",
+    "top_priority_scenario": null,
+    "dominant_score_dimension": "strategy_score",
+    "strategic_theme": "balanced_execution",
+    "recommended_focus_area": "maintain_balanced_program_execution",
+    "summary_confidence": 0.5
+  },
+  "meta": {
+    "total_scenarios_detected": 0,
+    "generated_at": "2026-01-31T00:00:00+00:00",
+    "engine_version": "phase2-controlled-scope",
+    "tier": "pro"
+  }
+}
