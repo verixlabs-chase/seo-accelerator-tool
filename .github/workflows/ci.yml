@@ -34,6 +34,7 @@ jobs:
       PYTHONHASHSEED: "0"
       LC_ALL: C.UTF-8
       LANG: C.UTF-8
+      BASELINE_MANIFEST_SHA256: "34a9f980e67c525bb8e04b3c29e60bb0f003b3b0eee01ec246a6fad9f603c059"
     defaults:
       run:
         working-directory: backend
@@ -50,15 +51,29 @@ jobs:
               - 'backend/app/services/strategy_engine/**'
               - 'backend/app/services/intelligence_service.py'
               - 'backend/app/services/**/*readiness*.py'
-              - 'backend/app/services/**/*confidence*cap*.py'
+              - 'backend/app/services/**/*threshold*.py'
+              - 'backend/app/core/**/*threshold*.py'
+              - 'backend/app/core/alert_thresholds.py'
               - 'backend/app/models/intelligence.py'
+              - 'backend/app/governance/replay/**'
               - 'backend/scripts/replay/**'
+              - 'backend/app/testing/fixtures/replay_corpus/**'
+              - 'backend/artifacts/replay/baseline/v1/**'
+            baseline_locked:
+              - 'backend/artifacts/replay/baseline/v1/**'
 
       - name: Setup Python
-        if: steps.replay_changes.outputs.replay_required == 'true'
+        if: steps.replay_changes.outputs.replay_required == 'true' || steps.replay_changes.outputs.baseline_locked == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Verify baseline manifest hash integrity
+        if: steps.replay_changes.outputs.replay_required == 'true' || steps.replay_changes.outputs.baseline_locked == 'true'
+        run: >-
+          python scripts/replay/verify_baseline_manifest_hash.py
+          --manifest artifacts/replay/baseline/v1/manifest.json
+          --expected-sha256 ${BASELINE_MANIFEST_SHA256}
 
       - name: Install backend requirements
         if: steps.replay_changes.outputs.replay_required == 'true'
@@ -76,8 +91,14 @@ jobs:
           --report artifacts/replay/ci/replay_report.json
           --executor app.governance.replay.executor_strategy_engine:execute_case
 
+      - name: Enforce baseline immutability
+        if: steps.replay_changes.outputs.baseline_locked == 'true'
+        run: |
+          echo "Replay baseline artifacts are immutable and must not be modified in standard changes."
+          exit 1
+
       - name: Replay gate not required
-        if: steps.replay_changes.outputs.replay_required != 'true'
+        if: steps.replay_changes.outputs.replay_required != 'true' && steps.replay_changes.outputs.baseline_locked != 'true'
         run: echo "Replay-sensitive paths unchanged; skipping deterministic replay gate."
 
 

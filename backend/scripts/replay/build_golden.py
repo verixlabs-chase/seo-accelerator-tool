@@ -7,11 +7,12 @@ from pathlib import Path
 import sys
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-from app.governance.replay.hashing import build_hash, input_hash, output_hash, version_fingerprint
+def _bootstrap_script_path() -> None:
+    root = Path(__file__).resolve().parents[2]
+    root_str = str(root)
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -70,6 +71,8 @@ def _validate_manifest(corpus_root: Path) -> dict[str, Any]:
 
 
 def build_golden(corpus_root: Path, output_root: Path) -> dict[str, Any]:
+    from app.governance.replay.hashing import build_hash, input_hash, output_hash, version_fingerprint
+
     manifest = _validate_manifest(corpus_root)
     cases = manifest["cases"]
 
@@ -137,4 +140,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _bootstrap_script_path()
     raise SystemExit(main())
