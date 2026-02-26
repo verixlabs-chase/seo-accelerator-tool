@@ -16,7 +16,9 @@ from app.services.idempotency_service import (
     persist_execution_result,
 )
 from app.services.strategy_engine.engine import build_campaign_strategy
+from app.services.strategy_engine.profile import resolve_strategy_profile
 from app.services.strategy_engine.schemas import CampaignStrategyOut, StrategyWindow
+from app.services.strategy_engine.temporal_integration import integrate_temporal_state
 from app.services.strategy_engine.thresholds import version_id as threshold_version
 
 _REGISTRY_VERSION = "scenario-registry-v1"
@@ -40,11 +42,14 @@ def build_campaign_strategy_idempotent(
         "tier": tier,
     }
     in_hash = input_hash(request_payload)
+    profile = resolve_strategy_profile(tier)
+    profile_hash = profile.version_hash()
     version_tuple = {
         "engine_version": "phase2-controlled-scope",
         "threshold_bundle_version": threshold_version,
         "registry_version": _REGISTRY_VERSION,
         "signal_schema_version": _SIGNAL_SCHEMA_VERSION,
+        "profile_version_hash": profile_hash,
     }
     version_hash = version_fingerprint(version_tuple)
     idem_key = f"{campaign_id}:{window.date_from.isoformat()}:{window.date_to.isoformat()}:{tier}"
@@ -82,6 +87,13 @@ def build_campaign_strategy_idempotent(
             db=db,
         )
         payload = output.model_dump(mode="json")
+        temporal_visibility = integrate_temporal_state(
+            db,
+            campaign_id=campaign_id,
+            window=window,
+            profile=profile,
+            payload=payload,
+        )
         out_hash = output_hash(payload)
         payload["meta"]["threshold_bundle_version"] = threshold_version
         payload["meta"]["registry_version"] = _REGISTRY_VERSION
@@ -89,7 +101,10 @@ def build_campaign_strategy_idempotent(
         payload["meta"]["input_hash"] = in_hash
         payload["meta"]["output_hash"] = out_hash
         payload["meta"]["version_fingerprint"] = version_hash
+        payload["meta"]["profile_version_hash"] = profile_hash
         payload["meta"]["build_hash"] = build_hash(input_digest=in_hash, output_digest=out_hash, version_digest=version_hash)
+        if temporal_visibility is not None:
+            payload["meta"]["temporal"] = temporal_visibility
 
         persist_execution_result(db, execution_id=execution.id, output_hash=out_hash, output_payload=payload)
         _persist_strategy_recommendation_metadata(

@@ -335,7 +335,13 @@ def get_campaign_strategy(
         raw_signals={},
         tier=tier,
     )
-    return envelope(request, CampaignStrategyOut.model_validate(payload).model_dump(mode="json"))
+    response_payload = CampaignStrategyOut.model_validate(payload).model_dump(mode="json")
+    temporal_meta = response_payload.get("meta", {}).get("temporal", {})
+    if isinstance(temporal_meta, dict):
+        for key in ("current_strategy_phase", "momentum_score", "trend_direction", "volatility_level"):
+            if key in temporal_meta:
+                response_payload[key] = temporal_meta[key]
+    return envelope(request, response_payload)
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
