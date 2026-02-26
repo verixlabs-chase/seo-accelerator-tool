@@ -21,7 +21,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: pip install pip-audit
       - run: echo "DATABASE_URL=${DATABASE_URL}"
-      - run: alembic upgrade head
+      - run: python scripts/validate_migrations.py
       - run: pytest
       - run: pip-audit
 
@@ -81,9 +81,9 @@ jobs:
         if: steps.replay_changes.outputs.replay_required == 'true'
         run: pip install -r requirements.txt
 
-      - name: Apply migrations
+      - name: Validate migrations
         if: steps.replay_changes.outputs.replay_required == 'true'
-        run: alembic upgrade head
+        run: python scripts/validate_migrations.py
 
       - name: Run deterministic replay
         if: steps.replay_changes.outputs.replay_required == 'true'

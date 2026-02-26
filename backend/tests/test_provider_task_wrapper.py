@@ -1,3 +1,5 @@
+import time
+
 from app.providers.errors import ProviderAuthError, ProviderTimeoutError
 from app.providers.execution_types import ProviderExecutionRequest, ProviderExecutionResult
 from app.providers.retry import RetryPolicy
@@ -27,6 +29,21 @@ class _ProviderTask(CeleryProviderTask):
     retry_policy = RetryPolicy(max_attempts=2, jitter_ratio=0.0, sleep_fn=lambda _d: None)
 
 
+class _FastProviderTask(_ProviderTask):
+    def _record_execution_metric(self, **kwargs):  # noqa: ANN003, ANN002
+        return
+
+    def _upsert_health_failure(self, **kwargs):  # noqa: ANN003, ANN002
+        return
+
+    def _upsert_health_success(self, **kwargs):  # noqa: ANN003, ANN002
+        return
+
+    def _upsert_quota(self, **kwargs):  # noqa: ANN003, ANN002
+        return
+
+
+
 def test_provider_task_idempotency_reuses_first_result() -> None:
     task = _ProviderTask()
     req = ProviderExecutionRequest(operation="snapshot", payload={"keyword": "seo"})
@@ -41,7 +58,7 @@ def test_provider_task_idempotency_reuses_first_result() -> None:
 
 
 def test_provider_task_retries_retryable_then_succeeds() -> None:
-    task = _ProviderTask()
+    task = _FastProviderTask()
     req = ProviderExecutionRequest(operation="snapshot", payload={"keyword": "seo-2"})
     provider = _StubProvider(
         [
@@ -49,9 +66,12 @@ def test_provider_task_retries_retryable_then_succeeds() -> None:
             ProviderExecutionResult(success=True, latency_ms=4, raw_payload={"position": 1}),
         ]
     )
+    started_at = time.perf_counter()
     result = task.run_provider_call(provider=provider, request=req)
+    elapsed = time.perf_counter() - started_at
     assert result.success is True
     assert provider.calls == 2
+    assert elapsed < 1.0
 
 
 def test_provider_task_non_retryable_error_propagates_without_dead_letter() -> None:

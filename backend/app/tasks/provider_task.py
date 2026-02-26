@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from datetime import UTC, datetime
 import hashlib
@@ -14,7 +15,7 @@ import app.db.session as db_session_module
 from app.providers.base import ProviderBase
 from app.providers.errors import ProviderTimeoutError, classify_provider_error
 from app.providers.execution_types import ProviderExecutionRequest, ProviderExecutionResult
-from app.providers.retry import RetryExhaustedError, RetryPolicy
+from app.providers.retry import NoSleepRetryStrategy, RetryExhaustedError, RetryPolicy
 from app.services.provider_telemetry_service import ProviderTelemetryService
 
 
@@ -32,6 +33,8 @@ class CeleryProviderTask(Task):
     def __init__(self) -> None:
         super().__init__()
         self._idempotent_results: dict[str, ProviderExecutionResult] = {}
+        if os.getenv('APP_ENV', '').strip().lower() == 'test':
+            self.retry_policy = self.retry_policy.with_strategy(NoSleepRetryStrategy())
 
     def build_idempotency_key(self, request: ProviderExecutionRequest) -> str:
         public_payload = self._normalize_public_fields_only(request.payload)
@@ -62,6 +65,7 @@ class CeleryProviderTask(Task):
             return result
 
         started_at = time.perf_counter()
+        provider_elapsed_seconds = 0.0
         attempt_number = 0
         tenant_id = self._extract_tenant_id(request)
         sub_account_id = self._extract_sub_account_id(request)
@@ -70,11 +74,16 @@ class CeleryProviderTask(Task):
         provider_version = self._resolve_provider_version(provider)
 
         def _operation() -> ProviderExecutionResult:
-            nonlocal attempt_number
+            nonlocal attempt_number, provider_elapsed_seconds
             attempt_number += 1
             attempt_started_at = time.perf_counter()
             try:
-                result = self._invoke_with_timeout(provider=provider, request=request, started_at=started_at)
+                result, elapsed_seconds = self._invoke_with_timeout(
+                    provider=provider,
+                    request=request,
+                    consumed_seconds=provider_elapsed_seconds,
+                )
+                provider_elapsed_seconds += elapsed_seconds
                 self._record_execution_metric(
                     tenant_id=tenant_id,
                     sub_account_id=sub_account_id,
@@ -207,17 +216,25 @@ class CeleryProviderTask(Task):
                 )
             return failed_result
 
-    def _invoke_with_timeout(self, *, provider: ProviderBase, request: ProviderExecutionRequest, started_at: float) -> ProviderExecutionResult:
-        elapsed_seconds = time.perf_counter() - started_at
-        if elapsed_seconds > self.timeout_budget_seconds:
-            raise ProviderTimeoutError("Task timeout budget exceeded before provider call.")
+    def _invoke_with_timeout(
+        self,
+        *,
+        provider: ProviderBase,
+        request: ProviderExecutionRequest,
+        consumed_seconds: float,
+    ) -> tuple[ProviderExecutionResult, float]:
+        if consumed_seconds > self.timeout_budget_seconds:
+            raise ProviderTimeoutError('Task timeout budget exceeded before provider call.')
+
+        call_started_at = time.perf_counter()
         result = provider.execute(request)
-        elapsed_seconds = time.perf_counter() - started_at
-        if elapsed_seconds > self.timeout_budget_seconds:
-            raise ProviderTimeoutError("Task timeout budget exceeded after provider call.")
+        call_elapsed_seconds = time.perf_counter() - call_started_at
+
+        if consumed_seconds + call_elapsed_seconds > self.timeout_budget_seconds:
+            raise ProviderTimeoutError('Task timeout budget exceeded after provider call.')
         if not result.success and result.error is not None:
             raise result.error
-        return result
+        return result, call_elapsed_seconds
 
     def _dead_letter_payload(
         self,

@@ -79,6 +79,7 @@ def build_campaign_strategy_idempotent(
             window=window,
             raw_signals=raw_signals,
             tier=tier,
+            db=db,
         )
         payload = output.model_dump(mode="json")
         out_hash = output_hash(payload)

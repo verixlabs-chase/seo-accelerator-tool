@@ -20,16 +20,10 @@ def _resolve_sqlalchemy_url() -> tuple[str, str]:
     if database_url:
         return database_url, "env.DATABASE_URL"
 
-    postgres_dsn = os.getenv("POSTGRES_DSN", "").strip()
-    if postgres_dsn:
-        return postgres_dsn, "env.POSTGRES_DSN"
-
-    configured = config.get_main_option("sqlalchemy.url")
-    if configured:
-        return configured, "alembic.ini sqlalchemy.url"
-
-    settings = get_settings()
-    return settings.postgres_dsn, "settings.postgres_dsn"
+    raise RuntimeError(
+        "Alembic requires explicit DATABASE_URL (or connection_url attribute). "
+        "Refusing implicit fallback to persistent local SQLite."
+    )
 
 
 resolved_url, url_source = _resolve_sqlalchemy_url()

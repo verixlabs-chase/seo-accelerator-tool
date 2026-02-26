@@ -7,6 +7,7 @@ class TestSettings(Settings):
     public_base_url: str = "http://testserver"
     jwt_secret: str = "test-jwt-secret-32-characters-minimum"
     platform_master_key: str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    postgres_dsn: str = "sqlite:///:memory:"
     celery_task_always_eager: bool = True
     celery_task_eager_propagates: bool = True
     celery_broker_url: str = "memory://"
@@ -25,4 +26,6 @@ class TestSettings(Settings):
             values["platform_master_key"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
         if not str(values.get("public_base_url", "")).strip():
             values["public_base_url"] = "http://testserver"
+        if not str(values.get("postgres_dsn", "")).strip():
+            values["postgres_dsn"] = "sqlite:///:memory:"
         return values

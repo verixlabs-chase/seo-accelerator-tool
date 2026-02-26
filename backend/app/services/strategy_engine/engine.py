@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.services.strategy_engine.modules.competitor_diagnostics import run_competitor_diagnostics
 from app.services.strategy_engine.modules.core_web_vitals_diagnostics import run_core_web_vitals_diagnostics
 from app.services.strategy_engine.modules.ctr_diagnostics import run_ctr_diagnostics
 from app.services.strategy_engine.modules.gbp_diagnostics import run_gbp_diagnostics
 from app.services.strategy_engine.modules.ranking_diagnostics import run_ranking_diagnostics
+from app.services.strategy_engine.modules.temporal_diagnostics import run_temporal_diagnostics
 from app.services.strategy_engine.executive_summary import build_executive_summary
 from app.services.strategy_engine.priority_engine import PriorityInput, rank_priorities
 from app.services.strategy_engine.scenario_registry import SCENARIO_INDEX
@@ -20,6 +23,7 @@ def build_campaign_strategy(
     window: StrategyWindow,
     raw_signals: dict[str, Any],
     tier: str,
+    db: Session | None = None,
 ) -> CampaignStrategyOut:
     """Deterministic strategy orchestration for the phase-2 controlled scope."""
     signals = build_signal_model(raw_signals)
@@ -31,8 +35,19 @@ def build_campaign_strategy(
     diagnostics.extend(run_ranking_diagnostics(signals, window_reference=window_reference))
     diagnostics.extend(run_gbp_diagnostics(signals, window_reference=window_reference, tier=tier))
 
-    if tier == "enterprise":
+    if tier == 'enterprise':
         diagnostics.extend(run_competitor_diagnostics(signals, window_reference=window_reference))
+
+    if db is not None:
+        diagnostics.extend(
+            run_temporal_diagnostics(
+                db,
+                campaign_id=campaign_id,
+                window=window,
+                window_reference=window_reference,
+                tier=tier,
+            )
+        )
 
     priority_inputs: list[PriorityInput] = []
     filtered_results: list[DiagnosticResult] = []
@@ -77,10 +92,10 @@ def build_campaign_strategy(
         detected_scenarios=[item.scenario_id for item in ranked],
         recommendations=recommendations,
         meta={
-            "total_scenarios_detected": len(ranked),
-            "generated_at": window.date_to.isoformat(),
-            "engine_version": "phase2-controlled-scope",
-            "tier": tier,
+            'total_scenarios_detected': len(ranked),
+            'generated_at': window.date_to.isoformat(),
+            'engine_version': 'phase2-controlled-scope',
+            'tier': tier,
         },
     )
     output.strategic_scores = compute_strategic_scores(output)

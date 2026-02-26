@@ -50,6 +50,7 @@ from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEv
 from app.models.role import Role, UserRole
 from app.models.sub_account import SubAccount  # noqa: F401
 from app.models.tenant import Tenant
+from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot  # noqa: F401
 from app.models.user import User
 
 

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_seconds: int = 604800
     jwt_algorithm: str = "HS256"
 
-    postgres_dsn: str = "sqlite:///./lsos.db"
+    postgres_dsn: str
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
@@ -159,11 +159,13 @@ def get_settings() -> Settings:
             stripped = value.strip()
             return stripped if stripped else default
 
+        test_dsn = _env_or_default("POSTGRES_DSN", _env_or_default("DATABASE_URL", "sqlite:///:memory:"))
         return Settings(
             app_env="test",
             public_base_url=_env_or_default("PUBLIC_BASE_URL", "http://testserver"),
             jwt_secret=_env_or_default("JWT_SECRET", "test-secret-key"),
             platform_master_key=_env_or_default("PLATFORM_MASTER_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+            postgres_dsn=test_dsn,
             celery_task_always_eager=True,
             celery_task_eager_propagates=True,
             celery_broker_url="memory://",

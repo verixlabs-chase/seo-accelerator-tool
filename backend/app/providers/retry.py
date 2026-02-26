@@ -8,7 +8,7 @@ from typing import Callable, TypeVar
 from app.providers.errors import ProviderError, classify_provider_error
 
 
-T = TypeVar("T")
+T = TypeVar('T')
 
 
 @dataclass(frozen=True)
@@ -17,7 +17,52 @@ class RetryExhaustedError(Exception):
     attempts: int
 
     def __str__(self) -> str:
-        return f"Retry exhausted after {self.attempts} attempts: {self.last_error}"
+        return f'Retry exhausted after {self.attempts} attempts: {self.last_error}'
+
+
+class RetryStrategy:
+    def compute_delay(self, attempt: int) -> float:
+        raise NotImplementedError
+
+    def sleep(self, seconds: float) -> None:
+        raise NotImplementedError
+
+
+class RealRetryStrategy(RetryStrategy):
+    def __init__(
+        self,
+        *,
+        base_delay_seconds: float,
+        max_delay_seconds: float,
+        jitter_ratio: float,
+        sleep_fn: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.base_delay_seconds = base_delay_seconds
+        self.max_delay_seconds = max_delay_seconds
+        self.jitter_ratio = jitter_ratio
+        self.sleep_fn = sleep_fn
+
+    def compute_delay(self, attempt: int) -> float:
+        base = min(self.max_delay_seconds, self.base_delay_seconds * (2 ** (attempt - 1)))
+        if self.jitter_ratio <= 0:
+            return base
+        # Deterministic jitter preserves replay stability while reducing herd retries.
+        digest = sha256(f'retry-attempt:{attempt}'.encode('utf-8')).digest()
+        scaled = int.from_bytes(digest[:8], 'big') / float(2**64)
+        jitter_fraction = (scaled * 2.0) - 1.0
+        jitter_multiplier = 1.0 + (jitter_fraction * self.jitter_ratio)
+        return max(0.0, min(self.max_delay_seconds, base * jitter_multiplier))
+
+    def sleep(self, seconds: float) -> None:
+        self.sleep_fn(seconds)
+
+
+class NoSleepRetryStrategy(RetryStrategy):
+    def compute_delay(self, attempt: int) -> float:  # noqa: ARG002
+        return 0.0
+
+    def sleep(self, seconds: float) -> None:  # noqa: ARG002
+        return
 
 
 class RetryPolicy:
@@ -29,23 +74,30 @@ class RetryPolicy:
         max_delay_seconds: float = 5.0,
         jitter_ratio: float = 0.1,
         sleep_fn: Callable[[float], None] = time.sleep,
+        strategy: RetryStrategy | None = None,
     ) -> None:
         self.max_attempts = max_attempts
         self.base_delay_seconds = base_delay_seconds
         self.max_delay_seconds = max_delay_seconds
         self.jitter_ratio = jitter_ratio
-        self.sleep_fn = sleep_fn
+        self._strategy = strategy or RealRetryStrategy(
+            base_delay_seconds=base_delay_seconds,
+            max_delay_seconds=max_delay_seconds,
+            jitter_ratio=jitter_ratio,
+            sleep_fn=sleep_fn,
+        )
+
+    def with_strategy(self, strategy: RetryStrategy) -> RetryPolicy:
+        return RetryPolicy(
+            max_attempts=self.max_attempts,
+            base_delay_seconds=self.base_delay_seconds,
+            max_delay_seconds=self.max_delay_seconds,
+            jitter_ratio=self.jitter_ratio,
+            strategy=strategy,
+        )
 
     def delay_for_attempt(self, attempt_number: int) -> float:
-        base = min(self.max_delay_seconds, self.base_delay_seconds * (2 ** (attempt_number - 1)))
-        if self.jitter_ratio <= 0:
-            return base
-        # Deterministic jitter preserves stable replay while avoiding synchronized retries.
-        digest = sha256(f"retry-attempt:{attempt_number}".encode("utf-8")).digest()
-        scaled = int.from_bytes(digest[:8], "big") / float(2**64)
-        jitter_fraction = (scaled * 2.0) - 1.0
-        jitter_multiplier = 1.0 + (jitter_fraction * self.jitter_ratio)
-        return max(0.0, min(self.max_delay_seconds, base * jitter_multiplier))
+        return self._strategy.compute_delay(attempt_number)
 
     def execute(
         self,
@@ -63,5 +115,6 @@ class RetryPolicy:
                     raise provider_error
                 if attempt >= self.max_attempts:
                     raise RetryExhaustedError(last_error=provider_error, attempts=attempt)
-                self.sleep_fn(self.delay_for_attempt(attempt))
+                delay_seconds = self.delay_for_attempt(attempt)
+                self._strategy.sleep(delay_seconds)
                 attempt += 1
