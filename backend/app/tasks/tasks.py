@@ -988,3 +988,58 @@ def entity_analyze_campaign(self, tenant_id: str, campaign_id: str) -> dict:
 def process_fleet_job_item_task(fleet_job_item_id: str):
     return fleet_service.process_fleet_job_item_with_new_session(fleet_job_item_id)
     
+
+@celery_app.task(name="strategy.run_automation_for_all_campaigns", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def run_strategy_automation_for_all_campaigns(self, evaluation_date_iso: str | None = None) -> dict:
+    from app.services.strategy_engine.automation_engine import evaluate_campaign_for_automation
+
+    db = SessionLocal()
+    execution = _start_task_execution(
+        db,
+        "system",
+        "strategy.run_automation_for_all_campaigns",
+        {"evaluation_date_iso": evaluation_date_iso or ""},
+    )
+    try:
+        evaluation_date = datetime.now(UTC)
+        if evaluation_date_iso:
+            parsed = datetime.fromisoformat(evaluation_date_iso.replace("Z", "+00:00"))
+            evaluation_date = parsed.astimezone(UTC)
+
+        campaigns = db.query(Campaign).order_by(Campaign.created_at.asc(), Campaign.id.asc()).all()
+        results: list[dict] = []
+        failures: list[dict[str, str]] = []
+
+        for campaign in campaigns:
+            try:
+                results.append(
+                    evaluate_campaign_for_automation(
+                        campaign_id=campaign.id,
+                        db=db,
+                        evaluation_date=evaluation_date,
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - defensive non-blocking task behavior
+                db.rollback()
+                failures.append({"campaign_id": campaign.id, "error": str(exc)})
+
+        summary = {
+            "evaluation_date": evaluation_date.isoformat(),
+            "campaigns_scanned": len(campaigns),
+            "campaigns_evaluated": len(results),
+            "campaign_failures": len(failures),
+            "failures": failures,
+            "result_status_counts": {
+                "evaluated": sum(1 for item in results if item.get("status") == "evaluated"),
+                "already_evaluated": sum(1 for item in results if item.get("status") == "already_evaluated"),
+                "frozen": sum(1 for item in results if item.get("status") == "frozen"),
+                "campaign_not_found": sum(1 for item in results if item.get("status") == "campaign_not_found"),
+            },
+        }
+        _finish_task_execution(db, execution, "success", summary)
+        return summary
+    except Exception as exc:
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
+        raise
+    finally:
+        db.close()

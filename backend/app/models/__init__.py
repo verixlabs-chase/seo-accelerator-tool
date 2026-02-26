@@ -34,6 +34,7 @@ from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEv
 from app.models.role import Role, UserRole
 from app.models.sub_account import SubAccount
 from app.models.strategy_execution_key import StrategyExecutionKey
+from app.models.strategy_automation_event import StrategyAutomationEvent
 from app.models.task_execution import TaskExecution
 from app.models.tenant import Tenant
 from app.models.threshold_bundle import ThresholdBundle
@@ -46,6 +47,7 @@ __all__ = [
     'UserRole',
     'SubAccount',
     'StrategyExecutionKey',
+    'StrategyAutomationEvent',
     'ThresholdBundle',
     'Campaign',
     'AuditLog',

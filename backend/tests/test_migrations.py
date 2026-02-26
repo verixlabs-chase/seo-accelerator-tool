@@ -108,6 +108,7 @@ def test_migration_upgrade_and_downgrade():
         assert "temporal_signal_snapshots" in inspector.get_table_names()
         assert "momentum_metrics" in inspector.get_table_names()
         assert "strategy_phase_history" in inspector.get_table_names()
+        assert "strategy_automation_events" in inspector.get_table_names()
         assert "organizations" in inspector.get_table_names()
         assert "provider_policies" in inspector.get_table_names()
         assert "organization_provider_credentials" in inspector.get_table_names()

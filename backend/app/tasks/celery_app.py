@@ -6,6 +6,7 @@ import time
 
 from celery import Celery
 from celery.app.task import Task
+from celery.schedules import crontab
 from celery.signals import beat_init, heartbeat_sent, task_postrun, task_prerun, worker_ready
 from kombu import Queue
 
@@ -188,6 +189,12 @@ def create_celery_app() -> Celery:
         "*": {"queue": "default_queue"},
     }
     celery.conf.timezone = "UTC"
+    celery.conf.beat_schedule = {
+        "strategy-automation-monthly": {
+            "task": "strategy.run_automation_for_all_campaigns",
+            "schedule": crontab(minute=0, hour=3, day_of_month=1),
+        }
+    }
     celery.autodiscover_tasks(["app.tasks"])
     return celery
 
