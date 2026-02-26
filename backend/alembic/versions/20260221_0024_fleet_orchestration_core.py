@@ -38,7 +38,10 @@ def upgrade() -> None:
         if "cancelled_items" not in columns:
             batch_op.add_column(sa.Column("cancelled_items", sa.Integer(), nullable=False, server_default="0"))
 
-    op.execute("UPDATE fleet_jobs SET idempotency_key = CONCAT('legacy-', id) WHERE idempotency_key IS NULL")
+    if bind.dialect.name == "sqlite":
+        op.execute("UPDATE fleet_jobs SET idempotency_key = 'legacy-' || id WHERE idempotency_key IS NULL")
+    else:
+        op.execute("UPDATE fleet_jobs SET idempotency_key = CONCAT('legacy-', id) WHERE idempotency_key IS NULL")
 
     with op.batch_alter_table("fleet_jobs") as batch_op:
         batch_op.alter_column("idempotency_key", nullable=False)
@@ -96,3 +99,4 @@ def downgrade() -> None:
             batch_op.drop_column("total_items")
         if "idempotency_key" in columns:
             batch_op.drop_column("idempotency_key")
+
