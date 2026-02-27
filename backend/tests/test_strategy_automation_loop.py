@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from sqlalchemy import inspect
 
 from app.models.campaign import Campaign
 from app.models.intelligence import StrategyRecommendation
+from app.models.strategy_automation_event import StrategyAutomationEvent
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory
 from app.models.tenant import Tenant
 from app.services.strategy_engine.automation_engine import evaluate_campaign_for_automation
@@ -13,10 +15,22 @@ from app.tasks import tasks
 from app.tasks.celery_app import celery_app
 
 
-def _seed_campaign(db_session, *, name: str = 'Automation Campaign', setup_state: str = 'Active') -> Campaign:
+def _seed_campaign(
+    db_session,
+    *,
+    name: str = 'Automation Campaign',
+    setup_state: str = 'Active',
+    manual_automation_lock: bool = False,
+) -> Campaign:
     tenant = db_session.query(Tenant).order_by(Tenant.created_at.asc()).first()
     assert tenant is not None
-    campaign = Campaign(tenant_id=tenant.id, name=name, domain=f'{name.lower().replace(" ", "-")}.example', setup_state=setup_state)
+    campaign = Campaign(
+        tenant_id=tenant.id,
+        name=name,
+        domain=f'{name.lower().replace(" ", "-")}.example',
+        setup_state=setup_state,
+        manual_automation_lock=manual_automation_lock,
+    )
     db_session.add(campaign)
     db_session.commit()
     db_session.refresh(campaign)
@@ -83,6 +97,24 @@ def test_automation_promotes_recommendation_and_advances_phase(db_session) -> No
     assert len(transitions) == 1
     assert transitions[0]['from'] == 'GENERATED'
     assert transitions[0]['to'] == 'VALIDATED'
+    assert len(result['decision_hash']) == 64
+
+    event = (
+        db_session.query(StrategyAutomationEvent)
+        .filter(StrategyAutomationEvent.campaign_id == campaign.id)
+        .order_by(StrategyAutomationEvent.evaluation_date.desc(), StrategyAutomationEvent.id.desc())
+        .first()
+    )
+    assert event is not None
+    trace_payload = json.loads(event.trace_payload or '{}')
+    assert sorted(trace_payload.keys()) == [
+        'allocation_weights',
+        'confidence_adjustments',
+        'momentum_inputs',
+        'rule_evaluations',
+        'threshold_values',
+        'volatility_inputs',
+    ]
 
     latest_phase = (
         db_session.query(StrategyPhaseHistory)

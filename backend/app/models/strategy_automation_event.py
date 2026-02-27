@@ -21,5 +21,7 @@ class StrategyAutomationEvent(Base):
     triggered_rules: Mapped[str] = mapped_column(Text, nullable=False, default='[]')
     momentum_snapshot: Mapped[str] = mapped_column(Text, nullable=False, default='{}')
     action_summary: Mapped[str] = mapped_column(Text, nullable=False, default='{}')
+    trace_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     version_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))

@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.core.config import get_settings
 from app.api.v1 import (
     auth,
+    automation,
     authority,
     campaigns,
     competitors,
@@ -32,6 +33,7 @@ settings = get_settings()
 tenant_api_router.include_router(health.router)
 tenant_api_router.include_router(tenants.router)
 tenant_api_router.include_router(auth.router)
+tenant_api_router.include_router(automation.router)
 tenant_api_router.include_router(campaigns.router)
 tenant_api_router.include_router(crawl.router)
 if settings.app_env.lower() != "production":

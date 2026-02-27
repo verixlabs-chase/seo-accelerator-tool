@@ -109,6 +109,9 @@ def test_migration_upgrade_and_downgrade():
         assert "momentum_metrics" in inspector.get_table_names()
         assert "strategy_phase_history" in inspector.get_table_names()
         assert "strategy_automation_events" in inspector.get_table_names()
+        automation_cols = {col["name"] for col in inspector.get_columns("strategy_automation_events")}
+        assert "decision_hash" in automation_cols
+        assert "trace_payload" in automation_cols
         assert "organizations" in inspector.get_table_names()
         assert "provider_policies" in inspector.get_table_names()
         assert "organization_provider_credentials" in inspector.get_table_names()
@@ -149,6 +152,7 @@ def test_migration_upgrade_and_downgrade():
         tenant_cols = {col["name"] for col in inspector.get_columns("tenants")}
         assert "status" in tenant_cols
         assert "setup_state" in campaign_cols
+        assert "manual_automation_lock" in campaign_cols
         strategy_cols = {col["name"] for col in inspector.get_columns("strategy_recommendations")}
         assert "confidence_score" in strategy_cols
         assert "evidence_json" in strategy_cols
