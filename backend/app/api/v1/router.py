@@ -5,6 +5,7 @@ from app.api.v1 import (
     auth,
     automation,
     authority,
+    business_locations,
     campaigns,
     competitors,
     content,
@@ -58,7 +59,9 @@ tenant_api_router.include_router(dashboard.router)
 tenant_api_router.include_router(reference_library.router)
 tenant_api_router.include_router(reports.router)
 tenant_api_router.include_router(subaccounts.router)
+tenant_api_router.include_router(business_locations.router)
 
 control_plane_api_router = APIRouter()
 control_plane_api_router.include_router(provider_credentials.control_plane_router)
 control_plane_api_router.include_router(platform_control.router)
+
