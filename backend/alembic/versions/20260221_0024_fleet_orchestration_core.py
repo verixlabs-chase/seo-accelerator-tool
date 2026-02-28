@@ -7,6 +7,7 @@ Create Date: 2026-02-21 14:20:00
 
 from __future__ import annotations
 
+from alembic import context
 from alembic import op
 import sqlalchemy as sa
 
@@ -19,7 +20,31 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    inspector = sa.inspect(bind)
+    offline = context.is_offline_mode()
+    inspector = None if offline else sa.inspect(bind)
+
+    if offline:
+        with op.batch_alter_table("fleet_jobs") as batch_op:
+            batch_op.add_column(sa.Column("idempotency_key", sa.String(length=120), nullable=True))
+            batch_op.add_column(sa.Column("total_items", sa.Integer(), nullable=False, server_default="0"))
+            batch_op.add_column(sa.Column("queued_items", sa.Integer(), nullable=False, server_default="0"))
+            batch_op.add_column(sa.Column("running_items", sa.Integer(), nullable=False, server_default="0"))
+            batch_op.add_column(sa.Column("succeeded_items", sa.Integer(), nullable=False, server_default="0"))
+            batch_op.add_column(sa.Column("failed_items", sa.Integer(), nullable=False, server_default="0"))
+            batch_op.add_column(sa.Column("cancelled_items", sa.Integer(), nullable=False, server_default="0"))
+        with op.batch_alter_table("fleet_jobs") as batch_op:
+            batch_op.alter_column("idempotency_key", nullable=False)
+        with op.batch_alter_table("fleet_jobs") as batch_op:
+            batch_op.create_unique_constraint(
+                "uq_fleet_jobs_portfolio_job_type_idempotency",
+                ["portfolio_id", "job_type", "idempotency_key"],
+            )
+        op.create_index(
+            "ix_fleet_jobs_portfolio_jobtype_idempotency",
+            "fleet_jobs",
+            ["portfolio_id", "job_type", "idempotency_key"],
+        )
+        return
 
     columns = {column["name"] for column in inspector.get_columns("fleet_jobs")}
     with op.batch_alter_table("fleet_jobs") as batch_op:
@@ -72,7 +97,22 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
-    inspector = sa.inspect(bind)
+    offline = context.is_offline_mode()
+    inspector = None if offline else sa.inspect(bind)
+
+    if offline:
+        op.drop_index("ix_fleet_jobs_portfolio_jobtype_idempotency", table_name="fleet_jobs")
+        with op.batch_alter_table("fleet_jobs") as batch_op:
+            batch_op.drop_constraint("uq_fleet_jobs_portfolio_job_type_idempotency", type_="unique")
+        with op.batch_alter_table("fleet_jobs") as batch_op:
+            batch_op.drop_column("cancelled_items")
+            batch_op.drop_column("failed_items")
+            batch_op.drop_column("succeeded_items")
+            batch_op.drop_column("running_items")
+            batch_op.drop_column("queued_items")
+            batch_op.drop_column("total_items")
+            batch_op.drop_column("idempotency_key")
+        return
 
     indexes = {index["name"] for index in inspector.get_indexes("fleet_jobs")}
     if "ix_fleet_jobs_portfolio_jobtype_idempotency" in indexes:
@@ -99,4 +139,3 @@ def downgrade() -> None:
             batch_op.drop_column("total_items")
         if "idempotency_key" in columns:
             batch_op.drop_column("idempotency_key")
-

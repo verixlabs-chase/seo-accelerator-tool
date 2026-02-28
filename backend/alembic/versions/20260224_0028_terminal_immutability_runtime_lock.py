@@ -7,6 +7,7 @@ Create Date: 2026-02-24 11:00:00.000000
 
 from typing import Sequence, Union
 
+from alembic import context
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import inspect, text
@@ -28,7 +29,8 @@ _TERMINAL_STATES = "'EXECUTED', 'FAILED', 'ROLLED_BACK', 'ARCHIVED'"
 def upgrade() -> None:
     bind = op.get_bind()
     dialect = bind.dialect.name.lower()
-    inspector = inspect(bind)
+    offline = context.is_offline_mode()
+    inspector = None if offline else inspect(bind)
 
     if dialect == "postgresql":
         op.execute(
@@ -77,10 +79,7 @@ def upgrade() -> None:
                 pass
             batch_op.create_check_constraint("ck_strategy_recommendations_status_values", f"status IN ({_ALLOWED_STATES})")
 
-    if dialect == "postgresql":
-        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability ON strategy_recommendations")
-    else:
-        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability")
+    _drop_strategy_trigger(dialect)
 
     if dialect == "postgresql":
         op.execute(
@@ -188,7 +187,7 @@ def upgrade() -> None:
             """
         )
 
-    if not inspector.has_table("runtime_version_locks"):
+    if offline or not inspector.has_table("runtime_version_locks"):
         op.create_table(
             "runtime_version_locks",
             sa.Column("id", sa.String(length=36), nullable=False),
@@ -200,43 +199,41 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
         )
 
-    active_count = bind.execute(text("SELECT count(*) FROM runtime_version_locks WHERE active = true")).scalar_one()
-    if int(active_count) == 0:
-        bind.execute(
-            text(
-                """
-                INSERT INTO runtime_version_locks (
-                    id,
-                    expected_schema_revision,
-                    expected_code_fingerprint,
-                    expected_registry_version,
-                    active
-                ) VALUES (
-                    :id,
-                    :schema,
-                    :code,
-                    :registry,
-                    true
-                )
-                """
-            ),
-            {
-                "id": "runtime-lock-20260224-0028",
-                "schema": "20260224_0028",
-                "code": "dev",
-                "registry": "scenario-registry-v1",
-            },
-        )
+    if not offline:
+        active_count = bind.execute(text("SELECT count(*) FROM runtime_version_locks WHERE active = true")).scalar_one()
+        if int(active_count) == 0:
+            bind.execute(
+                text(
+                    """
+                    INSERT INTO runtime_version_locks (
+                        id,
+                        expected_schema_revision,
+                        expected_code_fingerprint,
+                        expected_registry_version,
+                        active
+                    ) VALUES (
+                        :id,
+                        :schema,
+                        :code,
+                        :registry,
+                        true
+                    )
+                    """
+                ),
+                {
+                    "id": "runtime-lock-20260224-0028",
+                    "schema": "20260224_0028",
+                    "code": "dev",
+                    "registry": "scenario-registry-v1",
+                },
+            )
 
 
 def downgrade() -> None:
     bind = op.get_bind()
     dialect = bind.dialect.name.lower()
 
-    if dialect == "postgresql":
-        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability ON strategy_recommendations")
-    else:
-        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability")
+    _drop_strategy_trigger(dialect)
 
     if dialect == "postgresql":
         op.execute("DROP FUNCTION IF EXISTS governed_override_strategy_recommendation(TEXT, TEXT, TEXT, strategy_recommendation_status, TEXT)")
@@ -248,19 +245,47 @@ def downgrade() -> None:
             USING status::text
             """
         )
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION enforce_strategy_output_immutability()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                IF OLD.status IN ('FINAL', 'final') THEN
+                    RAISE EXCEPTION 'Immutable strategy output: updates are forbidden for final records';
+                END IF;
+                RETURN NEW;
+            END;
+            $$;
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER trg_strategy_output_immutability
+            BEFORE UPDATE ON strategy_recommendations
+            FOR EACH ROW
+            EXECUTE FUNCTION enforce_strategy_output_immutability();
+            """
+        )
     else:
-        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability")
-
-    op.execute(
-        """
-        CREATE TRIGGER trg_strategy_output_immutability
-        BEFORE UPDATE ON strategy_recommendations
-        FOR EACH ROW
-        WHEN OLD.status IN ('FINAL', 'final')
-        BEGIN
-            SELECT RAISE(ABORT, 'Immutable strategy output: updates are forbidden for final records');
-        END;
-        """
-    )
+        op.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS trg_strategy_output_immutability
+            BEFORE UPDATE ON strategy_recommendations
+            FOR EACH ROW
+            WHEN OLD.status IN ('FINAL', 'final')
+            BEGIN
+                SELECT RAISE(ABORT, 'Immutable strategy output: updates are forbidden for final records');
+            END;
+            """
+        )
 
     op.drop_table("runtime_version_locks")
+
+
+def _drop_strategy_trigger(dialect: str) -> None:
+    if dialect == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability ON strategy_recommendations")
+        return
+    op.execute("DROP TRIGGER IF EXISTS trg_strategy_output_immutability")

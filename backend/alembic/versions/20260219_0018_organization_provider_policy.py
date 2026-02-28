@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from alembic import context
 from alembic import op
 import sqlalchemy as sa
 
@@ -98,7 +99,8 @@ def upgrade() -> None:
         sa.UniqueConstraint("provider_name", name="uq_platform_provider_credentials_provider"),
     )
 
-    _seed_internal_anchor_policy()
+    if not context.is_offline_mode():
+        _seed_internal_anchor_policy()
 
 
 def downgrade() -> None:

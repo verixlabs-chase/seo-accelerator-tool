@@ -7,6 +7,7 @@ Create Date: 2026-02-24 10:00:00.000000
 
 from typing import Sequence, Union
 
+from alembic import context
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import inspect
@@ -21,9 +22,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    inspector = inspect(bind)
+    offline = context.is_offline_mode()
+    inspector = None if offline else inspect(bind)
 
-    existing_cols = {column["name"] for column in inspector.get_columns("strategy_recommendations")}
+    existing_cols = set() if offline else {column["name"] for column in inspector.get_columns("strategy_recommendations")}
     with op.batch_alter_table("strategy_recommendations") as batch_op:
         if "engine_version" not in existing_cols:
             batch_op.add_column(sa.Column("engine_version", sa.String(length=64), nullable=True))
