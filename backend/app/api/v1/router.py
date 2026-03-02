@@ -15,6 +15,7 @@ from app.api.v1 import (
     entity,
     google_oauth,
     health,
+    hierarchy_observability,
     intelligence,
     local,
     locations,
@@ -62,6 +63,7 @@ tenant_api_router.include_router(reports.router)
 tenant_api_router.include_router(subaccounts.router)
 tenant_api_router.include_router(business_locations.router)
 tenant_api_router.include_router(locations.router)
+tenant_api_router.include_router(hierarchy_observability.router)
 
 control_plane_api_router = APIRouter()
 control_plane_api_router.include_router(provider_credentials.control_plane_router)

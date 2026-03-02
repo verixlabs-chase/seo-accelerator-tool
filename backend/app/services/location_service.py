@@ -6,6 +6,7 @@ Direct DB writes to locations outside this service are prohibited.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -14,6 +15,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 
+logger = logging.getLogger("lsos.api")
 UNSET = object()
 
 _METADATA = sa.MetaData()
@@ -99,6 +101,12 @@ class LocationWriteService:
                 updated_at=now,
             )
         )
+        _log_hierarchy_assignment(
+            organization_id=organization_id,
+            location_id=location_id,
+            business_location_id=business_location_id,
+            action="create",
+        )
 
         return {
             "id": location_id,
@@ -171,6 +179,12 @@ class LocationWriteService:
                 .where(_LOCATIONS_TABLE.c.id == location_id)
                 .values(**update_values)
             )
+            _log_hierarchy_assignment(
+                organization_id=organization_id,
+                location_id=location_id,
+                business_location_id=next_business_location_id,
+                action=_resolve_assignment_action(business_location_id),
+            )
 
         return {
             "id": location_id,
@@ -219,3 +233,27 @@ def _normalize_optional(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _log_hierarchy_assignment(
+    *,
+    organization_id: str,
+    location_id: str,
+    business_location_id: str | None,
+    action: str,
+) -> None:
+    logger.info(
+        "location_hierarchy_assignment",
+        extra={
+            "organization_id": organization_id,
+            "location_id": location_id,
+            "business_location_id": business_location_id,
+            "action": action,
+        },
+    )
+
+
+def _resolve_assignment_action(business_location_id: str | None | object) -> str:
+    if business_location_id is None:
+        return "unlink"
+    return "update"
