@@ -55,7 +55,7 @@ def create_business_location_with_portfolio(
 ) -> dict[str, object]:
     now = datetime.now(UTC)
     business_location_id = str(uuid.uuid4())
-    normalized_name = name.strip()
+    normalized_name = name
     normalized_domain = _normalize_optional(domain)
     normalized_city = _normalize_optional(primary_city)
 
@@ -127,3 +127,4 @@ def _normalize_optional(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+

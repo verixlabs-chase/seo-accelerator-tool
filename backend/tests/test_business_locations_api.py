@@ -10,7 +10,7 @@ def _login(client, email: str, password: str) -> tuple[str, str]:
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
     payload = response.json()["data"]
-    return payload["access_token"], payload["user"]["tenant_id"]
+    return payload["access_token"], payload["user"]["organization_id"]
 
 
 def test_business_location_create_auto_creates_internal_portfolio(client, db_session) -> None:
@@ -190,3 +190,40 @@ def test_business_location_rolls_back_when_portfolio_auto_create_fails(client, d
         {"organization_id": org_id, "name": "Rollback Check"},
     ).scalar_one()
     assert business_location_count == 0
+
+
+def test_business_location_rejects_whitespace_name(client, db_session) -> None:
+    token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
+
+    response = client.post(
+        f"/api/v1/organizations/{org_id}/business-locations",
+        json={"name": "   "},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 422
+
+    business_location_count = db_session.execute(
+        text(
+            """
+            SELECT count(*)
+            FROM business_locations
+            WHERE organization_id = :organization_id
+            """
+        ),
+        {"organization_id": org_id},
+    ).scalar_one()
+    portfolio_count = db_session.execute(
+        text(
+            """
+            SELECT count(*)
+            FROM portfolios
+            WHERE organization_id = :organization_id
+              AND business_location_id IS NOT NULL
+            """
+        ),
+        {"organization_id": org_id},
+    ).scalar_one()
+
+    assert business_location_count == 0
+    assert portfolio_count == 0
