@@ -14,6 +14,8 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 
+UNSET = object()
+
 _METADATA = sa.MetaData()
 _LOCATIONS_TABLE = sa.Table(
     "locations",
@@ -123,13 +125,17 @@ class LocationWriteService:
         *,
         location_id: str,
         organization_id: str,
-        business_location_id: str | None,
+        name: str | object = UNSET,
+        business_location_id: str | None | object = UNSET,
     ) -> dict[str, object]:
         current = db.execute(
             sa.select(
                 _LOCATIONS_TABLE.c.id,
                 _LOCATIONS_TABLE.c.organization_id,
+                _LOCATIONS_TABLE.c.name,
                 _LOCATIONS_TABLE.c.business_location_id,
+                _LOCATIONS_TABLE.c.created_at,
+                _LOCATIONS_TABLE.c.updated_at,
             ).where(_LOCATIONS_TABLE.c.id == location_id)
         ).mappings().first()
         if current is None or current["organization_id"] != organization_id:
@@ -138,24 +144,41 @@ class LocationWriteService:
                 detail={"message": "Location not found.", "reason_code": "location_not_found"},
             )
 
-        self._validate_business_location_scope(
-            db,
-            organization_id=organization_id,
-            business_location_id=business_location_id,
-        )
+        next_name = current["name"]
+        next_business_location_id = current["business_location_id"]
+        next_updated_at = current["updated_at"]
+        update_values: dict[str, object] = {}
 
-        now = datetime.now(UTC)
-        db.execute(
-            sa.update(_LOCATIONS_TABLE)
-            .where(_LOCATIONS_TABLE.c.id == location_id)
-            .values(business_location_id=business_location_id, updated_at=now)
-        )
+        if name is not UNSET:
+            normalized_name = str(name).strip()
+            update_values["name"] = normalized_name
+            next_name = normalized_name
+
+        if business_location_id is not UNSET:
+            self._validate_business_location_scope(
+                db,
+                organization_id=organization_id,
+                business_location_id=business_location_id,
+            )
+            update_values["business_location_id"] = business_location_id
+            next_business_location_id = business_location_id
+
+        if update_values:
+            next_updated_at = datetime.now(UTC)
+            update_values["updated_at"] = next_updated_at
+            db.execute(
+                sa.update(_LOCATIONS_TABLE)
+                .where(_LOCATIONS_TABLE.c.id == location_id)
+                .values(**update_values)
+            )
 
         return {
             "id": location_id,
             "organization_id": organization_id,
-            "business_location_id": business_location_id,
-            "updated_at": now,
+            "name": next_name,
+            "business_location_id": next_business_location_id,
+            "created_at": current["created_at"],
+            "updated_at": next_updated_at,
         }
 
     def _validate_business_location_scope(

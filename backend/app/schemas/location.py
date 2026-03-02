@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -13,6 +13,11 @@ NonBlankLocationName = Annotated[
 class LocationCreateIn(BaseModel):
     name: NonBlankLocationName
     business_location_id: str | None = Field(default=None, max_length=36)
+
+
+class LocationUpdateRequest(BaseModel):
+    name: Optional[NonBlankLocationName] = None
+    business_location_id: Optional[str] = Field(default=None, max_length=36)
 
 
 class LocationOut(BaseModel):
