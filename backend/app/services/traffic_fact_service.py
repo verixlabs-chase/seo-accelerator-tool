@@ -6,7 +6,6 @@ from hashlib import sha256
 import json
 import os
 from typing import Any
-from urllib.parse import quote
 
 from sqlalchemy.orm import Session
 

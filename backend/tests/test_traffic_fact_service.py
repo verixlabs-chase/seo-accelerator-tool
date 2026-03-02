@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
 
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.campaign import Campaign
@@ -93,7 +94,6 @@ def test_analytics_daily_metric_upsert_updates_on_hash_change(db_session) -> Non
     assert row.sessions == 25
     assert row.conversions == 4
 
-from types import SimpleNamespace
 
 
 def test_search_console_sync_only_fetches_missing_days_and_is_idempotent(db_session, monkeypatch) -> None:
