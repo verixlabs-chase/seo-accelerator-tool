@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -58,27 +58,13 @@ class ReportTemplateVersion(Base):
 
 class ReportSchedule(Base):
     __tablename__ = "report_schedules"
+    __table_args__ = (Index("ix_report_schedules_org_portfolio_next_run_at", "organization_id", "portfolio_id", "next_run_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    organization_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("organizations.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    portfolio_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("portfolios.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    sub_account_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("sub_accounts.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+    portfolio_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("portfolios.id", ondelete="SET NULL"), nullable=True, index=True)
+    sub_account_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("sub_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
     cadence: Mapped[str] = mapped_column(String(20), nullable=False, default="monthly")
     timezone: Mapped[str] = mapped_column(String(80), nullable=False, default="UTC")

@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, Float, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -10,13 +10,8 @@ from app.db.base import Base
 class ProviderHealthState(Base):
     __tablename__ = "provider_health_states"
     __table_args__ = (
-        UniqueConstraint(
-            "tenant_id",
-            "environment",
-            "provider_name",
-            "capability",
-            name="uq_provider_health_tenant_env_provider_capability",
-        ),
+        UniqueConstraint("tenant_id", "environment", "provider_name", "capability", name="uq_provider_health_tenant_env_provider_capability"),
+        Index("ix_provider_health_states_tenant_env_breaker_state", "tenant_id", "environment", "breaker_state"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))

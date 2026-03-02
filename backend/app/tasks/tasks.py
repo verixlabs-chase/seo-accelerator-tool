@@ -1,14 +1,17 @@
 import json
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from celery import Task
 from kombu.exceptions import KombuError
+from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.campaign import Campaign
 from app.models.crawl import CrawlPageResult
 from app.models.task_execution import TaskExecution
 from app.services import (
+    analytics_service,
     authority_service,
     competitor_service,
     content_service,
@@ -24,13 +27,203 @@ from app.services import (
     reference_library_service,
     rank_service,
     reporting_service,
+    traffic_fact_service,
 )
 from app.tasks.celery_app import celery_app
+
+logger = logging.getLogger("lsos.traffic.facts")
 
 
 @celery_app.task(name="ops.healthcheck.snapshot")
 def ops_healthcheck_snapshot() -> dict:
     return {"timestamp": datetime.now(UTC).isoformat(), "status": "ok"}
+
+
+@celery_app.task(name="analytics.rollup_daily", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def analytics_rollup_daily(self, metric_date: str | None = None, tenant_id: str = "system") -> dict:
+    db = SessionLocal()
+    execution = _start_task_execution(db, tenant_id, "analytics.rollup_daily", {"metric_date": metric_date})
+    try:
+        resolved_metric_date = metric_date or (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
+        result = analytics_service.rollup_campaign_daily_metrics_for_date(db=db, metric_date=resolved_metric_date)
+        payload = {
+            "metric_date": result.metric_date.isoformat(),
+            "processed_campaigns": result.processed_campaigns,
+            "inserted_rows": result.inserted_rows,
+            "updated_rows": result.updated_rows,
+            "skipped_rows": result.skipped_rows,
+        }
+        _finish_task_execution(db, execution, "success", payload)
+        return payload
+    except Exception as exc:
+        db.rollback()
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="traffic.sync_search_console_daily_metrics_for_campaign", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def sync_search_console_daily_metrics_for_campaign(
+    self,
+    campaign_id: str,
+    start_date: str,
+    end_date: str,
+    tenant_id: str | None = None,
+) -> dict:
+    db = SessionLocal()
+    campaign = db.get(Campaign, campaign_id)
+    execution_tenant = tenant_id or (campaign.tenant_id if campaign is not None else "system")
+    payload = {"campaign_id": campaign_id, "start_date": start_date, "end_date": end_date}
+    execution = _start_task_execution(db, execution_tenant, "traffic.sync_search_console_daily_metrics_for_campaign", payload)
+    started_at = datetime.now(UTC)
+    try:
+        if campaign is None:
+            raise ValueError("Campaign not found")
+        result = traffic_fact_service.sync_search_console_daily_metrics_for_campaign(
+            db=db,
+            campaign=campaign,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        response = _traffic_fact_sync_payload(result)
+        _finish_task_execution(db, execution, "success", response)
+        _log_traffic_fact_sync_completed(result=result, duration_ms=_duration_ms(started_at))
+        return response
+    except Exception as exc:
+        db.rollback()
+        duration_ms = _duration_ms(started_at)
+        _log_traffic_fact_sync_failed(
+            organization_id=str(getattr(campaign, "organization_id", "") or ""),
+            campaign_id=campaign_id,
+            start_date=start_date,
+            end_date=end_date,
+            duration_ms=duration_ms,
+            error=str(exc),
+        )
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="traffic.sync_analytics_daily_metrics_for_campaign", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+def sync_analytics_daily_metrics_for_campaign(
+    self,
+    campaign_id: str,
+    start_date: str,
+    end_date: str,
+    tenant_id: str | None = None,
+) -> dict:
+    db = SessionLocal()
+    campaign = db.get(Campaign, campaign_id)
+    execution_tenant = tenant_id or (campaign.tenant_id if campaign is not None else "system")
+    payload = {"campaign_id": campaign_id, "start_date": start_date, "end_date": end_date}
+    execution = _start_task_execution(db, execution_tenant, "traffic.sync_analytics_daily_metrics_for_campaign", payload)
+    started_at = datetime.now(UTC)
+    try:
+        if campaign is None:
+            raise ValueError("Campaign not found")
+        result = traffic_fact_service.sync_analytics_daily_metrics_for_campaign(
+            db=db,
+            campaign=campaign,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        response = _traffic_fact_sync_payload(result)
+        _finish_task_execution(db, execution, "success", response)
+        _log_traffic_fact_sync_completed(result=result, duration_ms=_duration_ms(started_at))
+        return response
+    except Exception as exc:
+        db.rollback()
+        duration_ms = _duration_ms(started_at)
+        _log_traffic_fact_sync_failed(
+            organization_id=str(getattr(campaign, "organization_id", "") or ""),
+            campaign_id=campaign_id,
+            start_date=start_date,
+            end_date=end_date,
+            duration_ms=duration_ms,
+            error=str(exc),
+        )
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="traffic.nightly_sync_traffic_facts", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
+def nightly_sync_traffic_facts(self, lookback_days: int | None = None, tenant_id: str = "system") -> dict:
+    db = SessionLocal()
+    settings = get_settings()
+    resolved_lookback_days = max(1, int(lookback_days or settings.traffic_fact_sync_lookback_days))
+    end_date = datetime.now(UTC).date() - timedelta(days=1)
+    start_date = end_date - timedelta(days=resolved_lookback_days - 1)
+    payload = {
+        "lookback_days": resolved_lookback_days,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+    }
+    execution = _start_task_execution(db, tenant_id, "traffic.nightly_sync_traffic_facts", payload)
+    processed_campaigns = 0
+    failed_campaigns = 0
+    search_synced_days = 0
+    analytics_synced_days = 0
+    try:
+        campaigns = (
+            db.query(Campaign)
+            .filter(
+                Campaign.setup_state == "Active",
+                Campaign.organization_id.isnot(None),
+            )
+            .order_by(Campaign.created_at.asc(), Campaign.id.asc())
+            .all()
+        )
+        campaign_refs = [(campaign.id, campaign.tenant_id) for campaign in campaigns]
+
+        for campaign_id, campaign_tenant_id in campaign_refs:
+            processed_campaigns += 1
+            try:
+                search_payload = sync_search_console_daily_metrics_for_campaign.run(
+                    campaign_id=campaign_id,
+                    start_date=start_date.isoformat(),
+                    end_date=end_date.isoformat(),
+                    tenant_id=campaign_tenant_id,
+                )
+                analytics_payload = sync_analytics_daily_metrics_for_campaign.run(
+                    campaign_id=campaign_id,
+                    start_date=start_date.isoformat(),
+                    end_date=end_date.isoformat(),
+                    tenant_id=campaign_tenant_id,
+                )
+                search_synced_days += int(search_payload.get("requested_days", 0))
+                analytics_synced_days += int(analytics_payload.get("requested_days", 0))
+            except Exception:
+                failed_campaigns += 1
+                continue
+
+        analytics_rollup = analytics_service.rollup_campaign_daily_metrics_for_range(
+            db=db,
+            date_from=start_date,
+            date_to=end_date,
+        )
+        response = {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "lookback_days": resolved_lookback_days,
+            "processed_campaigns": processed_campaigns,
+            "failed_campaigns": failed_campaigns,
+            "search_synced_days": search_synced_days,
+            "analytics_synced_days": analytics_synced_days,
+            "rollup_days_processed": analytics_rollup.days_processed,
+        }
+        _finish_task_execution(db, execution, "success", response)
+        return response
+    except Exception as exc:
+        db.rollback()
+        _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
+        raise
+    finally:
+        db.close()
 
 
 @celery_app.task(name="campaigns.bootstrap_month_plan")
@@ -111,6 +304,69 @@ def _reason_code(exc: Exception) -> str:
     if "kombu" in name:
         return "queue_broker_error"
     return "internal_error"
+
+
+def _traffic_fact_sync_payload(result: traffic_fact_service.TrafficFactSyncResult) -> dict:
+    return {
+        "organization_id": result.organization_id,
+        "campaign_id": result.campaign_id,
+        "start_date": result.start_date.isoformat(),
+        "end_date": result.end_date.isoformat(),
+        "requested_days": result.requested_days,
+        "provider_calls": result.provider_calls,
+        "inserted_rows": result.inserted_rows,
+        "updated_rows": result.updated_rows,
+        "skipped_rows": result.skipped_rows,
+        "replay_skipped": result.replay_skipped,
+    }
+
+
+def _duration_ms(started_at: datetime) -> int:
+    return max(0, int((datetime.now(UTC) - started_at).total_seconds() * 1000))
+
+
+def _log_traffic_fact_sync_completed(*, result: traffic_fact_service.TrafficFactSyncResult, duration_ms: int) -> None:
+    logger.info(
+        json.dumps(
+            {
+                "event": "traffic_fact_sync_completed",
+                "organization_id": result.organization_id,
+                "campaign_id": result.campaign_id,
+                "start_date": result.start_date.isoformat(),
+                "end_date": result.end_date.isoformat(),
+                "duration_ms": duration_ms,
+                "requested_days": result.requested_days,
+                "provider_calls": result.provider_calls,
+                "replay_skipped": result.replay_skipped,
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def _log_traffic_fact_sync_failed(
+    *,
+    organization_id: str,
+    campaign_id: str,
+    start_date: str,
+    end_date: str,
+    duration_ms: int,
+    error: str,
+) -> None:
+    logger.error(
+        json.dumps(
+            {
+                "event": "traffic_fact_sync_failed",
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "duration_ms": duration_ms,
+                "error": error,
+            },
+            sort_keys=True,
+        )
+    )
 
 
 def _task_failure_payload(task: Task, exc: Exception) -> dict:

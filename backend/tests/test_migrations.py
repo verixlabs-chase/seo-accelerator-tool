@@ -105,6 +105,11 @@ def test_migration_upgrade_and_downgrade():
         assert "provider_quota_states" in inspector.get_table_names()
         assert "provider_execution_metrics" in inspector.get_table_names()
         assert "portfolio_usage_daily" in inspector.get_table_names()
+        assert "campaign_daily_metrics" in inspector.get_table_names()
+        assert "search_console_daily_metrics" in inspector.get_table_names()
+        assert "analytics_daily_metrics" in inspector.get_table_names()
+        assert "keyword_daily_economics" in inspector.get_table_names()
+        assert "keyword_market_snapshots" in inspector.get_table_names()
         assert "temporal_signal_snapshots" in inspector.get_table_names()
         assert "momentum_metrics" in inspector.get_table_names()
         assert "strategy_phase_history" in inspector.get_table_names()
@@ -143,11 +148,25 @@ def test_migration_upgrade_and_downgrade():
         report_schedule_cols = {col["name"] for col in inspector.get_columns("report_schedules")}
         metric_cols = {col["name"] for col in inspector.get_columns("provider_execution_metrics")}
         metric_indexes = {idx["name"] for idx in inspector.get_indexes("provider_execution_metrics")}
+        campaign_daily_metric_cols = {col["name"] for col in inspector.get_columns("campaign_daily_metrics")}
+        campaign_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("campaign_daily_metrics")}
+        search_console_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("search_console_daily_metrics")}
+        analytics_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("analytics_daily_metrics")}
+        keyword_daily_economics_indexes = {idx["name"] for idx in inspector.get_indexes("keyword_daily_economics")}
+        keyword_market_snapshot_indexes = {idx["name"] for idx in inspector.get_indexes("keyword_market_snapshots")}
         assert "sub_account_id" in campaign_cols
         assert "sub_account_id" in report_schedule_cols
         assert "sub_account_id" in metric_cols
         assert "campaign_id" in metric_cols
         assert "ix_provider_execution_metrics_tenant_campaign_created_at" in metric_indexes
+        assert "organization_id" in campaign_daily_metric_cols
+        assert "metric_date" in campaign_daily_metric_cols
+        assert "deterministic_hash" in campaign_daily_metric_cols
+        assert "ix_campaign_daily_metrics_campaign_date" in campaign_daily_metric_indexes
+        assert "ix_search_console_daily_metrics_campaign_date" in search_console_daily_metric_indexes
+        assert "ix_analytics_daily_metrics_campaign_date" in analytics_daily_metric_indexes
+        assert "ix_keyword_daily_economics_keyword_date" in keyword_daily_economics_indexes
+        assert "ix_keyword_market_snapshots_geo_device_date" in keyword_market_snapshot_indexes
 
         tenant_cols = {col["name"] for col in inspector.get_columns("tenants")}
         assert "status" in tenant_cols

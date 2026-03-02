@@ -1,39 +1,38 @@
 # SEARCH CAPITAL FORECAST ENGINE
 ## Enterprise Specification
-Platform: SEO Accelerator Tool  
-Phase: Portfolio Intelligence (Phase 2.x)  
-Status: Specification Draft  
-Version: v1.0  
-Author: Platform Architecture  
-Last Updated: 2026-02-27
+Platform: SEO Accelerator Tool
+Phase: Portfolio Intelligence (Phase 2.x)
+Status: Specification Draft
+Version: v1.1
+Author: Platform Architecture
+Last Updated: 2026-03-02
 
 ---
 
 ## 1. Executive Summary
 
-The Search Capital Forecast Engine (SCFE) is a deterministic forecasting subsystem that estimates the economic value of SEO ranking improvements at keyword, cluster, campaign, and portfolio levels.
+The Search Capital Forecast Engine (SCFE) v1 is the platform's **Organic Media Value Engine**.
 
-SCFE is designed to convert search opportunity into capital allocation decisions by quantifying:
+SCFE v1 is a deterministic replacement-cost valuation subsystem that estimates the paid-media equivalent value of organic rankings at keyword, cluster, campaign, and portfolio levels.
 
-- Incremental organic click and conversion potential.
-- Revenue uplift bands (low/median/high).
-- Paid-media equivalent cost.
-- Break-even CPC and efficiency ratios.
-- Forecast confidence and assumption sensitivity.
+SCFE v1 answers:
+- What is the current paid-equivalent value of the traffic represented by this ranking?
+- What would that value become if rank improves?
+- Which keywords have the highest economic upside based on paid replacement cost?
 
-SCFE is **decision support**, not financial guarantee. All outputs are deterministic for identical inputs and assumption versions.
+SCFE v1 is **not** accounting ROI, revenue attribution, or financial performance reporting. Those concerns belong to the separate ROI Attribution Engine.
 
 ---
 
 ## 2. Strategic Purpose
 
-SCFE enables the platform to move from diagnostics to capital planning:
+SCFE v1 enables the platform to move from diagnostics to asset valuation and capital planning:
 
-- Executive ROI forecasting for board-level planning.
-- Organic vs paid investment comparison.
+- Organic vs paid replacement-cost comparison.
 - Deterministic prioritization for portfolio allocation.
+- Opportunity modeling for keyword ownership scenarios.
+- Sales and executive narrative around owned organic media value.
 - Tier differentiation for commercialization.
-- Better attribution narrative for agencies and enterprise operators.
 
 ---
 
@@ -41,38 +40,44 @@ SCFE enables the platform to move from diagnostics to capital planning:
 
 ### 3.1 In Scope (v1)
 
-- Keyword-level and cluster-level forecast generation.
+- Keyword-level and cluster-level paid-equivalent valuation.
 - Deterministic CTR-curve based click modeling by rank.
-- Conversion/revenue delta modeling with confidence bands.
+- Rank-improvement forecasting based on CTR change.
+- Keyword simulation for hypothetical target positions.
 - Paid-equivalent benchmark model.
 - Hash-stamped, replay-safe payloads.
 - API and service-level contracts for downstream portfolio engines.
 
 ### 3.2 Out of Scope (v1)
 
+- Revenue forecasting.
+- Conversion delta modeling.
+- Break-even CPC calculations.
+- Accounting ROI, CAC, or LTV analysis.
 - Machine-learned rank prediction.
 - Real-time auction bid simulation.
 - Cross-channel MMM attribution.
 - Vertical-specific CTR tuning via AI.
 
+Revenue attribution, ROI accounting, and related commercial metrics are reserved for the separate ROI Attribution Engine.
+
 ---
 
 ## 4. Core Definitions
 
-- **Forecast Window**: fixed period for volume and value assumptions (typically 30 days).
+- **Forecast Window**: fixed period for search demand and valuation assumptions (typically 30 days).
 - **Current Rank**: observed baseline rank at forecast start.
 - **Target Rank**: hypothetical or planned rank state for scenario simulation.
 - **CTR Curve**: versioned mapping from rank position to click-through rate.
-- **Capital Efficiency Index (CEI)**: normalized value-to-cost efficiency signal for ranking opportunity.
-- **Paid Equivalent Cost**: estimated spend required to acquire equivalent traffic through ads.
-- **Break-even CPC**: CPC threshold where paid cost equals forecasted organic value.
-- **Assumption Bundle**: immutable set of model constants (CTR, CVR modifiers, confidence multipliers).
+- **Estimated Clicks**: `search_volume * ctr(position)` under the active CTR curve.
+- **Paid Equivalent Value**: estimated spend required to acquire equivalent traffic through ads.
+- **Assumption Bundle**: immutable set of model constants (CTR curve, confidence multipliers, local market modifiers).
 
 ---
 
 ## 5. Functional Requirements
 
-### 5.1 Organic Revenue Forecast Model
+### 5.1 Organic Media Value Model
 
 Inputs:
 - `keyword`
@@ -80,48 +85,49 @@ Inputs:
 - `current_rank`
 - `target_rank`
 - `ctr_curve_version`
-- `conversion_rate`
-- `revenue_per_conversion`
+- `cpc`
 
 Outputs:
-- Current projected clicks.
-- Target projected clicks.
-- Incremental clicks and conversions.
-- Incremental revenue delta.
-- Confidence band outputs (`low`, `median`, `high`).
+- Current estimated clicks.
+- Target estimated clicks.
+- Current paid-equivalent value.
+- Target paid-equivalent value.
+- Value delta.
+- Confidence outputs for the valuation estimate.
 
-### 5.2 Paid Benchmark Comparison
+### 5.2 Simulation Mode
 
-Inputs:
-- `cpc` (manual or provider-sourced)
-- `paid_conversion_rate` (optional override)
-- `paid_ctr` (optional, primarily for advanced paid simulation)
+SCFE v1 must support pure deterministic simulation for questions such as:
+- If this keyword ranked at position `1`, what would it be worth?
+- If this keyword moved from `5` to `2`, what is the projected value gain?
 
-Outputs:
-- Paid equivalent cost for projected organic incremental traffic.
-- Break-even CPC.
-- CEI and related ranking signals.
+Simulation requirements:
+- No persistence required for ad hoc scenario calls.
+- No provider calls.
+- Identical inputs must produce identical outputs.
 
 ### 5.3 Portfolio Readiness Outputs
 
-SCFE output schema must include fields consumable by portfolio allocator:
+SCFE v1 output schema must include fields consumable by portfolio allocation:
 - `opportunity_score`
-- `capital_efficiency_index`
+- `value_delta`
 - `confidence_weight`
 - `forecast_hash`
+
+Capital allocation is a downstream consumer of SCFE v1. It does not redefine SCFE as ROI.
 
 ---
 
 ## 6. Deterministic Modeling Requirements
 
-SCFE must satisfy the following non-negotiable deterministic controls:
+SCFE v1 must satisfy the following non-negotiable deterministic controls:
 
 1. Canonical JSON serialization (`sort_keys=true`, compact separators).
 2. Fixed precision rounding (6 decimals).
 3. Stable ordering for all list outputs.
 4. SHA256 hash of canonical payload.
 5. Versioned assumption tables and CTR curves.
-6. No randomization, wall-clock dependence, or mutable global state.
+6. No randomization, wall-clock dependence, or mutable global state in output computation.
 7. Replay-safe deterministic behavior in CI.
 
 ---
@@ -136,42 +142,42 @@ For a keyword:
 - `clicks_target = search_volume_monthly * ctr(target_rank)`
 - `clicks_delta = max(0, clicks_target - clicks_current)`
 
-### 7.2 Conversion and Revenue Projection
+### 7.2 Paid Equivalent Valuation
 
-- `conversions_delta = clicks_delta * conversion_rate`
-- `revenue_delta = conversions_delta * revenue_per_conversion`
+- `value_current = clicks_current * cpc`
+- `value_target = clicks_target * cpc`
+- `value_delta = max(0, value_target - value_current)`
 
-### 7.3 Paid Equivalent
+### 7.3 Opportunity Scoring
 
-- `paid_equivalent_cost = clicks_delta * cpc`
-- `break_even_cpc = revenue_delta / max(clicks_delta, epsilon)`
+SCFE v1 may emit a deterministic opportunity score derived from:
+- rank gap
+- value delta
+- confidence weight
 
-### 7.4 Capital Efficiency (Reference Formula)
-
-- `cei = revenue_delta / max(paid_equivalent_cost, epsilon)`
-
-Where `epsilon` is a deterministic small constant defined in the assumption bundle.
+The exact formula must be versioned in the assumption bundle and hash-locked in the output.
 
 ---
 
-## 8. Confidence Band Model
+## 8. Confidence Model
 
-SCFE must emit three deterministic bands:
+SCFE v1 should emit deterministic confidence signals based on input quality.
 
-- **Low**: conservative multipliers on CTR/CVR/value assumptions.
-- **Median**: baseline assumptions.
-- **High**: optimistic but bounded assumptions.
+Examples:
+- lower confidence when search volume is missing or inferred
+- lower confidence when CPC is inferred
+- higher confidence when stored click data supports the estimate
 
-Band multipliers are part of a versioned assumption bundle and must be hash-locked in output metadata.
+Confidence multipliers are part of a versioned assumption bundle and must be hash-locked in output metadata.
 
 Example structure:
 
 ```json
 {
-  "confidence_band": {
-    "low": {"revenue_delta": 0.0},
-    "median": {"revenue_delta": 0.0},
-    "high": {"revenue_delta": 0.0}
+  "confidence": {
+    "score": 0.0,
+    "weight": 0.0,
+    "inputs_complete": false
   }
 }
 ```
@@ -190,12 +196,7 @@ Example structure:
   "search_volume_monthly": 1200,
   "current_rank": 9,
   "target_rank": 3,
-  "conversion_rate": 0.03,
-  "revenue_per_conversion": 850,
-  "paid": {
-    "cpc": 18.5,
-    "paid_conversion_rate": 0.025
-  },
+  "cpc": 18.5,
   "assumption_bundle_version": "scfe-assumptions-v1"
 }
 ```
@@ -206,23 +207,24 @@ Example structure:
 {
   "keyword": "...",
   "model_version": "scfe-v1",
+  "engine_name": "organic-media-value-engine",
   "assumption_bundle_version": "scfe-assumptions-v1",
-  "current_state": {},
-  "projected_state": {},
+  "current_state": {
+    "estimated_clicks": 0.0,
+    "paid_equivalent_value": 0.0
+  },
+  "projected_state": {
+    "estimated_clicks": 0.0,
+    "paid_equivalent_value": 0.0
+  },
   "delta": {
     "clicks": 0.0,
-    "conversions": 0.0,
-    "revenue": 0.0
+    "paid_equivalent_value": 0.0
   },
-  "paid_equivalent": {
-    "cost": 0.0,
-    "break_even_cpc": 0.0
-  },
-  "capital_efficiency_index": 0.0,
-  "confidence_band": {
-    "low": {},
-    "median": {},
-    "high": {}
+  "opportunity_score": 0.0,
+  "confidence": {
+    "score": 0.0,
+    "weight": 0.0
   },
   "hash": "sha256hex"
 }
@@ -232,15 +234,15 @@ Example structure:
 
 ## 10. Assumption and Version Governance
 
-SCFE requires versioned assumption artifacts:
+SCFE v1 requires versioned assumption artifacts:
 
 - CTR curve tables.
-- Confidence band multipliers.
-- Numeric constants (`epsilon`, caps/floors).
+- Confidence multipliers.
+- Numeric constants and local market modifiers.
 
 Governance controls:
 - Each artifact version has immutable hash.
-- Artifact changes require review + changelog entry.
+- Artifact changes require review and changelog entry.
 - Replay corpus includes artifact version pins.
 
 ---
@@ -257,134 +259,35 @@ Required CI controls:
 Replay additions:
 - `forecast_keyword_baseline`
 - `forecast_paid_equivalent_edge_cases`
-- `forecast_confidence_band_stability`
-- `forecast_zero_volume_and_zero_cpc`.
+- `forecast_confidence_stability`
+- `forecast_zero_volume_and_zero_cpc`
 
 ---
 
-## 12. Portfolio Integration Requirements
+## 12. Security and Data Handling
 
-SCFE outputs must integrate cleanly with:
-
-- Portfolio momentum model.
-- Portfolio allocation engine.
-- Strategy automation loop.
-- Executive reporting and board exports.
-
-Integration contract expectations:
-- Deterministic per-keyword opportunity records.
-- Aggregatable to campaign and portfolio dimensions.
-- Stable IDs/hashes for downstream caching and dedupe.
-
----
-
-## 13. Security and Compliance Considerations
-
-- Treat revenue assumptions as sensitive commercial metadata.
-- Enforce tenant and organization scoping on all forecast endpoints.
-- Log access and compute events to audit trail.
+- Treat CPC assumptions and market modifiers as sensitive commercial metadata.
+- Enforce tenant and organization scoping on all future forecast endpoints.
 - Do not expose cross-tenant assumption artifacts or forecast records.
 - Ensure PII is excluded from forecast payloads by design.
 
 ---
 
-## 14. Failure Modes and Guardrails
+## 13. Relationship to ROI Attribution
 
-Expected failure classes:
+SCFE v1 is not the ROI Attribution Engine.
 
-- Invalid rank/volume ranges.
-- Missing/invalid assumption bundle version.
-- Numerical instability (divide by zero protections).
-- Missing paid benchmark inputs.
+SCFE v1 owns:
+- CTR-based click estimation
+- paid-equivalent valuation
+- rank-improvement value forecasting
+- deterministic keyword simulations
 
-Guardrails:
-- Strong schema validation and bounded numeric ranges.
-- Deterministic fallback behavior for optional paid fields.
-- Explicit reason codes for rejected requests.
+ROI Attribution Engine owns:
+- conversion attribution
+- revenue attribution
+- accounting ROI
+- CAC/LTV style business metrics
+- other finance-grade outcome models built from revenue assumptions
 
----
-
-## 15. Commercialization Strategy
-
-Suggested packaging:
-
-- **Base**: manual ROI input and keyword-level forecast.
-- **Pro**: live rank-linked forecast + cluster aggregation.
-- **Enterprise**: portfolio capital forecasting + allocation-ready output.
-- **Executive**: board-grade exports and attribution overlays.
-
-Monetizable differentiators:
-- Forecast confidence controls.
-- Portfolio-level CEI prioritization.
-- Decision-ready exports for C-suite reporting.
-
----
-
-## 16. Roadmap Placement
-
-- **Phase 2.x**: SCFE core model + deterministic contracts + keyword endpoint.
-- **Phase 3**: portfolio control plane integration.
-- **Phase 4**: executive attribution and capital efficiency dashboards.
-- **Phase 6**: commercialization hardening and entitlement enforcement.
-
----
-
-## 17. Success Metrics
-
-Primary metrics:
-- Forecast usefulness adoption (% of active users invoking SCFE).
-- Forecast-to-realized directional accuracy.
-- % of allocation decisions influenced by SCFE CEI.
-- Executive report engagement on forecast sections.
-
-Reliability metrics:
-- Replay drift count (target: zero).
-- Deterministic hash stability across environments.
-- API p95 latency and error rates.
-
----
-
-## 18. Future Enhancements
-
-- Deterministic rank trajectory modeling from historical slope and volatility.
-- SERP volatility adjustment factors.
-- Competitive paid overlap modifiers.
-- Vertical-specific assumption bundles (still deterministic/versioned).
-- Attribution confidence scoring tied to realized outcomes.
-
----
-
-## 19. Open Questions
-
-- Preferred default CTR curve source and update cadence.
-- Minimum data completeness threshold for exposing confidence bands.
-- Paid benchmark fallback policy when CPC unavailable.
-- How CEI should be normalized across heterogeneous campaign verticals.
-
----
-
-## 20. Implementation Readiness Checklist
-
-SCFE is build-ready when:
-
-1. Assumption bundle schema and governance policy approved.
-2. Deterministic math library and rounding conventions finalized.
-3. Replay corpus extension plan accepted.
-4. API contract reviewed by platform and reporting teams.
-5. Commercial packaging and entitlement mapping approved.
-
----
-
-## 21. Codex Engineering Directive (Future Build)
-
-When implementing SCFE:
-
-1. Build pure deterministic service first (no side effects).
-2. Lock assumption versioning before API release.
-3. Add replay corpus and CI drift gate before rollout.
-4. Integrate with portfolio allocator only after deterministic stability is verified.
-5. Keep paid comparisons explicit as benchmark assumptions, never as guarantees.
-
----
-
-END OF DOCUMENT
+If future SCFE versions add revenue overlays, those overlays must remain explicitly separated from SCFE v1's replacement-cost valuation core.

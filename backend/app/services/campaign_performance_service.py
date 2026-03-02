@@ -11,6 +11,7 @@ from app.models.campaign import Campaign
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_analytics import GoogleAnalyticsProviderAdapter
 from app.providers.google_search_console import SearchConsoleProviderAdapter
+from app.services import analytics_service, traffic_fact_service
 from app.services.provider_credentials_service import resolve_provider_credentials
 
 OPPORTUNITY_IMPRESSIONS_THRESHOLD = 1000.0
@@ -48,8 +49,17 @@ def build_campaign_performance_summary(
     date_from: datetime,
     date_to: datetime,
 ) -> dict:
+    analytics_summary = analytics_service.build_campaign_performance_summary_from_metrics(
+        db,
+        campaign_id=campaign.id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    if analytics_summary is not None:
+        return analytics_summary
+
     organization_id = campaign.tenant_id
-    credentials = resolve_provider_credentials(db, organization_id, "google")
+    credentials = resolve_provider_credentials(db, organization_id, 'google')
     site_url = _resolve_site_url(credentials=credentials, campaign=campaign)
     property_id = _resolve_property_id(credentials=credentials)
 
@@ -95,20 +105,20 @@ def build_campaign_performance_summary(
     )
 
     return {
-        "campaign_id": campaign.id,
-        "date_from": _as_utc(date_from).isoformat(),
-        "date_to": _as_utc(date_to).isoformat(),
-        "clicks": current.clicks,
-        "impressions": current.impressions,
-        "ctr": current.ctr,
-        "avg_position": current.avg_position,
-        "sessions": current.sessions,
-        "conversions": current.conversions,
-        "visibility_score": visibility_score,
-        "traffic_growth_percent": traffic_growth_percent,
-        "position_delta": position_delta,
-        "opportunity_flag": opportunity_flag,
-        "decline_flag": decline_flag,
+        'campaign_id': campaign.id,
+        'date_from': _as_utc(date_from).isoformat(),
+        'date_to': _as_utc(date_to).isoformat(),
+        'clicks': current.clicks,
+        'impressions': current.impressions,
+        'ctr': current.ctr,
+        'avg_position': current.avg_position,
+        'sessions': current.sessions,
+        'conversions': current.conversions,
+        'visibility_score': visibility_score,
+        'traffic_growth_percent': traffic_growth_percent,
+        'position_delta': position_delta,
+        'opportunity_flag': opportunity_flag,
+        'decline_flag': decline_flag,
     }
 
 
@@ -118,10 +128,20 @@ def build_campaign_performance_trend(
     campaign: Campaign,
     date_from: date,
     date_to: date,
-    interval: Literal["day", "week", "month"],
+    interval: Literal['day', 'week', 'month'],
 ) -> dict[str, Any]:
+    analytics_trend = analytics_service.build_campaign_performance_trend_from_metrics(
+        db,
+        campaign_id=campaign.id,
+        date_from=date_from,
+        date_to=date_to,
+        interval=interval,
+    )
+    if analytics_trend is not None:
+        return analytics_trend
+
     organization_id = campaign.tenant_id
-    credentials = resolve_provider_credentials(db, organization_id, "google")
+    credentials = resolve_provider_credentials(db, organization_id, 'google')
     site_url = _resolve_site_url(credentials=credentials, campaign=campaign)
     property_id = _resolve_property_id(credentials=credentials)
 
@@ -141,6 +161,11 @@ def build_campaign_performance_trend(
         date_from=date_from,
         date_to=date_to,
     )
+    _materialize_analytics_rollup(
+        db=db,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
     points: list[dict[str, Any]] = []
     for period_start, period_end in _iter_periods(date_from=date_from, date_to=date_to, interval=interval):
@@ -152,13 +177,13 @@ def build_campaign_performance_trend(
         conversions = 0.0
 
         for day in bucket_dates:
-            search_metrics = daily_search.get(day, {"clicks": 0.0, "impressions": 0.0, "position_weighted_sum": 0.0})
-            clicks += float(search_metrics["clicks"])
-            impressions += float(search_metrics["impressions"])
-            weighted_position_sum += float(search_metrics["position_weighted_sum"])
-            ga_metrics = daily_ga.get(day, {"sessions": 0.0, "conversions": 0.0})
-            sessions += float(ga_metrics["sessions"])
-            conversions += float(ga_metrics["conversions"])
+            search_metrics = daily_search.get(day, {'clicks': 0.0, 'impressions': 0.0, 'position_weighted_sum': 0.0})
+            clicks += float(search_metrics['clicks'])
+            impressions += float(search_metrics['impressions'])
+            weighted_position_sum += float(search_metrics['position_weighted_sum'])
+            ga_metrics = daily_ga.get(day, {'sessions': 0.0, 'conversions': 0.0})
+            sessions += float(ga_metrics['sessions'])
+            conversions += float(ga_metrics['conversions'])
 
         ctr = (clicks / impressions) if impressions > 0 else 0.0
         avg_position_raw = (weighted_position_sum / impressions) if impressions > 0 else None
@@ -177,24 +202,24 @@ def build_campaign_performance_trend(
         )
         points.append(
             {
-                "period_start": point.period_start.isoformat(),
-                "period_end": point.period_end.isoformat(),
-                "clicks": point.clicks,
-                "impressions": point.impressions,
-                "ctr": point.ctr,
-                "avg_position": point.avg_position,
-                "sessions": point.sessions,
-                "conversions": point.conversions,
-                "visibility_score": point.visibility_score,
+                'period_start': point.period_start.isoformat(),
+                'period_end': point.period_end.isoformat(),
+                'clicks': point.clicks,
+                'impressions': point.impressions,
+                'ctr': point.ctr,
+                'avg_position': point.avg_position,
+                'sessions': point.sessions,
+                'conversions': point.conversions,
+                'visibility_score': point.visibility_score,
             }
         )
 
     return {
-        "campaign_id": campaign.id,
-        "date_from": date_from.isoformat(),
-        "date_to": date_to.isoformat(),
-        "interval": interval,
-        "points": points,
+        'campaign_id': campaign.id,
+        'date_from': date_from.isoformat(),
+        'date_to': date_to.isoformat(),
+        'interval': interval,
+        'points': points,
     }
 
 
@@ -208,71 +233,54 @@ def _window_metrics(
     date_from: datetime,
     date_to: datetime,
 ) -> WindowMetrics:
-    search_console = SearchConsoleProviderAdapter(db=db)
-    search_result = search_console.execute(
-        ProviderExecutionRequest(
-            operation="search_console_query",
-            payload={
-                "organization_id": organization_id,
-                "campaign_id": campaign_id,
-                "site_url": site_url,
-                "start_date": date_from.date().isoformat(),
-                "end_date": date_to.date().isoformat(),
-                "dimensions": ["query"],
-                "row_limit": 1000,
-            },
-        )
+    daily_search = _daily_search_metrics(
+        db=db,
+        organization_id=organization_id,
+        campaign_id=campaign_id,
+        site_url=site_url,
+        date_from=date_from.date(),
+        date_to=date_to.date(),
     )
-    if not search_result.success:
-        raise RuntimeError("Search Console provider call failed.")
+    daily_ga = _daily_ga_metrics(
+        db=db,
+        organization_id=organization_id,
+        campaign_id=campaign_id,
+        property_id=property_id,
+        date_from=date_from.date(),
+        date_to=date_to.date(),
+    )
+    _materialize_analytics_rollup(
+        db=db,
+        date_from=date_from.date(),
+        date_to=date_to.date(),
+    )
 
-    search_rows = _rows(search_result.raw_payload)
-    clicks = sum(float(row.get("clicks", 0.0)) for row in search_rows)
-    impressions = sum(float(row.get("impressions", 0.0)) for row in search_rows)
-    ctr = (clicks / impressions) if impressions > 0 else 0.0
-    avg_position = _weighted_avg_position(search_rows)
-
+    clicks = 0.0
+    impressions = 0.0
+    weighted_position_sum = 0.0
     sessions = 0.0
-    conversions: float | None = None
-    if property_id:
-        ga = GoogleAnalyticsProviderAdapter(db=db)
-        ga_result = ga.execute(
-            ProviderExecutionRequest(
-                operation="ga4_run_report",
-                payload={
-                    "organization_id": organization_id,
-                    "campaign_id": campaign_id,
-                    "property_id": property_id,
-                    "start_date": date_from.date().isoformat(),
-                    "end_date": date_to.date().isoformat(),
-                    "dimensions": ["date"],
-                    "metrics": ["sessions", "conversions"],
-                    "limit": 1000,
-                },
-            )
-        )
-        if not ga_result.success:
-            raise RuntimeError("Google Analytics provider call failed.")
-        ga_rows = _rows(ga_result.raw_payload)
-        session_values: list[float] = []
-        for row in ga_rows:
-            value = _metric_value(row, "sessions")
-            if value is not None:
-                session_values.append(float(value))
-        sessions = sum(session_values)
-        conversion_values: list[float] = []
-        for row in ga_rows:
-            value = _metric_value(row, "conversions")
-            if value is not None:
-                conversion_values.append(float(value))
-        conversions = sum(conversion_values) if conversion_values else None
+    conversions = 0.0
+    has_conversion_data = False
+
+    for day in _iter_days(date_from.date(), date_to.date()):
+        search_metrics = daily_search.get(day, {'clicks': 0.0, 'impressions': 0.0, 'position_weighted_sum': 0.0})
+        clicks += float(search_metrics['clicks'])
+        impressions += float(search_metrics['impressions'])
+        weighted_position_sum += float(search_metrics['position_weighted_sum'])
+        ga_metrics = daily_ga.get(day, {'sessions': 0.0, 'conversions': 0.0})
+        sessions += float(ga_metrics['sessions'])
+        conversions += float(ga_metrics['conversions'])
+        has_conversion_data = has_conversion_data or (day in daily_ga)
+
+    ctr = (clicks / impressions) if impressions > 0 else 0.0
+    avg_position = (weighted_position_sum / impressions) if impressions > 0 else None
     return WindowMetrics(
         clicks=clicks,
         impressions=impressions,
         ctr=ctr,
         avg_position=avg_position,
         sessions=sessions,
-        conversions=conversions,
+        conversions=conversions if has_conversion_data else None,
     )
 
 
@@ -288,37 +296,55 @@ def _daily_search_metrics(
     search_console = SearchConsoleProviderAdapter(db=db)
     search_result = search_console.execute(
         ProviderExecutionRequest(
-            operation="search_console_query",
+            operation='search_console_query',
             payload={
-                "organization_id": organization_id,
-                "campaign_id": campaign_id,
-                "site_url": site_url,
-                "start_date": date_from.isoformat(),
-                "end_date": date_to.isoformat(),
-                "dimensions": ["date"],
-                "row_limit": 1000,
+                'organization_id': organization_id,
+                'campaign_id': campaign_id,
+                'site_url': site_url,
+                'start_date': date_from.isoformat(),
+                'end_date': date_to.isoformat(),
+                'dimensions': ['date'],
+                'row_limit': 1000,
             },
         )
     )
     if not search_result.success:
-        raise RuntimeError("Search Console provider call failed.")
+        raise RuntimeError('Search Console provider call failed.')
 
     metrics_by_day: dict[date, dict[str, float]] = {}
     for row in _rows(search_result.raw_payload):
         row_date = _extract_row_date(row)
         if row_date is None:
             continue
-        clicks = _safe_float(row.get("clicks"))
-        impressions = _safe_float(row.get("impressions"))
-        position = _safe_float(row.get("position"))
+        clicks = _safe_float(row.get('clicks'))
+        impressions = _safe_float(row.get('impressions'))
+        position = _safe_float(row.get('position'))
         entry = metrics_by_day.setdefault(
             row_date,
-            {"clicks": 0.0, "impressions": 0.0, "position_weighted_sum": 0.0},
+            {'clicks': 0.0, 'impressions': 0.0, 'position_weighted_sum': 0.0},
         )
-        entry["clicks"] += clicks
-        entry["impressions"] += impressions
+        entry['clicks'] += clicks
+        entry['impressions'] += impressions
         if impressions > 0:
-            entry["position_weighted_sum"] += impressions * position
+            entry['position_weighted_sum'] += impressions * position
+
+    changed = False
+    for row_date, values in metrics_by_day.items():
+        avg_position = (values['position_weighted_sum'] / values['impressions']) if values['impressions'] > 0 else None
+        outcome = traffic_fact_service.upsert_search_console_daily_metric(
+            db=db,
+            metric_input=traffic_fact_service.SearchConsoleDailyMetricInput(
+                organization_id=organization_id,
+                campaign_id=campaign_id,
+                metric_date=row_date,
+                clicks=int(round(values['clicks'])),
+                impressions=int(round(values['impressions'])),
+                avg_position=avg_position,
+            ),
+        )
+        changed = changed or outcome.inserted or outcome.updated
+    if changed:
+        db.commit()
     return metrics_by_day
 
 
@@ -337,42 +363,66 @@ def _daily_ga_metrics(
     ga = GoogleAnalyticsProviderAdapter(db=db)
     ga_result = ga.execute(
         ProviderExecutionRequest(
-            operation="ga4_run_report",
+            operation='ga4_run_report',
             payload={
-                "organization_id": organization_id,
-                "campaign_id": campaign_id,
-                "property_id": property_id,
-                "start_date": date_from.isoformat(),
-                "end_date": date_to.isoformat(),
-                "dimensions": ["date"],
-                "metrics": ["sessions", "conversions"],
-                "limit": 1000,
+                'organization_id': organization_id,
+                'campaign_id': campaign_id,
+                'property_id': property_id,
+                'start_date': date_from.isoformat(),
+                'end_date': date_to.isoformat(),
+                'dimensions': ['date'],
+                'metrics': ['sessions', 'conversions'],
+                'limit': 1000,
             },
         )
     )
     if not ga_result.success:
-        raise RuntimeError("Google Analytics provider call failed.")
+        raise RuntimeError('Google Analytics provider call failed.')
 
     metrics_by_day: dict[date, dict[str, float]] = {}
     for row in _rows(ga_result.raw_payload):
         row_date = _extract_row_date(row)
         if row_date is None:
             continue
-        entry = metrics_by_day.setdefault(row_date, {"sessions": 0.0, "conversions": 0.0})
-        entry["sessions"] += _safe_float(_metric_value(row, "sessions"))
-        entry["conversions"] += _safe_float(_metric_value(row, "conversions"))
+        entry = metrics_by_day.setdefault(row_date, {'sessions': 0.0, 'conversions': 0.0})
+        entry['sessions'] += _safe_float(_metric_value(row, 'sessions'))
+        entry['conversions'] += _safe_float(_metric_value(row, 'conversions'))
+
+    changed = False
+    for row_date, values in metrics_by_day.items():
+        outcome = traffic_fact_service.upsert_analytics_daily_metric(
+            db=db,
+            metric_input=traffic_fact_service.AnalyticsDailyMetricInput(
+                organization_id=organization_id,
+                campaign_id=campaign_id,
+                metric_date=row_date,
+                sessions=int(round(values['sessions'])),
+                conversions=int(round(values['conversions'])),
+            ),
+        )
+        changed = changed or outcome.inserted or outcome.updated
+    if changed:
+        db.commit()
     return metrics_by_day
 
 
+def _materialize_analytics_rollup(*, db: Session, date_from: date, date_to: date) -> None:
+    analytics_service.rollup_campaign_daily_metrics_for_range(
+        db=db,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
 def _resolve_site_url(*, credentials: dict[str, Any], campaign: Campaign) -> str:
-    site_url = str(credentials.get("search_console_site_url", "")).strip()
+    site_url = str(credentials.get('search_console_site_url', '')).strip()
     if site_url:
         return site_url
-    return f"sc-domain:{campaign.domain}"
+    return f'sc-domain:{campaign.domain}'
 
 
 def _resolve_property_id(*, credentials: dict[str, Any]) -> str:
-    value = credentials.get("ga4_property_id") or credentials.get("property_id") or ""
+    value = credentials.get('ga4_property_id') or credentials.get('property_id') or ''
     return str(value).strip()
 
 
@@ -423,7 +473,7 @@ def _decline_flag(*, current_sessions: float, previous_sessions: float) -> bool:
 
 
 def _metric_value(row: dict[str, Any], name: str) -> float | None:
-    metrics = row.get("metric_values")
+    metrics = row.get('metric_values')
     if not isinstance(metrics, dict):
         return None
     value = metrics.get(name)
@@ -436,7 +486,7 @@ def _metric_value(row: dict[str, Any], name: str) -> float | None:
 def _rows(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(payload, dict):
         return []
-    rows = payload.get("rows")
+    rows = payload.get('rows')
     if not isinstance(rows, list):
         return []
     return [row for row in rows if isinstance(row, dict)]
@@ -446,8 +496,8 @@ def _weighted_avg_position(rows: list[dict[str, Any]]) -> float | None:
     total_impressions = 0.0
     weighted_sum = 0.0
     for row in rows:
-        impressions = float(row.get("impressions", 0.0))
-        position = float(row.get("position", 0.0))
+        impressions = float(row.get('impressions', 0.0))
+        position = float(row.get('position', 0.0))
         if impressions > 0:
             total_impressions += impressions
             weighted_sum += impressions * position
@@ -471,19 +521,19 @@ def _safe_float(value: Any) -> float:
 
 def _extract_row_date(row: dict[str, Any]) -> date | None:
     candidates: list[Any] = []
-    if "date" in row:
-        candidates.append(row.get("date"))
-    keys = row.get("keys")
+    if 'date' in row:
+        candidates.append(row.get('date'))
+    keys = row.get('keys')
     if isinstance(keys, list) and keys:
         candidates.append(keys[0])
-    dim_values = row.get("dimension_values")
-    if isinstance(dim_values, dict) and "date" in dim_values:
-        candidates.append(dim_values.get("date"))
-    dim_values_alt = row.get("dimensionValues")
+    dim_values = row.get('dimension_values')
+    if isinstance(dim_values, dict) and 'date' in dim_values:
+        candidates.append(dim_values.get('date'))
+    dim_values_alt = row.get('dimensionValues')
     if isinstance(dim_values_alt, list) and dim_values_alt:
         first_value = dim_values_alt[0]
         if isinstance(first_value, dict):
-            candidates.append(first_value.get("value"))
+            candidates.append(first_value.get('value'))
         else:
             candidates.append(first_value)
 
@@ -502,7 +552,7 @@ def _parse_date_value(value: Any) -> date | None:
         return None
     if len(raw) == 8 and raw.isdigit():
         try:
-            return datetime.strptime(raw, "%Y%m%d").date()
+            return datetime.strptime(raw, '%Y%m%d').date()
         except ValueError:
             return None
     try:
@@ -524,15 +574,15 @@ def _iter_periods(
     *,
     date_from: date,
     date_to: date,
-    interval: Literal["day", "week", "month"],
+    interval: Literal['day', 'week', 'month'],
 ) -> list[tuple[date, date]]:
-    if interval == "day":
+    if interval == 'day':
         return [(day, day) for day in _iter_days(date_from, date_to)]
 
     periods: list[tuple[date, date]] = []
     cursor = date_from
     while cursor <= date_to:
-        if interval == "week":
+        if interval == 'week':
             days_to_end = 6 - cursor.weekday()
             period_end = min(date_to, cursor + timedelta(days=days_to_end))
         else:

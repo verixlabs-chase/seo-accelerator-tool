@@ -45,6 +45,11 @@ slow_queries_total = Counter(
     ["band"],
 )
 
+traffic_fact_stale_campaigns_total = Counter(
+    "traffic_fact_stale_campaigns_total",
+    "Total number of stale traffic fact campaign detections.",
+)
+
 celery_task_duration_seconds = Histogram(
     "celery_task_duration_seconds",
     "Celery task duration in seconds.",

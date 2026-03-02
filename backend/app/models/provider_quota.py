@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -10,14 +10,8 @@ from app.db.base import Base
 class ProviderQuotaState(Base):
     __tablename__ = "provider_quota_states"
     __table_args__ = (
-        UniqueConstraint(
-            "tenant_id",
-            "environment",
-            "provider_name",
-            "capability",
-            "window_start",
-            name="uq_provider_quota_tenant_env_provider_capability_window_start",
-        ),
+        UniqueConstraint("tenant_id", "environment", "provider_name", "capability", "window_start", name="uq_provider_quota_tenant_env_provider_capability_window_start"),
+        Index("ix_provider_quota_states_tenant_env_window_end", "tenant_id", "environment", "window_end"),
         CheckConstraint("limit_count >= 0", name="ck_provider_quota_limit_non_negative"),
         CheckConstraint("used_count >= 0", name="ck_provider_quota_used_non_negative"),
         CheckConstraint("remaining_count >= 0", name="ck_provider_quota_remaining_non_negative"),

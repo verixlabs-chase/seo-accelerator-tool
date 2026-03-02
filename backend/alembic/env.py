@@ -2,7 +2,10 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from alembic.operations import Operations
+from alembic.ddl.sqlite import SQLiteImpl
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.schema import AddConstraint, DropConstraint
 
 from app.db.base import Base
 from app import models  # noqa: F401
@@ -34,10 +37,43 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+_original_batch_alter_table = Operations.batch_alter_table
+
+
+def _offline_safe_batch_alter_table(self, table_name, *args, **kwargs):
+    if context.is_offline_mode() and 'recreate' not in kwargs:
+        kwargs['recreate'] = 'never'
+    return _original_batch_alter_table(self, table_name, *args, **kwargs)
+
+
+Operations.batch_alter_table = _offline_safe_batch_alter_table
+
+_original_sqlite_add_constraint = SQLiteImpl.add_constraint
+_original_sqlite_drop_constraint = SQLiteImpl.drop_constraint
+
+
+def _offline_safe_sqlite_add_constraint(self, const):
+    if self.as_sql:
+        self._exec(AddConstraint(const))
+        return
+    return _original_sqlite_add_constraint(self, const)
+
+
+def _offline_safe_sqlite_drop_constraint(self, const):
+    if self.as_sql:
+        self._exec(DropConstraint(const))
+        return
+    return _original_sqlite_drop_constraint(self, const)
+
+
+SQLiteImpl.add_constraint = _offline_safe_sqlite_add_constraint
+SQLiteImpl.drop_constraint = _offline_safe_sqlite_drop_constraint
+
+
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(url=url, target_metadata=target_metadata, literal_binds=True, compare_type=True)
+    context.configure(url=url, target_metadata=target_metadata, literal_binds=True, compare_type=False)
     with context.begin_transaction():
         context.run_migrations()
 
@@ -49,7 +85,7 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+        context.configure(connection=connection, target_metadata=target_metadata, compare_type=False)
         with context.begin_transaction():
             context.run_migrations()
 

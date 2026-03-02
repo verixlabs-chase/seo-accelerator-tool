@@ -16,6 +16,7 @@ from app.models.local import ReviewVelocitySnapshot
 from app.models.rank import RankingSnapshot
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent, ReportSchedule
 from app.providers import get_email_adapter
+from app.services import analytics_service
 from app.services.strategy_engine.thresholds import version_id as strategy_threshold_version
 
 REPORT_SCHEDULE_MAX_RETRIES = 3
@@ -30,6 +31,11 @@ def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
 
 def aggregate_kpis(db: Session, tenant_id: str, campaign_id: str, month_number: int) -> dict:
     _campaign_or_404(db, tenant_id, campaign_id)
+    latest_metric = analytics_service.get_latest_campaign_daily_metric(
+        db,
+        campaign_id=campaign_id,
+        on_or_before=datetime.now(UTC),
+    )
     ranking_count = db.query(RankingSnapshot).filter(RankingSnapshot.tenant_id == tenant_id, RankingSnapshot.campaign_id == campaign_id).count()
     issues_count = db.query(TechnicalIssue).filter(TechnicalIssue.tenant_id == tenant_id, TechnicalIssue.campaign_id == campaign_id).count()
     latest_score = (
@@ -47,10 +53,16 @@ def aggregate_kpis(db: Session, tenant_id: str, campaign_id: str, month_number: 
     return {
         "month_number": month_number,
         "rank_snapshots": ranking_count,
-        "technical_issues": issues_count,
-        "intelligence_score": latest_score.score_value if latest_score else None,
-        "reviews_last_30d": latest_velocity.reviews_last_30d if latest_velocity else 0,
-        "avg_rating_last_30d": latest_velocity.avg_rating_last_30d if latest_velocity else 0.0,
+        "technical_issues": int(latest_metric.technical_issue_count) if latest_metric is not None else issues_count,
+        "intelligence_score": (
+            latest_metric.intelligence_score if latest_metric is not None else (latest_score.score_value if latest_score else None)
+        ),
+        "reviews_last_30d": int(latest_metric.reviews_last_30d) if latest_metric is not None else (latest_velocity.reviews_last_30d if latest_velocity else 0),
+        "avg_rating_last_30d": (
+            latest_metric.avg_rating_last_30d
+            if latest_metric is not None and latest_metric.avg_rating_last_30d is not None
+            else (latest_velocity.avg_rating_last_30d if latest_velocity else 0.0)
+        ),
     }
 
 

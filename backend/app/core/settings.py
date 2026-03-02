@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     google_oauth_token_endpoint: str = "https://oauth2.googleapis.com/token"
     google_oauth_state_ttl_seconds: int = 600
     google_oauth_http_timeout_seconds: float = 15.0
+    traffic_fact_sync_lookback_days: int = 7
+    traffic_fact_sync_hour_utc: int = 2
+    traffic_fact_sync_minute_utc: int = 0
+    traffic_fact_max_staleness_days: int = 2
     google_oauth_access_token_skew_seconds: int = 60
     rank_provider_http_endpoint: str = ""
     rank_provider_http_timeout_seconds: float = 15.0

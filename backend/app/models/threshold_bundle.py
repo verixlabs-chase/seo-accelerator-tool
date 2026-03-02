@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,9 +9,10 @@ from app.db.base import Base
 
 class ThresholdBundle(Base):
     __tablename__ = "threshold_bundles"
+    __table_args__ = (UniqueConstraint("version", name="uq_threshold_bundles_version"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    version: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", index=True)
     checksum: Mapped[str] = mapped_column(String(128), nullable=False)
     is_valid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

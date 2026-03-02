@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -20,7 +21,7 @@ from app.services.campaign_performance_service import build_campaign_performance
 from app.services.feature_gate_service import assert_feature_available
 from app.services.strategy_engine.schemas import CampaignStrategyOut, StrategyWindow
 from app.services.strategy_build_service import build_campaign_strategy_idempotent
-from app.services import lifecycle_service
+from app.services import economics_service, lifecycle_service
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -343,6 +344,124 @@ def get_campaign_strategy(
                 response_payload[key] = temporal_meta[key]
     return envelope(request, response_payload)
 
+
+@router.get("/{id}/organic-media-value")
+def get_campaign_organic_media_value(
+    request: Request,
+    id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.tenant_id == user["tenant_id"]).first()
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+
+    current_payload = economics_service.current_organic_media_value(db, campaign.id)
+    projection_payload = economics_service.projected_value_if_rank_improves(db, campaign.id)
+    top_keywords = economics_service.top_keywords_by_value(db, campaign.id)
+    payload = {
+        "campaign_id": campaign.id,
+        "current_value": _money_as_str(current_payload["current_value"]),
+        "projected_value": _money_as_str(projection_payload["projected_value"]),
+        "value_delta": _money_as_str(projection_payload["value_delta"]),
+        "keyword_count": current_payload["keyword_count"],
+        "as_of": current_payload["as_of"].isoformat() if current_payload["as_of"] is not None else None,
+        "top_keywords_by_value": [_serialize_keyword_value_row(row) for row in top_keywords],
+    }
+    return envelope(request, payload)
+
+
+@router.get("/{id}/organic-media-opportunity")
+def get_campaign_organic_media_opportunity(
+    request: Request,
+    id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.tenant_id == user["tenant_id"]).first()
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+
+    current_payload = economics_service.current_organic_media_value(db, campaign.id)
+    projection_payload = economics_service.projected_value_if_rank_improves(db, campaign.id)
+    opportunities = economics_service.highest_opportunity_gap_keywords(db, campaign.id)
+    payload = {
+        "campaign_id": campaign.id,
+        "current_value": _money_as_str(current_payload["current_value"]),
+        "projected_value": _money_as_str(projection_payload["projected_value"]),
+        "value_delta": _money_as_str(projection_payload["value_delta"]),
+        "keyword_count": current_payload["keyword_count"],
+        "as_of": current_payload["as_of"].isoformat() if current_payload["as_of"] is not None else None,
+        "opportunity_keywords": [
+            {
+                "keyword_id": row["keyword_id"],
+                "metric_date": row["metric_date"].isoformat(),
+                "current_rank": row["current_rank"],
+                "projected_rank": row["projected_rank"],
+                "current_value": _money_as_str(row["current_value"]),
+                "projected_value": _money_as_str(row["projected_value"]),
+                "delta_value": _money_as_str(row["delta_value"]),
+                "opportunity_gap": _money_as_str(row["opportunity_gap"]),
+                "ctr_model_version": row["ctr_model_version"],
+            }
+            for row in opportunities
+        ],
+    }
+    return envelope(request, payload)
+
+
+
+
+@router.get("/{id}/organic-media-scenarios")
+def get_campaign_organic_media_scenarios(
+    request: Request,
+    id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.tenant_id == user["tenant_id"]).first()
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+
+    current_payload = economics_service.current_organic_media_value(db, campaign.id)
+    scenarios = [
+        economics_service.projected_value_for_scenario(db, campaign.id, economics_service.Scenario.CONSERVATIVE),
+        economics_service.projected_value_for_scenario(db, campaign.id, economics_service.Scenario.MODERATE),
+        economics_service.projected_value_for_scenario(db, campaign.id, economics_service.Scenario.STRONG),
+        economics_service.projected_value_for_scenario(db, campaign.id, economics_service.Scenario.DOMINANT),
+    ]
+    payload = {
+        "campaign_id": campaign.id,
+        "current_value": _money_as_str(current_payload["current_value"]),
+        "keyword_count": current_payload["keyword_count"],
+        "as_of": current_payload["as_of"].isoformat() if current_payload["as_of"] is not None else None,
+        "scenarios": [
+            {
+                "scenario": row["scenario"],
+                "projected_value": _money_as_str(row["projected_value"]),
+                "delta": _money_as_str(row["delta"]),
+                "percentage_lift": _money_as_str(row["percentage_lift"]),
+                "confidence_weight": _money_as_str(row["confidence_weight"]),
+            }
+            for row in scenarios
+        ],
+    }
+    return envelope(request, payload)
+
+def _serialize_keyword_value_row(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "keyword_id": row["keyword_id"],
+        "metric_date": row["metric_date"].isoformat(),
+        "current_value": _money_as_str(row["current_value"]),
+        "estimated_clicks": row["estimated_clicks"],
+        "search_volume": row["search_volume"],
+        "cpc": _money_as_str(row["cpc"]),
+        "ctr_model_version": row["ctr_model_version"],
+    }
+
+
+def _money_as_str(value: Decimal) -> str:
+    return format(value.quantize(Decimal("0.01")), "f")
 
 def _as_utc(value: datetime | None) -> datetime | None:
     if value is None:

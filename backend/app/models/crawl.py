@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -35,6 +35,7 @@ class CrawlRun(Base):
 
 class CrawlPageResult(Base):
     __tablename__ = "crawl_page_results"
+    __table_args__ = (Index("ix_crawl_page_results_tenant_campaign_crawled", "tenant_id", "campaign_id", "crawled_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -65,6 +66,7 @@ class CrawlFrontierUrl(Base):
     __tablename__ = "crawl_frontier_urls"
     __table_args__ = (
         UniqueConstraint("crawl_run_id", "normalized_url", name="uq_crawl_frontier_run_normalized_url"),
+        Index("ix_crawl_frontier_urls_run_status_created", "crawl_run_id", "status", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))

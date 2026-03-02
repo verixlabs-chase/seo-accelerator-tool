@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,6 +9,7 @@ from app.db.base import Base
 
 class StrategyRecommendation(Base):
     __tablename__ = "strategy_recommendations"
+    __table_args__ = (UniqueConstraint("tenant_id", "campaign_id", "idempotency_key", name="uq_strategy_recommendations_idempotency"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -46,6 +47,7 @@ class IntelligenceScore(Base):
 
 class CampaignMilestone(Base):
     __tablename__ = "campaign_milestones"
+    __table_args__ = (UniqueConstraint("tenant_id", "campaign_id", "month_number", "milestone_key", name="uq_campaign_milestone_key"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)

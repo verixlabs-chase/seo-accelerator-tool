@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -10,24 +10,15 @@ from app.db.base import Base
 class StrategyExecutionKey(Base):
     __tablename__ = "strategy_execution_keys"
     __table_args__ = (
-        UniqueConstraint(
-            "tenant_id",
-            "operation_type",
-            "idempotency_key",
-            name="uq_strategy_exec_tenant_operation_idempotency",
-        ),
-        UniqueConstraint(
-            "tenant_id",
-            "operation_type",
-            "input_hash",
-            "version_fingerprint",
-            name="uq_strategy_exec_tenant_operation_input_version",
-        ),
+        UniqueConstraint("tenant_id", "operation_type", "idempotency_key", name="uq_strategy_exec_tenant_operation_idempotency"),
+        UniqueConstraint("tenant_id", "operation_type", "input_hash", "version_fingerprint", name="uq_strategy_exec_tenant_operation_input_version"),
+        Index("ix_strategy_execution_keys_tenant", "tenant_id"),
+        Index("ix_strategy_execution_keys_campaign", "campaign_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    campaign_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(36), nullable=False)
     operation_type: Mapped[str] = mapped_column(String(80), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)

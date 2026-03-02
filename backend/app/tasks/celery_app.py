@@ -190,9 +190,20 @@ def create_celery_app() -> Celery:
     }
     celery.conf.timezone = "UTC"
     celery.conf.beat_schedule = {
+        "analytics-rollup-nightly": {
+            "task": "analytics.rollup_daily",
+            "schedule": crontab(minute=15, hour=1),
+        },
         "strategy-automation-monthly": {
             "task": "strategy.run_automation_for_all_campaigns",
             "schedule": crontab(minute=0, hour=3, day_of_month=1),
+        },
+        "traffic-fact-sync-nightly": {
+            "task": "traffic.nightly_sync_traffic_facts",
+            "schedule": crontab(
+                minute=settings.traffic_fact_sync_minute_utc,
+                hour=settings.traffic_fact_sync_hour_utc,
+            ),
         }
     }
     celery.autodiscover_tasks(["app.tasks"])

@@ -1,13 +1,20 @@
 from app.models.audit_log import AuditLog
+from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact
+from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap
 from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
+from app.models.keyword_daily_economics import KeywordDailyEconomics
+from app.models.keyword_market_snapshot import KeywordMarketSnapshot
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
+from app.models.runtime_version_lock import RuntimeVersionLock
 from app.models.location import Location
 from app.models.fleet_job import FleetJob
 from app.models.fleet_job_item import FleetJobItem
@@ -50,6 +57,8 @@ __all__ = [
     'StrategyAutomationEvent',
     'ThresholdBundle',
     'Campaign',
+    'CampaignDailyMetric',
+    'AnalyticsDailyMetric',
     'AuditLog',
     'TaskExecution',
     'Page',
@@ -62,6 +71,8 @@ __all__ = [
     'EntityAnalysisRun',
     'KeywordCluster',
     'CampaignKeyword',
+    'KeywordDailyEconomics',
+    'KeywordMarketSnapshot',
     'Ranking',
     'RankingSnapshot',
     'ReferenceLibraryVersion',
@@ -80,6 +91,8 @@ __all__ = [
     'LocalHealthSnapshot',
     'Review',
     'ReviewVelocitySnapshot',
+    'SearchConsoleDailyMetric',
+    'RuntimeVersionLock',
     'Portfolio',
     'PortfolioUsageDaily',
     'Location',
@@ -100,6 +113,7 @@ __all__ = [
     'BacklinkOpportunity',
     'Backlink',
     'Citation',
+    'BusinessLocation',
     'StrategyRecommendation',
     'IntelligenceScore',
     'CampaignMilestone',

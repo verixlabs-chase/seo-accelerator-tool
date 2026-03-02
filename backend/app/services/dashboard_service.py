@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.core.alert_thresholds import ALERT_THRESHOLDS
-from app.services import crawl_service, entity_service, intelligence_service, observability_service, reporting_service
+from app.services import analytics_service, crawl_service, entity_service, intelligence_service, observability_service, reporting_service
 
 
 def _derive_platform_state(snapshot: dict, report_summary: dict) -> tuple[str, dict]:
@@ -51,8 +51,15 @@ def _technical_score_from_issue_count(issue_count: int) -> float:
 
 
 def build_dashboard(db: Session, tenant_id: str, campaign_id: str) -> dict:
-    issues = crawl_service.list_issues(db, tenant_id=tenant_id, campaign_id=campaign_id)
-    technical_score = _technical_score_from_issue_count(len(issues))
+    latest_metric = analytics_service.get_latest_campaign_daily_metric(
+        db,
+        campaign_id=campaign_id,
+        on_or_before=datetime.now(UTC),
+    )
+    issue_count = int(latest_metric.technical_issue_count or 0) if latest_metric is not None else len(
+        crawl_service.list_issues(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    )
+    technical_score = _technical_score_from_issue_count(issue_count)
 
     entity_report = entity_service.get_latest_entity_report(db, tenant_id=tenant_id, campaign_id=campaign_id)
     recommendation_summary = intelligence_service.get_recommendation_summary(db, tenant_id=tenant_id, campaign_id=campaign_id)

@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,6 +9,7 @@ from app.db.base import Base
 
 class ReferenceLibraryVersion(Base):
     __tablename__ = "reference_library_versions"
+    __table_args__ = (UniqueConstraint("tenant_id", "version", name="uq_reference_library_version_tenant_version"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -21,15 +22,14 @@ class ReferenceLibraryVersion(Base):
 
 class ReferenceLibraryArtifact(Base):
     __tablename__ = "reference_library_artifacts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "reference_library_version_id", "artifact_type", name="uq_reference_library_artifact_type"),
+        Index("ix_ref_lib_artifacts_version_id", "reference_library_version_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    reference_library_version_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("reference_library_versions.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    reference_library_version_id: Mapped[str] = mapped_column(String(36), ForeignKey("reference_library_versions.id", ondelete="CASCADE"), nullable=False)
     artifact_type: Mapped[str] = mapped_column(String(40), nullable=False)
     artifact_uri: Mapped[str] = mapped_column(Text, nullable=False)
     artifact_sha256: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -39,15 +39,11 @@ class ReferenceLibraryArtifact(Base):
 
 class ReferenceLibraryValidationRun(Base):
     __tablename__ = "reference_library_validation_runs"
+    __table_args__ = (Index("ix_ref_lib_validation_runs_version_id", "reference_library_version_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    reference_library_version_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("reference_library_versions.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    reference_library_version_id: Mapped[str] = mapped_column(String(36), ForeignKey("reference_library_versions.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     errors_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
@@ -56,15 +52,11 @@ class ReferenceLibraryValidationRun(Base):
 
 class ReferenceLibraryActivation(Base):
     __tablename__ = "reference_library_activations"
+    __table_args__ = (Index("ix_ref_lib_activations_version_id", "reference_library_version_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    reference_library_version_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("reference_library_versions.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    reference_library_version_id: Mapped[str] = mapped_column(String(36), ForeignKey("reference_library_versions.id", ondelete="CASCADE"), nullable=False)
     activated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     rollback_from_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
     activation_status: Mapped[str] = mapped_column(String(30), nullable=False, default="queued")

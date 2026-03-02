@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,21 +9,12 @@ from app.db.base import Base
 
 class TaskExecution(Base):
     __tablename__ = "task_executions"
+    __table_args__ = (Index("ix_task_executions_org_portfolio_created_at", "organization_id", "portfolio_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    organization_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("organizations.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    portfolio_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("portfolios.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+    portfolio_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("portfolios.id", ondelete="SET NULL"), nullable=True, index=True)
     task_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, default="{}")

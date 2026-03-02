@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, synonym
 
 from app.db.base import Base
@@ -9,6 +9,7 @@ from app.db.base import Base
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (Index("ix_users_email", "email"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)

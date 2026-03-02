@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /home/verixlabs/SEO\ Accelerator\ Tool/backend
+exec ./.venv312/Scripts/python.exe scripts/backfill_campaign_daily_metrics.py $@
