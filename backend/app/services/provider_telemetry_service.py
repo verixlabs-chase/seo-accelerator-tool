@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 import uuid
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_metric import ProviderExecutionMetric
 from app.models.provider_quota import ProviderQuotaState
+from app.services.operational_telemetry_service import record_provider_call
 
 
 logger = logging.getLogger("lsos.provider.telemetry")
@@ -82,6 +83,11 @@ class ProviderTelemetryService:
             )
             self._db.add(metric)
             self._db.commit()
+            record_provider_call(
+                provider=provider_name,
+                duration_ms=duration_ms,
+                success=outcome == "success",
+            )
         except Exception:  # noqa: BLE001
             self._db.rollback()
             logger.warning("provider telemetry metric persistence failed", exc_info=True)

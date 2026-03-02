@@ -1,8 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
 from datetime import UTC, datetime
+
+
+_RESERVED_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__.keys()) | {"message", "asctime"}
 
 
 class JsonFormatter(logging.Formatter):
@@ -16,9 +19,12 @@ class JsonFormatter(logging.Formatter):
             "tenant_id": getattr(record, "tenant_id", None),
             "organization_id": getattr(record, "organization_id", None),
         }
-        for field in ("method", "path", "status_code", "duration_ms"):
-            if hasattr(record, field):
-                payload[field] = getattr(record, field)
+        for key, value in record.__dict__.items():
+            if key in _RESERVED_RECORD_FIELDS or key.startswith("_"):
+                continue
+            if key in payload:
+                continue
+            payload[key] = value
         return json.dumps(payload, default=str)
 
 

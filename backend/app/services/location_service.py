@@ -1,4 +1,4 @@
-"""
+﻿"""
 Canonical write surface for execution-layer locations.
 All future location create/update flows MUST call this service.
 Direct DB writes to locations outside this service are prohibited.
@@ -7,12 +7,15 @@ Direct DB writes to locations outside this service are prohibited.
 from __future__ import annotations
 
 import logging
+from time import monotonic
 import uuid
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+
+from app.services.operational_telemetry_service import record_service_operation
 
 
 logger = logging.getLogger("lsos.api")
@@ -66,66 +69,77 @@ class LocationWriteService:
         status_value: str = "active",
         business_location_id: str | None = None,
     ) -> dict[str, object]:
-        self._validate_business_location_scope(
-            db,
-            organization_id=organization_id,
-            business_location_id=business_location_id,
-        )
-
-        now = datetime.now(UTC)
-        location_id = str(uuid.uuid4())
-        normalized_status = status_value.strip().lower() or "active"
-        normalized_location_code = location_code.strip()
-        normalized_name = name.strip()
-        normalized_country_code = country_code.strip().upper()
-        normalized_region = _normalize_optional(region)
-        normalized_city = _normalize_optional(city)
-
-        db.execute(
-            sa.insert(_LOCATIONS_TABLE).values(
-                id=location_id,
+        started_at = monotonic()
+        success = False
+        try:
+            self._validate_business_location_scope(
+                db,
                 organization_id=organization_id,
-                portfolio_id=portfolio_id,
-                sub_account_id=sub_account_id,
-                campaign_id=campaign_id,
-                location_code=normalized_location_code,
-                name=normalized_name,
-                country_code=normalized_country_code,
-                region=normalized_region,
-                city=normalized_city,
-                lat=lat,
-                lng=lng,
-                status=normalized_status,
                 business_location_id=business_location_id,
-                created_at=now,
-                updated_at=now,
             )
-        )
-        _log_hierarchy_assignment(
-            organization_id=organization_id,
-            location_id=location_id,
-            business_location_id=business_location_id,
-            action="create",
-        )
 
-        return {
-            "id": location_id,
-            "organization_id": organization_id,
-            "portfolio_id": portfolio_id,
-            "sub_account_id": sub_account_id,
-            "campaign_id": campaign_id,
-            "location_code": normalized_location_code,
-            "name": normalized_name,
-            "country_code": normalized_country_code,
-            "region": normalized_region,
-            "city": normalized_city,
-            "lat": lat,
-            "lng": lng,
-            "status": normalized_status,
-            "business_location_id": business_location_id,
-            "created_at": now,
-            "updated_at": now,
-        }
+            now = datetime.now(UTC)
+            location_id = str(uuid.uuid4())
+            normalized_status = status_value.strip().lower() or "active"
+            normalized_location_code = location_code.strip()
+            normalized_name = name.strip()
+            normalized_country_code = country_code.strip().upper()
+            normalized_region = _normalize_optional(region)
+            normalized_city = _normalize_optional(city)
+
+            db.execute(
+                sa.insert(_LOCATIONS_TABLE).values(
+                    id=location_id,
+                    organization_id=organization_id,
+                    portfolio_id=portfolio_id,
+                    sub_account_id=sub_account_id,
+                    campaign_id=campaign_id,
+                    location_code=normalized_location_code,
+                    name=normalized_name,
+                    country_code=normalized_country_code,
+                    region=normalized_region,
+                    city=normalized_city,
+                    lat=lat,
+                    lng=lng,
+                    status=normalized_status,
+                    business_location_id=business_location_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            _log_hierarchy_assignment(
+                organization_id=organization_id,
+                location_id=location_id,
+                business_location_id=business_location_id,
+                action="create",
+            )
+            success = True
+            return {
+                "id": location_id,
+                "organization_id": organization_id,
+                "portfolio_id": portfolio_id,
+                "sub_account_id": sub_account_id,
+                "campaign_id": campaign_id,
+                "location_code": normalized_location_code,
+                "name": normalized_name,
+                "country_code": normalized_country_code,
+                "region": normalized_region,
+                "city": normalized_city,
+                "lat": lat,
+                "lng": lng,
+                "status": normalized_status,
+                "business_location_id": business_location_id,
+                "created_at": now,
+                "updated_at": now,
+            }
+        finally:
+            record_service_operation(
+                service="location_write_service",
+                operation="create_location",
+                duration_ms=(monotonic() - started_at) * 1000.0,
+                success=success,
+                organization_id=organization_id,
+            )
 
     def update_location(
         self,
@@ -136,64 +150,76 @@ class LocationWriteService:
         name: str | object = UNSET,
         business_location_id: str | None | object = UNSET,
     ) -> dict[str, object]:
-        current = db.execute(
-            sa.select(
-                _LOCATIONS_TABLE.c.id,
-                _LOCATIONS_TABLE.c.organization_id,
-                _LOCATIONS_TABLE.c.name,
-                _LOCATIONS_TABLE.c.business_location_id,
-                _LOCATIONS_TABLE.c.created_at,
-                _LOCATIONS_TABLE.c.updated_at,
-            ).where(_LOCATIONS_TABLE.c.id == location_id)
-        ).mappings().first()
-        if current is None or current["organization_id"] != organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"message": "Location not found.", "reason_code": "location_not_found"},
-            )
+        started_at = monotonic()
+        success = False
+        try:
+            current = db.execute(
+                sa.select(
+                    _LOCATIONS_TABLE.c.id,
+                    _LOCATIONS_TABLE.c.organization_id,
+                    _LOCATIONS_TABLE.c.name,
+                    _LOCATIONS_TABLE.c.business_location_id,
+                    _LOCATIONS_TABLE.c.created_at,
+                    _LOCATIONS_TABLE.c.updated_at,
+                ).where(_LOCATIONS_TABLE.c.id == location_id)
+            ).mappings().first()
+            if current is None or current["organization_id"] != organization_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"message": "Location not found.", "reason_code": "location_not_found"},
+                )
 
-        next_name = current["name"]
-        next_business_location_id = current["business_location_id"]
-        next_updated_at = current["updated_at"]
-        update_values: dict[str, object] = {}
+            next_name = current["name"]
+            next_business_location_id = current["business_location_id"]
+            next_updated_at = current["updated_at"]
+            update_values: dict[str, object] = {}
 
-        if name is not UNSET:
-            normalized_name = str(name).strip()
-            update_values["name"] = normalized_name
-            next_name = normalized_name
+            if name is not UNSET:
+                normalized_name = str(name).strip()
+                update_values["name"] = normalized_name
+                next_name = normalized_name
 
-        if business_location_id is not UNSET:
-            self._validate_business_location_scope(
-                db,
+            if business_location_id is not UNSET:
+                self._validate_business_location_scope(
+                    db,
+                    organization_id=organization_id,
+                    business_location_id=business_location_id,
+                )
+                update_values["business_location_id"] = business_location_id
+                next_business_location_id = business_location_id
+
+            if update_values:
+                next_updated_at = datetime.now(UTC)
+                update_values["updated_at"] = next_updated_at
+                db.execute(
+                    sa.update(_LOCATIONS_TABLE)
+                    .where(_LOCATIONS_TABLE.c.id == location_id)
+                    .values(**update_values)
+                )
+                _log_hierarchy_assignment(
+                    organization_id=organization_id,
+                    location_id=location_id,
+                    business_location_id=next_business_location_id,
+                    action=_resolve_assignment_action(business_location_id),
+                )
+
+            success = True
+            return {
+                "id": location_id,
+                "organization_id": organization_id,
+                "name": next_name,
+                "business_location_id": next_business_location_id,
+                "created_at": current["created_at"],
+                "updated_at": next_updated_at,
+            }
+        finally:
+            record_service_operation(
+                service="location_write_service",
+                operation="update_location",
+                duration_ms=(monotonic() - started_at) * 1000.0,
+                success=success,
                 organization_id=organization_id,
-                business_location_id=business_location_id,
             )
-            update_values["business_location_id"] = business_location_id
-            next_business_location_id = business_location_id
-
-        if update_values:
-            next_updated_at = datetime.now(UTC)
-            update_values["updated_at"] = next_updated_at
-            db.execute(
-                sa.update(_LOCATIONS_TABLE)
-                .where(_LOCATIONS_TABLE.c.id == location_id)
-                .values(**update_values)
-            )
-            _log_hierarchy_assignment(
-                organization_id=organization_id,
-                location_id=location_id,
-                business_location_id=next_business_location_id,
-                action=_resolve_assignment_action(business_location_id),
-            )
-
-        return {
-            "id": location_id,
-            "organization_id": organization_id,
-            "name": next_name,
-            "business_location_id": next_business_location_id,
-            "created_at": current["created_at"],
-            "updated_at": next_updated_at,
-        }
 
     def _validate_business_location_scope(
         self,

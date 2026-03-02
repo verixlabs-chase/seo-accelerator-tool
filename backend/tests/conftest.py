@@ -1,4 +1,4 @@
-import os
+﻿import os
 os.environ["APP_ENV"] = "test"
 if os.getenv("DATABASE_URL"):
     os.environ["POSTGRES_DSN"] = os.environ["DATABASE_URL"]
@@ -23,6 +23,7 @@ import app.db.session as db_session_module
 import app.tasks.tasks as tasks_module
 from app.core.passwords import hash_password
 from app.db.session import get_db
+from app.services.operational_telemetry_service import reset_operational_telemetry
 
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
@@ -345,4 +346,12 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         yield test_client
     app.dependency_overrides.clear()
 
+
+
+
+@pytest.fixture(autouse=True)
+def reset_operational_metrics_fixture() -> Generator[None, None, None]:
+    reset_operational_telemetry()
+    yield
+    reset_operational_telemetry()
 

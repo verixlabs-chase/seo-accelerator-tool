@@ -1,6 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-import time
+from time import monotonic
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -10,11 +10,10 @@ from app.core.metrics import http_request_duration_seconds, http_requests_total
 
 class MetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        started_at = time.perf_counter()
+        started_at = monotonic()
         response = await call_next(request)
-        duration = time.perf_counter() - started_at
+        duration = monotonic() - started_at
         route = request.scope.get("route")
-        # Cardinality guardrail: use normalized route templates only.
         route_path = getattr(route, "path", None) or "unmatched"
         http_requests_total.labels(
             method=request.method,

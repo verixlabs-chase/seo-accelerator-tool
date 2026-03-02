@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -23,6 +23,7 @@ jobs:
       - run: echo "DATABASE_URL=${DATABASE_URL}"
       - run: python scripts/validate_migrations.py
       - run: pytest
+      - run: pytest -q tests/test_performance_envelope.py
       - run: pip-audit
 
   deterministic-replay-gate:
@@ -102,7 +103,6 @@ jobs:
       - name: Replay gate not required
         if: steps.replay_changes.outputs.replay_required != 'true' && steps.replay_changes.outputs.baseline_locked != 'true'
         run: echo "Replay-sensitive paths unchanged; skipping deterministic replay gate."
-
 
   frontend:
     runs-on: ubuntu-latest

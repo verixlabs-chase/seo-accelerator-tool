@@ -1,10 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+from time import monotonic
 import uuid
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
+
+from app.services.operational_telemetry_service import record_service_operation
 
 
 _METADATA = sa.MetaData()
@@ -53,63 +56,75 @@ def create_business_location_with_portfolio(
     domain: str | None,
     primary_city: str | None,
 ) -> dict[str, object]:
-    now = datetime.now(UTC)
-    business_location_id = str(uuid.uuid4())
-    normalized_name = name
-    normalized_domain = _normalize_optional(domain)
-    normalized_city = _normalize_optional(primary_city)
-
+    started_at = monotonic()
+    success = False
     try:
-        db.execute(
-            sa.insert(_BUSINESS_LOCATIONS_TABLE).values(
-                id=business_location_id,
-                organization_id=organization_id,
-                name=normalized_name,
-                domain=normalized_domain,
-                primary_city=normalized_city,
-                status="active",
-                created_at=now,
-                updated_at=now,
+        now = datetime.now(UTC)
+        business_location_id = str(uuid.uuid4())
+        normalized_name = name
+        normalized_domain = _normalize_optional(domain)
+        normalized_city = _normalize_optional(primary_city)
+
+        try:
+            db.execute(
+                sa.insert(_BUSINESS_LOCATIONS_TABLE).values(
+                    id=business_location_id,
+                    organization_id=organization_id,
+                    name=normalized_name,
+                    domain=normalized_domain,
+                    primary_city=normalized_city,
+                    status="active",
+                    created_at=now,
+                    updated_at=now,
+                )
             )
-        )
-    except sa.exc.IntegrityError as exc:
-        raise BusinessLocationConflictError("business_location_conflict") from exc
+        except sa.exc.IntegrityError as exc:
+            raise BusinessLocationConflictError("business_location_conflict") from exc
 
-    persisted_org_id = db.execute(
-        sa.select(_BUSINESS_LOCATIONS_TABLE.c.organization_id).where(_BUSINESS_LOCATIONS_TABLE.c.id == business_location_id)
-    ).scalar_one()
-    if persisted_org_id != organization_id:
-        raise BusinessLocationInvariantError("business_location_org_mismatch")
+        persisted_org_id = db.execute(
+            sa.select(_BUSINESS_LOCATIONS_TABLE.c.organization_id).where(_BUSINESS_LOCATIONS_TABLE.c.id == business_location_id)
+        ).scalar_one()
+        if persisted_org_id != organization_id:
+            raise BusinessLocationInvariantError("business_location_org_mismatch")
 
-    try:
-        db.execute(
-            sa.insert(_PORTFOLIOS_TABLE).values(
-                id=str(uuid.uuid4()),
-                organization_id=organization_id,
-                business_location_id=business_location_id,
-                name=_build_internal_portfolio_name(normalized_name),
-                code=_build_internal_portfolio_code(business_location_id),
-                status="active",
-                timezone="UTC",
-                default_sla_tier="standard",
-                archived_at=None,
-                created_at=now,
-                updated_at=now,
+        try:
+            db.execute(
+                sa.insert(_PORTFOLIOS_TABLE).values(
+                    id=str(uuid.uuid4()),
+                    organization_id=organization_id,
+                    business_location_id=business_location_id,
+                    name=_build_internal_portfolio_name(normalized_name),
+                    code=_build_internal_portfolio_code(business_location_id),
+                    status="active",
+                    timezone="UTC",
+                    default_sla_tier="standard",
+                    archived_at=None,
+                    created_at=now,
+                    updated_at=now,
+                )
             )
-        )
-    except sa.exc.IntegrityError as exc:
-        raise BusinessLocationConflictError("portfolio_auto_create_conflict") from exc
+        except sa.exc.IntegrityError as exc:
+            raise BusinessLocationConflictError("portfolio_auto_create_conflict") from exc
 
-    return {
-        "id": business_location_id,
-        "organization_id": organization_id,
-        "name": normalized_name,
-        "domain": normalized_domain,
-        "primary_city": normalized_city,
-        "status": "active",
-        "created_at": now,
-        "updated_at": now,
-    }
+        success = True
+        return {
+            "id": business_location_id,
+            "organization_id": organization_id,
+            "name": normalized_name,
+            "domain": normalized_domain,
+            "primary_city": normalized_city,
+            "status": "active",
+            "created_at": now,
+            "updated_at": now,
+        }
+    finally:
+        record_service_operation(
+            service="business_location_service",
+            operation="create_business_location_with_portfolio",
+            duration_ms=(monotonic() - started_at) * 1000.0,
+            success=success,
+            organization_id=organization_id,
+        )
 
 
 def _build_internal_portfolio_name(name: str) -> str:
@@ -127,4 +142,3 @@ def _normalize_optional(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
-

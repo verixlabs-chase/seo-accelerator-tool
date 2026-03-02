@@ -1,4 +1,4 @@
-name: Backend CI
+﻿name: Backend CI
 
 on:
   push:
@@ -22,6 +22,9 @@ jobs:
 
       - name: Run Tests
         run: docker compose run --rm test-runner
+
+      - name: Performance Envelope
+        run: docker compose run --rm test-runner pytest -q backend/tests/test_performance_envelope.py
 
       - name: Run Lint
         run: docker compose run --rm test-runner ruff check .

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import importlib
@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import random
 import sys
+from time import monotonic
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
@@ -27,8 +28,6 @@ ExecutorAdapter = Callable[["ReplayCase"], dict[str, Any]]
 
 
 def _bootstrap_script_path() -> None:
-    # Allow direct script execution from backend/scripts/replay.
-    # Module execution (python -m scripts.replay.run_replay) does not require this.
     root = Path(__file__).resolve().parents[2]
     root_str = str(root)
     if root_str not in sys.path:
@@ -143,6 +142,8 @@ def _validate_corpus(manifest_path: Path, manifest: dict[str, Any]) -> None:
 
 
 def run_replay(manifest_path: Path, *, executor: ExecutorAdapter) -> "ReplayReport":
+    from app.services.operational_telemetry_service import record_replay_execution
+
     _lock_deterministic_environment()
     (
         compare_confidence_bands,
@@ -173,7 +174,16 @@ def run_replay(manifest_path: Path, *, executor: ExecutorAdapter) -> "ReplayRepo
             expected_output=expected_output,
             version_tuple=item["version_tuple"],
         )
-        actual_output = executor(case)
+        started_at = monotonic()
+        try:
+            actual_output = executor(case)
+        except Exception:
+            record_replay_execution(
+                duration_ms=(monotonic() - started_at) * 1000.0,
+                success=False,
+                drift_detected=False,
+            )
+            raise
 
         expected_sanitized = _strip_volatile_fields(case.expected_output)
         actual_sanitized = _strip_volatile_fields(actual_output)
@@ -231,6 +241,13 @@ def run_replay(manifest_path: Path, *, executor: ExecutorAdapter) -> "ReplayRepo
                     actual=actual_bands,
                 )
             )
+
+        drift_detected = not (match_hash and match_order and match_bands and expected_signature == actual_signature)
+        record_replay_execution(
+            duration_ms=(monotonic() - started_at) * 1000.0,
+            success=True,
+            drift_detected=drift_detected,
+        )
 
     total_cases = len(cases)
     failed_case_ids = {event.case_id for event in drift_events}

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Any, Callable
@@ -12,6 +12,8 @@ from app.core.config import get_settings
 from app.core.metrics import active_workers, queue_depth
 from app.db.session import SessionLocal
 from app.infra.contracts import SCHEDULER_HEARTBEAT_KEY, WORKER_HEARTBEAT_KEY, inspect_active_queues
+from app.services.operational_telemetry_service import record_queue_depth_snapshot
+
 REDIS_HEALTHCHECK_TIMEOUT_SECONDS = 0.2
 _REDIS_PROBE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="infra-redis-probe")
 _BACKPRESSURE_WORKLOAD_QUEUES: dict[str, str] = {
@@ -145,6 +147,7 @@ def queue_depth_count(queue_name: str) -> int | None:
     depth_value = _run_redis_probe_value(_probe, None)
     if isinstance(depth_value, int):
         queue_depth.labels(queue_name=queue_name).set(depth_value)
+        record_queue_depth_snapshot(queue_name=queue_name, depth=depth_value)
         return depth_value
     return None
 
@@ -158,6 +161,5 @@ def queue_backpressure_active(workload: str) -> bool:
         return False
     depth = queue_depth_count(queue_name)
     if depth is None:
-        # Fail open when Redis queue depth is unavailable.
         return False
     return depth > int(settings.queue_backpressure_threshold)
