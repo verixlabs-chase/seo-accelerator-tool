@@ -102,8 +102,8 @@ services:
       dockerfile: backend/Dockerfile
     command: >
       bash -c "
-        DATABASE_URL=$DATABASE_URL alembic upgrade head &&
-        DATABASE_URL=$DATABASE_URL pytest
+        alembic upgrade head &&
+        pytest
       "
     environment:
       APP_ENV: test
@@ -171,6 +171,7 @@ services:
 
 volumes:
   pg_data:
+
 
 
 
