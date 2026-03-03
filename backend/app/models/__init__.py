@@ -9,11 +9,13 @@ from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking,
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap
 from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
+from app.models.entitlement import Entitlement
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.keyword_daily_economics import KeywordDailyEconomics
 from app.models.keyword_market_snapshot import KeywordMarketSnapshot
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
+from app.models.onboarding_state import OnboardingState
 from app.models.runtime_version_lock import RuntimeVersionLock
 from app.models.location import Location
 from app.models.fleet_job import FleetJob
@@ -45,6 +47,8 @@ from app.models.strategy_automation_event import StrategyAutomationEvent
 from app.models.task_execution import TaskExecution
 from app.models.tenant import Tenant
 from app.models.threshold_bundle import ThresholdBundle
+from app.models.tier_profile import TierProfile
+from app.models.usage_ledger import UsageLedger
 from app.models.user import User
 
 __all__ = [
@@ -56,6 +60,7 @@ __all__ = [
     'StrategyExecutionKey',
     'StrategyAutomationEvent',
     'ThresholdBundle',
+    'TierProfile',
     'Campaign',
     'CampaignDailyMetric',
     'AnalyticsDailyMetric',
@@ -69,6 +74,7 @@ __all__ = [
     'PageEntity',
     'CompetitorEntity',
     'EntityAnalysisRun',
+    'Entitlement',
     'KeywordCluster',
     'CampaignKeyword',
     'KeywordDailyEconomics',
@@ -91,6 +97,7 @@ __all__ = [
     'LocalHealthSnapshot',
     'Review',
     'ReviewVelocitySnapshot',
+    'OnboardingState',
     'SearchConsoleDailyMetric',
     'RuntimeVersionLock',
     'Portfolio',
@@ -126,4 +133,6 @@ __all__ = [
     'ReportDeliveryEvent',
     'ReportSchedule',
     'ReportTemplateVersion',
+    'UsageLedger',
 ]
+

@@ -21,12 +21,18 @@ jobs:
         run: docker compose build
 
       - name: Run Tests
+        env:
+          DATABASE_URL: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
         run: docker compose run --rm test-runner
 
       - name: Performance Envelope
+        env:
+          DATABASE_URL: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
         run: docker compose run --rm test-runner pytest -q backend/tests/test_performance_envelope.py
 
       - name: Run Lint
+        env:
+          DATABASE_URL: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
         run: docker compose run --rm test-runner ruff check .
 
       - name: Validate Production Config
