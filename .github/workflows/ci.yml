@@ -7,11 +7,26 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lsos
+          POSTGRES_PASSWORD: lsos
+          POSTGRES_DB: lsos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lsos -d lsos"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
     env:
-      DATABASE_URL: sqlite:///./test.db
+      DATABASE_URL: postgresql+psycopg://lsos:lsos@127.0.0.1:5432/lsos
+      POSTGRES_DSN: postgresql+psycopg://lsos:lsos@127.0.0.1:5432/lsos
     steps:
       - uses: actions/checkout@v4
 
@@ -132,6 +147,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm audit --audit-level=high
+
 
 
 
