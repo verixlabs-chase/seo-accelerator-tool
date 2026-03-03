@@ -100,7 +100,11 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: pytest -q backend/tests
+    command: >
+      bash -c "
+        alembic upgrade head &&
+        pytest
+      "
     environment:
       APP_ENV: test
       APP_NAME: LSOS API
@@ -108,6 +112,7 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
+      DATABASE_URL: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
       POSTGRES_DSN: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
@@ -166,3 +171,5 @@ services:
 
 volumes:
   pg_data:
+
+
