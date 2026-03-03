@@ -1,7 +1,9 @@
 from app.models.campaign import Campaign
 from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, TechnicalIssue
+from app.models.organization import Organization
 from app.models.user import User
 from app.services import crawl_service
+from tests.helpers.economic_setup import provision_test_organization
 
 
 class _FakeResponse:
@@ -51,12 +53,21 @@ class _ExpansionClient(_FakeClient):
         return _FakeResponse(404, "")
 
 
+
+def _provision_user_org(db_session, user: User) -> Organization:
+    organization = db_session.query(Organization).filter(Organization.id == user.tenant_id).first()
+    assert organization is not None
+    return provision_test_organization(db_session, organization)
+
+
+
 def test_execute_run_persists_results_and_issues(db_session, monkeypatch):
     monkeypatch.setattr(crawl_service.httpx, "Client", _FakeClient)
     user = db_session.query(User).filter(User.email == "a@example.com").first()
     assert user is not None
+    organization = _provision_user_org(db_session, user)
 
-    campaign = Campaign(tenant_id=user.tenant_id, name="Exec Crawl", domain="example.com")
+    campaign = Campaign(tenant_id=user.tenant_id, organization_id=organization.id, name="Exec Crawl", domain="example.com")
     db_session.add(campaign)
     db_session.flush()
     run = CrawlRun(tenant_id=user.tenant_id, campaign_id=campaign.id, crawl_type="deep", status="scheduled", seed_url="https://example.com")
@@ -76,12 +87,14 @@ def test_execute_run_persists_results_and_issues(db_session, monkeypatch):
     assert len(issues) >= 3
 
 
+
 def test_execute_run_respects_robots_disallow(db_session, monkeypatch):
     monkeypatch.setattr(crawl_service.httpx, "Client", _DisallowClient)
     user = db_session.query(User).filter(User.email == "a@example.com").first()
     assert user is not None
+    organization = _provision_user_org(db_session, user)
 
-    campaign = Campaign(tenant_id=user.tenant_id, name="Robots Crawl", domain="example.com")
+    campaign = Campaign(tenant_id=user.tenant_id, organization_id=organization.id, name="Robots Crawl", domain="example.com")
     db_session.add(campaign)
     db_session.flush()
     run = CrawlRun(tenant_id=user.tenant_id, campaign_id=campaign.id, crawl_type="deep", status="scheduled", seed_url="https://example.com")
@@ -90,6 +103,7 @@ def test_execute_run_respects_robots_disallow(db_session, monkeypatch):
 
     result = crawl_service.execute_run(db_session, crawl_run_id=run.id, provided_urls=["https://example.com/private/page"])
     assert result["processed_urls"] == 0
+
 
 
 def test_execute_run_discovers_internal_links_with_limit(db_session, monkeypatch):
@@ -111,8 +125,9 @@ def test_execute_run_discovers_internal_links_with_limit(db_session, monkeypatch
     )
     user = db_session.query(User).filter(User.email == "a@example.com").first()
     assert user is not None
+    organization = _provision_user_org(db_session, user)
 
-    campaign = Campaign(tenant_id=user.tenant_id, name="Expansion Crawl", domain="example.com")
+    campaign = Campaign(tenant_id=user.tenant_id, organization_id=organization.id, name="Expansion Crawl", domain="example.com")
     db_session.add(campaign)
     db_session.flush()
     run = CrawlRun(tenant_id=user.tenant_id, campaign_id=campaign.id, crawl_type="deep", status="scheduled", seed_url="https://example.com")
@@ -121,6 +136,7 @@ def test_execute_run_discovers_internal_links_with_limit(db_session, monkeypatch
 
     result = crawl_service.execute_run(db_session, crawl_run_id=run.id)
     assert result["processed_urls"] == 2
+
 
 
 def test_execute_run_frontier_batches_until_complete(db_session, monkeypatch):
@@ -143,8 +159,9 @@ def test_execute_run_frontier_batches_until_complete(db_session, monkeypatch):
     )
     user = db_session.query(User).filter(User.email == "a@example.com").first()
     assert user is not None
+    organization = _provision_user_org(db_session, user)
 
-    campaign = Campaign(tenant_id=user.tenant_id, name="Batched Frontier Crawl", domain="example.com")
+    campaign = Campaign(tenant_id=user.tenant_id, organization_id=organization.id, name="Batched Frontier Crawl", domain="example.com")
     db_session.add(campaign)
     db_session.flush()
     run = CrawlRun(tenant_id=user.tenant_id, campaign_id=campaign.id, crawl_type="deep", status="scheduled", seed_url="https://example.com")

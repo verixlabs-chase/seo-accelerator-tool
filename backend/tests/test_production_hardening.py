@@ -4,16 +4,20 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.models.organization import Organization
 from app.models.reporting import ReportSchedule
 from app.models.task_execution import TaskExecution
 from app.services import entity_service, observability_service
 from app.tasks import tasks
+from tests.helpers.economic_setup import provision_test_organization
+
 
 
 def _login(client, email, password):
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
     return response.json()["data"]["access_token"]
+
 
 
 def _create_campaign(client, token, name="Hardening Campaign", domain="hardening.example") -> dict:
@@ -24,6 +28,7 @@ def _create_campaign(client, token, name="Hardening Campaign", domain="hardening
     )
     assert response.status_code == 200
     return response.json()["data"]
+
 
 
 def _latest_task(db_session, tenant_id: str, task_name: str) -> dict:
@@ -37,10 +42,18 @@ def _latest_task(db_session, tenant_id: str, task_name: str) -> dict:
     return json.loads(row.result_json or "{}")
 
 
+
 def test_failure_simulation_reason_codes_and_retry_cap(client, db_session, monkeypatch):
     token = _login(client, "a@example.com", "pass-a")
+    organization = db_session.query(Organization).filter(Organization.id == "tenant-a").first()
+    if organization is None:
+        # fallback to seeded fixture shape where org id mirrors tenant id from created campaign response
+        pass
     campaign = _create_campaign(client, token, name="Failure Simulation", domain="failure-sim.example")
     tenant_id = campaign["tenant_id"]
+    organization = db_session.query(Organization).filter(Organization.id == tenant_id).first()
+    assert organization is not None
+    provision_test_organization(db_session, organization)
 
     # Proxy failure simulation: rank task fails with connection error.
     monkeypatch.setattr(
@@ -131,6 +144,7 @@ def test_failure_simulation_reason_codes_and_retry_cap(client, db_session, monke
     assert dashboard.status_code == 200
     assert dashboard.json()["data"]["report_status_summary"]["schedule"]["has_failure"] is True
     assert dashboard.json()["data"]["platform_state"] in {"Degraded", "Critical"}
+
 
 
 def test_queue_stress_backlog_and_alert_trigger(client):

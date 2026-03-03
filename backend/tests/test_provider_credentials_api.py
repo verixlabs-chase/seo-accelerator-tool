@@ -5,12 +5,15 @@ from app.core.settings import get_settings
 from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.services.provider_credentials_service import upsert_provider_policy
+from tests.helpers.economic_setup import provision_test_organization
 
 MASTER_KEY_B64 = base64.b64encode(b"0123456789abcdef0123456789abcdef").decode("ascii")
 
 
+
 def _set_master_key(monkeypatch) -> None:
     monkeypatch.setenv("PLATFORM_MASTER_KEY", MASTER_KEY_B64)
+
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -18,6 +21,7 @@ def _login(client, email: str, password: str) -> tuple[str, str]:
     assert response.status_code == 200
     payload = response.json()["data"]
     return payload["access_token"], payload["user"]["tenant_id"]
+
 
 
 def test_platform_owner_can_manage_provider_policy(client, db_session, monkeypatch) -> None:
@@ -40,6 +44,7 @@ def test_platform_owner_can_manage_provider_policy(client, db_session, monkeypat
     assert tenant_id == res.json()["meta"]["tenant_id"]
 
 
+
 def test_platform_admin_cannot_modify_provider_policy(client, db_session, monkeypatch) -> None:
     _set_master_key(monkeypatch)
     token, _tenant_id = _login(client, "platform-admin@example.com", "pass-platform-admin")
@@ -55,6 +60,7 @@ def test_platform_admin_cannot_modify_provider_policy(client, db_session, monkey
     assert res.status_code == 403
 
 
+
 def test_platform_admin_cannot_modify_platform_credentials(client, monkeypatch) -> None:
     _set_master_key(monkeypatch)
     token, _tenant_id = _login(client, "platform-admin@example.com", "pass-platform-admin")
@@ -64,6 +70,7 @@ def test_platform_admin_cannot_modify_platform_credentials(client, monkeypatch) 
         headers={"Authorization": f"Bearer {token}"},
     )
     assert res.status_code == 403
+
 
 
 def test_org_roles_cannot_modify_platform_credentials(client, monkeypatch) -> None:
@@ -77,6 +84,7 @@ def test_org_roles_cannot_modify_platform_credentials(client, monkeypatch) -> No
     assert res.status_code == 403
 
 
+
 def test_platform_credentials_response_is_redacted(client, monkeypatch) -> None:
     _set_master_key(monkeypatch)
     token, _tenant_id = _login(client, "platform-owner@example.com", "pass-platform-owner")
@@ -88,6 +96,7 @@ def test_platform_credentials_response_is_redacted(client, monkeypatch) -> None:
     assert res.status_code == 200
     payload_text = str(res.json())
     assert "super-secret-value" not in payload_text
+
 
 
 def test_byo_required_missing_credential_returns_reason_code(client, db_session, monkeypatch) -> None:
@@ -106,7 +115,8 @@ def test_byo_required_missing_credential_returns_reason_code(client, db_session,
             org.plan_type = "standard"
             org.billing_mode = "subscription"
             org.status = "active"
-        db_session.commit()
+        db_session.flush()
+        provision_test_organization(db_session, org)
         upsert_provider_policy(
             db_session,
             organization_id=org.id,
@@ -116,11 +126,24 @@ def test_byo_required_missing_credential_returns_reason_code(client, db_session,
         campaign = Campaign(
             id=str(uuid.uuid4()),
             tenant_id=tenant_id,
+            organization_id=org.id,
             name="BYO Required Test",
             domain="example.com",
         )
         db_session.add(campaign)
         db_session.commit()
+
+        keyword = client.post(
+            "/api/v1/rank/keywords",
+            json={
+                "campaign_id": campaign.id,
+                "cluster_name": "BYO Required",
+                "keyword": "provider credentials test",
+                "location_code": "US",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert keyword.status_code == 200
 
         response = client.post(
             "/api/v1/rank/schedule",
@@ -134,3 +157,4 @@ def test_byo_required_missing_credential_returns_reason_code(client, db_session,
         monkeypatch.delenv("RANK_PROVIDER_BACKEND", raising=False)
         monkeypatch.delenv("RANK_PROVIDER_SERPAPI_API_KEY", raising=False)
         get_settings.cache_clear()
+

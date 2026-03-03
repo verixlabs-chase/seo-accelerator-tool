@@ -1,11 +1,23 @@
+from app.models.organization import Organization
+from app.models.user import User
+from tests.helpers.economic_setup import provision_test_organization
+
+
 def _login(client, email, password):
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
     return response.json()["data"]["access_token"]
 
 
-def test_rank_keyword_schedule_snapshots_and_trends(client):
+
+def test_rank_keyword_schedule_snapshots_and_trends(client, db_session):
     token = _login(client, "a@example.com", "pass-a")
+    user = db_session.query(User).filter(User.email == "a@example.com").first()
+    assert user is not None
+    organization = db_session.query(Organization).filter(Organization.id == user.tenant_id).first()
+    assert organization is not None
+    provision_test_organization(db_session, organization)
+
     campaign = client.post(
         "/api/v1/campaigns",
         json={"name": "Rank Campaign", "domain": "rank.com"},
@@ -45,4 +57,3 @@ def test_rank_keyword_schedule_snapshots_and_trends(client):
     )
     assert trends.status_code == 200
     assert len(trends.json()["data"]["items"]) >= 1
-

@@ -1,16 +1,20 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from app.models.organization import Organization
 from app.models.reporting import ReportSchedule
 from app.models.role import Role, UserRole
 from app.models.user import User
 from app.tasks import tasks
+from tests.helpers.economic_setup import provision_test_organization
+
 
 
 def _login(client, email, password):
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
     return response.json()["data"]["access_token"]
+
 
 
 def _grant_platform_admin(db_session, email: str) -> None:
@@ -27,9 +31,15 @@ def _grant_platform_admin(db_session, email: str) -> None:
         db_session.commit()
 
 
+
 def test_staging_e2e_campaign_flow(client, db_session):
     _grant_platform_admin(db_session, "a@example.com")
     token = _login(client, "a@example.com", "pass-a")
+    user = db_session.query(User).filter(User.email == "a@example.com").first()
+    assert user is not None
+    organization = db_session.query(Organization).filter(Organization.id == user.tenant_id).first()
+    assert organization is not None
+    provision_test_organization(db_session, organization)
     headers = {"Authorization": f"Bearer {token}"}
 
     tenant = client.post("/api/v1/tenants", json={"name": f"Staging Tenant {uuid.uuid4()}"}, headers=headers)
@@ -140,8 +150,14 @@ def test_staging_e2e_campaign_flow(client, db_session):
         assert "error" in payload
 
 
+
 def test_staging_dashboard_reflects_schedule_failure(client, db_session, monkeypatch):
     token = _login(client, "a@example.com", "pass-a")
+    user = db_session.query(User).filter(User.email == "a@example.com").first()
+    assert user is not None
+    organization = db_session.query(Organization).filter(Organization.id == user.tenant_id).first()
+    assert organization is not None
+    provision_test_organization(db_session, organization)
     headers = {"Authorization": f"Bearer {token}"}
     campaign = client.post(
         "/api/v1/campaigns",
