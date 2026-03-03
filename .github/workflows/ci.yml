@@ -7,37 +7,34 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: sqlite:///./test.db
-      POSTGRES_DSN: sqlite:///./test.db
     defaults:
       run:
         working-directory: backend
+    env:
+      DATABASE_URL: sqlite:///./test.db
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: Apply database migrations
+          python-version: '3.12'
+
+      - name: Install dependencies
         run: |
-          cd backend
           python -m venv .venv
           source .venv/bin/activate
+          pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-          DATABASE_URL='sqlite:///test.db' alembic upgrade head
-      - name: Debug DB state
+
+      - name: Apply migrations
         run: |
-          echo "PWD:"
-          pwd
-          echo "DATABASE_URL is: $DATABASE_URL"
-          ls -lah
-          ls -lah test.db || echo "test.db not found"
-          sqlite3 test.db ".tables" || echo "no tables"
-          sqlite3 test.db "PRAGMA table_info(organizations);" || echo "org schema missing"
+          source .venv/bin/activate
+          alembic upgrade head
+
       - name: Run tests
         run: |
-          cd backend
           source .venv/bin/activate
           pytest -q
 
@@ -135,6 +132,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm audit --audit-level=high
+
 
 
 
