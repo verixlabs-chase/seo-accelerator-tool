@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -68,10 +68,70 @@ def _run_alembic_upgrade(backend_dir: Path, database_url: str) -> None:
 def pytest_configure(config: pytest.Config) -> None:
     workers = getattr(config.option, "numprocesses", None)
     if workers and int(workers) > 1:
-        pytest.exit("SQLite test path does not support pytest-xdist parallel workers.")
+        pytest.exit("Test DB path does not support pytest-xdist parallel workers.")
+
+
+def _is_sqlite_url(database_url: str) -> bool:
+    return database_url.startswith("sqlite")
+
+
+def _resolve_test_database_url() -> str | None:
+    for env_name in ("DATABASE_URL", "POSTGRES_DSN"):
+        value = os.getenv(env_name, "").strip()
+        if value:
+            return value
+    return None
+
+
+def _create_test_engine(database_url: str):
+    if _is_sqlite_url(database_url):
+        return create_engine(
+            database_url,
+            connect_args={"check_same_thread": False, "timeout": 30},
+            poolclass=NullPool,
+        )
+    return create_engine(database_url, poolclass=NullPool)
+
+
+def _verify_required_tables(database_url: str) -> None:
+    verification_engine = _create_test_engine(database_url)
+    try:
+        has_crawl_runs = inspect(verification_engine).has_table("crawl_runs")
+    finally:
+        verification_engine.dispose()
+    if not has_crawl_runs:
+        raise RuntimeError(f"Alembic migration parity check failed; missing table: crawl_runs (db={database_url})")
+
+
+def _reset_external_test_database(engine) -> None:
+    if engine.dialect.name == "sqlite":
+        return
+    inspector = inspect(engine)
+    tables = [table_name for table_name in inspector.get_table_names() if table_name != "alembic_version"]
+    if not tables:
+        return
+    joined_tables = ", ".join(f'"{table_name}"' for table_name in tables)
+    with engine.begin() as conn:
+        conn.execute(text(f"TRUNCATE TABLE {joined_tables} RESTART IDENTITY CASCADE"))
 @pytest.fixture(scope="session", autouse=True)
-def apply_migrations() -> Generator[Path, None, None]:
+def apply_migrations() -> Generator[dict[str, object], None, None]:
     backend_dir = Path(__file__).resolve().parents[1]
+    explicit_database_url = _resolve_test_database_url()
+    if explicit_database_url and not _is_sqlite_url(explicit_database_url):
+        database_url = explicit_database_url
+        os.environ["DATABASE_URL"] = database_url
+        os.environ["POSTGRES_DSN"] = database_url
+
+        from app.core.settings import get_settings
+
+        get_settings.cache_clear()
+        print(f"[tests] DATABASE_URL={database_url}")
+        db_session_module.reset_engine_state()
+        _run_alembic_upgrade(backend_dir, database_url)
+        _verify_required_tables(database_url)
+        yield {"database_url": database_url, "mode": "external"}
+        return
+
     temp_dir = Path(tempfile.mkdtemp(prefix="pytest-db-"))
     template_db_path = temp_dir / f"template-{uuid.uuid4().hex}.sqlite3"
     database_url = f"sqlite:///{template_db_path.as_posix()}"
@@ -84,22 +144,20 @@ def apply_migrations() -> Generator[Path, None, None]:
     print(f"[tests] DATABASE_URL={database_url}")
     db_session_module.reset_engine_state()
     _run_alembic_upgrade(backend_dir, database_url)
-    # Keep SQLite fast-lane aligned with migration head by asserting required tables exist.
-    verification_engine = create_engine(database_url, connect_args={"check_same_thread": False, "timeout": 30}, poolclass=NullPool)
-    try:
-        has_crawl_runs = inspect(verification_engine).has_table("crawl_runs")
-    finally:
-        verification_engine.dispose()
-    if not has_crawl_runs:
-        raise RuntimeError("Alembic migration parity check failed; missing table: crawl_runs")
-    yield template_db_path
+    _verify_required_tables(database_url)
+    yield {
+        "database_url": database_url,
+        "mode": "sqlite",
+        "template_db_path": template_db_path,
+        "temp_dir": temp_dir,
+    }
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="session", autouse=True)
-def bind_module_session_factories(apply_migrations: Path) -> Generator[None, None, None]:
-    database_url = f"sqlite:///{apply_migrations.as_posix()}"
-    bootstrap_engine = create_engine(database_url, connect_args={"check_same_thread": False, "timeout": 30}, poolclass=NullPool)
+def bind_module_session_factories(apply_migrations: dict[str, object]) -> Generator[None, None, None]:
+    database_url = str(apply_migrations["database_url"])
+    bootstrap_engine = _create_test_engine(database_url)
     bootstrap_session_local = sessionmaker(bind=bootstrap_engine, autocommit=False, autoflush=False)
 
     db_session_module.bind_session_factory_for_tests(bootstrap_session_local)
@@ -117,15 +175,19 @@ def bind_module_session_factories(apply_migrations: Path) -> Generator[None, Non
 
 
 @pytest.fixture()
-def db_session(apply_migrations: Path) -> Generator[Session, None, None]:
-    test_db_path = apply_migrations.parent / f"{uuid.uuid4().hex}.sqlite3"
-    shutil.copy2(apply_migrations, test_db_path)
-    database_url = f"sqlite:///{test_db_path.as_posix()}"
-    engine = create_engine(
-        database_url,
-        connect_args={"check_same_thread": False, "timeout": 30},
-        poolclass=NullPool,
-    )
+def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, None]:
+    mode = str(apply_migrations["mode"])
+    test_db_path: Path | None = None
+    if mode == "sqlite":
+        template_db_path = Path(str(apply_migrations["template_db_path"]))
+        test_db_path = template_db_path.parent / f"{uuid.uuid4().hex}.sqlite3"
+        shutil.copy2(template_db_path, test_db_path)
+        database_url = f"sqlite:///{test_db_path.as_posix()}"
+    else:
+        database_url = str(apply_migrations["database_url"])
+    engine = _create_test_engine(database_url)
+    if mode != "sqlite":
+        _reset_external_test_database(engine)
     test_session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     test_session = test_session_local()
 
@@ -334,12 +396,13 @@ def db_session(apply_migrations: Path) -> Generator[Session, None, None]:
     test_session.close()
     engine.dispose()
     db_session_module.reset_engine_state()
-    for _ in range(5):
-        try:
-            test_db_path.unlink(missing_ok=True)
-            break
-        except PermissionError:
-            time.sleep(0.05)
+    if test_db_path is not None:
+        for _ in range(5):
+            try:
+                test_db_path.unlink(missing_ok=True)
+                break
+            except PermissionError:
+                time.sleep(0.05)
 
 
 @pytest.fixture()

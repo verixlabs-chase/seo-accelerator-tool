@@ -163,7 +163,7 @@ def get_settings() -> Settings:
             stripped = value.strip()
             return stripped if stripped else default
 
-        test_dsn = _env_or_default("POSTGRES_DSN", _env_or_default("DATABASE_URL", "sqlite:///:memory:"))
+        test_dsn = _env_or_default("DATABASE_URL", _env_or_default("POSTGRES_DSN", "sqlite:///:memory:"))
         return Settings(
             app_env="test",
             public_base_url=_env_or_default("PUBLIC_BASE_URL", "http://testserver"),

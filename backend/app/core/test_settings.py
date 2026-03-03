@@ -1,3 +1,5 @@
+import os
+
 from app.core.settings import Settings
 from pydantic import model_validator
 
@@ -7,7 +9,7 @@ class TestSettings(Settings):
     public_base_url: str = "http://testserver"
     jwt_secret: str = "test-jwt-secret-32-characters-minimum"
     platform_master_key: str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-    postgres_dsn: str = "sqlite:///:memory:"
+    postgres_dsn: str = ""
     celery_task_always_eager: bool = True
     celery_task_eager_propagates: bool = True
     celery_broker_url: str = "memory://"
@@ -27,5 +29,5 @@ class TestSettings(Settings):
         if not str(values.get("public_base_url", "")).strip():
             values["public_base_url"] = "http://testserver"
         if not str(values.get("postgres_dsn", "")).strip():
-            values["postgres_dsn"] = "sqlite:///:memory:"
+            values["postgres_dsn"] = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DSN") or "sqlite:///:memory:"
         return values
