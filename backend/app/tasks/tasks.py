@@ -7,9 +7,13 @@ from celery import Task
 from kombu.exceptions import KombuError
 from app.core.config import get_settings
 from app.db.session import SessionLocal
+from app.domain import entitlement_codes
 from app.models.campaign import Campaign
+from app.models.organization import Organization
 from app.models.crawl import CrawlPageResult
+from app.models.rank import CampaignKeyword
 from app.models.task_execution import TaskExecution
+from app.services.entitlement_service import EntitlementNotFoundError, can_consume
 from app.services import (
     analytics_service,
     authority_service,
@@ -87,6 +91,9 @@ def sync_search_console_daily_metrics_for_campaign(
             end_date=end_date,
         )
         response = _traffic_fact_sync_payload(result)
+        if response.get("reason_code") == "ORG_INACTIVE":
+            _finish_task_execution(db, execution, "failed", response)
+            return response
         _finish_task_execution(db, execution, "success", response)
         _log_traffic_fact_sync_completed(result=result, duration_ms=_duration_ms(started_at))
         return response
@@ -131,6 +138,9 @@ def sync_analytics_daily_metrics_for_campaign(
             end_date=end_date,
         )
         response = _traffic_fact_sync_payload(result)
+        if response.get("reason_code") == "ORG_INACTIVE":
+            _finish_task_execution(db, execution, "failed", response)
+            return response
         _finish_task_execution(db, execution, "success", response)
         _log_traffic_fact_sync_completed(result=result, duration_ms=_duration_ms(started_at))
         return response
@@ -195,6 +205,9 @@ def nightly_sync_traffic_facts(self, lookback_days: int | None = None, tenant_id
                     end_date=end_date.isoformat(),
                     tenant_id=campaign_tenant_id,
                 )
+                if search_payload.get("reason_code") == "ORG_INACTIVE" or analytics_payload.get("reason_code") == "ORG_INACTIVE":
+                    failed_campaigns += 1
+                    continue
                 search_synced_days += int(search_payload.get("requested_days", 0))
                 analytics_synced_days += int(analytics_payload.get("requested_days", 0))
             except Exception:
@@ -318,6 +331,8 @@ def _traffic_fact_sync_payload(result: traffic_fact_service.TrafficFactSyncResul
         "updated_rows": result.updated_rows,
         "skipped_rows": result.skipped_rows,
         "replay_skipped": result.replay_skipped,
+        "status": result.status,
+        "reason_code": result.reason_code,
     }
 
 
@@ -384,6 +399,54 @@ def _task_failure_payload(task: Task, exc: Exception) -> dict:
     }
 
 
+
+def _precheck_crawl_page_entitlement(db, *, crawl_run_id: str, provided_urls: list[str] | None = None) -> dict | None:
+    run = crawl_service.get_run_or_404(db, crawl_run_id)
+    if run.started_at is not None:
+        return None
+
+    campaign = db.get(Campaign, run.campaign_id)
+    if campaign is None or campaign.organization_id is None:
+        raise EntitlementNotFoundError(
+            f"Campaign missing organization_id for crawl entitlement enforcement: {run.campaign_id}"
+        )
+    organization = db.get(Organization, campaign.organization_id)
+    if organization is None:
+        raise ValueError(f"Organization not found for crawl run: {crawl_run_id}")
+    if organization.status.strip().lower() != "active":
+        return {
+            "crawl_run_id": crawl_run_id,
+            "campaign_id": run.campaign_id,
+            "status": "failed",
+            "reason_code": "ORG_INACTIVE",
+        }
+
+    planned_page_count = crawl_service.get_planned_page_count(
+        db,
+        crawl_run_id=crawl_run_id,
+        provided_urls=provided_urls,
+    )
+    if planned_page_count <= 0:
+        return None
+
+    allowed = can_consume(
+        db,
+        str(campaign.organization_id),
+        entitlement_codes.LIMIT_CRAWL_PAGES_MONTHLY,
+        amount=planned_page_count,
+    )
+    if allowed:
+        return None
+
+    return {
+        "crawl_run_id": crawl_run_id,
+        "campaign_id": run.campaign_id,
+        "status": "failed",
+        "reason_code": "ENTITLEMENT_EXCEEDED",
+        "planned_pages": planned_page_count,
+    }
+
+
 @celery_app.task(name="crawl.schedule_campaign", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def crawl_schedule_campaign(self, campaign_id: str, crawl_run_id: str, tenant_id: str) -> dict:
     db = SessionLocal()
@@ -391,6 +454,12 @@ def crawl_schedule_campaign(self, campaign_id: str, crawl_run_id: str, tenant_id
     execution = _start_task_execution(db, tenant_id, "crawl.schedule_campaign", payload)
     try:
         with crawl_metrics.stage_timer("crawl.schedule_campaign"):
+            precheck_failure = _precheck_crawl_page_entitlement(db, crawl_run_id=crawl_run_id)
+            if precheck_failure is not None:
+                crawl_service.mark_run_failed(db, crawl_run_id, "ENTITLEMENT_EXCEEDED")
+                _finish_task_execution(db, execution, "failed", precheck_failure)
+                return precheck_failure
+
             run = crawl_service.get_run_or_404(db, crawl_run_id)
             seeded = crawl_service.seed_frontier_for_run(db, run)
             crawl_fetch_batch.delay(crawl_run_id=crawl_run_id)
@@ -403,6 +472,17 @@ def crawl_schedule_campaign(self, campaign_id: str, crawl_run_id: str, tenant_id
             }
             _finish_task_execution(db, execution, "success", result)
             return result
+    except EntitlementNotFoundError as exc:
+        crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
+        failure = {
+            "crawl_run_id": crawl_run_id,
+            "campaign_id": campaign_id,
+            "status": "failed",
+            "reason_code": "ENTITLEMENT_NOT_FOUND",
+            "error": str(exc),
+        }
+        _finish_task_execution(db, execution, "failed", failure)
+        return failure
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
         _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
@@ -423,16 +503,40 @@ def crawl_fetch_batch(self, crawl_run_id: str, batch_urls: list[str] | None = No
     )
     try:
         with crawl_metrics.stage_timer("crawl.fetch_batch"):
+            precheck_failure = _precheck_crawl_page_entitlement(
+                db,
+                crawl_run_id=crawl_run_id,
+                provided_urls=batch_urls,
+            )
+            if precheck_failure is not None:
+                crawl_service.mark_run_failed(db, crawl_run_id, "ENTITLEMENT_EXCEEDED")
+                _finish_task_execution(db, execution, "failed", precheck_failure)
+                return precheck_failure
+
             result = crawl_service.execute_run(
                 db,
                 crawl_run_id=crawl_run_id,
                 provided_urls=batch_urls,
                 batch_size=batch_size,
             )
+            if result.get("reason_code") in {"ENTITLEMENT_EXCEEDED", "ORG_INACTIVE"}:
+                crawl_service.mark_run_failed(db, crawl_run_id, "ENTITLEMENT_EXCEEDED")
+                _finish_task_execution(db, execution, "failed", result)
+                return result
             if batch_urls is None and result.get("status") == "running" and int(result.get("pending_urls", 0)) > 0:
                 crawl_fetch_batch.delay(crawl_run_id=crawl_run_id, batch_size=batch_size)
             _finish_task_execution(db, execution, "success", result)
             return result
+    except EntitlementNotFoundError as exc:
+        crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
+        failure = {
+            "crawl_run_id": crawl_run_id,
+            "status": "failed",
+            "reason_code": "ENTITLEMENT_NOT_FOUND",
+            "error": str(exc),
+        }
+        _finish_task_execution(db, execution, "failed", failure)
+        return failure
     except Exception as exc:
         crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
         _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
@@ -525,6 +629,46 @@ def crawl_finalize_run(self, crawl_run_id: str) -> dict:
         db.close()
 
 
+
+def _precheck_rank_snapshot_entitlement(db, *, campaign_id: str, tenant_id: str, location_code: str) -> dict | None:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        return None
+
+    keyword_count = (
+        db.query(CampaignKeyword)
+        .filter(
+            CampaignKeyword.tenant_id == tenant_id,
+            CampaignKeyword.campaign_id == campaign_id,
+            CampaignKeyword.location_code == location_code,
+        )
+        .count()
+    )
+    if keyword_count <= 0:
+        return None
+    if campaign.organization_id is None:
+        raise EntitlementNotFoundError(
+            f"Campaign missing organization_id for rank snapshot enforcement: {campaign_id}"
+        )
+
+    allowed = can_consume(
+        db,
+        str(campaign.organization_id),
+        entitlement_codes.LIMIT_RANK_KEYWORD_SNAPSHOTS_MONTHLY,
+        amount=keyword_count,
+    )
+    if allowed:
+        return None
+
+    return {
+        "campaign_id": campaign_id,
+        "location_code": location_code,
+        "status": "failed",
+        "reason_code": "ENTITLEMENT_EXCEEDED",
+        "snapshots_created": 0,
+    }
+
+
 @celery_app.task(name="rank.schedule_window", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def rank_schedule_window(self, campaign_id: str, tenant_id: str, location_code: str) -> dict:
     db = SessionLocal()
@@ -535,14 +679,44 @@ def rank_schedule_window(self, campaign_id: str, tenant_id: str, location_code: 
         {"campaign_id": campaign_id, "location_code": location_code},
     )
     try:
+        precheck_failure = _precheck_rank_snapshot_entitlement(
+            db,
+            campaign_id=campaign_id,
+            tenant_id=tenant_id,
+            location_code=location_code,
+        )
+        if precheck_failure is not None:
+            _finish_task_execution(db, execution, "failed", precheck_failure)
+            return precheck_failure
+
         result = rank_service.run_snapshot_collection(
             db,
             tenant_id=tenant_id,
             campaign_id=campaign_id,
             location_code=location_code,
         )
+        if result.get("reason_code") in {"ENTITLEMENT_EXCEEDED", "ORG_INACTIVE"}:
+            failure = {
+                "campaign_id": campaign_id,
+                "location_code": location_code,
+                "status": "failed",
+                "reason_code": result.get("reason_code"),
+                "snapshots_created": int(result.get("snapshots_created", 0)),
+            }
+            _finish_task_execution(db, execution, "failed", failure)
+            return failure
         _finish_task_execution(db, execution, "success", result)
         return result
+    except EntitlementNotFoundError as exc:
+        failure = {
+            "campaign_id": campaign_id,
+            "location_code": location_code,
+            "status": "failed",
+            "reason_code": "ENTITLEMENT_NOT_FOUND",
+            "error": str(exc),
+        }
+        _finish_task_execution(db, execution, "failed", failure)
+        return failure
     except Exception as exc:
         _finish_task_execution(db, execution, "failed", _task_failure_payload(self, exc))
         raise
@@ -560,14 +734,44 @@ def rank_fetch_serp_batch(campaign_id: str, tenant_id: str, location_code: str) 
         {"campaign_id": campaign_id, "location_code": location_code},
     )
     try:
+        precheck_failure = _precheck_rank_snapshot_entitlement(
+            db,
+            campaign_id=campaign_id,
+            tenant_id=tenant_id,
+            location_code=location_code,
+        )
+        if precheck_failure is not None:
+            _finish_task_execution(db, execution, "failed", precheck_failure)
+            return precheck_failure
+
         result = rank_service.run_snapshot_collection(
             db,
             tenant_id=tenant_id,
             campaign_id=campaign_id,
             location_code=location_code,
         )
+        if result.get("reason_code") in {"ENTITLEMENT_EXCEEDED", "ORG_INACTIVE"}:
+            failure = {
+                "campaign_id": campaign_id,
+                "location_code": location_code,
+                "status": "failed",
+                "reason_code": result.get("reason_code"),
+                "snapshots_created": int(result.get("snapshots_created", 0)),
+            }
+            _finish_task_execution(db, execution, "failed", failure)
+            return failure
         _finish_task_execution(db, execution, "success", result)
         return result
+    except EntitlementNotFoundError as exc:
+        failure = {
+            "campaign_id": campaign_id,
+            "location_code": location_code,
+            "status": "failed",
+            "reason_code": "ENTITLEMENT_NOT_FOUND",
+            "error": str(exc),
+        }
+        _finish_task_execution(db, execution, "failed", failure)
+        return failure
     finally:
         db.close()
 
@@ -1299,3 +1503,11 @@ def run_strategy_automation_for_all_campaigns(self, evaluation_date_iso: str | N
         raise
     finally:
         db.close()
+
+
+
+
+
+
+
+

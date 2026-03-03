@@ -11,11 +11,14 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.domain import entitlement_codes
 from app.events import emit_event
 from app.models.campaign import Campaign
+from app.models.organization import Organization
 from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
 from app.providers import get_crawl_adapter
 from app.services import crawl_parser, observability_service
+from app.services.entitlement_service import EntitlementNotFoundError, check_and_consume
 
 
 def schedule_crawl(db: Session, tenant_id: str, campaign_id: str, crawl_type: str, seed_url: str) -> CrawlRun:
@@ -301,6 +304,38 @@ def get_run_or_404(db: Session, crawl_run_id: str) -> CrawlRun:
     return run
 
 
+def get_planned_page_count(
+    db: Session,
+    crawl_run_id: str,
+    provided_urls: list[str] | None = None,
+) -> int:
+    run = get_run_or_404(db, crawl_run_id)
+    settings = get_settings()
+    max_pages = max(1, int(getattr(settings, "crawl_max_pages_per_run", 200)))
+
+    if provided_urls is not None:
+        return min(max_pages, len(_normalize_urls_for_admission(provided_urls)))
+
+    if run.started_at is not None:
+        return 0
+
+    return max_pages
+
+
+
+def _normalize_urls_for_admission(urls: list[str]) -> list[str]:
+    normalized_urls: list[str] = []
+    seen: set[str] = set()
+    for raw_url in urls:
+        normalized = _normalize_url(raw_url)
+        if normalized is None or normalized in seen:
+            continue
+        normalized_urls.append(normalized)
+        seen.add(normalized)
+    return normalized_urls
+
+
+
 def execute_run(
     db: Session,
     crawl_run_id: str,
@@ -309,6 +344,43 @@ def execute_run(
 ) -> dict:
     settings = get_settings()
     run = get_run_or_404(db, crawl_run_id)
+    campaign = db.get(Campaign, run.campaign_id)
+    if campaign is None or campaign.organization_id is None:
+        raise EntitlementNotFoundError(
+            f"Campaign missing organization_id for crawl entitlement enforcement: {run.campaign_id}"
+        )
+    organization = db.get(Organization, campaign.organization_id)
+    if organization is None:
+        raise ValueError(f"Organization not found for crawl run: {crawl_run_id}")
+    if organization.status.strip().lower() != "active":
+        return {
+            "crawl_run_id": run.id,
+            "status": "failed",
+            "processed_urls": 0,
+            "total_processed_urls": run.pages_discovered,
+            "pending_urls": 0,
+            "reason_code": "ORG_INACTIVE",
+        }
+
+    admitted_page_count = get_planned_page_count(db, crawl_run_id, provided_urls=provided_urls)
+
+    if run.started_at is None and admitted_page_count > 0:
+        allowed = check_and_consume(
+            db,
+            str(campaign.organization_id),
+            entitlement_codes.LIMIT_CRAWL_PAGES_MONTHLY,
+            amount=admitted_page_count,
+        )
+        if not allowed:
+            return {
+                "crawl_run_id": run.id,
+                "status": "failed",
+                "processed_urls": 0,
+                "total_processed_urls": run.pages_discovered,
+                "pending_urls": 0,
+                "reason_code": "ENTITLEMENT_EXCEEDED",
+            }
+
     run.status = "running"
     if run.started_at is None:
         run.started_at = datetime.now(UTC)
@@ -465,3 +537,6 @@ def mark_run_failed(db: Session, crawl_run_id: str, error_message: str) -> None:
             )
         )
     db.commit()
+
+
+

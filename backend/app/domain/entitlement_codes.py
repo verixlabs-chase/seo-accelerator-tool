@@ -1,0 +1,23 @@
+from __future__ import annotations
+
+FEATURE_PERFORMANCE_TREND = "feature.performance_trend"
+FEATURE_CAMPAIGN_REPORT = "feature.campaign_report"
+FEATURE_REPORT_EXPORT = "feature.report_export"
+LIMIT_SUBACCOUNTS = "limit.subaccounts"
+LIMIT_QUEUE_TOKENS_PER_MINUTE = "limit.queue.tokens_per_minute"
+LIMIT_TRAFFIC_FACT_PROVIDER_CALLS_MONTHLY = "limit.traffic_fact.provider_calls_monthly"
+LIMIT_RANK_KEYWORD_SNAPSHOTS_MONTHLY = "limit.rank.keyword_snapshots_monthly"
+LIMIT_CRAWL_PAGES_MONTHLY = "limit.crawl.pages_monthly"
+LIMIT_CRAWL_CONCURRENT_RUNS = "limit.crawl.concurrent_runs"
+
+ALL_ENTITLEMENT_CODES = (
+    FEATURE_PERFORMANCE_TREND,
+    FEATURE_CAMPAIGN_REPORT,
+    FEATURE_REPORT_EXPORT,
+    LIMIT_SUBACCOUNTS,
+    LIMIT_QUEUE_TOKENS_PER_MINUTE,
+    LIMIT_TRAFFIC_FACT_PROVIDER_CALLS_MONTHLY,
+    LIMIT_RANK_KEYWORD_SNAPSHOTS_MONTHLY,
+    LIMIT_CRAWL_PAGES_MONTHLY,
+    LIMIT_CRAWL_CONCURRENT_RUNS,
+)

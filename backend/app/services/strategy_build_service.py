@@ -7,7 +7,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.governance.replay.hashing import build_hash, input_hash, output_hash, version_fingerprint
+from app.models.campaign import Campaign
 from app.models.intelligence import StrategyRecommendation
+from app.models.organization import Organization
 from app.models.strategy_execution_key import StrategyExecutionKey
 from app.services.idempotency_service import (
     claim_pending_execution,
@@ -35,6 +37,25 @@ def build_campaign_strategy_idempotent(
     raw_signals: dict[str, Any],
     tier: str,
 ) -> CampaignStrategyOut:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None or campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    if campaign.organization_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign organization is not configured")
+    organization = db.get(Organization, campaign.organization_id)
+    if organization is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    if organization.status.strip().lower() != "active":
+        return CampaignStrategyOut(
+            campaign_id=campaign_id,
+            window=window,
+            detected_scenarios=[],
+            recommendations=[],
+            strategic_scores=None,
+            executive_summary=None,
+            meta={"status": "failed", "reason_code": "ORG_INACTIVE"},
+        )
+
     request_payload = {
         "campaign_id": campaign_id,
         "window": {"date_from": window.date_from.isoformat(), "date_to": window.date_to.isoformat()},
@@ -188,3 +209,4 @@ def _persist_strategy_recommendation_metadata(
     existing.output_hash = output_hash
     existing.build_hash = build_hash_value
     db.commit()
+

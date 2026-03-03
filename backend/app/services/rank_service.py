@@ -3,10 +3,13 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.domain import entitlement_codes
 from app.events import emit_event
 from app.models.campaign import Campaign
+from app.models.organization import Organization
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
 from app.providers import get_rank_provider_for_organization
+from app.services.entitlement_service import EntitlementNotFoundError, check_and_consume
 from app.services.provider_credentials_service import ProviderCredentialConfigurationError
 
 
@@ -15,6 +18,7 @@ def _get_campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campa
     if campaign is None or campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     return campaign
+
 
 
 def add_keyword(db: Session, tenant_id: str, campaign_id: str, cluster_name: str, keyword: str, location_code: str) -> CampaignKeyword:
@@ -46,8 +50,57 @@ def add_keyword(db: Session, tenant_id: str, campaign_id: str, cluster_name: str
     return record
 
 
+
 def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, location_code: str) -> dict:
     campaign = _get_campaign_or_404(db, tenant_id, campaign_id)
+    if campaign.organization_id is None:
+        raise EntitlementNotFoundError(
+            f"Campaign missing organization_id for rank snapshot enforcement: {campaign_id}"
+        )
+    organization = db.get(Organization, campaign.organization_id)
+    if organization is None:
+        raise ValueError(f"Organization not found for campaign: {campaign_id}")
+    if organization.status.strip().lower() != "active":
+        return {
+            "campaign_id": campaign_id,
+            "location_code": location_code,
+            "snapshots_created": 0,
+            "status": "failed",
+            "reason_code": "ORG_INACTIVE",
+        }
+
+    keywords = (
+        db.query(CampaignKeyword)
+        .filter(
+            CampaignKeyword.tenant_id == tenant_id,
+            CampaignKeyword.campaign_id == campaign_id,
+            CampaignKeyword.location_code == location_code,
+        )
+        .all()
+    )
+    if not keywords:
+        return {
+            "campaign_id": campaign_id,
+            "location_code": location_code,
+            "snapshots_created": 0,
+            "status": "no_keywords",
+        }
+
+    allowed = check_and_consume(
+        db,
+        str(campaign.organization_id),
+        entitlement_codes.LIMIT_RANK_KEYWORD_SNAPSHOTS_MONTHLY,
+        amount=len(keywords),
+    )
+    if not allowed:
+        return {
+            "campaign_id": campaign_id,
+            "location_code": location_code,
+            "snapshots_created": 0,
+            "status": "failed",
+            "reason_code": "ENTITLEMENT_EXCEEDED",
+        }
+
     try:
         provider = get_rank_provider_for_organization(db, tenant_id)
     except ProviderCredentialConfigurationError as exc:
@@ -66,15 +119,6 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
                 "reason_code": "provider_unavailable",
             },
         ) from exc
-    keywords = (
-        db.query(CampaignKeyword)
-        .filter(
-            CampaignKeyword.tenant_id == tenant_id,
-            CampaignKeyword.campaign_id == campaign_id,
-            CampaignKeyword.location_code == location_code,
-        )
-        .all()
-    )
     now = datetime.now(UTC)
     month_partition = now.strftime("%Y-%m")
     created = 0
@@ -138,7 +182,13 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
         payload={"campaign_id": campaign_id, "location_code": location_code, "snapshots_created": created},
     )
     db.commit()
-    return {"campaign_id": campaign_id, "location_code": location_code, "snapshots_created": created}
+    return {
+        "campaign_id": campaign_id,
+        "location_code": location_code,
+        "snapshots_created": created,
+        "status": "success",
+    }
+
 
 
 def normalize_snapshot(db: Session, snapshot_id: str) -> dict:
@@ -149,6 +199,7 @@ def normalize_snapshot(db: Session, snapshot_id: str) -> dict:
     snapshot.confidence = round(max(0.0, min(float(snapshot.confidence), 1.0)), 2)
     db.commit()
     return {"snapshot_id": snapshot.id, "normalized": True}
+
 
 
 def recompute_deltas(db: Session, tenant_id: str, campaign_id: str) -> dict:
@@ -184,6 +235,7 @@ def recompute_deltas(db: Session, tenant_id: str, campaign_id: str) -> dict:
     return {"campaign_id": campaign_id, "tenant_id": tenant_id, "rankings_recomputed": updated}
 
 
+
 def get_snapshots(db: Session, tenant_id: str, campaign_id: str) -> list[RankingSnapshot]:
     return (
         db.query(RankingSnapshot)
@@ -191,6 +243,7 @@ def get_snapshots(db: Session, tenant_id: str, campaign_id: str) -> list[Ranking
         .order_by(RankingSnapshot.captured_at.desc())
         .all()
     )
+
 
 
 def get_trends(db: Session, tenant_id: str, campaign_id: str) -> list[dict]:
@@ -215,3 +268,5 @@ def get_trends(db: Session, tenant_id: str, campaign_id: str) -> list[dict]:
             }
         )
     return trends
+
+

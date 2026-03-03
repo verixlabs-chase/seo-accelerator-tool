@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.campaign import Campaign
+from app.models.organization import Organization
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_analytics import GoogleAnalyticsProviderAdapter
@@ -58,6 +59,8 @@ class TrafficFactSyncResult:
     updated_rows: int
     skipped_rows: int
     replay_skipped: bool = False
+    status: str = "success"
+    reason_code: str | None = None
 
 
 def upsert_search_console_daily_metric(*, db: Session, metric_input: SearchConsoleDailyMetricInput) -> MetricUpsertResult:
@@ -117,6 +120,15 @@ def sync_search_console_daily_metrics_for_campaign(
     resolved_end = _coerce_date(end_date)
     _validate_range(resolved_start, resolved_end)
     organization_id = _require_organization_id(campaign)
+    inactive_result = _inactive_organization_result(
+        db=db,
+        organization_id=organization_id,
+        campaign_id=campaign.id,
+        start_date=resolved_start,
+        end_date=resolved_end,
+    )
+    if inactive_result is not None:
+        return inactive_result
     missing_dates = _missing_metric_dates(
         db=db,
         model=SearchConsoleDailyMetric,
@@ -223,6 +235,15 @@ def sync_analytics_daily_metrics_for_campaign(
     resolved_end = _coerce_date(end_date)
     _validate_range(resolved_start, resolved_end)
     organization_id = _require_organization_id(campaign)
+    inactive_result = _inactive_organization_result(
+        db=db,
+        organization_id=organization_id,
+        campaign_id=campaign.id,
+        start_date=resolved_start,
+        end_date=resolved_end,
+    )
+    if inactive_result is not None:
+        return inactive_result
     missing_dates = _missing_metric_dates(
         db=db,
         model=AnalyticsDailyMetric,
@@ -313,6 +334,36 @@ def sync_analytics_daily_metrics_for_campaign(
         updated_rows,
         skipped_rows,
     )
+
+
+def _inactive_organization_result(
+    *,
+    db: Session,
+    organization_id: str,
+    campaign_id: str,
+    start_date: date,
+    end_date: date,
+) -> TrafficFactSyncResult | None:
+    organization = db.get(Organization, organization_id)
+    if organization is None:
+        raise ValueError(f"Organization not found for campaign: {campaign_id}")
+    if organization.status.strip().lower() == "active":
+        return None
+    return TrafficFactSyncResult(
+        organization_id,
+        campaign_id,
+        start_date,
+        end_date,
+        0,
+        0,
+        0,
+        0,
+        0,
+        replay_skipped=False,
+        status="failed",
+        reason_code="ORG_INACTIVE",
+    )
+
 
 
 def _normalize_search_console_daily_metric(metric_input: SearchConsoleDailyMetricInput) -> dict[str, Any]:
@@ -499,3 +550,4 @@ def _resolve_property_id(*, credentials: dict[str, Any]) -> str:
 
 def _replay_mode_enabled() -> bool:
     return os.getenv('LSOS_REPLAY_MODE', '0').strip() == '1' or os.getenv('REPLAY_MODE', '0').strip() == '1'
+
