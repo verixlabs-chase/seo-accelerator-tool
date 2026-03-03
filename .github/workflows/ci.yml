@@ -28,8 +28,8 @@ jobs:
           DATABASE_URL='sqlite:///test.db' alembic upgrade head
       - name: Debug DB state
         run: |
-          cd backend
-          source .venv/bin/activate
+          echo "PWD:"
+          pwd
           echo "DATABASE_URL is: $DATABASE_URL"
           ls -lah
           ls -lah test.db || echo "test.db not found"
@@ -135,5 +135,6 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm audit --audit-level=high
+
 
 
