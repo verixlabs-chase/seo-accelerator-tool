@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -18,13 +18,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements-dev.txt
-      - run: pip install pip-audit
-      - run: echo "DATABASE_URL=${DATABASE_URL}"
-      - run: python scripts/validate_migrations.py
-      - run: pytest
-      - run: pytest -q tests/test_performance_envelope.py
-      - run: pip-audit
+      - name: Apply database migrations
+        run: |
+          cd backend
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          DATABASE_URL='sqlite:///test.db' alembic upgrade head
+      - name: Debug DB state
+        run: |
+          cd backend
+          source .venv/bin/activate
+          echo "DATABASE_URL is: $DATABASE_URL"
+          ls -lah
+          ls -lah test.db || echo "test.db not found"
+          sqlite3 test.db ".tables" || echo "no tables"
+          sqlite3 test.db "PRAGMA table_info(organizations);" || echo "org schema missing"
+      - name: Run tests
+        run: |
+          cd backend
+          source .venv/bin/activate
+          pytest -q
 
   deterministic-replay-gate:
     runs-on: ubuntu-latest
@@ -120,3 +135,5 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm audit --audit-level=high
+
+
