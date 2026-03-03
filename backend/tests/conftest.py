@@ -1,4 +1,4 @@
-﻿import os
+import os
 os.environ["APP_ENV"] = "test"
 if os.getenv("DATABASE_URL"):
     os.environ["POSTGRES_DSN"] = os.environ["DATABASE_URL"]
@@ -53,6 +53,7 @@ from app.models.sub_account import SubAccount  # noqa: F401
 from app.models.tenant import Tenant
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot  # noqa: F401
 from app.models.user import User
+from tests.helpers.economic_setup import ensure_test_tier_profile, provision_test_organization
 
 
 
@@ -137,12 +138,15 @@ def db_session(apply_migrations: Path) -> Generator[Session, None, None]:
 
     tenant_a = Tenant(id=str(uuid.uuid4()), name="Tenant A", created_at=datetime.now(UTC))
     tenant_b = Tenant(id=str(uuid.uuid4()), name="Tenant B", created_at=datetime.now(UTC))
+    test_tier_profile = ensure_test_tier_profile(test_session)
     org_a = Organization(
         id=tenant_a.id,
         name=f"Org-{tenant_a.id[:8]}",
         plan_type="standard",
         billing_mode="subscription",
         status="active",
+        tier_profile_id=test_tier_profile.id,
+        tier_version=test_tier_profile.version,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
@@ -152,6 +156,8 @@ def db_session(apply_migrations: Path) -> Generator[Session, None, None]:
         plan_type="standard",
         billing_mode="subscription",
         status="active",
+        tier_profile_id=test_tier_profile.id,
+        tier_version=test_tier_profile.version,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
@@ -322,6 +328,8 @@ def db_session(apply_migrations: Path) -> Generator[Session, None, None]:
         ]
     )
     test_session.commit()
+    provision_test_organization(test_session, org_a)
+    provision_test_organization(test_session, org_b)
     yield test_session
     test_session.close()
     engine.dispose()
@@ -354,4 +362,5 @@ def reset_operational_metrics_fixture() -> Generator[None, None, None]:
     reset_operational_telemetry()
     yield
     reset_operational_telemetry()
+
 

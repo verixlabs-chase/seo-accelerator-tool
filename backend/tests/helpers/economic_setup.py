@@ -17,12 +17,7 @@ _TEST_TIER_VERSION = 1
 _TEST_DISPLAY_NAME = "Test Unlimited"
 
 
-
-def provision_test_organization(db: Session, organization: Organization) -> Organization:
-    """
-    Creates a TierProfile with unlimited limits and provisions
-    the organization so rank/crawl tests pass enforcement.
-    """
+def ensure_test_tier_profile(db: Session) -> TierProfile:
     entitlements = [
         {
             "code": code,
@@ -46,21 +41,31 @@ def provision_test_organization(db: Session, organization: Organization) -> Orga
         .filter(TierProfile.deterministic_hash == deterministic_hash)
         .first()
     )
-    if tier_profile is None:
-        tier_profile = TierProfile(
-            id=str(uuid.uuid4()),
-            tier_code=_TEST_TIER_CODE,
-            display_name=_TEST_DISPLAY_NAME,
-            version=_TEST_TIER_VERSION,
-            entitlement_template_json={"entitlements": entitlements},
-            deterministic_hash=deterministic_hash,
-            is_active=True,
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
-        )
-        db.add(tier_profile)
-        db.flush()
+    if tier_profile is not None:
+        return tier_profile
 
+    tier_profile = TierProfile(
+        id=str(uuid.uuid4()),
+        tier_code=_TEST_TIER_CODE,
+        display_name=_TEST_DISPLAY_NAME,
+        version=_TEST_TIER_VERSION,
+        entitlement_template_json={"entitlements": entitlements},
+        deterministic_hash=deterministic_hash,
+        is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db.add(tier_profile)
+    db.flush()
+    return tier_profile
+
+
+def provision_test_organization(db: Session, organization: Organization) -> Organization:
+    """
+    Creates a TierProfile with unlimited limits and provisions
+    the organization so rank/crawl tests pass enforcement.
+    """
+    tier_profile = ensure_test_tier_profile(db)
     organization.tier_profile_id = tier_profile.id
     organization.tier_version = tier_profile.version
     organization.status = "active"
