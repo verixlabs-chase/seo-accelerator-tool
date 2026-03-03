@@ -9,24 +9,24 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:15
         env:
-          POSTGRES_USER: lsos
-          POSTGRES_PASSWORD: lsos
-          POSTGRES_DB: lsos
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U lsos -d lsos"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     defaults:
       run:
         working-directory: backend
     env:
-      DATABASE_URL: postgresql+psycopg://lsos:lsos@localhost:5432/lsos
-      POSTGRES_DSN: postgresql+psycopg://lsos:lsos@localhost:5432/lsos
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+      POSTGRES_DSN: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +34,23 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Wait for Postgres readiness
+        run: |
+          python - <<'PY'
+          import socket
+          import time
+
+          deadline = time.time() + 60
+          while time.time() < deadline:
+              try:
+                  with socket.create_connection(("localhost", 5432), timeout=1):
+                      break
+              except OSError:
+                  time.sleep(1)
+          else:
+              raise SystemExit("Postgres did not become ready in time")
+          PY
 
       - name: Install dependencies
         run: |
@@ -56,8 +73,8 @@ jobs:
   deterministic-replay-gate:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: sqlite:///./test.db
-      POSTGRES_DSN: sqlite:///./test.db
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+      POSTGRES_DSN: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
       TZ: UTC
       PYTHONHASHSEED: "0"
       LC_ALL: C.UTF-8
@@ -147,6 +164,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm audit --audit-level=high
+
 
 
 
