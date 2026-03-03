@@ -102,7 +102,10 @@ services:
       dockerfile: backend/Dockerfile
     command: >
       bash -c "
+        echo DATABASE_URL=$DATABASE_URL &&
         alembic upgrade head &&
+        echo ''Tables after migration:'' &&
+        psql $DATABASE_URL -c ''\dt'' &&
         pytest
       "
     environment:
@@ -171,5 +174,6 @@ services:
 
 volumes:
   pg_data:
+
 
 
