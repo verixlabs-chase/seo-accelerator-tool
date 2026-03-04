@@ -6,7 +6,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 from fastapi import HTTPException, status
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Session
 
@@ -185,30 +185,34 @@ def enqueue_frontier_urls(
     depth: int = 0,
     discovered_from_url: str | None = None,
 ) -> int:
-    created = 0
+    payload_rows: list[dict[str, object]] = []
+    seen_normalized: set[str] = set()
+    now = datetime.now(UTC)
     for raw_url in urls:
         normalized = _normalize_url(raw_url)
-        if normalized is None:
+        if normalized is None or normalized in seen_normalized:
             continue
-        try:
-            with db.begin_nested():
-                row = CrawlFrontierUrl(
-                    tenant_id=run.tenant_id,
-                    campaign_id=run.campaign_id,
-                    crawl_run_id=run.id,
-                    url=normalized,
-                    normalized_url=normalized,
-                    status="pending",
-                    depth=depth,
-                    discovered_from_url=discovered_from_url,
-                    updated_at=datetime.now(UTC),
-                )
-                db.add(row)
-                db.flush()
-                created += 1
-        except IntegrityError:
-            continue
-    return created
+        seen_normalized.add(normalized)
+        payload_rows.append(
+            {
+                "tenant_id": run.tenant_id,
+                "campaign_id": run.campaign_id,
+                "crawl_run_id": run.id,
+                "url": normalized,
+                "normalized_url": normalized,
+                "status": "pending",
+                "depth": depth,
+                "discovered_from_url": discovered_from_url,
+                "updated_at": now,
+            }
+        )
+    if not payload_rows:
+        return 0
+    stmt = pg_insert(CrawlFrontierUrl.__table__).values(payload_rows)
+    stmt = stmt.on_conflict_do_nothing(index_elements=["crawl_run_id", "normalized_url"])
+    result = db.execute(stmt)
+    db.flush()
+    return int(result.rowcount or 0)
 
 
 def seed_frontier_for_run(db: Session, run: CrawlRun) -> int:
@@ -537,6 +541,8 @@ def mark_run_failed(db: Session, crawl_run_id: str, error_message: str) -> None:
             )
         )
     db.commit()
+
+
 
 
 

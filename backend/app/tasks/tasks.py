@@ -462,6 +462,9 @@ def crawl_schedule_campaign(self, campaign_id: str, crawl_run_id: str, tenant_id
 
             run = crawl_service.get_run_or_404(db, crawl_run_id)
             seeded = crawl_service.seed_frontier_for_run(db, run)
+            # Commit seeded frontier rows before dispatching follow-up work.
+            # In eager task mode, .delay() may execute synchronously.
+            db.commit()
             crawl_fetch_batch.delay(crawl_run_id=crawl_run_id)
             result = {
                 "campaign_id": campaign_id,
@@ -1503,6 +1506,7 @@ def run_strategy_automation_for_all_campaigns(self, evaluation_date_iso: str | N
         raise
     finally:
         db.close()
+
 
 
 
