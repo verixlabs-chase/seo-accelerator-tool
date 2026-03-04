@@ -7,6 +7,8 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.enums import StrategyRecommendationStatus
+from app.utils.enum_guard import ensure_enum
 from app.events import emit_event
 from app.models.campaign import Campaign
 from app.models.competitor import CompetitorPage
@@ -192,7 +194,7 @@ def run_entity_analysis(db: Session, tenant_id: str, campaign_id: str) -> dict:
                 evidence_json=json.dumps(rec["evidence"]),
                 risk_tier=rec["risk_tier"],
                 rollback_plan_json=json.dumps(rec["rollback_plan"]),
-                status="GENERATED",
+                status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
             )
         )
 
@@ -242,3 +244,11 @@ def get_latest_entity_report(db: Session, tenant_id: str, campaign_id: str) -> d
         "recommendations": json.loads(row.recommendations_json or "[]"),
         "created_at": row.created_at,
     }
+
+
+
+
+
+
+
+

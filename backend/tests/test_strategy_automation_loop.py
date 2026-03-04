@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from sqlalchemy import inspect
 
 from app.models.campaign import Campaign
+from app.enums import StrategyRecommendationStatus
+from app.utils.enum_guard import ensure_enum
 from app.models.intelligence import StrategyRecommendation
 from app.models.strategy_automation_event import StrategyAutomationEvent
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory
@@ -84,7 +86,7 @@ def test_automation_promotes_recommendation_and_advances_phase(db_session) -> No
             evidence_json='["momentum_positive"]',
             risk_tier=1,
             rollback_plan_json='{"steps":["undo"]}',
-            status='GENERATED',
+            status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
         )
     )
     db_session.commit()
@@ -169,3 +171,11 @@ def test_strategy_automation_monthly_schedule_registered() -> None:
 def test_strategy_automation_events_table_present(db_session) -> None:
     inspector = inspect(db_session.get_bind())
     assert 'strategy_automation_events' in inspector.get_table_names()
+
+
+
+
+
+
+
+

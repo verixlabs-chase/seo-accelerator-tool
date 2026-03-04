@@ -1,10 +1,11 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Enum as SqlEnum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.enums import StrategyRecommendationStatus
 
 
 class StrategyRecommendation(Base):
@@ -21,7 +22,11 @@ class StrategyRecommendation(Base):
     evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     risk_tier: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     rollback_plan_json: Mapped[str] = mapped_column(Text, nullable=False, default='{"steps":[]}')
-    status: Mapped[str] = mapped_column(String(40), nullable=False, default="GENERATED")
+    status: Mapped[StrategyRecommendationStatus] = mapped_column(
+        SqlEnum(StrategyRecommendationStatus, name="strategy_recommendation_status"),
+        nullable=False,
+        default=StrategyRecommendationStatus.GENERATED,
+    )
     engine_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     threshold_bundle_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     registry_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -69,3 +74,5 @@ class AnomalyEvent(Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")
     details_json: Mapped[str] = mapped_column(Text, default="{}")
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
+
+

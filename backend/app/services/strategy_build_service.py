@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.governance.replay.hashing import build_hash, input_hash, output_hash, version_fingerprint
 from app.models.campaign import Campaign
+from app.enums import StrategyRecommendationStatus
+from app.utils.enum_guard import ensure_enum
 from app.models.intelligence import StrategyRecommendation
 from app.models.organization import Organization
 from app.models.strategy_execution_key import StrategyExecutionKey
@@ -25,7 +27,7 @@ from app.services.strategy_engine.thresholds import version_id as threshold_vers
 
 _REGISTRY_VERSION = "scenario-registry-v1"
 _SIGNAL_SCHEMA_VERSION = "signals-v1"
-_TERMINAL_RECOMMENDATION_STATUS = "ARCHIVED"
+_TERMINAL_RECOMMENDATION_STATUS = StrategyRecommendationStatus.ARCHIVED
 
 
 def build_campaign_strategy_idempotent(
@@ -196,7 +198,7 @@ def _persist_strategy_recommendation_metadata(
             evidence_json=json.dumps(["deterministic_strategy_build"]),
             risk_tier=0,
             rollback_plan_json=json.dumps(payload),
-            status=_TERMINAL_RECOMMENDATION_STATUS,
+            status=ensure_enum(_TERMINAL_RECOMMENDATION_STATUS, StrategyRecommendationStatus),
             idempotency_key=idempotency_key,
         )
         db.add(existing)
@@ -209,4 +211,10 @@ def _persist_strategy_recommendation_metadata(
     existing.output_hash = output_hash
     existing.build_hash = build_hash_value
     db.commit()
+
+
+
+
+
+
 

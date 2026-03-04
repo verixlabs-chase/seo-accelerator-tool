@@ -9,6 +9,8 @@ from app.events import emit_event
 from app.models.campaign import Campaign
 from app.models.content import ContentAsset
 from app.models.crawl import TechnicalIssue
+from app.enums import StrategyRecommendationStatus
+from app.utils.enum_guard import ensure_enum
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.local import LocalHealthSnapshot
 from app.models.rank import Ranking
@@ -185,7 +187,7 @@ def upsert_recommendations(db: Session, tenant_id: str, campaign_id: str) -> lis
                         ]
                     }
                 ),
-                status="GENERATED",
+                status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
             )
         )
     else:
@@ -212,7 +214,7 @@ def upsert_recommendations(db: Session, tenant_id: str, campaign_id: str) -> lis
                         ]
                     }
                 ),
-                status="GENERATED",
+                status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
             )
         )
     for rec in recommendations:
@@ -271,7 +273,7 @@ def transition_recommendation_state(
             detail="Activation blocked: recommendation must be VALIDATED first",
         )
     _validate_recommendation_payload(row)
-    row.status = target_state
+    row.status = ensure_enum(target_state, StrategyRecommendationStatus)
     emit_event(
         db,
         tenant_id=tenant_id,
@@ -367,3 +369,11 @@ def advance_month(db: Session, tenant_id: str, campaign_id: str, override: bool)
     campaign.month_number = min(12, campaign.month_number + 1)
     db.commit()
     return {"campaign_id": campaign.id, "advanced_to_month": campaign.month_number, "override": override}
+
+
+
+
+
+
+
+

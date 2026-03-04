@@ -4,6 +4,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.campaign import Campaign
+from app.enums import StrategyRecommendationStatus
+from app.utils.enum_guard import ensure_enum
 from app.models.intelligence import StrategyRecommendation
 from app.models.tenant import Tenant
 from app.services.intelligence_service import transition_recommendation_state
@@ -44,7 +46,7 @@ def test_recommendation_state_guards(db_session, from_state, to_state, should_pa
         evidence_json=json.dumps(["fixture_evidence"]),
         risk_tier=1,
         rollback_plan_json=json.dumps({"steps": ["undo_change"]}),
-        status=from_state,
+        status=ensure_enum(from_state, StrategyRecommendationStatus),
     )
     db_session.add(rec)
     db_session.commit()
@@ -67,3 +69,11 @@ def test_recommendation_state_guards(db_session, from_state, to_state, should_pa
                 recommendation_id=rec.id,
                 target_state=to_state,
             )
+
+
+
+
+
+
+
+
