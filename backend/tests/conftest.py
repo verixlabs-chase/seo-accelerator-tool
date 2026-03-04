@@ -115,6 +115,7 @@ def _reset_external_test_database(engine) -> None:
         conn.execute(text(f"TRUNCATE TABLE {joined_tables} RESTART IDENTITY CASCADE"))
 @pytest.fixture(scope="session", autouse=True)
 def apply_migrations() -> Generator[dict[str, object], None, None]:
+    print("apply_migrations: start", flush=True)
     backend_dir = Path(__file__).resolve().parents[1]
     explicit_database_url = _resolve_test_database_url()
     if explicit_database_url and not _is_sqlite_url(explicit_database_url):
@@ -127,8 +128,11 @@ def apply_migrations() -> Generator[dict[str, object], None, None]:
         get_settings.cache_clear()
         print(f"[tests] DATABASE_URL={database_url}")
         db_session_module.reset_engine_state()
-        _run_alembic_upgrade(backend_dir, database_url)
+        # The compose test stack migrates the external Postgres database before pytest starts.
+        # Skip the duplicate upgrade here and keep the parity check as a guardrail.
+        print("apply_migrations: before verify_required_tables", flush=True)
         _verify_required_tables(database_url)
+        print("apply_migrations: yielding", flush=True)
         yield {"database_url": database_url, "mode": "external"}
         return
 
@@ -144,7 +148,9 @@ def apply_migrations() -> Generator[dict[str, object], None, None]:
     print(f"[tests] DATABASE_URL={database_url}")
     db_session_module.reset_engine_state()
     _run_alembic_upgrade(backend_dir, database_url)
+    print("apply_migrations: before verify_required_tables", flush=True)
     _verify_required_tables(database_url)
+    print("apply_migrations: yielding", flush=True)
     yield {
         "database_url": database_url,
         "mode": "sqlite",
@@ -156,6 +162,7 @@ def apply_migrations() -> Generator[dict[str, object], None, None]:
 
 @pytest.fixture(scope="session", autouse=True)
 def bind_module_session_factories(apply_migrations: dict[str, object]) -> Generator[None, None, None]:
+    print("bind_module_session_factories: start", flush=True)
     database_url = str(apply_migrations["database_url"])
     bootstrap_engine = _create_test_engine(database_url)
     bootstrap_session_local = sessionmaker(bind=bootstrap_engine, autocommit=False, autoflush=False)
@@ -168,7 +175,9 @@ def bind_module_session_factories(apply_migrations: dict[str, object]) -> Genera
     crawl_api_module.SessionLocal = db_session_module.SessionLocal
 
     # Import app after rebinding to avoid stale SessionLocal capture in route modules.
+    print("bind_module_session_factories: before import app.main", flush=True)
     import app.main  # noqa: F401
+    print("bind_module_session_factories: after import app.main", flush=True)
 
     yield
     bootstrap_engine.dispose()
@@ -187,7 +196,9 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
         database_url = str(apply_migrations["database_url"])
     engine = _create_test_engine(database_url)
     if mode != "sqlite":
+        print("db_session: before reset_external_test_database")
         _reset_external_test_database(engine)
+        print("db_session: after reset_external_test_database")
     test_session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     test_session = test_session_local()
 
@@ -307,6 +318,8 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
             org_owner_user,
         ]
     )
+    # Persist principals first so Postgres sees referenced rows before FK-dependent inserts.
+    test_session.commit()
     test_session.add_all(
         [
             UserRole(id=str(uuid.uuid4()), user_id=user_a.id, role_id=role_tenant_admin.id, created_at=datetime.now(UTC)),
@@ -337,6 +350,8 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
             ),
         ]
     )
+    # Ensure users exist before memberships reference them.
+    test_session.flush()
     test_session.add_all(
         [
             OrganizationMembership(
@@ -407,14 +422,18 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
 
 @pytest.fixture()
 def client(db_session: Session) -> Generator[TestClient, None, None]:
+    print("client fixture: before importing app", flush=True)
     from app.main import app
+    print("client fixture: before TestClient(app)", flush=True)
+    test_client = TestClient(app)
+    print("client fixture: after TestClient(app)", flush=True)
 
     def _override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
+    yield test_client
+    print("client fixture: teardown", flush=True)
     app.dependency_overrides.clear()
 
 
@@ -425,5 +444,6 @@ def reset_operational_metrics_fixture() -> Generator[None, None, None]:
     reset_operational_telemetry()
     yield
     reset_operational_telemetry()
+
 
 
