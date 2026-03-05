@@ -9,15 +9,16 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.governance.replay.hashing import version_fingerprint
-from app.models.campaign import Campaign
 from app.enums import StrategyRecommendationStatus
+from app.governance.replay.hashing import version_fingerprint
+from app.intelligence.recommendation_execution_engine import schedule_execution
+from app.models.campaign import Campaign
 from app.models.intelligence import StrategyRecommendation
 from app.models.strategy_automation_event import StrategyAutomationEvent
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory
-from app.utils.enum_guard import ensure_enum
 from app.observability.events import emit_automation_event, emit_phase_transition, emit_rule_trigger
 from app.services.strategy_engine.decision_trace import build_decision_trace, serialize_trace_payload
+from app.utils.enum_guard import ensure_enum
 
 AUTOMATION_ENGINE_VERSION = 'automation-loop-v1'
 FREEZE_VOLATILITY_CEILING = 0.9
@@ -204,7 +205,15 @@ def evaluate_campaign_for_automation(campaign_id: str, db: Session, evaluation_d
         db.query(StrategyRecommendation)
         .filter(
             StrategyRecommendation.campaign_id == campaign_id,
-            StrategyRecommendation.status.in_({StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus.VALIDATED, StrategyRecommendationStatus.FAILED}),
+            StrategyRecommendation.status.in_(
+                {
+                    StrategyRecommendationStatus.GENERATED,
+                    StrategyRecommendationStatus.VALIDATED,
+                    StrategyRecommendationStatus.APPROVED,
+                    StrategyRecommendationStatus.SCHEDULED,
+                    StrategyRecommendationStatus.FAILED,
+                }
+            ),
         )
         .order_by(StrategyRecommendation.created_at.desc(), StrategyRecommendation.id.desc())
         .all()
@@ -233,6 +242,11 @@ def evaluate_campaign_for_automation(campaign_id: str, db: Session, evaluation_d
         status = 'evaluated'
         for rule in triggered_rules:
             rule_evaluations.append({'rule': rule, 'result': True, 'source': 'phase_decision'})
+
+    # Auto-schedule deterministic execution for approved/scheduled recommendations.
+    for rec in recs:
+        if rec.status in {StrategyRecommendationStatus.APPROVED, StrategyRecommendationStatus.SCHEDULED}:
+            schedule_execution(rec.id, db=db)
 
     action_summary = {
         'recommendation_transitions': transitions,
@@ -355,4 +369,3 @@ def evaluate_campaign_for_automation(campaign_id: str, db: Session, evaluation_d
         'event_id': event.id,
         'action_summary': action_summary,
     }
-

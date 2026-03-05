@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter
+from fastapi import APIRouter
 
 from app.core.config import get_settings
 from app.api.v1 import (
@@ -13,10 +13,12 @@ from app.api.v1 import (
     debug_live_validation,
     dashboard,
     entity,
+    executions,
     google_oauth,
     health,
     hierarchy_observability,
     intelligence,
+    intelligence_metrics,
     local,
     locations,
     onboarding,
@@ -41,7 +43,7 @@ tenant_api_router.include_router(auth.router)
 tenant_api_router.include_router(automation.router)
 tenant_api_router.include_router(campaigns.router)
 tenant_api_router.include_router(crawl.router)
-if settings.app_env.lower() != "production":
+if settings.app_env.lower() != 'production':
     tenant_api_router.include_router(debug_live_validation.router)
 tenant_api_router.include_router(entity.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
@@ -59,7 +61,9 @@ tenant_api_router.include_router(authority.authority_router)
 tenant_api_router.include_router(authority.citations_router)
 tenant_api_router.include_router(intelligence.intelligence_router)
 tenant_api_router.include_router(intelligence.campaign_intelligence_router)
+tenant_api_router.include_router(intelligence_metrics.router)
 tenant_api_router.include_router(recommendations.router)
+tenant_api_router.include_router(executions.router)
 tenant_api_router.include_router(dashboard.router)
 tenant_api_router.include_router(reference_library.router)
 tenant_api_router.include_router(reports.router)

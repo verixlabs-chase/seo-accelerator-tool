@@ -1,3 +1,5 @@
+from app.intelligence.cohort_feature_aggregator import aggregate_feature_profiles, build_cohort_rows
+from app.intelligence.cohort_pattern_engine import discover_cohort_patterns as discover_learning_cohort_patterns
 from app.intelligence.feature_aggregator import aggregate_features, build_cohort_profiles, describe_campaign_cohort
 from app.intelligence.feature_store import compute_features
 from app.intelligence.llm_explainer import explain_recommendation
@@ -20,6 +22,9 @@ __all__ = [
     'aggregate_features',
     'build_cohort_profiles',
     'describe_campaign_cohort',
+    'build_cohort_rows',
+    'aggregate_feature_profiles',
+    'discover_learning_cohort_patterns',
     'record_outcome',
     'compute_reward',
     'update_policy_weights',

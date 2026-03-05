@@ -4,13 +4,15 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.intelligence.feature_aggregator import describe_campaign_cohort
+from app.models.strategy_cohort_pattern import StrategyCohortPattern
+from app.services.strategy_engine.executive_summary import build_executive_summary
 from app.services.strategy_engine.modules.competitor_diagnostics import run_competitor_diagnostics
 from app.services.strategy_engine.modules.core_web_vitals_diagnostics import run_core_web_vitals_diagnostics
 from app.services.strategy_engine.modules.ctr_diagnostics import run_ctr_diagnostics
 from app.services.strategy_engine.modules.gbp_diagnostics import run_gbp_diagnostics
 from app.services.strategy_engine.modules.ranking_diagnostics import run_ranking_diagnostics
 from app.services.strategy_engine.modules.temporal_diagnostics import run_temporal_diagnostics
-from app.services.strategy_engine.executive_summary import build_executive_summary
 from app.services.strategy_engine.priority_engine import PriorityInput, rank_priorities
 from app.services.strategy_engine.scenario_registry import SCENARIO_INDEX
 from app.services.strategy_engine.schemas import CampaignStrategyOut, DiagnosticResult, StrategyRecommendationOut, StrategyWindow
@@ -25,9 +27,8 @@ def build_campaign_strategy(
     tier: str,
     db: Session | None = None,
 ) -> CampaignStrategyOut:
-    """Deterministic strategy orchestration for the phase-2 controlled scope."""
     signals = build_signal_model(raw_signals)
-    window_reference = f"{window.date_from.isoformat()}__{window.date_to.isoformat()}"
+    window_reference = f'{window.date_from.isoformat()}__{window.date_to.isoformat()}'
 
     diagnostics: list[DiagnosticResult] = []
     diagnostics.extend(run_ctr_diagnostics(signals, window_reference=window_reference, tier=tier))
@@ -49,6 +50,8 @@ def build_campaign_strategy(
             )
         )
 
+    pattern_multiplier_by_feature = _cohort_pattern_multiplier_by_feature(db, campaign_id) if db is not None else {}
+
     priority_inputs: list[PriorityInput] = []
     filtered_results: list[DiagnosticResult] = []
     for result in diagnostics:
@@ -56,10 +59,15 @@ def build_campaign_strategy(
         if scenario is None or scenario.deprecated:
             continue
         filtered_results.append(result)
+
+        feature_name = _scenario_feature_name(result.scenario_id, scenario.category)
+        multiplier = float(pattern_multiplier_by_feature.get(feature_name, 1.0))
+        adjusted_impact_weight = max(0.0, min(1.0, scenario.impact_weight * multiplier))
+
         priority_inputs.append(
             PriorityInput(
                 scenario_id=result.scenario_id,
-                impact_weight=scenario.impact_weight,
+                impact_weight=adjusted_impact_weight,
                 signal_magnitude=result.signal_magnitude,
                 confidence=result.confidence,
             )
@@ -101,3 +109,40 @@ def build_campaign_strategy(
     output.strategic_scores = compute_strategic_scores(output)
     output.executive_summary = build_executive_summary(output)
     return output
+
+
+def _scenario_feature_name(scenario_id: str, scenario_category: str) -> str:
+    if scenario_id in {'ranking_decline_detected', 'rank_negative_momentum', 'competitive_position_gap', 'competitive_momentum_gap'}:
+        return 'ranking_velocity'
+    if scenario_id in {'content_velocity_decline'}:
+        return 'content_velocity'
+    if scenario_id in {'core_web_vitals_failure'}:
+        return 'technical_issue_density'
+    if scenario_category == 'technical':
+        return 'technical_issue_density'
+    if scenario_category == 'organic':
+        return 'ranking_velocity'
+    return 'ranking_velocity'
+
+
+def _cohort_pattern_multiplier_by_feature(db: Session, campaign_id: str) -> dict[str, float]:
+    cohort_definition = describe_campaign_cohort(db, campaign_id)['cohort']
+    rows = (
+        db.query(StrategyCohortPattern)
+        .filter(
+            StrategyCohortPattern.cohort_definition == cohort_definition,
+            StrategyCohortPattern.support_count >= 3,
+            StrategyCohortPattern.confidence >= 0.6,
+        )
+        .order_by(StrategyCohortPattern.created_at.desc(), StrategyCohortPattern.id.desc())
+        .all()
+    )
+
+    multipliers: dict[str, float] = {}
+    for row in rows:
+        feature_name = str(row.feature_name)
+        influence = max(0.0, min(0.5, float(row.pattern_strength) * float(row.confidence) * 0.5))
+        current = float(multipliers.get(feature_name, 1.0))
+        multipliers[feature_name] = round(min(1.5, current + influence), 6)
+
+    return multipliers

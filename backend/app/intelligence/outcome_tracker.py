@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.events import emit_event
 from app.models.campaign import Campaign
+from app.models.recommendation_execution import RecommendationExecution
 from app.models.recommendation_outcome import RecommendationOutcome
 
 
@@ -60,3 +61,20 @@ def record_outcome(
     db.commit()
     db.refresh(row)
     return row
+
+
+def record_execution_outcome(
+    db: Session,
+    *,
+    execution: RecommendationExecution,
+    metric_before: float,
+    metric_after: float,
+) -> RecommendationOutcome:
+    return record_outcome(
+        db,
+        recommendation_id=execution.recommendation_id,
+        campaign_id=execution.campaign_id,
+        metric_before=metric_before,
+        metric_after=metric_after,
+        emit_learning_event=True,
+    )
