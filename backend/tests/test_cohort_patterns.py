@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from app.intelligence.pattern_engine import discover_cohort_patterns
+from app.models.campaign import Campaign
+from app.models.content import ContentAsset
+from app.models.crawl import CrawlPageResult
+from app.models.rank import CampaignKeyword, KeywordCluster
+from app.models.temporal import TemporalSignalSnapshot, TemporalSignalType
+from app.models.tenant import Tenant
+
+
+def test_discover_cohort_patterns_detects_internal_link_deficit(db_session) -> None:
+    tenant = Tenant(name='Cohort Tenant', status='Active')
+    db_session.add(tenant)
+    db_session.flush()
+
+    healthy = Campaign(tenant_id=tenant.id, name='Healthy Campaign', domain='plumber-healthy.example')
+    weak = Campaign(tenant_id=tenant.id, name='Weak Campaign', domain='plumber-weak.example')
+    db_session.add_all([healthy, weak])
+    db_session.flush()
+
+    for campaign in (healthy, weak):
+        db_session.add(
+            CrawlPageResult(
+                tenant_id=tenant.id,
+                campaign_id=campaign.id,
+                crawl_run_id='run-1',
+                page_id=f'page-{campaign.id[:6]}',
+                status_code=200,
+                is_indexable=1,
+                title='Page',
+            )
+        )
+        db_session.add(
+            ContentAsset(
+                tenant_id=tenant.id,
+                campaign_id=campaign.id,
+                cluster_name='Core',
+                title='Published',
+                status='published',
+                planned_month=1,
+            )
+        )
+        cluster = KeywordCluster(tenant_id=tenant.id, campaign_id=campaign.id, name='Core')
+        db_session.add(cluster)
+        db_session.flush()
+        db_session.add(
+            CampaignKeyword(
+                tenant_id=tenant.id,
+                campaign_id=campaign.id,
+                cluster_id=cluster.id,
+                keyword='plumber in usa',
+                location_code='US',
+            )
+        )
+
+    observed_at = datetime.now(UTC)
+    db_session.add_all(
+        [
+            TemporalSignalSnapshot(
+                campaign_id=healthy.id,
+                signal_type=TemporalSignalType.CUSTOM,
+                metric_name='internal_link_ratio',
+                metric_value=0.82,
+                observed_at=observed_at,
+                source='feature_store_v1',
+                confidence=1.0,
+                version_hash='c1',
+            ),
+            TemporalSignalSnapshot(
+                campaign_id=healthy.id,
+                signal_type=TemporalSignalType.CUSTOM,
+                metric_name='ranking_velocity',
+                metric_value=-0.02,
+                observed_at=observed_at,
+                source='feature_store_v1',
+                confidence=1.0,
+                version_hash='c2',
+            ),
+            TemporalSignalSnapshot(
+                campaign_id=healthy.id,
+                signal_type=TemporalSignalType.CUSTOM,
+                metric_name='content_growth_rate',
+                metric_value=0.05,
+                observed_at=observed_at,
+                source='feature_store_v1',
+                confidence=1.0,
+                version_hash='c3',
+            ),
+            TemporalSignalSnapshot(
+                campaign_id=weak.id,
+                signal_type=TemporalSignalType.CUSTOM,
+                metric_name='internal_link_ratio',
+                metric_value=0.3,
+                observed_at=observed_at,
+                source='feature_store_v1',
+                confidence=1.0,
+                version_hash='c4',
+            ),
+            TemporalSignalSnapshot(
+                campaign_id=weak.id,
+                signal_type=TemporalSignalType.CUSTOM,
+                metric_name='ranking_velocity',
+                metric_value=-0.1,
+                observed_at=observed_at,
+                source='feature_store_v1',
+                confidence=1.0,
+                version_hash='c5',
+            ),
+            TemporalSignalSnapshot(
+                campaign_id=weak.id,
+                signal_type=TemporalSignalType.CUSTOM,
+                metric_name='content_growth_rate',
+                metric_value=-0.1,
+                observed_at=observed_at,
+                source='feature_store_v1',
+                confidence=1.0,
+                version_hash='c6',
+            ),
+        ]
+    )
+    db_session.commit()
+
+    patterns = discover_cohort_patterns(
+        db_session,
+        campaign_id=weak.id,
+        features={
+            'internal_link_ratio': 0.3,
+            'ranking_velocity': -0.1,
+            'content_growth_rate': -0.1,
+        },
+    )
+
+    keys = {item['pattern_key'] for item in patterns}
+    assert 'internal_link_deficit' in keys

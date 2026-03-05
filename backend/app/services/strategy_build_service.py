@@ -7,6 +7,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.governance.replay.hashing import build_hash, input_hash, output_hash, version_fingerprint
+from app.intelligence.feature_store import compute_features
+from app.intelligence.pattern_engine import detect_patterns, discover_cohort_patterns
+from app.intelligence.policy_engine import derive_policy, generate_recommendations, score_policy
 from app.intelligence.signal_assembler import assemble_signals
 from app.models.campaign import Campaign
 from app.models.intelligence import StrategyRecommendation
@@ -64,17 +67,24 @@ def build_campaign_strategy_idempotent(
     if raw_signals:
         assembled_signals.update(raw_signals)
 
+    learning_context = _build_learning_pipeline_context(db=db, campaign_id=campaign_id)
+
     request_payload = {
         'campaign_id': campaign_id,
         'window': {'date_from': window.date_from.isoformat(), 'date_to': window.date_to.isoformat()},
         'raw_signals': assembled_signals,
         'tier': tier,
+        'learning_context': {
+            'feature_fingerprint': learning_context['feature_fingerprint'],
+            'pattern_keys': learning_context['pattern_keys'],
+            'policy_ids': learning_context['policy_ids'],
+        },
     }
     in_hash = input_hash(request_payload)
     profile = resolve_strategy_profile(tier)
     profile_hash = profile.version_hash()
     version_tuple = {
-        'engine_version': 'phase2-controlled-scope',
+        'engine_version': 'phase3-deterministic-policy-pipeline',
         'threshold_bundle_version': threshold_version,
         'registry_version': _REGISTRY_VERSION,
         'signal_schema_version': _SIGNAL_SCHEMA_VERSION,
@@ -124,16 +134,23 @@ def build_campaign_strategy_idempotent(
             payload=payload,
         )
         out_hash = output_hash(payload)
-        payload['meta']['threshold_bundle_version'] = threshold_version
-        payload['meta']['registry_version'] = _REGISTRY_VERSION
-        payload['meta']['signal_schema_version'] = _SIGNAL_SCHEMA_VERSION
-        payload['meta']['input_hash'] = in_hash
-        payload['meta']['output_hash'] = out_hash
-        payload['meta']['version_fingerprint'] = version_hash
-        payload['meta']['profile_version_hash'] = profile_hash
-        payload['meta']['build_hash'] = build_hash(input_digest=in_hash, output_digest=out_hash, version_digest=version_hash)
+        meta = payload.setdefault('meta', {})
+        meta['threshold_bundle_version'] = threshold_version
+        meta['registry_version'] = _REGISTRY_VERSION
+        meta['signal_schema_version'] = _SIGNAL_SCHEMA_VERSION
+        meta['input_hash'] = in_hash
+        meta['output_hash'] = out_hash
+        meta['version_fingerprint'] = version_hash
+        meta['profile_version_hash'] = profile_hash
+        meta['build_hash'] = build_hash(input_digest=in_hash, output_digest=out_hash, version_digest=version_hash)
+        meta['learning_pipeline'] = {
+            'features': learning_context['features'],
+            'patterns': learning_context['patterns'],
+            'policies': learning_context['policies'],
+            'policy_recommendations': learning_context['policy_recommendations'],
+        }
         if temporal_visibility is not None:
-            payload['meta']['temporal'] = temporal_visibility
+            meta['temporal'] = temporal_visibility
 
         persist_execution_result(db, execution_id=execution.id, output_hash=out_hash, output_payload=payload)
         _persist_strategy_recommendation_metadata(
@@ -151,6 +168,42 @@ def build_campaign_strategy_idempotent(
     except Exception as exc:
         mark_execution_failed(db, execution_id=execution.id, error_message=str(exc))
         raise
+
+
+def _build_learning_pipeline_context(db: Session, *, campaign_id: str) -> dict[str, Any]:
+    features = compute_features(campaign_id, db=db, persist=False)
+    pattern_matches = [
+        {
+            'pattern_key': item.pattern_key,
+            'confidence': item.confidence,
+            'evidence': item.evidence,
+        }
+        for item in detect_patterns(features)
+    ]
+    pattern_matches.extend(discover_cohort_patterns(db, campaign_id=campaign_id, features=features))
+
+    policies = [score_policy(policy, features) for policy in derive_policy(pattern_matches)]
+    policy_recommendations = [
+        recommendation
+        for policy in policies
+        for recommendation in generate_recommendations(policy)
+    ]
+
+    feature_fingerprint = {
+        key: round(float(value), 6)
+        for key, value in sorted(features.items())
+        if isinstance(value, (int, float))
+    }
+
+    return {
+        'features': feature_fingerprint,
+        'patterns': pattern_matches,
+        'pattern_keys': sorted({str(item['pattern_key']) for item in pattern_matches}),
+        'policies': policies,
+        'policy_ids': sorted({str(item['policy_id']) for item in policies}),
+        'policy_recommendations': policy_recommendations,
+        'feature_fingerprint': feature_fingerprint,
+    }
 
 
 def _reset_failed_to_pending(db: Session, execution_id: str) -> None:
@@ -186,7 +239,7 @@ def _persist_strategy_recommendation_metadata(
         .first()
     )
 
-    payload = {
+    rollback_payload = {
         'steps': [
             'rebuild_strategy_with_prior_tuple',
             'invalidate_conflicting_cached_payloads',
@@ -203,7 +256,7 @@ def _persist_strategy_recommendation_metadata(
             confidence_score=1.0,
             evidence_json=json.dumps(['deterministic_strategy_build']),
             risk_tier=0,
-            rollback_plan_json=json.dumps(payload),
+            rollback_plan_json=json.dumps(rollback_payload),
             status=ensure_enum(_TERMINAL_RECOMMENDATION_STATUS, StrategyRecommendationStatus),
             idempotency_key=idempotency_key,
         )
