@@ -3,22 +3,23 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.intelligence.feature_aggregator import aggregate_features, build_cohort_profiles, describe_campaign_cohort
-from app.models.campaign import Campaign
 from app.models.content import ContentAsset
 from app.models.crawl import CrawlPageResult
 from app.models.rank import CampaignKeyword, KeywordCluster
 from app.models.temporal import TemporalSignalSnapshot, TemporalSignalType
-from app.models.tenant import Tenant
+from tests.conftest import create_test_campaign
 
 
-def test_feature_aggregator_builds_cohort_rows_and_profiles(db_session) -> None:
-    tenant = Tenant(name='Aggregator Tenant', status='Active')
-    db_session.add(tenant)
-    db_session.flush()
-
-    campaign = Campaign(tenant_id=tenant.id, name='Campaign 1', domain='plumber-alpha.example')
-    db_session.add(campaign)
-    db_session.flush()
+def test_feature_aggregator_builds_cohort_rows_and_profiles(db_session, create_test_tenant, create_test_org) -> None:
+    tenant = create_test_tenant(name='Aggregator Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Aggregator Org')
+    campaign = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=tenant.id,
+        name='Campaign 1',
+        domain='plumber-alpha.example',
+    )
 
     db_session.add_all(
         [

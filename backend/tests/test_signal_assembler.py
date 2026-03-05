@@ -3,23 +3,24 @@ from __future__ import annotations
 from datetime import date
 
 from app.intelligence.signal_assembler import assemble_signals
-from app.models.campaign import Campaign
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.content import ContentAsset
 from app.models.crawl import TechnicalIssue
 from app.models.local import LocalHealthSnapshot, LocalProfile
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking
-from app.models.tenant import Tenant
+from tests.conftest import create_test_campaign
 
 
-def test_assemble_signals_collects_expected_fields(db_session) -> None:
-    tenant = Tenant(name='Assembler Tenant', status='Active')
-    db_session.add(tenant)
-    db_session.flush()
-
-    campaign = Campaign(tenant_id=tenant.id, name='Assembler Campaign', domain='assembler.example')
-    db_session.add(campaign)
-    db_session.flush()
+def test_assemble_signals_collects_expected_fields(db_session, create_test_tenant, create_test_org) -> None:
+    tenant = create_test_tenant(name='Assembler Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Assembler Org')
+    campaign = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=tenant.id,
+        name='Assembler Campaign',
+        domain='assembler.example',
+    )
 
     profile = LocalProfile(
         tenant_id=tenant.id,
@@ -83,7 +84,7 @@ def test_assemble_signals_collects_expected_fields(db_session) -> None:
 
     db_session.add(
         CampaignDailyMetric(
-            organization_id=tenant.id,
+            organization_id=org.id,
             portfolio_id=None,
             sub_account_id=None,
             campaign_id=campaign.id,

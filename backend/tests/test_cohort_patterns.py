@@ -3,23 +3,30 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.intelligence.pattern_engine import discover_cohort_patterns
-from app.models.campaign import Campaign
 from app.models.content import ContentAsset
 from app.models.crawl import CrawlPageResult
 from app.models.rank import CampaignKeyword, KeywordCluster
 from app.models.temporal import TemporalSignalSnapshot, TemporalSignalType
-from app.models.tenant import Tenant
+from tests.conftest import create_test_campaign
 
 
-def test_discover_cohort_patterns_detects_internal_link_deficit(db_session) -> None:
-    tenant = Tenant(name='Cohort Tenant', status='Active')
-    db_session.add(tenant)
-    db_session.flush()
-
-    healthy = Campaign(tenant_id=tenant.id, name='Healthy Campaign', domain='plumber-healthy.example')
-    weak = Campaign(tenant_id=tenant.id, name='Weak Campaign', domain='plumber-weak.example')
-    db_session.add_all([healthy, weak])
-    db_session.flush()
+def test_discover_cohort_patterns_detects_internal_link_deficit(db_session, create_test_tenant, create_test_org) -> None:
+    tenant = create_test_tenant(name='Cohort Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Cohort Org')
+    healthy = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=tenant.id,
+        name='Healthy Campaign',
+        domain='plumber-healthy.example',
+    )
+    weak = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=tenant.id,
+        name='Weak Campaign',
+        domain='plumber-weak.example',
+    )
 
     for campaign in (healthy, weak):
         db_session.add(

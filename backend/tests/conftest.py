@@ -542,6 +542,22 @@ def reset_operational_metrics_fixture() -> Generator[None, None, None]:
     reset_operational_telemetry()
 
 
+def create_test_campaign(
+    session: Session,
+    org_id: str,
+    *,
+    tenant_id: str | None = None,
+    name: str | None = None,
+    domain: str | None = None,
+):
+    from app.models.campaign import Campaign
 
-
-
+    campaign = Campaign(
+        tenant_id=tenant_id or org_id,
+        organization_id=org_id,
+        name=name or f'Campaign-{uuid.uuid4().hex[:8]}',
+        domain=domain or f'example-{uuid.uuid4().hex[:8]}.test',
+    )
+    session.add(campaign)
+    session.flush()
+    return campaign
