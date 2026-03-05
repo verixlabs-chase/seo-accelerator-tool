@@ -30,6 +30,7 @@ from app.db.redis_client import get_redis_client
 from app.governance.startup_invariants import run_startup_invariants
 import app.db.session as db_session
 from app.services.auth_service import seed_local_admin
+from app.middleware.correlation_id import CorrelationIdMiddleware
 
 settings = get_settings()
 configure_logging(log_level=settings.log_level, app_env=settings.app_env)
@@ -115,6 +116,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestSizeLimitMiddleware, max_request_body_bytes=settings.max_request_body_bytes)
 app.add_middleware(
