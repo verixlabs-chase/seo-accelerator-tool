@@ -9,6 +9,7 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.events import emit_event
+from app.intelligence.signal_assembler import assemble_signals
 from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.models.sub_account import SubAccount
@@ -333,7 +334,7 @@ def get_campaign_strategy(
         tenant_id=user["tenant_id"],
         campaign_id=campaign.id,
         window=StrategyWindow(date_from=summary_date_from, date_to=summary_date_to),
-        raw_signals={},
+        raw_signals=assemble_signals(campaign.id, db=db),
         tier=tier,
     )
     response_payload = CampaignStrategyOut.model_validate(payload).model_dump(mode="json")

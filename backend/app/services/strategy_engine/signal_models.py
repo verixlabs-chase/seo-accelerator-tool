@@ -6,62 +6,69 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 CANONICAL_SIGNAL_FIELDS: frozenset[str] = frozenset(
     {
-        "clicks",
-        "impressions",
-        "ctr",
-        "avg_position",
-        "position_delta",
-        "traffic_growth_percent",
-        "sessions",
-        "conversions",
-        "profile_views",
-        "direction_requests",
-        "phone_calls",
-        "photo_views",
-        "review_count",
-        "review_velocity",
-        "avg_rating",
-        "review_response_rate",
-        "lcp",
-        "cls",
-        "inp",
-        "ttfb",
-        "index_coverage_errors",
-        "crawl_errors",
-        "mobile_usability_errors",
-        "structured_data_present",
-        "duplicate_title_flag",
-        "cannibalization_flag",
-        "competitor_avg_position",
-        "competitor_ctr_estimate",
-        "competitor_lcp",
-        "competitor_word_count",
-        "competitor_schema_presence",
-        "competitor_review_count",
-        "competitor_rating",
+        'clicks',
+        'impressions',
+        'ctr',
+        'avg_position',
+        'position_delta',
+        'traffic_growth_percent',
+        'sessions',
+        'conversions',
+        'profile_views',
+        'direction_requests',
+        'phone_calls',
+        'photo_views',
+        'review_count',
+        'review_velocity',
+        'avg_rating',
+        'review_response_rate',
+        'lcp',
+        'cls',
+        'inp',
+        'ttfb',
+        'index_coverage_errors',
+        'crawl_errors',
+        'mobile_usability_errors',
+        'structured_data_present',
+        'duplicate_title_flag',
+        'cannibalization_flag',
+        'competitor_avg_position',
+        'competitor_ctr_estimate',
+        'competitor_lcp',
+        'competitor_word_count',
+        'competitor_schema_presence',
+        'competitor_review_count',
+        'competitor_rating',
+        'technical_issue_count',
+        'content_count',
+        'local_health',
+        'ranking_velocity',
+        'content_growth_rate',
+        'internal_link_ratio',
+        'technical_issue_density',
+        'crawl_health_score',
     }
 )
 
 SIGNAL_ALIASES: dict[str, str] = {
-    "gbp_total_views": "profile_views",
-    "gbp_direction_requests": "direction_requests",
-    "gbp_calls": "phone_calls",
-    "gbp_photo_views": "photo_views",
-    "total_reviews": "review_count",
-    "review_velocity_90d": "review_velocity",
-    "average_rating": "avg_rating",
-    "competitor_average_rating": "competitor_rating",
-    "LCP": "lcp",
-    "CLS": "cls",
-    "INP": "inp",
-    "TTFB": "ttfb",
+    'gbp_total_views': 'profile_views',
+    'gbp_direction_requests': 'direction_requests',
+    'gbp_calls': 'phone_calls',
+    'gbp_photo_views': 'photo_views',
+    'total_reviews': 'review_count',
+    'review_velocity_90d': 'review_velocity',
+    'average_rating': 'avg_rating',
+    'competitor_average_rating': 'competitor_rating',
+    'avg_rank': 'avg_position',
+    'LCP': 'lcp',
+    'CLS': 'cls',
+    'INP': 'inp',
+    'TTFB': 'ttfb',
 }
 
 
 class StrategyEngineSignals(BaseModel):
-    """Canonical deterministic signal model consumed by downstream diagnostics."""
-
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra='forbid')
 
     clicks: float | None = Field(default=None, ge=0)
     impressions: float | None = Field(default=None, ge=0)
@@ -101,19 +108,22 @@ class StrategyEngineSignals(BaseModel):
     competitor_review_count: float | None = Field(default=None, ge=0)
     competitor_rating: float | None = Field(default=None, ge=0, le=5)
 
-    @field_validator("clicks", "impressions", mode="after")
+    technical_issue_count: float | None = Field(default=None, ge=0)
+    content_count: float | None = Field(default=None, ge=0)
+    local_health: float | None = Field(default=None, ge=0, le=1)
+    ranking_velocity: float | None = None
+    content_growth_rate: float | None = None
+    internal_link_ratio: float | None = Field(default=None, ge=0, le=1)
+    technical_issue_density: float | None = Field(default=None, ge=0)
+    crawl_health_score: float | None = Field(default=None, ge=0, le=1)
+
+    @field_validator('clicks', 'impressions', mode='after')
     @classmethod
     def _clicks_impressions_integrity(cls, value: float | None) -> float | None:
         return value
 
 
 def normalize_signal_payload(raw_signals: dict[str, Any]) -> dict[str, Any]:
-    """
-    Normalize raw signals into canonical names.
-
-    Raises:
-        ValueError: if unknown signal names are encountered.
-    """
     normalized: dict[str, Any] = {}
     unknown_fields: list[str] = []
 
@@ -125,13 +135,11 @@ def normalize_signal_payload(raw_signals: dict[str, Any]) -> dict[str, Any]:
         normalized[canonical_key] = value
 
     if unknown_fields:
-        raise ValueError(f"Unknown signal fields: {sorted(unknown_fields)}")
+        raise ValueError(f'Unknown signal fields: {sorted(unknown_fields)}')
 
     return normalized
 
 
 def build_signal_model(raw_signals: dict[str, Any]) -> StrategyEngineSignals:
-    """Build and validate the canonical signal model from a raw payload."""
     normalized = normalize_signal_payload(raw_signals)
     return StrategyEngineSignals.model_validate(normalized)
-

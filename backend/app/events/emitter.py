@@ -33,6 +33,7 @@ def emit_event(db: Session, tenant_id: str, event_type: str, payload: dict[str, 
         correlation_id=correlation_id,
         payload=payload_with_correlation,
     )
+
     db.add(
         AuditLog(
             tenant_id=tenant_id,
@@ -41,6 +42,18 @@ def emit_event(db: Session, tenant_id: str, event_type: str, payload: dict[str, 
             created_at=datetime.now(UTC),
         )
     )
+
+    _process_learning_event(db, tenant_id=tenant_id, event_type=event_type, payload=payload_with_correlation)
+
     # Never fail caller because a subscriber misbehaved.
     event_bus.publish(event_type, event.model_dump(mode='python'))
     return event
+
+
+def _process_learning_event(db: Session, *, tenant_id: str, event_type: str, payload: dict[str, Any]) -> None:
+    try:
+        from app.intelligence.event_integration import process_learning_event
+
+        process_learning_event(db, tenant_id=tenant_id, event_type=event_type, payload=payload)
+    except Exception:
+        return

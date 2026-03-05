@@ -1,0 +1,18 @@
+from app.intelligence.feature_store import compute_features
+from app.intelligence.llm_explainer import explain_recommendation
+from app.intelligence.outcome_tracker import compute_reward, record_outcome
+from app.intelligence.pattern_engine import discover_patterns_for_campaign
+from app.intelligence.policy_update_engine import update_policy_weights
+from app.intelligence.signal_assembler import assemble_signals
+from app.intelligence.temporal_ingestion import write_temporal_signals
+
+__all__ = [
+    'assemble_signals',
+    'write_temporal_signals',
+    'compute_features',
+    'discover_patterns_for_campaign',
+    'record_outcome',
+    'compute_reward',
+    'update_policy_weights',
+    'explain_recommendation',
+]

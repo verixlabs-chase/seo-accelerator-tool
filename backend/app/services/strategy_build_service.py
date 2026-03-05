@@ -7,9 +7,8 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.governance.replay.hashing import build_hash, input_hash, output_hash, version_fingerprint
+from app.intelligence.signal_assembler import assemble_signals
 from app.models.campaign import Campaign
-from app.enums import StrategyRecommendationStatus
-from app.utils.enum_guard import ensure_enum
 from app.models.intelligence import StrategyRecommendation
 from app.models.organization import Organization
 from app.models.strategy_execution_key import StrategyExecutionKey
@@ -24,9 +23,11 @@ from app.services.strategy_engine.profile import resolve_strategy_profile
 from app.services.strategy_engine.schemas import CampaignStrategyOut, StrategyWindow
 from app.services.strategy_engine.temporal_integration import integrate_temporal_state
 from app.services.strategy_engine.thresholds import version_id as threshold_version
+from app.enums import StrategyRecommendationStatus
+from app.utils.enum_guard import ensure_enum
 
-_REGISTRY_VERSION = "scenario-registry-v1"
-_SIGNAL_SCHEMA_VERSION = "signals-v1"
+_REGISTRY_VERSION = 'scenario-registry-v1'
+_SIGNAL_SCHEMA_VERSION = 'signals-v1'
 _TERMINAL_RECOMMENDATION_STATUS = StrategyRecommendationStatus.ARCHIVED
 
 
@@ -41,13 +42,14 @@ def build_campaign_strategy_idempotent(
 ) -> CampaignStrategyOut:
     campaign = db.get(Campaign, campaign_id)
     if campaign is None or campaign.tenant_id != tenant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Campaign not found')
     if campaign.organization_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign organization is not configured")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Campaign organization is not configured')
+
     organization = db.get(Organization, campaign.organization_id)
     if organization is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
-    if organization.status.strip().lower() != "active":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Organization not found')
+    if organization.status.strip().lower() != 'active':
         return CampaignStrategyOut(
             campaign_id=campaign_id,
             window=window,
@@ -55,61 +57,65 @@ def build_campaign_strategy_idempotent(
             recommendations=[],
             strategic_scores=None,
             executive_summary=None,
-            meta={"status": "failed", "reason_code": "ORG_INACTIVE"},
+            meta={'status': 'failed', 'reason_code': 'ORG_INACTIVE'},
         )
 
+    assembled_signals = assemble_signals(campaign_id, db=db)
+    if raw_signals:
+        assembled_signals.update(raw_signals)
+
     request_payload = {
-        "campaign_id": campaign_id,
-        "window": {"date_from": window.date_from.isoformat(), "date_to": window.date_to.isoformat()},
-        "raw_signals": raw_signals,
-        "tier": tier,
+        'campaign_id': campaign_id,
+        'window': {'date_from': window.date_from.isoformat(), 'date_to': window.date_to.isoformat()},
+        'raw_signals': assembled_signals,
+        'tier': tier,
     }
     in_hash = input_hash(request_payload)
     profile = resolve_strategy_profile(tier)
     profile_hash = profile.version_hash()
     version_tuple = {
-        "engine_version": "phase2-controlled-scope",
-        "threshold_bundle_version": threshold_version,
-        "registry_version": _REGISTRY_VERSION,
-        "signal_schema_version": _SIGNAL_SCHEMA_VERSION,
-        "profile_version_hash": profile_hash,
+        'engine_version': 'phase2-controlled-scope',
+        'threshold_bundle_version': threshold_version,
+        'registry_version': _REGISTRY_VERSION,
+        'signal_schema_version': _SIGNAL_SCHEMA_VERSION,
+        'profile_version_hash': profile_hash,
     }
     version_hash = version_fingerprint(version_tuple)
-    idem_key = f"{campaign_id}:{window.date_from.isoformat()}:{window.date_to.isoformat()}:{tier}"
+    idem_key = f'{campaign_id}:{window.date_from.isoformat()}:{window.date_to.isoformat()}:{tier}'
 
     execution, _ = get_or_create_execution(
         db,
         tenant_id=tenant_id,
         campaign_id=campaign_id,
-        operation_type="strategy_build",
+        operation_type='strategy_build',
         idempotency_key=idem_key,
         input_hash=in_hash,
         version_fingerprint=version_hash,
     )
 
-    if execution.status == "completed" and execution.output_payload_json:
+    if execution.status == 'completed' and execution.output_payload_json:
         payload = json.loads(execution.output_payload_json)
         return CampaignStrategyOut.model_validate(payload)
 
-    if execution.status == "running":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Strategy build already running for this idempotency key")
+    if execution.status == 'running':
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Strategy build already running for this idempotency key')
 
-    if execution.status == "failed":
+    if execution.status == 'failed':
         _reset_failed_to_pending(db, execution.id)
 
     claimed = claim_pending_execution(db, execution_id=execution.id)
     if claimed is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Strategy build execution is locked by another worker")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Strategy build execution is locked by another worker')
 
     try:
         output = build_campaign_strategy(
             campaign_id=campaign_id,
             window=window,
-            raw_signals=raw_signals,
+            raw_signals=assembled_signals,
             tier=tier,
             db=db,
         )
-        payload = output.model_dump(mode="json")
+        payload = output.model_dump(mode='json')
         temporal_visibility = integrate_temporal_state(
             db,
             campaign_id=campaign_id,
@@ -118,16 +124,16 @@ def build_campaign_strategy_idempotent(
             payload=payload,
         )
         out_hash = output_hash(payload)
-        payload["meta"]["threshold_bundle_version"] = threshold_version
-        payload["meta"]["registry_version"] = _REGISTRY_VERSION
-        payload["meta"]["signal_schema_version"] = _SIGNAL_SCHEMA_VERSION
-        payload["meta"]["input_hash"] = in_hash
-        payload["meta"]["output_hash"] = out_hash
-        payload["meta"]["version_fingerprint"] = version_hash
-        payload["meta"]["profile_version_hash"] = profile_hash
-        payload["meta"]["build_hash"] = build_hash(input_digest=in_hash, output_digest=out_hash, version_digest=version_hash)
+        payload['meta']['threshold_bundle_version'] = threshold_version
+        payload['meta']['registry_version'] = _REGISTRY_VERSION
+        payload['meta']['signal_schema_version'] = _SIGNAL_SCHEMA_VERSION
+        payload['meta']['input_hash'] = in_hash
+        payload['meta']['output_hash'] = out_hash
+        payload['meta']['version_fingerprint'] = version_hash
+        payload['meta']['profile_version_hash'] = profile_hash
+        payload['meta']['build_hash'] = build_hash(input_digest=in_hash, output_digest=out_hash, version_digest=version_hash)
         if temporal_visibility is not None:
-            payload["meta"]["temporal"] = temporal_visibility
+            payload['meta']['temporal'] = temporal_visibility
 
         persist_execution_result(db, execution_id=execution.id, output_hash=out_hash, output_payload=payload)
         _persist_strategy_recommendation_metadata(
@@ -138,7 +144,7 @@ def build_campaign_strategy_idempotent(
             input_hash=in_hash,
             output_hash=out_hash,
             version_tuple=version_tuple,
-            build_hash_value=payload["meta"]["build_hash"],
+            build_hash_value=payload['meta']['build_hash'],
         )
 
         return CampaignStrategyOut.model_validate(payload)
@@ -151,9 +157,9 @@ def _reset_failed_to_pending(db: Session, execution_id: str) -> None:
     from datetime import UTC, datetime
 
     row = db.get(StrategyExecutionKey, execution_id)
-    if row is None or row.status != "failed":
+    if row is None or row.status != 'failed':
         return
-    row.status = "pending"
+    row.status = 'pending'
     row.updated_at = datetime.now(UTC)
     db.commit()
 
@@ -181,9 +187,9 @@ def _persist_strategy_recommendation_metadata(
     )
 
     payload = {
-        "steps": [
-            "rebuild_strategy_with_prior_tuple",
-            "invalidate_conflicting_cached_payloads",
+        'steps': [
+            'rebuild_strategy_with_prior_tuple',
+            'invalidate_conflicting_cached_payloads',
         ]
     }
 
@@ -191,11 +197,11 @@ def _persist_strategy_recommendation_metadata(
         existing = StrategyRecommendation(
             tenant_id=tenant_id,
             campaign_id=campaign_id,
-            recommendation_type="strategy_bundle_record",
-            rationale="Deterministic strategy build artifact record",
+            recommendation_type='strategy_bundle_record',
+            rationale='Deterministic strategy build artifact record',
             confidence=1.0,
             confidence_score=1.0,
-            evidence_json=json.dumps(["deterministic_strategy_build"]),
+            evidence_json=json.dumps(['deterministic_strategy_build']),
             risk_tier=0,
             rollback_plan_json=json.dumps(payload),
             status=ensure_enum(_TERMINAL_RECOMMENDATION_STATUS, StrategyRecommendationStatus),
@@ -203,18 +209,11 @@ def _persist_strategy_recommendation_metadata(
         )
         db.add(existing)
 
-    existing.engine_version = version_tuple["engine_version"]
-    existing.threshold_bundle_version = version_tuple["threshold_bundle_version"]
-    existing.registry_version = version_tuple["registry_version"]
-    existing.signal_schema_version = version_tuple["signal_schema_version"]
+    existing.engine_version = version_tuple['engine_version']
+    existing.threshold_bundle_version = version_tuple['threshold_bundle_version']
+    existing.registry_version = version_tuple['registry_version']
+    existing.signal_schema_version = version_tuple['signal_schema_version']
     existing.input_hash = input_hash
     existing.output_hash = output_hash
     existing.build_hash = build_hash_value
     db.commit()
-
-
-
-
-
-
-
