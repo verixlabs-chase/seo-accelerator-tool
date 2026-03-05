@@ -1,21 +1,53 @@
+import uuid
 from datetime import UTC, datetime, timedelta
 
+from app.models.campaign import Campaign
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_metric import ProviderExecutionMetric
 from app.models.provider_quota import ProviderQuotaState
-from app.models.tenant import Tenant
 from app.services.provider_telemetry_service import ProviderTelemetryService
 
 
-def test_provider_telemetry_persistence(db_session) -> None:
-    tenant = db_session.query(Tenant).first()
-    assert tenant is not None
+def test_provider_telemetry_persistence(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+    create_test_sub_account,
+) -> None:
+    tenant = create_test_tenant(
+        tenant_id=str(uuid.uuid4()),
+        name=f"Telemetry Tenant {uuid.uuid4().hex[:8]}",
+    )
+    organization = create_test_org(
+        organization_id=tenant.id,
+        tenant_id=tenant.id,
+        name=f"Telemetry Org {tenant.id[:8]}",
+    )
+    sub_account = create_test_sub_account(
+        sub_account_id="sub-1",
+        organization_id=organization.id,
+        tenant_id=tenant.id,
+        name="Test Sub",
+    )
+
+    campaign = db_session.query(Campaign).filter(Campaign.id == "campaign-1").one_or_none()
+    if campaign is None:
+        campaign = Campaign(
+            id="campaign-1",
+            tenant_id=tenant.id,
+            organization_id=organization.id,
+            sub_account_id=sub_account.id,
+            name="Test Campaign",
+            domain="telemetry.example",
+        )
+        db_session.add(campaign)
+        db_session.flush()
 
     telemetry = ProviderTelemetryService(db_session)
     telemetry.record_execution_metric(
         tenant_id=tenant.id,
-        sub_account_id="sub-1",
-        campaign_id="campaign-1",
+        sub_account_id=sub_account.id,
+        campaign_id=campaign.id,
         provider_name="rank",
         provider_version="1.0.0",
         capability="rank_snapshot",
@@ -61,16 +93,15 @@ def test_provider_telemetry_persistence(db_session) -> None:
     quota = db_session.query(ProviderQuotaState).one()
 
     assert metric.provider_name == "rank"
-    assert metric.sub_account_id == "sub-1"
-    assert metric.campaign_id == "campaign-1"
+    assert metric.sub_account_id == sub_account.id
+    assert metric.campaign_id == campaign.id
     assert metric.operation == "unknown"
     assert health.capability == "rank_snapshot"
     assert quota.remaining_count == 900
 
 
-def test_provider_telemetry_failures_are_non_blocking(db_session, monkeypatch) -> None:
-    tenant = db_session.query(Tenant).first()
-    assert tenant is not None
+def test_provider_telemetry_failures_are_non_blocking(db_session, monkeypatch, create_test_tenant) -> None:
+    tenant = create_test_tenant()
 
     telemetry = ProviderTelemetryService(db_session)
 
@@ -109,3 +140,5 @@ def test_provider_telemetry_failures_are_non_blocking(db_session, monkeypatch) -
         used_count=1,
         remaining_count=9,
     )
+
+

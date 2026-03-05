@@ -9,7 +9,7 @@ import tempfile
 import time
 import uuid
 from datetime import UTC, datetime
-from typing import Callable, Generator
+from typing import Generator
 from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
@@ -115,7 +115,6 @@ def _reset_external_test_database(engine) -> None:
         conn.execute(text(f"TRUNCATE TABLE {joined_tables} RESTART IDENTITY CASCADE"))
 @pytest.fixture(scope="session", autouse=True)
 def apply_migrations() -> Generator[dict[str, object], None, None]:
-    print("apply_migrations: start", flush=True)
     backend_dir = Path(__file__).resolve().parents[1]
     explicit_database_url = _resolve_test_database_url()
     if explicit_database_url and not _is_sqlite_url(explicit_database_url):
@@ -128,11 +127,8 @@ def apply_migrations() -> Generator[dict[str, object], None, None]:
         get_settings.cache_clear()
         print(f"[tests] DATABASE_URL={database_url}")
         db_session_module.reset_engine_state()
-        # The compose test stack migrates the external Postgres database before pytest starts.
-        # Skip the duplicate upgrade here and keep the parity check as a guardrail.
-        print("apply_migrations: before verify_required_tables", flush=True)
+        _run_alembic_upgrade(backend_dir, database_url)
         _verify_required_tables(database_url)
-        print("apply_migrations: yielding", flush=True)
         yield {"database_url": database_url, "mode": "external"}
         return
 
@@ -148,9 +144,7 @@ def apply_migrations() -> Generator[dict[str, object], None, None]:
     print(f"[tests] DATABASE_URL={database_url}")
     db_session_module.reset_engine_state()
     _run_alembic_upgrade(backend_dir, database_url)
-    print("apply_migrations: before verify_required_tables", flush=True)
     _verify_required_tables(database_url)
-    print("apply_migrations: yielding", flush=True)
     yield {
         "database_url": database_url,
         "mode": "sqlite",
@@ -162,7 +156,6 @@ def apply_migrations() -> Generator[dict[str, object], None, None]:
 
 @pytest.fixture(scope="session", autouse=True)
 def bind_module_session_factories(apply_migrations: dict[str, object]) -> Generator[None, None, None]:
-    print("bind_module_session_factories: start", flush=True)
     database_url = str(apply_migrations["database_url"])
     bootstrap_engine = _create_test_engine(database_url)
     bootstrap_session_local = sessionmaker(bind=bootstrap_engine, autocommit=False, autoflush=False)
@@ -175,9 +168,7 @@ def bind_module_session_factories(apply_migrations: dict[str, object]) -> Genera
     crawl_api_module.SessionLocal = db_session_module.SessionLocal
 
     # Import app after rebinding to avoid stale SessionLocal capture in route modules.
-    print("bind_module_session_factories: before import app.main", flush=True)
     import app.main  # noqa: F401
-    print("bind_module_session_factories: after import app.main", flush=True)
 
     yield
     bootstrap_engine.dispose()
@@ -196,9 +187,7 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
         database_url = str(apply_migrations["database_url"])
     engine = _create_test_engine(database_url)
     if mode != "sqlite":
-        print("db_session: before reset_external_test_database")
         _reset_external_test_database(engine)
-        print("db_session: after reset_external_test_database")
     test_session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     test_session = test_session_local()
 
@@ -318,8 +307,6 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
             org_owner_user,
         ]
     )
-    # Persist principals first so Postgres sees referenced rows before FK-dependent inserts.
-    test_session.commit()
     test_session.add_all(
         [
             UserRole(id=str(uuid.uuid4()), user_id=user_a.id, role_id=role_tenant_admin.id, created_at=datetime.now(UTC)),
@@ -350,8 +337,6 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
             ),
         ]
     )
-    # Ensure users exist before memberships reference them.
-    test_session.flush()
     test_session.add_all(
         [
             OrganizationMembership(
@@ -422,117 +407,17 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
 
 @pytest.fixture()
 def client(db_session: Session) -> Generator[TestClient, None, None]:
-    print("client fixture: before importing app", flush=True)
     from app.main import app
-    print("client fixture: before TestClient(app)", flush=True)
-    test_client = TestClient(app)
-    print("client fixture: after TestClient(app)", flush=True)
 
     def _override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = _override_get_db
-    yield test_client
-    print("client fixture: teardown", flush=True)
+    with TestClient(app) as test_client:
+        yield test_client
     app.dependency_overrides.clear()
 
 
-
-
-
-def create_test_tenant(session: Session, tenant_id: str | None = None, name: str = "Test Tenant") -> Tenant:
-    resolved_tenant_id = tenant_id or str(uuid.uuid4())
-    tenant = session.query(Tenant).filter(Tenant.id == resolved_tenant_id).one_or_none()
-    if tenant is not None:
-        return tenant
-    tenant = Tenant(
-        id=resolved_tenant_id,
-        name=name if tenant_id is None else f"{name} {resolved_tenant_id[:8]}",
-        status="Active",
-        created_at=datetime.now(UTC),
-    )
-    session.add(tenant)
-    session.flush()
-    return tenant
-
-
-@pytest.fixture(name="create_test_tenant")
-def create_test_tenant_fixture(db_session: Session) -> Callable[..., Tenant]:
-    def _create_test_tenant(*, tenant_id: str | None = None, name: str | None = None) -> Tenant:
-        return create_test_tenant(
-            session=db_session,
-            tenant_id=tenant_id,
-            name=name or "Test Tenant",
-        )
-
-    return _create_test_tenant
-
-@pytest.fixture()
-def create_test_org(
-    db_session: Session,
-    create_test_tenant: Callable[..., Tenant],
-) -> Callable[..., Organization]:
-    def _create_test_org(
-        *,
-        organization_id: str | None = None,
-        tenant_id: str | None = None,
-        name: str | None = None,
-        status: str = "active",
-    ) -> Organization:
-        resolved_tenant_id = tenant_id or organization_id
-        tenant = create_test_tenant(tenant_id=resolved_tenant_id)
-        resolved_org_id = organization_id or tenant.id
-        organization = db_session.query(Organization).filter(Organization.id == resolved_org_id).one_or_none()
-        if organization is None:
-            test_tier_profile = ensure_test_tier_profile(db_session)
-            organization = Organization(
-                id=resolved_org_id,
-                name=name or f"Org-{resolved_org_id[:8]}",
-                plan_type="standard",
-                billing_mode="subscription",
-                status=status,
-                tier_profile_id=test_tier_profile.id,
-                tier_version=test_tier_profile.version,
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC),
-            )
-            db_session.add(organization)
-            db_session.flush()
-        return organization
-
-    return _create_test_org
-
-
-@pytest.fixture()
-def create_test_sub_account(
-    db_session: Session,
-    create_test_org: Callable[..., Organization],
-) -> Callable[..., SubAccount]:
-    def _create_test_sub_account(
-        *,
-        sub_account_id: str | None = None,
-        organization_id: str | None = None,
-        tenant_id: str | None = None,
-        name: str = "Test SubAccount",
-        status: str = "active",
-    ) -> SubAccount:
-        organization = create_test_org(organization_id=organization_id, tenant_id=tenant_id)
-        resolved_sub_account_id = sub_account_id or str(uuid.uuid4())
-        sub_account = db_session.query(SubAccount).filter(SubAccount.id == resolved_sub_account_id).one_or_none()
-        if sub_account is None:
-            sub_account = SubAccount(
-                id=resolved_sub_account_id,
-                organization_id=organization.id,
-                name=name,
-                status=status,
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC),
-            )
-            db_session.add(sub_account)
-            db_session.flush()
-        return sub_account
-
-    return _create_test_sub_account
 
 
 @pytest.fixture(autouse=True)
@@ -540,8 +425,5 @@ def reset_operational_metrics_fixture() -> Generator[None, None, None]:
     reset_operational_telemetry()
     yield
     reset_operational_telemetry()
-
-
-
 
 

@@ -6,6 +6,7 @@ from typing import Literal
 
 import pytest
 
+from app.models.campaign import Campaign
 from app.models.provider_metric import ProviderExecutionMetric
 from app.providers.circuit_breaker import CircuitBreaker
 from app.providers.execution_types import ProviderExecutionRequest
@@ -267,7 +268,7 @@ class _GoogleProviderTask(CeleryProviderTask):
     retry_policy = RetryPolicy(max_attempts=1, jitter_ratio=0.0, sleep_fn=lambda _d: None)
 
 
-def test_google_provider_execution_persists_telemetry(db_session, monkeypatch) -> None:
+def test_google_provider_execution_persists_telemetry(db_session, monkeypatch, create_test_org, create_test_sub_account) -> None:
     calls: list[dict[str, Any]] = []
     actions = [
         _FakeResponse(
@@ -275,6 +276,23 @@ def test_google_provider_execution_persists_telemetry(db_session, monkeypatch) -
             payload={"rows": [{"keys": ["q"], "clicks": 1, "impressions": 10, "ctr": 0.1, "position": 3.0}]},
         )
     ]
+    organization = create_test_org()
+    sub_account = create_test_sub_account(
+        sub_account_id="sub-telemetry",
+        organization_id=organization.id,
+        tenant_id=organization.id,
+        name="Test Sub",
+    )
+    campaign = Campaign(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        sub_account_id=sub_account.id,
+        name="Telemetry Campaign",
+        domain="telemetry.example",
+        setup_state="Active",
+    )
+    db_session.add(campaign)
+    db_session.commit()
     _patch_credentials(monkeypatch, "app.providers.google_search_console")
     _patch_http_client(monkeypatch, "app.providers.google_search_console", actions, calls)
 
@@ -286,9 +304,10 @@ def test_google_provider_execution_persists_telemetry(db_session, monkeypatch) -
     request = ProviderExecutionRequest(
         operation="search_console_query",
         payload={
-            "tenant_id": "tenant-telemetry",
-            "sub_account_id": "sub-telemetry",
-            "organization_id": "org-1",
+            "tenant_id": organization.id,
+            "sub_account_id": sub_account.id,
+            "organization_id": organization.id,
+            "campaign_id": campaign.id,
             "site_url": "sc-domain:example.com",
             "start_date": "2026-01-01",
             "end_date": "2026-01-31",
@@ -301,5 +320,18 @@ def test_google_provider_execution_persists_telemetry(db_session, monkeypatch) -
     metric = db_session.query(ProviderExecutionMetric).filter(ProviderExecutionMetric.provider_name == "google_search_console").first()
     assert metric is not None
     assert metric.outcome == "success"
-    assert metric.sub_account_id == "sub-telemetry"
+    assert metric.sub_account_id == sub_account.id
     assert metric.reason_code is None
+    assert metric.campaign_id == campaign.id
+
+
+
+
+
+
+
+
+
+
+
+

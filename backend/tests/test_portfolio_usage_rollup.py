@@ -7,6 +7,7 @@ from app.models.campaign import Campaign
 from app.models.crawl import CrawlPageResult, CrawlRun, Page
 from app.models.organization import Organization
 from app.models.portfolio import Portfolio
+from app.models.tenant import Tenant
 from app.models.portfolio_usage_daily import PortfolioUsageDaily
 from app.models.provider_metric import ProviderExecutionMetric
 from app.models.reporting import MonthlyReport
@@ -16,34 +17,50 @@ from app.tasks import tasks
 
 def _seed_org_and_portfolio(db_session, *, org_id: str, portfolio_id: str) -> None:
     now = datetime.now(UTC)
-    db_session.add(
-        Organization(
-            id=org_id,
-            name=f"Org-{org_id[:8]}",
-            plan_type="standard",
-            billing_mode="subscription",
-            status="active",
-            created_at=now,
-            updated_at=now,
+    tenant = db_session.query(Tenant).filter(Tenant.id == org_id).one_or_none()
+    if tenant is None:
+        tenant = Tenant(id=org_id, name=f"Tenant-{org_id[:8]}", status="Active")
+        db_session.add(tenant)
+        db_session.flush()
+
+    organization = db_session.query(Organization).filter(Organization.id == org_id).one_or_none()
+    if organization is None:
+        db_session.add(
+            Organization(
+                id=org_id,
+                name=f"Org-{org_id[:8]}",
+                plan_type="standard",
+                billing_mode="subscription",
+                status="active",
+                created_at=now,
+                updated_at=now,
+            )
         )
-    )
-    db_session.add(
-        Portfolio(
-            id=portfolio_id,
-            organization_id=org_id,
-            name=f"Portfolio-{portfolio_id[:8]}",
-            code=f"portfolio-{portfolio_id[:8]}",
-            status="active",
-            timezone="UTC",
-            default_sla_tier="standard",
-            created_at=now,
-            updated_at=now,
+
+    portfolio = db_session.query(Portfolio).filter(Portfolio.id == portfolio_id).one_or_none()
+    if portfolio is None:
+        db_session.add(
+            Portfolio(
+                id=portfolio_id,
+                organization_id=org_id,
+                name=f"Portfolio-{portfolio_id[:8]}",
+                code=f"portfolio-{portfolio_id[:8]}",
+                status="active",
+                timezone="UTC",
+                default_sla_tier="standard",
+                created_at=now,
+                updated_at=now,
+            )
         )
-    )
     db_session.flush()
 
 
 def _seed_campaign(db_session, *, org_id: str, portfolio_id: str, created_at: datetime, setup_state: str = "Active") -> Campaign:
+    tenant = db_session.query(Tenant).filter(Tenant.id == org_id).one_or_none()
+    if tenant is None:
+        tenant = Tenant(id=org_id, name=f"Tenant-{org_id[:8]}", status="Active")
+        db_session.add(tenant)
+        db_session.flush()
     campaign = Campaign(
         id=str(uuid.uuid4()),
         tenant_id=org_id,
@@ -232,3 +249,6 @@ def test_incremental_rollup_task_is_idempotent(db_session) -> None:
         .count()
         == 2
     )
+
+
+

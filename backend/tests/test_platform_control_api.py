@@ -127,16 +127,28 @@ def test_platform_provider_health_summary_and_audit_feed(client, db_session) -> 
             updated_at=now,
         )
     )
-    db_session.add(
-        ProviderPolicy(
-            id=str(uuid.uuid4()),
-            organization_id=tenant_id,
-            provider_name="dataforseo",
-            credential_mode="byo_optional",
-            created_at=now,
-            updated_at=now,
+    existing_policy = (
+        db_session.query(ProviderPolicy)
+        .filter(
+            ProviderPolicy.organization_id == tenant_id,
+            ProviderPolicy.provider_name == "dataforseo",
         )
+        .one_or_none()
     )
+    if existing_policy is None:
+        db_session.add(
+            ProviderPolicy(
+                id=str(uuid.uuid4()),
+                organization_id=tenant_id,
+                provider_name="dataforseo",
+                credential_mode="byo_optional",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    else:
+        existing_policy.credential_mode = "byo_optional"
+        existing_policy.updated_at = now
     db_session.add(
         AuditLog(
             tenant_id=tenant_id,
@@ -227,3 +239,4 @@ def test_platform_route_fails_without_platform_role_claim(client) -> None:
     token, _tenant_id, _user_id = _login(client, "a@example.com", "pass-a")
     response = client.get("/api/v1/platform/audit", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 403
+

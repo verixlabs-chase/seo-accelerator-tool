@@ -6,6 +6,7 @@ from app.models.campaign import Campaign
 from app.models.crawl import CrawlRun
 from app.models.organization import Organization
 from app.models.organization_membership import OrganizationMembership
+from app.models.tenant import Tenant
 from app.models.user import User
 
 
@@ -35,7 +36,7 @@ def test_token_tampering_is_rejected(client) -> None:
     assert response.status_code == 401
 
 
-def test_cross_org_access_denied(client, db_session) -> None:
+def test_cross_org_access_denied(client, db_session, create_test_tenant) -> None:
     login_a = _login(client, "a@example.com", "pass-a")
     assert login_a["status_code"] == 200
     token_a = login_a["json"]["data"]["access_token"]
@@ -43,6 +44,8 @@ def test_cross_org_access_denied(client, db_session) -> None:
     login_b = _login(client, "b@example.com", "pass-b")
     assert login_b["status_code"] == 200
     org_b_id = login_b["json"]["data"]["user"]["organization_id"]
+
+    create_test_tenant(tenant_id=org_b_id, name=f"Tenant-{org_b_id[:8]}")
 
     campaign_b = Campaign(id=str(uuid.uuid4()), tenant_id=org_b_id, name="Cross Org Campaign", domain="crossorg.com")
     db_session.add(campaign_b)
@@ -64,7 +67,7 @@ def test_cross_org_access_denied(client, db_session) -> None:
     assert response.status_code in {403, 404}
 
 
-def test_platform_and_org_route_access_control(client, db_session) -> None:
+def test_platform_and_org_route_access_control(client, db_session, create_test_tenant) -> None:
     org_user_login = _login(client, "org-admin@example.com", "pass-org-admin")
     assert org_user_login["status_code"] == 200
     org_user_token = org_user_login["json"]["data"]["access_token"]
@@ -72,9 +75,11 @@ def test_platform_and_org_route_access_control(client, db_session) -> None:
     platform_list_denied = client.get("/api/v1/platform/orgs", headers={"Authorization": f"Bearer {org_user_token}"})
     assert platform_list_denied.status_code == 403
 
+    platform_tenant = create_test_tenant(tenant_id=str(uuid.uuid4()), name=f"platform-only-{uuid.uuid4().hex[:8]}")
+
     platform_only_user = User(
         id=str(uuid.uuid4()),
-        tenant_id=str(uuid.uuid4()),
+        tenant_id=platform_tenant.id,
         email="platform-only@example.com",
         hashed_password=hash_password("pass-platform-only"),
         is_platform_user=True,
@@ -144,3 +149,8 @@ def test_multi_org_requires_selection_endpoint(client, db_session) -> None:
     selected = select_res.json()["data"]
     assert selected["access_token"]
     assert selected["user"]["organization_id"] == second_org.id
+
+
+
+
+

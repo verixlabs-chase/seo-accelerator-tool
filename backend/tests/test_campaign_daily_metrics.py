@@ -13,6 +13,7 @@ from app.models.intelligence import IntelligenceScore
 from app.models.local import LocalProfile, ReviewVelocitySnapshot
 from app.models.organization import Organization
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+from app.models.tenant import Tenant
 from app.services import analytics_service
 
 
@@ -21,8 +22,20 @@ def _organization_id(db_session) -> str:
 
 
 def _build_campaign(db_session, *, organization_id: str | None) -> Campaign:
+    tenant_id = organization_id or str(uuid.uuid4())
+    tenant = db_session.query(Tenant).filter(Tenant.id == tenant_id).one_or_none()
+    if tenant is None:
+        tenant = Tenant(
+            id=tenant_id,
+            name=f"Analytics Tenant {tenant_id[:8]}",
+            status="Active",
+            created_at=datetime(2026, 3, 1, 9, 0, tzinfo=UTC),
+        )
+        db_session.add(tenant)
+        db_session.flush()
+
     campaign = Campaign(
-        tenant_id=organization_id or str(uuid.uuid4()),
+        tenant_id=tenant.id,
         organization_id=organization_id,
         name='Analytics Campaign',
         domain=f'{uuid.uuid4().hex}.example',
@@ -31,7 +44,6 @@ def _build_campaign(db_session, *, organization_id: str | None) -> Campaign:
     db_session.add(campaign)
     db_session.flush()
     return campaign
-
 
 def test_campaign_daily_metric_hash_is_stable() -> None:
     metric_input = analytics_service.CampaignDailyMetricInput(
@@ -414,3 +426,10 @@ def test_campaign_daily_metric_range_rollup_is_idempotent(db_session) -> None:
     assert [row.metric_date.isoformat() for row in rows] == ['2026-03-01', '2026-03-02']
     assert rows[0].clicks == 10
     assert rows[1].sessions == 25
+
+
+
+
+
+
+
