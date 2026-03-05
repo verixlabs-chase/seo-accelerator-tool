@@ -7,7 +7,7 @@ from app.models.content import ContentAsset
 from app.models.crawl import CrawlPageResult
 from app.models.rank import CampaignKeyword, KeywordCluster
 from app.models.temporal import TemporalSignalSnapshot, TemporalSignalType
-from tests.conftest import create_test_campaign, create_test_crawl_run
+from tests.conftest import create_test_campaign, create_test_crawl_run, create_test_page
 
 
 def test_discover_cohort_patterns_detects_internal_link_deficit(db_session, create_test_tenant, create_test_org) -> None:
@@ -30,12 +30,13 @@ def test_discover_cohort_patterns_detects_internal_link_deficit(db_session, crea
 
     for campaign in (healthy, weak):
         campaign_crawl_run_id = create_test_crawl_run(db_session, campaign.id, tenant.id)
+        page_id = create_test_page(db_session, tenant.id, campaign.id)
         db_session.add(
             CrawlPageResult(
                 tenant_id=tenant.id,
                 campaign_id=campaign.id,
                 crawl_run_id=campaign_crawl_run_id,
-                page_id=f'page-{campaign.id[:6]}',
+                page_id=page_id,
                 status_code=200,
                 is_indexable=1,
                 title='Page',

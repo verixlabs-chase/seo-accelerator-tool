@@ -28,7 +28,7 @@ from app.services.operational_telemetry_service import reset_operational_telemet
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
-from app.models.crawl import CrawlRun, TechnicalIssue  # noqa: F401
+from app.models.crawl import CrawlRun, Page, TechnicalIssue  # noqa: F401
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity  # noqa: F401
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
@@ -580,3 +580,21 @@ def create_test_crawl_run(session: Session, campaign_id: str, tenant_id: str) ->
     session.commit()
     session.refresh(crawl_run)
     return crawl_run.id
+
+
+def create_test_page(
+    session: Session,
+    tenant_id: str,
+    campaign_id: str,
+    url: str = 'https://example.com/page-1',
+) -> str:
+    page = Page(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        url=url,
+    )
+    session.add(page)
+    session.commit()
+    session.refresh(page)
+    return page.id

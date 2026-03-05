@@ -6,7 +6,7 @@ from app.intelligence.feature_store import compute_features
 from app.models.content import ContentAsset
 from app.models.crawl import CrawlPageResult, TechnicalIssue
 from app.models.temporal import MomentumMetric, TemporalSignalSnapshot, TemporalSignalType
-from tests.conftest import create_test_campaign, create_test_crawl_run
+from tests.conftest import create_test_campaign, create_test_crawl_run, create_test_page
 
 
 def test_compute_features_returns_expected_keys_and_persists(db_session, create_test_tenant, create_test_org) -> None:
@@ -20,6 +20,7 @@ def test_compute_features_returns_expected_keys_and_persists(db_session, create_
         domain='feature.example',
     )
     crawl_run_id = create_test_crawl_run(db_session, campaign.id, tenant.id)
+    page_id = create_test_page(db_session, tenant.id, campaign.id)
 
     db_session.add(
         ContentAsset(
@@ -37,7 +38,7 @@ def test_compute_features_returns_expected_keys_and_persists(db_session, create_
             tenant_id=tenant.id,
             campaign_id=campaign.id,
             crawl_run_id=crawl_run_id,
-            page_id='page-1',
+            page_id=page_id,
             status_code=200,
             is_indexable=1,
             title='Page 1',
