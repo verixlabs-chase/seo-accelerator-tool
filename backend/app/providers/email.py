@@ -32,6 +32,7 @@ class SyntheticEmailAdapter:
         self._open_until = 0.0
 
     def send_email(self, recipient: str, subject: str, body: str) -> dict:  # noqa: ARG002
+        del subject
         if self._circuit_open():
             return {"status": "deferred", "reason": "circuit_open"}
         attempt = 0

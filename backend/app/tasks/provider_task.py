@@ -369,8 +369,8 @@ class CeleryProviderTask(Task):
                 snapshot = health_snapshot()
                 breaker_state = snapshot.state
                 consecutive_failures = snapshot.consecutive_failures
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("provider health snapshot retrieval failed", exc_info=exc)
         self._with_telemetry_service(
             lambda telemetry: telemetry.upsert_health_state(
                 tenant_id=tenant_id,
@@ -399,8 +399,8 @@ class CeleryProviderTask(Task):
             try:
                 snapshot = health_snapshot()
                 breaker_state = snapshot.state
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("provider health snapshot retrieval failed", exc_info=exc)
         self._with_telemetry_service(
             lambda telemetry: telemetry.upsert_health_state(
                 tenant_id=tenant_id,

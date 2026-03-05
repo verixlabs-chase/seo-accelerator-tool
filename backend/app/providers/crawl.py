@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import time
 from functools import lru_cache
 from typing import Protocol
 
 import httpx
+
+logger = logging.getLogger("lsos.providers.crawl")
 
 
 class CrawlAdapter(Protocol):
@@ -54,8 +57,8 @@ class DefaultCrawlAdapter:
                             browser.close()
                             self._record_success()
                             return status_code, html
-                    except Exception:
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("Playwright crawl attempt failed; falling back to HTTP client.", exc_info=exc)
 
                 with httpx.Client(follow_redirects=True) as client:
                     response = client.get(url, timeout=timeout_seconds)

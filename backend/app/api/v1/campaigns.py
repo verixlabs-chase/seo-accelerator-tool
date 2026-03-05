@@ -483,7 +483,8 @@ def _resolve_trend_window(*, date_from: date | None, date_to: date | None) -> tu
         resolved_to = date_to
         resolved_from = date_to - timedelta(days=89)
     else:
-        assert date_from is not None and date_to is not None
+        if date_from is None or date_to is None:
+            raise ValueError("Invalid trend window state: date_from and date_to must both be provided.")
         resolved_from = date_from
         resolved_to = date_to
 

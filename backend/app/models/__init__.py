@@ -16,6 +16,7 @@ from app.models.keyword_market_snapshot import KeywordMarketSnapshot
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
 from app.models.onboarding_state import OnboardingState
+from app.models.onboarding_session import OnboardingSession
 from app.models.runtime_version_lock import RuntimeVersionLock
 from app.models.location import Location
 from app.models.fleet_job import FleetJob
@@ -98,6 +99,7 @@ __all__ = [
     'Review',
     'ReviewVelocitySnapshot',
     'OnboardingState',
+    'OnboardingSession',
     'SearchConsoleDailyMetric',
     'RuntimeVersionLock',
     'Portfolio',

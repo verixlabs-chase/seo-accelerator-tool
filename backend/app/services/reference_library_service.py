@@ -74,8 +74,8 @@ def _validate_bundle(artifacts: dict[str, Any], strict_mode: bool) -> tuple[list
         errors.append("Missing `recommendations` artifact object.")
     if errors:
         return errors, warnings
-    assert isinstance(metrics_payload, dict)
-    assert isinstance(recommendations_payload, dict)
+    if not isinstance(metrics_payload, dict) or not isinstance(recommendations_payload, dict):
+        raise ValueError("Invalid artifact state: expected dictionary payloads for metrics and recommendations.")
 
     enforce_validation = get_settings().reference_library_enforce_validation
     if enforce_validation:

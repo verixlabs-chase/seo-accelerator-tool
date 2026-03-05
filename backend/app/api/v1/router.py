@@ -19,6 +19,7 @@ from app.api.v1 import (
     intelligence,
     local,
     locations,
+    onboarding,
     platform_control,
     provider_credentials,
     provider_health,
@@ -50,6 +51,7 @@ tenant_api_router.include_router(content.content_router)
 tenant_api_router.include_router(content.internal_links_router)
 tenant_api_router.include_router(local.local_router)
 tenant_api_router.include_router(local.reviews_router)
+tenant_api_router.include_router(onboarding.router)
 tenant_api_router.include_router(provider_credentials.tenant_router)
 tenant_api_router.include_router(provider_health.router)
 tenant_api_router.include_router(provider_metrics.router)
