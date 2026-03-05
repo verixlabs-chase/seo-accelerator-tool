@@ -6,7 +6,6 @@ from app.models.campaign import Campaign
 from app.models.crawl import CrawlRun
 from app.models.organization import Organization
 from app.models.organization_membership import OrganizationMembership
-from app.models.tenant import Tenant
 from app.models.user import User
 
 
