@@ -561,3 +561,22 @@ def create_test_campaign(
     session.add(campaign)
     session.flush()
     return campaign
+
+
+def create_test_crawl_run(session: Session, campaign_id: str, tenant_id: str) -> str:
+    crawl_run = CrawlRun(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        crawl_type='deep',
+        status='completed',
+        seed_url='https://example.test',
+        pages_discovered=0,
+        created_at=datetime.now(UTC),
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+    )
+    session.add(crawl_run)
+    session.commit()
+    session.refresh(crawl_run)
+    return crawl_run.id

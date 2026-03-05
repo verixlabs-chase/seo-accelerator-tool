@@ -8,7 +8,7 @@ from app.models.content import ContentAsset
 from app.models.crawl import TechnicalIssue
 from app.models.local import LocalHealthSnapshot, LocalProfile
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking
-from tests.conftest import create_test_campaign
+from tests.conftest import create_test_campaign, create_test_crawl_run
 
 
 def test_assemble_signals_collects_expected_fields(db_session, create_test_tenant, create_test_org) -> None:
@@ -21,6 +21,7 @@ def test_assemble_signals_collects_expected_fields(db_session, create_test_tenan
         name='Assembler Campaign',
         domain='assembler.example',
     )
+    crawl_run_id = create_test_crawl_run(db_session, campaign.id, tenant.id)
 
     profile = LocalProfile(
         tenant_id=tenant.id,
@@ -74,7 +75,7 @@ def test_assemble_signals_collects_expected_fields(db_session, create_test_tenan
         TechnicalIssue(
             tenant_id=tenant.id,
             campaign_id=campaign.id,
-            crawl_run_id='run-1',
+            crawl_run_id=crawl_run_id,
             page_id=None,
             issue_code='missing_title',
             severity='high',

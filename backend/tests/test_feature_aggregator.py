@@ -7,7 +7,7 @@ from app.models.content import ContentAsset
 from app.models.crawl import CrawlPageResult
 from app.models.rank import CampaignKeyword, KeywordCluster
 from app.models.temporal import TemporalSignalSnapshot, TemporalSignalType
-from tests.conftest import create_test_campaign
+from tests.conftest import create_test_campaign, create_test_crawl_run
 
 
 def test_feature_aggregator_builds_cohort_rows_and_profiles(db_session, create_test_tenant, create_test_org) -> None:
@@ -20,13 +20,14 @@ def test_feature_aggregator_builds_cohort_rows_and_profiles(db_session, create_t
         name='Campaign 1',
         domain='plumber-alpha.example',
     )
+    crawl_run_id = create_test_crawl_run(db_session, campaign.id, tenant.id)
 
     db_session.add_all(
         [
             CrawlPageResult(
                 tenant_id=tenant.id,
                 campaign_id=campaign.id,
-                crawl_run_id='run-1',
+                crawl_run_id=crawl_run_id,
                 page_id='page-1',
                 status_code=200,
                 is_indexable=1,
