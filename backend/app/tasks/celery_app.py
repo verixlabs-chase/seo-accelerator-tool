@@ -25,33 +25,33 @@ _RETRY_SCHEDULE_SECONDS = (5, 15, 60, 300, 900)
 
 def _queue_for_task_name(task_name: str | None) -> str:
     if not task_name:
-        return "default_queue"
-    if task_name.startswith("crawl."):
-        return "crawl_queue"
-    if task_name.startswith("rank."):
-        return "rank_queue"
-    if task_name.startswith("content."):
-        return "content_queue"
-    if task_name.startswith("authority."):
-        return "authority_queue"
-    return "default_queue"
+        return 'default_queue'
+    if task_name.startswith('crawl.'):
+        return 'crawl_queue'
+    if task_name.startswith('rank.'):
+        return 'rank_queue'
+    if task_name.startswith('content.'):
+        return 'content_queue'
+    if task_name.startswith('authority.'):
+        return 'authority_queue'
+    return 'default_queue'
 
 
 def _resolve_prefetch_multiplier(default_multiplier: int) -> int:
-    explicit_multiplier = os.getenv("CELERY_WORKER_PREFETCH_MULTIPLIER")
+    explicit_multiplier = os.getenv('CELERY_WORKER_PREFETCH_MULTIPLIER')
     if explicit_multiplier is not None:
         try:
             return max(1, int(explicit_multiplier))
         except ValueError:
             return max(1, int(default_multiplier))
 
-    profile = os.getenv("CELERY_WORKER_PROFILE", "default").strip().lower()
+    profile = os.getenv('CELERY_WORKER_PROFILE', 'default').strip().lower()
     profile_defaults = {
-        "crawl": 1,
-        "rank": 1,
-        "content": 2,
-        "authority": 1,
-        "default": 1,
+        'crawl': 1,
+        'rank': 1,
+        'content': 2,
+        'authority': 1,
+        'default': 1,
     }
     if profile in profile_defaults:
         return profile_defaults[profile]
@@ -81,14 +81,14 @@ def _scheduler_heartbeat_loop(**_kwargs) -> None:
     if _scheduler_heartbeat_started:
         return
     _scheduler_heartbeat_started = True
-    run_startup_invariants(runtime="celery-beat")
+    run_startup_invariants(runtime='celery-beat')
 
     def _loop() -> None:
         while True:
             _publish_heartbeat(SCHEDULER_HEARTBEAT_KEY)
             time.sleep(30)
 
-    thread = threading.Thread(target=_loop, name="scheduler-heartbeat", daemon=True)
+    thread = threading.Thread(target=_loop, name='scheduler-heartbeat', daemon=True)
     thread.start()
 
 
@@ -96,7 +96,7 @@ def _scheduler_heartbeat_loop(**_kwargs) -> None:
 def _record_task_start(task_id=None, **_kwargs) -> None:
     if not task_id:
         return
-    task_name = getattr(_kwargs.get("task"), "name", None)
+    task_name = getattr(_kwargs.get('task'), 'name', None)
     queue_name = _queue_for_task_name(task_name)
     with _task_start_lock:
         _task_started_at[task_id] = time.perf_counter()
@@ -112,28 +112,28 @@ def _record_task_duration(task_id=None, task=None, **_kwargs) -> None:
     if started_at is None:
         return
     duration_seconds = time.perf_counter() - started_at
-    task_name = getattr(task, "name", None) or "unknown"
-    queue_name = _queue_for_task_name(getattr(task, "name", None))
+    task_name = getattr(task, 'name', None) or 'unknown'
+    queue_name = _queue_for_task_name(getattr(task, 'name', None))
     tasks_in_progress.labels(queue_name=queue_name).dec()
     celery_task_duration_seconds.labels(task_name=task_name, queue_name=queue_name).observe(duration_seconds)
 
 
 def create_celery_app() -> Celery:
     settings = get_settings()
-    is_test_env = settings.app_env.lower() == "test"
+    is_test_env = settings.app_env.lower() == 'test'
     if not is_test_env:
-        run_startup_invariants(runtime=os.getenv("CELERY_RUNTIME", "celery-worker"))
+        run_startup_invariants(runtime=os.getenv('CELERY_RUNTIME', 'celery-worker'))
         # Fail fast when Redis is unavailable in non-test environments.
         get_redis_client()
 
     class LSOSTask(Task):
         def apply_async(self, args=None, kwargs=None, task_id=None, producer=None, link=None, link_error=None, **options):
             call_kwargs = kwargs or {}
-            queue_name = str(options.get("queue") or _queue_for_task_name(getattr(self, "name", None)))
-            tenant_id = str(call_kwargs.get("tenant_id", "system"))
+            queue_name = str(options.get('queue') or _queue_for_task_name(getattr(self, 'name', None)))
+            tenant_id = str(call_kwargs.get('tenant_id', 'system'))
             decision = admit_enqueue(tenant_id=tenant_id, queue_name=queue_name)
             if not decision.allowed:
-                raise RuntimeError(f"enqueue_rejected:{decision.reason}")
+                raise RuntimeError(f'enqueue_rejected:{decision.reason}')
             return super().apply_async(
                 args=args,
                 kwargs=kwargs,
@@ -145,20 +145,20 @@ def create_celery_app() -> Celery:
             )
 
         def retry(self, *args, **kwargs):
-            retry_count = int(getattr(getattr(self, "request", None), "retries", 0) or 0)
-            if "countdown" not in kwargs:
+            retry_count = int(getattr(getattr(self, 'request', None), 'retries', 0) or 0)
+            if 'countdown' not in kwargs:
                 idx = min(retry_count, len(_RETRY_SCHEDULE_SECONDS) - 1)
-                kwargs["countdown"] = _RETRY_SCHEDULE_SECONDS[idx]
+                kwargs['countdown'] = _RETRY_SCHEDULE_SECONDS[idx]
             if is_test_env:
-                exc = kwargs.get("exc")
+                exc = kwargs.get('exc')
                 if exc is not None:
                     raise exc
-                raise RuntimeError("Retry requested during tests without an underlying exception.")
+                raise RuntimeError('Retry requested during tests without an underlying exception.')
             return super().retry(*args, **kwargs)
 
     if is_test_env:
-        broker = "memory://"
-        backend = "cache+memory://"
+        broker = 'memory://'
+        backend = 'cache+memory://'
         task_always_eager = True
         task_eager_propagates = True
     else:
@@ -167,47 +167,71 @@ def create_celery_app() -> Celery:
         task_always_eager = settings.celery_task_always_eager
         task_eager_propagates = settings.celery_task_eager_propagates
 
-    celery = Celery("lsos", broker=broker, backend=backend)
+    celery = Celery('lsos', broker=broker, backend=backend)
     celery.Task = LSOSTask
     celery.conf.task_always_eager = task_always_eager
     celery.conf.task_eager_propagates = task_eager_propagates
     celery.conf.worker_prefetch_multiplier = _resolve_prefetch_multiplier(settings.celery_worker_prefetch_multiplier)
 
-    celery.conf.task_default_queue = "default_queue"
+    celery.conf.task_default_queue = 'default_queue'
     celery.conf.task_queues = (
-        Queue("crawl_queue"),
-        Queue("rank_queue"),
-        Queue("content_queue"),
-        Queue("authority_queue"),
-        Queue("default_queue"),
+        Queue('crawl_queue'),
+        Queue('rank_queue'),
+        Queue('content_queue'),
+        Queue('authority_queue'),
+        Queue('default_queue'),
     )
     celery.conf.task_routes = {
-        "crawl.*": {"queue": "crawl_queue"},
-        "rank.*": {"queue": "rank_queue"},
-        "content.*": {"queue": "content_queue"},
-        "authority.*": {"queue": "authority_queue"},
-        "*": {"queue": "default_queue"},
+        'crawl.*': {'queue': 'crawl_queue'},
+        'rank.*': {'queue': 'rank_queue'},
+        'content.*': {'queue': 'content_queue'},
+        'authority.*': {'queue': 'authority_queue'},
+        '*': {'queue': 'default_queue'},
     }
-    celery.conf.timezone = "UTC"
+    celery.conf.timezone = 'UTC'
+    celery.conf.imports = (
+        'app.tasks.tasks',
+        'app.tasks.intelligence_tasks',
+    )
     celery.conf.beat_schedule = {
-        "analytics-rollup-nightly": {
-            "task": "analytics.rollup_daily",
-            "schedule": crontab(minute=15, hour=1),
+        'analytics-rollup-nightly': {
+            'task': 'analytics.rollup_daily',
+            'schedule': crontab(minute=15, hour=1),
         },
-        "strategy-automation-monthly": {
-            "task": "strategy.run_automation_for_all_campaigns",
-            "schedule": crontab(minute=0, hour=3, day_of_month=1),
+        'strategy-automation-monthly': {
+            'task': 'strategy.run_automation_for_all_campaigns',
+            'schedule': crontab(minute=0, hour=3, day_of_month=1),
         },
-        "traffic-fact-sync-nightly": {
-            "task": "traffic.nightly_sync_traffic_facts",
-            "schedule": crontab(
+        'traffic-fact-sync-nightly': {
+            'task': 'traffic.nightly_sync_traffic_facts',
+            'schedule': crontab(
                 minute=settings.traffic_fact_sync_minute_utc,
                 hour=settings.traffic_fact_sync_hour_utc,
             ),
-        }
+        },
+        'intelligence-system-cycle-6h': {
+            'task': 'intelligence.run_system_cycle',
+            'schedule': crontab(minute=0, hour='*/6'),
+        },
+        'intelligence-metrics-daily': {
+            'task': 'intelligence.recompute_system_metrics',
+            'schedule': crontab(minute=30, hour=2),
+        },
+        'intelligence-cohort-patterns-weekly': {
+            'task': 'intelligence.discover_weekly_cohort_patterns',
+            'schedule': crontab(minute=0, hour=4, day_of_week='sun'),
+        },
     }
-    celery.autodiscover_tasks(["app.tasks"])
+    celery.autodiscover_tasks(['app.tasks'])
     return celery
 
 
 celery_app = create_celery_app()
+
+celery_app.conf.beat_schedule.setdefault(
+    'intelligence-digital-twin-training-weekly',
+    {
+        'task': 'intelligence.train_digital_twin_models',
+        'schedule': crontab(minute=0, hour=5, day_of_week='sun'),
+    },
+)

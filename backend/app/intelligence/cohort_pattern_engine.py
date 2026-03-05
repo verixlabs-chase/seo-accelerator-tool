@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.intelligence.cohort_feature_aggregator import aggregate_feature_profiles, build_cohort_rows
+from app.intelligence.strategy_memory_engine import record_validated_pattern
 from app.models.strategy_cohort_pattern import StrategyCohortPattern
 
 MINIMUM_SAMPLES = 3
@@ -43,6 +44,17 @@ def discover_cohort_patterns(
             accepted.append(row)
             if persist:
                 db.add(row)
+                record_validated_pattern(
+                    db,
+                    {
+                        'pattern_name': row.pattern_name,
+                        'feature_name': row.feature_name,
+                        'pattern_description': f'Promoted from cohort {row.cohort_definition}',
+                        'support_count': row.support_count,
+                        'avg_outcome_delta': float(candidate.get('avg_outcome_delta', row.pattern_strength)),
+                        'confidence_score': row.confidence,
+                    },
+                )
 
     if persist and accepted:
         db.commit()
@@ -73,6 +85,7 @@ def _profile_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
                 'pattern_strength': round(strength, 6),
                 'support_count': support_count,
                 'confidence': round(confidence, 6),
+                'avg_outcome_delta': round(avg_outcome_delta, 6),
             }
         )
 
@@ -87,6 +100,7 @@ def _profile_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
                 'pattern_strength': round(strength, 6),
                 'support_count': support_count,
                 'confidence': round(confidence, 6),
+                'avg_outcome_delta': round(avg_outcome_delta, 6),
             }
         )
 
@@ -101,6 +115,7 @@ def _profile_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
                 'pattern_strength': round(strength, 6),
                 'support_count': support_count,
                 'confidence': round(confidence, 6),
+                'avg_outcome_delta': round(avg_outcome_delta, 6),
             }
         )
 

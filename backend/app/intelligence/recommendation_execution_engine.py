@@ -10,10 +10,13 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.enums import StrategyRecommendationStatus
 from app.events import emit_event
+from app.intelligence.execution_risk_scoring import score_execution_risk
 from app.intelligence.executors.registry import get_executor
 from app.intelligence.outcome_tracker import record_execution_outcome
+from app.intelligence.safety_monitor import is_safety_paused
 from app.intelligence.signal_assembler import assemble_signals
 from app.models.intelligence import StrategyRecommendation
+from app.models.intelligence_governance_policy import IntelligenceGovernancePolicy
 from app.models.recommendation_execution import RecommendationExecution
 
 MAX_EXECUTIONS_PER_CAMPAIGN_PER_DAY = 20
@@ -42,7 +45,10 @@ _DEFAULT_METRIC_BY_EXECUTION_TYPE: dict[str, str] = {
 }
 
 
-def schedule_execution(recommendation_id: str, db: Session | None = None) -> RecommendationExecution | None:
+def schedule_execution(
+    recommendation_id: str,
+    db: Session | None = None,
+) -> RecommendationExecution | dict[str, Any] | None:
     owns_session = db is None
     session = db or SessionLocal()
     try:
@@ -52,20 +58,46 @@ def schedule_execution(recommendation_id: str, db: Session | None = None) -> Rec
         if recommendation.status not in {StrategyRecommendationStatus.APPROVED, StrategyRecommendationStatus.SCHEDULED}:
             return None
 
+        if is_safety_paused(session):
+            return _governance_block(
+                campaign_id=recommendation.campaign_id,
+                execution_type='unknown',
+                reason_code='safety_circuit_breaker_active',
+                message='Safety circuit breaker is active. Scheduling is paused.',
+            )
+
         now = datetime.now(UTC)
         day_start = datetime(now.year, now.month, now.day, tzinfo=UTC)
+
+        execution_type = _execution_type_for(recommendation.recommendation_type)
+        policy = _resolve_governance_policy(session, campaign_id=recommendation.campaign_id, execution_type=execution_type)
+
+        if not policy['enabled']:
+            return _governance_block(
+                campaign_id=recommendation.campaign_id,
+                execution_type=execution_type,
+                reason_code='execution_type_disabled',
+                message='Execution type is disabled by governance policy.',
+            )
+
         daily_count = (
             session.query(RecommendationExecution)
             .filter(
                 RecommendationExecution.campaign_id == recommendation.campaign_id,
+                RecommendationExecution.execution_type == execution_type,
                 RecommendationExecution.created_at >= day_start,
             )
             .count()
         )
-        if daily_count >= MAX_EXECUTIONS_PER_CAMPAIGN_PER_DAY:
-            return None
+        daily_cap = min(int(policy['max_daily_executions']), MAX_EXECUTIONS_PER_CAMPAIGN_PER_DAY)
+        if daily_count >= daily_cap:
+            return _governance_block(
+                campaign_id=recommendation.campaign_id,
+                execution_type=execution_type,
+                reason_code='max_daily_executions_exceeded',
+                message='Daily execution cap exceeded by governance policy.',
+            )
 
-        execution_type = _execution_type_for(recommendation.recommendation_type)
         metric_name = _DEFAULT_METRIC_BY_EXECUTION_TYPE.get(execution_type, 'avg_rank')
         signals = assemble_signals(recommendation.campaign_id, db=session)
         metric_before = float(signals.get(metric_name, 0.0) or 0.0)
@@ -75,6 +107,14 @@ def schedule_execution(recommendation_id: str, db: Session | None = None) -> Rec
         if existing is not None:
             return existing
 
+        scope_of_change = max(1, int((recommendation.risk_tier or 1) * 2))
+        risk = score_execution_risk(
+            session,
+            campaign_id=recommendation.campaign_id,
+            execution_type=execution_type,
+            scope_of_change=scope_of_change,
+        )
+
         payload = {
             'recommendation_id': recommendation.id,
             'campaign_id': recommendation.campaign_id,
@@ -82,7 +122,10 @@ def schedule_execution(recommendation_id: str, db: Session | None = None) -> Rec
             'metric_name': metric_name,
             'metric_before': metric_before,
             'idempotency_key': idempotency_key,
+            'requires_manual_approval': bool(policy['requires_manual_approval']),
         }
+
+        initial_status = 'pending' if policy['requires_manual_approval'] else 'scheduled'
 
         execution = RecommendationExecution(
             recommendation_id=recommendation.id,
@@ -91,14 +134,32 @@ def schedule_execution(recommendation_id: str, db: Session | None = None) -> Rec
             execution_payload=json.dumps(payload, sort_keys=True),
             idempotency_key=idempotency_key,
             deterministic_hash=_deterministic_hash(execution_type=execution_type, payload=payload),
-            status='scheduled',
+            status=initial_status,
             attempt_count=0,
+            risk_score=risk.risk_score,
+            risk_level=risk.risk_level,
+            scope_of_change=risk.scope_of_change,
+            historical_success_rate=risk.historical_success_rate,
         )
-        session.add(execution)
-        _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.SCHEDULED)
-        session.flush()
 
+        if policy['requires_manual_approval']:
+            execution.result_summary = json.dumps(
+                _governance_block(
+                    campaign_id=recommendation.campaign_id,
+                    execution_type=execution_type,
+                    reason_code='manual_approval_required',
+                    message='Execution requires manual approval before run.',
+                ),
+                sort_keys=True,
+            )
+
+        session.add(execution)
+        if initial_status == 'scheduled':
+            _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.SCHEDULED)
+
+        session.flush()
         _emit_execution_event(session, recommendation.tenant_id, 'execution.scheduled', execution=execution, result_summary=None)
+
         if owns_session:
             session.commit()
             session.refresh(execution)
@@ -124,32 +185,82 @@ def execute_recommendation(
             return execution
 
         payload = _load_payload(execution.execution_payload)
-        executor = get_executor(execution.execution_type)
-        executor.validate(payload)
-
         if dry_run:
+            executor = get_executor(execution.execution_type)
+            executor.validate(payload)
             return _normalize_result(executor.plan(payload), execution.execution_type)
+
+        recommendation = session.get(StrategyRecommendation, execution.recommendation_id)
+        if recommendation is None:
+            return None
+
+        if is_safety_paused(session):
+            execution.last_error = 'safety_circuit_breaker_active'
+            execution.result_summary = json.dumps(
+                _governance_block(
+                    campaign_id=execution.campaign_id,
+                    execution_type=execution.execution_type,
+                    reason_code='safety_circuit_breaker_active',
+                    message='Safety circuit breaker is active. Execution blocked.',
+                ),
+                sort_keys=True,
+            )
+            if owns_session:
+                session.commit()
+            return execution
+
+        policy = _resolve_governance_policy(session, campaign_id=execution.campaign_id, execution_type=execution.execution_type)
+        if not policy['enabled']:
+            execution.status = 'failed'
+            execution.last_error = 'execution_type_disabled'
+            execution.result_summary = json.dumps(
+                _governance_block(
+                    campaign_id=execution.campaign_id,
+                    execution_type=execution.execution_type,
+                    reason_code='execution_type_disabled',
+                    message='Execution type disabled by governance policy.',
+                ),
+                sort_keys=True,
+            )
+            if owns_session:
+                session.commit()
+            return execution
+
+        if policy['requires_manual_approval'] and not (execution.approved_by and execution.approved_at):
+            execution.status = 'pending'
+            execution.last_error = 'manual_approval_required'
+            execution.result_summary = json.dumps(
+                _governance_block(
+                    campaign_id=execution.campaign_id,
+                    execution_type=execution.execution_type,
+                    reason_code='manual_approval_required',
+                    message='Execution requires approval before run.',
+                ),
+                sort_keys=True,
+            )
+            if owns_session:
+                session.commit()
+            return execution
 
         if int(execution.attempt_count or 0) >= RETRY_LIMIT:
             execution.status = 'failed'
             execution.last_error = 'retry limit exceeded'
             failed = _failed_result(execution.execution_type, 'Retry limit exceeded before execution.')
             execution.result_summary = json.dumps(failed, sort_keys=True)
-            recommendation = session.get(StrategyRecommendation, execution.recommendation_id)
-            if recommendation is not None:
-                _emit_execution_event(session, recommendation.tenant_id, 'execution.failed', execution=execution, result_summary=failed)
+            _emit_execution_event(session, recommendation.tenant_id, 'execution.failed', execution=execution, result_summary=failed)
             if owns_session:
                 session.commit()
             return execution
+
+        executor = get_executor(execution.execution_type)
+        executor.validate(payload)
 
         execution.status = 'running'
         execution.attempt_count = int(execution.attempt_count or 0) + 1
         execution.last_error = None
         session.flush()
 
-        recommendation = session.get(StrategyRecommendation, execution.recommendation_id)
-        if recommendation is not None:
-            _emit_execution_event(session, recommendation.tenant_id, 'execution.started', execution=execution, result_summary=None)
+        _emit_execution_event(session, recommendation.tenant_id, 'execution.started', execution=execution, result_summary=None)
 
         try:
             result = _normalize_result(executor.run(payload), execution.execution_type)
@@ -161,9 +272,8 @@ def execute_recommendation(
             execution.last_error = result.get('notes', 'execution failed')
             execution.result_summary = json.dumps(result, sort_keys=True)
             execution.executed_at = datetime.now(UTC)
-            if recommendation is not None:
-                _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.FAILED)
-                _emit_execution_event(session, recommendation.tenant_id, 'execution.failed', execution=execution, result_summary=result)
+            _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.FAILED)
+            _emit_execution_event(session, recommendation.tenant_id, 'execution.failed', execution=execution, result_summary=result)
             if owns_session:
                 session.commit()
                 session.refresh(execution)
@@ -174,9 +284,8 @@ def execute_recommendation(
         execution.executed_at = datetime.now(UTC)
         execution.result_summary = json.dumps(result, sort_keys=True)
 
-        if recommendation is not None:
-            _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.EXECUTED)
-            _emit_execution_event(session, recommendation.tenant_id, 'execution.completed', execution=execution, result_summary=result)
+        _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.EXECUTED)
+        _emit_execution_event(session, recommendation.tenant_id, 'execution.completed', execution=execution, result_summary=result)
 
         _record_outcome_if_possible(session, execution, result)
 
@@ -184,20 +293,70 @@ def execute_recommendation(
             session.commit()
             session.refresh(execution)
         return execution
-    except Exception as exc:
+    finally:
+        if owns_session:
+            session.close()
+
+
+def approve_execution(
+    execution_id: str,
+    *,
+    approved_by: str,
+    db: Session | None = None,
+) -> RecommendationExecution | None:
+    owns_session = db is None
+    session = db or SessionLocal()
+    try:
         execution = session.get(RecommendationExecution, execution_id)
-        if execution is not None:
-            execution.status = 'failed'
-            execution.last_error = str(exc)
-            failed = _failed_result(execution.execution_type, str(exc))
-            execution.result_summary = json.dumps(failed, sort_keys=True)
-            execution.executed_at = datetime.now(UTC)
-            recommendation = session.get(StrategyRecommendation, execution.recommendation_id)
-            if recommendation is not None:
-                _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.FAILED)
-                _emit_execution_event(session, recommendation.tenant_id, 'execution.failed', execution=execution, result_summary=failed)
-            if owns_session:
-                session.commit()
+        if execution is None:
+            return None
+
+        execution.approved_by = approved_by
+        execution.approved_at = datetime.now(UTC)
+        if execution.status == 'pending':
+            execution.status = 'scheduled'
+
+        if owns_session:
+            session.commit()
+            session.refresh(execution)
+        return execution
+    finally:
+        if owns_session:
+            session.close()
+
+
+def reject_execution(
+    execution_id: str,
+    *,
+    rejected_by: str,
+    db: Session | None = None,
+) -> RecommendationExecution | None:
+    owns_session = db is None
+    session = db or SessionLocal()
+    try:
+        execution = session.get(RecommendationExecution, execution_id)
+        if execution is None:
+            return None
+
+        execution.status = 'failed'
+        execution.last_error = 'manual_rejection'
+        execution.result_summary = json.dumps(
+            {
+                'execution_type': execution.execution_type,
+                'status': 'failed',
+                'actions': [],
+                'artifacts': {},
+                'metrics_to_measure': [],
+                'notes': f'rejected_by:{rejected_by}',
+                'reason_code': 'manual_rejection',
+            },
+            sort_keys=True,
+        )
+        execution.executed_at = datetime.now(UTC)
+
+        if owns_session:
+            session.commit()
+            session.refresh(execution)
         return execution
     finally:
         if owns_session:
@@ -251,7 +410,6 @@ def retry_execution(execution_id: str, db: Session | None = None) -> Recommendat
             return execution
         if int(execution.attempt_count or 0) >= RETRY_LIMIT:
             return execution
-
         execution.status = 'scheduled'
         execution.last_error = None
         session.flush()
@@ -305,6 +463,41 @@ def _execution_type_for(recommendation_type: str) -> str:
         if token in lowered:
             return execution_type
     return 'create_content_brief'
+
+
+def _resolve_governance_policy(db: Session, *, campaign_id: str, execution_type: str) -> dict[str, Any]:
+    campaign_policy = (
+        db.query(IntelligenceGovernancePolicy)
+        .filter(
+            IntelligenceGovernancePolicy.campaign_id == campaign_id,
+            IntelligenceGovernancePolicy.execution_type == execution_type,
+        )
+        .order_by(IntelligenceGovernancePolicy.updated_at.desc(), IntelligenceGovernancePolicy.id.desc())
+        .first()
+    )
+    global_policy = (
+        db.query(IntelligenceGovernancePolicy)
+        .filter(
+            IntelligenceGovernancePolicy.campaign_id.is_(None),
+            IntelligenceGovernancePolicy.execution_type == execution_type,
+        )
+        .order_by(IntelligenceGovernancePolicy.updated_at.desc(), IntelligenceGovernancePolicy.id.desc())
+        .first()
+    )
+    policy = campaign_policy or global_policy
+    if policy is None:
+        return {
+            'enabled': True,
+            'max_daily_executions': MAX_EXECUTIONS_PER_CAMPAIGN_PER_DAY,
+            'requires_manual_approval': False,
+            'risk_level': 'medium',
+        }
+    return {
+        'enabled': bool(policy.enabled),
+        'max_daily_executions': int(policy.max_daily_executions),
+        'requires_manual_approval': bool(policy.requires_manual_approval),
+        'risk_level': str(policy.risk_level),
+    }
 
 
 def _set_recommendation_status_if_allowed(recommendation: StrategyRecommendation, target: StrategyRecommendationStatus) -> None:
@@ -385,6 +578,16 @@ def _failed_result(execution_type: str, note: str) -> dict[str, Any]:
     }
 
 
+def _governance_block(*, campaign_id: str, execution_type: str, reason_code: str, message: str) -> dict[str, Any]:
+    return {
+        'campaign_id': campaign_id,
+        'execution_type': execution_type,
+        'status': 'blocked',
+        'reason_code': reason_code,
+        'message': message,
+    }
+
+
 def _load_payload(payload: str | None) -> dict[str, Any]:
     if not payload:
         return {}
@@ -417,6 +620,12 @@ def _emit_execution_event(
         'deterministic_hash': execution.deterministic_hash,
         'status': execution.status,
         'attempt_count': int(execution.attempt_count or 0),
+        'approved_by': execution.approved_by,
+        'approved_at': execution.approved_at.isoformat() if execution.approved_at else None,
+        'risk_score': execution.risk_score,
+        'risk_level': execution.risk_level,
+        'scope_of_change': execution.scope_of_change,
+        'historical_success_rate': execution.historical_success_rate,
         'created_at': execution.created_at.isoformat() if execution.created_at else None,
         'executed_at': execution.executed_at.isoformat() if execution.executed_at else None,
         'event_recorded_at': datetime.now(UTC).isoformat(),

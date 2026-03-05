@@ -17,6 +17,13 @@ class IntelligenceMetricsSnapshotOut(BaseModel):
     positive_outcomes: int
     negative_outcomes: int
     policy_updates_applied: int
+    simulations_run: int
+    avg_predicted_rank_delta: float
+    avg_confidence: float
+    optimizer_selection_rate: float
+    avg_prediction_error_rank: float
+    avg_prediction_error_traffic: float
+    prediction_accuracy_score: float
     created_at: datetime
 
     model_config = {'from_attributes': True}
@@ -41,11 +48,18 @@ class SystemIntelligenceMetricsOut(BaseModel):
     positive_outcomes: int
     negative_outcomes: int
     policy_updates_applied: int
+    simulations_run: int
     recommendation_success_rate: float
     execution_success_rate: float
     pattern_discovery_rate: float
     learning_velocity: float
     average_outcome_delta: float
+    avg_predicted_rank_delta: float
+    avg_confidence: float
+    optimizer_selection_rate: float
+    avg_prediction_error_rank: float
+    avg_prediction_error_traffic: float
+    prediction_accuracy_score: float
 
 
 class IntelligenceTrendsOut(BaseModel):

@@ -7,15 +7,29 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.intelligence.recommendation_execution_engine import (
+    approve_execution,
     cancel_execution,
     execute_recommendation,
+    reject_execution,
     retry_execution,
 )
 from app.models.intelligence import StrategyRecommendation
 from app.models.recommendation_execution import RecommendationExecution
-from app.schemas.executions import ExecutionOut, ExecutionRunIn
+from app.schemas.executions import ExecutionApprovalIn, ExecutionOut, ExecutionRunIn
 
 router = APIRouter(prefix='/executions', tags=['executions'])
+
+
+def _tenant_scoped_execution(db: Session, execution_id: str, tenant_id: str) -> RecommendationExecution | None:
+    return (
+        db.query(RecommendationExecution)
+        .join(StrategyRecommendation, StrategyRecommendation.id == RecommendationExecution.recommendation_id)
+        .filter(
+            RecommendationExecution.id == execution_id,
+            StrategyRecommendation.tenant_id == tenant_id,
+        )
+        .first()
+    )
 
 
 @router.get('')
@@ -48,15 +62,7 @@ def get_execution(
     user: dict = Depends(require_roles({'tenant_admin'})),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = (
-        db.query(RecommendationExecution)
-        .join(StrategyRecommendation, StrategyRecommendation.id == RecommendationExecution.recommendation_id)
-        .filter(
-            RecommendationExecution.id == execution_id,
-            StrategyRecommendation.tenant_id == user['tenant_id'],
-        )
-        .first()
-    )
+    row = _tenant_scoped_execution(db, execution_id, user['tenant_id'])
     if row is None:
         raise HTTPException(status_code=404, detail='Execution not found')
     return envelope(request, ExecutionOut.model_validate(row).model_dump(mode='json'))
@@ -70,15 +76,7 @@ def run_execution(
     user: dict = Depends(require_roles({'tenant_admin'})),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = (
-        db.query(RecommendationExecution)
-        .join(StrategyRecommendation, StrategyRecommendation.id == RecommendationExecution.recommendation_id)
-        .filter(
-            RecommendationExecution.id == execution_id,
-            StrategyRecommendation.tenant_id == user['tenant_id'],
-        )
-        .first()
-    )
+    row = _tenant_scoped_execution(db, execution_id, user['tenant_id'])
     if row is None:
         raise HTTPException(status_code=404, detail='Execution not found')
 
@@ -110,15 +108,7 @@ def retry_execution_endpoint(
     user: dict = Depends(require_roles({'tenant_admin'})),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = (
-        db.query(RecommendationExecution)
-        .join(StrategyRecommendation, StrategyRecommendation.id == RecommendationExecution.recommendation_id)
-        .filter(
-            RecommendationExecution.id == execution_id,
-            StrategyRecommendation.tenant_id == user['tenant_id'],
-        )
-        .first()
-    )
+    row = _tenant_scoped_execution(db, execution_id, user['tenant_id'])
     if row is None:
         raise HTTPException(status_code=404, detail='Execution not found')
 
@@ -144,15 +134,7 @@ def cancel_execution_endpoint(
     user: dict = Depends(require_roles({'tenant_admin'})),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = (
-        db.query(RecommendationExecution)
-        .join(StrategyRecommendation, StrategyRecommendation.id == RecommendationExecution.recommendation_id)
-        .filter(
-            RecommendationExecution.id == execution_id,
-            StrategyRecommendation.tenant_id == user['tenant_id'],
-        )
-        .first()
-    )
+    row = _tenant_scoped_execution(db, execution_id, user['tenant_id'])
     if row is None:
         raise HTTPException(status_code=404, detail='Execution not found')
 
@@ -160,6 +142,44 @@ def cancel_execution_endpoint(
         raise HTTPException(status_code=400, detail='Execution cannot be cancelled from current status')
 
     updated = cancel_execution(execution_id, db=db)
+    if updated is None:
+        raise HTTPException(status_code=404, detail='Execution not found')
+    return envelope(request, ExecutionOut.model_validate(updated).model_dump(mode='json'))
+
+
+@router.post('/{execution_id}/approve')
+def approve_execution_endpoint(
+    request: Request,
+    execution_id: str,
+    body: ExecutionApprovalIn,
+    user: dict = Depends(require_roles({'tenant_admin'})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = _tenant_scoped_execution(db, execution_id, user['tenant_id'])
+    if row is None:
+        raise HTTPException(status_code=404, detail='Execution not found')
+
+    actor = body.approved_by or str(user.get('user_id') or user.get('id') or 'tenant_admin')
+    updated = approve_execution(execution_id, approved_by=actor, db=db)
+    if updated is None:
+        raise HTTPException(status_code=404, detail='Execution not found')
+    return envelope(request, ExecutionOut.model_validate(updated).model_dump(mode='json'))
+
+
+@router.post('/{execution_id}/reject')
+def reject_execution_endpoint(
+    request: Request,
+    execution_id: str,
+    body: ExecutionApprovalIn,
+    user: dict = Depends(require_roles({'tenant_admin'})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = _tenant_scoped_execution(db, execution_id, user['tenant_id'])
+    if row is None:
+        raise HTTPException(status_code=404, detail='Execution not found')
+
+    actor = body.approved_by or str(user.get('user_id') or user.get('id') or 'tenant_admin')
+    updated = reject_execution(execution_id, rejected_by=actor, db=db)
     if updated is None:
         raise HTTPException(status_code=404, detail='Execution not found')
     return envelope(request, ExecutionOut.model_validate(updated).model_dump(mode='json'))

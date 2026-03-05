@@ -19,6 +19,7 @@ from app.api.v1 import (
     hierarchy_observability,
     intelligence,
     intelligence_metrics,
+    intelligence_simulations,
     local,
     locations,
     onboarding,
@@ -32,6 +33,7 @@ from app.api.v1 import (
     reports,
     subaccounts,
     system_operational,
+    strategy_memory,
     tenants,
 )
 
@@ -62,11 +64,13 @@ tenant_api_router.include_router(authority.citations_router)
 tenant_api_router.include_router(intelligence.intelligence_router)
 tenant_api_router.include_router(intelligence.campaign_intelligence_router)
 tenant_api_router.include_router(intelligence_metrics.router)
+tenant_api_router.include_router(intelligence_simulations.router)
 tenant_api_router.include_router(recommendations.router)
 tenant_api_router.include_router(executions.router)
 tenant_api_router.include_router(dashboard.router)
 tenant_api_router.include_router(reference_library.router)
 tenant_api_router.include_router(reports.router)
+tenant_api_router.include_router(strategy_memory.router)
 tenant_api_router.include_router(subaccounts.router)
 tenant_api_router.include_router(business_locations.router)
 tenant_api_router.include_router(locations.router)

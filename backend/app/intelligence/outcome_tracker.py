@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.events import emit_event
 from app.models.campaign import Campaign
+from app.models.digital_twin_simulation import DigitalTwinSimulation
 from app.models.recommendation_execution import RecommendationExecution
 from app.models.recommendation_outcome import RecommendationOutcome
 
@@ -27,6 +28,7 @@ def record_outcome(
     campaign_id: str,
     metric_before: float,
     metric_after: float,
+    simulation_id: str | None = None,
     measured_at: datetime | None = None,
     emit_learning_event: bool = True,
 ) -> RecommendationOutcome:
@@ -35,6 +37,7 @@ def record_outcome(
     row = RecommendationOutcome(
         recommendation_id=recommendation_id,
         campaign_id=campaign_id,
+        simulation_id=simulation_id,
         metric_before=before,
         metric_after=after,
         delta=after - before,
@@ -53,6 +56,7 @@ def record_outcome(
                 payload={
                     'campaign_id': campaign_id,
                     'recommendation_id': recommendation_id,
+                    'simulation_id': simulation_id,
                     'delta': row.delta,
                     'measured_at': row.measured_at.isoformat(),
                 },
@@ -70,11 +74,40 @@ def record_execution_outcome(
     metric_before: float,
     metric_after: float,
 ) -> RecommendationOutcome:
+    simulation_id = _resolve_simulation_for_execution(db, execution)
     return record_outcome(
         db,
         recommendation_id=execution.recommendation_id,
         campaign_id=execution.campaign_id,
+        simulation_id=simulation_id,
         metric_before=metric_before,
         metric_after=metric_after,
         emit_learning_event=True,
     )
+
+
+def _resolve_simulation_for_execution(db: Session, execution: RecommendationExecution) -> str | None:
+    reference_time = execution.created_at or datetime.now(UTC)
+    row = (
+        db.query(DigitalTwinSimulation)
+        .filter(
+            DigitalTwinSimulation.campaign_id == execution.campaign_id,
+            DigitalTwinSimulation.selected_strategy.is_(True),
+            DigitalTwinSimulation.created_at <= reference_time,
+        )
+        .order_by(DigitalTwinSimulation.created_at.desc(), DigitalTwinSimulation.id.desc())
+        .first()
+    )
+    if row is not None:
+        return row.id
+
+    fallback = (
+        db.query(DigitalTwinSimulation)
+        .filter(
+            DigitalTwinSimulation.campaign_id == execution.campaign_id,
+            DigitalTwinSimulation.selected_strategy.is_(True),
+        )
+        .order_by(DigitalTwinSimulation.created_at.desc(), DigitalTwinSimulation.id.desc())
+        .first()
+    )
+    return fallback.id if fallback is not None else None

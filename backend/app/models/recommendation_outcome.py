@@ -23,6 +23,12 @@ class RecommendationOutcome(Base):
         nullable=False,
         index=True,
     )
+    simulation_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey('digital_twin_simulations.id', ondelete='SET NULL'),
+        nullable=True,
+        index=True,
+    )
     metric_before: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     metric_after: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     delta: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

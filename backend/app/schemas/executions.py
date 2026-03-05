@@ -18,6 +18,15 @@ class ExecutionOut(BaseModel):
     status: str
     attempt_count: int
     last_error: str | None
+
+    approved_by: str | None
+    approved_at: datetime | None
+
+    risk_score: float
+    risk_level: str
+    scope_of_change: int
+    historical_success_rate: float
+
     result_summary: str | None
     executed_at: datetime | None
     created_at: datetime
@@ -43,3 +52,7 @@ class ExecutionOut(BaseModel):
 
 class ExecutionRunIn(BaseModel):
     dry_run: bool = False
+
+
+class ExecutionApprovalIn(BaseModel):
+    approved_by: str | None = None

@@ -1,0 +1,24 @@
+name: Backend Docker Test Parity
+
+on:
+  pull_request:
+    paths:
+      - "**/*.py"
+      - "alembic/**"
+      - "tests/**"
+      - "Dockerfile"
+      - "requirements*.txt"
+      - ".env.example"
+  workflow_dispatch:
+
+jobs:
+  docker-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ruff
+        run: docker compose run --build --rm -e DATABASE_URL=postgresql+psycopg://lsos:lsos@postgres:5432/lsos api ruff check .
+      - name: Alembic
+        run: docker compose run --build --rm -e DATABASE_URL=postgresql+psycopg://lsos:lsos@postgres:5432/lsos api alembic upgrade head
+      - name: Pytest
+        run: docker compose run --build --rm -e DATABASE_URL=postgresql+psycopg://lsos:lsos@postgres:5432/lsos api pytest -q

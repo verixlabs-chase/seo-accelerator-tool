@@ -96,11 +96,35 @@ def _create_test_engine(database_url: str):
 def _verify_required_tables(database_url: str) -> None:
     verification_engine = _create_test_engine(database_url)
     try:
-        has_crawl_runs = inspect(verification_engine).has_table("crawl_runs")
+        inspector = inspect(verification_engine)
+        required_tables = [
+            "crawl_runs",
+            "strategy_cohort_patterns",
+            "recommendation_executions",
+            "recommendation_outcomes",
+            "intelligence_metrics_snapshots",
+        ]
+        missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:
         verification_engine.dispose()
-    if not has_crawl_runs:
-        raise RuntimeError(f"Alembic migration parity check failed; missing table: crawl_runs (db={database_url})")
+    if missing:
+        raise RuntimeError(
+            "Alembic migration parity check failed; missing tables: "
+            + ", ".join(missing)
+            + " (db="
+            + database_url
+            + ")"
+        )
+
+
+def _reset_external_test_schema(database_url: str) -> None:
+    engine = _create_test_engine(database_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+    finally:
+        engine.dispose()
 
 
 def _reset_external_test_database(engine) -> None:
@@ -128,8 +152,10 @@ def apply_migrations() -> Generator[dict[str, object], None, None]:
         get_settings.cache_clear()
         print(f"[tests] DATABASE_URL={database_url}")
         db_session_module.reset_engine_state()
-        # The compose test stack migrates the external Postgres database before pytest starts.
-        # Skip the duplicate upgrade here and keep the parity check as a guardrail.
+        print("apply_migrations: reset external schema", flush=True)
+        _reset_external_test_schema(database_url)
+        print("apply_migrations: run alembic upgrade head", flush=True)
+        _run_alembic_upgrade(backend_dir, database_url)
         print("apply_migrations: before verify_required_tables", flush=True)
         _verify_required_tables(database_url)
         print("apply_migrations: yielding", flush=True)

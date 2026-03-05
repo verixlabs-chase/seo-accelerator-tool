@@ -12,6 +12,7 @@ from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.recommendation_outcome import RecommendationOutcome
+from app.models.digital_twin_simulation import DigitalTwinSimulation
 from app.models.keyword_daily_economics import KeywordDailyEconomics
 from app.models.keyword_market_snapshot import KeywordMarketSnapshot
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot
@@ -126,6 +127,7 @@ __all__ = [
     'BusinessLocation',
     'StrategyRecommendation',
     'RecommendationOutcome',
+    'DigitalTwinSimulation',
     'IntelligenceScore',
     'CampaignMilestone',
     'AnomalyEvent',
