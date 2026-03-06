@@ -9,6 +9,8 @@ from app.db.session import SessionLocal
 from app.intelligence.digital_twin.strategy_simulation_engine import simulate_strategy
 from app.intelligence.digital_twin.twin_state_model import DigitalTwinState
 from app.intelligence.global_graph.graph_service import get_graph_query_engine
+from app.intelligence.industry_models.industry_query_engine import get_industry_query_engine
+from app.intelligence.predictive_models.prediction_engine import predict_strategy_outcome
 
 
 class StrategyQueryEngine(Protocol):
@@ -63,18 +65,40 @@ def transfer_strategies(
         candidates = [_to_candidate(item) for item in raw_strategies]
         results: list[dict[str, Any]] = []
 
+        industry_engine = get_industry_query_engine()
+
         for candidate in candidates:
+            industry_success_rate = 0.0
+            forecast = predict_strategy_outcome(
+                campaign_id,
+                {
+                    'strategy_id': candidate.strategy_id,
+                    'industry': industry,
+                },
+                db=session,
+            )
+            if industry:
+                industry_success_rate = industry_engine.get_strategy_success_rate(industry, candidate.strategy_id)
+            candidate_actions = _build_strategy_actions(
+                candidate.strategy_id,
+                candidate.evidence,
+                candidate.graph_score,
+                industry_success_rate=industry_success_rate,
+                forecast=forecast,
+            )
             simulation = simulator(
                 twin_state,
-                candidate.strategy_actions,
+                candidate_actions,
                 db=session if persist_simulations else None,
                 strategy_id=candidate.strategy_id,
             )
             results.append(
                 {
                     'strategy_id': candidate.strategy_id,
-                    'strategy_actions': candidate.strategy_actions,
+                    'strategy_actions': candidate_actions,
                     'graph_score': round(float(candidate.graph_score), 6),
+                    'industry_success_rate': round(float(industry_success_rate), 6),
+                    'forecast': forecast,
                     'simulation': simulation,
                     'confidence': round(float(simulation.get('confidence', 0.0)), 6),
                     'expected_value': round(float(simulation.get('expected_value', 0.0)), 6),
@@ -86,6 +110,8 @@ def transfer_strategies(
             results,
             key=lambda item: (
                 float(item.get('confidence', 0.0)),
+                float(item.get('forecast', {}).get('confidence_score', 0.0)),
+                1.0 - float(item.get('forecast', {}).get('risk_score', 1.0)),
                 float(item.get('expected_value', 0.0)),
                 float(item.get('graph_score', 0.0)),
                 str(item.get('strategy_id', '')),
@@ -114,10 +140,9 @@ def _to_candidate(payload: dict[str, Any]) -> TransferCandidate:
 
     evidence = payload.get('evidence') if isinstance(payload.get('evidence'), list) else []
     graph_score = float(payload.get('score', 0.0) or 0.0)
-    actions = _build_strategy_actions(strategy_id, evidence, graph_score)
     return TransferCandidate(
         strategy_id=strategy_id,
-        strategy_actions=actions,
+        strategy_actions=[],
         evidence=evidence,
         graph_score=graph_score,
     )
@@ -127,9 +152,13 @@ def _build_strategy_actions(
     strategy_id: str,
     evidence: list[dict[str, Any]],
     graph_score: float,
+    *,
+    industry_success_rate: float = 0.0,
+    forecast: dict[str, float] | None = None,
 ) -> list[dict[str, object]]:
     support_count = _sum_support_count(evidence)
     cohort_confidence = _average_confidence(evidence)
+    forecast_payload = dict(forecast or {})
     normalized = strategy_id.lower()
 
     if 'internal' in normalized:
@@ -140,6 +169,10 @@ def _build_strategy_actions(
                 'count': count,
                 'pattern_support_count': support_count,
                 'cohort_confidence': cohort_confidence,
+                'industry_success_rate': industry_success_rate,
+                'predicted_rank_delta': float(forecast_payload.get('predicted_rank_delta', 0.0)),
+                'predicted_confidence': float(forecast_payload.get('confidence_score', 0.0)),
+                'predicted_risk_score': float(forecast_payload.get('risk_score', 0.0)),
             }
         ]
 
@@ -151,6 +184,10 @@ def _build_strategy_actions(
                 'pages': pages,
                 'pattern_support_count': support_count,
                 'cohort_confidence': cohort_confidence,
+                'industry_success_rate': industry_success_rate,
+                'predicted_rank_delta': float(forecast_payload.get('predicted_rank_delta', 0.0)),
+                'predicted_confidence': float(forecast_payload.get('confidence_score', 0.0)),
+                'predicted_risk_score': float(forecast_payload.get('risk_score', 0.0)),
             }
         ]
 
@@ -162,6 +199,10 @@ def _build_strategy_actions(
                 'count': count,
                 'pattern_support_count': support_count,
                 'cohort_confidence': cohort_confidence,
+                'industry_success_rate': industry_success_rate,
+                'predicted_rank_delta': float(forecast_payload.get('predicted_rank_delta', 0.0)),
+                'predicted_confidence': float(forecast_payload.get('confidence_score', 0.0)),
+                'predicted_risk_score': float(forecast_payload.get('risk_score', 0.0)),
             }
         ]
 
@@ -171,6 +212,10 @@ def _build_strategy_actions(
             'pages': 1,
             'pattern_support_count': support_count,
             'cohort_confidence': cohort_confidence,
+            'industry_success_rate': industry_success_rate,
+            'predicted_rank_delta': float(forecast_payload.get('predicted_rank_delta', 0.0)),
+            'predicted_confidence': float(forecast_payload.get('confidence_score', 0.0)),
+            'predicted_risk_score': float(forecast_payload.get('risk_score', 0.0)),
         }
     ]
 

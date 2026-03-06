@@ -83,6 +83,16 @@ def _build_feature_payload(
     if cohort_pattern_strength == 0.0:
         cohort_pattern_strength = _average_float_field(actions, 'cohort_confidence')
 
+    industry_success_rate = _average_float_field(actions, 'industry_success_rate')
+    if industry_success_rate > 0.0:
+        cohort_pattern_strength = max(cohort_pattern_strength, industry_success_rate)
+
+    predicted_confidence = _average_float_field(actions, 'predicted_confidence')
+    if predicted_confidence > 0.0:
+        cohort_pattern_strength = max(cohort_pattern_strength, predicted_confidence)
+
+    predicted_rank_delta = _average_float_field(actions, 'predicted_rank_delta')
+
     return {
         'internal_link_count': float(twin_state.internal_link_count),
         'content_page_count': float(twin_state.content_page_count),
@@ -90,6 +100,7 @@ def _build_feature_payload(
         'avg_rank': float(twin_state.avg_rank),
         'momentum_score': float(twin_state.momentum_score),
         'cohort_pattern_strength': float(cohort_pattern_strength),
+        'predicted_rank_delta_prior': float(predicted_rank_delta),
     }
 
 

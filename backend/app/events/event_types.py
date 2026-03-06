@@ -14,3 +14,5 @@ class EventType(str, Enum):
     EXECUTION_COMPLETED = 'execution.completed'
     OUTCOME_RECORDED = 'outcome.recorded'
     POLICY_UPDATED = 'policy.updated'
+    CAMPAIGN_PROCESSING_STARTED = 'campaign.processing.started'
+    CAMPAIGN_PROCESSING_COMPLETED = 'campaign.processing.completed'

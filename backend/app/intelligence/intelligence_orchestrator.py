@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.enums import StrategyRecommendationStatus
 from app.intelligence.feature_store import compute_features
+from app.intelligence.campaign_workers.campaign_worker_pool import CampaignWorkerPool
 from app.intelligence.intelligence_metrics_aggregator import compute_campaign_metrics
 from app.intelligence.pattern_engine import detect_patterns, discover_cohort_patterns
 from app.intelligence.policy_engine import derive_policy, generate_recommendations, score_policy
@@ -169,9 +170,24 @@ def run_system_cycle(db: Session | None = None) -> dict[str, Any]:
             .all()
         )
 
+        campaign_ids = [campaign.id for campaign in active_campaigns]
         summaries: list[dict[str, Any]] = []
-        for campaign in active_campaigns:
-            summaries.append(run_campaign_cycle(campaign.id, db=session))
+        assignments: dict[str, int] = {}
+        worker_count = 1
+
+        if campaign_ids:
+            if owns_session:
+                worker_count = min(8, max(1, len(campaign_ids)))
+                pool = CampaignWorkerPool(
+                    worker_count=worker_count,
+                    processor=lambda cid: run_campaign_cycle(cid, db=None),
+                )
+                assignments, result_map = pool.process_campaigns(campaign_ids)
+                summaries = [result_map[campaign_id] for campaign_id in campaign_ids if campaign_id in result_map]
+            else:
+                # Shared SQLAlchemy sessions are not thread-safe; keep deterministic fallback for injected sessions.
+                summaries = [run_campaign_cycle(campaign_id, db=session) for campaign_id in campaign_ids]
+                assignments = {campaign_id: 0 for campaign_id in campaign_ids}
 
         stage_totals: dict[str, float] = {stage: 0.0 for stage in PIPELINE_STAGES}
         stage_counts: dict[str, int] = {stage: 0 for stage in PIPELINE_STAGES}
@@ -228,6 +244,11 @@ def run_system_cycle(db: Session | None = None) -> dict[str, Any]:
             'campaigns_processed': len(summaries),
             'campaign_ids': sorted([item['campaign_id'] for item in summaries]),
             'summaries': summaries,
+            'worker_fabric': {
+                'enabled': bool(campaign_ids),
+                'worker_count': worker_count,
+                'assignments': assignments,
+            },
             'stage_profile_summary': {
                 'average_stage_runtime_ms': average_stage_runtime_ms,
                 'slowest_stage': slowest_stage,
@@ -238,8 +259,6 @@ def run_system_cycle(db: Session | None = None) -> dict[str, Any]:
     finally:
         if owns_session:
             session.close()
-
-
 def _generate_and_persist_recommendations(
     db: Session,
     *,
@@ -271,12 +290,17 @@ def _generate_and_persist_recommendations(
             if not strategy_id:
                 continue
             confidence = float(strategy.get('confidence', 0.0) or 0.0)
+            forecast = strategy.get('forecast') if isinstance(strategy.get('forecast'), dict) else {}
+            forecast_confidence = float(forecast.get('confidence_score', 0.0) or 0.0)
+            forecast_risk = float(forecast.get('risk_score', 0.0) or 0.0)
+            transfer_priority = confidence * max(forecast_confidence, 0.1) * max(0.1, 1.0 - forecast_risk)
+            risk_tier = 1 if forecast_risk < 0.34 else 2 if forecast_risk < 0.67 else 3
             policy_recommendations.append(
                 {
                     'recommendation_type': f'transfer::{strategy_id}',
                     'action': strategy_id,
-                    'risk_tier': 1,
-                    'priority_weight': max(0.1, min(confidence, 1.0)),
+                    'risk_tier': risk_tier,
+                    'priority_weight': max(0.1, min(transfer_priority, 1.0)),
                     'policy_id': 'transfer_engine',
                 }
             )

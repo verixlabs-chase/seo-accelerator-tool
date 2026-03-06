@@ -8,6 +8,7 @@ from app.events.event_types import EventType
 from app.intelligence.digital_twin.strategy_optimizer import optimize_strategy
 from app.intelligence.digital_twin.twin_state_model import DigitalTwinState
 from app.intelligence.global_graph.graph_service import get_graph_update_pipeline
+from app.intelligence.industry_models.industry_learning_pipeline import get_industry_learning_pipeline
 
 
 def process(payload: dict[str, object]) -> dict[str, object] | None:
@@ -32,6 +33,7 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
         if isinstance(simulation, dict):
             simulation_payload.update(simulation)
         get_graph_update_pipeline().update_from_simulation(simulation_payload)
+        get_industry_learning_pipeline().update_from_simulation(simulation_payload)
 
         publish_event(EventType.SIMULATION_COMPLETED.value, completion)
         return completion
@@ -50,6 +52,7 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
         if isinstance(simulation, dict):
             simulation_payload.update(simulation)
         get_graph_update_pipeline().update_from_simulation(simulation_payload)
+        get_industry_learning_pipeline().update_from_simulation(simulation_payload)
 
         publish_event(EventType.SIMULATION_COMPLETED.value, completion)
         return completion

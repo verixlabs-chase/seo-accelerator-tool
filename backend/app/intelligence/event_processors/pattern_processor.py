@@ -8,6 +8,7 @@ from app.db.session import SessionLocal
 from app.events.event_bus import publish_event
 from app.events.event_types import EventType
 from app.intelligence.global_graph.graph_service import get_graph_update_pipeline
+from app.intelligence.industry_models.industry_learning_pipeline import get_industry_learning_pipeline
 from app.intelligence.pattern_engine import discover_cohort_patterns, discover_patterns_for_campaign
 
 
@@ -31,6 +32,7 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
             'model_version': 'pattern_engine_v1',
         }
         get_graph_update_pipeline().update_from_pattern(graph_payload)
+        get_industry_learning_pipeline().update_from_pattern(graph_payload)
 
         publish_event(
             EventType.PATTERN_DISCOVERED.value,
@@ -53,6 +55,7 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
             'model_version': 'pattern_engine_v1',
         }
         get_graph_update_pipeline().update_from_pattern(graph_payload)
+        get_industry_learning_pipeline().update_from_pattern(graph_payload)
 
         publish_event(
             EventType.PATTERN_DISCOVERED.value,

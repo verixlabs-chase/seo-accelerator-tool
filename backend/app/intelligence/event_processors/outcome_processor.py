@@ -4,6 +4,7 @@ from app.db.session import SessionLocal
 from app.events.event_bus import publish_event
 from app.events.event_types import EventType
 from app.intelligence.global_graph.graph_service import get_graph_update_pipeline
+from app.intelligence.industry_models.industry_learning_pipeline import get_industry_learning_pipeline
 from app.intelligence.recommendation_execution_engine import record_execution_result
 from app.models.recommendation_execution import RecommendationExecution
 from app.models.recommendation_outcome import RecommendationOutcome
@@ -51,6 +52,7 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
         }
 
         get_graph_update_pipeline().update_from_outcome(dispatch)
+        get_industry_learning_pipeline().update_from_outcome(dispatch)
 
         publish_event(EventType.OUTCOME_RECORDED.value, dispatch)
         return dispatch
