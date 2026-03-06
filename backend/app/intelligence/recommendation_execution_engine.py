@@ -632,3 +632,17 @@ def _emit_execution_event(
         'result_summary': result_summary or {},
     }
     emit_event(db, tenant_id=tenant_id, event_type=event_type, payload=payload)
+    _publish_internal_execution_event(event_type, payload)
+
+
+def _publish_internal_execution_event(event_type: str, payload: dict[str, Any]) -> None:
+    from app.events import EventType, publish_event
+
+    mapping = {
+        'execution.scheduled': EventType.EXECUTION_SCHEDULED.value,
+        'execution.completed': EventType.EXECUTION_COMPLETED.value,
+    }
+    internal_event = mapping.get(event_type)
+    if internal_event is None:
+        return
+    publish_event(internal_event, payload)

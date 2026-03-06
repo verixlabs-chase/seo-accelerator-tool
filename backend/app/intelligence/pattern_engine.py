@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.events import EventType, publish_event
 from app.intelligence.feature_aggregator import build_cohort_profiles, describe_campaign_cohort
 from app.intelligence.feature_store import compute_features
 
@@ -46,9 +48,15 @@ def detect_patterns(features: dict[str, float]) -> list[PatternMatch]:
     return patterns
 
 
-def discover_patterns_for_campaign(campaign_id: str, db: Session, *, persist_features: bool = False) -> list[dict[str, object]]:
-    features = compute_features(campaign_id, db=db, persist=persist_features)
-    return [
+def discover_patterns_for_campaign(
+    campaign_id: str,
+    db: Session,
+    *,
+    persist_features: bool = False,
+    publish: bool = True,
+) -> list[dict[str, object]]:
+    features = compute_features(campaign_id, db=db, persist=persist_features, publish=False)
+    patterns = [
         {
             'pattern_key': match.pattern_key,
             'confidence': match.confidence,
@@ -56,6 +64,17 @@ def discover_patterns_for_campaign(campaign_id: str, db: Session, *, persist_fea
         }
         for match in detect_patterns(features)
     ]
+    if publish:
+        publish_event(
+            EventType.PATTERN_DISCOVERED.value,
+            {
+                'campaign_id': campaign_id,
+                'patterns': patterns,
+                'features': features,
+                'detected_at': datetime.now(UTC).isoformat(),
+            },
+        )
+    return patterns
 
 
 def discover_cohort_patterns(
@@ -65,7 +84,7 @@ def discover_cohort_patterns(
     features: dict[str, float] | None = None,
     cohort_profiles: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, object]]:
-    current_features = features or compute_features(campaign_id, db=db, persist=False)
+    current_features = features or compute_features(campaign_id, db=db, persist=False, publish=False)
     cohort_context = describe_campaign_cohort(db, campaign_id)
     profiles = cohort_profiles or build_cohort_profiles(db)
     profile = profiles.get(cohort_context['cohort'])

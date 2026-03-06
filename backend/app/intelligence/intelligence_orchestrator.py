@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from hashlib import sha256
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -15,6 +16,7 @@ from app.intelligence.pattern_engine import detect_patterns, discover_cohort_pat
 from app.intelligence.policy_engine import derive_policy, generate_recommendations, score_policy
 from app.intelligence.policy_update_engine import update_policy_priority_weights, update_policy_weights
 from app.intelligence.recommendation_execution_engine import execute_recommendation, schedule_execution
+from app.intelligence.strategy_transfer_engine import transfer_strategies
 from app.intelligence.signal_assembler import assemble_signals
 from app.intelligence.temporal_ingestion import write_temporal_signals
 from app.models.campaign import Campaign
@@ -25,6 +27,21 @@ from app.utils.enum_guard import ensure_enum
 
 
 PIPELINE_VERSION = 'orchestrator-v1'
+PIPELINE_STAGES: tuple[str, ...] = (
+    'assemble_signals',
+    'write_temporal_signals',
+    'compute_features',
+    'detect_patterns',
+    'discover_cohort_patterns',
+    'generate_recommendations',
+    'digital_twin_simulations',
+    'execution_scheduling',
+    'policy_learning',
+    'metrics_aggregation',
+)
+
+# In-memory stage timings keyed by campaign id.
+pipeline_timings: dict[str, dict[str, float]] = {}
 
 
 def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str, Any]:
@@ -36,8 +53,14 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             raise ValueError(f'Campaign not found: {campaign_id}')
 
         cycle_started_at = datetime.now(UTC)
+        campaign_started_perf = perf_counter()
+        stage_timings: dict[str, float] = {}
 
+        stage_started = perf_counter()
         signals = assemble_signals(campaign_id, db=session)
+        stage_timings['assemble_signals'] = round((perf_counter() - stage_started) * 1000.0, 3)
+
+        stage_started = perf_counter()
         temporal_write_result = write_temporal_signals(
             campaign_id,
             signals,
@@ -45,9 +68,13 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             observed_at=cycle_started_at,
             source='orchestrator_signal_assembler_v1',
         )
+        stage_timings['write_temporal_signals'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
+        stage_started = perf_counter()
         features = compute_features(campaign_id, db=session, persist=True)
+        stage_timings['compute_features'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
+        stage_started = perf_counter()
         direct_patterns = [
             {
                 'pattern_key': item.pattern_key,
@@ -56,8 +83,13 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             }
             for item in detect_patterns(features)
         ]
-        cohort_patterns = discover_cohort_patterns(session, campaign_id=campaign_id, features=features)
+        stage_timings['detect_patterns'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
+        stage_started = perf_counter()
+        cohort_patterns = discover_cohort_patterns(session, campaign_id=campaign_id, features=features)
+        stage_timings['discover_cohort_patterns'] = round((perf_counter() - stage_started) * 1000.0, 3)
+
+        stage_started = perf_counter()
         recommendations = _generate_and_persist_recommendations(
             session,
             campaign=campaign,
@@ -66,16 +98,29 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             cohort_patterns=cohort_patterns,
             cycle_started_at=cycle_started_at,
         )
+        stage_timings['generate_recommendations'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
+        stage_started = perf_counter()
         scheduled_executions = _schedule_recommendation_executions(session, recommendations)
+        stage_timings['execution_scheduling'] = round((perf_counter() - stage_started) * 1000.0, 3)
+
+        stage_started = perf_counter()
         completed_executions = _execute_scheduled_executions(session, scheduled_executions)
+        stage_timings['digital_twin_simulations'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         outcomes_recorded = _count_outcomes_since(session, campaign_id, cycle_started_at)
 
+        stage_started = perf_counter()
         recommendation_weights = update_policy_weights(session)
         policy_priority_weights = update_policy_priority_weights(session)
+        stage_timings['policy_learning'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
+        stage_started = perf_counter()
         metrics_snapshot = compute_campaign_metrics(campaign_id, db=session, metric_date=cycle_started_at.date())
+        stage_timings['metrics_aggregation'] = round((perf_counter() - stage_started) * 1000.0, 3)
+
+        total_runtime_ms = round((perf_counter() - campaign_started_perf) * 1000.0, 3)
+        pipeline_timings[campaign_id] = dict(stage_timings)
 
         if owns_session:
             session.commit()
@@ -102,6 +147,11 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             },
             'metrics_snapshot_id': metrics_snapshot.id,
             'metrics_snapshot_date': metrics_snapshot.metric_date.isoformat(),
+            'pipeline_timings': {
+                'campaign_id': campaign_id,
+                'timings': stage_timings,
+                'total_runtime_ms': total_runtime_ms,
+            },
         }
     finally:
         if owns_session:
@@ -123,6 +173,53 @@ def run_system_cycle(db: Session | None = None) -> dict[str, Any]:
         for campaign in active_campaigns:
             summaries.append(run_campaign_cycle(campaign.id, db=session))
 
+        stage_totals: dict[str, float] = {stage: 0.0 for stage in PIPELINE_STAGES}
+        stage_counts: dict[str, int] = {stage: 0 for stage in PIPELINE_STAGES}
+        campaign_runtimes_ms: list[float] = []
+        per_campaign_total_runtime_ms: dict[str, float] = {}
+
+        for item in summaries:
+            campaign_id = str(item.get('campaign_id', ''))
+            timings_payload = item.get('pipeline_timings', {})
+            if not isinstance(timings_payload, dict):
+                continue
+
+            stage_values = timings_payload.get('timings', {})
+            if isinstance(stage_values, dict):
+                for stage in PIPELINE_STAGES:
+                    value = stage_values.get(stage)
+                    if isinstance(value, (int, float)):
+                        stage_totals[stage] += float(value)
+                        stage_counts[stage] += 1
+
+            total_value = timings_payload.get('total_runtime_ms')
+            if isinstance(total_value, (int, float)):
+                runtime = float(total_value)
+                campaign_runtimes_ms.append(runtime)
+                if campaign_id:
+                    per_campaign_total_runtime_ms[campaign_id] = runtime
+
+        average_stage_runtime_ms = {
+            stage: round(stage_totals[stage] / stage_counts[stage], 3)
+            for stage in PIPELINE_STAGES
+            if stage_counts[stage] > 0
+        }
+        slowest_stage = (
+            max(average_stage_runtime_ms, key=lambda name: average_stage_runtime_ms[name])
+            if average_stage_runtime_ms
+            else None
+        )
+        avg_runtime_per_campaign_ms = round(sum(campaign_runtimes_ms) / len(campaign_runtimes_ms), 3) if campaign_runtimes_ms else 0.0
+
+        print('STAGE PROFILE SUMMARY')
+        for stage in PIPELINE_STAGES:
+            value = average_stage_runtime_ms.get(stage)
+            if value is None:
+                continue
+            suffix = '  <-- slowest stage' if slowest_stage == stage else ''
+            print(f'{stage}: {value:.1f}ms avg{suffix}')
+        print(f'avg_runtime_per_campaign: {avg_runtime_per_campaign_ms / 1000.0:.3f}s')
+
         if owns_session:
             session.commit()
 
@@ -131,6 +228,12 @@ def run_system_cycle(db: Session | None = None) -> dict[str, Any]:
             'campaigns_processed': len(summaries),
             'campaign_ids': sorted([item['campaign_id'] for item in summaries]),
             'summaries': summaries,
+            'stage_profile_summary': {
+                'average_stage_runtime_ms': average_stage_runtime_ms,
+                'slowest_stage': slowest_stage,
+                'avg_runtime_per_campaign_ms': avg_runtime_per_campaign_ms,
+                'total_runtime_per_campaign_ms': per_campaign_total_runtime_ms,
+            },
         }
     finally:
         if owns_session:
@@ -157,6 +260,26 @@ def _generate_and_persist_recommendations(
         for policy in policies
         for recommendation in generate_recommendations(policy)
     ]
+
+    transfer_payload = transfer_strategies(campaign.id, db=db)
+    transfer_strategies_list = transfer_payload.get('strategies', [])
+    if isinstance(transfer_strategies_list, list):
+        for strategy in transfer_strategies_list:
+            if not isinstance(strategy, dict):
+                continue
+            strategy_id = str(strategy.get('strategy_id', '') or '')
+            if not strategy_id:
+                continue
+            confidence = float(strategy.get('confidence', 0.0) or 0.0)
+            policy_recommendations.append(
+                {
+                    'recommendation_type': f'transfer::{strategy_id}',
+                    'action': strategy_id,
+                    'risk_tier': 1,
+                    'priority_weight': max(0.1, min(confidence, 1.0)),
+                    'policy_id': 'transfer_engine',
+                }
+            )
 
     persisted: list[StrategyRecommendation] = []
     for recommendation in policy_recommendations:

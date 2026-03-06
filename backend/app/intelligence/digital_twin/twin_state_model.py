@@ -24,8 +24,8 @@ class DigitalTwinState:
 
     @classmethod
     def from_campaign_data(cls, db: Session, campaign_id: str) -> 'DigitalTwinState':
-        signals = assemble_signals(campaign_id, db=db)
-        features = compute_features(campaign_id, db=db, persist=False)
+        signals = assemble_signals(campaign_id, db=db, publish=False)
+        features = compute_features(campaign_id, db=db, persist=False, publish=False)
 
         crawl_page_count = int(
             db.query(func.count(CrawlPageResult.id))

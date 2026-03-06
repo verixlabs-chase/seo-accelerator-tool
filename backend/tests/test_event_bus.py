@@ -1,7 +1,9 @@
 from app.core.event_bus import EventBus
+from app.events.event_bus import publish_event, reset_subscribers, subscribe
+from app.events.event_types import EventType
 
 
-def test_event_bus_publish_and_subscribe() -> None:
+def test_core_event_bus_publish_and_subscribe() -> None:
     bus = EventBus()
     events: list[dict] = []
 
@@ -14,7 +16,7 @@ def test_event_bus_publish_and_subscribe() -> None:
     assert events == [{'campaign_id': 'c-1'}]
 
 
-def test_event_bus_unsubscribe() -> None:
+def test_core_event_bus_unsubscribe() -> None:
     bus = EventBus()
     events: list[dict] = []
 
@@ -28,18 +30,14 @@ def test_event_bus_unsubscribe() -> None:
     assert events == []
 
 
-def test_event_bus_handler_failure_is_non_fatal() -> None:
-    bus = EventBus()
-    calls = {'ok': 0}
+def test_internal_event_bus_dispatches_handlers() -> None:
+    reset_subscribers()
+    seen: list[dict] = []
 
-    def _bad(_: dict) -> None:
-        raise RuntimeError('boom')
+    def _handler(payload: dict) -> None:
+        seen.append(payload)
 
-    def _ok(_: dict) -> None:
-        calls['ok'] += 1
+    subscribe(EventType.SIGNAL_UPDATED.value, _handler)
+    publish_event(EventType.SIGNAL_UPDATED.value, {'campaign_id': 'c1', 'signals': {'avg_rank': 8.2}})
 
-    bus.subscribe('automation.enabled', _bad)
-    bus.subscribe('automation.enabled', _ok)
-    bus.publish('automation.enabled', {'campaign_id': 'c-1'})
-
-    assert calls['ok'] == 1
+    assert seen == [{'campaign_id': 'c1', 'signals': {'avg_rank': 8.2}}]

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.events import emit_event
+from app.events import EventType, emit_event, publish_event
 from app.models.campaign import Campaign
 from app.models.digital_twin_simulation import DigitalTwinSimulation
 from app.models.recommendation_execution import RecommendationExecution
@@ -45,6 +45,18 @@ def record_outcome(
     )
     db.add(row)
     db.flush()
+
+    publish_event(
+        EventType.OUTCOME_RECORDED.value,
+        {
+            'campaign_id': campaign_id,
+            'recommendation_id': recommendation_id,
+            'simulation_id': simulation_id,
+            'outcome_id': row.id,
+            'delta': row.delta,
+            'measured_at': row.measured_at.isoformat(),
+        },
+    )
 
     if emit_learning_event:
         campaign = db.get(Campaign, campaign_id)

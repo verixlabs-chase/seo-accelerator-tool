@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from app.events import EventType, publish_event
 from app.models.campaign import Campaign
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.content import ContentAsset
@@ -15,7 +16,7 @@ from app.models.rank import Ranking
 from app.models.temporal import MomentumMetric
 
 
-def assemble_signals(campaign_id: str, db: Session | None = None) -> dict[str, float]:
+def assemble_signals(campaign_id: str, db: Session | None = None, *, publish: bool = True) -> dict[str, float]:
     owns_session = db is None
     session = db or SessionLocal()
     try:
@@ -95,7 +96,7 @@ def assemble_signals(campaign_id: str, db: Session | None = None) -> dict[str, f
             .count()
         )
 
-        return {
+        payload = {
             'technical_issue_count': float(technical_issue_count),
             'avg_rank': round(avg_rank, 4),
             'avg_position': round(avg_rank, 4),
@@ -114,6 +115,19 @@ def assemble_signals(campaign_id: str, db: Session | None = None) -> dict[str, f
             'review_count': round(review_count, 6),
             'avg_rating': round(avg_rating, 6),
         }
+
+        if publish:
+            publish_event(
+                EventType.SIGNAL_UPDATED.value,
+                {
+                    'campaign_id': campaign_id,
+                    'signal_keys': sorted(payload.keys()),
+                    'signals': payload,
+                    'observed_at': datetime.now(UTC).isoformat(),
+                },
+            )
+
+        return payload
     finally:
         if owns_session:
             session.close()

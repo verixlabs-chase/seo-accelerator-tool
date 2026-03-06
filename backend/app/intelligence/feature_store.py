@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from app.events import EventType, publish_event
 from app.intelligence.signal_assembler import assemble_signals
 from app.intelligence.temporal_ingestion import write_temporal_signals
 from app.models.content import ContentAsset
@@ -12,11 +13,17 @@ from app.models.crawl import CrawlPageResult, TechnicalIssue
 from app.models.temporal import MomentumMetric, TemporalSignalSnapshot
 
 
-def compute_features(campaign_id: str, db: Session | None = None, *, persist: bool = True) -> dict[str, float]:
+def compute_features(
+    campaign_id: str,
+    db: Session | None = None,
+    *,
+    persist: bool = True,
+    publish: bool = True,
+) -> dict[str, float]:
     owns_session = db is None
     session = db or SessionLocal()
     try:
-        signals = assemble_signals(campaign_id, db=session)
+        signals = assemble_signals(campaign_id, db=session, publish=False)
 
         technical_issue_count = float(signals.get('technical_issue_count', 0.0))
         content_count = max(float(signals.get('content_count', 0.0)), 1.0)
@@ -66,6 +73,17 @@ def compute_features(campaign_id: str, db: Session | None = None, *, persist: bo
             )
             if owns_session:
                 session.commit()
+
+        if publish:
+            publish_event(
+                EventType.FEATURE_UPDATED.value,
+                {
+                    'campaign_id': campaign_id,
+                    'changed_features': sorted(features.keys()),
+                    'features': features,
+                    'computed_at': datetime.now(UTC).isoformat(),
+                },
+            )
 
         return features
     finally:
