@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+
+DEPRECATED_RUNTIME = True
 # Threshold contract metadata (frozen location per master spec).
 version_id = "v1.0.0"
 threshold_source = "Google Search Central + web.dev + Google Business Profile guidance"

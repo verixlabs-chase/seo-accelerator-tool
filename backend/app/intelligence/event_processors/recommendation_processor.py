@@ -20,7 +20,7 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
 
     if isinstance(db, Session):
         features = payload.get('features') if isinstance(payload.get('features'), dict) else compute_features(campaign_id, db=db, persist=False)
-        recommendations_payload = _build_recommendations(pattern_rows, features)
+        recommendations_payload = _build_recommendations(pattern_rows, features, db=db)
         publish_event(
             EventType.RECOMMENDATION_GENERATED.value,
             {'campaign_id': campaign_id, **recommendations_payload},
@@ -30,7 +30,7 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
     session = SessionLocal()
     try:
         features = payload.get('features') if isinstance(payload.get('features'), dict) else compute_features(campaign_id, db=session, persist=False)
-        recommendations_payload = _build_recommendations(pattern_rows, features)
+        recommendations_payload = _build_recommendations(pattern_rows, features, db=session)
         publish_event(
             EventType.RECOMMENDATION_GENERATED.value,
             {'campaign_id': campaign_id, **recommendations_payload},
@@ -40,8 +40,8 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
         session.close()
 
 
-def _build_recommendations(pattern_rows: list[object], features: dict[str, object]) -> dict[str, object]:
-    policies = [score_policy(policy, features) for policy in derive_policy(pattern_rows)]
+def _build_recommendations(pattern_rows: list[object], features: dict[str, object], *, db: Session | None = None) -> dict[str, object]:
+    policies = [score_policy(policy, features, db=db) for policy in derive_policy(pattern_rows)]
     recommendation_rows = [recommendation for policy in policies for recommendation in generate_recommendations(policy)]
 
     candidate_strategies = []

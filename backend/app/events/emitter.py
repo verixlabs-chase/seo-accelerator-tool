@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.correlation import get_correlation_id
-from app.core.event_bus import event_bus
+from app.events.event_bus import event_bus
 from app.models.audit_log import AuditLog
 
 

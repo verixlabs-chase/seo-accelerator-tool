@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+DEPRECATED_RUNTIME = True
 CANONICAL_SIGNAL_FIELDS: frozenset[str] = frozenset(
     {
         'clicks',

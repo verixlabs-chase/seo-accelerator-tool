@@ -7,26 +7,24 @@ from app.intelligence.executors.base import BaseExecutor
 
 class OptimizeGbpProfileExecutor(BaseExecutor):
     execution_type = 'optimize_gbp_profile'
+    produces_website_mutations = False
 
     def plan(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.validate(payload)
         return {
             'execution_type': self.execution_type,
             'status': 'planned',
-            'actions': [
-                'review_profile_completeness',
-                'queue_profile_updates',
-                'schedule_local_signal_refresh',
-            ],
-            'artifacts': {'profile_task': 'gbp_opt_v1'},
+            'actions': ['queue_profile_updates'],
+            'artifacts': {'profile_task': 'gbp_opt_v1', 'connector_status': 'pending_real_provider'},
             'metrics_to_measure': self.get_metrics_to_measure(payload),
-            'notes': 'GBP optimization plan generated deterministically.',
+            'mutations': [],
+            'notes': 'GBP optimization remains a non-website execution path and requires a provider-native connector.',
         }
 
     def run(self, payload: dict[str, Any]) -> dict[str, Any]:
         result = self.plan(payload)
         result['status'] = 'completed'
-        result['notes'] = 'GBP optimization completed deterministically.'
+        result['notes'] = 'No website mutation was applied; GBP remains provider-managed.'
         return result
 
     def get_metrics_to_measure(self, payload: dict[str, Any]) -> list[str]:

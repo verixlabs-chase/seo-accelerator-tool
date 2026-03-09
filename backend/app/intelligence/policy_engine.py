@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy.orm import Session
+
+from app.models.policy_weights import PolicyWeight
+
 _POLICY_LIBRARY: dict[str, dict[str, Any]] = {
     'prioritize_internal_linking': {
         'priority_weight': 0.75,
@@ -61,7 +65,7 @@ def derive_policy(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [grouped[key] for key in sorted(grouped)]
 
 
-def score_policy(policy: dict[str, Any], features: dict[str, float]) -> dict[str, Any]:
+def score_policy(policy: dict[str, Any], features: dict[str, float], db: Session | None = None) -> dict[str, Any]:
     scored = dict(policy)
     policy_id = str(policy.get('policy_id', '') or '')
     base_weight = float(policy.get('priority_weight', 0.5) or 0.5)
@@ -81,10 +85,14 @@ def score_policy(policy: dict[str, Any], features: dict[str, float]) -> dict[str
         content_growth_rate = float(features.get('content_growth_rate', 0.0) or 0.0)
         signal_boost += max(0.0, 0.1 - content_growth_rate) * 0.5
 
-    priority_score = max(0.0, min(1.0, base_weight * 0.7 + pattern_confidence * 0.2 + signal_boost))
+    learned_weight = _policy_weight(db, policy_id)
+    learned_confidence = _policy_confidence(db, policy_id)
+    priority_score = max(0.0, min(1.0, (base_weight * learned_weight) * 0.65 + pattern_confidence * 0.2 + signal_boost + learned_confidence * 0.05))
 
     scored['priority_score'] = round(priority_score, 6)
-    scored['confidence_score'] = round(max(0.0, min(1.0, pattern_confidence)), 6)
+    scored['confidence_score'] = round(max(0.0, min(1.0, pattern_confidence * max(learned_confidence, 0.5))), 6)
+    scored['learned_weight'] = round(learned_weight, 6)
+    scored['learned_confidence'] = round(learned_confidence, 6)
     return scored
 
 
@@ -103,8 +111,28 @@ def generate_recommendations(policy: dict[str, Any]) -> list[dict[str, Any]]:
                 'action': action,
                 'priority_weight': round(priority_score, 6),
                 'risk_tier': risk_tier,
-                'rationale': f'Deterministic policy action derived from {policy_id}',
+                'rationale': str(policy.get('rationale') or f'Deterministic policy action derived from {policy_id}'),
+                'legacy_source_scenario_id': policy.get('legacy_source_scenario_id'),
+                'operator_explanation': policy.get('operator_explanation'),
             }
         )
 
     return recommendations
+
+
+def _policy_weight(db: Session | None, policy_id: str) -> float:
+    if db is None or not policy_id:
+        return 1.0
+    row = db.get(PolicyWeight, f'policy::{policy_id}')
+    if row is None:
+        return 1.0
+    return max(0.1, min(float(row.weight), 3.0))
+
+
+def _policy_confidence(db: Session | None, policy_id: str) -> float:
+    if db is None or not policy_id:
+        return 0.5
+    row = db.get(PolicyWeight, f'policy::{policy_id}')
+    if row is None:
+        return 0.5
+    return max(0.05, min(float(row.confidence), 1.0))

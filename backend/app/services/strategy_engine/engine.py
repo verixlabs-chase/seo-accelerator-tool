@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ from app.services.strategy_engine.signal_models import build_signal_model
 from app.services.strategy_engine.strategic_scoring import compute_strategic_scores
 
 
+DEPRECATED_RUNTIME = True
 def build_campaign_strategy(
     campaign_id: str,
     window: StrategyWindow,

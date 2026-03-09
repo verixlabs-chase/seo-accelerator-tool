@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from app.intelligence.global_graph.graph_schema import EdgeType, NodeType
-from app.intelligence.global_graph.graph_store import InMemoryGraphStore
+from app.intelligence.global_graph.graph_store import GraphStoreProtocol
 
 
 class GraphQueryEngine:
-    def __init__(self, store: InMemoryGraphStore) -> None:
+    def __init__(self, store: GraphStoreProtocol) -> None:
         self.store = store
 
     def get_relevant_strategies(
@@ -51,6 +51,7 @@ class GraphQueryEngine:
                     'target_id': edge.target_id,
                     'confidence': confidence,
                     'outcome_strength': float(edge.metadata.get('outcome_strength', 0.0)),
+                    'support_count': int(edge.metadata.get('support_count', 0) or 0),
                 }
             )
 
@@ -84,6 +85,7 @@ class GraphQueryEngine:
                     'target_id': edge.target_id,
                     'confidence': confidence,
                     'outcome_strength': strength,
+                    'support_count': support_count,
                 }
             )
 

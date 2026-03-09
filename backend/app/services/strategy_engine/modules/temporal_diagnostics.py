@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from app.services.strategy_engine.schemas import DiagnosticResult, Evidence, Str
 from app.services.strategy_engine.temporal_math import compute_acceleration, compute_slope, compute_trend_strength, compute_volatility
 
 
+DEPRECATED_RUNTIME = True
 def _series(
     db: Session,
     campaign_id: str,

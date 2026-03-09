@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.governance.replay.hashing import version_fingerprint
 
 
+DEPRECATED_RUNTIME = True
 class StrategyEngineProfile(BaseModel):
     model_config = ConfigDict(extra='forbid')
 

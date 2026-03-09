@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+
 from app.services.strategy_engine.temporal_math import PRECISION
 
+DEPRECATED_RUNTIME = True
 DEFAULT_IMPACT_WEIGHT = 1.0
 STAGNATION_BAND = 0.01
 VOLATILITY_THRESHOLD = 0.75

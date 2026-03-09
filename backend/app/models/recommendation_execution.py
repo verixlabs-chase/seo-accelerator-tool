@@ -30,15 +30,13 @@ class RecommendationExecution(Base):
     status: Mapped[str] = mapped_column(String(30), nullable=False, default='pending', index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-
     approved_by: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
     risk_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     risk_level: Mapped[str] = mapped_column(String(20), nullable=False, default='medium')
     scope_of_change: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     historical_success_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-
     result_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True)

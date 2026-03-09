@@ -27,7 +27,10 @@ from app.core.middleware import (
 )
 from app.core.tracing import setup_tracing
 from app.db.redis_client import get_redis_client
+from app.events import initialize_event_stream
+from app.events.subscriber_registry import register_default_subscribers
 from app.governance.startup_invariants import run_startup_invariants
+from app.intelligence.model_registry import initialize_default_models
 import app.db.session as db_session
 from app.services.auth_service import seed_local_admin
 from app.middleware.correlation_id import CorrelationIdMiddleware
@@ -101,6 +104,9 @@ def _emit_statelessness_warnings() -> None:
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     run_startup_invariants(runtime="api")
     _emit_statelessness_warnings()
+    initialize_event_stream()
+    register_default_subscribers()
+    initialize_default_models()
     if settings.app_env.lower() != "test":
         # Fail startup loudly when Redis is unavailable.
         get_redis_client()

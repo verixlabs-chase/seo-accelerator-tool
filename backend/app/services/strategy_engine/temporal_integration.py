@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import hashlib
 from datetime import datetime
 
@@ -16,6 +17,7 @@ from app.services.strategy_engine.temporal_math import (
 )
 
 
+DEPRECATED_RUNTIME = True
 def _clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
 

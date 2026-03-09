@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+
 from app.services.strategy_engine import thresholds
 from app.services.strategy_engine.schemas import DiagnosticResult, Evidence
 from app.services.strategy_engine.signal_models import StrategyEngineSignals
 
 
+DEPRECATED_RUNTIME = True
 def _bounded_ratio(value: float, threshold_value: float) -> float:
     if threshold_value <= 0:
         return 0.0

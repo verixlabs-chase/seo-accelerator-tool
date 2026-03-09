@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
+DEPRECATED_RUNTIME = True
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

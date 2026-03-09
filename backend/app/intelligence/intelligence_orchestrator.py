@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.enums import StrategyRecommendationStatus
+from app.intelligence.digital_twin.strategy_optimizer import optimize_strategy
+from app.intelligence.digital_twin.twin_state_model import DigitalTwinState
 from app.intelligence.feature_store import compute_features
+from app.intelligence.legacy_adapters.diagnostic_adapter import collect_legacy_diagnostics
+from app.intelligence.legacy_adapters.executive_summary_adapter import build_legacy_packaging
+from app.intelligence.legacy_adapters.scenario_registry_adapter import diagnostics_to_patterns, diagnostics_to_policy_inputs
 from app.intelligence.campaign_workers.campaign_worker_pool import CampaignWorkerPool
 from app.intelligence.intelligence_metrics_aggregator import compute_campaign_metrics
 from app.intelligence.pattern_engine import detect_patterns, discover_cohort_patterns
@@ -21,6 +26,7 @@ from app.intelligence.strategy_transfer_engine import transfer_strategies
 from app.intelligence.signal_assembler import assemble_signals
 from app.intelligence.temporal_ingestion import write_temporal_signals
 from app.models.campaign import Campaign
+from app.models.organization import Organization
 from app.models.intelligence import StrategyRecommendation
 from app.models.recommendation_execution import RecommendationExecution
 from app.models.recommendation_outcome import RecommendationOutcome
@@ -35,8 +41,9 @@ PIPELINE_STAGES: tuple[str, ...] = (
     'detect_patterns',
     'discover_cohort_patterns',
     'generate_recommendations',
-    'digital_twin_simulations',
+    'digital_twin_selection',
     'execution_scheduling',
+    'execution_runtime',
     'policy_learning',
     'metrics_aggregation',
 )
@@ -91,23 +98,50 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         stage_timings['discover_cohort_patterns'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
+        runtime_tier = _campaign_runtime_tier(session, campaign)
+        legacy_diagnostics = collect_legacy_diagnostics(
+            campaign_id=campaign.id,
+            raw_signals=signals,
+            db=session,
+            tier=runtime_tier,
+        )
+        legacy_patterns = diagnostics_to_patterns(legacy_diagnostics)
+        legacy_policies = diagnostics_to_policy_inputs(legacy_diagnostics)
         recommendations = _generate_and_persist_recommendations(
             session,
             campaign=campaign,
             features=features,
             direct_patterns=direct_patterns,
             cohort_patterns=cohort_patterns,
+            legacy_patterns=legacy_patterns,
+            legacy_policies=legacy_policies,
             cycle_started_at=cycle_started_at,
+        )
+        legacy_packaging = build_legacy_packaging(
+            campaign_id=campaign.id,
+            tier=runtime_tier,
+            window=_current_window(cycle_started_at),
+            recommendations=recommendations,
+            detected_scenarios=[item.scenario_id for item in legacy_diagnostics],
+            generated_at=cycle_started_at.isoformat(),
         )
         stage_timings['generate_recommendations'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
-        scheduled_executions = _schedule_recommendation_executions(session, recommendations)
+        selected_recommendations, simulation_result = _select_recommendations_via_digital_twin(
+            session,
+            campaign_id=campaign.id,
+            recommendations=recommendations,
+        )
+        stage_timings['digital_twin_selection'] = round((perf_counter() - stage_started) * 1000.0, 3)
+
+        stage_started = perf_counter()
+        scheduled_executions = _schedule_recommendation_executions(session, selected_recommendations)
         stage_timings['execution_scheduling'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
         completed_executions = _execute_scheduled_executions(session, scheduled_executions)
-        stage_timings['digital_twin_simulations'] = round((perf_counter() - stage_started) * 1000.0, 3)
+        stage_timings['execution_runtime'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         outcomes_recorded = _count_outcomes_since(session, campaign_id, cycle_started_at)
 
@@ -138,6 +172,10 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             'cohort_patterns_detected': len(cohort_patterns),
             'recommendations_generated': len(recommendations),
             'recommendation_ids': sorted([row.id for row in recommendations]),
+            'recommendations_selected_for_execution': len(selected_recommendations),
+            'selected_recommendation_ids': sorted([row.id for row in selected_recommendations]),
+            'digital_twin_selection': simulation_result,
+            'legacy_packaging': legacy_packaging,
             'executions_scheduled': len(scheduled_executions),
             'executions_completed': len(completed_executions),
             'execution_ids': sorted([row.id for row in completed_executions]),
@@ -259,6 +297,8 @@ def run_system_cycle(db: Session | None = None) -> dict[str, Any]:
     finally:
         if owns_session:
             session.close()
+
+
 def _generate_and_persist_recommendations(
     db: Session,
     *,
@@ -267,13 +307,15 @@ def _generate_and_persist_recommendations(
     direct_patterns: list[dict[str, Any]],
     cohort_patterns: list[dict[str, Any]],
     cycle_started_at: datetime,
+    legacy_patterns: list[dict[str, Any]] | None = None,
+    legacy_policies: list[dict[str, Any]] | None = None,
 ) -> list[StrategyRecommendation]:
     all_patterns = sorted(
-        direct_patterns + cohort_patterns,
+        direct_patterns + cohort_patterns + list(legacy_patterns or []),
         key=lambda item: (str(item.get('pattern_key', '')), str(item.get('cohort', ''))),
     )
 
-    policies = [score_policy(policy, features) for policy in derive_policy(all_patterns)]
+    policies = [score_policy(policy, features, db=db) for policy in _merge_policy_inputs(derive_policy(all_patterns), legacy_policies or [])]
     policy_recommendations = [
         recommendation
         for policy in policies
@@ -333,6 +375,8 @@ def _generate_and_persist_recommendations(
                 'patterns': all_patterns,
                 'features': {key: round(float(value), 6) for key, value in sorted(features.items())},
                 'policy_id': policy_id,
+                'legacy_source_scenario_id': recommendation.get('legacy_source_scenario_id'),
+                'operator_explanation': recommendation.get('operator_explanation'),
             },
             sort_keys=True,
         )
@@ -341,7 +385,7 @@ def _generate_and_persist_recommendations(
             tenant_id=campaign.tenant_id,
             campaign_id=campaign.id,
             recommendation_type=recommendation_type,
-            rationale=f'Deterministic recommendation from {policy_id}:{action}',
+            rationale=str(recommendation.get('rationale') or f'Deterministic recommendation from {policy_id}:{action}'),
             confidence=round(priority_weight, 6),
             confidence_score=round(priority_weight, 6),
             evidence_json=evidence_json,
@@ -412,6 +456,66 @@ def _execute_scheduled_executions(db: Session, executions: list[RecommendationEx
     return completed
 
 
+def _select_recommendations_via_digital_twin(
+    db: Session,
+    *,
+    campaign_id: str,
+    recommendations: list[StrategyRecommendation],
+) -> tuple[list[StrategyRecommendation], dict[str, Any]]:
+    ordered = sorted(recommendations, key=lambda row: row.id)
+    if not ordered:
+        return [], {'status': 'no_recommendations', 'selected_recommendation_ids': []}
+
+    candidate_strategies: list[dict[str, Any]] = []
+    by_strategy_id: dict[str, StrategyRecommendation] = {}
+    for recommendation in ordered:
+        strategy_id = f'recommendation:{recommendation.id}'
+        candidate_strategies.append(
+            {
+                'strategy_id': strategy_id,
+                'recommendation_id': recommendation.id,
+                'strategy_actions': _recommendation_to_strategy_actions(recommendation.recommendation_type),
+            }
+        )
+        by_strategy_id[strategy_id] = recommendation
+
+    try:
+        twin_state = DigitalTwinState.from_campaign_data(db, campaign_id)
+        winning = optimize_strategy(twin_state, candidate_strategies, db=db)
+    except Exception as exc:  # pragma: no cover
+        return ordered, {
+            'status': 'failed_open',
+            'error': str(exc),
+            'selected_recommendation_ids': [row.id for row in ordered],
+        }
+
+    if winning is None:
+        return ordered, {'status': 'no_candidates', 'selected_recommendation_ids': [row.id for row in ordered]}
+
+    strategy_id = str(winning.get('strategy_id', '') or '')
+    selected = by_strategy_id.get(strategy_id)
+    if selected is None:
+        return ordered, {'status': 'winner_unmapped', 'selected_recommendation_ids': [row.id for row in ordered]}
+
+    simulation = winning.get('simulation') if isinstance(winning.get('simulation'), dict) else {}
+    return [selected], {
+        'status': 'optimized',
+        'winning_strategy_id': strategy_id,
+        'selected_recommendation_ids': [selected.id],
+        'expected_value': float(winning.get('expected_value', 0.0) or 0.0),
+        'simulation_id': simulation.get('simulation_id'),
+    }
+
+
+def _recommendation_to_strategy_actions(recommendation_type: str) -> list[dict[str, int | str]]:
+    normalized = recommendation_type.lower()
+    if 'internal' in normalized or 'link' in normalized:
+        return [{'type': 'internal_link', 'count': 1}]
+    if 'title' in normalized or 'schema' in normalized or 'fix' in normalized or 'gbp' in normalized:
+        return [{'type': 'fix_technical_issues', 'count': 1}]
+    return [{'type': 'publish_content', 'pages': 1}]
+
+
 def _count_outcomes_since(db: Session, campaign_id: str, started_at: datetime) -> int:
     return int(
         db.query(RecommendationOutcome)
@@ -426,3 +530,47 @@ def _count_outcomes_since(db: Session, campaign_id: str, started_at: datetime) -
 def _hash_payload(payload: Any) -> str:
     packed = json.dumps(payload, sort_keys=True, default=str)
     return sha256(packed.encode('utf-8')).hexdigest()
+
+
+
+def _merge_policy_inputs(base_policies: list[dict[str, Any]], legacy_policies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for item in list(base_policies) + list(legacy_policies):
+        policy_id = str(item.get('policy_id', '') or '')
+        if not policy_id:
+            continue
+        existing = merged.get(policy_id)
+        if existing is None:
+            merged[policy_id] = {
+                **dict(item),
+                'recommended_actions': list(item.get('recommended_actions', [])),
+                'source_patterns': list(item.get('source_patterns', [])),
+            }
+            continue
+        existing['priority_weight'] = max(float(existing.get('priority_weight', 0.0) or 0.0), float(item.get('priority_weight', 0.0) or 0.0))
+        existing['pattern_confidence'] = max(float(existing.get('pattern_confidence', 0.0) or 0.0), float(item.get('pattern_confidence', 0.0) or 0.0))
+        existing['recommended_actions'] = sorted(set(existing.get('recommended_actions', []) + list(item.get('recommended_actions', []))))
+        existing['source_patterns'] = sorted(set(existing.get('source_patterns', []) + list(item.get('source_patterns', []))))
+        for key in ('legacy_source_scenario_id', 'rationale', 'operator_explanation', 'risk_tier'):
+            if key in item and item.get(key) is not None:
+                existing[key] = item.get(key)
+    return [merged[key] for key in sorted(merged)]
+
+
+def _campaign_runtime_tier(db: Session, campaign: Campaign) -> str:
+    if campaign.organization_id:
+        org_row = db.query(Organization).filter(Organization.id == campaign.organization_id).first()
+        if org_row is not None:
+            plan = str(org_row.plan_type or 'standard').strip().lower()
+            if plan == 'enterprise':
+                return 'enterprise'
+            if plan in {'pro', 'internal_anchor'}:
+                return 'pro'
+            return plan
+    return 'standard'
+
+
+def _current_window(now: datetime):
+    from app.services.strategy_engine.schemas import StrategyWindow
+
+    return StrategyWindow(date_from=now.replace(day=1), date_to=now)

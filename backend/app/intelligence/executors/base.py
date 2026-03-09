@@ -6,6 +6,7 @@ from typing import Any
 
 class BaseExecutor(ABC):
     execution_type: str = ''
+    produces_website_mutations: bool = False
 
     def validate(self, payload: dict[str, Any]) -> None:
         if not isinstance(payload, dict):
