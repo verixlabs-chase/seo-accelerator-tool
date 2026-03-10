@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+
 from app.services.strategy_engine import thresholds
 from app.services.strategy_engine.schemas import DiagnosticResult, Evidence
 from app.services.strategy_engine.signal_models import StrategyEngineSignals
 
 
+DEPRECATED_RUNTIME = True
 def run_ranking_diagnostics(signals: StrategyEngineSignals, window_reference: str) -> list[DiagnosticResult]:
     if signals.position_delta is None:
         return []

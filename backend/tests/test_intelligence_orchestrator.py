@@ -43,9 +43,12 @@ def test_run_campaign_cycle_wires_pipeline(db_session, create_test_tenant, creat
     recommendation_rows = (
         db_session.query(StrategyRecommendation)
         .filter(StrategyRecommendation.campaign_id == campaign.id)
-        .count()
+        .all()
     )
-    assert recommendation_rows > 0
+    assert recommendation_rows
+    assert all(len(row.recommendation_type) <= 128 for row in recommendation_rows)
+    assert all(len(row.idempotency_key or '') <= 128 for row in recommendation_rows)
+    assert all('Increase review request coverage across touchpoints.' not in row.recommendation_type for row in recommendation_rows)
 
     execution_rows = (
         db_session.query(RecommendationExecution)

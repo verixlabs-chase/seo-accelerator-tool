@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+
 from app.services.strategy_engine.scenario_registry import SCENARIO_INDEX
 from app.services.strategy_engine.schemas import CampaignStrategyOut, ExecutiveSummaryOut
 
+DEPRECATED_RUNTIME = True
 _STRATEGIC_THEME_BY_DIMENSION: dict[str, str] = {
     "risk_index": "risk_containment",
     "opportunity_index": "growth_capture",

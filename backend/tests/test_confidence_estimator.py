@@ -2,7 +2,7 @@ from app.intelligence.digital_twin.models.confidence_estimator import Confidence
 from app.intelligence.digital_twin.models.model_registry import reset_model_registry
 
 
-def test_confidence_estimator_is_deterministic_and_bounded() -> None:
+def test_confidence_estimator_is_deterministic_and_bounded(db_session) -> None:
     reset_model_registry()
     estimator = ConfidenceEstimator()
 

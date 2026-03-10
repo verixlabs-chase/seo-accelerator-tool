@@ -1,0 +1,27 @@
+{
+  "_meta": {
+    "purpose": "core_web_vitals_reference",
+    "version": "0.1.0",
+    "generated_at": "2026-02-18T00:00:00Z"
+  },
+  "metrics": [
+    {
+      "metric_key": "cwv_lcp",
+      "thresholds": {
+        "good": 2500,
+        "needs_improvement": 4000,
+        "units": "ms"
+      },
+      "recommendations": ["reduce_render_blocking", "optimize_server_response"]
+    },
+    {
+      "metric_key": "cwv_cls",
+      "thresholds": {
+        "good": 0.1,
+        "needs_improvement": 0.25,
+        "units": "score"
+      },
+      "recommendations": ["stabilize_layout_shift"]
+    }
+  ]
+}

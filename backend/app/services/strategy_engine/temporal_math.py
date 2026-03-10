@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+
 import hashlib
 import math
 from datetime import datetime
 
+DEPRECATED_RUNTIME = True
 PRECISION = 6
 TEMPORAL_MATH_VERSION = 'temporal-math-v1'
 TEMPORAL_MATH_VERSION_HASH = hashlib.sha256(TEMPORAL_MATH_VERSION.encode('utf-8')).hexdigest()

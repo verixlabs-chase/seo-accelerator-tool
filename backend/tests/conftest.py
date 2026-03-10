@@ -33,6 +33,8 @@ from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity  #
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
 from app.models.organization import Organization  # noqa: F401
+from app.models.industry_intelligence import IndustryIntelligenceModel  # noqa: F401
+from app.models.intelligence_model_registry import IntelligenceModelRegistryState  # noqa: F401
 from app.models.organization_membership import OrganizationMembership  # noqa: F401
 from app.models.organization_provider_credential import OrganizationProviderCredential  # noqa: F401
 from app.models.platform_provider_credential import PlatformProviderCredential  # noqa: F401
@@ -103,6 +105,8 @@ def _verify_required_tables(database_url: str) -> None:
             "recommendation_executions",
             "recommendation_outcomes",
             "intelligence_metrics_snapshots",
+            "intelligence_model_registry_states",
+            "industry_intelligence_models",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:
@@ -126,6 +130,38 @@ def _reset_external_test_schema(database_url: str) -> None:
     finally:
         engine.dispose()
 
+
+
+
+def _seed_intelligence_state(session: Session) -> None:
+    if session.query(IntelligenceModelRegistryState).filter(
+        IntelligenceModelRegistryState.registry_name == "autonomous_model_registry"
+    ).one_or_none() is None:
+        session.add(
+            IntelligenceModelRegistryState(
+                registry_name="autonomous_model_registry",
+                payload={"models": {}},
+                updated_at=datetime.now(UTC),
+            )
+        )
+
+    if session.query(IndustryIntelligenceModel).filter(
+        IndustryIntelligenceModel.industry_id == "unknown"
+    ).one_or_none() is None:
+        session.add(
+            IndustryIntelligenceModel(
+                industry_id="unknown",
+                industry_name="unknown",
+                pattern_distribution={},
+                strategy_success_rates={},
+                avg_rank_delta=0.0,
+                avg_traffic_delta=0.0,
+                confidence_score=0.0,
+                sample_size=0,
+                support_state={},
+                last_updated=datetime.now(UTC),
+            )
+        )
 
 def _reset_external_test_database(engine) -> None:
     if engine.dialect.name == "sqlite":
@@ -433,6 +469,8 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
     test_session.commit()
     provision_test_organization(test_session, org_a)
     provision_test_organization(test_session, org_b)
+    _seed_intelligence_state(test_session)
+    test_session.commit()
     yield test_session
     test_session.close()
     engine.dispose()
@@ -578,9 +616,31 @@ def create_test_campaign(
 ):
     from app.models.campaign import Campaign
 
+    resolved_tenant_id = tenant_id or org_id
+    tenant = session.query(Tenant).filter(Tenant.id == resolved_tenant_id).one_or_none()
+    if tenant is None:
+        tenant = create_test_tenant(session, tenant_id=resolved_tenant_id, name="Campaign Tenant")
+
+    organization = session.query(Organization).filter(Organization.id == org_id).one_or_none()
+    if organization is None:
+        test_tier_profile = ensure_test_tier_profile(session)
+        organization = Organization(
+            id=org_id,
+            name=f"Org-{org_id[:8]}",
+            plan_type="standard",
+            billing_mode="subscription",
+            status="active",
+            tier_profile_id=test_tier_profile.id,
+            tier_version=test_tier_profile.version,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        session.add(organization)
+        session.flush()
+
     campaign = Campaign(
-        tenant_id=tenant_id or org_id,
-        organization_id=org_id,
+        tenant_id=tenant.id,
+        organization_id=organization.id,
         name=name or f'Campaign-{uuid.uuid4().hex[:8]}',
         domain=domain or f'example-{uuid.uuid4().hex[:8]}.test',
     )

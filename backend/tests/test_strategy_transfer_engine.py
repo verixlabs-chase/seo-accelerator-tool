@@ -50,7 +50,7 @@ class _FakeQueryEngine:
         ]
 
 
-def test_transfer_strategies_retrieves_from_graph() -> None:
+def test_transfer_strategies_retrieves_from_graph(db_session) -> None:
     query = _FakeQueryEngine()
 
     payload = transfer_strategies(
@@ -65,7 +65,7 @@ def test_transfer_strategies_retrieves_from_graph() -> None:
     assert len(payload['strategies']) == 2
 
 
-def test_transfer_strategies_passes_candidates_to_simulation() -> None:
+def test_transfer_strategies_passes_candidates_to_simulation(db_session) -> None:
     query = _FakeQueryEngine()
     simulated: list[dict[str, Any]] = []
 
@@ -93,7 +93,7 @@ def test_transfer_strategies_passes_candidates_to_simulation() -> None:
     assert 'publish_content' in action_types
 
 
-def test_transfer_strategies_returns_confidence_sorted_results() -> None:
+def test_transfer_strategies_returns_confidence_sorted_results(db_session) -> None:
     query = _FakeQueryEngine()
 
     def fake_simulator(_twin_state: object, _actions: list[dict[str, object]], **kwargs: Any) -> dict[str, Any]:

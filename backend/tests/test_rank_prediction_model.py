@@ -2,7 +2,7 @@ from app.intelligence.digital_twin.models.model_registry import reset_model_regi
 from app.intelligence.digital_twin.models.rank_prediction_model import RankPredictionModel
 
 
-def test_rank_prediction_model_returns_deterministic_delta() -> None:
+def test_rank_prediction_model_returns_deterministic_delta(db_session) -> None:
     reset_model_registry()
     model = RankPredictionModel()
     features = {

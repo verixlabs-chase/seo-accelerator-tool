@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+
 from app.services.strategy_engine.temporal_math import PRECISION
 
+DEPRECATED_RUNTIME = True
 DELTA_SIMULATOR_VERSION = 'delta-simulator-v1'
 
 

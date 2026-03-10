@@ -2,7 +2,7 @@ from app.intelligence.digital_twin.models.model_registry import reset_model_regi
 from app.intelligence.digital_twin.models.traffic_prediction_model import TrafficPredictionModel
 
 
-def test_traffic_prediction_model_uses_rank_and_baseline() -> None:
+def test_traffic_prediction_model_uses_rank_and_baseline(db_session) -> None:
     reset_model_registry()
     model = TrafficPredictionModel()
 

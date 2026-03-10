@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+
 from pydantic import BaseModel, Field
 
 
+DEPRECATED_RUNTIME = True
 class PriorityInput(BaseModel):
     scenario_id: str
     impact_weight: float = Field(ge=0, le=1)

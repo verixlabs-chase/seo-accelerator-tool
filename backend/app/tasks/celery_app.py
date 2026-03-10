@@ -192,6 +192,7 @@ def create_celery_app() -> Celery:
     celery.conf.imports = (
         'app.tasks.tasks',
         'app.tasks.intelligence_tasks',
+        'app.intelligence.campaign_workers.campaign_task_runner',
     )
     celery.conf.beat_schedule = {
         'analytics-rollup-nightly': {

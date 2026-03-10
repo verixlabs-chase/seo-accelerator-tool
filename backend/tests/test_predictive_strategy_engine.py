@@ -49,7 +49,7 @@ def test_prediction_features_generated_correctly(monkeypatch: Any) -> None:
     assert features['baseline_traffic'] == 500.0
 
 
-def test_rank_and_traffic_predictions_work() -> None:
+def test_rank_and_traffic_predictions_work(db_session) -> None:
     features = {
         'campaign_momentum_score': 0.3,
         'graph_support': 10.0,
@@ -64,7 +64,7 @@ def test_rank_and_traffic_predictions_work() -> None:
     assert traffic_delta > 0
 
 
-def test_confidence_score_bounded_correctly() -> None:
+def test_confidence_score_bounded_correctly(db_session) -> None:
     low = predict_confidence(sample_size=1.0, outcome_variance=10.0)
     high = predict_confidence(sample_size=500.0, outcome_variance=0.01)
 
@@ -73,7 +73,7 @@ def test_confidence_score_bounded_correctly() -> None:
     assert high >= low
 
 
-def test_prediction_engine_integrates_with_strategy(monkeypatch: Any) -> None:
+def test_prediction_engine_integrates_with_strategy(db_session, monkeypatch: Any) -> None:
     class _FakeIndustry:
         def get_strategy_success_rate(self, _industry_id: str, _strategy: str) -> float:
             return 0.65

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
+DEPRECATED_RUNTIME = True
 class ScenarioDefinition(BaseModel):
     model_config = ConfigDict(extra='forbid')
 

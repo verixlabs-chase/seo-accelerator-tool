@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ from app.observability.events import emit_automation_event, emit_phase_transitio
 from app.services.strategy_engine.decision_trace import build_decision_trace, serialize_trace_payload
 from app.utils.enum_guard import ensure_enum
 
+DEPRECATED_RUNTIME = True
 AUTOMATION_ENGINE_VERSION = 'automation-loop-v1'
 FREEZE_VOLATILITY_CEILING = 0.9
 PROMOTION_CONFIDENCE_THRESHOLD = 0.8

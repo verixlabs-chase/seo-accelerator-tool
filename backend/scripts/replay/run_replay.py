@@ -48,6 +48,15 @@ def _load_replay_dependencies() -> tuple[Any, Any, Any, Any, Any, Any, Any]:
     )
 
 
+def _configure_replay_runtime() -> None:
+    os.environ.setdefault('APP_ENV', 'test')
+    os.environ.setdefault('PUBLIC_BASE_URL', 'http://testserver')
+    os.environ.setdefault('JWT_SECRET', 'test-secret-key')
+    os.environ.setdefault('PLATFORM_MASTER_KEY', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=')
+    os.environ.setdefault('DATABASE_URL', 'sqlite:///:memory:')
+    os.environ.setdefault('POSTGRES_DSN', os.environ['DATABASE_URL'])
+
+
 def _lock_deterministic_environment() -> None:
     os.environ["TZ"] = "UTC"
     if hasattr(__import__("time"), "tzset"):
@@ -63,6 +72,12 @@ def _lock_deterministic_environment() -> None:
 def _load_manifest(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as file:
         return json.load(file)
+
+
+def _write_report(path: Path, payload: str) -> None:
+    temp_path = path.with_name(f".{path.name}.tmp")
+    temp_path.write_text(payload, encoding="utf-8")
+    temp_path.replace(path)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -144,6 +159,7 @@ def _validate_corpus(manifest_path: Path, manifest: dict[str, Any]) -> None:
 def run_replay(manifest_path: Path, *, executor: ExecutorAdapter) -> "ReplayReport":
     from app.services.operational_telemetry_service import record_replay_execution
 
+    _configure_replay_runtime()
     _lock_deterministic_environment()
     (
         compare_confidence_bands,
@@ -273,6 +289,7 @@ def main() -> int:
     manifest_path = Path(args.manifest).resolve()
     report_path = Path(args.report).resolve()
     report_path.parent.mkdir(parents=True, exist_ok=True)
+    _configure_replay_runtime()
 
     try:
         executor = _load_executor(args.executor)
@@ -295,10 +312,10 @@ def main() -> int:
                 }
             ],
         }
-        report_path.write_text(json.dumps(error_report, indent=2), encoding="utf-8")
+        _write_report(report_path, json.dumps(error_report, indent=2))
         return 1
 
-    report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    _write_report(report_path, report.model_dump_json(indent=2))
     return 1 if report.failed_cases > 0 else 0
 
 

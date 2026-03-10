@@ -11,8 +11,15 @@ from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, 
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
+from app.models.intelligence_graph import IntelligenceGraphEdge, IntelligenceGraphNode
+from app.models.industry_intelligence import IndustryIntelligenceModel
+from app.models.industry_similarity_matrix import IndustrySimilarityMatrix
+from app.models.intelligence_model_registry import IntelligenceModelRegistryState
 from app.models.recommendation_outcome import RecommendationOutcome
 from app.models.digital_twin_simulation import DigitalTwinSimulation
+from app.models.execution_mutation import ExecutionMutation
+from app.models.seo_mutation_outcome import SEOMutationOutcome
+from app.models.seo_experiment_result import SEOExperimentResult
 from app.models.keyword_daily_economics import KeywordDailyEconomics
 from app.models.keyword_market_snapshot import KeywordMarketSnapshot
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot
@@ -35,6 +42,7 @@ from app.models.provider_metric import ProviderExecutionMetric
 from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
 from app.models.platform_provider_credential import PlatformProviderCredential
+from app.models.policy_weights import PolicyWeight
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
 from app.models.reference_library import (
     ReferenceLibraryActivation,
@@ -46,6 +54,8 @@ from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEv
 from app.models.role import Role, UserRole
 from app.models.sub_account import SubAccount
 from app.models.strategy_execution_key import StrategyExecutionKey
+from app.models.strategy_experiment import StrategyExperiment
+from app.models.strategy_performance import StrategyPerformance
 from app.models.strategy_automation_event import StrategyAutomationEvent
 from app.models.task_execution import TaskExecution
 from app.models.tenant import Tenant
@@ -61,6 +71,8 @@ __all__ = [
     'UserRole',
     'SubAccount',
     'StrategyExecutionKey',
+    'StrategyPerformance',
+    'StrategyExperiment',
     'StrategyAutomationEvent',
     'ThresholdBundle',
     'TierProfile',
@@ -115,6 +127,7 @@ __all__ = [
     'OrganizationMembership',
     'OrganizationProviderCredential',
     'PlatformProviderCredential',
+    'PolicyWeight',
     'ProviderHealthState',
     'ProviderPolicy',
     'ProviderQuotaState',
@@ -126,8 +139,16 @@ __all__ = [
     'Citation',
     'BusinessLocation',
     'StrategyRecommendation',
+    'IntelligenceGraphNode',
+    'IntelligenceGraphEdge',
+    'IndustryIntelligenceModel',
+    'IndustrySimilarityMatrix',
+    'IntelligenceModelRegistryState',
     'RecommendationOutcome',
     'DigitalTwinSimulation',
+    'ExecutionMutation',
+    'SEOMutationOutcome',
+    'SEOExperimentResult',
     'IntelligenceScore',
     'CampaignMilestone',
     'AnomalyEvent',

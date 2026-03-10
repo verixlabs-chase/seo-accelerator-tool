@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.models.intelligence import StrategyRecommendation
+from app.models.policy_weights import PolicyWeight
 from app.models.recommendation_outcome import RecommendationOutcome
+from app.intelligence.strategy_evolution.strategy_lifecycle_manager import evolve_strategy_ecosystem as evolve_strategy_ecosystem_runtime
 
 
 def recommendation_effectiveness(db: Session) -> dict[str, dict[str, float]]:
@@ -36,7 +39,7 @@ def update_policy_weights(db: Session, base_weights: dict[str, float] | None = N
     effectiveness = recommendation_effectiveness(db)
 
     for rec_type, metrics in effectiveness.items():
-        base = float(weights.get(rec_type, 1.0))
+        base = float(weights.get(rec_type, _load_weight(db, f'recommendation::{rec_type}', 1.0)))
         mean_delta = float(metrics.get('mean_delta', 0.0))
         if mean_delta > 0:
             updated = base * 1.05
@@ -44,8 +47,17 @@ def update_policy_weights(db: Session, base_weights: dict[str, float] | None = N
             updated = base * 0.95
         else:
             updated = base
-        weights[rec_type] = round(max(0.1, min(updated, 3.0)), 6)
+        bounded = round(max(0.1, min(updated, 3.0)), 6)
+        weights[rec_type] = bounded
+        _upsert_policy_weight(
+            db,
+            policy_id=f'recommendation::{rec_type}',
+            weight=bounded,
+            confidence=float(metrics.get('win_rate', 0.5) or 0.5),
+            sample_size=int(metrics.get('samples', 0) or 0),
+        )
 
+    db.flush()
     return weights
 
 
@@ -76,15 +88,12 @@ def policy_effectiveness(db: Session) -> dict[str, dict[str, float]]:
     return summary
 
 
-def update_policy_priority_weights(
-    db: Session,
-    base_policy_weights: dict[str, float] | None = None,
-) -> dict[str, float]:
+def update_policy_priority_weights(db: Session, base_policy_weights: dict[str, float] | None = None) -> dict[str, float]:
     weights = dict(base_policy_weights or {})
     effectiveness = policy_effectiveness(db)
 
     for policy_id, metrics in effectiveness.items():
-        base = float(weights.get(policy_id, 0.5))
+        base = float(weights.get(policy_id, _load_weight(db, f'policy::{policy_id}', 0.5)))
         mean_effectiveness = float(metrics.get('effectiveness', 0.0))
         if mean_effectiveness > 0:
             updated = base * 1.05
@@ -92,9 +101,49 @@ def update_policy_priority_weights(
             updated = base * 0.95
         else:
             updated = base
-        weights[policy_id] = round(max(0.1, min(updated, 1.0)), 6)
+        bounded = round(max(0.1, min(updated, 1.0)), 6)
+        weights[policy_id] = bounded
+        _upsert_policy_weight(
+            db,
+            policy_id=f'policy::{policy_id}',
+            weight=bounded,
+            confidence=float(metrics.get('win_rate', 0.5) or 0.5),
+            sample_size=int(metrics.get('samples', 0) or 0),
+        )
 
+    db.flush()
     return weights
+
+
+def load_policy_weights(db: Session) -> dict[str, dict[str, float]]:
+    rows = db.query(PolicyWeight).order_by(PolicyWeight.policy_id.asc()).all()
+    return {
+        row.policy_id: {
+            'weight': float(row.weight),
+            'confidence': float(row.confidence),
+            'sample_size': int(row.sample_size),
+        }
+        for row in rows
+    }
+
+
+def _load_weight(db: Session, policy_id: str, fallback: float) -> float:
+    row = db.get(PolicyWeight, policy_id)
+    if row is None:
+        return fallback
+    return float(row.weight)
+
+
+def _upsert_policy_weight(db: Session, *, policy_id: str, weight: float, confidence: float, sample_size: int) -> PolicyWeight:
+    row = db.get(PolicyWeight, policy_id)
+    if row is None:
+        row = PolicyWeight(policy_id=policy_id)
+        db.add(row)
+    row.weight = float(weight)
+    row.confidence = max(0.0, min(float(confidence), 1.0))
+    row.sample_size = max(0, int(sample_size))
+    row.last_updated = datetime.now(UTC)
+    return row
 
 
 def _policy_id_from_recommendation_type(recommendation_type: str) -> str | None:
@@ -104,3 +153,7 @@ def _policy_id_from_recommendation_type(recommendation_type: str) -> str | None:
     if len(parts) < 2:
         return None
     return parts[1] or None
+
+
+def evolve_strategy_ecosystem(db: Session, *, industry: str | None = None) -> dict[str, object]:
+    return evolve_strategy_ecosystem_runtime(db, industry=industry)

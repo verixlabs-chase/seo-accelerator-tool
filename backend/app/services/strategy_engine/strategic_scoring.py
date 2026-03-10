@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+
 from app.services.strategy_engine.scenario_registry import SCENARIO_INDEX
 from app.services.strategy_engine.schemas import CampaignStrategyOut, StrategicScoreOut
 
+DEPRECATED_RUNTIME = True
 MIN_SCORE = 0.0
 MAX_SCORE = 100.0
 NORMALIZED_MAX = 1.0
