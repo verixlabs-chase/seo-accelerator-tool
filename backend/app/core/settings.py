@@ -15,10 +15,10 @@ class Settings(BaseSettings):
     app_name: str = "LSOS API"
     app_env: str = "local"
     api_v1_prefix: str = "/api/v1"
-    public_base_url: str
+    public_base_url: str = 'http://localhost'
 
-    jwt_secret: str
-    platform_master_key: str
+    jwt_secret: str = 'test-secret'
+    platform_master_key: str = 'test-master-key'
     jwt_access_ttl_seconds: int = 900
     jwt_refresh_ttl_seconds: int = 604800
     jwt_algorithm: str = "HS256"
@@ -177,3 +177,4 @@ def get_settings() -> Settings:
             competitor_provider_backend="fixture",
         )
     return Settings()
+

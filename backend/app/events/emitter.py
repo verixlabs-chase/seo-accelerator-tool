@@ -76,3 +76,15 @@ def outbox_event_write(db: Session, tenant_id: str, event_type: str, payload: di
 def _payload_hash(*, tenant_id: str, payload: dict[str, Any]) -> str:
     canonical = json.dumps({'tenant_id': tenant_id, 'payload': payload}, sort_keys=True, default=str, separators=(',', ':'))
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+def _process_learning_event(*args, **kwargs):
+    '''
+    Legacy compatibility hook.
+
+    This function previously triggered synchronous learning
+    integration before the worker architecture was introduced.
+
+    It now exists only so older tests and monkeypatch hooks
+    can safely override it.
+    '''
+    return None
