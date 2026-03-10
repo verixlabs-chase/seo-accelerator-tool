@@ -25,8 +25,7 @@ def _now() -> datetime:
 
 
 def _seed_file(relative: str) -> Path:
-    settings = get_settings()
-    candidate = reference_library_file(*Path(relative).parts, configured_path=settings.reference_library_seed_path)
+    candidate = reference_library_file(*Path(relative).parts)
     if not candidate.exists():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
