@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from app.models.role import Role, UserRole
 from app.models.user import User
+from app.reference_library.paths import reference_library_file
 
 
 def _login(client, email, password):
@@ -112,3 +113,8 @@ def test_reference_library_activation_blocked_if_latest_validation_failed(client
     payload = activate.json()
     assert payload["success"] is False
     assert "not PASSED" in payload["errors"][0]["message"]
+
+
+def test_reference_library_seed_paths_resolve_from_shared_resolver():
+    assert reference_library_file('metrics', 'core_web_vitals.json').exists()
+    assert reference_library_file('metrics', 'perf_recommendations.json').exists()

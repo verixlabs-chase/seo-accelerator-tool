@@ -1,7 +1,7 @@
 import hashlib
 import json
-from datetime import UTC, datetime
 from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -16,6 +16,7 @@ from app.models.reference_library import (
     ReferenceLibraryValidationRun,
     ReferenceLibraryVersion,
 )
+from app.reference_library.paths import resolve_reference_library_root
 from app.reference_library.schema_models import MetricsArtifact, RecommendationsArtifact
 
 
@@ -23,15 +24,9 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _root_dir() -> Path:
-    return Path(__file__).resolve().parents[3]
-
-
 def _seed_dir() -> Path:
     settings = get_settings()
-    if settings.reference_library_seed_path.strip():
-        return Path(settings.reference_library_seed_path).expanduser().resolve()
-    return _root_dir() / "backend" / "reference_library"
+    return resolve_reference_library_root(settings.reference_library_seed_path)
 
 
 def _seed_file(relative: str) -> Path:
