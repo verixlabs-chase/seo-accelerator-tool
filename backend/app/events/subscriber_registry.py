@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from app.events.event_bus import reset_subscribers, subscribe
+from app.events.queue import enqueue_experiment_event, enqueue_learning_event
 from app.events.event_types import EventType
 from app.intelligence.event_processors import (
     execution_processor,
     outcome_processor,
     pattern_processor,
-    policy_learning_processor,
     recommendation_processor,
     signal_processor,
     simulation_processor,
@@ -30,7 +30,8 @@ def register_default_subscribers(force_reset: bool = False) -> None:
     subscribe(EventType.RECOMMENDATION_GENERATED.value, simulation_processor.process)
     subscribe(EventType.SIMULATION_COMPLETED.value, execution_processor.process)
     subscribe(EventType.EXECUTION_COMPLETED.value, outcome_processor.process)
-    subscribe(EventType.OUTCOME_RECORDED.value, policy_learning_processor.process)
+    subscribe(EventType.OUTCOME_RECORDED.value, enqueue_learning_event)
+    subscribe(EventType.EXPERIMENT_COMPLETED.value, enqueue_experiment_event)
 
     _INITIALIZED = True
 

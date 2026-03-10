@@ -30,14 +30,20 @@ from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking,
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
 from app.models.crawl import CrawlRun, Page, TechnicalIssue  # noqa: F401
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity  # noqa: F401
+from app.models.experiment import Experiment, ExperimentAssignment, ExperimentOutcome  # noqa: F401
+from app.models.causal_edge import CausalEdge  # noqa: F401
+from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge  # noqa: F401
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
+from app.models.learning_metric_snapshot import LearningMetricSnapshot  # noqa: F401
+from app.models.learning_report import LearningReport  # noqa: F401
 from app.models.organization import Organization  # noqa: F401
 from app.models.industry_intelligence import IndustryIntelligenceModel  # noqa: F401
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState  # noqa: F401
 from app.models.organization_membership import OrganizationMembership  # noqa: F401
 from app.models.organization_provider_credential import OrganizationProviderCredential  # noqa: F401
 from app.models.platform_provider_credential import PlatformProviderCredential  # noqa: F401
+from app.models.policy_performance import PolicyPerformance  # noqa: F401
 from app.models.provider_health import ProviderHealthState  # noqa: F401
 from app.models.provider_metric import ProviderExecutionMetric  # noqa: F401
 from app.models.provider_policy import ProviderPolicy  # noqa: F401
@@ -51,6 +57,7 @@ from app.models.reference_library import (
 )
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent, ReportSchedule, ReportTemplateVersion  # noqa: F401
 from app.models.role import Role, UserRole
+from app.models.strategy_evolution_log import StrategyEvolutionLog  # noqa: F401
 from app.models.sub_account import SubAccount  # noqa: F401
 from app.models.tenant import Tenant
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot  # noqa: F401
@@ -107,6 +114,15 @@ def _verify_required_tables(database_url: str) -> None:
             "intelligence_metrics_snapshots",
             "intelligence_model_registry_states",
             "industry_intelligence_models",
+            "experiment_outcomes",
+            "experiment_assignments",
+            "experiments",
+            "policy_performance",
+            "causal_edges",
+            "causal_feature_edges",
+            "policy_feature_edges",
+            "learning_metrics",
+            "learning_reports",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:

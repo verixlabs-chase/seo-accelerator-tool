@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.events import EventType, emit_event, publish_event
+from app.intelligence.experiments.experiment_engine import record_experiment_outcome
+from app.intelligence.portfolio.portfolio_engine import run_portfolio_cycle
 from app.models.campaign import Campaign
 from app.models.digital_twin_simulation import DigitalTwinSimulation
 from app.models.recommendation_execution import RecommendationExecution
@@ -46,36 +48,39 @@ def record_outcome(
     db.add(row)
     db.flush()
 
-    publish_event(
-        EventType.OUTCOME_RECORDED.value,
-        {
-            'campaign_id': campaign_id,
-            'recommendation_id': recommendation_id,
-            'simulation_id': simulation_id,
-            'outcome_id': row.id,
-            'delta': row.delta,
-            'measured_at': row.measured_at.isoformat(),
-        },
-    )
+    campaign = db.get(Campaign, campaign_id) if emit_learning_event else None
+    event_payload = {
+        'campaign_id': campaign_id,
+        'recommendation_id': recommendation_id,
+        'simulation_id': simulation_id,
+        'outcome_id': row.id,
+        'delta': row.delta,
+        'measured_at': row.measured_at.isoformat(),
+    }
 
-    if emit_learning_event:
-        campaign = db.get(Campaign, campaign_id)
-        if campaign is not None:
-            emit_event(
-                db,
-                tenant_id=campaign.tenant_id,
-                event_type='recommendation.outcome_recorded',
-                payload={
-                    'campaign_id': campaign_id,
-                    'recommendation_id': recommendation_id,
-                    'simulation_id': simulation_id,
-                    'delta': row.delta,
-                    'measured_at': row.measured_at.isoformat(),
-                },
-            )
-
+    run_portfolio_cycle(db, row)
+    _experiment_outcome, experiment_event = record_experiment_outcome(db, outcome=row)
     db.commit()
     db.refresh(row)
+
+    if emit_learning_event and campaign is not None:
+        emit_event(
+            db,
+            tenant_id=campaign.tenant_id,
+            event_type='recommendation.outcome_recorded',
+            payload={
+                'campaign_id': campaign_id,
+                'recommendation_id': recommendation_id,
+                'simulation_id': simulation_id,
+                'delta': row.delta,
+                'measured_at': row.measured_at.isoformat(),
+            },
+        )
+        db.commit()
+
+    if experiment_event is not None:
+        publish_event(str(experiment_event['event_type']), dict(experiment_event['payload']))
+    publish_event(EventType.OUTCOME_RECORDED.value, event_payload)
     return row
 
 

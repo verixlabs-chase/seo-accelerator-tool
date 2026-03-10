@@ -18,10 +18,10 @@ from app.intelligence.legacy_adapters.diagnostic_adapter import collect_legacy_d
 from app.intelligence.legacy_adapters.executive_summary_adapter import build_legacy_packaging
 from app.intelligence.legacy_adapters.scenario_registry_adapter import diagnostics_to_patterns, diagnostics_to_policy_inputs
 from app.intelligence.campaign_workers.campaign_worker_pool import CampaignWorkerPool
+from app.intelligence.contracts.recommendations import RecommendationPayload
 from app.intelligence.intelligence_metrics_aggregator import compute_campaign_metrics
 from app.intelligence.pattern_engine import detect_patterns, discover_cohort_patterns
 from app.intelligence.policy_engine import derive_policy, generate_recommendations, score_policy
-from app.intelligence.policy_update_engine import update_policy_priority_weights, update_policy_weights
 from app.intelligence.recommendation_execution_engine import execute_recommendation, schedule_execution
 from app.intelligence.strategy_transfer_engine import transfer_strategies
 from app.intelligence.signal_assembler import assemble_signals
@@ -147,8 +147,9 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         outcomes_recorded = _count_outcomes_since(session, campaign_id, cycle_started_at)
 
         stage_started = perf_counter()
-        recommendation_weights = update_policy_weights(session)
-        policy_priority_weights = update_policy_priority_weights(session)
+        # Policy learning now runs in background workers off outcome events.
+        recommendation_weights: dict[str, float] = {}
+        policy_priority_weights: dict[str, float] = {}
         stage_timings['policy_learning'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
@@ -300,6 +301,40 @@ def run_system_cycle(db: Session | None = None) -> dict[str, Any]:
             session.close()
 
 
+def _validated_recommendation_payload(
+    *,
+    recommendation: dict[str, Any],
+    policy_id: str,
+    recommendation_type: str,
+    action: str,
+    all_patterns: list[dict[str, Any]],
+) -> RecommendationPayload:
+    evidence = recommendation.get('evidence')
+    if not isinstance(evidence, dict) or not evidence:
+        evidence = {
+            'pattern_key': str(all_patterns[0].get('pattern_key', 'orchestrator.default')) if all_patterns else 'orchestrator.default',
+            'patterns': all_patterns,
+            'policy_id': policy_id,
+            'action': action,
+        }
+
+    rollback_plan = recommendation.get('rollback_plan')
+    if not isinstance(rollback_plan, dict) or not rollback_plan:
+        rollback_plan = {'steps': ['revert_automation_action']}
+
+    return RecommendationPayload.model_validate(
+        {
+            'policy_id': policy_id,
+            'recommendation_type': recommendation_type,
+            'rationale': str(recommendation.get('rationale') or f'Deterministic recommendation from {policy_id}:{action}'),
+            'confidence': float(recommendation.get('priority_weight', 0.5) or 0.5),
+            'evidence': evidence,
+            'risk_tier': int(recommendation.get('risk_tier', 2) or 2),
+            'rollback_plan': rollback_plan,
+        }
+    )
+
+
 def _generate_and_persist_recommendations(
     db: Session,
     *,
@@ -382,11 +417,19 @@ def _generate_and_persist_recommendations(
             persisted.append(existing)
             continue
 
+        contract_payload = _validated_recommendation_payload(
+            recommendation=recommendation,
+            policy_id=policy_id,
+            recommendation_type=recommendation_type,
+            action=action,
+            all_patterns=all_patterns,
+        )
         evidence_json = json.dumps(
             {
+                'evidence': contract_payload.evidence,
                 'patterns': all_patterns,
                 'features': {key: round(float(value), 6) for key, value in sorted(features.items())},
-                'policy_id': policy_id,
+                'policy_id': contract_payload.policy_id,
                 'legacy_source_scenario_id': recommendation.get('legacy_source_scenario_id'),
                 'operator_explanation': recommendation.get('operator_explanation'),
             },
@@ -396,18 +439,18 @@ def _generate_and_persist_recommendations(
         row = StrategyRecommendation(
             tenant_id=campaign.tenant_id,
             campaign_id=campaign.id,
-            recommendation_type=recommendation_type,
-            rationale=str(recommendation.get('rationale') or f'Deterministic recommendation from {policy_id}:{action}'),
-            confidence=round(priority_weight, 6),
-            confidence_score=round(priority_weight, 6),
+            recommendation_type=contract_payload.recommendation_type,
+            rationale=contract_payload.rationale,
+            confidence=round(contract_payload.confidence, 6),
+            confidence_score=round(contract_payload.confidence, 6),
             evidence_json=evidence_json,
-            risk_tier=risk_tier,
-            rollback_plan_json=json.dumps({'steps': ['revert_automation_action']}, sort_keys=True),
+            risk_tier=contract_payload.risk_tier,
+            rollback_plan_json=json.dumps(contract_payload.rollback_plan, sort_keys=True),
             status=ensure_enum(StrategyRecommendationStatus.APPROVED, StrategyRecommendationStatus),
             idempotency_key=idempotency_key,
             input_hash=_hash_payload(features),
-            output_hash=_hash_payload(recommendation),
-            build_hash=_hash_payload({'policy_id': policy_id, 'action': action, 'idempotency_key': idempotency_key}),
+            output_hash=_hash_payload(contract_payload.model_dump(mode='json')),
+            build_hash=_hash_payload({'policy_id': contract_payload.policy_id, 'action': action, 'idempotency_key': idempotency_key}),
         )
         db.add(row)
         db.flush()
@@ -427,20 +470,31 @@ def _generate_and_persist_recommendations(
         if existing_fallback is not None:
             persisted.append(existing_fallback)
         else:
+            fallback_payload = _validated_recommendation_payload(
+                recommendation={
+                    'rationale': 'Deterministic fallback recommendation due to no matched patterns',
+                    'priority_weight': 0.6,
+                    'risk_tier': 1,
+                },
+                policy_id='fallback',
+                recommendation_type='policy::fallback::stabilize_foundations',
+                action='stabilize_foundations',
+                all_patterns=all_patterns,
+            )
             fallback = StrategyRecommendation(
                 tenant_id=campaign.tenant_id,
                 campaign_id=campaign.id,
-                recommendation_type='policy::fallback::stabilize_foundations',
-                rationale='Deterministic fallback recommendation due to no matched patterns',
-                confidence=0.6,
-                confidence_score=0.6,
-                evidence_json=json.dumps({'patterns': all_patterns, 'features': features}, sort_keys=True),
-                risk_tier=1,
-                rollback_plan_json=json.dumps({'steps': ['revert_automation_action']}, sort_keys=True),
+                recommendation_type=fallback_payload.recommendation_type,
+                rationale=fallback_payload.rationale,
+                confidence=fallback_payload.confidence,
+                confidence_score=fallback_payload.confidence,
+                evidence_json=json.dumps({'evidence': fallback_payload.evidence, 'patterns': all_patterns, 'features': features}, sort_keys=True),
+                risk_tier=fallback_payload.risk_tier,
+                rollback_plan_json=json.dumps(fallback_payload.rollback_plan, sort_keys=True),
                 status=ensure_enum(StrategyRecommendationStatus.APPROVED, StrategyRecommendationStatus),
                 idempotency_key=fallback_key,
                 input_hash=_hash_payload(features),
-                output_hash=_hash_payload({'recommendation_type': 'policy::fallback::stabilize_foundations'}),
+                output_hash=_hash_payload(fallback_payload.model_dump(mode='json')),
                 build_hash=_hash_payload({'fallback_key': fallback_key}),
             )
             db.add(fallback)

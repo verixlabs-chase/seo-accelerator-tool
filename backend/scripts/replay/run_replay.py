@@ -98,6 +98,12 @@ def _load_executor(executor_ref: str | None) -> ExecutorAdapter:
     return candidate
 
 
+def _validate_recommendation_contract_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    from app.intelligence.contracts.recommendations import maybe_validate_recommendation_artifact
+
+    return maybe_validate_recommendation_artifact(payload)
+
+
 def _strip_volatile_fields(payload: Any) -> Any:
     if isinstance(payload, dict):
         return {
@@ -181,7 +187,7 @@ def run_replay(manifest_path: Path, *, executor: ExecutorAdapter) -> "ReplayRepo
     for item in cases:
         case_dir = manifest_path.parent
         input_payload = _load_json(case_dir / item["input_ref"])
-        expected_output = _load_json(case_dir / item["expected_ref"])
+        expected_output = _validate_recommendation_contract_payload(_load_json(case_dir / item["expected_ref"]))
         case = ReplayCase(
             case_id=item["case_id"],
             tenant_id=item["tenant_id"],
@@ -192,7 +198,7 @@ def run_replay(manifest_path: Path, *, executor: ExecutorAdapter) -> "ReplayRepo
         )
         started_at = monotonic()
         try:
-            actual_output = executor(case)
+            actual_output = _validate_recommendation_contract_payload(executor(case))
         except Exception:
             record_replay_execution(
                 duration_ms=(monotonic() - started_at) * 1000.0,

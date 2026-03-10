@@ -1,109 +1,127 @@
-from datetime import UTC, datetime
+from __future__ import annotations
 
-from app.enums import StrategyRecommendationStatus
-from app.intelligence.strategy_evolution.strategy_experiment_engine import create_strategy_experiments
-from app.intelligence.strategy_evolution.strategy_lifecycle_manager import evolve_strategy_ecosystem
-from app.intelligence.strategy_evolution.strategy_performance_analyzer import analyze_strategy_performance
-from app.models.intelligence import StrategyRecommendation
-from app.models.recommendation_outcome import RecommendationOutcome
-from app.models.strategy_experiment import StrategyExperiment
-from app.models.strategy_performance import StrategyPerformance
-from tests.conftest import create_test_campaign
-
-
-def test_strategy_performance_analysis_and_lifecycle(db_session, create_test_tenant, create_test_org) -> None:
-    tenant = create_test_tenant(tenant_id='tenant-1', name='Evolution Tenant')
-    org = create_test_org(organization_id=tenant.id, tenant_id=tenant.id, name='Evolution Org')
-    campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Evolution Campaign', domain='evolution.example')
-
-    for idx, delta in enumerate([3.0, 2.5, 2.0], start=1):
-        recommendation = StrategyRecommendation(
-            tenant_id=tenant.id,
-            campaign_id=campaign.id,
-            recommendation_type='policy::prioritize_internal_linking::add_contextual_links',
-            rationale='test',
-            confidence=0.8,
-            confidence_score=0.8,
-            evidence_json='[]',
-            risk_tier=1,
-            rollback_plan_json='{}',
-            status=StrategyRecommendationStatus.EXECUTED,
-            idempotency_key=f'evolution-{idx}',
-        )
-        db_session.add(recommendation)
-        db_session.flush()
-        db_session.add(
-            RecommendationOutcome(
-                recommendation_id=recommendation.id,
-                campaign_id=campaign.id,
-                metric_before=10.0,
-                metric_after=10.0 + delta,
-                delta=delta,
-                measured_at=datetime.now(UTC),
-            )
-        )
-    db_session.commit()
-
-    summaries = analyze_strategy_performance(db_session)
-    assert summaries
-    assert summaries[0]['strategy_id'] == 'policy::prioritize_internal_linking::add_contextual_links'
-
-    result = evolve_strategy_ecosystem(db_session)
-    db_session.commit()
-
-    performance = db_session.get(StrategyPerformance, 'policy::prioritize_internal_linking::add_contextual_links')
-    assert performance is not None
-    assert performance.lifecycle_stage == 'promoted'
-    assert result['strategies_analyzed'] >= 1
+from app.events import EventType, publish_event
+from app.events.subscriber_registry import register_default_subscribers
+from app.intelligence.evolution.strategy_evolution_engine import evolve_strategies
+from app.models.causal_edge import CausalEdge
+from app.models.experiment import Experiment
+from app.models.intelligence_model_registry import IntelligenceModelRegistryState
+from app.models.policy_weights import PolicyWeight
+from app.models.strategy_evolution_log import StrategyEvolutionLog
 
 
-def test_strategy_experiment_engine_creates_variants(db_session, create_test_tenant, create_test_org) -> None:
-    tenant = create_test_tenant(name='Experiment Tenant')
-    org = create_test_org(tenant_id=tenant.id, name='Experiment Org')
-    campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Experiment Campaign', domain='experiment.example')
-    performance = StrategyPerformance(
-        strategy_id='policy::prioritize_internal_linking::add_contextual_links',
-        recommendation_type='policy::prioritize_internal_linking::add_contextual_links',
-        lifecycle_stage='promoted',
-        performance_score=0.82,
-        win_rate=0.9,
-        avg_delta=1.1,
-        sample_size=4,
-        graph_score=0.2,
-        industry_prior=0.1,
-        metadata_json={'campaign_id': campaign.id},
-    )
-    db_session.add(performance)
-    db_session.commit()
-
-    class StubTwinState:
-        campaign_id = campaign.id
-        avg_rank = 10.0
-        traffic_estimate = 100.0
-        technical_issue_count = 2
-        internal_link_count = 10
-        content_page_count = 5
-        review_velocity = 0.0
-        local_health_score = 0.0
-        momentum_score = 0.1
-
-    def build_stub(_db, _campaign_id):
-        return StubTwinState()
-
-    def simulate_stub(_twin_state, strategy_actions, **_kwargs):
-        return {
-            'predicted_rank_delta': float(strategy_actions[0].get('count', strategy_actions[0].get('pages', 1))),
-            'predicted_traffic_delta': 2.0,
-            'confidence': 0.7,
-            'expected_value': 0.9,
-        }
-
-    experiments = create_strategy_experiments(
-        db_session,
-        twin_state_builder=build_stub,
-        simulate_fn=simulate_stub,
+def test_causal_insights_generate_mutations_and_trigger_experiments(db_session) -> None:
+    db_session.add_all(
+        [
+            CausalEdge(
+                source_node='industry::local',
+                target_node='outcome::success',
+                policy_id='increase_internal_links',
+                effect_size=0.42,
+                confidence=0.91,
+                sample_size=18,
+                industry='local',
+            ),
+            CausalEdge(
+                source_node='industry::local',
+                target_node='outcome::success',
+                policy_id='add_location_pages',
+                effect_size=0.33,
+                confidence=0.82,
+                sample_size=15,
+                industry='local',
+            ),
+            CausalEdge(
+                source_node='industry::local',
+                target_node='outcome::success',
+                policy_id='weak_policy',
+                effect_size=0.05,
+                confidence=0.4,
+                sample_size=9,
+                industry='local',
+            ),
+        ]
     )
     db_session.commit()
 
-    assert experiments
-    assert db_session.query(StrategyExperiment).count() >= 1
+    result = evolve_strategies(db_session, industry='local', effect_threshold=0.2, confidence_threshold=0.7)
+    db_session.commit()
+
+    assert [item.policy_id for item in result.candidates] == ['increase_internal_links', 'add_location_pages']
+    assert [item.new_policy for item in result.mutations] == ['increase_internal_links_more', 'add_location_pages_cluster']
+    assert {item.status for item in result.registered_policies} == {'experimental'}
+    assert len(result.experiments_triggered) == 2
+
+    registry = db_session.get(IntelligenceModelRegistryState, 'policy_registry')
+    assert registry is not None
+    policies = dict(registry.payload.get('policies') or {})
+    assert policies['increase_internal_links_more']['status'] == 'experimental'
+    assert policies['add_location_pages_cluster']['parent_policy'] == 'add_location_pages'
+
+    assert db_session.query(StrategyEvolutionLog).count() == 2
+    assert db_session.query(Experiment).filter(Experiment.experiment_type == 'strategy_evolution').count() == 2
+    assert db_session.get(PolicyWeight, 'policy::increase_internal_links_more') is not None
+    assert db_session.get(PolicyWeight, 'policy::add_location_pages_cluster') is not None
+
+
+def test_evolution_engine_is_idempotent_for_existing_mutations(db_session) -> None:
+    db_session.add(
+        CausalEdge(
+            source_node='industry::local',
+            target_node='outcome::success',
+            policy_id='increase_internal_links',
+            effect_size=0.5,
+            confidence=0.9,
+            sample_size=20,
+            industry='local',
+        )
+    )
+    db_session.commit()
+
+    first = evolve_strategies(db_session, industry='local')
+    db_session.commit()
+    second = evolve_strategies(db_session, industry='local')
+    db_session.commit()
+
+    assert len(first.experiments_triggered) == 1
+    assert len(second.experiments_triggered) == 1
+    assert db_session.query(StrategyEvolutionLog).count() == 1
+    assert db_session.query(Experiment).filter(Experiment.policy_id == 'increase_internal_links_more').count() == 1
+
+
+def test_evolution_processor_runs_after_causal_learning_on_experiment_completed(db_session) -> None:
+    register_default_subscribers(force_reset=True)
+
+    publish_event(
+        EventType.EXPERIMENT_COMPLETED.value,
+        {
+            'policy_id': 'increase_internal_links',
+            'effect_size': 0.44,
+            'confidence': 0.92,
+            'industry': 'local',
+            'sample_size': 12,
+            'source_node': 'industry::local',
+            'target_node': 'outcome::success',
+        },
+    )
+
+    assert db_session.query(CausalEdge).filter(CausalEdge.policy_id == 'increase_internal_links').count() == 1
+    assert db_session.query(StrategyEvolutionLog).filter(StrategyEvolutionLog.new_policy == 'increase_internal_links_more').count() == 1
+    assert db_session.query(Experiment).filter(Experiment.policy_id == 'increase_internal_links_more').count() == 1
+
+
+def test_evolution_caps_limit_new_experiments_per_cycle(db_session) -> None:
+    db_session.add_all(
+        [
+            CausalEdge(source_node='industry::local', target_node='outcome::success', policy_id='increase_internal_links', effect_size=0.4, confidence=0.9, sample_size=10, industry='local'),
+            CausalEdge(source_node='industry::local', target_node='outcome::success', policy_id='add_location_pages', effect_size=0.35, confidence=0.88, sample_size=11, industry='local'),
+        ]
+    )
+    db_session.commit()
+
+    result = evolve_strategies(db_session, industry='local', max_new_experiments_per_cycle=1)
+    db_session.commit()
+
+    assert len(result.mutations) == 2
+    assert len(result.experiments_triggered) == 1
+    assert db_session.query(Experiment).filter(Experiment.experiment_type == 'strategy_evolution').count() == 1

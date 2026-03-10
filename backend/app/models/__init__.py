@@ -3,6 +3,8 @@ from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.causal_edge import CausalEdge
+from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
@@ -18,10 +20,13 @@ from app.models.intelligence_model_registry import IntelligenceModelRegistryStat
 from app.models.recommendation_outcome import RecommendationOutcome
 from app.models.digital_twin_simulation import DigitalTwinSimulation
 from app.models.execution_mutation import ExecutionMutation
+from app.models.experiment import Experiment, ExperimentAssignment, ExperimentOutcome
 from app.models.seo_mutation_outcome import SEOMutationOutcome
 from app.models.seo_experiment_result import SEOExperimentResult
 from app.models.keyword_daily_economics import KeywordDailyEconomics
 from app.models.keyword_market_snapshot import KeywordMarketSnapshot
+from app.models.learning_metric_snapshot import LearningMetricSnapshot
+from app.models.learning_report import LearningReport
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
 from app.models.onboarding_state import OnboardingState
@@ -43,6 +48,7 @@ from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
 from app.models.platform_provider_credential import PlatformProviderCredential
 from app.models.policy_weights import PolicyWeight
+from app.models.policy_performance import PolicyPerformance
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
 from app.models.reference_library import (
     ReferenceLibraryActivation,
@@ -57,6 +63,7 @@ from app.models.strategy_execution_key import StrategyExecutionKey
 from app.models.strategy_experiment import StrategyExperiment
 from app.models.strategy_performance import StrategyPerformance
 from app.models.strategy_automation_event import StrategyAutomationEvent
+from app.models.strategy_evolution_log import StrategyEvolutionLog
 from app.models.task_execution import TaskExecution
 from app.models.tenant import Tenant
 from app.models.threshold_bundle import ThresholdBundle
@@ -74,9 +81,13 @@ __all__ = [
     'StrategyPerformance',
     'StrategyExperiment',
     'StrategyAutomationEvent',
+    'StrategyEvolutionLog',
     'ThresholdBundle',
     'TierProfile',
     'Campaign',
+    'CausalEdge',
+    'FeatureImpactEdge',
+    'PolicyFeatureEdge',
     'CampaignDailyMetric',
     'AnalyticsDailyMetric',
     'AuditLog',
@@ -94,6 +105,8 @@ __all__ = [
     'CampaignKeyword',
     'KeywordDailyEconomics',
     'KeywordMarketSnapshot',
+    'LearningMetricSnapshot',
+    'LearningReport',
     'Ranking',
     'RankingSnapshot',
     'ReferenceLibraryVersion',
@@ -128,6 +141,7 @@ __all__ = [
     'OrganizationProviderCredential',
     'PlatformProviderCredential',
     'PolicyWeight',
+    'PolicyPerformance',
     'ProviderHealthState',
     'ProviderPolicy',
     'ProviderQuotaState',
@@ -147,6 +161,9 @@ __all__ = [
     'RecommendationOutcome',
     'DigitalTwinSimulation',
     'ExecutionMutation',
+    'Experiment',
+    'ExperimentAssignment',
+    'ExperimentOutcome',
     'SEOMutationOutcome',
     'SEOExperimentResult',
     'IntelligenceScore',

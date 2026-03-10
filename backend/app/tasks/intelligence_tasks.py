@@ -5,6 +5,7 @@ from app.intelligence.cohort_pattern_engine import discover_cohort_patterns as d
 from app.intelligence.digital_twin.models.training_pipeline import train_prediction_models
 from app.intelligence.intelligence_metrics_aggregator import compute_system_metrics
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle, run_system_cycle
+from app.intelligence.workers import run_worker
 from app.tasks.celery_app import celery_app
 
 
@@ -55,3 +56,8 @@ def train_digital_twin_models_task() -> dict:
         return train_prediction_models(db)
     finally:
         db.close()
+
+
+@celery_app.task(name='intelligence.run_worker')
+def run_intelligence_worker_task(worker_name: str, payload: dict) -> dict:
+    return run_worker(worker_name, payload)

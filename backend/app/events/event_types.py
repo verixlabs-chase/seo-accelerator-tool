@@ -15,6 +15,7 @@ class EventType(str, Enum):
     EXECUTION_FAILED = 'execution.failed'
     EXECUTION_ROLLED_BACK = 'execution.rolled_back'
     OUTCOME_RECORDED = 'outcome.recorded'
+    EXPERIMENT_COMPLETED = 'experiment.completed'
     POLICY_UPDATED = 'policy.updated'
     CAMPAIGN_PROCESSING_STARTED = 'campaign.processing.started'
     CAMPAIGN_PROCESSING_COMPLETED = 'campaign.processing.completed'

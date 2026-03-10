@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.enums import StrategyRecommendationStatus
 from app.intelligence.outcome_tracker import compute_reward, record_outcome
 from app.models.campaign import Campaign
@@ -49,3 +51,60 @@ def test_record_outcome_and_compute_reward(db_session) -> None:
 
     reward = compute_reward(100.0, 120.0)
     assert round(reward, 2) == 0.2
+
+
+
+def test_record_outcome_rolls_back_without_emitting_event_on_portfolio_failure(db_session, monkeypatch) -> None:
+    tenant = Tenant(name='Outcome Failure Tenant', status='Active')
+    db_session.add(tenant)
+    db_session.flush()
+
+    campaign = Campaign(tenant_id=tenant.id, name='Outcome Failure Campaign', domain='failure.example')
+    db_session.add(campaign)
+    db_session.flush()
+
+    rec = StrategyRecommendation(
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_type='test_recommendation',
+        rationale='test rationale',
+        confidence=0.8,
+        confidence_score=0.8,
+        evidence_json='{}',
+        rollback_plan_json='{}',
+        status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
+    )
+    db_session.add(rec)
+    db_session.commit()
+
+    published: list[tuple[str, dict]] = []
+    emitted: list[tuple[str, dict]] = []
+
+    def _publish(event_type: str, payload: dict) -> None:
+        published.append((event_type, payload))
+
+    def _emit(*args, **kwargs):
+        emitted.append((kwargs['event_type'], kwargs['payload']))
+        return None
+
+    def _fail_portfolio(*args, **kwargs):
+        raise RuntimeError('portfolio failure')
+
+    monkeypatch.setattr('app.intelligence.outcome_tracker.publish_event', _publish)
+    monkeypatch.setattr('app.intelligence.outcome_tracker.emit_event', _emit)
+    monkeypatch.setattr('app.intelligence.outcome_tracker.run_portfolio_cycle', _fail_portfolio)
+
+    with pytest.raises(RuntimeError, match='portfolio failure'):
+        record_outcome(
+            db_session,
+            recommendation_id=rec.id,
+            campaign_id=campaign.id,
+            metric_before=100.0,
+            metric_after=120.0,
+        )
+
+    db_session.rollback()
+
+    assert published == []
+    assert emitted == []
+    assert db_session.query(RecommendationOutcome).filter(RecommendationOutcome.recommendation_id == rec.id).count() == 0
