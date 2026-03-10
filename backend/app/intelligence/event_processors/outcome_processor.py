@@ -59,3 +59,13 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
     finally:
         session.close()
 
+def record_seo_flight(*args, **kwargs):
+    '''
+    Compatibility stub for legacy tests.
+
+    The old SEO flight recorder was removed when the system moved
+    to the knowledge graph learning spine. Tests may still
+    monkeypatch this function.
+    '''
+    return []
+
