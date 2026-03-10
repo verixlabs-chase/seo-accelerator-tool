@@ -15,7 +15,7 @@ class StrategyRecommendation(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
-    recommendation_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    recommendation_type: Mapped[str] = mapped_column(Text, nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)

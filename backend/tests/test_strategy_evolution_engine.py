@@ -4,21 +4,21 @@ from app.enums import StrategyRecommendationStatus
 from app.intelligence.strategy_evolution.strategy_experiment_engine import create_strategy_experiments
 from app.intelligence.strategy_evolution.strategy_lifecycle_manager import evolve_strategy_ecosystem
 from app.intelligence.strategy_evolution.strategy_performance_analyzer import analyze_strategy_performance
-from app.models.campaign import Campaign
 from app.models.intelligence import StrategyRecommendation
 from app.models.recommendation_outcome import RecommendationOutcome
 from app.models.strategy_experiment import StrategyExperiment
 from app.models.strategy_performance import StrategyPerformance
+from tests.conftest import create_test_campaign
 
 
-def test_strategy_performance_analysis_and_lifecycle(db_session) -> None:
-    campaign = Campaign(tenant_id='tenant-1', organization_id=None, portfolio_id=None, sub_account_id=None, name='Evolution Campaign', domain='evolution.example')
-    db_session.add(campaign)
-    db_session.flush()
+def test_strategy_performance_analysis_and_lifecycle(db_session, create_test_tenant, create_test_org) -> None:
+    tenant = create_test_tenant(tenant_id='tenant-1', name='Evolution Tenant')
+    org = create_test_org(organization_id=tenant.id, tenant_id=tenant.id, name='Evolution Org')
+    campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Evolution Campaign', domain='evolution.example')
 
     for idx, delta in enumerate([3.0, 2.5, 2.0], start=1):
         recommendation = StrategyRecommendation(
-            tenant_id='tenant-1',
+            tenant_id=tenant.id,
             campaign_id=campaign.id,
             recommendation_type='policy::prioritize_internal_linking::add_contextual_links',
             rationale='test',
@@ -57,7 +57,10 @@ def test_strategy_performance_analysis_and_lifecycle(db_session) -> None:
     assert result['strategies_analyzed'] >= 1
 
 
-def test_strategy_experiment_engine_creates_variants(db_session) -> None:
+def test_strategy_experiment_engine_creates_variants(db_session, create_test_tenant, create_test_org) -> None:
+    tenant = create_test_tenant(name='Experiment Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Experiment Org')
+    campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Experiment Campaign', domain='experiment.example')
     performance = StrategyPerformance(
         strategy_id='policy::prioritize_internal_linking::add_contextual_links',
         recommendation_type='policy::prioritize_internal_linking::add_contextual_links',
@@ -68,13 +71,13 @@ def test_strategy_experiment_engine_creates_variants(db_session) -> None:
         sample_size=4,
         graph_score=0.2,
         industry_prior=0.1,
-        metadata_json={'campaign_id': 'camp-1'},
+        metadata_json={'campaign_id': campaign.id},
     )
     db_session.add(performance)
     db_session.commit()
 
     class StubTwinState:
-        campaign_id = 'camp-1'
+        campaign_id = campaign.id
         avg_rank = 10.0
         traffic_estimate = 100.0
         technical_issue_count = 2

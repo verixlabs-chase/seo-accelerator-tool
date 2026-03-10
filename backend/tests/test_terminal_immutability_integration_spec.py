@@ -38,6 +38,10 @@ def _seed_strategy_dependencies(db_session) -> None:
 
 
 def test_terminal_record_update_blocked_by_trigger(db_session) -> None:
+    dialect = db_session.bind.dialect.name.lower() if db_session.bind is not None else ""
+    if dialect != "postgresql":
+        pytest.skip("Terminal immutability trigger enforcement is PostgreSQL-only")
+
     _seed_strategy_dependencies(db_session)
     row = StrategyRecommendation(
         tenant_id="tenant-1",

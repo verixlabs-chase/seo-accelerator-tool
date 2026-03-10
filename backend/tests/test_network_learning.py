@@ -5,7 +5,6 @@ from app.intelligence.network_learning.causal_outcome_analyzer import analyze_ca
 from app.intelligence.network_learning.global_intelligence_network import run_global_intelligence_network
 from app.intelligence.network_learning.industry_similarity_engine import compute_industry_similarity_matrix, similarity_allows_transfer
 from app.intelligence.network_learning.seo_flight_recorder import record_seo_flight
-from app.models.campaign import Campaign
 from app.models.execution_mutation import ExecutionMutation
 from app.models.industry_intelligence import IndustryIntelligenceModel
 from app.models.recommendation_execution import RecommendationExecution
@@ -13,14 +12,15 @@ from app.models.recommendation_outcome import RecommendationOutcome
 from app.models.seo_mutation_outcome import SEOMutationOutcome
 from app.models.strategy_experiment import StrategyExperiment
 from app.models.intelligence import StrategyRecommendation
+from tests.conftest import create_test_campaign
 
 
-def test_seo_flight_recorder_persists_mutation_outcomes(db_session) -> None:
-    campaign = Campaign(tenant_id='tenant-1', organization_id=None, portfolio_id=None, sub_account_id=None, name='Flight Campaign', domain='flight.example')
-    db_session.add(campaign)
-    db_session.flush()
+def test_seo_flight_recorder_persists_mutation_outcomes(db_session, create_test_tenant, create_test_org) -> None:
+    tenant = create_test_tenant(tenant_id='tenant-1', name='Flight Tenant')
+    org = create_test_org(organization_id=tenant.id, tenant_id=tenant.id, name='Flight Org')
+    campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Flight Campaign', domain='flight.example')
     recommendation = StrategyRecommendation(
-        tenant_id='tenant-1',
+        tenant_id=tenant.id,
         campaign_id=campaign.id,
         recommendation_type='policy::prioritize_internal_linking::add_contextual_links',
         rationale='test',
@@ -75,11 +75,14 @@ def test_network_learning_respects_industry_similarity_thresholds(db_session) ->
     assert findings == []
 
 
-def test_global_network_syncs_experiment_results(db_session) -> None:
+def test_global_network_syncs_experiment_results(db_session, create_test_tenant, create_test_org) -> None:
+    tenant = create_test_tenant(name='Network Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Network Org')
+    campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Network Campaign', domain='network.example')
     experiment = StrategyExperiment(
         strategy_id='policy::prioritize_internal_linking::add_contextual_links',
         variant_strategy_id='policy::prioritize_internal_linking::add_contextual_links::variant_1',
-        campaign_id=None,
+        campaign_id=campaign.id,
         hypothesis='test',
         mutation_payload=[{'type': 'internal_link', 'count': 5}],
         predicted_rank_delta=1.0,

@@ -1,19 +1,19 @@
 from app.enums import StrategyRecommendationStatus
 from app.intelligence.policy_engine import score_policy
 from app.intelligence.policy_update_engine import load_policy_weights, update_policy_priority_weights
-from app.models.campaign import Campaign
 from app.models.intelligence import StrategyRecommendation
 from app.models.recommendation_outcome import RecommendationOutcome
+from tests.conftest import create_test_campaign
 
 
-def test_policy_updates_persist_and_influence_scoring(db_session) -> None:
-    campaign = Campaign(tenant_id='tenant-1', organization_id=None, portfolio_id=None, sub_account_id=None, name='Test Campaign', domain='example.com')
-    db_session.add(campaign)
-    db_session.flush()
+def test_policy_updates_persist_and_influence_scoring(db_session, create_test_tenant, create_test_org) -> None:
+    tenant = create_test_tenant(tenant_id='tenant-1', name='Policy Tenant')
+    org = create_test_org(organization_id=tenant.id, tenant_id=tenant.id, name='Policy Org')
+    campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Test Campaign', domain='example.com')
 
     recommendation = StrategyRecommendation(
         campaign_id=campaign.id,
-        tenant_id='tenant-1',
+        tenant_id=tenant.id,
         recommendation_type='policy::prioritize_internal_linking::add_contextual_links',
         rationale='test',
         confidence=0.8,
