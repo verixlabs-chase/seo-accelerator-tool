@@ -62,6 +62,7 @@ from app.models.sub_account import SubAccount  # noqa: F401
 from app.models.tenant import Tenant
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot  # noqa: F401
 from app.models.user import User
+from tests.fixtures.intelligence_graph_factory import create_intelligence_graph
 from tests.helpers.economic_setup import ensure_test_tier_profile, provision_test_organization
 
 
@@ -499,6 +500,12 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
             except PermissionError:
                 time.sleep(0.05)
 
+
+
+
+@pytest.fixture()
+def intelligence_graph(db_session: Session) -> dict[str, object]:
+    return create_intelligence_graph(db_session)
 
 @pytest.fixture()
 def client(db_session: Session) -> Generator[TestClient, None, None]:

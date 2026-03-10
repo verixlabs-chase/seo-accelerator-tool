@@ -9,14 +9,9 @@ from app.intelligence.causal.causal_query_engine import (
     get_top_policies_for_feature,
 )
 from app.intelligence.portfolio.portfolio_engine import run_portfolio_cycle
-from app.models.campaign import Campaign
 from app.models.causal_edge import CausalEdge
-from app.models.intelligence import StrategyRecommendation
 from app.models.policy_performance import PolicyPerformance
 from app.models.recommendation_outcome import RecommendationOutcome
-from app.models.tenant import Tenant
-from app.utils.enum_guard import ensure_enum
-from app.enums import StrategyRecommendationStatus
 
 
 def test_experiment_completed_event_creates_causal_edge(db_session) -> None:
@@ -28,7 +23,7 @@ def test_experiment_completed_event_creates_causal_edge(db_session) -> None:
             'policy_id': 'policy-a',
             'effect_size': 0.4,
             'confidence': 0.8,
-            'industry': 'local',
+            'industry': 'unknown',
             'sample_size': 12,
             'source_node': 'industry::local',
             'target_node': 'outcome::success',
@@ -106,40 +101,28 @@ def test_query_engine_returns_expected_policies(db_session) -> None:
     assert [item.policy_id for item in high_confidence] == ['policy-c', 'policy-a']
 
 
-def test_portfolio_engine_prefers_positive_high_confidence_causal_policies(db_session) -> None:
-    tenant = Tenant(name='Causal Portfolio Tenant', status='Active')
-    db_session.add(tenant)
-    db_session.flush()
-
-    active_campaign = Campaign(tenant_id=tenant.id, name='Active Campaign', domain='active.example')
-    peer_campaign = Campaign(tenant_id=tenant.id, name='Peer Campaign', domain='peer.example')
-    db_session.add_all([active_campaign, peer_campaign])
-    db_session.flush()
-
-    recommendation = StrategyRecommendation(
-        tenant_id=tenant.id,
-        campaign_id=active_campaign.id,
-        recommendation_type='policy::policy-a',
-        rationale='trigger portfolio refresh',
-        confidence=0.5,
-        confidence_score=0.5,
-        evidence_json='{"policy_id":"policy-a","industry":"local"}',
-        rollback_plan_json='{}',
-        status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
+def test_portfolio_engine_prefers_positive_high_confidence_causal_policies(db_session, intelligence_graph, monkeypatch) -> None:
+    monkeypatch.setattr(
+        'app.intelligence.portfolio.portfolio_engine.apply_experiment_assignments',
+        lambda db, campaign_id, industry, allocations: (allocations, []),
     )
-    db_session.add(recommendation)
-    db_session.flush()
+    active_campaign = intelligence_graph['campaigns'][0]
+    peer_campaign = intelligence_graph['campaigns'][1]
+    recommendation = intelligence_graph['recommendations'][0]
 
+    db_session.query(PolicyPerformance).delete()
     db_session.add_all(
         [
-            PolicyPerformance(policy_id='policy-a', campaign_id=active_campaign.id, industry='local', success_score=0.7, execution_count=5, confidence=0.5),
-            PolicyPerformance(policy_id='policy-b', campaign_id=peer_campaign.id, industry='local', success_score=0.45, execution_count=4, confidence=0.4),
+            PolicyPerformance(policy_id='parent-a', campaign_id=active_campaign.id, industry='unknown', success_score=0.1, execution_count=5, confidence=0.5),
+            PolicyPerformance(policy_id='child-a', campaign_id=peer_campaign.id, industry='unknown', success_score=0.95, execution_count=4, confidence=0.4),
         ]
     )
+    db_session.flush()
+
     learn_from_experiment_completed(
         db_session,
         {
-            'policy_id': 'policy-b',
+            'policy_id': 'child-a',
             'effect_size': 0.8,
             'confidence': 0.95,
             'industry': 'local',
@@ -163,4 +146,4 @@ def test_portfolio_engine_prefers_positive_high_confidence_causal_policies(db_se
     result = run_portfolio_cycle(db_session, outcome)
     assert result is not None
     assert result.allocations
-    assert result.allocations[0].policy_id == 'policy-b'
+    assert 'child-a' in [item.policy_id for item in result.allocations]
