@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     max_request_body_bytes: int = 2_000_000
     rate_limit_requests_per_minute: int = 60
     rate_limit_enabled: bool = False
+    max_concurrent_requests: int = 2000
+    max_requests_per_tenant: int = 200
+    max_queue_depth: int = 10000
+    max_worker_inflight: int = 2000
+    knowledge_graph_batch_size: int = 100
+    knowledge_graph_flush_interval_ms: int = 500
+    event_stream_batch_size: int = 100
+    campaign_execution_lock_timeout_seconds: int = 30
     queue_backpressure_threshold: int = 100
     queue_backpressure_enabled: bool = False
     shadow_replay_enabled: bool = True
@@ -177,4 +185,5 @@ def get_settings() -> Settings:
             competitor_provider_backend="fixture",
         )
     return Settings()
+
 

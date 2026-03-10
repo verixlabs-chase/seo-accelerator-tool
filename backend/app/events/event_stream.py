@@ -12,6 +12,7 @@ from typing import Any, Callable
 from redis.exceptions import RedisError
 
 from app.core.config import get_settings
+from app.core.metrics import event_batch_latency_seconds
 from app.db.redis_client import get_redis_client
 
 logger = logging.getLogger('lsos.intelligence.event_stream')
@@ -367,3 +368,25 @@ def _record_to_dict(record: EventRecord) -> dict[str, Any]:
         'attempts': record.attempts,
         'created_at': record.created_at,
     }
+
+
+def consume_event_batches(
+    handler: EventHandler,
+    *,
+    consumer_name: str = 'default',
+    batch_size: int | None = None,
+    max_batches: int = 1,
+) -> list[list[str]]:
+    configured_size = int(batch_size or get_settings().event_stream_batch_size)
+    effective_batch_size = max(50, min(configured_size, 200))
+    batches: list[list[str]] = []
+    for _ in range(max(1, int(max_batches))):
+        started_at = datetime.now(UTC)
+        handled = consume_events(handler, consumer_name=consumer_name, max_count=effective_batch_size)
+        if not handled:
+            break
+        elapsed = max((datetime.now(UTC) - started_at).total_seconds(), 0.0)
+        event_batch_latency_seconds.labels(consumer_name=consumer_name).observe(elapsed)
+        batches.append(handled)
+    return batches
+

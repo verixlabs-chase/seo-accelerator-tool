@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+import time
+
 from app.db.session import SessionLocal
 from app.intelligence.cohort_pattern_engine import discover_cohort_patterns as discover_learning_cohort_patterns
 from app.intelligence.digital_twin.models.training_pipeline import train_prediction_models
@@ -7,6 +10,10 @@ from app.intelligence.intelligence_metrics_aggregator import compute_system_metr
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle, run_system_cycle
 from app.intelligence.workers import run_worker
 from app.tasks.celery_app import celery_app
+
+
+logger = logging.getLogger('lsos.intelligence.tasks')
+_WORKER_RETRY_BACKOFF_SECONDS = (0.1, 0.2, 0.4)
 
 
 @celery_app.task(name='intelligence.run_campaign_cycle')
@@ -60,4 +67,18 @@ def train_digital_twin_models_task() -> dict:
 
 @celery_app.task(name='intelligence.run_worker')
 def run_intelligence_worker_task(worker_name: str, payload: dict) -> dict:
-    return run_worker(worker_name, payload)
+    last_error: Exception | None = None
+    for attempt, delay in enumerate((0.0, *_WORKER_RETRY_BACKOFF_SECONDS), start=1):
+        if delay:
+            time.sleep(delay)
+        try:
+            return run_worker(worker_name, payload)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            logger.exception(
+                'intelligence_worker_failure',
+                extra={'worker_name': worker_name, 'attempt': attempt},
+            )
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f'Worker failed without error: {worker_name}')

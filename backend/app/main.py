@@ -17,12 +17,13 @@ from app.api.v1 import google_oauth
 from app.api.v1.router import control_plane_api_router, tenant_api_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
-from app.core.metrics import render_metrics
+from app.core.metrics import internal_metrics_snapshot, render_metrics
 from app.core.middleware import (
     MetricsMiddleware,
     RateLimitMiddleware,
     RequestLoggingMiddleware,
     RequestSizeLimitMiddleware,
+    RequestThrottleMiddleware,
     SecurityHeadersMiddleware,
 )
 from app.core.tracing import setup_tracing
@@ -124,6 +125,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(
+    RequestThrottleMiddleware,
+    max_concurrent_requests=settings.max_concurrent_requests,
+    max_requests_per_tenant=settings.max_requests_per_tenant,
+)
 app.add_middleware(RequestSizeLimitMiddleware, max_request_body_bytes=settings.max_request_body_bytes)
 app.add_middleware(
     RateLimitMiddleware,
@@ -165,6 +171,11 @@ if settings.metrics_enabled:
         return Response(content=payload, media_type=content_type)
 
 
+
+@app.get("/internal/metrics", include_in_schema=False)
+async def internal_metrics() -> JSONResponse:
+    return JSONResponse(content=internal_metrics_snapshot())
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     message = exc.detail if isinstance(exc.detail, str) else "Request failed"
@@ -200,3 +211,5 @@ async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSON
         code="internal_server_error",
     )
     return JSONResponse(status_code=500, content=payload)
+
+

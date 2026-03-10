@@ -12,6 +12,7 @@ class PolicyPerformance(Base):
     __table_args__ = (
         UniqueConstraint('policy_id', 'campaign_id', 'industry', name='uq_policy_performance_scope'),
         Index('ix_policy_performance_industry_success', 'industry', 'success_score'),
+        Index('ix_policy_performance_policy_campaign', 'policy_id', 'campaign_id'),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))

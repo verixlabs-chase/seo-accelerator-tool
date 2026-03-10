@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import UTC, datetime
 from hashlib import sha256
 import re
@@ -26,6 +27,7 @@ from app.intelligence.recommendation_execution_engine import execute_recommendat
 from app.intelligence.strategy_transfer_engine import transfer_strategies
 from app.intelligence.signal_assembler import assemble_signals
 from app.intelligence.temporal_ingestion import write_temporal_signals
+from app.core.metrics import campaign_execution_lock_wait
 from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.models.intelligence import StrategyRecommendation
@@ -52,8 +54,30 @@ PIPELINE_STAGES: tuple[str, ...] = (
 # In-memory stage timings keyed by campaign id.
 pipeline_timings: dict[str, dict[str, float]] = {}
 
+_CAMPAIGN_LOCKS: dict[str, threading.Lock] = {}
+_CAMPAIGN_LOCKS_GUARD = threading.RLock()
+
+
+def _campaign_execution_lock(campaign_id: str) -> threading.Lock:
+    with _CAMPAIGN_LOCKS_GUARD:
+        lock = _CAMPAIGN_LOCKS.get(campaign_id)
+        if lock is None:
+            lock = threading.Lock()
+            _CAMPAIGN_LOCKS[campaign_id] = lock
+        return lock
+
 
 def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str, Any]:
+    lock = _campaign_execution_lock(campaign_id)
+    if not lock.acquire(blocking=False):
+        campaign_execution_lock_wait.labels(campaign_id=campaign_id).set(1)
+        return {
+            'campaign_id': campaign_id,
+            'pipeline_version': PIPELINE_VERSION,
+            'status': 'deferred',
+            'reason': 'campaign_cycle_already_running',
+        }
+    campaign_execution_lock_wait.labels(campaign_id=campaign_id).set(0)
     owns_session = db is None
     session = db or SessionLocal()
     try:
@@ -195,6 +219,7 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             },
         }
     finally:
+        lock.release()
         if owns_session:
             session.close()
 
@@ -684,3 +709,5 @@ def _current_window(now: datetime):
     from app.services.strategy_engine.schemas import StrategyWindow
 
     return StrategyWindow(date_from=now.replace(day=1), date_to=now)
+
+

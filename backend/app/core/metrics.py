@@ -1,4 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+from typing import Any
 
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
@@ -74,6 +76,68 @@ tasks_in_progress = Gauge(
     ["queue_name"],
 )
 
+active_api_requests = Gauge(
+    "active_api_requests",
+    "Current number of active API requests.",
+)
+
+active_api_requests_by_tenant = Gauge(
+    "active_api_requests_by_tenant",
+    "Current number of active API requests per tenant.",
+    ["tenant_id"],
+)
+
+worker_queue_depth = Gauge(
+    "worker_queue_depth",
+    "Current worker queue depth.",
+    ["worker_name"],
+)
+
+worker_inflight_jobs = Gauge(
+    "worker_inflight_jobs",
+    "Current in-flight jobs per worker.",
+    ["worker_name"],
+)
+
+graph_write_batch_size = Gauge(
+    "graph_write_batch_size",
+    "Number of knowledge graph edge writes flushed per batch.",
+)
+
+event_batch_latency_seconds = Histogram(
+    "event_batch_latency_seconds",
+    "Latency for processing event batches.",
+    ["consumer_name"],
+)
+
+campaign_execution_lock_wait = Gauge(
+    "campaign_execution_lock_wait",
+    "Current campaign execution lock wait state.",
+    ["campaign_id"],
+)
+
 
 def render_metrics() -> tuple[bytes, str]:
     return generate_latest(), CONTENT_TYPE_LATEST
+
+
+def internal_metrics_snapshot() -> dict[str, Any]:
+    return {
+        'active_api_requests': _gauge_value(active_api_requests),
+        'worker_queue_depth': _collect_labeled_gauge(worker_queue_depth),
+        'worker_inflight_jobs': _collect_labeled_gauge(worker_inflight_jobs),
+        'graph_write_batch_size': _gauge_value(graph_write_batch_size),
+        'campaign_execution_lock_wait': _collect_labeled_gauge(campaign_execution_lock_wait),
+    }
+
+
+def _gauge_value(metric: Gauge) -> float:
+    return float(metric._value.get())  # type: ignore[attr-defined]
+
+
+def _collect_labeled_gauge(metric: Gauge) -> dict[str, float]:
+    samples: dict[str, float] = {}
+    for sample in metric.collect()[0].samples:
+        labels = '|'.join(f'{key}={value}' for key, value in sorted(sample.labels.items())) or 'default'
+        samples[labels] = float(sample.value)
+    return samples

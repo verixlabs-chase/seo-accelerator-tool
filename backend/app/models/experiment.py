@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -22,7 +22,10 @@ class Experiment(Base):
 
 class ExperimentAssignment(Base):
     __tablename__ = 'experiment_assignments'
-    __table_args__ = (UniqueConstraint('experiment_id', 'campaign_id', name='uq_experiment_assignment_campaign'),)
+    __table_args__ = (
+        UniqueConstraint('experiment_id', 'campaign_id', name='uq_experiment_assignment_campaign'),
+        Index('ix_experiment_assignments_campaign_policy_created', 'campaign_id', 'assigned_policy_id', 'created_at'),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     experiment_id: Mapped[str] = mapped_column(String(36), ForeignKey('experiments.experiment_id', ondelete='CASCADE'), nullable=False, index=True)
@@ -35,7 +38,10 @@ class ExperimentAssignment(Base):
 
 class ExperimentOutcome(Base):
     __tablename__ = 'experiment_outcomes'
-    __table_args__ = (UniqueConstraint('outcome_id', name='uq_experiment_outcome_source'),)
+    __table_args__ = (
+        UniqueConstraint('outcome_id', name='uq_experiment_outcome_source'),
+        Index('ix_experiment_outcomes_experiment_measured', 'experiment_id', 'measured_at'),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     experiment_id: Mapped[str] = mapped_column(String(36), ForeignKey('experiments.experiment_id', ondelete='CASCADE'), nullable=False, index=True)

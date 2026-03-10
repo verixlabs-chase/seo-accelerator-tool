@@ -27,6 +27,7 @@ class KnowledgeEdge(Base):
     __table_args__ = (
         UniqueConstraint('source_node_id', 'target_node_id', 'edge_type', 'industry', name='uq_knowledge_edges_identity'),
         Index('ix_knowledge_edges_industry_confidence', 'industry', 'confidence'),
+        Index('ix_knowledge_edges_source_type_confidence', 'source_node_id', 'edge_type', 'confidence'),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
