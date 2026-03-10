@@ -3,7 +3,7 @@ from app.intelligence.digital_twin.strategy_simulation_engine import simulate_st
 from app.intelligence.digital_twin.twin_state_model import DigitalTwinState
 
 
-def test_simulate_strategy_is_deterministic() -> None:
+def test_simulate_strategy_is_deterministic(db_session) -> None:
     reset_model_registry()
 
     twin_state = DigitalTwinState(

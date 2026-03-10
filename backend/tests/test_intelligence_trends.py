@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from app.enums import StrategyRecommendationStatus
 from app.intelligence.intelligence_metrics_aggregator import compute_campaign_trends, compute_system_trends
@@ -36,7 +36,7 @@ def test_campaign_trends_are_deterministic(db_session, create_test_tenant, creat
     db_session.add(recommendation)
     db_session.flush()
 
-    today = date.today()
+    today = datetime.now(UTC).date()
     db_session.add_all(
         [
             IntelligenceMetricsSnapshot(
@@ -96,7 +96,7 @@ def test_system_trends_include_required_rates(db_session, create_test_tenant, cr
     db_session.add(
         IntelligenceMetricsSnapshot(
             campaign_id=campaign.id,
-            metric_date=date.today(),
+            metric_date=datetime.now(UTC).date(),
             signals_processed=3,
             features_computed=2,
             patterns_detected=1,

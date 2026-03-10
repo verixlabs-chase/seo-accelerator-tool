@@ -3,8 +3,8 @@
 ## Current Implemented Slice
 - Reference Library persistence model and migration (`reference_library_versions`, `reference_library_artifacts`, `reference_library_validation_runs`, `reference_library_activations`).
 - Loader service that ingests CWV metrics and performance recommendations from:
-  - `Docs/TXT Governing Docs/Future Enhancements/reference_library/metrics/core_web_vitals.json`
-  - `Docs/TXT Governing Docs/Future Enhancements/reference_library/recommendations/perf_recommendations.json`
+  - `backend/reference_library/metrics/core_web_vitals.json`
+  - `backend/reference_library/recommendations/perf_recommendations.json`
 - Validation rules enforcing:
   - metric schema integrity
   - threshold fields presence (`good`, `needs_improvement`, `units`)

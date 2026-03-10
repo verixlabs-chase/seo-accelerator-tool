@@ -3,7 +3,7 @@ from app.intelligence.model_registry import load_model_parameters, register_mode
 from app.intelligence.predictive_models.prediction_registry import get_model_parameters as get_predictive_registry
 
 
-def test_unified_model_registry_updates_shared_state() -> None:
+def test_unified_model_registry_updates_shared_state(db_session) -> None:
     register_model('forecast_model', 'v2', {'bias': 0.2, 'momentum_weight': 0.9})
     update_model_parameters('confidence_estimator', {'base': 0.55, 'minimum': 0.1}, version='v3')
 

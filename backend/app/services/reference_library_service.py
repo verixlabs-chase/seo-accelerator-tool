@@ -31,7 +31,7 @@ def _seed_dir() -> Path:
     settings = get_settings()
     if settings.reference_library_seed_path.strip():
         return Path(settings.reference_library_seed_path).expanduser().resolve()
-    return _root_dir() / "Docs" / "TXT Governing Docs" / "Future Enhancements" / "reference_library"
+    return _root_dir() / "backend" / "reference_library"
 
 
 def _seed_file(relative: str) -> Path:

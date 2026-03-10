@@ -2,7 +2,7 @@ from app.intelligence.digital_twin.strategy_optimizer import optimize_strategy
 from app.intelligence.digital_twin.twin_state_model import DigitalTwinState
 
 
-def test_optimize_strategy_selects_highest_expected_value() -> None:
+def test_optimize_strategy_selects_highest_expected_value(db_session) -> None:
     twin_state = DigitalTwinState(
         campaign_id='c1',
         avg_rank=12.0,
