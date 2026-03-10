@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.events import EventType, publish_event
 from app.events.subscriber_registry import register_default_subscribers
 from app.intelligence.evolution.strategy_evolution_engine import evolve_strategies
+from app.intelligence.causal.causal_learning_engine import learn_from_experiment_completed
 from app.models.causal_edge import CausalEdge
 from app.models.experiment import Experiment
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState
@@ -12,13 +13,12 @@ from app.models.strategy_evolution_log import StrategyEvolutionLog
 
 def test_causal_insights_generate_mutations_and_trigger_experiments(db_session, intelligence_graph) -> None:
     _ = intelligence_graph
-    db_session.add_all(
-        [
-            CausalEdge(source_node='industry::local', target_node='outcome::success', policy_id='increase_internal_links', effect_size=0.42, confidence=0.91, sample_size=18, industry='local'),
-            CausalEdge(source_node='industry::local', target_node='outcome::success', policy_id='add_location_pages', effect_size=0.33, confidence=0.82, sample_size=15, industry='local'),
-            CausalEdge(source_node='industry::local', target_node='outcome::success', policy_id='weak_policy', effect_size=0.05, confidence=0.4, sample_size=9, industry='local'),
-        ]
-    )
+    for payload in [
+        {'policy_id': 'increase_internal_links', 'effect_size': 0.42, 'confidence': 0.91, 'sample_size': 18, 'industry': 'local', 'source_node': 'internal_link_ratio', 'target_node': 'outcome::success'},
+        {'policy_id': 'add_location_pages', 'effect_size': 0.33, 'confidence': 0.82, 'sample_size': 15, 'industry': 'local', 'source_node': 'content_growth_rate', 'target_node': 'outcome::success'},
+        {'policy_id': 'weak_policy', 'effect_size': 0.05, 'confidence': 0.4, 'sample_size': 9, 'industry': 'local', 'source_node': 'industry::local', 'target_node': 'outcome::success'},
+    ]:
+        learn_from_experiment_completed(db_session, payload)
     db_session.commit()
 
     result = evolve_strategies(db_session, industry='local', effect_threshold=0.2, confidence_threshold=0.7)
@@ -43,16 +43,17 @@ def test_causal_insights_generate_mutations_and_trigger_experiments(db_session, 
 
 def test_evolution_engine_is_idempotent_for_existing_mutations(db_session, intelligence_graph) -> None:
     _ = intelligence_graph
-    db_session.add(
-        CausalEdge(
-            source_node='industry::local',
-            target_node='outcome::success',
-            policy_id='increase_internal_links',
-            effect_size=0.5,
-            confidence=0.9,
-            sample_size=20,
-            industry='local',
-        )
+    learn_from_experiment_completed(
+        db_session,
+        {
+            'policy_id': 'increase_internal_links',
+            'effect_size': 0.5,
+            'confidence': 0.9,
+            'sample_size': 20,
+            'industry': 'local',
+            'source_node': 'internal_link_ratio',
+            'target_node': 'outcome::success',
+        },
     )
     db_session.commit()
 
@@ -90,12 +91,11 @@ def test_evolution_processor_runs_after_causal_learning_on_experiment_completed(
 
 def test_evolution_caps_limit_new_experiments_per_cycle(db_session, intelligence_graph) -> None:
     _ = intelligence_graph
-    db_session.add_all(
-        [
-            CausalEdge(source_node='industry::local', target_node='outcome::success', policy_id='increase_internal_links', effect_size=0.4, confidence=0.9, sample_size=10, industry='local'),
-            CausalEdge(source_node='industry::local', target_node='outcome::success', policy_id='add_location_pages', effect_size=0.35, confidence=0.88, sample_size=11, industry='local'),
-        ]
-    )
+    for payload in [
+        {'policy_id': 'increase_internal_links', 'effect_size': 0.4, 'confidence': 0.9, 'sample_size': 10, 'industry': 'local', 'source_node': 'internal_link_ratio', 'target_node': 'outcome::success'},
+        {'policy_id': 'add_location_pages', 'effect_size': 0.35, 'confidence': 0.88, 'sample_size': 11, 'industry': 'local', 'source_node': 'content_growth_rate', 'target_node': 'outcome::success'},
+    ]:
+        learn_from_experiment_completed(db_session, payload)
     db_session.commit()
 
     result = evolve_strategies(db_session, industry='local', max_new_experiments_per_cycle=1)

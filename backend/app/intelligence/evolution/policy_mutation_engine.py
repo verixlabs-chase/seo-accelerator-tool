@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.intelligence.evolution.evolution_models import PolicyMutationCandidate, RegisteredPolicyEntry
+from app.intelligence.knowledge_graph.update_engine import record_policy_evolution
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState
 from app.models.policy_weights import PolicyWeight
 from app.models.strategy_evolution_log import StrategyEvolutionLog
@@ -25,6 +26,14 @@ def register_mutated_policies(db: Session, mutations: list[PolicyMutationCandida
     for mutation in mutations:
         row = _ensure_evolution_log(db, mutation)
         _ = row
+        record_policy_evolution(
+            db,
+            parent_policy=mutation.parent_policy,
+            child_policy=mutation.new_policy,
+            industry=mutation.industry,
+            confidence=mutation.confidence,
+            effect_size=mutation.expected_effect,
+        )
         policies[mutation.new_policy] = {
             'parent_policy': mutation.parent_policy,
             'mutation_type': mutation.mutation_type,

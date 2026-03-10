@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.intelligence.causal.causal_query_engine import get_policy_preference_map
+from app.intelligence.knowledge_graph.query_engine import get_policy_preference_map
 from app.intelligence.experiments.experiment_engine import apply_experiment_assignments
 from app.intelligence.portfolio.policy_performance import update_policy_performance
 from app.intelligence.portfolio.portfolio_models import PolicyPerformanceSnapshot, PortfolioAllocationResult

@@ -1,4 +1,5 @@
 from app.models.audit_log import AuditLog
+from app.events.outbox.event_outbox import EventOutbox
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact
 from app.models.business_location import BusinessLocation
@@ -25,6 +26,7 @@ from app.models.seo_mutation_outcome import SEOMutationOutcome
 from app.models.seo_experiment_result import SEOExperimentResult
 from app.models.keyword_daily_economics import KeywordDailyEconomics
 from app.models.keyword_market_snapshot import KeywordMarketSnapshot
+from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode
 from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.learning_report import LearningReport
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot
@@ -91,6 +93,7 @@ __all__ = [
     'CampaignDailyMetric',
     'AnalyticsDailyMetric',
     'AuditLog',
+    'EventOutbox',
     'TaskExecution',
     'Page',
     'CrawlRun',
@@ -105,6 +108,8 @@ __all__ = [
     'CampaignKeyword',
     'KeywordDailyEconomics',
     'KeywordMarketSnapshot',
+    'KnowledgeNode',
+    'KnowledgeEdge',
     'LearningMetricSnapshot',
     'LearningReport',
     'Ranking',

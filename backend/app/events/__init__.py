@@ -1,4 +1,4 @@
-from app.events.emitter import emit_event
+from app.events.emitter import emit_event, outbox_event_write
 from app.events.event_bus import publish_event, reset_subscribers, subscribe, unsubscribe
 from app.events.event_stream import (
     acknowledge_event,
@@ -12,6 +12,7 @@ from app.events.event_types import EventType
 
 __all__ = [
     'emit_event',
+    'outbox_event_write',
     'EventType',
     'publish_event',
     'subscribe',

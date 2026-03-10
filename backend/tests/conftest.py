@@ -37,6 +37,7 @@ from app.models.intelligence import AnomalyEvent, CampaignMilestone, Intelligenc
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
 from app.models.learning_metric_snapshot import LearningMetricSnapshot  # noqa: F401
 from app.models.learning_report import LearningReport  # noqa: F401
+from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode  # noqa: F401
 from app.models.organization import Organization  # noqa: F401
 from app.models.industry_intelligence import IndustryIntelligenceModel  # noqa: F401
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState  # noqa: F401
@@ -124,6 +125,8 @@ def _verify_required_tables(database_url: str) -> None:
             "policy_feature_edges",
             "learning_metrics",
             "learning_reports",
+            "knowledge_nodes",
+            "knowledge_edges",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.enums import StrategyRecommendationStatus
-from app.events import emit_event
+from app.events.emitter import outbox_event_write
 from app.intelligence.execution_risk_scoring import score_execution_risk
 from app.intelligence.executors.registry import get_executor
 from app.intelligence.executors.wordpress_plugin import WordPressExecutionError, apply_mutations, rollback_mutations
@@ -107,7 +107,7 @@ def schedule_execution(recommendation_id: str, db: Session | None = None) -> Rec
         if initial_status == 'scheduled':
             _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.SCHEDULED)
         session.flush()
-        _emit_execution_event(session, recommendation.tenant_id, 'execution.scheduled', execution=execution, result_summary=None)
+        outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.scheduled', payload=_execution_event_payload(execution=execution, result_summary=None))
         if owns_session:
             session.commit()
             session.refresh(execution)
@@ -160,7 +160,7 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
             execution.last_error = 'retry limit exceeded'
             failed = _failed_result(execution.execution_type, 'Retry limit exceeded before execution.')
             execution.result_summary = json.dumps(failed, sort_keys=True)
-            _emit_execution_event(session, recommendation.tenant_id, 'execution.failed', execution=execution, result_summary=failed)
+            outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.failed', payload=_execution_event_payload(execution=execution, result_summary=failed))
             if owns_session:
                 session.commit()
             return execution
@@ -168,7 +168,7 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
         execution.attempt_count = int(execution.attempt_count or 0) + 1
         execution.last_error = None
         session.flush()
-        _emit_execution_event(session, recommendation.tenant_id, 'execution.started', execution=execution, result_summary=None)
+        outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.started', payload=_execution_event_payload(execution=execution, result_summary=None))
         try:
             result = _normalize_result(executor.run(payload), execution.execution_type)
             result = _deliver_mutations(session, execution=execution, result=result)
@@ -180,7 +180,7 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
             execution.result_summary = json.dumps(result, sort_keys=True)
             execution.executed_at = datetime.now(UTC)
             _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.FAILED)
-            _emit_execution_event(session, recommendation.tenant_id, 'execution.failed', execution=execution, result_summary=result)
+            outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.failed', payload=_execution_event_payload(execution=execution, result_summary=result))
             if owns_session:
                 session.commit()
                 session.refresh(execution)
@@ -190,7 +190,7 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
         execution.executed_at = datetime.now(UTC)
         execution.result_summary = json.dumps(result, sort_keys=True)
         _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.EXECUTED)
-        _emit_execution_event(session, recommendation.tenant_id, 'execution.completed', execution=execution, result_summary=result)
+        outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.completed', payload=_execution_event_payload(execution=execution, result_summary=result))
         _record_outcome_if_possible(session, execution, result)
         if owns_session:
             session.commit()
@@ -248,7 +248,7 @@ def rollback_execution(execution_id: str, *, requested_by: str, db: Session | No
             'mutations': [],
         }, sort_keys=True)
         recommendation.status = StrategyRecommendationStatus.ROLLED_BACK
-        _emit_execution_event(session, recommendation.tenant_id, 'execution.rolled_back', execution=execution, result_summary={'requested_by': requested_by, 'rolled_back_mutations': rollback_results})
+        outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.rolled_back', payload=_execution_event_payload(execution=execution, result_summary={'requested_by': requested_by, 'rolled_back_mutations': rollback_results}))
         if owns_session:
             session.commit()
             session.refresh(execution)
@@ -315,7 +315,7 @@ def record_execution_result(execution_id: str, result: dict[str, Any], db: Sessi
             target = StrategyRecommendationStatus.EXECUTED if execution.status == 'completed' else StrategyRecommendationStatus.FAILED
             _set_recommendation_status_if_allowed(recommendation, target)
             event_type = 'execution.completed' if execution.status == 'completed' else 'execution.failed'
-            _emit_execution_event(session, recommendation.tenant_id, event_type, execution=execution, result_summary=normalized)
+            outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type=event_type, payload=_execution_event_payload(execution=execution, result_summary=normalized))
         _record_outcome_if_possible(session, execution, normalized)
         if owns_session:
             session.commit()
@@ -342,7 +342,7 @@ def retry_execution(execution_id: str, db: Session | None = None) -> Recommendat
         session.flush()
         recommendation = session.get(StrategyRecommendation, execution.recommendation_id)
         if recommendation is not None:
-            _emit_execution_event(session, recommendation.tenant_id, 'execution.scheduled', execution=execution, result_summary=None)
+            outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.scheduled', payload=_execution_event_payload(execution=execution, result_summary=None))
         if owns_session:
             session.commit()
             session.refresh(execution)
@@ -369,7 +369,7 @@ def cancel_execution(execution_id: str, db: Session | None = None) -> Recommenda
         recommendation = session.get(StrategyRecommendation, execution.recommendation_id)
         if recommendation is not None:
             _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.FAILED)
-            _emit_execution_event(session, recommendation.tenant_id, 'execution.failed', execution=execution, result_summary=failed)
+            outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.failed', payload=_execution_event_payload(execution=execution, result_summary=failed))
         if owns_session:
             session.commit()
             session.refresh(execution)
@@ -483,8 +483,8 @@ def _deterministic_hash(*, execution_type: str, payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 
 
-def _emit_execution_event(db: Session, tenant_id: str, event_type: str, *, execution: RecommendationExecution, result_summary: dict[str, Any] | None) -> None:
-    payload = {
+def _execution_event_payload(*, execution: RecommendationExecution, result_summary: dict[str, Any] | None) -> dict[str, Any]:
+    return {
         'execution_id': execution.id,
         'recommendation_id': execution.recommendation_id,
         'campaign_id': execution.campaign_id,
@@ -505,22 +505,6 @@ def _emit_execution_event(db: Session, tenant_id: str, event_type: str, *, execu
         'event_recorded_at': datetime.now(UTC).isoformat(),
         'result_summary': result_summary or {},
     }
-    emit_event(db, tenant_id=tenant_id, event_type=event_type, payload=payload)
-    _publish_internal_execution_event(event_type, payload)
-
-
-def _publish_internal_execution_event(event_type: str, payload: dict[str, Any]) -> None:
-    from app.events import EventType, publish_event
-    mapping = {
-        'execution.scheduled': EventType.EXECUTION_SCHEDULED.value,
-        'execution.started': EventType.EXECUTION_STARTED.value,
-        'execution.failed': EventType.EXECUTION_FAILED.value,
-        'execution.completed': EventType.EXECUTION_COMPLETED.value,
-        'execution.rolled_back': EventType.EXECUTION_ROLLED_BACK.value,
-    }
-    internal_event = mapping.get(event_type)
-    if internal_event is not None:
-        publish_event(internal_event, payload)
 
 
 def _build_execution_payload(*, recommendation: StrategyRecommendation, campaign: Campaign, metric_name: str, metric_before: float, idempotency_key: str, requires_manual_approval: bool) -> dict[str, Any]:
