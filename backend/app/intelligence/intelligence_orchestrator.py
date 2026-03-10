@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from hashlib import sha256
+import re
 from time import perf_counter
 from typing import Any
 
@@ -349,13 +350,24 @@ def _generate_and_persist_recommendations(
 
     persisted: list[StrategyRecommendation] = []
     for recommendation in policy_recommendations:
-        recommendation_type = str(recommendation.get('recommendation_type', 'policy::unknown::action'))
+        raw_recommendation_type = str(recommendation.get('recommendation_type', 'policy::unknown::action'))
         action = str(recommendation.get('action', 'unknown_action'))
         risk_tier = int(recommendation.get('risk_tier', 2) or 2)
         priority_weight = float(recommendation.get('priority_weight', 0.5) or 0.5)
         policy_id = str(recommendation.get('policy_id', 'unknown_policy'))
 
-        idempotency_key = f'{campaign.id}:{cycle_started_at.date().isoformat()}:{policy_id}:{action}'
+        recommendation_type = _stable_recommendation_type(
+            raw_recommendation_type,
+            policy_id=policy_id,
+            action=action,
+        )
+        idempotency_key = _stable_idempotency_key(
+            campaign_id=campaign.id,
+            cycle_started_at=cycle_started_at,
+            policy_id=policy_id,
+            recommendation_type=recommendation_type,
+            action=action,
+        )
 
         existing = (
             db.query(StrategyRecommendation)
@@ -530,6 +542,51 @@ def _count_outcomes_since(db: Session, campaign_id: str, started_at: datetime) -
 def _hash_payload(payload: Any) -> str:
     packed = json.dumps(payload, sort_keys=True, default=str)
     return sha256(packed.encode('utf-8')).hexdigest()
+
+
+_MACHINE_TOKEN_RE = re.compile(r'^[a-z0-9_:-]+$')
+
+
+def _is_machine_token(value: str) -> bool:
+    return bool(value) and bool(_MACHINE_TOKEN_RE.fullmatch(value))
+
+
+def _stable_recommendation_type(
+    raw_recommendation_type: str,
+    *,
+    policy_id: str,
+    action: str,
+) -> str:
+    normalized = raw_recommendation_type.strip().lower()
+    normalized_policy_id = policy_id.strip().lower() or 'unknown_policy'
+    normalized_action = action.strip().lower()
+
+    if normalized.startswith('policy::legacy::'):
+        return f'policy::{normalized_policy_id}'
+    if normalized.startswith('policy::') and _is_machine_token(normalized):
+        return normalized if len(normalized) <= 128 else f"policy::{normalized_policy_id}:{sha256(normalized.encode('utf-8')).hexdigest()[:16]}"
+    if _is_machine_token(normalized_action):
+        candidate = f'policy::{normalized_policy_id}::{normalized_action}'
+        return candidate if len(candidate) <= 128 else f"policy::{normalized_policy_id}:{sha256(candidate.encode('utf-8')).hexdigest()[:16]}"
+    return f'policy::{normalized_policy_id}'
+
+
+def _stable_idempotency_key(
+    *,
+    campaign_id: str,
+    cycle_started_at: datetime,
+    policy_id: str,
+    recommendation_type: str,
+    action: str,
+) -> str:
+    basis = {
+        'policy_id': policy_id,
+        'recommendation_type': recommendation_type,
+        'action': action,
+    }
+    digest = sha256(json.dumps(basis, sort_keys=True).encode('utf-8')).hexdigest()[:16]
+    policy_token = (policy_id or 'unknown_policy').strip().lower()[:48]
+    return f'{campaign_id}:{cycle_started_at.date().isoformat()}:{policy_token}:{digest}'
 
 
 

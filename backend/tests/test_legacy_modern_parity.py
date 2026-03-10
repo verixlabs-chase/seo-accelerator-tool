@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle
 from app.intelligence.legacy_adapters.diagnostic_adapter import collect_legacy_diagnostics
 from app.intelligence.signal_assembler import assemble_signals, recent_window_bounds
+from app.models.intelligence import StrategyRecommendation
 from app.services.strategy_engine.engine import build_campaign_strategy
 from app.services.strategy_engine.schemas import StrategyWindow
 from tests.conftest import create_test_campaign
@@ -28,7 +29,12 @@ def test_modern_runtime_preserves_legacy_diagnostic_coverage(db_session, create_
 
     modern = run_campaign_cycle(campaign.id, db=db_session)
     modern_packaging = modern['legacy_packaging']
+    persisted = db_session.query(StrategyRecommendation).filter(StrategyRecommendation.campaign_id == campaign.id).all()
 
+    assert persisted
+    assert all(len(row.recommendation_type) <= 128 for row in persisted)
+    assert all(len(row.idempotency_key or '') <= 128 for row in persisted)
+    assert all('Increase review request coverage across touchpoints.' not in row.recommendation_type for row in persisted)
     assert set(legacy.detected_scenarios).issubset(set(modern_packaging['detected_scenarios']))
     assert modern_packaging['executive_summary']['top_priority_scenario'] in set(modern_packaging['detected_scenarios']) | {None}
     assert modern_packaging['strategic_scores']['strategy_score'] >= 0
