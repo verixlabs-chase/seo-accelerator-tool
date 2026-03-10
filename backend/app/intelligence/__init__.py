@@ -19,10 +19,7 @@ _EXPORTS = {
     "aggregate_feature_profiles": ("app.intelligence.cohort_feature_aggregator", "aggregate_feature_profiles"),
     "discover_learning_cohort_patterns": ("app.intelligence.cohort_pattern_engine", "discover_cohort_patterns"),
     "record_outcome": ("app.intelligence.outcome_tracker", "record_outcome"),
-    "compute_reward": ("app.intelligence.outcome_tracker", "compute_reward"),
-    "update_policy_weights": ("app.intelligence.policy_update_engine", "update_policy_weights"),
-    "update_policy_priority_weights": ("app.intelligence.policy_update_engine", "update_policy_priority_weights"),
-    "run_campaign_cycle": ("app.intelligence.intelligence_orchestrator", "run_campaign_cycle"),
+    "compute_reward": ("app.intelligence.outcome_tracker", "compute_reward"),    "run_campaign_cycle": ("app.intelligence.intelligence_orchestrator", "run_campaign_cycle"),
     "run_system_cycle": ("app.intelligence.intelligence_orchestrator", "run_system_cycle"),
     "explain_recommendation": ("app.intelligence.llm_explainer", "explain_recommendation"),
     "DigitalTwinState": ("app.intelligence.digital_twin", "DigitalTwinState"),
@@ -42,3 +39,4 @@ def __getattr__(name: str) -> Any:
     value = getattr(module, attr_name)
     globals()[name] = value
     return value
+

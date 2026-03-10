@@ -48,14 +48,6 @@ def process(payload: dict[str, object] | None = None) -> dict[str, object]:
 
 
 def _process_learning_event(session, *, event: EventEnvelope) -> None:
-    try:
-        from app.intelligence.event_integration import process_learning_event
-
-        process_learning_event(
-            session,
-            tenant_id=event.tenant_id,
-            event_type=event.event_type,
-            payload=dict(event.payload),
-        )
-    except Exception:
-        return
+    _ = session
+    _ = event
+    return None
