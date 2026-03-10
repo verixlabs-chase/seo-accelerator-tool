@@ -2,16 +2,86 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.enums import StrategyRecommendationStatus
 from app.intelligence.telemetry.learning_metrics_engine import snapshot_learning_metrics_payload
+from app.models.campaign import Campaign
 from app.models.causal_edge import CausalEdge
 from app.models.experiment import Experiment, ExperimentAssignment, ExperimentOutcome
+from app.models.intelligence import StrategyRecommendation
 from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.policy_performance import PolicyPerformance
 from app.models.recommendation_outcome import RecommendationOutcome
 from app.models.strategy_evolution_log import StrategyEvolutionLog
+from app.models.tenant import Tenant
+from app.utils.enum_guard import ensure_enum
 
 
 def test_learning_metrics_snapshot_computes_expected_values(db_session) -> None:
+    tenant = Tenant(id='tenant-learning-metrics', name='Learning Metrics Tenant', status='Active')
+    db_session.add(tenant)
+    db_session.flush()
+
+    campaigns = [
+        Campaign(id='camp-1', tenant_id=tenant.id, name='Campaign 1', domain='camp-1.example'),
+        Campaign(id='camp-2', tenant_id=tenant.id, name='Campaign 2', domain='camp-2.example'),
+        Campaign(id='camp-3', tenant_id=tenant.id, name='Campaign 3', domain='camp-3.example'),
+        Campaign(id='camp-4', tenant_id=tenant.id, name='Campaign 4', domain='camp-4.example'),
+    ]
+    db_session.add_all(campaigns)
+    db_session.flush()
+
+    recommendations = [
+        StrategyRecommendation(
+            id='r1',
+            tenant_id=tenant.id,
+            campaign_id='camp-1',
+            recommendation_type='policy::parent-a',
+            rationale='control recommendation',
+            confidence=0.5,
+            confidence_score=0.5,
+            evidence_json='{}',
+            rollback_plan_json='{}',
+            status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
+        ),
+        StrategyRecommendation(
+            id='r2',
+            tenant_id=tenant.id,
+            campaign_id='camp-2',
+            recommendation_type='policy::child-a',
+            rationale='treatment recommendation',
+            confidence=0.5,
+            confidence_score=0.5,
+            evidence_json='{}',
+            rollback_plan_json='{}',
+            status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
+        ),
+        StrategyRecommendation(
+            id='r3',
+            tenant_id=tenant.id,
+            campaign_id='camp-3',
+            recommendation_type='policy::parent-b',
+            rationale='control recommendation',
+            confidence=0.5,
+            confidence_score=0.5,
+            evidence_json='{}',
+            rollback_plan_json='{}',
+            status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
+        ),
+        StrategyRecommendation(
+            id='r4',
+            tenant_id=tenant.id,
+            campaign_id='camp-4',
+            recommendation_type='policy::child-b',
+            rationale='treatment recommendation',
+            confidence=0.5,
+            confidence_score=0.5,
+            evidence_json='{}',
+            rollback_plan_json='{}',
+            status=ensure_enum(StrategyRecommendationStatus.GENERATED, StrategyRecommendationStatus),
+        ),
+    ]
+    db_session.add_all(recommendations)
+    db_session.flush()
     db_session.add_all(
         [
             StrategyEvolutionLog(parent_policy='parent-a', new_policy='child-a', mutation_type='extend_policy_variant'),
