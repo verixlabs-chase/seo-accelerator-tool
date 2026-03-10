@@ -9,8 +9,6 @@ from app.intelligence.portfolio.portfolio_models import PolicyPerformanceSnapsho
 from app.intelligence.portfolio.strategy_allocator import allocate_strategies
 from app.models.intelligence import StrategyRecommendation
 from app.models.policy_performance import PolicyPerformance
-from app.models.tenant import Tenant
-from app.models.campaign import Campaign
 from app.utils.enum_guard import ensure_enum
 
 
@@ -37,15 +35,9 @@ def test_campaign_ranking_uses_velocity_score() -> None:
 
 
 
-def test_policy_success_scoring_updates_running_average(db_session) -> None:
-    tenant = Tenant(name='Portfolio Tenant', status='Active')
-    db_session.add(tenant)
-    db_session.flush()
-
-    campaign = Campaign(tenant_id=tenant.id, name='Portfolio Campaign', domain='portfolio.example')
-    db_session.add(campaign)
-    db_session.flush()
-
+def test_policy_success_scoring_updates_running_average(db_session, intelligence_graph) -> None:
+    campaign = intelligence_graph['campaigns'][0]
+    tenant = intelligence_graph['tenant']
     recommendation = StrategyRecommendation(
         tenant_id=tenant.id,
         campaign_id=campaign.id,
@@ -103,15 +95,9 @@ def test_strategy_allocation_balances_exploit_and_explore() -> None:
 
 
 
-def test_portfolio_engine_runs_after_outcome_tracking(db_session) -> None:
-    tenant = Tenant(name='Portfolio Integration Tenant', status='Active')
-    db_session.add(tenant)
-    db_session.flush()
-
-    campaign = Campaign(tenant_id=tenant.id, name='Portfolio Integration Campaign', domain='portfolio-int.example')
-    db_session.add(campaign)
-    db_session.flush()
-
+def test_portfolio_engine_runs_after_outcome_tracking(db_session, intelligence_graph) -> None:
+    campaign = intelligence_graph['campaigns'][0]
+    tenant = intelligence_graph['tenant']
     recommendation = StrategyRecommendation(
         tenant_id=tenant.id,
         campaign_id=campaign.id,
