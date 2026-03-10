@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from sqlalchemy.orm import aliased
+
 from app.events import EventType, publish_event
 from app.events.queue import reset_queue_state
 from app.events.subscriber_registry import register_default_subscribers
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle
-from app.models.causal_edge import CausalEdge
 from app.models.experiment import Experiment
+from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode
 from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.strategy_evolution_log import StrategyEvolutionLog
 from tests.conftest import create_test_campaign
@@ -28,10 +30,18 @@ def test_experiment_completed_runs_async_learning_loop(db_session) -> None:
         },
     )
 
-    assert db_session.query(CausalEdge).filter(CausalEdge.policy_id == 'increase_internal_links').count() == 1
+    policy = aliased(KnowledgeNode)
+    assert (
+        db_session.query(KnowledgeEdge)
+        .join(policy, KnowledgeEdge.source_node_id == policy.id)
+        .filter(KnowledgeEdge.edge_type == 'policy_outcome', policy.node_key == 'increase_internal_links')
+        .count()
+        == 1
+    )
     assert db_session.query(StrategyEvolutionLog).filter(StrategyEvolutionLog.new_policy == 'increase_internal_links_more').count() == 1
     assert db_session.query(Experiment).filter(Experiment.policy_id == 'increase_internal_links_more').count() == 1
     assert db_session.query(LearningMetricSnapshot).count() == 1
+
 
 
 def test_campaign_cycle_completes_without_running_learning_workers_inline(db_session, create_test_tenant, create_test_org, monkeypatch) -> None:
@@ -43,7 +53,6 @@ def test_campaign_cycle_completes_without_running_learning_workers_inline(db_ses
 
     queued: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr('app.events.queue.dispatch_worker_job', lambda worker_name, payload: queued.append((worker_name, dict(payload))) or {'worker': worker_name, 'status': 'queued'})
-    monkeypatch.setattr('app.events.emitter._process_learning_event', lambda *args, **kwargs: None)
 
     summary = run_campaign_cycle(campaign.id, db=db_session)
 

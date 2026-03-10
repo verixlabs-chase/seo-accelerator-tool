@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from sqlalchemy.orm import aliased
+
+from app.intelligence.causal.causal_learning_engine import learn_from_experiment_completed
 from app.intelligence.workers.causal_worker import process as process_causal_worker
 from app.intelligence.workers.evolution_worker import process as process_evolution_worker
 from app.intelligence.workers.experiment_worker import process as process_experiment_worker
-from app.models.causal_edge import CausalEdge
+from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode
 from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.learning_report import LearningReport
 
@@ -39,23 +42,31 @@ def test_causal_worker_updates_causal_graph(db_session, intelligence_graph) -> N
     )
     db_session.commit()
 
+    policy = aliased(KnowledgeNode)
     assert result['policy_id'] == policy_id
-    assert db_session.query(CausalEdge).filter(CausalEdge.policy_id == policy_id).count() == 1
+    assert (
+        db_session.query(KnowledgeEdge)
+        .join(policy, KnowledgeEdge.source_node_id == policy.id)
+        .filter(KnowledgeEdge.edge_type == 'policy_outcome', policy.node_key == policy_id)
+        .count()
+        == 1
+    )
 
 
 
 def test_evolution_worker_generates_metrics_and_reports(db_session, intelligence_graph) -> None:
     policy_id = intelligence_graph['policy_performance'][0].policy_id
-    db_session.add(
-        CausalEdge(
-            source_node='industry::local',
-            target_node='outcome::success',
-            policy_id=policy_id,
-            effect_size=0.4,
-            confidence=0.88,
-            sample_size=9,
-            industry='local',
-        )
+    learn_from_experiment_completed(
+        db_session,
+        {
+            'policy_id': policy_id,
+            'effect_size': 0.4,
+            'confidence': 0.88,
+            'sample_size': 9,
+            'industry': 'local',
+            'source_node': 'industry::local',
+            'target_node': 'outcome::success',
+        },
     )
     db_session.commit()
 

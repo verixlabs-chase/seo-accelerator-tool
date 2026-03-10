@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.intelligence.causal.causal_learning_engine import learn_from_experiment_completed
 from app.intelligence.telemetry.learning_metrics_engine import snapshot_learning_metrics_payload
-from app.models.causal_edge import CausalEdge
 from app.models.experiment import ExperimentOutcome
 from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.recommendation_outcome import RecommendationOutcome
@@ -11,11 +11,29 @@ from app.models.recommendation_outcome import RecommendationOutcome
 
 def test_learning_metrics_snapshot_computes_expected_values(db_session, intelligence_graph) -> None:
     graph = intelligence_graph
-    db_session.add_all(
-        [
-            CausalEdge(source_node='industry::local', target_node='outcome::success', policy_id='child-a', effect_size=0.4, confidence=0.8, sample_size=10, industry='local'),
-            CausalEdge(source_node='industry::local', target_node='outcome::success', policy_id='child-b', effect_size=0.2, confidence=0.6, sample_size=8, industry='local'),
-        ]
+    learn_from_experiment_completed(
+        db_session,
+        {
+            'policy_id': 'child-a',
+            'effect_size': 0.4,
+            'confidence': 0.8,
+            'sample_size': 10,
+            'industry': 'local',
+            'source_node': 'industry::local',
+            'target_node': 'outcome::success',
+        },
+    )
+    learn_from_experiment_completed(
+        db_session,
+        {
+            'policy_id': 'child-b',
+            'effect_size': 0.2,
+            'confidence': 0.6,
+            'sample_size': 8,
+            'industry': 'local',
+            'source_node': 'industry::local',
+            'target_node': 'outcome::success',
+        },
     )
     db_session.flush()
 
@@ -48,6 +66,7 @@ def test_learning_metrics_snapshot_computes_expected_values(db_session, intellig
     assert payload['causal_confidence_mean'] == 0.7
     assert payload['policy_improvement_velocity'] == 0.0
     assert db_session.query(LearningMetricSnapshot).count() == 1
+
 
 def test_learning_metrics_snapshot_handles_empty_state(db_session) -> None:
     payload = snapshot_learning_metrics_payload(db_session)

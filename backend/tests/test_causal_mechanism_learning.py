@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from app.intelligence.causal_mechanisms.mechanism_learning_engine import learn_mechanisms_from_experiment_completed
+from app.intelligence.causal.causal_learning_engine import learn_from_experiment_completed
 from app.intelligence.evolution.strategy_evolution_engine import evolve_strategies
 from app.models.campaign import Campaign
-from app.models.causal_edge import CausalEdge
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge
 from app.models.temporal import TemporalSignalSnapshot, TemporalSignalType
 from app.models.tenant import Tenant
@@ -103,16 +103,17 @@ def test_experiment_feature_deltas_create_mechanism_edges(db_session) -> None:
 
 
 def test_feature_driven_evolution_targets_causal_driver_features(db_session) -> None:
-    db_session.add(
-        CausalEdge(
-            source_node='industry::local',
-            target_node='outcome::success',
-            policy_id='generic_policy',
-            effect_size=0.42,
-            confidence=0.91,
-            sample_size=18,
-            industry='local',
-        )
+    learn_from_experiment_completed(
+        db_session,
+        {
+            'policy_id': 'generic_policy',
+            'effect_size': 0.42,
+            'confidence': 0.91,
+            'sample_size': 18,
+            'industry': 'local',
+            'source_node': 'industry::local',
+            'target_node': 'outcome::success',
+        },
     )
     db_session.add(
         PolicyFeatureEdge(

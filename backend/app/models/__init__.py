@@ -4,7 +4,6 @@ from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
-from app.models.causal_edge import CausalEdge
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.campaign_daily_metric import CampaignDailyMetric
@@ -87,7 +86,6 @@ __all__ = [
     'ThresholdBundle',
     'TierProfile',
     'Campaign',
-    'CausalEdge',
     'FeatureImpactEdge',
     'PolicyFeatureEdge',
     'CampaignDailyMetric',

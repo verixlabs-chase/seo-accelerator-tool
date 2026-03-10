@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from sqlalchemy.orm import aliased
+
 from app.events import EventType, publish_event
 from app.events.subscriber_registry import register_default_subscribers
 from app.intelligence.causal.causal_learning_engine import learn_from_experiment_completed
@@ -9,7 +11,7 @@ from app.intelligence.causal.causal_query_engine import (
     get_top_policies_for_feature,
 )
 from app.intelligence.portfolio.portfolio_engine import run_portfolio_cycle
-from app.models.causal_edge import CausalEdge
+from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode
 from app.models.policy_performance import PolicyPerformance
 from app.models.recommendation_outcome import RecommendationOutcome
 
@@ -30,12 +32,20 @@ def test_experiment_completed_event_creates_causal_edge(db_session) -> None:
         },
     )
 
-    row = db_session.query(CausalEdge).filter(CausalEdge.policy_id == 'policy-a').one()
-    assert row.source_node == 'industry::local'
-    assert row.target_node == 'outcome::success'
-    assert float(row.effect_size) == 0.4
-    assert float(row.confidence) == 0.8
-    assert int(row.sample_size) == 12
+    policy = aliased(KnowledgeNode)
+    target = aliased(KnowledgeNode)
+    edge, policy_node, target_node = (
+        db_session.query(KnowledgeEdge, policy, target)
+        .join(policy, KnowledgeEdge.source_node_id == policy.id)
+        .join(target, KnowledgeEdge.target_node_id == target.id)
+        .filter(KnowledgeEdge.edge_type == 'policy_outcome', policy.node_key == 'policy-a')
+        .one()
+    )
+    assert policy_node.node_key == 'policy-a'
+    assert target_node.node_key == 'outcome::success'
+    assert float(edge.effect_size) == 0.4
+    assert float(edge.confidence) == 0.8
+    assert int(edge.sample_size) == 12
 
 
 def test_multiple_experiments_aggregate_existing_edge(db_session) -> None:
@@ -65,7 +75,13 @@ def test_multiple_experiments_aggregate_existing_edge(db_session) -> None:
     )
     db_session.commit()
 
-    row = db_session.query(CausalEdge).filter(CausalEdge.policy_id == 'policy-a').one()
+    policy = aliased(KnowledgeNode)
+    row = (
+        db_session.query(KnowledgeEdge)
+        .join(policy, KnowledgeEdge.source_node_id == policy.id)
+        .filter(KnowledgeEdge.edge_type == 'policy_outcome', policy.node_key == 'policy-a')
+        .one()
+    )
     assert float(row.effect_size) == 0.65
     assert float(row.confidence) == 0.8
     assert int(row.sample_size) == 40
@@ -125,7 +141,7 @@ def test_portfolio_engine_prefers_positive_high_confidence_causal_policies(db_se
             'policy_id': 'child-a',
             'effect_size': 0.8,
             'confidence': 0.95,
-            'industry': 'local',
+            'industry': 'unknown',
             'sample_size': 20,
             'source_node': 'industry::local',
             'target_node': 'outcome::success',

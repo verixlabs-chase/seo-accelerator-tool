@@ -4,7 +4,6 @@ from app.events import EventType, publish_event
 from app.events.subscriber_registry import register_default_subscribers
 from app.intelligence.evolution.strategy_evolution_engine import evolve_strategies
 from app.intelligence.causal.causal_learning_engine import learn_from_experiment_completed
-from app.models.causal_edge import CausalEdge
 from app.models.experiment import Experiment
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState
 from app.models.policy_weights import PolicyWeight
@@ -84,7 +83,6 @@ def test_evolution_processor_runs_after_causal_learning_on_experiment_completed(
         },
     )
 
-    assert db_session.query(CausalEdge).filter(CausalEdge.policy_id == 'increase_internal_links').count() == 1
     assert db_session.query(StrategyEvolutionLog).filter(StrategyEvolutionLog.new_policy == 'increase_internal_links_more').count() == 1
     assert db_session.query(Experiment).filter(Experiment.policy_id == 'increase_internal_links_more').count() == 1
 

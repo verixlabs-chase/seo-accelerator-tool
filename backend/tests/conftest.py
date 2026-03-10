@@ -31,7 +31,6 @@ from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, 
 from app.models.crawl import CrawlRun, Page, TechnicalIssue  # noqa: F401
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity  # noqa: F401
 from app.models.experiment import Experiment, ExperimentAssignment, ExperimentOutcome  # noqa: F401
-from app.models.causal_edge import CausalEdge  # noqa: F401
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge  # noqa: F401
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
@@ -120,7 +119,6 @@ def _verify_required_tables(database_url: str) -> None:
             "experiment_assignments",
             "experiments",
             "policy_performance",
-            "causal_edges",
             "causal_feature_edges",
             "policy_feature_edges",
             "learning_metrics",

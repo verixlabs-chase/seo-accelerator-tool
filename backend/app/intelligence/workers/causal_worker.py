@@ -10,7 +10,7 @@ def process(db: Session, payload: dict[str, object]) -> dict[str, object]:
     edge = learn_from_experiment_completed(db, payload)
     mechanisms = learn_mechanisms_from_experiment_completed(db, payload)
     return {
-        'policy_id': edge.policy_id,
+        'policy_id': str(payload.get('policy_id', '')),
         'industry': edge.industry,
         'effect_size': float(edge.effect_size),
         'confidence': float(edge.confidence),

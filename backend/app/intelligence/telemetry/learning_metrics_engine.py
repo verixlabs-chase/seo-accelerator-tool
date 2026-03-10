@@ -6,8 +6,8 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.causal_edge import CausalEdge
 from app.models.experiment import Experiment, ExperimentAssignment, ExperimentOutcome
+from app.models.knowledge_graph import KnowledgeEdge
 from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.policy_performance import PolicyPerformance
 from app.models.strategy_evolution_log import StrategyEvolutionLog
@@ -41,7 +41,15 @@ def snapshot_learning_metrics(db: Session) -> LearningMetricSnapshot:
             winning_experiments += 1
     experiment_win_rate = round(winning_experiments / experiment_count, 6) if experiment_count else 0.0
 
-    causal_confidence_mean = round(float(db.query(func.coalesce(func.avg(CausalEdge.confidence), 0.0)).scalar() or 0.0), 6)
+    causal_confidence_mean = round(
+        float(
+            db.query(func.coalesce(func.avg(KnowledgeEdge.confidence), 0.0))
+            .filter(KnowledgeEdge.edge_type == 'policy_outcome')
+            .scalar()
+            or 0.0
+        ),
+        6,
+    )
 
     now = datetime.now(UTC)
     window_start = now.replace(hour=0, minute=0, second=0, microsecond=0)

@@ -5,7 +5,6 @@ from pathlib import Path
 from app.intelligence.causal.causal_learning_engine import learn_from_experiment_completed
 from app.intelligence.evolution.strategy_evolution_engine import evolve_strategies
 from app.intelligence.portfolio.portfolio_engine import run_portfolio_cycle
-from app.models.causal_edge import CausalEdge
 from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode
 from app.models.policy_performance import PolicyPerformance
 from app.models.recommendation_outcome import RecommendationOutcome
@@ -33,7 +32,6 @@ def test_causal_learning_updates_graph_edges(db_session) -> None:
     assert db_session.query(KnowledgeEdge).filter(KnowledgeEdge.edge_type == 'policy_feature').count() == 1
     assert db_session.query(KnowledgeEdge).filter(KnowledgeEdge.edge_type == 'feature_outcome').count() == 1
     assert db_session.query(KnowledgeEdge).filter(KnowledgeEdge.edge_type == 'policy_outcome').count() == 1
-    assert db_session.query(CausalEdge).filter(CausalEdge.policy_id == 'policy-a').count() == 1
 
 
 def test_policy_evolution_produces_policy_to_policy_edge(db_session, intelligence_graph) -> None:
