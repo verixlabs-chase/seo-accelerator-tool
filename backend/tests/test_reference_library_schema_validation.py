@@ -7,7 +7,7 @@ from app.reference_library.schema_models import MetricsArtifact, Recommendations
 def test_reference_library_seed_artifacts_match_schema():
     project_root = Path(__file__).resolve().parents[2]
     metrics_path = project_root / "backend" / "reference_library" / "metrics" / "core_web_vitals.json"
-    recommendations_path = project_root / "backend" / "reference_library" / "recommendations" / "perf_recommendations.json"
+    recommendations_path = project_root / "backend" / "reference_library" / "metrics" / "perf_recommendations.json"
 
     metrics_payload = json.loads(metrics_path.read_text(encoding="utf-8"))
     recommendations_payload = json.loads(recommendations_path.read_text(encoding="utf-8"))

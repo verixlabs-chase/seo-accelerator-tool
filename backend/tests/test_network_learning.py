@@ -60,10 +60,42 @@ def test_seo_flight_recorder_persists_mutation_outcomes(db_session, create_test_
     assert persisted[0].mutation_parameters == {}
 
 
-def test_network_learning_respects_industry_similarity_thresholds(db_session) -> None:
+def test_network_learning_respects_industry_similarity_thresholds(db_session, create_test_tenant, create_test_org) -> None:
+    tenant = create_test_tenant(tenant_id='tenant-1', name='Similarity Tenant')
+    org = create_test_org(organization_id=tenant.id, tenant_id=tenant.id, name='Similarity Org')
+    campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Similarity Campaign', domain='similarity.example')
+
+    recommendation = StrategyRecommendation(
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_type='policy::prioritize_internal_linking::add_contextual_links',
+        rationale='similarity-test',
+        confidence=0.7,
+        confidence_score=0.7,
+        evidence_json='[]',
+        risk_tier=1,
+        rollback_plan_json='{}',
+        status=StrategyRecommendationStatus.EXECUTED,
+        idempotency_key='similarity-rec-1',
+    )
+    db_session.add(recommendation)
+    db_session.flush()
+
+    execution = RecommendationExecution(
+        recommendation_id=recommendation.id,
+        campaign_id=campaign.id,
+        execution_type='improve_internal_links',
+        execution_payload='{}',
+        idempotency_key='similarity-exec-1',
+        deterministic_hash='similarity-hash',
+        status='completed',
+    )
+    db_session.add(execution)
+    db_session.flush()
+
     db_session.add(IndustryIntelligenceModel(industry_id='legal', industry_name='Legal', pattern_distribution={'internal_link_problem': 1.0}, strategy_success_rates={'insert_internal_link': 0.8}, avg_rank_delta=1.0, avg_traffic_delta=2.0, confidence_score=0.8, sample_size=10, support_state={}))
     db_session.add(IndustryIntelligenceModel(industry_id='ecommerce', industry_name='Ecommerce', pattern_distribution={'schema_gap': 1.0}, strategy_success_rates={'add_schema_markup': 0.7}, avg_rank_delta=0.5, avg_traffic_delta=1.0, confidence_score=0.7, sample_size=8, support_state={}))
-    db_session.add(SEOMutationOutcome(execution_id='exec-1', mutation_id=None, campaign_id='camp-1', industry_id='legal', mutation_type='insert_internal_link', page_url='/a', rank_before=10.0, rank_after=7.0, traffic_before=100.0, traffic_after=120.0, measured_delta=-3.0))
+    db_session.add(SEOMutationOutcome(execution_id=execution.id, mutation_id=None, campaign_id=campaign.id, industry_id='legal', mutation_type='insert_internal_link', page_url='/a', rank_before=10.0, rank_after=7.0, traffic_before=100.0, traffic_after=120.0, measured_delta=-3.0))
     db_session.commit()
 
     similarity = compute_industry_similarity_matrix(db_session)

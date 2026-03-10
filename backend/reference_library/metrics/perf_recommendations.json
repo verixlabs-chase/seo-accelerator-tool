@@ -1,0 +1,27 @@
+{
+  "_meta": {
+    "purpose": "performance_recommendations_reference",
+    "version": "0.1.0",
+    "generated_at": "2026-02-18T00:00:00Z"
+  },
+  "recommendations": [
+    {
+      "rec_key": "reduce_render_blocking",
+      "impact": "high",
+      "effort": "medium",
+      "risk_tier": 1
+    },
+    {
+      "rec_key": "optimize_server_response",
+      "impact": "high",
+      "effort": "high",
+      "risk_tier": 1
+    },
+    {
+      "rec_key": "stabilize_layout_shift",
+      "impact": "medium",
+      "effort": "medium",
+      "risk_tier": 1
+    }
+  ]
+}
