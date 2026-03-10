@@ -388,7 +388,6 @@ def _generate_and_persist_recommendations(
         raw_recommendation_type = str(recommendation.get('recommendation_type', 'policy::unknown::action'))
         action = str(recommendation.get('action', 'unknown_action'))
         risk_tier = int(recommendation.get('risk_tier', 2) or 2)
-        priority_weight = float(recommendation.get('priority_weight', 0.5) or 0.5)
         policy_id = str(recommendation.get('policy_id', 'unknown_policy'))
 
         recommendation_type = _stable_recommendation_type(

@@ -60,7 +60,7 @@ def test_policy_success_scoring_updates_running_average(db_session) -> None:
     db_session.add(recommendation)
     db_session.commit()
 
-    first = record_outcome(
+    record_outcome(
         db_session,
         recommendation_id=recommendation.id,
         campaign_id=campaign.id,

@@ -6,9 +6,7 @@ from app.intelligence.telemetry.learning_metrics_engine import snapshot_learning
 from app.models.causal_edge import CausalEdge
 from app.models.experiment import ExperimentOutcome
 from app.models.learning_metric_snapshot import LearningMetricSnapshot
-from app.models.policy_performance import PolicyPerformance
 from app.models.recommendation_outcome import RecommendationOutcome
-from app.models.strategy_evolution_log import StrategyEvolutionLog
 
 
 def test_learning_metrics_snapshot_computes_expected_values(db_session, intelligence_graph) -> None:
