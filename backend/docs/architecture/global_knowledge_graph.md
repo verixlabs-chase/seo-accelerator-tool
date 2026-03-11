@@ -47,3 +47,4 @@ experiment outcome
 - graph identities are unique by `(source_node_id, target_node_id, edge_type, industry)`
 - graph writes must go through `update_engine.py`
 - direct `KnowledgeEdge` inserts outside `knowledge_graph/` are architecture violations
+- Legacy global_graph runtime path removed. All learning now flows through the knowledge_graph layer.

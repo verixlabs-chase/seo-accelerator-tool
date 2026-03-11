@@ -132,10 +132,7 @@ def test_execution_processor_emits_started_and_completed(monkeypatch: Any) -> No
     assert EventType.EXECUTION_COMPLETED.value in events
 
 
-def test_outcome_processor_updates_graph(monkeypatch: Any) -> None:
-    updates: list[dict[str, Any]] = []
-    published: list[str] = []
-
+def test_outcome_processor_returns_dispatch_without_republishing_learning(monkeypatch: Any) -> None:
     fake_execution = SimpleNamespace(id='exec-2', campaign_id='campaign-y', recommendation_id='rec-y')
     fake_outcome = SimpleNamespace(
         id='out-1',
@@ -162,20 +159,18 @@ def test_outcome_processor_updates_graph(monkeypatch: Any) -> None:
         def get(self, *_args: Any, **_kwargs: Any) -> Any:
             return fake_execution
 
-    class _FakeUpdater:
-        def update_from_outcome(self, payload: dict[str, Any]) -> list[str]:
-            updates.append(payload)
-            return ['o1']
-
     monkeypatch.setattr(outcome_processor, 'SessionLocal', lambda: _OutcomeSession())
     monkeypatch.setattr(outcome_processor, 'record_execution_result', lambda *_args, **_kwargs: fake_execution)
-    monkeypatch.setattr(outcome_processor, 'get_graph_update_pipeline', lambda: _FakeUpdater())
-    monkeypatch.setattr(outcome_processor, 'get_industry_learning_pipeline', lambda: _FakeUpdater())
     monkeypatch.setattr(outcome_processor, 'record_seo_flight', lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(outcome_processor, 'publish_event', lambda event_type, _payload: published.append(event_type))
 
     result = outcome_processor.process({'execution_id': 'exec-2', 'result': {'status': 'completed'}})
 
-    assert result is not None
-    assert updates
-    assert published == [EventType.OUTCOME_RECORDED.value]
+    assert result == {
+        'campaign_id': 'campaign-y',
+        'recommendation_id': 'rec-y',
+        'execution_id': 'exec-2',
+        'outcome_id': 'out-1',
+        'simulation_id': 'sim-2',
+        'delta': 1.4,
+        'measured_at': '2026-03-06T00:00:00Z',
+    }

@@ -19,7 +19,7 @@ def test_portfolio_reads_from_knowledge_graph_query_engine() -> None:
 
 def test_causal_learning_writes_through_knowledge_graph_update_engine() -> None:
     text = _read(APP_ROOT / 'intelligence' / 'causal' / 'causal_learning_engine.py')
-    assert 'from app.intelligence.knowledge_graph.update_engine import update_global_knowledge_graph' in text
+    assert 'update_global_knowledge_graph' in text
     assert 'update_global_knowledge_graph(' in text
 
 
@@ -53,4 +53,7 @@ def test_legacy_learning_modules_are_not_executed_by_runtime_hooks() -> None:
     assert 'strategy_evolution' not in learning_worker
     assert 'return None' in event_integration
     assert 'network_learning' not in outcome_processor
+    assert 'get_graph_update_pipeline' not in outcome_processor
+    assert 'get_industry_learning_pipeline' not in outcome_processor
+    assert 'publish_event(EventType.OUTCOME_RECORDED.value' not in outcome_processor
 

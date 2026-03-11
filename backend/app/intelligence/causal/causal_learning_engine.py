@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.intelligence.causal.causal_models import ExperimentCompletedPayload
-from app.intelligence.knowledge_graph.update_engine import update_global_knowledge_graph
+from app.intelligence.knowledge_graph.update_engine import ensure_knowledge_node, flush_graph_write_batch, update_global_knowledge_graph
 from app.models.knowledge_graph import KnowledgeEdge
 
 
@@ -21,4 +21,9 @@ def learn_from_experiment_completed(db: Session, payload: dict[str, object] | Ex
         confidence=message.confidence,
         sample_size=message.sample_size,
     )
+    if 'policy_outcome' not in edges:
+        policy_node = ensure_knowledge_node(db, node_type='policy', node_key=message.policy_id, label=message.policy_id)
+        outcome_node = ensure_knowledge_node(db, node_type='outcome', node_key=target_node, label=target_node)
+        flushed = flush_graph_write_batch(db, force=True)
+        return flushed[(policy_node.id, outcome_node.id, 'policy_outcome', message.industry)]
     return edges['policy_outcome']

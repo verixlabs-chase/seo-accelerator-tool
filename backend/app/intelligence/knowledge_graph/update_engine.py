@@ -147,6 +147,7 @@ def update_global_knowledge_graph(
     effect_size: float,
     confidence: float,
     sample_size: int,
+    force_flush: bool = False,
 ) -> dict[str, KnowledgeEdge]:
     ensure_knowledge_node(db, node_type='industry', node_key=industry, label=industry)
     policy_node = ensure_knowledge_node(db, node_type='policy', node_key=policy_id, label=policy_id)
@@ -184,10 +185,13 @@ def update_global_knowledge_graph(
     }
     for item in writes.values():
         _BATCHER.enqueue(item)
-    flushed = flush_graph_write_batch(db, force=True)
+    flushed = flush_graph_write_batch(db, force=force_flush)
+    if not flushed:
+        return {}
     return {
         name: flushed[(item.source_node.id, item.target_node.id, item.edge_type, item.industry)]
         for name, item in writes.items()
+        if (item.source_node.id, item.target_node.id, item.edge_type, item.industry) in flushed
     }
 
 
@@ -199,7 +203,8 @@ def record_policy_evolution(
     industry: str,
     confidence: float,
     effect_size: float,
-) -> KnowledgeEdge:
+    force_flush: bool = False,
+) -> KnowledgeEdge | None:
     parent_node = ensure_knowledge_node(db, node_type='policy', node_key=parent_policy, label=parent_policy)
     child_node = ensure_knowledge_node(db, node_type='policy', node_key=child_policy, label=child_policy)
     write = PendingEdgeWrite(
@@ -212,5 +217,7 @@ def record_policy_evolution(
         sample_size=1,
     )
     _BATCHER.enqueue(write)
-    flushed = flush_graph_write_batch(db, force=True)
+    flushed = flush_graph_write_batch(db, force=force_flush)
+    if not flushed:
+        return None
     return flushed[(parent_node.id, child_node.id, 'policy_policy', industry)]

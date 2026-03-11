@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.intelligence.evolution.evolution_models import PolicyMutationCandidate, RegisteredPolicyEntry
-from app.intelligence.knowledge_graph.update_engine import record_policy_evolution
+from app.intelligence.knowledge_graph.update_engine import flush_graph_write_batch, record_policy_evolution
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState
 from app.models.policy_weights import PolicyWeight
 from app.models.strategy_evolution_log import StrategyEvolutionLog
@@ -67,6 +67,7 @@ def register_mutated_policies(db: Session, mutations: list[PolicyMutationCandida
     else:
         registry.payload = payload
         registry.updated_at = datetime.now(UTC)
+    flush_graph_write_batch(db, force=True)
     db.flush()
     return registered
 
