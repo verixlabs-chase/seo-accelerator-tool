@@ -1,14 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 * {
   box-sizing: border-box;
 }
 
+:root {
+  color-scheme: dark;
+  --lsos-bg: #070b16;
+  --lsos-surface-1: rgba(11, 18, 32, 0.88);
+  --lsos-surface-2: rgba(18, 26, 46, 0.92);
+  --lsos-surface-3: rgba(28, 36, 66, 0.96);
+  --lsos-border: rgba(148, 163, 184, 0.16);
+  --lsos-border-strong: rgba(129, 140, 248, 0.28);
+  --lsos-text: #f8fafc;
+  --lsos-text-muted: #cbd5e1;
+  --lsos-text-soft: #94a3b8;
+  --lsos-indigo: #6366f1;
+  --lsos-violet: #8b5cf6;
+  --lsos-blue: #38bdf8;
+  --lsos-green: #22c55e;
+  --lsos-yellow: #facc15;
+  --lsos-red: #f87171;
+  --lsos-shadow: 0 24px 80px rgba(15, 23, 42, 0.42);
+  --lsos-glow: 0 0 0 1px rgba(99, 102, 241, 0.16), 0 18px 50px rgba(99, 102, 241, 0.12);
+}
+
 body {
   margin: 0;
-  font-family: "Segoe UI", sans-serif;
-  background: #f5f7fa;
-  color: #17202a;
+  font-family: Inter, "Segoe UI", sans-serif;
+  background: var(--lsos-bg);
+  color: var(--lsos-text);
 }
 
 a {
   color: inherit;
+  text-decoration: none;
+}
+
+body.lsos-theme-dark {
+  background:
+    radial-gradient(circle at top left, rgba(99, 102, 241, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(139, 92, 246, 0.14), transparent 24%),
+    linear-gradient(180deg, #050816 0%, #070b16 36%, #090d18 100%);
+}
+
+.lsos-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+.lsos-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.lsos-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+}
+
+.lsos-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lsos-card-border {
+  border: 1px solid var(--lsos-border);
+  box-shadow: var(--lsos-shadow);
+}
+
+.lsos-card-glow {
+  box-shadow: var(--lsos-glow);
+}
+
+.lsos-glass {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0.72));
+  backdrop-filter: blur(18px);
 }
