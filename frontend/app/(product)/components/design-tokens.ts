@@ -1,74 +1,74 @@
 export const colorTokens = {
-  background: "#070b16",
-  surface1: "rgba(11, 18, 32, 0.88)",
-  surface2: "rgba(18, 26, 46, 0.92)",
-  surface3: "rgba(28, 36, 66, 0.96)",
-  border: "rgba(148, 163, 184, 0.16)",
-  borderStrong: "rgba(129, 140, 248, 0.28)",
-  text: "#f8fafc",
-  textMuted: "#cbd5e1",
-  textSoft: "#94a3b8",
-  indigo: "#6366f1",
-  violet: "#8b5cf6",
-  blue: "#38bdf8",
+  background: "#0b0b0c",
+  surface1: "#111214",
+  surface2: "#141518",
+  surface3: "#1a1b1f",
+  border: "#26272c",
+  borderStrong: "rgba(255, 106, 26, 0.45)",
+  text: "#f5f5f5",
+  textMuted: "#d0d0d0",
+  textSoft: "#878787",
+  indigo: "#ff6a1a",
+  violet: "#ff7f3f",
+  blue: "#ff944f",
   green: "#22c55e",
-  yellow: "#facc15",
+  yellow: "#f59e0b",
   red: "#f87171",
 } as const;
 
 export const typographyScale = {
-  display: "text-4xl font-semibold tracking-[-0.03em] md:text-5xl",
-  heroMetric: "text-3xl font-semibold tracking-[-0.04em] md:text-4xl",
-  metric: "text-2xl font-semibold tracking-[-0.03em]",
-  title: "text-lg font-semibold tracking-[-0.02em]",
-  section: "text-sm font-semibold uppercase tracking-[0.16em] text-slate-400",
-  body: "text-sm leading-6 text-slate-300",
-  caption: "text-xs leading-5 text-slate-400",
+  display: "text-4xl font-bold tracking-[-0.05em] md:text-[2.85rem]",
+  heroMetric: "text-[2rem] font-semibold tracking-[-0.04em] md:text-[2.35rem]",
+  metric: "text-[1.75rem] font-semibold tracking-[-0.03em]",
+  title: "text-base font-semibold tracking-[-0.02em]",
+  section: "text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500",
+  body: "text-sm font-normal leading-5 text-zinc-300",
+  caption: "text-xs leading-5 text-zinc-500",
 } as const;
 
 export const spacingScale = {
-  pageX: "px-4 md:px-6 xl:px-8",
-  pageY: "py-4 md:py-6",
-  sectionGap: "gap-6",
-  gridGap: "gap-5",
-  cardPadding: "p-5 md:p-6",
+  pageX: "px-4 md:px-5 xl:px-6",
+  pageY: "py-3 md:py-4",
+  sectionGap: "gap-4",
+  gridGap: "gap-4",
+  cardPadding: "p-4",
 } as const;
 
 export const surfaceStyles = {
   app:
-    "min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.18),transparent_26%),radial-gradient(circle_at_top_right,rgba(139,92,246,0.14),transparent_24%),linear-gradient(180deg,#050816_0%,#070b16_36%,#090d18_100%)] text-slate-50",
-  shell: "rounded-[28px] border border-white/10 bg-slate-950/55 shadow-[0_24px_80px_rgba(15,23,42,0.42)] backdrop-blur-xl",
-  card: "rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.72))] shadow-[0_18px_55px_rgba(15,23,42,0.36)] backdrop-blur-xl",
+    "min-h-screen bg-[radial-gradient(circle_at_22%_0%,rgba(255,106,26,0.12),transparent_16%),radial-gradient(circle_at_70%_12%,rgba(255,255,255,0.035),transparent_22%),linear-gradient(180deg,#09090a_0%,#0b0b0c_48%,#101114_100%)] text-zinc-50",
+  shell: "rounded-md border border-[#26272c] bg-[#0f1012] shadow-[0_0_30px_rgba(0,0,0,0.4)]",
+  card: "rounded-md border border-[#26272c] bg-[#141518] shadow-[0_0_30px_rgba(0,0,0,0.4)]",
   cardElevated:
-    "rounded-[24px] border border-indigo-400/20 bg-[linear-gradient(180deg,rgba(27,37,72,0.96),rgba(17,24,39,0.88))] shadow-[0_0_0_1px_rgba(99,102,241,0.16),0_18px_50px_rgba(99,102,241,0.12)]",
-  cardSubtle: "rounded-[20px] border border-white/10 bg-slate-950/45",
-  sidebar: "border-r border-white/10 bg-slate-950/50 backdrop-blur-xl",
-  topBar: "border-b border-white/10 bg-slate-950/45 backdrop-blur-xl",
-  trustStrip: "border-b border-indigo-400/12 bg-indigo-500/6",
+    "rounded-md border border-[#3a2a20] bg-[#161417] shadow-[0_0_30px_rgba(0,0,0,0.4)]",
+  cardSubtle: "rounded-md border border-[#26272c] bg-[#111214]",
+  sidebar: "border-r border-[#26272c] bg-[#0b0b0c]",
+  topBar: "border-b border-[#26272c] bg-[#101114]",
+  trustStrip: "border-b border-[#26272c] bg-[#111214]",
 } as const;
 
 export const cardStyles = {
   base: `${surfaceStyles.card} ${spacingScale.cardPadding}`,
   elevated: `${surfaceStyles.cardElevated} ${spacingScale.cardPadding}`,
-  compact: `${surfaceStyles.card} p-4`,
+  compact: `${surfaceStyles.card} p-3.5`,
 } as const;
 
 export const tailwindPatterns = {
-  kpiValue: "text-3xl font-semibold tracking-[-0.04em] text-white",
-  subtleLabel: "text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400",
-  insightText: "text-sm leading-6 text-slate-300",
+  kpiValue: "text-[2rem] font-semibold tracking-[-0.04em] text-white",
+  subtleLabel: "text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500",
+  insightText: "text-sm leading-5 text-zinc-300",
   actionButton:
-    "inline-flex items-center justify-center rounded-full border border-indigo-400/25 bg-indigo-500/12 px-4 py-2 text-sm font-medium text-indigo-100 transition hover:border-indigo-300/35 hover:bg-indigo-500/18",
+    "inline-flex items-center justify-center rounded-md border border-accent-500/35 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100 transition hover:border-accent-500/55 hover:bg-accent-500/18",
   secondaryButton:
-    "inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10",
+    "inline-flex items-center justify-center rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-[#1a1b1f]",
 } as const;
 
 export const chartPalette = {
-  primary: "#818cf8",
-  secondary: "#a78bfa",
-  info: "#38bdf8",
+  primary: "#ff6a1a",
+  secondary: "#ff7f3f",
+  info: "#ff944f",
   success: "#22c55e",
-  warning: "#facc15",
+  warning: "#f59e0b",
   danger: "#f87171",
-  muted: "#64748b",
+  muted: "#52525b",
 } as const;

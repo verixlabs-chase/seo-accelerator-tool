@@ -14,29 +14,29 @@ export function TopBar({
   actions,
 }: TopBarProps) {
   return (
-    <header className="flex flex-col gap-4 px-5 py-4 md:flex-row md:items-center md:justify-between md:px-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200">
+    <header className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:px-5">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <div className="rounded-md border border-[#26272c] bg-[#131417] px-3 py-1.5 text-sm text-zinc-200">
           {accountLabel}
         </div>
-        <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
+        <div className="rounded-md border border-[#26272c] bg-[#131417] px-3 py-1.5 text-sm text-zinc-400">
           {dateRangeLabel}
         </div>
-        <div className="min-w-[240px] rounded-full border border-white/10 bg-slate-950/80 px-4 py-2.5 text-sm text-slate-500">
+        <div className="min-w-[260px] rounded-md border border-[#26272c] bg-[#0d0e10] px-3 py-2 text-sm text-zinc-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
           Search pages, keywords, or locations
         </div>
       </div>
 
-      <div className={cn("flex items-center gap-2", actions ? "" : "text-slate-300")}>
+      <div className={cn("flex items-center gap-2", actions ? "" : "text-zinc-300")}>
         {actions ?? (
           <>
-            <button className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200">
+            <button className="rounded-md border border-[#26272c] bg-white/[0.03] px-3 py-1.5 text-sm text-zinc-200">
               Alerts
             </button>
-            <button className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200">
+            <button className="rounded-md border border-[#26272c] bg-white/[0.03] px-3 py-1.5 text-sm text-zinc-200">
               Help
             </button>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-indigo-400/20 bg-indigo-500/15 text-sm font-semibold text-indigo-100">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-accent-500/25 bg-accent-500/10 text-sm font-semibold text-zinc-100 shadow-[0_0_16px_rgba(255,106,26,0.08)]">
               VA
             </div>
           </>

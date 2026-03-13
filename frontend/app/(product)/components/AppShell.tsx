@@ -23,25 +23,25 @@ export function AppShell({
   topBarActions,
 }: AppShellProps) {
   return (
-    <div className="lsos-theme-dark min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.18),transparent_26%),radial-gradient(circle_at_top_right,rgba(139,92,246,0.14),transparent_24%),linear-gradient(180deg,#050816_0%,#070b16_36%,#090d18_100%)] text-slate-50">
-      <div className="mx-auto flex min-h-screen max-w-[1680px] flex-col px-4 py-4 md:px-6 xl:px-8">
-        <div className="flex min-h-[calc(100vh-2rem)] overflow-hidden rounded-[30px] border border-white/10 bg-slate-950/50 shadow-[0_24px_80px_rgba(15,23,42,0.42)] backdrop-blur-xl">
-          <div className="hidden w-[280px] shrink-0 border-r border-white/10 bg-slate-950/50 xl:block">
+    <div className="lsos-theme-dark min-h-screen bg-[radial-gradient(circle_at_22%_0%,rgba(255,106,26,0.12),transparent_16%),radial-gradient(circle_at_70%_12%,rgba(255,255,255,0.035),transparent_22%),linear-gradient(180deg,#09090a_0%,#0b0b0c_48%,#101114_100%)] font-sans text-zinc-50">
+      <div className="flex min-h-screen flex-col">
+        <div className="flex min-h-screen overflow-hidden rounded-md border border-[#26272c] bg-[#0f1012] shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+          <div className="hidden w-[232px] shrink-0 border-r border-[#26272c] bg-[#0b0b0c] xl:block">
             <SidebarNav items={navItems} />
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="border-b border-white/10 bg-slate-950/45">
+            <div className="border-b border-[#26272c] bg-[#101114]">
               <TopBar
                 accountLabel={accountLabel}
                 dateRangeLabel={dateRangeLabel}
                 actions={topBarActions}
               />
             </div>
-            <div className="border-b border-indigo-400/12 bg-indigo-500/6">
+            <div className="border-b border-[#26272c] bg-[#111214]">
               <TrustStatusBar signals={trustSignals} />
             </div>
-            <main className="lsos-scrollbar flex-1 overflow-y-auto px-5 py-6 md:px-6 xl:px-8">
+            <main className="lsos-scrollbar flex-1 overflow-y-auto px-4 py-4 md:px-5 xl:px-6">
               {children}
             </main>
           </div>

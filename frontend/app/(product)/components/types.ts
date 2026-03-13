@@ -5,6 +5,7 @@ export type NavItem = {
   label: string;
   badge?: string;
   active?: boolean;
+  disabled?: boolean;
 };
 
 export type TrustSignal = {

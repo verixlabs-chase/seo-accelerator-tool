@@ -136,7 +136,7 @@ The current repo is not yet fully Tailwind-enabled. This folder defines the styl
   <ChartCard
     title="Ranking momentum"
     summary="Two high-intent keyword clusters recovered this week."
-    chart={<div className="h-64 rounded-2xl bg-white/5" />}
+    chart={<div className="h-64 rounded-md border border-[#26272c] bg-[#141518]" />}
   />
   <ActionDrawer
     title="Strengthen service page links"

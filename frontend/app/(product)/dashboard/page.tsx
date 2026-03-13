@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import {
   Area,
   AreaChart,
@@ -16,73 +18,119 @@ import {
   ActionDrawer,
   AppShell,
   ChartCard,
+  EmptyState,
   InsightCard,
   KpiCard,
   type NavItem,
   type TrustSignal,
 } from "../components";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
+
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", active: true },
-  { href: "/locations", label: "Locations" },
-  { href: "/rankings", label: "Rankings" },
-  { href: "/local-visibility", label: "Local Visibility" },
-  { href: "/site-health", label: "Site Health", badge: "3" },
-  { href: "/competitors", label: "Competitors" },
-  { href: "/opportunities", label: "Opportunities", badge: "5" },
-  { href: "/reports", label: "Reports" },
-  { href: "/settings", label: "Settings" },
+  { href: "/locations", label: "Locations", disabled: true },
+  { href: "/rankings", label: "Rankings", disabled: true },
+  { href: "/local-visibility", label: "Local Visibility", disabled: true },
+  { href: "/site-health", label: "Site Health", badge: "3", disabled: true },
+  { href: "/competitors", label: "Competitors", disabled: true },
+  { href: "/opportunities", label: "Opportunities", badge: "5", disabled: true },
+  { href: "/reports", label: "Reports", disabled: true },
+  { href: "/settings", label: "Settings", disabled: true },
 ];
 
-const trustSignals: TrustSignal[] = [
-  { label: "Freshness", value: "Updated 12 min ago", tone: "info" },
-  { label: "Providers", value: "4 connected", tone: "success" },
-  { label: "Crawl sync", value: "Healthy", tone: "success" },
-  { label: "Rank sync", value: "Refresh running", tone: "warning" },
-];
+type Me = {
+  id?: string;
+  tenant_id?: string;
+};
 
-const visibilityTrend = [
-  { label: "Mon", visibility: 58, baseline: 54 },
-  { label: "Tue", visibility: 60, baseline: 55 },
-  { label: "Wed", visibility: 63, baseline: 56 },
-  { label: "Thu", visibility: 65, baseline: 57 },
-  { label: "Fri", visibility: 67, baseline: 58 },
-  { label: "Sat", visibility: 69, baseline: 59 },
-  { label: "Sun", visibility: 72, baseline: 60 },
-];
+type Campaign = {
+  id: string;
+  name?: string;
+  domain?: string;
+};
 
-const rankingTrend = [
-  { label: "Mon", momentum: 41, benchmark: 46 },
-  { label: "Tue", momentum: 44, benchmark: 45 },
-  { label: "Wed", momentum: 49, benchmark: 45 },
-  { label: "Thu", momentum: 53, benchmark: 44 },
-  { label: "Fri", momentum: 56, benchmark: 44 },
-  { label: "Sat", momentum: 59, benchmark: 43 },
-  { label: "Sun", momentum: 62, benchmark: 43 },
-];
+type CrawlRun = {
+  id?: string;
+  status?: string;
+  crawl_type?: string;
+  created_at?: string;
+  updated_at?: string;
+};
 
-const recentActivity = [
-  {
-    title: "Crawl completed",
-    time: "12 minutes ago",
-    detail: "118 pages processed and 3 high-priority title issues flagged.",
-  },
-  {
-    title: "Rankings refreshed",
-    time: "38 minutes ago",
-    detail: "Two high-intent service keywords moved into the top 3.",
-  },
-  {
-    title: "Report generated",
-    time: "Yesterday",
-    detail: "Monthly executive summary sent to the owner and marketing lead.",
-  },
-  {
-    title: "Optimization executed",
-    time: "2 days ago",
-    detail: "Internal links were updated on 4 service pages with supporting anchors.",
-  },
-];
+type RankTrend = {
+  id?: string;
+  keyword?: string;
+  position?: number | string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type Report = {
+  id?: string;
+  month_number?: number | string;
+  report_status?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+function toTitleCase(value?: string) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function withScheme(domain: string) {
+  if (!domain) {
+    return "";
+  }
+
+  if (domain.startsWith("http://") || domain.startsWith("https://")) {
+    return domain;
+  }
+
+  return `https://${domain}`;
+}
+
+function formatRelativeTime(value?: string) {
+  if (!value) {
+    return "No recent activity";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "No recent activity";
+  }
+
+  const diffMs = date.getTime() - Date.now();
+  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const minutes = Math.round(diffMs / 60000);
+
+  if (Math.abs(minutes) < 60) {
+    return formatter.format(minutes, "minute");
+  }
+
+  const hours = Math.round(diffMs / 3600000);
+  if (Math.abs(hours) < 24) {
+    return formatter.format(hours, "hour");
+  }
+
+  const days = Math.round(diffMs / 86400000);
+  return formatter.format(days, "day");
+}
+
+function coerceNumber(value: number | string | undefined, fallback = 0) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
 function SectionHeading({
   eyebrow,
@@ -94,14 +142,14 @@ function SectionHeading({
   summary: string;
 }) {
   return (
-    <div className="mb-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-200/80">
+    <div className="mb-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
         {eyebrow}
       </p>
-      <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">
+      <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
         {title}
       </h2>
-      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{summary}</p>
+      <p className="mt-1.5 max-w-3xl text-sm leading-5 text-zinc-300">{summary}</p>
     </div>
   );
 }
@@ -120,13 +168,13 @@ function TrendTooltip({
   }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-4 py-3 shadow-[0_18px_45px_rgba(15,23,42,0.42)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+    <div className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-2.5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
         {label}
       </p>
       <div className="mt-2 space-y-1.5">
         {payload.map((entry) => (
-          <div key={entry.name} className="flex items-center gap-2 text-sm text-slate-200">
+          <div key={entry.name} className="flex items-center gap-2 text-sm text-zinc-200">
             <span
               className="h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: entry.color }}
@@ -140,15 +188,19 @@ function TrendTooltip({
   );
 }
 
-function VisibilityTrendChart() {
+function VisibilityTrendChart({
+  data,
+}: {
+  data: Array<{ label: string; visibility: number; baseline: number }>;
+}) {
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={visibilityTrend}>
+        <AreaChart data={data}>
           <defs>
             <linearGradient id="visibilityFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#818cf8" stopOpacity={0.34} />
-              <stop offset="95%" stopColor="#818cf8" stopOpacity={0.02} />
+              <stop offset="5%" stopColor="#FF6A1A" stopOpacity={0.34} />
+              <stop offset="95%" stopColor="#FF6A1A" stopOpacity={0.02} />
             </linearGradient>
           </defs>
           <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
@@ -156,28 +208,28 @@ function VisibilityTrendChart() {
             dataKey="label"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#94a3b8", fontSize: 12 }}
+            tick={{ fill: "#71717a", fontSize: 12 }}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#94a3b8", fontSize: 12 }}
+            tick={{ fill: "#71717a", fontSize: 12 }}
             width={36}
           />
           <Tooltip content={<TrendTooltip />} />
           <Area
             type="monotone"
             dataKey="visibility"
-            stroke="#818cf8"
-            strokeWidth={3}
+            stroke="#FF6A1A"
+            strokeWidth={2.2}
             fill="url(#visibilityFill)"
             name="Visibility"
           />
           <Line
             type="monotone"
             dataKey="baseline"
-            stroke="#38bdf8"
-            strokeWidth={2}
+            stroke="#FF944F"
+            strokeWidth={1.75}
             strokeDasharray="4 5"
             dot={false}
             name="Baseline"
@@ -188,39 +240,43 @@ function VisibilityTrendChart() {
   );
 }
 
-function RankingTrendChart() {
+function RankingTrendChart({
+  data,
+}: {
+  data: Array<{ label: string; momentum: number; benchmark: number }>;
+}) {
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={rankingTrend}>
+        <LineChart data={data}>
           <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
           <XAxis
             dataKey="label"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#94a3b8", fontSize: 12 }}
+            tick={{ fill: "#71717a", fontSize: 12 }}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#94a3b8", fontSize: 12 }}
+            tick={{ fill: "#71717a", fontSize: 12 }}
             width={36}
           />
           <Tooltip content={<TrendTooltip />} />
           <Line
             type="monotone"
             dataKey="momentum"
-            stroke="#a78bfa"
-            strokeWidth={3}
+            stroke="#FF6A1A"
+            strokeWidth={2.2}
             dot={{ r: 0 }}
-            activeDot={{ r: 5, fill: "#a78bfa", stroke: "#070b16", strokeWidth: 2 }}
+            activeDot={{ r: 4, fill: "#FF6A1A", stroke: "#0a0a0a", strokeWidth: 2 }}
             name="Momentum"
           />
           <Line
             type="monotone"
             dataKey="benchmark"
-            stroke="#22c55e"
-            strokeWidth={2}
+            stroke="#FF944F"
+            strokeWidth={1.75}
             dot={false}
             strokeDasharray="5 6"
             name="Benchmark"
@@ -243,12 +299,11 @@ function MiniSpark({
       {bars.map((bar, index) => (
         <span
           key={`${color}-${index}`}
-          className="w-2 rounded-full"
+          className="w-1.5"
           style={{
             height: `${bar}%`,
             background: color,
-            opacity: 0.92,
-            boxShadow: `0 0 18px ${color}33`,
+            opacity: 0.88,
           }}
         />
       ))}
@@ -256,9 +311,13 @@ function MiniSpark({
   );
 }
 
-function TimelineCard() {
+function TimelineCard({
+  recentActivity,
+}: {
+  recentActivity: Array<{ title: string; time: string; detail: string }>;
+}) {
   return (
-    <section className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.72))] p-5 shadow-[0_18px_55px_rgba(15,23,42,0.36)] md:p-6">
+    <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
       <SectionHeading
         eyebrow="Recent activity"
         title="Execution timeline"
@@ -268,19 +327,19 @@ function TimelineCard() {
         {recentActivity.map((item, index) => (
           <div key={item.title} className="flex gap-4">
             <div className="flex flex-col items-center">
-              <div className="mt-1 h-3.5 w-3.5 rounded-full border border-indigo-300/30 bg-indigo-400 shadow-[0_0_18px_rgba(129,140,248,0.55)]" />
+              <div className="mt-1 h-3 w-3 border border-accent-500/30 bg-accent-500/90" />
               {index < recentActivity.length - 1 ? (
-                <div className="mt-2 h-full min-h-10 w-px bg-white/10" />
+                <div className="mt-2 h-full min-h-10 w-px bg-[#26272c]" />
               ) : null}
             </div>
-            <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+            <div className="flex-1 rounded-md border border-[#26272c] bg-[#111214] px-3 py-3">
               <div className="flex flex-wrap items-center gap-3">
                 <h3 className="text-sm font-semibold text-white">{item.title}</h3>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">
+                <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-400">
                   {item.time}
                 </span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-slate-300">{item.detail}</p>
+              <p className="mt-2 text-sm leading-5 text-zinc-300">{item.detail}</p>
             </div>
           </div>
         ))}
@@ -290,56 +349,564 @@ function TimelineCard() {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [me, setMe] = useState<Me | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [campaignName, setCampaignName] = useState("");
+  const [campaignDomain, setCampaignDomain] = useState("");
+  const [seedUrl, setSeedUrl] = useState("");
+  const [crawlType, setCrawlType] = useState("deep");
+  const [clusterName, setClusterName] = useState("Core Terms");
+  const [keyword, setKeyword] = useState("local seo agency");
+  const [locationCode, setLocationCode] = useState("US");
+  const [monthNumber, setMonthNumber] = useState("1");
+  const [recipientEmail, setRecipientEmail] = useState("admin@local.dev");
+  const [busyAction, setBusyAction] = useState("");
+  const [latestRuns, setLatestRuns] = useState<CrawlRun[]>([]);
+  const [latestTrends, setLatestTrends] = useState<RankTrend[]>([]);
+  const [latestReports, setLatestReports] = useState<Report[]>([]);
+
+  async function api(path: string, options: RequestInit = {}) {
+    async function runRequest(token: string) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+
+      try {
+        return await fetch(`${API_BASE}${path}`, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            ...(options.headers || {}),
+          },
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          throw new Error("Request timed out. Please try again.");
+        }
+
+        throw err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    let token = localStorage.getItem("access_token");
+    if (!token) {
+      router.push("/login");
+      throw new Error("No token found. Login first.");
+    }
+
+    let response = await runRequest(token);
+
+    if (response.status === 401) {
+      const refreshToken = localStorage.getItem("refresh_token");
+      if (!refreshToken) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        localStorage.removeItem("tenant_id");
+        router.push("/login");
+        throw new Error("Session expired. Please log in again.");
+      }
+
+      const refreshResponse = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      const refreshJson = await refreshResponse.json().catch(() => ({}));
+
+      if (!refreshResponse.ok || !refreshJson?.data?.access_token) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        localStorage.removeItem("tenant_id");
+        router.push("/login");
+        throw new Error("Session expired. Please log in again.");
+      }
+
+      localStorage.setItem("access_token", refreshJson.data.access_token);
+      token = refreshJson.data.access_token;
+      response = await runRequest(token);
+    }
+
+    let json: any = {};
+    try {
+      json = await response.json();
+    } catch {
+      json = {};
+    }
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        localStorage.removeItem("tenant_id");
+        router.push("/login");
+      }
+
+      throw new Error(json?.error?.message || `Request failed (${response.status})`);
+    }
+
+    return json.data;
+  }
+
+  async function loadCampaigns() {
+    const data = await api("/campaigns");
+    const items = (data?.items || []) as Campaign[];
+    setCampaigns(items);
+
+    if (!selectedCampaignId && items.length > 0) {
+      setSelectedCampaignId(items[0].id);
+      setSeedUrl(withScheme(items[0].domain || ""));
+    }
+
+    return items;
+  }
+
+  async function loadLatest(campaignId: string) {
+    if (!campaignId) {
+      return;
+    }
+
+    const [runsData, trendsData, reportsData] = await Promise.all([
+      api(`/crawl/runs?campaign_id=${encodeURIComponent(campaignId)}`),
+      api(`/rank/trends?campaign_id=${encodeURIComponent(campaignId)}`),
+      api(`/reports?campaign_id=${encodeURIComponent(campaignId)}`),
+    ]);
+
+    setLatestRuns((runsData?.items || []) as CrawlRun[]);
+    setLatestTrends((trendsData?.items || []) as RankTrend[]);
+    setLatestReports((reportsData?.items || []) as Report[]);
+  }
+
+  async function runAction(label: string, fn: () => Promise<void>) {
+    setBusyAction(label);
+    setError("");
+    setNotice("");
+
+    try {
+      await fn();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function createCampaign(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!campaignName.trim() || !campaignDomain.trim()) {
+      setError("Campaign name and domain are required.");
+      return;
+    }
+
+    await runAction("createCampaign", async () => {
+      const created = await api("/campaigns", {
+        method: "POST",
+        body: JSON.stringify({
+          name: campaignName.trim(),
+          domain: campaignDomain.trim(),
+        }),
+      });
+
+      await loadCampaigns();
+      setSelectedCampaignId(created.id);
+      setSeedUrl(withScheme(created.domain || ""));
+      setCampaignName("");
+      setCampaignDomain("");
+      setNotice("Campaign created.");
+      await loadLatest(created.id);
+    });
+  }
+
+  async function scheduleCrawl() {
+    if (!selectedCampaignId) {
+      setError("Select a campaign first.");
+      return;
+    }
+
+    await runAction("crawl", async () => {
+      const chosenCampaign = campaigns.find((item) => item.id === selectedCampaignId);
+      const effectiveSeedUrl = seedUrl.trim() || withScheme(chosenCampaign?.domain || "");
+
+      if (!effectiveSeedUrl) {
+        throw new Error("Seed URL is required for crawl.");
+      }
+
+      await api("/crawl/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          crawl_type: crawlType,
+          seed_url: effectiveSeedUrl,
+        }),
+      });
+
+      setSeedUrl(effectiveSeedUrl);
+      setNotice("Crawl scheduled.");
+      await loadLatest(selectedCampaignId);
+    });
+  }
+
+  async function addKeywordAndRunRank() {
+    if (!selectedCampaignId) {
+      setError("Select a campaign first.");
+      return;
+    }
+
+    if (!keyword.trim()) {
+      setError("Keyword is required.");
+      return;
+    }
+
+    await runAction("rank", async () => {
+      await api("/rank/keywords", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          cluster_name: clusterName.trim() || "Core Terms",
+          keyword: keyword.trim(),
+          location_code: locationCode.trim() || "US",
+        }),
+      });
+
+      await api("/rank/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          location_code: locationCode.trim() || "US",
+        }),
+      });
+
+      setNotice("Rank snapshot scheduled.");
+      await loadLatest(selectedCampaignId);
+    });
+  }
+
+  async function generateReport() {
+    if (!selectedCampaignId) {
+      setError("Select a campaign first.");
+      return;
+    }
+
+    await runAction("report", async () => {
+      const parsedMonth = Number.parseInt(monthNumber, 10);
+      const safeMonth = Number.isNaN(parsedMonth)
+        ? 1
+        : Math.min(12, Math.max(1, parsedMonth));
+
+      await api("/reports/generate", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          month_number: safeMonth,
+        }),
+      });
+
+      setNotice(`Report generated for month ${safeMonth}.`);
+      await loadLatest(selectedCampaignId);
+    });
+  }
+
+  async function deliverLatestReport() {
+    if (!selectedCampaignId) {
+      setError("Select a campaign first.");
+      return;
+    }
+
+    if (!recipientEmail.trim()) {
+      setError("Recipient email is required.");
+      return;
+    }
+
+    if (latestReports.length === 0 || !latestReports[0]?.id) {
+      setError("Generate a report first.");
+      return;
+    }
+
+    await runAction("deliver", async () => {
+      await api(`/reports/${latestReports[0].id}/deliver`, {
+        method: "POST",
+        body: JSON.stringify({ recipient: recipientEmail.trim() }),
+      });
+
+      setNotice("Latest report marked as delivered.");
+      await loadLatest(selectedCampaignId);
+    });
+  }
+
+  /* eslint-disable react-hooks/exhaustive-deps */
+  // The initial dashboard bootstrap should run once on mount.
+  useEffect(() => {
+    async function loadDashboard() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const user = (await api("/auth/me", { method: "GET" })) as Me;
+        setMe(user);
+        const items = await loadCampaigns();
+
+        if (items.length > 0) {
+          await loadLatest(items[0].id);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Session invalid");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadDashboard();
+  }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
+
+  useEffect(() => {
+    const selected = campaigns.find((item) => item.id === selectedCampaignId);
+    if (selected && !seedUrl) {
+      setSeedUrl(withScheme(selected.domain || ""));
+    }
+  }, [campaigns, seedUrl, selectedCampaignId]);
+
+  const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
+
+  const trustSignals = useMemo<TrustSignal[]>(
+    () => [
+      {
+        label: "Freshness",
+        value: latestRuns[0]?.updated_at
+          ? `Updated ${formatRelativeTime(latestRuns[0].updated_at)}`
+          : "Awaiting crawl data",
+        tone: latestRuns.length > 0 ? "info" : "warning",
+      },
+      {
+        label: "Campaigns",
+        value: `${campaigns.length} configured`,
+        tone: campaigns.length > 0 ? "success" : "warning",
+      },
+      {
+        label: "Crawl sync",
+        value: latestRuns[0]?.status ? toTitleCase(latestRuns[0].status) : "Not started",
+        tone: latestRuns[0]?.status === "completed" ? "success" : "warning",
+      },
+      {
+        label: "Rank sync",
+        value: latestTrends.length > 0 ? `${latestTrends.length} keywords tracked` : "No keywords yet",
+        tone: latestTrends.length > 0 ? "success" : "warning",
+      },
+    ],
+    [campaigns.length, latestRuns, latestTrends.length],
+  );
+
+  const visibilityTrend = useMemo(
+    () =>
+      latestTrends.slice(0, 7).map((trend, index) => {
+        const position = coerceNumber(trend.position, 0);
+        const visibility = position > 0 ? Math.max(0, 101 - position) : 0;
+        return {
+          label: trend.keyword?.slice(0, 10) || `KW ${index + 1}`,
+          visibility,
+          baseline: Math.max(0, visibility - 8),
+        };
+      }),
+    [latestTrends],
+  );
+
+  const rankingTrend = useMemo(
+    () =>
+      latestTrends.slice(0, 7).map((trend, index) => {
+        const position = coerceNumber(trend.position, 100);
+        return {
+          label: trend.keyword?.slice(0, 10) || `KW ${index + 1}`,
+          momentum: Math.max(1, 101 - position),
+          benchmark: Math.max(1, 96 - position),
+        };
+      }),
+    [latestTrends],
+  );
+
+  const recentActivity = useMemo(
+    () => [
+      latestRuns[0]
+        ? {
+            title: `Crawl ${toTitleCase(latestRuns[0].status)}`,
+            time: formatRelativeTime(latestRuns[0].updated_at || latestRuns[0].created_at),
+            detail: `Latest ${latestRuns[0].crawl_type || "crawl"} run is ${latestRuns[0].status || "pending"} for ${selectedCampaign?.name || "the active campaign"}.`,
+          }
+        : null,
+      latestTrends[0]
+        ? {
+            title: "Ranking snapshot updated",
+            time: formatRelativeTime(latestTrends[0].updated_at || latestTrends[0].created_at),
+            detail: `${latestTrends[0].keyword || "Top keyword"} is currently at position ${coerceNumber(latestTrends[0].position, 0)}.`,
+          }
+        : null,
+      latestReports[0]
+        ? {
+            title: "Report lifecycle",
+            time: formatRelativeTime(latestReports[0].updated_at || latestReports[0].created_at),
+            detail: `Month ${latestReports[0].month_number || "current"} report is ${toTitleCase(latestReports[0].report_status)}.`,
+          }
+        : null,
+      selectedCampaign
+        ? {
+            title: "Campaign selected",
+            time: "Now",
+            detail: `${selectedCampaign.name || "Unnamed campaign"} on ${selectedCampaign.domain || "no domain"} is the active workspace.`,
+          }
+        : null,
+    ].filter(Boolean) as Array<{ title: string; time: string; detail: string }>,
+    [latestReports, latestRuns, latestTrends, selectedCampaign],
+  );
+
+  const topKeyword = latestTrends[0];
+  const topReport = latestReports[0];
+  const topRun = latestRuns[0];
+
   return (
     <AppShell
       navItems={navItems}
       trustSignals={trustSignals}
-      accountLabel="Austin Roofing Co. / Downtown"
-      dateRangeLabel="Last 30 days"
+      accountLabel={
+        selectedCampaign
+          ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
+          : "No campaign selected"
+      }
+      dateRangeLabel="Live API data"
+      topBarActions={
+        <>
+          <button
+            onClick={() =>
+              runAction("refresh", async () => {
+                await loadLatest(selectedCampaignId);
+                setNotice("Latest results refreshed.");
+              })
+            }
+            disabled={busyAction !== "" || !selectedCampaignId}
+            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busyAction === "refresh" ? "Refreshing..." : "Refresh"}
+          </button>
+          <div className="flex h-9 min-w-9 items-center justify-center border border-accent-500/20 bg-accent-500/10 px-3 text-sm font-semibold text-zinc-100">
+            {me?.tenant_id ? "TA" : "LS"}
+          </div>
+        </>
+      }
     >
       <section className="space-y-6">
         <div className="max-w-4xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-200/80">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
             Campaign command center
           </p>
-          <h1 className="mt-2 text-4xl font-semibold tracking-[-0.04em] text-white md:text-5xl">
+          <h1 className="mt-2 text-4xl font-bold tracking-[-0.05em] text-white md:text-[3.25rem]">
             Local SEO performance, interpreted.
           </h1>
-          <p className="mt-3 text-base leading-7 text-slate-300">
-            Visibility is improving, rankings are recovering on priority service
-            pages, and the clearest next gain is still technical link equity.
+          <p className="mt-2.5 text-sm leading-6 text-zinc-300 md:text-base">
+            The redesigned command center is now wired back into the live campaign,
+            crawl, rank, and report workflows for the active tenant.
           </p>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-4">
+        {loading ? (
+          <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 text-sm text-zinc-300 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+            Loading session and campaign telemetry...
+          </section>
+        ) : null}
+
+        {error ? (
+          <section className="border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+            {error}
+          </section>
+        ) : null}
+
+        {notice ? (
+          <section className="border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
+            {notice}
+          </section>
+        ) : null}
+
+        <div className="grid gap-4 xl:grid-cols-4">
           <KpiCard
-            label="SEO Health Score"
-            value="81"
-            changeLabel="+6"
-            summary="Technical health improved after last week&apos;s page title and internal link updates."
-            visual={<MiniSpark bars={[30, 46, 42, 58, 61, 73, 82]} color="#22c55e" />}
+            label="Campaigns"
+            value={String(campaigns.length)}
+            changeLabel={selectedCampaign ? "Active" : "Awaiting setup"}
+            summary={
+              selectedCampaign
+                ? `Current workspace: ${selectedCampaign.name || "Unnamed campaign"} on ${selectedCampaign.domain || "no domain"}.`
+                : "Create a campaign to begin crawl, rank, and reporting workflows."
+            }
+            visual={
+              <MiniSpark
+                bars={[24, 34, 42, 50, 62, 76, Math.min(96, campaigns.length * 18 || 14)]}
+                color="#22c55e"
+              />
+            }
             tone="highlight"
           />
           <KpiCard
-            label="Local Visibility Score"
-            value="72"
-            changeLabel="+8%"
-            summary="Visibility expanded after review velocity improved across your highest-converting grid cells."
-            visual={<MiniSpark bars={[32, 38, 41, 49, 55, 62, 74]} color="#818cf8" />}
+            label="Latest Crawl"
+            value={topRun?.status ? toTitleCase(topRun.status) : "None"}
+            changeLabel={topRun?.crawl_type ? toTitleCase(topRun.crawl_type) : undefined}
+            summary={
+              topRun
+                ? `Most recent crawl was updated ${formatRelativeTime(topRun.updated_at || topRun.created_at)}.`
+                : "No crawl runs are available for the selected campaign yet."
+            }
+            visual={
+              <MiniSpark
+                bars={[18, 26, 38, 44, 58, 68, topRun ? 84 : 20]}
+                color="#FF6A1A"
+              />
+            }
           />
           <KpiCard
-            label="Ranking Momentum"
-            value="+11"
-            changeLabel="Upward"
-            summary="Two service pages recovered rankings after internal link consolidation and refreshed metadata."
-            visual={<MiniSpark bars={[18, 30, 39, 44, 57, 66, 79]} color="#a78bfa" />}
+            label="Tracked Keywords"
+            value={String(latestTrends.length)}
+            changeLabel={
+              topKeyword?.position ? `Top pos ${coerceNumber(topKeyword.position)}` : undefined
+            }
+            summary={
+              topKeyword
+                ? `${topKeyword.keyword || "Top keyword"} is leading the current trend set.`
+                : "No ranking snapshots exist yet for this campaign."
+            }
+            visual={
+              <MiniSpark
+                bars={[
+                  16,
+                  22,
+                  31,
+                  40,
+                  52,
+                  66,
+                  Math.min(92, latestTrends.length * 9 || 12),
+                ]}
+                color="#FF944F"
+              />
+            }
           />
           <KpiCard
-            label="Competitor Pressure"
-            value="Moderate"
-            changeLabel="-2 rivals"
-            summary="One core competitor lost downtown map-pack coverage, but service-area gaps remain on the west side."
-            visual={<MiniSpark bars={[74, 68, 63, 58, 49, 42, 36]} color="#38bdf8" />}
+            label="Reports"
+            value={String(latestReports.length)}
+            changeLabel={
+              topReport?.month_number ? `Month ${topReport.month_number}` : undefined
+            }
+            summary={
+              topReport
+                ? `Latest report status is ${toTitleCase(topReport.report_status)}.`
+                : "Generate a report when you are ready to package the latest work."
+            }
+            visual={
+              <MiniSpark
+                bars={[20, 28, 36, 48, 54, 62, Math.min(90, latestReports.length * 20 || 14)]}
+                color="#FF7F3F"
+              />
+            }
           />
         </div>
 
@@ -347,25 +914,43 @@ export default function DashboardPage() {
           <ChartCard
             eyebrow="Trend"
             title="Local visibility trend"
-            summary="The strongest gains came after review velocity improved and business-profile engagement stabilized in high-value cells."
-            chart={<VisibilityTrendChart />}
+            summary="Visibility now reflects live ranking data transformed from current keyword positions for the selected campaign."
+            chart={
+              visibilityTrend.length > 0 ? (
+                <VisibilityTrendChart data={visibilityTrend} />
+              ) : (
+                <EmptyState
+                  title="No visibility data yet"
+                  summary="Schedule a rank snapshot to populate this chart with live campaign signals."
+                  actionLabel="Run rankings"
+                />
+              )
+            }
             footer={
-              <p className="text-sm leading-6 text-slate-300">
-                What changed: visibility climbed steadily across the week. Why it
-                matters: stronger map-pack presence lifts inbound demand before site
-                visits even begin.
+              <p className="text-sm leading-5 text-zinc-300">
+                The chart is derived from current keyword positions returned by the
+                rank trends API, so it updates when new snapshots arrive.
               </p>
             }
           />
           <ChartCard
             eyebrow="Trend"
             title="Ranking momentum"
-            summary="Priority commercial terms are recovering faster than the market benchmark, which suggests the recent content and link work is holding."
-            chart={<RankingTrendChart />}
+            summary="Momentum now reflects the live tracked keywords instead of placeholder sample data."
+            chart={
+              rankingTrend.length > 0 ? (
+                <RankingTrendChart data={rankingTrend} />
+              ) : (
+                <EmptyState
+                  title="No ranking history yet"
+                  summary="Add a keyword and run a ranking snapshot to render momentum trends."
+                  actionLabel="Add keyword"
+                />
+              )
+            }
             footer={
-              <p className="text-sm leading-6 text-slate-300">
-                What to do next: reinforce the recovering service pages instead of
-                spreading effort across low-intent terms.
+              <p className="text-sm leading-5 text-zinc-300">
+                This surface uses the same live rank trend endpoint as the legacy dashboard.
               </p>
             }
           />
@@ -374,69 +959,258 @@ export default function DashboardPage() {
         <div className="grid gap-5 xl:grid-cols-3">
           <InsightCard
             insight={{
-              title: "Visibility increased near downtown.",
-              body: "Review velocity growth and improved business-profile completeness are lifting local pack coverage where conversion intent is strongest.",
-              tone: "success",
-              action: { label: "Open local visibility" },
+              title: selectedCampaign ? "Active campaign selected." : "Campaign setup required.",
+              body: selectedCampaign
+                ? `${selectedCampaign.name || "The selected campaign"} is ready for live crawl, rank, and reporting actions.`
+                : "Create or select a campaign to unlock dashboard actions and telemetry.",
+              tone: selectedCampaign ? "success" : "warning",
+              action: { label: "Manage campaign" },
             }}
           />
           <InsightCard
             insight={{
-              title: "Two service pages recovered rankings.",
-              body: "Internal link updates improved crawl depth and relevance signals on high-intent roofing service pages.",
-              tone: "info",
-              action: { label: "Inspect rankings" },
+              title: topKeyword ? "Top keyword trend loaded." : "Ranking workflow pending.",
+              body: topKeyword
+                ? `${topKeyword.keyword || "The current leader"} is at position ${coerceNumber(topKeyword.position)} in the latest ranking data.`
+                : "Add a keyword and schedule rank collection to populate the new charts.",
+              tone: topKeyword ? "info" : "warning",
+              action: { label: "Run rankings" },
             }}
           />
           <InsightCard
             insight={{
-              title: "Three service pages still need title fixes.",
-              body: "Metadata remains incomplete on money pages, which is limiting click-through rate and weakening page clarity.",
-              tone: "danger",
-              action: { label: "Review site health" },
+              title: topReport ? "Report pipeline available." : "Reports not generated yet.",
+              body: topReport
+                ? `Month ${topReport.month_number} report is ${toTitleCase(topReport.report_status)} and can be delivered from the action panel.`
+                : "Generate a report once the selected campaign has fresh crawl and ranking data.",
+              tone: topReport ? "success" : "warning",
+              action: { label: "Manage reports" },
             }}
           />
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
-          <section className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.72))] p-5 shadow-[0_18px_55px_rgba(15,23,42,0.36)] md:p-6">
+        <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+          <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
             <SectionHeading
-              eyebrow="Top risks"
-              title="Watch these constraints"
-              summary="The campaign is recovering, but a few weak points can still slow local growth if they are left unresolved."
+              eyebrow="Workflow controls"
+              title="Operate the live campaign"
+              summary="These controls are the working product flow from the legacy dashboard, now embedded in the redesigned shell."
             />
-            <div className="grid gap-4 md:grid-cols-2">
-              <InsightCard
-                insight={{
-                  title: "Review velocity slowed in the last two weeks.",
-                  body: "Recent gains are strong, but the pace of new reviews is flattening in the locations that influence your best-performing zones.",
-                  tone: "warning",
-                  action: { label: "Open review plan" },
-                }}
-              />
-              <InsightCard
-                insight={{
-                  title: "Competitor coverage remains stronger west of downtown.",
-                  body: "A nearby rival still outranks you for high-intent repair terms in a service area where you have weak landing-page support.",
-                  tone: "warning",
-                  action: { label: "Compare competitors" },
-                }}
-              />
+            <div className="grid gap-4 xl:grid-cols-2">
+              <form
+                onSubmit={createCampaign}
+                className="rounded-md border border-[#26272c] bg-[#111214] p-4"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Campaign
+                </p>
+                <div className="mt-4 space-y-3">
+                  <input
+                    value={campaignName}
+                    onChange={(event) => setCampaignName(event.target.value)}
+                    placeholder="Campaign name"
+                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                  <input
+                    value={campaignDomain}
+                    onChange={(event) => setCampaignDomain(event.target.value)}
+                    placeholder="example.com"
+                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={busyAction !== ""}
+                    className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "createCampaign" ? "Creating..." : "Create Campaign"}
+                  </button>
+                </div>
+                <div className="mt-5">
+                  <label className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                    Active campaign
+                  </label>
+                  <select
+                    value={selectedCampaignId}
+                    onChange={async (event) => {
+                      const nextId = event.target.value;
+                      setSelectedCampaignId(nextId);
+                      const selected = campaigns.find((item) => item.id === nextId);
+                      setSeedUrl(withScheme(selected?.domain || ""));
+                      await runAction("refresh", async () => {
+                        await loadLatest(nextId);
+                      });
+                    }}
+                    className="mt-2 w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
+                  >
+                    <option value="">Select campaign</option>
+                    {campaigns.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({item.domain})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </form>
+
+              <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Crawl
+                </p>
+                <div className="mt-4 space-y-3">
+                  <input
+                    value={seedUrl}
+                    onChange={(event) => setSeedUrl(event.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                  <select
+                    value={crawlType}
+                    onChange={(event) => setCrawlType(event.target.value)}
+                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
+                  >
+                    <option value="deep">deep</option>
+                    <option value="delta">delta</option>
+                  </select>
+                  <button
+                    onClick={scheduleCrawl}
+                    disabled={busyAction !== ""}
+                    className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "crawl" ? "Scheduling..." : "Run Crawl"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Rank
+                </p>
+                <div className="mt-4 space-y-3">
+                  <input
+                    value={clusterName}
+                    onChange={(event) => setClusterName(event.target.value)}
+                    placeholder="Core Terms"
+                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                  <input
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
+                    placeholder="local seo agency"
+                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                  <input
+                    value={locationCode}
+                    onChange={(event) => setLocationCode(event.target.value)}
+                    placeholder="US"
+                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                  <button
+                    onClick={addKeywordAndRunRank}
+                    disabled={busyAction !== ""}
+                    className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "rank" ? "Scheduling..." : "Run Rank Snapshot"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Reports
+                </p>
+                <div className="mt-4 space-y-3">
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    value={monthNumber}
+                    onChange={(event) => setMonthNumber(event.target.value)}
+                    placeholder="1"
+                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                  <input
+                    value={recipientEmail}
+                    onChange={(event) => setRecipientEmail(event.target.value)}
+                    placeholder="admin@local.dev"
+                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={generateReport}
+                      disabled={busyAction !== ""}
+                      className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busyAction === "report" ? "Generating..." : "Generate Report"}
+                    </button>
+                    <button
+                      onClick={deliverLatestReport}
+                      disabled={busyAction !== ""}
+                      className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busyAction === "deliver" ? "Delivering..." : "Deliver Latest"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
           <ActionDrawer
-            title="Strengthen internal links to service pages"
-            summary="Internal linking remains the clearest technical lever for ranking improvement and reinforces the pages already starting to recover."
+            title={
+              selectedCampaign
+                ? `Next action for ${selectedCampaign.name || "active campaign"}`
+                : "Select or create a campaign"
+            }
+            summary={
+              selectedCampaign
+                ? "The live workflow controls are restored. Use this drawer to trigger the next crawl, ranking, or reporting step without leaving the redesigned shell."
+                : "The new shell is intact, but it needs an active campaign before crawl, rank, and report actions can run."
+            }
             evidence={[
-              "Dropped pages have weaker internal link depth than the current winners.",
-              "High-intent keywords recently recovered after content and metadata updates.",
-              "Competitor wins still cluster around stronger page-to-page relevance signals.",
+              topRun
+                ? `Latest crawl status: ${toTitleCase(topRun.status)} (${topRun.crawl_type || "crawl"}).`
+                : "No crawl runs have been scheduled yet.",
+              topKeyword
+                ? `Top keyword: ${topKeyword.keyword || "Unknown"} at position ${coerceNumber(topKeyword.position)}.`
+                : "No ranking data has been collected yet.",
+              topReport
+                ? `Latest report: month ${topReport.month_number} is ${toTitleCase(topReport.report_status)}.`
+                : "No report has been generated yet.",
             ]}
+            actions={
+              <>
+                <button
+                  onClick={scheduleCrawl}
+                  disabled={busyAction !== ""}
+                  className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Run crawl
+                </button>
+                <button
+                  onClick={generateReport}
+                  disabled={busyAction !== ""}
+                  className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Generate report
+                </button>
+              </>
+            }
           />
         </div>
 
-        <TimelineCard />
+        <TimelineCard recentActivity={recentActivity} />
+
+        {me ? (
+          <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              Tenant context
+            </p>
+            <p className="mt-2 text-sm leading-5 text-zinc-300">
+              Signed in as tenant admin. user_id={me.id || "unknown"} | tenant_id=
+              {me.tenant_id || "unknown"}
+            </p>
+          </section>
+        ) : null}
       </section>
     </AppShell>
   );
