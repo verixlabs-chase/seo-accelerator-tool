@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "LSOS Portal",
-  description: "Tenant-aware SEO operations portal"
+  title: "InsightOS",
+  description: "Your local search command center"
 };
 
 export default function RootLayout({ children }) {

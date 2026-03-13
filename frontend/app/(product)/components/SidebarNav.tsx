@@ -11,8 +11,8 @@ type SidebarNavProps = {
 
 export function SidebarNav({
   items,
-  title = "Local SEO OS",
-  subtitle = "Local SEO OS",
+  title = "InsightOS",
+  subtitle = "InsightOS",
 }: SidebarNavProps) {
   function NavGlyph({ active = false }: { active?: boolean }) {
     return (

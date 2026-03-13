@@ -804,11 +804,10 @@ export default function DashboardPage() {
             Campaign command center
           </p>
           <h1 className="mt-2 text-4xl font-bold tracking-[-0.05em] text-white md:text-[3.25rem]">
-            Local SEO performance, interpreted.
+            Your Local Search Command Center
           </h1>
           <p className="mt-2.5 text-sm leading-6 text-zinc-300 md:text-base">
-            The redesigned command center is now wired back into the live campaign,
-            crawl, rank, and report workflows for the active tenant.
+            Track rankings, monitor visibility, and uncover the next actions that move your business up the map.
           </p>
         </div>
 
