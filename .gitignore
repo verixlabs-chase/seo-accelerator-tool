@@ -10,6 +10,7 @@ backend/.pip-cache/
 *.pyd
 *.db
 backend/.env
+.next/
 frontend/.next/
 frontend/.npm-cache/
 frontend/node_modules/
