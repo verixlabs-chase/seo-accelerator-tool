@@ -21,6 +21,7 @@ import {
   EmptyState,
   InsightCard,
   KpiCard,
+  OnboardingWizard,
   type NavItem,
   type TrustSignal,
 } from "../components";
@@ -365,6 +366,7 @@ export default function DashboardPage() {
   const [locationCode, setLocationCode] = useState("US");
   const [monthNumber, setMonthNumber] = useState("1");
   const [recipientEmail, setRecipientEmail] = useState("admin@local.dev");
+  const [showWizard, setShowWizard] = useState(false);
   const [busyAction, setBusyAction] = useState("");
   const [latestRuns, setLatestRuns] = useState<CrawlRun[]>([]);
   const [latestTrends, setLatestTrends] = useState<RankTrend[]>([]);
@@ -829,12 +831,25 @@ export default function DashboardPage() {
           </section>
         ) : null}
 
-        {!loading && campaigns.length === 0 ? (
+        {!loading && campaigns.length === 0 && !showWizard ? (
           <EmptyState
             title="Welcome to InsightOS"
             summary="Let's get your business set up so we can start tracking your online visibility."
             actionLabel="Set up your business"
-            onAction={() => document.getElementById("campaign-form")?.scrollIntoView({ behavior: "smooth" })}
+            onAction={() => setShowWizard(true)}
+          />
+        ) : null}
+
+        {showWizard ? (
+          <OnboardingWizard
+            onComplete={() => {
+              setShowWizard(false);
+              void loadCampaigns().then((items) => {
+                if (items.length > 0) {
+                  void loadLatest(items[0].id);
+                }
+              });
+            }}
           />
         ) : null}
 

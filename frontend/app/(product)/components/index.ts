@@ -8,6 +8,7 @@ export * from "./InsightCard";
 export * from "./KpiCard";
 export * from "./MapCard";
 export * from "./MobileNav";
+export * from "./OnboardingWizard";
 export * from "./ReportPreview";
 export * from "./SidebarNav";
 export * from "./TopBar";
