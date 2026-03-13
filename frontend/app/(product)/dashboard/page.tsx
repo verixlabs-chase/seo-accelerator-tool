@@ -29,11 +29,11 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", active: true },
-  { href: "/locations", label: "Locations", disabled: true },
+  { href: "/locations", label: "Locations", disabled: true, hidden: true },
   { href: "/rankings", label: "Rankings", disabled: true },
-  { href: "/local-visibility", label: "Local Visibility", disabled: true },
-  { href: "/site-health", label: "Site Health", badge: "3", disabled: true },
-  { href: "/competitors", label: "Competitors", disabled: true },
+  { href: "/local-visibility", label: "Local Visibility", disabled: true, hidden: true },
+  { href: "/site-health", label: "Site Health", badge: "3", disabled: true, hidden: true },
+  { href: "/competitors", label: "Competitors", disabled: true, hidden: true },
   { href: "/opportunities", label: "Opportunities", badge: "5", disabled: true },
   { href: "/reports", label: "Reports", disabled: true },
   { href: "/settings", label: "Settings", disabled: true },
@@ -801,19 +801,19 @@ export default function DashboardPage() {
       <section className="space-y-6">
         <div className="max-w-4xl">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            Campaign command center
+            Dashboard
           </p>
           <h1 className="mt-2 text-4xl font-bold tracking-[-0.05em] text-white md:text-[3.25rem]">
-            Your Local Search Command Center
+            Your Local Search Dashboard
           </h1>
           <p className="mt-2.5 text-sm leading-6 text-zinc-300 md:text-base">
-            Track rankings, monitor visibility, and uncover the next actions that move your business up the map.
+            See how customers find your business online, what changed, and what to do next.
           </p>
         </div>
 
         {loading ? (
           <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 text-sm text-zinc-300 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-            Loading session and campaign telemetry...
+            Loading your latest results...
           </section>
         ) : null}
 
@@ -827,6 +827,15 @@ export default function DashboardPage() {
           <section className="border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
             {notice}
           </section>
+        ) : null}
+
+        {!loading && campaigns.length === 0 ? (
+          <EmptyState
+            title="Welcome to InsightOS"
+            summary="Let's get your business set up so we can start tracking your online visibility."
+            actionLabel="Set up your business"
+            onAction={() => document.getElementById("campaign-form")?.scrollIntoView({ behavior: "smooth" })}
+          />
         ) : null}
 
         <div className="grid gap-4 xl:grid-cols-4">
@@ -912,44 +921,45 @@ export default function DashboardPage() {
         <div className="grid gap-5 xl:grid-cols-2">
           <ChartCard
             eyebrow="Trend"
-            title="Local visibility trend"
-            summary="Visibility now reflects live ranking data transformed from current keyword positions for the selected campaign."
+            title="How often customers find you"
+            summary="This shows your online visibility based on where you appear in search results."
             chart={
               visibilityTrend.length > 0 ? (
                 <VisibilityTrendChart data={visibilityTrend} />
               ) : (
                 <EmptyState
                   title="No visibility data yet"
-                  summary="Schedule a rank snapshot to populate this chart with live campaign signals."
-                  actionLabel="Run rankings"
+                  summary="Run a search position check to populate this chart."
+                  actionLabel="Check search positions"
+                  onAction={() => document.getElementById("rank-form")?.scrollIntoView({ behavior: "smooth" })}
                 />
               )
             }
             footer={
               <p className="text-sm leading-5 text-zinc-300">
-                The chart is derived from current keyword positions returned by the
-                rank trends API, so it updates when new snapshots arrive.
+                Updates automatically when new search position data arrives.
               </p>
             }
           />
           <ChartCard
             eyebrow="Trend"
-            title="Ranking momentum"
-            summary="Momentum now reflects the live tracked keywords instead of placeholder sample data."
+            title="Search position movement"
+            summary="Track whether your search positions are improving over time."
             chart={
               rankingTrend.length > 0 ? (
                 <RankingTrendChart data={rankingTrend} />
               ) : (
                 <EmptyState
                   title="No ranking history yet"
-                  summary="Add a keyword and run a ranking snapshot to render momentum trends."
-                  actionLabel="Add keyword"
+                  summary="Add a search term and run a position check to see your trends."
+                  actionLabel="Add search term"
+                  onAction={() => document.getElementById("rank-form")?.scrollIntoView({ behavior: "smooth" })}
                 />
               )
             }
             footer={
               <p className="text-sm leading-5 text-zinc-300">
-                This surface uses the same live rank trend endpoint as the legacy dashboard.
+                Shows movement for your tracked search terms over time.
               </p>
             }
           />
@@ -958,32 +968,41 @@ export default function DashboardPage() {
         <div className="grid gap-5 xl:grid-cols-3">
           <InsightCard
             insight={{
-              title: selectedCampaign ? "Active campaign selected." : "Campaign setup required.",
+              title: selectedCampaign ? "Your business is set up." : "Business setup required.",
               body: selectedCampaign
-                ? `${selectedCampaign.name || "The selected campaign"} is ready for live crawl, rank, and reporting actions.`
-                : "Create or select a campaign to unlock dashboard actions and telemetry.",
+                ? `${selectedCampaign.name || "Your business"} is ready for website scans, search position checks, and reports.`
+                : "Add your business to start tracking how customers find you online.",
               tone: selectedCampaign ? "success" : "warning",
-              action: { label: "Manage campaign" },
+              action: {
+                label: selectedCampaign ? "View business" : "Set up business",
+                onClick: () => document.getElementById("campaign-form")?.scrollIntoView({ behavior: "smooth" }),
+              },
             }}
           />
           <InsightCard
             insight={{
-              title: topKeyword ? "Top keyword trend loaded." : "Ranking workflow pending.",
+              title: topKeyword ? "Search positions tracked." : "No search terms tracked yet.",
               body: topKeyword
-                ? `${topKeyword.keyword || "The current leader"} is at position ${coerceNumber(topKeyword.position)} in the latest ranking data.`
-                : "Add a keyword and schedule rank collection to populate the new charts.",
+                ? `"${topKeyword.keyword || "Your top term"}" is at position ${coerceNumber(topKeyword.position)} in search results.`
+                : "Add a search term to see where your business shows up when customers search.",
               tone: topKeyword ? "info" : "warning",
-              action: { label: "Run rankings" },
+              action: {
+                label: topKeyword ? "View positions" : "Add search term",
+                onClick: () => document.getElementById("rank-form")?.scrollIntoView({ behavior: "smooth" }),
+              },
             }}
           />
           <InsightCard
             insight={{
-              title: topReport ? "Report pipeline available." : "Reports not generated yet.",
+              title: topReport ? "Reports available." : "No reports yet.",
               body: topReport
-                ? `Month ${topReport.month_number} report is ${toTitleCase(topReport.report_status)} and can be delivered from the action panel.`
-                : "Generate a report once the selected campaign has fresh crawl and ranking data.",
+                ? `Your ${toTitleCase(topReport.report_status)} report for month ${topReport.month_number} is ready to view or send.`
+                : "Create a report once you have search position data.",
               tone: topReport ? "success" : "warning",
-              action: { label: "Manage reports" },
+              action: {
+                label: topReport ? "View reports" : "Create report",
+                onClick: () => document.getElementById("report-form")?.scrollIntoView({ behavior: "smooth" }),
+              },
             }}
           />
         </div>
@@ -991,29 +1010,30 @@ export default function DashboardPage() {
         <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
           <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
             <SectionHeading
-              eyebrow="Workflow controls"
-              title="Operate the live campaign"
-              summary="These controls are the working product flow from the legacy dashboard, now embedded in the redesigned shell."
+              eyebrow="Actions"
+              title="Run checks and reports"
+              summary="Use these tools to scan your website, check search positions, and create reports."
             />
             <div className="grid gap-4 xl:grid-cols-2">
               <form
+                id="campaign-form"
                 onSubmit={createCampaign}
                 className="rounded-md border border-[#26272c] bg-[#111214] p-4"
               >
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Campaign
+                  Your business
                 </p>
                 <div className="mt-4 space-y-3">
                   <input
                     value={campaignName}
                     onChange={(event) => setCampaignName(event.target.value)}
-                    placeholder="Campaign name"
+                    placeholder="Business name"
                     className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
                   />
                   <input
                     value={campaignDomain}
                     onChange={(event) => setCampaignDomain(event.target.value)}
-                    placeholder="example.com"
+                    placeholder="Your website (example.com)"
                     className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
                   />
                   <button
@@ -1021,12 +1041,12 @@ export default function DashboardPage() {
                     disabled={busyAction !== ""}
                     className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {busyAction === "createCampaign" ? "Creating..." : "Create Campaign"}
+                    {busyAction === "createCampaign" ? "Adding..." : "Add your business"}
                   </button>
                 </div>
                 <div className="mt-5">
                   <label className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                    Active campaign
+                    Active business
                   </label>
                   <select
                     value={selectedCampaignId}
@@ -1053,54 +1073,34 @@ export default function DashboardPage() {
 
               <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Crawl
+                  Website scan
                 </p>
                 <div className="mt-4 space-y-3">
                   <input
                     value={seedUrl}
                     onChange={(event) => setSeedUrl(event.target.value)}
-                    placeholder="https://example.com"
+                    placeholder="Your website URL"
                     className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
                   />
-                  <select
-                    value={crawlType}
-                    onChange={(event) => setCrawlType(event.target.value)}
-                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
-                  >
-                    <option value="deep">deep</option>
-                    <option value="delta">delta</option>
-                  </select>
                   <button
                     onClick={scheduleCrawl}
                     disabled={busyAction !== ""}
                     className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {busyAction === "crawl" ? "Scheduling..." : "Run Crawl"}
+                    {busyAction === "crawl" ? "Scanning..." : "Run website scan"}
                   </button>
                 </div>
               </div>
 
-              <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+              <div id="rank-form" className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Rank
+                  Search position check
                 </p>
                 <div className="mt-4 space-y-3">
                   <input
-                    value={clusterName}
-                    onChange={(event) => setClusterName(event.target.value)}
-                    placeholder="Core Terms"
-                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
-                  />
-                  <input
                     value={keyword}
                     onChange={(event) => setKeyword(event.target.value)}
-                    placeholder="local seo agency"
-                    className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
-                  />
-                  <input
-                    value={locationCode}
-                    onChange={(event) => setLocationCode(event.target.value)}
-                    placeholder="US"
+                    placeholder="What customers search for (e.g. plumber near me)"
                     className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
                   />
                   <button
@@ -1108,12 +1108,12 @@ export default function DashboardPage() {
                     disabled={busyAction !== ""}
                     className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {busyAction === "rank" ? "Scheduling..." : "Run Rank Snapshot"}
+                    {busyAction === "rank" ? "Checking..." : "Check search positions"}
                   </button>
                 </div>
               </div>
 
-              <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+              <div id="report-form" className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                   Reports
                 </p>
@@ -1130,7 +1130,7 @@ export default function DashboardPage() {
                   <input
                     value={recipientEmail}
                     onChange={(event) => setRecipientEmail(event.target.value)}
-                    placeholder="admin@local.dev"
+                    placeholder="Email address to send report"
                     className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
                   />
                   <div className="flex flex-wrap gap-3">
@@ -1139,14 +1139,14 @@ export default function DashboardPage() {
                       disabled={busyAction !== ""}
                       className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {busyAction === "report" ? "Generating..." : "Generate Report"}
+                      {busyAction === "report" ? "Creating..." : "Create report"}
                     </button>
                     <button
                       onClick={deliverLatestReport}
                       disabled={busyAction !== ""}
                       className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {busyAction === "deliver" ? "Delivering..." : "Deliver Latest"}
+                      {busyAction === "deliver" ? "Sending..." : "Send to email"}
                     </button>
                   </div>
                 </div>
@@ -1157,24 +1157,24 @@ export default function DashboardPage() {
           <ActionDrawer
             title={
               selectedCampaign
-                ? `Next action for ${selectedCampaign.name || "active campaign"}`
-                : "Select or create a campaign"
+                ? `Recommended next step for ${selectedCampaign.name || "your business"}`
+                : "Add your business to get started"
             }
             summary={
               selectedCampaign
-                ? "The live workflow controls are restored. Use this drawer to trigger the next crawl, ranking, or reporting step without leaving the redesigned shell."
-                : "The new shell is intact, but it needs an active campaign before crawl, rank, and report actions can run."
+                ? "Run a website scan, check your search positions, or create a report."
+                : "Add your business details so we can start tracking how customers find you online."
             }
             evidence={[
               topRun
-                ? `Latest crawl status: ${toTitleCase(topRun.status)} (${topRun.crawl_type || "crawl"}).`
-                : "No crawl runs have been scheduled yet.",
+                ? `Website scan: ${toTitleCase(topRun.status)}.`
+                : "No website scans have been run yet.",
               topKeyword
-                ? `Top keyword: ${topKeyword.keyword || "Unknown"} at position ${coerceNumber(topKeyword.position)}.`
-                : "No ranking data has been collected yet.",
+                ? `"${topKeyword.keyword || "Top search term"}" is at position ${coerceNumber(topKeyword.position)} in search results.`
+                : "No search position data yet.",
               topReport
-                ? `Latest report: month ${topReport.month_number} is ${toTitleCase(topReport.report_status)}.`
-                : "No report has been generated yet.",
+                ? `Your month ${topReport.month_number} report is ${toTitleCase(topReport.report_status)}.`
+                : "No reports created yet.",
             ]}
             actions={
               <>
@@ -1183,14 +1183,14 @@ export default function DashboardPage() {
                   disabled={busyAction !== ""}
                   className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Run crawl
+                  Run website scan
                 </button>
                 <button
                   onClick={generateReport}
                   disabled={busyAction !== ""}
                   className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Generate report
+                  Create report
                 </button>
               </>
             }

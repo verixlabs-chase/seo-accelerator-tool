@@ -39,7 +39,7 @@ export function SidebarNav({
       </div>
 
       <nav className="space-y-1.5">
-        {items.map((item) => (
+        {items.filter((item) => !item.hidden).map((item) => (
           item.disabled ? (
             <div
               key={item.href}

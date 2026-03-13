@@ -1,5 +1,8 @@
-import type { ReactNode } from "react";
+"use client";
 
+import { useState, type ReactNode } from "react";
+
+import { MobileNav } from "./MobileNav";
 import { SidebarNav } from "./SidebarNav";
 import { TopBar } from "./TopBar";
 import { TrustStatusBar } from "./TrustStatusBar";
@@ -22,6 +25,8 @@ export function AppShell({
   children,
   topBarActions,
 }: AppShellProps) {
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   return (
     <div className="lsos-theme-dark min-h-screen bg-[radial-gradient(circle_at_22%_0%,rgba(255,106,26,0.12),transparent_16%),radial-gradient(circle_at_70%_12%,rgba(255,255,255,0.035),transparent_22%),linear-gradient(180deg,#09090a_0%,#0b0b0c_48%,#101114_100%)] font-sans text-zinc-50">
       <div className="flex min-h-screen flex-col">
@@ -36,6 +41,7 @@ export function AppShell({
                 accountLabel={accountLabel}
                 dateRangeLabel={dateRangeLabel}
                 actions={topBarActions}
+                onMenuOpen={() => setMobileNavOpen(true)}
               />
             </div>
             <div className="border-b border-[#26272c] bg-[#111214]">
@@ -47,6 +53,12 @@ export function AppShell({
           </div>
         </div>
       </div>
+
+      <MobileNav
+        navItems={navItems}
+        isOpen={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+      />
     </div>
   );
 }

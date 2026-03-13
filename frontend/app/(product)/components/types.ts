@@ -6,6 +6,7 @@ export type NavItem = {
   badge?: string;
   active?: boolean;
   disabled?: boolean;
+  hidden?: boolean;
 };
 
 export type TrustSignal = {
@@ -18,6 +19,7 @@ export type QuickAction = {
   label: string;
   href?: string;
   onClickLabel?: string;
+  onClick?: () => void;
 };
 
 export type Insight = {

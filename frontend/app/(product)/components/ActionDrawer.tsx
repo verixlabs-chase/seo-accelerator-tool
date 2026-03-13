@@ -39,18 +39,11 @@ export function ActionDrawer({
         </ul>
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2.5">
-        {actions ?? (
-          <>
-            <button className="rounded-md border border-accent-500/35 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100">
-              Approve
-            </button>
-            <button className="rounded-md border border-[#26272c] bg-white/[0.03] px-3 py-1.5 text-sm font-medium text-zinc-200">
-              Schedule
-            </button>
-          </>
-        )}
-      </div>
+      {actions ? (
+        <div className="mt-5 flex flex-wrap gap-2.5">
+          {actions}
+        </div>
+      ) : null}
     </aside>
   );
 }

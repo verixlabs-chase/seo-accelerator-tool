@@ -7,6 +7,7 @@ export * from "./EmptyState";
 export * from "./InsightCard";
 export * from "./KpiCard";
 export * from "./MapCard";
+export * from "./MobileNav";
 export * from "./ReportPreview";
 export * from "./SidebarNav";
 export * from "./TopBar";

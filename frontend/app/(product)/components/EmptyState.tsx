@@ -2,12 +2,14 @@ type EmptyStateProps = {
   title: string;
   summary: string;
   actionLabel?: string;
+  onAction?: () => void;
 };
 
 export function EmptyState({
   title,
   summary,
   actionLabel = "Start here",
+  onAction,
 }: EmptyStateProps) {
   return (
     <section className="rounded-md border border-dashed border-[#26272c] bg-[#141518] p-6 text-center">
@@ -20,7 +22,10 @@ export function EmptyState({
       <p className="mx-auto mt-2 max-w-xl text-sm leading-5 text-zinc-300">
         {summary}
       </p>
-      <button className="mt-5 rounded-md border border-accent-500/25 bg-accent-500/10 px-4 py-1.5 text-sm font-medium text-zinc-100">
+      <button
+        onClick={onAction}
+        className="mt-5 rounded-md border border-accent-500/25 bg-accent-500/10 px-4 py-1.5 text-sm font-medium text-zinc-100"
+      >
         {actionLabel}
       </button>
     </section>
