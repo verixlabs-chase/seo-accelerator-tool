@@ -14,11 +14,13 @@ class RequestThrottleMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._max_concurrent_requests = max(1, int(max_concurrent_requests))
         self._max_requests_per_tenant = max(1, int(max_requests_per_tenant))
-        self._global_semaphore = asyncio.Semaphore(self._max_concurrent_requests)
+        self._global_semaphore: asyncio.Semaphore | None = None
         self._tenant_semaphores: dict[str, asyncio.Semaphore] = {}
-        self._tenant_lock = asyncio.Lock()
+        self._tenant_lock: asyncio.Lock | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     async def dispatch(self, request: Request, call_next):
+        await self._ensure_loop_state()
         tenant_id = self._tenant_id_for_request(request)
         tenant_semaphore = await self._tenant_semaphore(tenant_id)
 
@@ -40,7 +42,18 @@ class RequestThrottleMiddleware(BaseHTTPMiddleware):
             self._global_semaphore.release()
             self._set_metrics(tenant_id)
 
+    async def _ensure_loop_state(self) -> None:
+        loop = asyncio.get_running_loop()
+        if self._loop is loop and self._global_semaphore is not None and self._tenant_lock is not None:
+            return
+        self._loop = loop
+        self._global_semaphore = asyncio.Semaphore(self._max_concurrent_requests)
+        self._tenant_semaphores = {}
+        self._tenant_lock = asyncio.Lock()
+
     async def _tenant_semaphore(self, tenant_id: str) -> asyncio.Semaphore:
+        if self._tenant_lock is None:
+            await self._ensure_loop_state()
         async with self._tenant_lock:
             semaphore = self._tenant_semaphores.get(tenant_id)
             if semaphore is None:
@@ -68,6 +81,8 @@ class RequestThrottleMiddleware(BaseHTTPMiddleware):
         return 'anonymous'
 
     def _set_metrics(self, tenant_id: str) -> None:
+        if self._global_semaphore is None:
+            return
         active_api_requests.set(self._max_concurrent_requests - self._global_semaphore._value)
         active_api_requests_by_tenant.labels(tenant_id=tenant_id).set(
             self._max_requests_per_tenant - self._tenant_semaphores[tenant_id]._value

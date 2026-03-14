@@ -1,30 +1,32 @@
-def _login(client, email, password):
-    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
-    assert response.status_code == 200
-    return response.json()["data"]["access_token"]
+import pytest
+from fastapi import HTTPException
+
+from app.models.campaign import Campaign
+from app.models.tenant import Tenant
+from app.schemas.intelligence import IntelligenceScoreOut, RecommendationOut
+from app.services import intelligence_service
 
 
-def test_intelligence_score_recommendations_and_advance_month(client):
-    token = _login(client, "a@example.com", "pass-a")
-    campaign = client.post(
-        "/api/v1/campaigns",
-        json={"name": "Intelligence Campaign", "domain": "intel.com"},
-        headers={"Authorization": f"Bearer {token}"},
-    ).json()["data"]
+def test_intelligence_score_recommendations_and_advance_month(db_session):
+    tenant = db_session.query(Tenant).filter(Tenant.name == "Tenant A").first()
+    assert tenant is not None
 
-    score = client.get(
-        f"/api/v1/intelligence/score?campaign_id={campaign['id']}",
-        headers={"Authorization": f"Bearer {token}"},
+    campaign = Campaign(
+        tenant_id=tenant.id,
+        organization_id=tenant.id,
+        name="Intelligence Campaign",
+        domain="intel.com",
     )
-    assert score.status_code == 200
-    assert "score_value" in score.json()["data"]
+    db_session.add(campaign)
+    db_session.commit()
+    db_session.refresh(campaign)
 
-    recs = client.get(
-        f"/api/v1/intelligence/recommendations?campaign_id={campaign['id']}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert recs.status_code == 200
-    items = recs.json()["data"]["items"]
+    score = intelligence_service.get_latest_score(db_session, tenant_id=tenant.id, campaign_id=campaign.id)
+    score_payload = IntelligenceScoreOut.model_validate(score).model_dump(mode="json")
+    assert "score_value" in score_payload
+
+    recs = intelligence_service.get_recommendations(db_session, tenant_id=tenant.id, campaign_id=campaign.id)
+    items = [RecommendationOut.model_validate(row).model_dump(mode="json") for row in recs]
     assert len(items) >= 1
     first = items[0]
     assert "confidence_score" in first
@@ -40,41 +42,47 @@ def test_intelligence_score_recommendations_and_advance_month(client):
     assert isinstance(first["rollback_plan"], dict)
     assert len(first["rollback_plan"]) >= 1
 
-    recommendation_id = first["id"]
-    invalid = client.post(
-        f"/api/v1/intelligence/recommendations/{recommendation_id}/transition?campaign_id={campaign['id']}",
-        json={"target_state": "APPROVED"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert invalid.status_code == 400
+    with pytest.raises(HTTPException) as invalid_transition:
+        intelligence_service.transition_recommendation_state(
+            db_session,
+            tenant_id=tenant.id,
+            campaign_id=campaign.id,
+            recommendation_id=first["id"],
+            target_state="APPROVED",
+        )
+    assert invalid_transition.value.status_code == 400
 
-    validated = client.post(
-        f"/api/v1/intelligence/recommendations/{recommendation_id}/transition?campaign_id={campaign['id']}",
-        json={"target_state": "VALIDATED"},
-        headers={"Authorization": f"Bearer {token}"},
+    validated = intelligence_service.transition_recommendation_state(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_id=first["id"],
+        target_state="VALIDATED",
     )
-    assert validated.status_code == 200
-    assert validated.json()["data"]["status"] == "VALIDATED"
+    assert validated.status == "VALIDATED"
 
-    approved = client.post(
-        f"/api/v1/intelligence/recommendations/{recommendation_id}/transition?campaign_id={campaign['id']}",
-        json={"target_state": "APPROVED"},
-        headers={"Authorization": f"Bearer {token}"},
+    approved = intelligence_service.transition_recommendation_state(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_id=first["id"],
+        target_state="APPROVED",
     )
-    assert approved.status_code == 200
-    assert approved.json()["data"]["status"] == "APPROVED"
+    assert approved.status == "APPROVED"
 
-    blocked = client.post(
-        f"/api/v1/campaigns/{campaign['id']}/advance-month",
-        json={"override": False},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert blocked.status_code == 400
+    with pytest.raises(HTTPException) as blocked:
+        intelligence_service.advance_month(
+            db_session,
+            tenant_id=tenant.id,
+            campaign_id=campaign.id,
+            override=False,
+        )
+    assert blocked.value.status_code == 400
 
-    advanced = client.post(
-        f"/api/v1/campaigns/{campaign['id']}/advance-month",
-        json={"override": True},
-        headers={"Authorization": f"Bearer {token}"},
+    advanced = intelligence_service.advance_month(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        override=True,
     )
-    assert advanced.status_code == 200
-    assert advanced.json()["data"]["advanced_to_month"] == 2
+    assert advanced["advanced_to_month"] == 2

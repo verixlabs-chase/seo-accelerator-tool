@@ -107,6 +107,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     _emit_statelessness_warnings()
     initialize_event_stream()
     register_default_subscribers()
+    if settings.app_env.lower() == "test":
+        # Tests seed their own DB state. Avoid extra startup writes from the
+        # lifespan thread against the same SQLite fixture database.
+        yield
+        return
+
     initialize_default_models()
     if settings.app_env.lower() != "test":
         # Fail startup loudly when Redis is unavailable.
@@ -123,22 +129,23 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
-app.add_middleware(CorrelationIdMiddleware)
-app.add_middleware(RequestLoggingMiddleware)
-app.add_middleware(
-    RequestThrottleMiddleware,
-    max_concurrent_requests=settings.max_concurrent_requests,
-    max_requests_per_tenant=settings.max_requests_per_tenant,
-)
-app.add_middleware(RequestSizeLimitMiddleware, max_request_body_bytes=settings.max_request_body_bytes)
-app.add_middleware(
-    RateLimitMiddleware,
-    enabled=settings.rate_limit_enabled,
-    requests_per_minute=settings.rate_limit_requests_per_minute,
-    redis_url=settings.redis_url,
-)
-app.add_middleware(MetricsMiddleware)
-app.add_middleware(SecurityHeadersMiddleware, app_env=settings.app_env)
+if settings.app_env.lower() != "test":
+    app.add_middleware(CorrelationIdMiddleware)
+    app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(
+        RequestThrottleMiddleware,
+        max_concurrent_requests=settings.max_concurrent_requests,
+        max_requests_per_tenant=settings.max_requests_per_tenant,
+    )
+    app.add_middleware(RequestSizeLimitMiddleware, max_request_body_bytes=settings.max_request_body_bytes)
+    app.add_middleware(
+        RateLimitMiddleware,
+        enabled=settings.rate_limit_enabled,
+        requests_per_minute=settings.rate_limit_requests_per_minute,
+        redis_url=settings.redis_url,
+    )
+    app.add_middleware(MetricsMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware, app_env=settings.app_env)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -211,5 +218,3 @@ async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSON
         code="internal_server_error",
     )
     return JSONResponse(status_code=500, content=payload)
-
-

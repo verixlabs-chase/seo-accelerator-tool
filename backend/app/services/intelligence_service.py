@@ -281,9 +281,9 @@ def transition_recommendation_state(
         event_type=f"recommendation.{target_state.lower()}",
         payload={"campaign_id": campaign_id, "recommendation_id": recommendation_id, "target_state": target_state},
     )
-    if target_state in {"APPROVED", "SCHEDULED"}:
-        # Keep approved recommendations visible in the execution inbox even when
-        # local event subscribers are not responsible for scheduling.
+    if target_state == "SCHEDULED":
+        # Scheduling stays an explicit lifecycle step. Only queue an execution
+        # once the recommendation is intentionally advanced beyond APPROVED.
         schedule_execution(recommendation_id, db=db)
     db.commit()
     db.refresh(row)

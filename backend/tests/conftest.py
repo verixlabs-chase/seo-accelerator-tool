@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Callable, Generator
 from pathlib import Path
 import pytest
+from contextlib import asynccontextmanager
 from fastapi.testclient import TestClient
 from alembic import command
 from alembic.config import Config
@@ -556,16 +557,29 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     print("client fixture: before importing app", flush=True)
     from app.main import app
     print("client fixture: before TestClient(app)", flush=True)
-    test_client = TestClient(app)
-    print("client fixture: after TestClient(app)", flush=True)
+
+    request_session_local = sessionmaker(bind=db_session.get_bind(), autocommit=False, autoflush=False)
 
     def _override_get_db():
-        yield db_session
+        request_session = request_session_local()
+        try:
+            yield request_session
+        finally:
+            request_session.close()
 
+    @asynccontextmanager
+    async def _test_lifespan(_app):
+        yield
+
+    original_lifespan = app.router.lifespan_context
+    app.router.lifespan_context = _test_lifespan
     app.dependency_overrides[get_db] = _override_get_db
-    yield test_client
+    with TestClient(app) as test_client:
+        print("client fixture: after TestClient(app)", flush=True)
+        yield test_client
     print("client fixture: teardown", flush=True)
     app.dependency_overrides.clear()
+    app.router.lifespan_context = original_lifespan
 
 
 
