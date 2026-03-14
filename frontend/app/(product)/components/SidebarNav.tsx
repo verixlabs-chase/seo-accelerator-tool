@@ -33,9 +33,9 @@ export function SidebarNav({
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/92">
           {subtitle}
         </p>
-        <h1 className="mt-2 text-sm font-semibold tracking-[0.01em] text-zinc-400">
+        <p className="mt-2 text-sm font-semibold tracking-[0.01em] text-zinc-400">
           {title}
-        </h1>
+        </p>
       </div>
 
       <nav className="space-y-1.5">
@@ -81,11 +81,10 @@ export function SidebarNav({
 
       <div className="mt-auto rounded-md border border-[#26272c] bg-[#111214] p-3">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-          Operating principle
+          InsightOS
         </p>
         <p className="mt-2 text-sm leading-5 text-zinc-400">
-          Every screen should explain what changed, why it matters, and what to do
-          next.
+          Local search visibility, explained simply.
         </p>
       </div>
     </aside>

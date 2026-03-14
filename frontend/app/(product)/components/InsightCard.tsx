@@ -25,9 +25,12 @@ export function InsightCard({ insight }: InsightCardProps) {
             {insight.title}
           </h3>
         </div>
-        <span className="rounded-md border border-[#26272c] bg-white/[0.03] px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-400">
-          {tone}
-        </span>
+        <span className={`h-2 w-2 shrink-0 rounded-full ${
+          tone === "success" ? "bg-emerald-400" :
+          tone === "warning" ? "bg-amber-400" :
+          tone === "danger" ? "bg-rose-400" :
+          "bg-zinc-500"
+        }`} aria-hidden="true" />
       </div>
       <p className="mt-2.5 text-sm leading-5 text-zinc-300">{insight.body}</p>
       {insight.action ? (

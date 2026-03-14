@@ -296,7 +296,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         </div>
 
         {error && (
-          <div className="mb-4 border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-100">
+          <div className="mb-4 rounded-md border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-100">
             {error}
           </div>
         )}

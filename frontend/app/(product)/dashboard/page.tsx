@@ -957,13 +957,13 @@ export default function DashboardPage() {
         ) : null}
 
         {error ? (
-          <section className="border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+          <section className="rounded-md border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
             {error}
           </section>
         ) : null}
 
         {notice ? (
-          <section className="border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
+          <section className="rounded-md border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
             {notice}
           </section>
         ) : null}

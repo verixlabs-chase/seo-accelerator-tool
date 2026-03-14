@@ -444,13 +444,13 @@ export default function ReportsPage() {
         ) : null}
 
         {error ? (
-          <section className="border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+          <section className="rounded-md border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
             {error}
           </section>
         ) : null}
 
         {notice ? (
-          <section className="border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
+          <section className="rounded-md border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
             {notice}
           </section>
         ) : null}
@@ -532,7 +532,7 @@ export default function ReportsPage() {
                 <div className="space-y-4">
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                     <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-zinc-500">
-                      Report month number
+                      Report period
                     </label>
                     <input
                       value={monthNumber}
