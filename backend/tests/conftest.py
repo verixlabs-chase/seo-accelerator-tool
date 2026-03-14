@@ -13,7 +13,8 @@ from typing import Callable, Generator
 from pathlib import Path
 import pytest
 from contextlib import asynccontextmanager
-from fastapi.testclient import TestClient
+import asyncio
+import httpx
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
@@ -553,12 +554,14 @@ def intelligence_graph(db_session: Session) -> dict[str, object]:
     return create_intelligence_graph(db_session)
 
 @pytest.fixture()
-def client(db_session: Session) -> Generator[TestClient, None, None]:
-    print("client fixture: before importing app", flush=True)
+def client(db_session: Session) -> Generator[object, None, None]:
     from app.main import app
-    print("client fixture: before TestClient(app)", flush=True)
-
-    request_session_local = sessionmaker(bind=db_session.get_bind(), autocommit=False, autoflush=False)
+    request_session_local = sessionmaker(
+        bind=db_session.get_bind(),
+        autocommit=False,
+        autoflush=False,
+        class_=Session,
+    )
 
     def _override_get_db():
         request_session = request_session_local()
@@ -574,12 +577,55 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     original_lifespan = app.router.lifespan_context
     app.router.lifespan_context = _test_lifespan
     app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as test_client:
-        print("client fixture: after TestClient(app)", flush=True)
+
+    runner = asyncio.Runner()
+    raw_test_client: httpx.AsyncClient | None = None
+
+    async def _create_async_client() -> httpx.AsyncClient:
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=True)
+        return httpx.AsyncClient(transport=transport, base_url="http://testserver")
+
+    class _Client:
+        def request(self, method: str, url: str, **kwargs):
+            nonlocal raw_test_client
+            if raw_test_client is None:
+                raw_test_client = runner.run(_create_async_client())
+            # Persist test-side setup before handing control to a request-scoped session.
+            db_session.commit()
+            db_session.expire_all()
+            response = runner.run(raw_test_client.request(method, url, **kwargs))
+            db_session.expire_all()
+            return response
+
+        def get(self, url: str, **kwargs):
+            return self.request("GET", url, **kwargs)
+
+        def post(self, url: str, **kwargs):
+            return self.request("POST", url, **kwargs)
+
+        def put(self, url: str, **kwargs):
+            return self.request("PUT", url, **kwargs)
+
+        def patch(self, url: str, **kwargs):
+            return self.request("PATCH", url, **kwargs)
+
+        def delete(self, url: str, **kwargs):
+            return self.request("DELETE", url, **kwargs)
+
+        def close(self) -> None:
+            if raw_test_client is not None:
+                runner.run(raw_test_client.aclose())
+
+    test_client = _Client()
+    try:
         yield test_client
-    print("client fixture: teardown", flush=True)
-    app.dependency_overrides.clear()
-    app.router.lifespan_context = original_lifespan
+    finally:
+        db_session.rollback()
+        db_session.expire_all()
+        test_client.close()
+        runner.close()
+        app.dependency_overrides.clear()
+        app.router.lifespan_context = original_lifespan
 
 
 
