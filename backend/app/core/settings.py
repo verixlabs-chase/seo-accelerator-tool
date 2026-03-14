@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
 
     postgres_dsn: str
+    db_pool_size: int = 20
+    db_max_overflow: int = 20
+    db_pool_timeout_seconds: int = 30
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"

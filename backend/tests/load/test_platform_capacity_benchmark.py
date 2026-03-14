@@ -21,6 +21,13 @@ from app.models.campaign import Campaign
 
 @pytest.mark.parametrize('campaign_count', [100, 500, 1000])
 def test_platform_capacity_benchmark(db_session, create_test_org, monkeypatch, campaign_count: int) -> None:
+    bind = db_session.get_bind()
+    if bind is not None and bind.dialect.name == 'sqlite':
+        pytest.skip(
+            'Platform capacity benchmark requires a client/server test database; '
+            'SQLite file-backed temp databases are not suitable for this concurrent load profile.'
+        )
+
     org = create_test_org(name=f'Benchmark Org {campaign_count}')
     campaigns = [
         Campaign(
@@ -158,4 +165,3 @@ async def _measure_api_request_latency(*, total_requests: int) -> float:
         await asyncio.gather(*(issue_request(index) for index in range(total_requests)))
 
     return mean(latencies) if latencies else 0.0
-

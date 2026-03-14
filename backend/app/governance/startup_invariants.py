@@ -22,7 +22,7 @@ class InvariantError(RuntimeError):
 
 
 def run_startup_invariants(*, runtime: str) -> None:
-    if os.getenv("APP_ENV", "").strip().lower() == "test":
+    if os.getenv("APP_ENV", "").strip().lower() in {"test", "local"}:
         return
 
     engine = get_engine()

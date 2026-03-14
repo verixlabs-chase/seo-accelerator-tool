@@ -20,6 +20,10 @@ def get_engine() -> Engine:
         is_sqlite = settings.postgres_dsn.startswith('sqlite')
         connect_args = {'check_same_thread': False} if is_sqlite else {}
         engine_kwargs: dict = {'pool_pre_ping': True, 'connect_args': connect_args}
+        if not is_sqlite:
+            engine_kwargs['pool_size'] = settings.db_pool_size
+            engine_kwargs['max_overflow'] = settings.db_max_overflow
+            engine_kwargs['pool_timeout'] = settings.db_pool_timeout_seconds
         if is_sqlite and settings.app_env.lower() == 'test':
             engine_kwargs['poolclass'] = NullPool
         _engine = create_engine(settings.postgres_dsn, **engine_kwargs)

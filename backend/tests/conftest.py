@@ -62,6 +62,7 @@ from app.models.sub_account import SubAccount  # noqa: F401
 from app.models.tenant import Tenant
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot  # noqa: F401
 from app.models.user import User
+from app.intelligence.knowledge_graph.update_engine import reset_graph_write_batcher
 from tests.fixtures.intelligence_graph_factory import create_intelligence_graph
 from tests.helpers.economic_setup import ensure_test_tier_profile, provision_test_organization
 
@@ -69,6 +70,8 @@ from tests.helpers.economic_setup import ensure_test_tier_profile, provision_tes
 
 def _run_alembic_upgrade(backend_dir: Path, database_url: str) -> None:
     cfg = Config(str(backend_dir / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    cfg.set_main_option("prepend_sys_path", str(backend_dir))
     cfg.set_main_option("sqlalchemy.url", database_url)
     os.environ["DATABASE_URL"] = database_url
     os.environ["POSTGRES_DSN"] = database_url
@@ -91,6 +94,38 @@ def _resolve_test_database_url() -> str | None:
         if value:
             return value
     return None
+
+
+def _uses_postgres_test_backend() -> bool:
+    database_url = _resolve_test_database_url()
+    return bool(database_url) and not _is_sqlite_url(database_url)
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    del config
+    postgres_backend_enabled = _uses_postgres_test_backend()
+
+    for item in items:
+        path = str(item.fspath)
+        normalized = path.replace("\\", "/")
+
+        if "/tests/load/" in normalized:
+            item.add_marker(pytest.mark.load)
+            item.add_marker(pytest.mark.postgres_required)
+        elif "/tests/integration/" in normalized:
+            item.add_marker(pytest.mark.integration)
+        elif "/tests/" in normalized:
+            item.add_marker(pytest.mark.unit)
+
+        if item.get_closest_marker("postgres_required") and not postgres_backend_enabled:
+            item.add_marker(
+                pytest.mark.skip(
+                    reason=(
+                        "requires PostgreSQL test backend; set DATABASE_URL or POSTGRES_DSN "
+                        "to a PostgreSQL test database to run this test"
+                    )
+                )
+            )
 
 
 def _create_test_engine(database_url: str):
@@ -281,6 +316,7 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
         print("db_session: after reset_external_test_database")
     test_session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     test_session = test_session_local()
+    reset_graph_write_batcher()
 
     # Ensure eager Celery tasks read/write against the same committed test DB.
     db_session_module.bind_session_factory_for_tests(test_session_local)
@@ -500,6 +536,13 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
                 break
             except PermissionError:
                 time.sleep(0.05)
+
+
+@pytest.fixture(autouse=True)
+def reset_knowledge_graph_batcher_fixture() -> Generator[None, None, None]:
+    reset_graph_write_batcher()
+    yield
+    reset_graph_write_batcher()
 
 
 
