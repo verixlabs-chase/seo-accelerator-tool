@@ -16,7 +16,7 @@ export function ActionDrawer({
   return (
     <aside className="rounded-md border border-accent-500/22 bg-[#161417] p-4 shadow-[0_0_0_1px_rgba(255,106,26,0.12),0_0_24px_rgba(255,106,26,0.06)]">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-600/90">
-        Action drawer
+        Recommended action
       </p>
       <h3 className="mt-2.5 text-lg font-semibold tracking-[-0.03em] text-white">
         {title}

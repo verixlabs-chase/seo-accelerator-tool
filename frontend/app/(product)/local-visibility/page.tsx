@@ -364,13 +364,13 @@ export default function LocalVisibilityPage() {
         ) : null}
 
         {error ? (
-          <section className="border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+          <section className="rounded-md border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
             {error}
           </section>
         ) : null}
 
         {notice ? (
-          <section className="border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
+          <section className="rounded-md border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
             {notice}
           </section>
         ) : null}
@@ -534,10 +534,10 @@ export default function LocalVisibilityPage() {
                 </p>
 
                 {reviews.length === 0 ? (
-                  <LoadingCard
-                    title="No recent reviews"
-                    summary="No reviews have been captured yet for this business."
-                  />
+                  <div className="mt-4 rounded-md border border-dashed border-[#26272c] bg-[#111214] p-4 text-center">
+                    <p className="text-sm font-medium text-zinc-300">No recent reviews yet</p>
+                    <p className="mt-1 text-sm text-zinc-500">Review signals will appear here once captured for this business.</p>
+                  </div>
                 ) : (
                   <div className="mt-4 space-y-3">
                     {reviews.slice(0, 5).map((review) => (

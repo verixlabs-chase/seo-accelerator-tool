@@ -95,7 +95,7 @@ export default function LoginPage() {
         ) : null}
 
         <div className="mt-6 flex items-center justify-between gap-3 text-sm text-zinc-400">
-          <span>Need a different entry point?</span>
+          <span>Wrong workspace?</span>
           <Link href="/" className="text-zinc-200 transition hover:text-white">
             Back to home
           </Link>
