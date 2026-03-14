@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import {
   Area,
@@ -21,24 +22,13 @@ import {
   EmptyState,
   InsightCard,
   KpiCard,
+  LoadingCard,
   OnboardingWizard,
-  type NavItem,
   type TrustSignal,
 } from "../components";
+import { buildProductNav } from "../nav.config";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
-
-const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", active: true },
-  { href: "/locations", label: "Locations", disabled: true, hidden: true },
-  { href: "/rankings", label: "Rankings", disabled: true },
-  { href: "/local-visibility", label: "Local Visibility", disabled: true, hidden: true },
-  { href: "/site-health", label: "Site Health", badge: "3", disabled: true, hidden: true },
-  { href: "/competitors", label: "Competitors", disabled: true, hidden: true },
-  { href: "/opportunities", label: "Opportunities", badge: "5", disabled: true },
-  { href: "/reports", label: "Reports", disabled: true },
-  { href: "/settings", label: "Settings", disabled: true },
-];
 
 type Me = {
   id?: string;
@@ -152,6 +142,26 @@ function SectionHeading({
       </h2>
       <p className="mt-1.5 max-w-3xl text-sm leading-5 text-zinc-300">{summary}</p>
     </div>
+  );
+}
+
+function BriefingCard({
+  eyebrow,
+  title,
+  body,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+        {eyebrow}
+      </p>
+      <h2 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-white">{title}</h2>
+      <p className="mt-2 text-sm leading-6 text-zinc-300">{body}</p>
+    </section>
   );
 }
 
@@ -350,6 +360,7 @@ function TimelineCard({
 }
 
 export default function DashboardPage() {
+  const pathname = usePathname();
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState("");
@@ -769,6 +780,99 @@ export default function DashboardPage() {
   const topKeyword = latestTrends[0];
   const topReport = latestReports[0];
   const topRun = latestRuns[0];
+  const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
+  const latestKeywordPosition = topKeyword?.position
+    ? coerceNumber(topKeyword.position)
+    : null;
+
+  const summaryState = (() => {
+    if (!selectedCampaign) {
+      return {
+        changeTitle: "No business is active yet",
+        changeBody: "Start by adding your business so InsightOS can scan your website and begin tracking visibility.",
+        impactTitle: "Why it matters",
+        impactBody: "Until your business is set up, the dashboard cannot show ranking changes, reports, or recommended actions.",
+        nextStepTitle: "Set up your business",
+        nextStepBody: "Complete the guided setup to run your first check and unlock your first visibility summary.",
+        primaryActionLabel: "Set up your business",
+        primaryAction: () => setShowWizard(true),
+        secondaryActionLabel: "Add business manually",
+        secondaryAction: () => document.getElementById("campaign-form")?.scrollIntoView({ behavior: "smooth" }),
+      };
+    }
+
+    if (!topRun) {
+      return {
+        changeTitle: "Your business is ready for its first website scan",
+        changeBody: `${selectedCampaign.name || "This business"} has been added, but no website scan has been run yet.`,
+        impactTitle: "Why it matters",
+        impactBody: "The first scan finds technical issues and creates the baseline for visibility and reporting.",
+        nextStepTitle: "Run your first website scan",
+        nextStepBody: "Start with a website scan so the dashboard can explain what changed and what needs attention.",
+        primaryActionLabel: "Run website scan",
+        primaryAction: () => void scheduleCrawl(),
+        secondaryActionLabel: "Review business details",
+        secondaryAction: () => document.getElementById("campaign-form")?.scrollIntoView({ behavior: "smooth" }),
+      };
+    }
+
+    if (!topKeyword || latestKeywordPosition === null) {
+      return {
+        changeTitle: `Latest website scan is ${toTitleCase(topRun.status)}`,
+        changeBody: `The most recent ${topRun.crawl_type || "website"} scan was updated ${formatRelativeTime(topRun.updated_at || topRun.created_at)}.`,
+        impactTitle: "Why it matters",
+        impactBody: "You need tracked searches to see whether customers can actually find your business in results.",
+        nextStepTitle: "Track your first search term",
+        nextStepBody: "Add a search term so the dashboard can start showing ranking movement and visibility trends.",
+        primaryActionLabel: "Check search positions",
+        primaryAction: () => void addKeywordAndRunRank(),
+        secondaryActionLabel: "Open search setup",
+        secondaryAction: () => document.getElementById("rank-form")?.scrollIntoView({ behavior: "smooth" }),
+      };
+    }
+
+    if (!topReport) {
+      return {
+        changeTitle: `"${topKeyword.keyword || "Top search term"}" is now tracked at position ${latestKeywordPosition}`,
+        changeBody: `Ranking data is flowing for ${selectedCampaign.name || "your business"}, but no report has been created yet.`,
+        impactTitle: "Why it matters",
+        impactBody: latestKeywordPosition <= 10
+          ? "You are already visible on page one for at least one tracked search, which is worth packaging into a client-ready summary."
+          : "This gives you a baseline to measure progress against in future checks and reports.",
+        nextStepTitle: "Create your first report",
+        nextStepBody: "Generate a report so you can package the latest scan and ranking results in one place.",
+        primaryActionLabel: "Create report",
+        primaryAction: () => void generateReport(),
+        secondaryActionLabel: "Open reports controls",
+        secondaryAction: () => document.getElementById("report-form")?.scrollIntoView({ behavior: "smooth" }),
+      };
+    }
+
+    return {
+      changeTitle: `"${topKeyword.keyword || "Top search term"}" is at position ${latestKeywordPosition}`,
+      changeBody: `Your latest report is ${toTitleCase(topReport.report_status)} and the most recent website scan is ${toTitleCase(topRun.status)}.`,
+      impactTitle: "Why it matters",
+      impactBody: latestKeywordPosition <= 10
+        ? "You already have visible traction. The priority now is staying consistent and sharing progress clearly."
+        : "Your tracked visibility is established, so the next gains come from consistent checks and targeted follow-up.",
+      nextStepTitle: "Keep the latest update moving",
+      nextStepBody: topReport.report_status === "generated"
+        ? "Send the latest report so the current progress is shared while it is still fresh."
+        : "Refresh your website and ranking checks so the next summary reflects the newest changes.",
+      primaryActionLabel: topReport.report_status === "generated" ? "Send latest report" : "Refresh latest results",
+      primaryAction: topReport.report_status === "generated"
+        ? () => void deliverLatestReport()
+        : () =>
+            void runAction("refresh", async () => {
+              await loadLatest(selectedCampaignId);
+              setNotice("Latest results refreshed.");
+            }),
+      secondaryActionLabel: topReport.report_status === "generated" ? "Open report controls" : "Review activity",
+      secondaryAction: topReport.report_status === "generated"
+        ? () => document.getElementById("report-form")?.scrollIntoView({ behavior: "smooth" })
+        : () => document.getElementById("activity-timeline")?.scrollIntoView({ behavior: "smooth" }),
+    };
+  })();
 
   return (
     <AppShell
@@ -801,22 +905,55 @@ export default function DashboardPage() {
       }
     >
       <section className="space-y-6">
-        <div className="max-w-4xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            Dashboard
-          </p>
-          <h1 className="mt-2 text-4xl font-bold tracking-[-0.05em] text-white md:text-[3.25rem]">
-            Your Local Search Dashboard
-          </h1>
-          <p className="mt-2.5 text-sm leading-6 text-zinc-300 md:text-base">
-            See how customers find your business online, what changed, and what to do next.
-          </p>
+        <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+          <div className="max-w-4xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              Daily briefing
+            </p>
+            <h1 className="mt-2 text-4xl font-bold tracking-[-0.05em] text-white md:text-[3.25rem]">
+              What changed for your business today
+            </h1>
+            <p className="mt-2.5 text-sm leading-6 text-zinc-300 md:text-base">
+              Start here to see the latest visibility update, why it matters, and the
+              next action InsightOS recommends.
+            </p>
+          </div>
+
+          <ActionDrawer
+            title={summaryState.nextStepTitle}
+            summary={summaryState.nextStepBody}
+            evidence={[
+              summaryState.changeTitle,
+              summaryState.impactBody,
+              selectedCampaign
+                ? `Active business: ${selectedCampaign.name || "Unnamed campaign"} on ${selectedCampaign.domain || "no domain"}.`
+                : "No active business is selected yet.",
+            ]}
+            actions={
+              <>
+                <button
+                  onClick={summaryState.primaryAction}
+                  disabled={busyAction !== "" && summaryState.primaryActionLabel !== "Refresh latest results"}
+                  className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {summaryState.primaryActionLabel}
+                </button>
+                <button
+                  onClick={summaryState.secondaryAction}
+                  className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200"
+                >
+                  {summaryState.secondaryActionLabel}
+                </button>
+              </>
+            }
+          />
         </div>
 
         {loading ? (
-          <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 text-sm text-zinc-300 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-            Loading your latest results...
-          </section>
+          <LoadingCard
+            title="Loading dashboard"
+            summary="Pulling the latest visibility summary, recommended action, and activity for your active business."
+          />
         ) : null}
 
         {error ? (
@@ -842,26 +979,57 @@ export default function DashboardPage() {
 
         {showWizard ? (
           <OnboardingWizard
-            onComplete={() => {
+            onComplete={({ campaignId, campaignDomain, notice: completionNotice }) => {
               setShowWizard(false);
+              setSelectedCampaignId(campaignId);
+              setSeedUrl(withScheme(campaignDomain));
+              setNotice(completionNotice);
               void loadCampaigns().then((items) => {
-                if (items.length > 0) {
-                  void loadLatest(items[0].id);
+                const matchedCampaign = items.find((item) => item.id === campaignId);
+                if (matchedCampaign) {
+                  setSelectedCampaignId(matchedCampaign.id);
+                  setSeedUrl(withScheme(matchedCampaign.domain || campaignDomain));
                 }
+                void loadLatest(campaignId);
               });
             }}
           />
         ) : null}
 
+        {campaigns.length > 0 ? (
+          <div className="grid gap-4 xl:grid-cols-3">
+            <BriefingCard
+              eyebrow="What changed"
+              title={summaryState.changeTitle}
+              body={summaryState.changeBody}
+            />
+            <BriefingCard
+              eyebrow="Why it matters"
+              title={summaryState.impactTitle}
+              body={summaryState.impactBody}
+            />
+            <BriefingCard
+              eyebrow="What to do next"
+              title={summaryState.nextStepTitle}
+              body={summaryState.nextStepBody}
+            />
+          </div>
+        ) : null}
+
+        <SectionHeading
+          eyebrow="At a glance"
+          title="Your current visibility summary"
+          summary="These cards show the latest state of setup, website scans, tracked searches, and reporting for the active business."
+        />
         <div className="grid gap-4 xl:grid-cols-4">
           <KpiCard
-            label="Campaigns"
+            label="Businesses"
             value={String(campaigns.length)}
-            changeLabel={selectedCampaign ? "Active" : "Awaiting setup"}
+            changeLabel={selectedCampaign ? "Active now" : "Needs setup"}
             summary={
               selectedCampaign
                 ? `Current workspace: ${selectedCampaign.name || "Unnamed campaign"} on ${selectedCampaign.domain || "no domain"}.`
-                : "Create a campaign to begin crawl, rank, and reporting workflows."
+                : "Add your business to start scans, rankings, and reports."
             }
             visual={
               <MiniSpark
@@ -872,13 +1040,13 @@ export default function DashboardPage() {
             tone="highlight"
           />
           <KpiCard
-            label="Latest Crawl"
+            label="Website scan"
             value={topRun?.status ? toTitleCase(topRun.status) : "None"}
             changeLabel={topRun?.crawl_type ? toTitleCase(topRun.crawl_type) : undefined}
             summary={
               topRun
                 ? `Most recent crawl was updated ${formatRelativeTime(topRun.updated_at || topRun.created_at)}.`
-                : "No crawl runs are available for the selected campaign yet."
+                : "No website scan has run for the active business yet."
             }
             visual={
               <MiniSpark
@@ -888,15 +1056,15 @@ export default function DashboardPage() {
             }
           />
           <KpiCard
-            label="Tracked Keywords"
+            label="Tracked searches"
             value={String(latestTrends.length)}
             changeLabel={
-              topKeyword?.position ? `Top pos ${coerceNumber(topKeyword.position)}` : undefined
+              topKeyword?.position ? `Best ${coerceNumber(topKeyword.position)}` : undefined
             }
             summary={
               topKeyword
-                ? `${topKeyword.keyword || "Top keyword"} is leading the current trend set.`
-                : "No ranking snapshots exist yet for this campaign."
+                ? `${topKeyword.keyword || "Top search"} is leading the current trend set.`
+                : "No search position snapshots exist yet for this business."
             }
             visual={
               <MiniSpark
@@ -922,7 +1090,7 @@ export default function DashboardPage() {
             summary={
               topReport
                 ? `Latest report status is ${toTitleCase(topReport.report_status)}.`
-                : "Generate a report when you are ready to package the latest work."
+                : "Create a report once your latest scan and ranking data are ready."
             }
             visual={
               <MiniSpark
@@ -933,6 +1101,11 @@ export default function DashboardPage() {
           />
         </div>
 
+        <SectionHeading
+          eyebrow="Trends"
+          title="How visibility is moving"
+          summary="Use these charts to see how often your business appears in search and whether search positions are improving."
+        />
         <div className="grid gap-5 xl:grid-cols-2">
           <ChartCard
             eyebrow="Trend"
@@ -980,12 +1153,17 @@ export default function DashboardPage() {
           />
         </div>
 
+        <SectionHeading
+          eyebrow="Highlights"
+          title="The clearest takeaways right now"
+          summary="These quick reads explain where the active business stands and where the next useful action lives."
+        />
         <div className="grid gap-5 xl:grid-cols-3">
           <InsightCard
             insight={{
-              title: selectedCampaign ? "Your business is set up." : "Business setup required.",
+              title: selectedCampaign ? "Your business is connected." : "Business setup required.",
               body: selectedCampaign
-                ? `${selectedCampaign.name || "Your business"} is ready for website scans, search position checks, and reports.`
+                ? `${selectedCampaign.name || "Your business"} is ready for scans, tracked searches, and reporting.`
                 : "Add your business to start tracking how customers find you online.",
               tone: selectedCampaign ? "success" : "warning",
               action: {
@@ -998,7 +1176,7 @@ export default function DashboardPage() {
             insight={{
               title: topKeyword ? "Search positions tracked." : "No search terms tracked yet.",
               body: topKeyword
-                ? `"${topKeyword.keyword || "Your top term"}" is at position ${coerceNumber(topKeyword.position)} in search results.`
+                ? `"${topKeyword.keyword || "Your top term"}" is currently at position ${coerceNumber(topKeyword.position)} in search results.`
                 : "Add a search term to see where your business shows up when customers search.",
               tone: topKeyword ? "info" : "warning",
               action: {
@@ -1011,7 +1189,7 @@ export default function DashboardPage() {
             insight={{
               title: topReport ? "Reports available." : "No reports yet.",
               body: topReport
-                ? `Your ${toTitleCase(topReport.report_status)} report for month ${topReport.month_number} is ready to view or send.`
+                ? `Your ${toTitleCase(topReport.report_status)} report for month ${topReport.month_number} is ready to review or send.`
                 : "Create a report once you have search position data.",
               tone: topReport ? "success" : "warning",
               action: {
@@ -1022,13 +1200,34 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-          <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+        <details className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Advanced controls
+                </p>
+                <h2 className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-white">
+                  Manual checks and report actions
+                </h2>
+                <p className="mt-1.5 text-sm leading-5 text-zinc-300">
+                  These controls are still available, but they are secondary to the
+                  daily briefing above.
+                </p>
+              </div>
+              <span className="rounded-md border border-[#26272c] bg-[#111214] px-3 py-1 text-sm text-zinc-300">
+                Expand
+              </span>
+            </div>
+          </summary>
+
+          <div className="mt-5">
             <SectionHeading
-              eyebrow="Actions"
+              eyebrow="Manual tools"
               title="Run checks and reports"
-              summary="Use these tools to scan your website, check search positions, and create reports."
+              summary="Use these tools when you want to manually trigger a website scan, add tracked searches, or create a report."
             />
+
             <div className="grid gap-4 xl:grid-cols-2">
               <form
                 id="campaign-form"
@@ -1167,52 +1366,56 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-          </section>
+          </div>
+        </details>
 
-          <ActionDrawer
-            title={
-              selectedCampaign
-                ? `Recommended next step for ${selectedCampaign.name || "your business"}`
-                : "Add your business to get started"
-            }
-            summary={
-              selectedCampaign
-                ? "Run a website scan, check your search positions, or create a report."
-                : "Add your business details so we can start tracking how customers find you online."
-            }
-            evidence={[
-              topRun
-                ? `Website scan: ${toTitleCase(topRun.status)}.`
-                : "No website scans have been run yet.",
-              topKeyword
-                ? `"${topKeyword.keyword || "Top search term"}" is at position ${coerceNumber(topKeyword.position)} in search results.`
-                : "No search position data yet.",
-              topReport
-                ? `Your month ${topReport.month_number} report is ${toTitleCase(topReport.report_status)}.`
-                : "No reports created yet.",
-            ]}
-            actions={
-              <>
-                <button
-                  onClick={scheduleCrawl}
-                  disabled={busyAction !== ""}
-                  className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Run website scan
-                </button>
-                <button
-                  onClick={generateReport}
-                  disabled={busyAction !== ""}
-                  className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Create report
-                </button>
-              </>
-            }
+        <div id="activity-timeline">
+          <SectionHeading
+            eyebrow="Activity"
+            title="What the system updated most recently"
+            summary="This timeline keeps the active business summary grounded in real scans, rankings, and reporting events."
           />
+          <TimelineCard recentActivity={recentActivity} />
         </div>
 
-        <TimelineCard recentActivity={recentActivity} />
+        <div className="grid gap-4 xl:grid-cols-[1fr_0.55fr]">
+          <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+            <SectionHeading
+              eyebrow="Visibility context"
+              title="What this workspace is tracking"
+              summary="Use this section to confirm the active business and make sure the current results belong to the right website."
+            />
+            <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+              <p className="text-sm leading-6 text-zinc-300">
+                {selectedCampaign
+                  ? `${selectedCampaign.name || "Unnamed campaign"} on ${selectedCampaign.domain || "no domain"} is the active workspace.`
+                  : "No business is active yet."}
+              </p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded-md border border-[#26272c] bg-[#141518] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Latest website scan
+                  </p>
+                  <p className="mt-2 text-sm text-zinc-200">
+                    {topRun
+                      ? `${toTitleCase(topRun.status)} ${formatRelativeTime(topRun.updated_at || topRun.created_at)}`
+                      : "No website scan has run yet."}
+                  </p>
+                </div>
+                <div className="rounded-md border border-[#26272c] bg-[#141518] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Latest report
+                  </p>
+                  <p className="mt-2 text-sm text-zinc-200">
+                    {topReport
+                      ? `${toTitleCase(topReport.report_status)} for month ${topReport.month_number || "current"}`
+                      : "No report has been created yet."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
 
         {me ? (
           <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">

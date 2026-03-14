@@ -47,6 +47,17 @@ class ExecutionOut(BaseModel):
             return {}
         return data if isinstance(data, dict) else {}
 
+    @computed_field(return_type=int)
+    def mutation_count(self) -> int:
+        result = self.result
+        mutations = result.get('mutations')
+        if isinstance(mutations, list):
+            return len(mutations)
+        rolled_back_mutations = result.get('rolled_back_mutations')
+        if isinstance(rolled_back_mutations, list):
+            return len(rolled_back_mutations)
+        return 0
+
 
 class ExecutionRunIn(BaseModel):
     dry_run: bool = False
