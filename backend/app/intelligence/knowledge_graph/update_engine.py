@@ -13,8 +13,8 @@ from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode
 
 @dataclass(slots=True)
 class PendingEdgeWrite:
-    source_node: KnowledgeNode
-    target_node: KnowledgeNode
+    source_node_id: str
+    target_node_id: str
     edge_type: str
     industry: str
     effect_size: float
@@ -29,6 +29,10 @@ class GraphWriteBatcher:
 
     def enqueue(self, write: PendingEdgeWrite) -> None:
         self._pending.append(write)
+
+    def reset(self) -> None:
+        self._pending.clear()
+        self._last_flush = monotonic()
 
     def flush(self, db: Session, *, force: bool = False) -> dict[tuple[str, str, str, str], KnowledgeEdge]:
         settings = get_settings()
@@ -45,7 +49,7 @@ class GraphWriteBatcher:
         graph_write_batch_size.set(len(pending))
 
         identities = {
-            (item.source_node.id, item.target_node.id, item.edge_type, item.industry)
+            (item.source_node_id, item.target_node_id, item.edge_type, item.industry)
             for item in pending
         }
         existing_rows = (
@@ -68,12 +72,12 @@ class GraphWriteBatcher:
         new_rows: list[KnowledgeEdge] = []
         result: dict[tuple[str, str, str, str], KnowledgeEdge] = {}
         for item in pending:
-            identity = (item.source_node.id, item.target_node.id, item.edge_type, item.industry)
+            identity = (item.source_node_id, item.target_node_id, item.edge_type, item.industry)
             row = existing_map.get(identity)
             if row is None:
                 row = KnowledgeEdge(
-                    source_node_id=item.source_node.id,
-                    target_node_id=item.target_node.id,
+                    source_node_id=item.source_node_id,
+                    target_node_id=item.target_node_id,
                     edge_type=item.edge_type,
                     industry=item.industry,
                     effect_size=item.effect_size,
@@ -137,6 +141,12 @@ def flush_graph_write_batch(db: Session, *, force: bool = False) -> dict[tuple[s
     return _BATCHER.flush(db, force=force)
 
 
+def reset_graph_write_batcher() -> None:
+    # Tests use one isolated SQLite file per case. Clearing the batcher prevents
+    # pending writes from earlier sessions from leaking across databases.
+    _BATCHER.reset()
+
+
 def update_global_knowledge_graph(
     db: Session,
     *,
@@ -156,8 +166,8 @@ def update_global_knowledge_graph(
 
     writes = {
         'policy_feature': PendingEdgeWrite(
-            source_node=policy_node,
-            target_node=feature_node,
+            source_node_id=policy_node.id,
+            target_node_id=feature_node.id,
             edge_type='policy_feature',
             industry=industry,
             effect_size=effect_size,
@@ -165,8 +175,8 @@ def update_global_knowledge_graph(
             sample_size=sample_size,
         ),
         'feature_outcome': PendingEdgeWrite(
-            source_node=feature_node,
-            target_node=outcome_node,
+            source_node_id=feature_node.id,
+            target_node_id=outcome_node.id,
             edge_type='feature_outcome',
             industry=industry,
             effect_size=effect_size,
@@ -174,8 +184,8 @@ def update_global_knowledge_graph(
             sample_size=sample_size,
         ),
         'policy_outcome': PendingEdgeWrite(
-            source_node=policy_node,
-            target_node=outcome_node,
+            source_node_id=policy_node.id,
+            target_node_id=outcome_node.id,
             edge_type='policy_outcome',
             industry=industry,
             effect_size=effect_size,
@@ -189,9 +199,9 @@ def update_global_knowledge_graph(
     if not flushed:
         return {}
     return {
-        name: flushed[(item.source_node.id, item.target_node.id, item.edge_type, item.industry)]
+        name: flushed[(item.source_node_id, item.target_node_id, item.edge_type, item.industry)]
         for name, item in writes.items()
-        if (item.source_node.id, item.target_node.id, item.edge_type, item.industry) in flushed
+        if (item.source_node_id, item.target_node_id, item.edge_type, item.industry) in flushed
     }
 
 
@@ -208,8 +218,8 @@ def record_policy_evolution(
     parent_node = ensure_knowledge_node(db, node_type='policy', node_key=parent_policy, label=parent_policy)
     child_node = ensure_knowledge_node(db, node_type='policy', node_key=child_policy, label=child_policy)
     write = PendingEdgeWrite(
-        source_node=parent_node,
-        target_node=child_node,
+        source_node_id=parent_node.id,
+        target_node_id=child_node.id,
         edge_type='policy_policy',
         industry=industry,
         effect_size=effect_size,
