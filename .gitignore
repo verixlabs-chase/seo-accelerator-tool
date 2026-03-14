@@ -22,3 +22,6 @@ lsos.db
 backend/generated_reports/
 
 backend/artifacts/replay/ci/
+
+.env
+frontend/tsconfig.tsbuildinfo
