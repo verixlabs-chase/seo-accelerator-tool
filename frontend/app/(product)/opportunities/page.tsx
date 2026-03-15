@@ -93,6 +93,14 @@ type DryRunPreview = {
   result: ExecutionResult;
 };
 
+type TimelineEntry = {
+  key: string;
+  label: string;
+  detail: string;
+  timestamp: string | null;
+  tone: "neutral" | "success" | "warning" | "error";
+};
+
 type WordPressExecutionSetup = {
   campaign_id: string;
   provider_name: string;
@@ -508,6 +516,136 @@ function normalizeExecutionActionResponse(response: unknown) {
   }
 
   return { execution: null, result: null, dryRun: false };
+}
+
+function getTimelineDotClass(tone: TimelineEntry["tone"]) {
+  if (tone === "success") {
+    return "bg-emerald-500";
+  }
+  if (tone === "warning") {
+    return "bg-amber-500";
+  }
+  if (tone === "error") {
+    return "bg-rose-500";
+  }
+  return "bg-zinc-500";
+}
+
+function buildExecutionTimeline(execution: Execution): TimelineEntry[] {
+  const entries: TimelineEntry[] = [];
+  const mutationCount = getMutationCount(execution);
+
+  // Always first: when the execution was created
+  entries.push({
+    key: "created",
+    label: "Execution created",
+    detail: `${describeExecutionType(execution.execution_type)}. Risk level: ${toTitleCase(execution.risk_level || "medium")}.`,
+    timestamp: execution.created_at ?? null,
+    tone: "neutral",
+  });
+
+  // Approval decision (mutually exclusive outcomes)
+  if (execution.approved_by && execution.approved_at) {
+    entries.push({
+      key: "approved",
+      label: "Approved",
+      detail: `Approved by ${execution.approved_by}.`,
+      timestamp: execution.approved_at,
+      tone: "success",
+    });
+  } else if (
+    execution.status === "failed" &&
+    execution.last_error === "manual_rejection"
+  ) {
+    entries.push({
+      key: "rejected",
+      label: "Rejected",
+      detail: "This execution was manually rejected by an operator.",
+      timestamp: null,
+      tone: "error",
+    });
+  } else if (execution.status === "pending") {
+    entries.push({
+      key: "awaiting",
+      label: "Awaiting approval",
+      detail: "An operator needs to approve or reject this execution before it can run.",
+      timestamp: null,
+      tone: "warning",
+    });
+  }
+
+  // Queued after approval but before execution
+  if (execution.status === "scheduled") {
+    entries.push({
+      key: "scheduled",
+      label: "Scheduled",
+      detail: "This execution is approved and queued to run.",
+      timestamp: null,
+      tone: "neutral",
+    });
+  }
+
+  // Ran (has executed_at)
+  if (execution.executed_at) {
+    const ranSuccessfully =
+      execution.status === "completed" || execution.status === "rolled_back";
+    const retryNote =
+      execution.attempt_count > 1
+        ? ` (${execution.attempt_count} attempts total)`
+        : "";
+    entries.push({
+      key: "executed",
+      label: ranSuccessfully ? "Executed" : "Attempted",
+      detail: ranSuccessfully
+        ? `Execution ran and recorded ${mutationCount} tracked change${mutationCount === 1 ? "" : "s"}.`
+        : `Execution was attempted${retryNote} but did not complete successfully.`,
+      timestamp: execution.executed_at,
+      tone: ranSuccessfully ? "success" : "warning",
+    });
+  }
+
+  // Failed state (excluding manual rejections, which are covered above)
+  if (execution.status === "failed" && execution.last_error !== "manual_rejection") {
+    entries.push({
+      key: "failed",
+      label: "Failed",
+      detail: execution.last_error
+        ? execution.last_error.replace(/_/g, " ")
+        : "The execution failed without a recorded error message.",
+      timestamp: null,
+      tone: "error",
+    });
+  }
+
+  // Completed with no rollback
+  if (execution.status === "completed" && !execution.rolled_back_at) {
+    entries.push({
+      key: "completed",
+      label: "Completed",
+      detail:
+        mutationCount > 0
+          ? `${mutationCount} change${mutationCount === 1 ? "" : "s"} are now live. Rollback is available if mutations were tracked.`
+          : "Execution completed. No mutations were tracked for this step.",
+      timestamp: execution.executed_at ?? null,
+      tone: "success",
+    });
+  }
+
+  // Rolled back
+  if (execution.rolled_back_at) {
+    entries.push({
+      key: "rolled_back",
+      label: "Rolled back",
+      detail:
+        mutationCount > 0
+          ? `${mutationCount} change${mutationCount === 1 ? "" : "s"} were reversed using the persisted mutation record.`
+          : "Rollback was applied to this execution.",
+      timestamp: execution.rolled_back_at,
+      tone: "neutral",
+    });
+  }
+
+  return entries;
 }
 
 export default function OpportunitiesPage() {
@@ -1714,6 +1852,48 @@ export default function OpportunitiesPage() {
                             run, retry, cancel, and rollback controls.
                           </div>
                         ) : null}
+
+                        <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                            History
+                          </p>
+                          <h3 className="mt-1.5 text-base font-semibold tracking-[-0.03em] text-white">
+                            Execution timeline
+                          </h3>
+                          <div className="mt-4">
+                            {buildExecutionTimeline(selectedExecution).map(
+                              (entry, index, all) => (
+                                <div key={entry.key} className="flex gap-3">
+                                  <div className="flex flex-col items-center pt-1">
+                                    <div
+                                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${getTimelineDotClass(entry.tone)}`}
+                                    />
+                                    {index < all.length - 1 ? (
+                                      <div className="mt-1.5 min-h-5 w-px flex-1 bg-[#26272c]" />
+                                    ) : null}
+                                  </div>
+                                  <div
+                                    className={`min-w-0 flex-1 ${index < all.length - 1 ? "pb-4" : ""}`}
+                                  >
+                                    <div className="flex flex-wrap items-baseline gap-3">
+                                      <p className="text-sm font-medium text-zinc-100">
+                                        {entry.label}
+                                      </p>
+                                      {entry.timestamp ? (
+                                        <span className="text-xs text-zinc-500">
+                                          {formatRelativeTime(entry.timestamp)}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <p className="mt-0.5 text-sm leading-5 text-zinc-400">
+                                      {entry.detail}
+                                    </p>
+                                  </div>
+                                </div>
+                              ),
+                            )}
+                          </div>
+                        </div>
                       </>
                     ) : (
                       <EmptyState
