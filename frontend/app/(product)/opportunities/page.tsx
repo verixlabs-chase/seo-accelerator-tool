@@ -1034,10 +1034,10 @@ export default function OpportunitiesPage() {
             Refresh
           </button>
           <button
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.push("/reports")}
             className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100"
           >
-            Open dashboard
+            View reports
           </button>
         </>
       }

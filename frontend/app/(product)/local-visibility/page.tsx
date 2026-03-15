@@ -341,10 +341,10 @@ export default function LocalVisibilityPage() {
             Refresh
           </button>
           <button
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.push("/citations")}
             className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100"
           >
-            Open dashboard
+            View citations
           </button>
         </>
       }
@@ -566,6 +566,25 @@ export default function LocalVisibilityPage() {
                 )}
               </section>
             </div>
+
+            <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                Next step
+              </p>
+              <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                Strengthen your local presence with citations
+              </h2>
+              <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+                Directory citations help build local authority and consistency across the web. Submit
+                your business to key directories and track listing status in the Citations workspace.
+              </p>
+              <button
+                onClick={() => router.push("/citations")}
+                className="mt-4 rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100"
+              >
+                Manage citations
+              </button>
+            </section>
           </>
         ) : null}
       </section>
