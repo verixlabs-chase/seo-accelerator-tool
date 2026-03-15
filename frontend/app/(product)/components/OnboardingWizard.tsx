@@ -2,6 +2,11 @@
 
 import { useState, useEffect, type FormEvent } from "react";
 import { platformApi } from "../../platform/api";
+import {
+  getStepThreeSummary,
+  getTaskStatusMeaning,
+  summarizeTaskCounts,
+} from "../truth/onboardingTruth.mjs";
 
 type OnboardingCompletion = {
   campaignId: string;
@@ -92,6 +97,9 @@ function SetupTaskList({ tasks }: { tasks: SetupTask[] }) {
               <div>
                 <p className="text-sm font-medium">{task.title}</p>
                 <p className="mt-1 text-sm opacity-80">{task.description}</p>
+                <p className="mt-2 text-xs uppercase tracking-[0.14em] opacity-70">
+                  {getTaskStatusMeaning(task.status)}
+                </p>
               </div>
               <span className="shrink-0 rounded-full border border-current/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
                 {label}
@@ -156,6 +164,16 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       current.map((task) => (task.id === taskId ? { ...task, status } : task)),
     );
   }
+
+  const {
+    completedTasks,
+    runningTasks,
+    failedTasks,
+    queuedTasks,
+    hasSetupIssues,
+    hasStartedBackgroundChecks,
+  } = summarizeTaskCounts(setupTasks);
+  const stepThreeSummary = getStepThreeSummary(setupTasks, scanDone);
 
   async function handleStep1(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -284,7 +302,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             Set up your business
           </h2>
           <p className="mt-2.5 text-sm leading-6 text-zinc-300">
-            We&apos;ll connect your business, start your first checks, and show you when your first results are on the way.
+            We&apos;ll save your business, queue the first checks, and show you exactly what finished, what is still running, and what needs attention.
           </p>
         </div>
 
@@ -307,9 +325,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               <p className="text-sm font-medium text-white">What this setup will do</p>
               <ul className="mt-2 space-y-2 text-sm leading-6 text-zinc-300">
                 <li>Create your business workspace.</li>
-                <li>Start your first website scan.</li>
+                <li>Queue your first website scan.</li>
                 <li>Add one starter search term and queue your first ranking check.</li>
               </ul>
+              <p className="mt-3 text-xs leading-5 text-zinc-500">
+                Setup finishes when these requests are accepted. Your first results may keep filling in after you land on the dashboard.
+              </p>
             </div>
             <div>
               <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-zinc-500">
@@ -346,7 +367,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         {step === 2 && (
           <form onSubmit={handleStep2} className="space-y-5">
             <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
-              We&apos;ll use this to choose a starter tracked search and local area for your first results.
+              We&apos;ll use this to choose the first tracked search and location context for your initial ranking checks.
             </div>
             <div>
               <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-zinc-500">
@@ -406,13 +427,50 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-left">
               <p className="text-sm font-medium text-white">What is happening now</p>
               <p className="mt-2 text-sm leading-6 text-zinc-300">
-                InsightOS is creating your first results in the background. You can go to the
-                dashboard as soon as setup finishes, and new data will appear as each check
-                completes.
+                InsightOS is saving your setup and starting the first background checks. This screen shows which steps are complete, which are still running, and whether anything needs attention before you move on.
               </p>
             </div>
 
+            <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="rounded-md border border-[#26272c] bg-[#141518] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Complete
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">{completedTasks}</p>
+                  <p className="mt-1 text-xs text-zinc-400">Finished successfully</p>
+                </div>
+                <div className="rounded-md border border-[#26272c] bg-[#141518] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    In progress
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">{runningTasks}</p>
+                  <p className="mt-1 text-xs text-zinc-400">Working now</p>
+                </div>
+                <div className="rounded-md border border-[#26272c] bg-[#141518] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Queued
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">{queuedTasks}</p>
+                  <p className="mt-1 text-xs text-zinc-400">Waiting to start</p>
+                </div>
+                <div className="rounded-md border border-[#26272c] bg-[#141518] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Needs attention
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">{failedTasks}</p>
+                  <p className="mt-1 text-xs text-zinc-400">Did not finish</p>
+                </div>
+              </div>
+            </div>
+
             <SetupTaskList tasks={setupTasks} />
+
+            <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+              <p className="text-sm font-medium text-white">{stepThreeSummary.title}</p>
+              <p className="mt-2 text-sm leading-6 text-zinc-300">{stepThreeSummary.body}</p>
+              <p className="mt-3 text-sm font-medium text-zinc-100">Next: {stepThreeSummary.next}</p>
+            </div>
 
             {!scanDone ? (
               <>
@@ -421,46 +479,68 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 </div>
                 <div className="text-center">
                   <p className="text-sm font-medium text-white">
-                    Starting your first website and search checks...
+                    {hasStartedBackgroundChecks
+                      ? "Your first checks are being started now..."
+                      : "Preparing your first checks..."}
                   </p>
                   <p className="mt-1.5 text-sm leading-6 text-zinc-400">
-                    This usually takes about 1 to 2 minutes to queue, and results may keep filling in after you reach the dashboard.
+                    This usually takes about 1 to 2 minutes to queue. Setup completes when the requests above finish, but the actual results may keep filling in after you reach the dashboard.
                   </p>
                 </div>
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
-                  Next: you&apos;ll land on a daily briefing that shows the latest change, why it matters, and the next recommended action.
+                  Next: stay here until setup finishes, then open the dashboard to see whether each first check is complete, still running, or needs attention.
                 </div>
               </>
             ) : (
               <>
                 <div className="flex justify-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-green-500/30 bg-green-500/10">
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-full ${
+                      hasSetupIssues
+                        ? "border border-amber-500/30 bg-amber-500/10"
+                        : "border border-green-500/30 bg-green-500/10"
+                    }`}
+                  >
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M5 13l4 4L19 7" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path
+                        d={hasSetupIssues ? "M12 8v5m0 3h.01M10.29 3.86l-7.4 12.82A2 2 0 004.62 19h14.76a2 2 0 001.73-2.99l-7.4-12.82a2 2 0 00-3.46 0z" : "M5 13l4 4L19 7"}
+                        stroke={hasSetupIssues ? "#f59e0b" : "#22c55e"}
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
                     </svg>
                   </div>
                 </div>
                 <p className="text-center text-sm font-medium text-white">
-                  {error ? "Setup finished with one or more issues." : "Your first results are on the way."}
+                  {hasSetupIssues ? "Setup finished with one or more issues." : "Setup finished successfully."}
                 </p>
                 <p className="text-center text-sm leading-6 text-zinc-400">
-                  {error
-                    ? "Your business was created, but one or more checks need attention. You can retry them from the dashboard."
-                    : "Your dashboard will now show the active business, current progress, and the next recommended step while results fill in."}
+                  {hasSetupIssues
+                    ? "Your business was created, but one or more first checks did not finish cleanly. The dashboard will show exactly what needs attention and what to retry."
+                    : "Your business was created and your first checks were queued successfully. The dashboard will show progress as scan and ranking data arrive."}
                 </p>
+                <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
+                  <p className="font-medium text-white">What happens next</p>
+                  <p className="mt-2">
+                    {hasSetupIssues
+                      ? "Go to the dashboard now. Start with the workflow status cards, then retry any step marked as needing attention."
+                      : "Go to the dashboard now. Start with the workflow status cards to confirm what is complete and what is still filling in."}
+                  </p>
+                </div>
                 <button
                   onClick={() =>
                     onComplete({
                       campaignId,
                       campaignDomain,
-                      notice: error
-                        ? "Business setup finished, but some first-result checks need attention."
-                        : "Business setup finished. Your first website and ranking checks are running now.",
+                      notice: hasSetupIssues
+                        ? "Business setup finished, but one or more first checks need attention on the dashboard."
+                        : "Business setup finished. Your first checks were queued successfully and results are now filling in.",
                     })
                   }
                   className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100"
                 >
-                  Go to your dashboard &rarr;
+                  Open your dashboard &rarr;
                 </button>
               </>
             )}

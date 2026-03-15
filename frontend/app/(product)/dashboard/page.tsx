@@ -27,6 +27,14 @@ import {
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
+import {
+  getCrawlWorkflowState,
+  getRankingWorkflowState,
+  getReportWorkflowState,
+  getSetupWorkflowState,
+  isFailedStatus,
+  isPendingStatus,
+} from "../truth/dashboardTruth.mjs";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
 
@@ -63,6 +71,14 @@ type Report = {
   report_status?: string;
   created_at?: string;
   updated_at?: string;
+};
+
+type WorkflowState = {
+  label: string;
+  status: string;
+  tone: "success" | "warning" | "info" | "danger";
+  detail: string;
+  nextStep: string;
 };
 
 function toTitleCase(value?: string) {
@@ -121,6 +137,22 @@ function coerceNumber(value: number | string | undefined, fallback = 0) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getWorkflowToneClass(tone: string) {
+  if (tone === "success") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
+  }
+
+  if (tone === "danger") {
+    return "border-rose-500/20 bg-rose-500/10 text-rose-100";
+  }
+
+  if (tone === "info") {
+    return "border-accent-500/20 bg-accent-500/10 text-zinc-100";
+  }
+
+  return "border-amber-500/20 bg-amber-500/10 text-amber-100";
 }
 
 function SectionHeading({
@@ -561,7 +593,7 @@ export default function DashboardPage() {
       });
 
       setSeedUrl(effectiveSeedUrl);
-      setNotice("Crawl scheduled.");
+      setNotice("Website scan requested. Check the workflow status below for queued, complete, or needs-attention updates.");
       await loadLatest(selectedCampaignId);
     });
   }
@@ -596,7 +628,7 @@ export default function DashboardPage() {
         }),
       });
 
-      setNotice("Rank snapshot scheduled.");
+      setNotice("Search tracking requested. The dashboard will show ranking progress once the first snapshot is available.");
       await loadLatest(selectedCampaignId);
     });
   }
@@ -621,7 +653,7 @@ export default function DashboardPage() {
         }),
       });
 
-      setNotice(`Report generated for month ${safeMonth}.`);
+      setNotice(`Report request completed for month ${safeMonth}. Confirm below whether it is ready to review, still processing, or needs attention.`);
       await loadLatest(selectedCampaignId);
     });
   }
@@ -648,7 +680,7 @@ export default function DashboardPage() {
         body: JSON.stringify({ recipient: recipientEmail.trim() }),
       });
 
-      setNotice("Latest report marked as delivered.");
+      setNotice("Report delivery was requested. Confirm the latest report status on this page before treating it as sent.");
       await loadLatest(selectedCampaignId);
     });
   }
@@ -784,6 +816,15 @@ export default function DashboardPage() {
   const latestKeywordPosition = topKeyword?.position
     ? coerceNumber(topKeyword.position)
     : null;
+  const workflowStates = useMemo(
+    () => [
+      getSetupWorkflowState(selectedCampaign, topRun),
+      getCrawlWorkflowState(topRun, selectedCampaign, formatRelativeTime),
+      getRankingWorkflowState(selectedCampaign, latestTrends, topKeyword),
+      getReportWorkflowState(topReport, selectedCampaign),
+    ],
+    [latestTrends, selectedCampaign, topKeyword, topReport, topRun],
+  );
 
   const summaryState = (() => {
     if (!selectedCampaign) {
@@ -816,6 +857,40 @@ export default function DashboardPage() {
       };
     }
 
+    if (isFailedStatus(topRun.status)) {
+      return {
+        changeTitle: "Latest website scan needs attention",
+        changeBody: `The most recent ${topRun.crawl_type || "website"} scan ended as ${toTitleCase(topRun.status)} for ${selectedCampaign.name || "this business"}.`,
+        impactTitle: "Why it matters",
+        impactBody: "Until the scan succeeds, the dashboard may be missing technical issues and other follow-up guidance.",
+        nextStepTitle: "Retry the website scan",
+        nextStepBody: "Run the scan again from the manual tools below, then confirm the status changes to completed.",
+        primaryActionLabel: "Retry website scan",
+        primaryAction: () => void scheduleCrawl(),
+        secondaryActionLabel: "Open scan tools",
+        secondaryAction: () => document.getElementById("campaign-form")?.scrollIntoView({ behavior: "smooth" }),
+      };
+    }
+
+    if (isPendingStatus(topRun.status)) {
+      return {
+        changeTitle: `Latest website scan is ${toTitleCase(topRun.status)}`,
+        changeBody: `The most recent ${topRun.crawl_type || "website"} scan is still processing for ${selectedCampaign.name || "this business"}.`,
+        impactTitle: "Why it matters",
+        impactBody: "The newest technical findings and visibility summary may still be incomplete until this scan finishes.",
+        nextStepTitle: "Wait for the scan to finish",
+        nextStepBody: "Refresh the dashboard after a moment to confirm whether the scan completed or needs attention.",
+        primaryActionLabel: "Refresh latest results",
+        primaryAction: () =>
+          void runAction("refresh", async () => {
+            await loadLatest(selectedCampaignId);
+            setNotice("Latest results refreshed.");
+          }),
+        secondaryActionLabel: "Review activity",
+        secondaryAction: () => document.getElementById("activity-timeline")?.scrollIntoView({ behavior: "smooth" }),
+      };
+    }
+
     if (!topKeyword || latestKeywordPosition === null) {
       return {
         changeTitle: `Latest website scan is ${toTitleCase(topRun.status)}`,
@@ -844,6 +919,40 @@ export default function DashboardPage() {
         primaryActionLabel: "Create report",
         primaryAction: () => void generateReport(),
         secondaryActionLabel: "Open reports controls",
+        secondaryAction: () => document.getElementById("report-form")?.scrollIntoView({ behavior: "smooth" }),
+      };
+    }
+
+    if (isFailedStatus(topReport.report_status)) {
+      return {
+        changeTitle: "Latest report needs attention",
+        changeBody: `Month ${topReport.month_number || "current"} report is ${toTitleCase(topReport.report_status)}.`,
+        impactTitle: "Why it matters",
+        impactBody: "Until the report is recreated successfully, you do not have a current summary ready to review or share.",
+        nextStepTitle: "Recreate the latest report",
+        nextStepBody: "Open report controls below and run the report again after confirming your latest checks are complete.",
+        primaryActionLabel: "Create report",
+        primaryAction: () => void generateReport(),
+        secondaryActionLabel: "Open report controls",
+        secondaryAction: () => document.getElementById("report-form")?.scrollIntoView({ behavior: "smooth" }),
+      };
+    }
+
+    if (isPendingStatus(topReport.report_status)) {
+      return {
+        changeTitle: `Latest report is ${toTitleCase(topReport.report_status)}`,
+        changeBody: `Month ${topReport.month_number || "current"} report is still being prepared.`,
+        impactTitle: "Why it matters",
+        impactBody: "Until report generation finishes, the latest summary is not ready to review or send.",
+        nextStepTitle: "Wait for the report to finish",
+        nextStepBody: "Refresh the latest results shortly, then confirm whether the report is ready or needs attention.",
+        primaryActionLabel: "Refresh latest results",
+        primaryAction: () =>
+          void runAction("refresh", async () => {
+            await loadLatest(selectedCampaignId);
+            setNotice("Latest results refreshed.");
+          }),
+        secondaryActionLabel: "Open report controls",
         secondaryAction: () => document.getElementById("report-form")?.scrollIntoView({ behavior: "smooth" }),
       };
     }
@@ -1016,6 +1125,40 @@ export default function DashboardPage() {
           </div>
         ) : null}
 
+        <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+          <SectionHeading
+            eyebrow="Workflow status"
+            title="Exactly where things stand"
+            summary="These cards translate system activity into user meaning: what is complete, what is still running, what needs attention, and what to do next."
+          />
+          <div className="grid gap-4 xl:grid-cols-4">
+            {workflowStates.map((state) => (
+              <div
+                key={state.label}
+                className="rounded-md border border-[#26272c] bg-[#111214] p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      {state.label}
+                    </p>
+                    <h3 className="mt-2 text-base font-semibold text-white">{state.status}</h3>
+                  </div>
+                  <span
+                    className={`rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${getWorkflowToneClass(
+                      state.tone,
+                    )}`}
+                  >
+                    {state.status}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-zinc-300">{state.detail}</p>
+                <p className="mt-3 text-sm font-medium text-zinc-100">Next: {state.nextStep}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <SectionHeading
           eyebrow="At a glance"
           title="Your current visibility summary"
@@ -1045,7 +1188,11 @@ export default function DashboardPage() {
             changeLabel={topRun?.crawl_type ? toTitleCase(topRun.crawl_type) : undefined}
             summary={
               topRun
-                ? `Most recent crawl was updated ${formatRelativeTime(topRun.updated_at || topRun.created_at)}.`
+                ? isFailedStatus(topRun.status)
+                  ? `Most recent crawl ended as ${toTitleCase(topRun.status)} and needs attention.`
+                  : isPendingStatus(topRun.status)
+                    ? `Most recent crawl is ${toTitleCase(topRun.status)}. Results may still be filling in.`
+                    : `Most recent crawl completed ${formatRelativeTime(topRun.updated_at || topRun.created_at)}.`
                 : "No website scan has run for the active business yet."
             }
             visual={
@@ -1089,7 +1236,15 @@ export default function DashboardPage() {
             }
             summary={
               topReport
-                ? `Latest report status is ${toTitleCase(topReport.report_status)}.`
+                ? topReport.report_status === "delivered"
+                  ? `Latest report was delivered for month ${topReport.month_number || "current"}.`
+                  : topReport.report_status === "generated"
+                    ? "Latest report is ready to review and send."
+                    : isFailedStatus(topReport.report_status)
+                      ? `Latest report needs attention after a ${toTitleCase(topReport.report_status)} result.`
+                      : isPendingStatus(topReport.report_status)
+                        ? `Latest report is ${toTitleCase(topReport.report_status)} and still being prepared.`
+                        : `Latest report status is ${toTitleCase(topReport.report_status)}.`
                 : "Create a report once your latest scan and ranking data are ready."
             }
             visual={
@@ -1189,9 +1344,19 @@ export default function DashboardPage() {
             insight={{
               title: topReport ? "Reports available." : "No reports yet.",
               body: topReport
-                ? `Your ${toTitleCase(topReport.report_status)} report for month ${topReport.month_number} is ready to review or send.`
+                ? topReport.report_status === "delivered"
+                  ? `Your month ${topReport.month_number} report has already been sent and is the latest shared update.`
+                  : topReport.report_status === "generated"
+                    ? `Your month ${topReport.month_number} report is ready to review and send.`
+                    : isFailedStatus(topReport.report_status)
+                      ? "Your latest report needs attention before it can be treated as ready to share."
+                      : `Your latest report is ${toTitleCase(topReport.report_status)} and still in progress.`
                 : "Create a report once you have search position data.",
-              tone: topReport ? "success" : "warning",
+              tone: topReport
+                ? topReport.report_status === "delivered"
+                  ? "success"
+                  : "info"
+                : "warning",
               action: {
                 label: topReport ? "View reports" : "Create report",
                 onClick: () => document.getElementById("report-form")?.scrollIntoView({ behavior: "smooth" }),
@@ -1208,11 +1373,10 @@ export default function DashboardPage() {
                   Advanced controls
                 </p>
                 <h2 className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-white">
-                  Manual checks and report actions
+                  Manual setup and refresh tools
                 </h2>
                 <p className="mt-1.5 text-sm leading-5 text-zinc-300">
-                  These controls are still available, but they are secondary to the
-                  daily briefing above.
+                  Use these when you need to retry setup, refresh results, or manually kick off a check. They are secondary to the daily briefing and workflow status above.
                 </p>
               </div>
               <span className="rounded-md border border-[#26272c] bg-[#111214] px-3 py-1 text-sm text-zinc-300">
@@ -1420,11 +1584,10 @@ export default function DashboardPage() {
         {me ? (
           <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-              Tenant context
+              Account context
             </p>
             <p className="mt-2 text-sm leading-5 text-zinc-300">
-              Signed in as tenant admin. user_id={me.id || "unknown"} | tenant_id=
-              {me.tenant_id || "unknown"}
+              Signed in and connected to the active workspace. Advanced account identifiers stay out of the main flow so this page can focus on business status and next steps.
             </p>
           </section>
         ) : null}

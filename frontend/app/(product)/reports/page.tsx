@@ -15,6 +15,13 @@ import {
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import {
+  getDeliveryWorkflowState,
+  getReportWorkflowState,
+  getScheduleWorkflowState,
+  isFailedStatus,
+  isPendingStatus,
+} from "../truth/reportsTruth.mjs";
 
 type Campaign = {
   id: string;
@@ -124,6 +131,22 @@ function parseSummary(summaryJson?: string) {
   }
 }
 
+function getWorkflowToneClass(tone: string) {
+  if (tone === "success") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
+  }
+
+  if (tone === "danger") {
+    return "border-rose-500/20 bg-rose-500/10 text-rose-100";
+  }
+
+  if (tone === "info") {
+    return "border-accent-500/20 bg-accent-500/10 text-zinc-100";
+  }
+
+  return "border-amber-500/20 bg-amber-500/10 text-amber-100";
+}
+
 function statusTone(status?: string) {
   if (status === "delivered") {
     return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
@@ -143,6 +166,14 @@ function reportPurpose(report: ReportItem) {
 
   if (report.report_status === "generated") {
     return "This report is ready to review and send to a client or business owner.";
+  }
+
+  if (isFailedStatus(report.report_status)) {
+    return "This report needs attention before it should be treated as ready to review or share.";
+  }
+
+  if (isPendingStatus(report.report_status)) {
+    return "This report record exists, but it is still being prepared and should not be treated as complete yet.";
   }
 
   return "Use this report to package the latest scan, rankings, and visibility signals into one summary.";
@@ -227,6 +258,7 @@ function getScheduleStatusTone(status?: string) {
   }
   return "border-[#26272c] bg-[#141518] text-zinc-200";
 }
+
 
 const SCHEDULE_TIMEZONES = [
   "America/New_York",
@@ -368,7 +400,9 @@ export default function ReportsPage() {
       });
 
       await loadReports(selectedCampaignId);
-      setNotice(`Report generated for month ${safeMonth}.`);
+      setNotice(
+        `Report request completed for month ${safeMonth}. Confirm below whether it is ready to send, still processing, or needs attention.`,
+      );
     });
   }
 
@@ -395,7 +429,9 @@ export default function ReportsPage() {
 
       await loadReports(selectedCampaignId);
       await loadReportDetail(reportId);
-      setNotice("Report sent successfully.");
+      setNotice(
+        "Report delivery was requested. Confirm below whether it was sent, is still queued, or needs attention.",
+      );
     });
   }
 
@@ -423,7 +459,9 @@ export default function ReportsPage() {
       });
 
       await loadSchedule(selectedCampaignId);
-      setNotice("Report schedule saved.");
+      setNotice(
+        "Report schedule saved. Confirm below whether it is active, paused, retrying, or needs attention.",
+      );
     });
   }
 
@@ -471,6 +509,18 @@ export default function ReportsPage() {
     () => buildReportSections(selectedReportDetail?.report || latestReport || undefined),
     [latestReport, selectedReportDetail],
   );
+  const reportWorkflow = useMemo(
+    () => getReportWorkflowState(latestReport, selectedCampaign),
+    [latestReport, selectedCampaign],
+  );
+  const deliveryWorkflow = useMemo(
+    () => getDeliveryWorkflowState(selectedReportDetail, selectedReportDetail?.report || latestReport),
+    [latestReport, selectedReportDetail],
+  );
+  const scheduleWorkflow = useMemo(
+    () => getScheduleWorkflowState(schedule, selectedCampaign, formatRelativeTime),
+    [schedule, selectedCampaign],
+  );
 
   const summary = useMemo(() => {
     if (!selectedCampaign) {
@@ -489,6 +539,22 @@ export default function ReportsPage() {
       };
     }
 
+    if (isFailedStatus(latestReport.report_status)) {
+      return {
+        title: "Your latest report needs attention",
+        body: `Month ${latestReport.month_number} is currently ${toTitleCase(latestReport.report_status)} and should not be treated as ready to send.`,
+        next: "Regenerate the report after confirming the latest checks are complete.",
+      };
+    }
+
+    if (isPendingStatus(latestReport.report_status)) {
+      return {
+        title: "Your latest report is still processing",
+        body: `Month ${latestReport.month_number} exists, but it is still ${toTitleCase(latestReport.report_status)}.`,
+        next: "Wait for generation to finish, then review the preview before sending it.",
+      };
+    }
+
     if (latestReport.report_status === "generated") {
       return {
         title: "Your latest report is ready to send",
@@ -498,9 +564,11 @@ export default function ReportsPage() {
     }
 
     return {
-      title: "Your latest report has already been sent",
+      title: "Your latest report has been completed",
       body: `Month ${latestReport.month_number} is marked ${toTitleCase(latestReport.report_status)}.`,
-      next: "Generate the next report when you want to package a new round of ranking and website updates.",
+      next: latestReport.report_status === "delivered"
+        ? "Generate the next report when you want to package a new round of ranking and website updates."
+        : "Review the delivery history below before deciding whether to resend or generate a new report.",
     };
   }, [latestReport, selectedCampaign]);
 
@@ -513,7 +581,7 @@ export default function ReportsPage() {
       },
       {
         label: "Ready to send",
-        value: generatedCount > 0 ? `${generatedCount} ready` : "Nothing queued",
+        value: generatedCount > 0 ? `${generatedCount} ready` : "Nothing ready",
         tone: generatedCount > 0 ? "info" : "warning",
       },
       {
@@ -625,6 +693,44 @@ export default function ReportsPage() {
               </div>
             </section>
 
+            <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                Workflow status
+              </p>
+              <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                Exactly where report work stands
+              </h2>
+              <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+                These cards translate raw report, delivery, and automation state into user meaning: what is complete, what is still processing, what failed, and what to do next.
+              </p>
+              <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                {[reportWorkflow, deliveryWorkflow, scheduleWorkflow].map((state) => (
+                  <div
+                    key={state.label}
+                    className="rounded-md border border-[#26272c] bg-[#111214] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                          {state.label}
+                        </p>
+                        <h3 className="mt-2 text-base font-semibold text-white">{state.status}</h3>
+                      </div>
+                      <span
+                        className={`rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${getWorkflowToneClass(
+                          state.tone,
+                        )}`}
+                      >
+                        {state.status}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-zinc-300">{state.detail}</p>
+                    <p className="mt-3 text-sm font-medium text-zinc-100">Next: {state.nextStep}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
                 label="Reports created"
@@ -634,13 +740,13 @@ export default function ReportsPage() {
               <KpiCard
                 label="Ready to send"
                 value={String(generatedCount)}
-                summary="These reports have been generated and can be delivered now."
+                summary="These reports are ready for review and sending. Queued or failed reports are not counted here."
                 tone="highlight"
               />
               <KpiCard
                 label="Delivered"
                 value={String(deliveredCount)}
-                summary="These reports have already been sent to a recipient."
+                summary="These reports are marked as delivered. Check delivery history below if you need confirmation detail."
               />
               <KpiCard
                 label="Latest report"
@@ -648,7 +754,13 @@ export default function ReportsPage() {
                 changeLabel={latestReport ? toTitleCase(latestReport.report_status) : undefined}
                 summary={
                   latestReport
-                    ? `Latest report was updated ${formatRelativeTime(latestReport.generated_at)}.`
+                    ? latestReport.report_status === "generated"
+                      ? "Latest report is ready to review and send."
+                      : isFailedStatus(latestReport.report_status)
+                        ? `Latest report needs attention after a ${toTitleCase(latestReport.report_status)} result.`
+                        : isPendingStatus(latestReport.report_status)
+                          ? `Latest report is ${toTitleCase(latestReport.report_status)} and still processing.`
+                          : `Latest report was updated ${formatRelativeTime(latestReport.generated_at)}.`
                     : "Generate your first report once the business has enough data."
                 }
               />
@@ -664,7 +776,7 @@ export default function ReportsPage() {
                     Create or send a report
                   </h2>
                   <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                    Generate a fresh report for the current business, then send the selected report by email.
+                    Generate a fresh report for the current business, then send the selected report by email after it is clearly ready.
                   </p>
                 </div>
 
@@ -679,7 +791,7 @@ export default function ReportsPage() {
                       className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
                     />
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
-                      Use this when you want to package the next reporting cycle for the active business.
+                      Use this when you want to package the next reporting cycle for the active business. A report request is not complete until the workflow status above says it is ready or complete.
                     </p>
                     <button
                       onClick={generateReport}
@@ -701,7 +813,7 @@ export default function ReportsPage() {
                       className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
                     />
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
-                      Send the selected report after you review the preview and confirm it is the right update.
+                      Send the selected report only after the workflow status above shows it is ready and you confirm the recipient is correct.
                     </p>
                     <button
                       onClick={deliverReport}
@@ -780,6 +892,17 @@ export default function ReportsPage() {
                             </p>
                             <p className="mt-1 text-sm leading-6 text-zinc-300">
                               {reportPurpose(report)}
+                            </p>
+                            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
+                              {report.report_status === "delivered"
+                                ? "Complete. This report has been shared."
+                                : report.report_status === "generated"
+                                  ? "Ready to send. Review it before delivery."
+                                  : isFailedStatus(report.report_status)
+                                    ? "Needs attention. Do not treat this as ready yet."
+                                    : isPendingStatus(report.report_status)
+                                      ? "In progress. This report record exists, but processing is not finished."
+                                      : "Review this state before taking the next step."}
                             </p>
                           </div>
                           <span
@@ -867,8 +990,8 @@ export default function ReportsPage() {
                   <div className="mt-3 rounded-md border border-[#26272c] bg-[#111214] p-4">
                     <p className="text-sm leading-6 text-zinc-400">
                       {selectedReportDetail.report.report_status === "delivered"
-                        ? "This report was marked as delivered. No delivery event record is available."
-                        : "This report has not been sent yet. Add a recipient above and use \u201cSend selected report\u201d to deliver it."}
+                        ? "This report is marked as delivered, but there is no event-level delivery confirmation available here."
+                        : "This report has not been sent yet. Add a recipient above and send it only after confirming it is ready."}
                     </p>
                   </div>
                 ) : (
@@ -887,7 +1010,18 @@ export default function ReportsPage() {
                                 ? ` · ${formatRelativeTime(event.sent_at)}`
                                 : event.delivery_status === "failed"
                                   ? " · Delivery was not completed"
+                                  : isPendingStatus(event.delivery_status)
+                                    ? " · Delivery is still being processed"
                                   : ""}
+                            </p>
+                            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
+                              {event.delivery_status === "sent"
+                                ? "Complete. The report reached this recipient."
+                                : event.delivery_status === "failed"
+                                  ? "Needs attention. Retry after confirming the recipient."
+                                  : isPendingStatus(event.delivery_status)
+                                    ? "In progress. Do not treat this report as delivered yet."
+                                    : "Review this delivery state before resending."}
                             </p>
                           </div>
                           <span
@@ -914,8 +1048,8 @@ export default function ReportsPage() {
                   </h2>
                   <p className="mt-1.5 text-sm leading-6 text-zinc-300">
                     {schedule
-                      ? "Adjust the cadence, timezone, and next run time for automatic report generation."
-                      : "No schedule has been set up yet. Configure one below to automate report generation."}
+                      ? "Adjust the cadence, timezone, and next run time for automatic report generation. Use the workflow status above to confirm whether automation is active, retrying, paused, or needs attention."
+                      : "No schedule has been set up yet. Configure one below if you want automatic report generation."}
                   </p>
                 </div>
                 {schedule ? (

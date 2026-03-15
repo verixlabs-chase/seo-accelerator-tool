@@ -14,6 +14,11 @@ import {
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import {
+  getExecutionStateSummary,
+  getRecommendationStateSummary,
+  getSetupBlockerSummary,
+} from "../truth/opportunitiesTruth.mjs";
 
 const EXECUTION_CONSOLE_ENABLED =
   process.env.NEXT_PUBLIC_EXECUTION_CONSOLE_ENABLED !== "false";
@@ -190,6 +195,19 @@ function getImpactLabel(confidenceScore = 0) {
   return "Expected impact: exploratory";
 }
 
+function getWorkflowToneClass(tone: string) {
+  if (tone === "success") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
+  }
+  if (tone === "danger") {
+    return "border-rose-500/20 bg-rose-500/10 text-rose-100";
+  }
+  if (tone === "info") {
+    return "border-sky-500/20 bg-sky-500/10 text-sky-100";
+  }
+  return "border-amber-500/20 bg-amber-500/10 text-amber-100";
+}
+
 function getStatusTone(status?: string) {
   if (status === "APPROVED" || status === "SCHEDULED") {
     return "border-accent-500/20 bg-accent-500/10 text-zinc-100";
@@ -318,6 +336,7 @@ function nextActionForStatus(status?: string) {
   return null;
 }
 
+
 function shouldAllowArchive(status?: string) {
   return status === "GENERATED" || status === "VALIDATED" || status === "APPROVED";
 }
@@ -398,6 +417,7 @@ function getExecutionSummary(execution: Execution) {
   }
   return "Execution detail will appear here after planning, approval, or delivery events.";
 }
+
 
 function getMutationCount(execution: Execution) {
   if (typeof execution.mutation_count === "number") {
@@ -826,7 +846,7 @@ export default function OpportunitiesPage() {
 
       await loadOpportunities(selectedCampaignId);
       setSelectedRecommendationId(recommendationId);
-      setNotice(successNotice);
+      setNotice(`${successNotice} Check the workflow state on this page to confirm what should happen next.`);
     });
   }
 
@@ -856,7 +876,7 @@ export default function OpportunitiesPage() {
 
       await refreshCampaignData(selectedCampaignId);
       setSelectedExecutionId(normalized.execution?.id || executionId);
-      setNotice(successNotice);
+      setNotice(`${successNotice} Check the execution state below to confirm whether it completed, queued, failed, or needs follow-up.`);
     });
   }
 
@@ -986,6 +1006,9 @@ export default function OpportunitiesPage() {
   const primaryAction = selectedRecommendation
     ? nextActionForStatus(selectedRecommendation.status)
     : null;
+  const recommendationState = selectedRecommendation
+    ? getRecommendationStateSummary(selectedRecommendation.status)
+    : null;
 
   const executionEvidence = selectedExecution
     ? [
@@ -998,6 +1021,15 @@ export default function OpportunitiesPage() {
       ]
     : [];
   const liveExecutionDisabledReason = getLiveExecutionDisabledReason(selectedExecution, wordpressSetup);
+  const executionState = selectedExecution
+    ? getExecutionStateSummary(selectedExecution, { getMutationCount, canRollbackExecution })
+    : null;
+  const setupBlockerState = getSetupBlockerSummary(
+    selectedExecution,
+    wordpressSetup,
+    liveExecutionDisabledReason,
+    requiresWordPressSetup,
+  );
 
   return (
     <AppShell
@@ -1099,6 +1131,46 @@ export default function OpportunitiesPage() {
               </div>
             </section>
 
+            <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                Workflow status
+              </p>
+              <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                Exactly where the selected action stands
+              </h2>
+              <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+                These cards separate recommendation state from execution state so you can see what is only recommended, what is approved, what is queued, what completed, what failed, and what to do next.
+              </p>
+              <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                {[recommendationState, executionState, setupBlockerState]
+                  .filter(Boolean)
+                  .map((state) => (
+                    <div
+                      key={state?.label}
+                      className="rounded-md border border-[#26272c] bg-[#111214] p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                            {state?.label}
+                          </p>
+                          <h3 className="mt-2 text-base font-semibold text-white">{state?.status}</h3>
+                        </div>
+                        <span
+                          className={`rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${getWorkflowToneClass(
+                            state?.tone || "warning",
+                          )}`}
+                        >
+                          {state?.status}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-zinc-300">{state?.detail}</p>
+                      <p className="mt-3 text-sm font-medium text-zinc-100">Next: {state?.nextStep}</p>
+                    </div>
+                  ))}
+              </div>
+            </section>
+
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
                 label="Open opportunities"
@@ -1174,11 +1246,11 @@ export default function OpportunitiesPage() {
                             </span>
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <span
-                              className={`rounded-md border px-2 py-1 text-xs font-medium ${getStatusTone(recommendation.status)}`}
-                            >
-                              {getStatusLabel(recommendation.status)}
-                            </span>
+                          <span
+                            className={`rounded-md border px-2 py-1 text-xs font-medium ${getStatusTone(recommendation.status)}`}
+                          >
+                            {getStatusLabel(recommendation.status)}
+                          </span>
                             <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-1 text-xs font-medium text-zinc-200">
                               {getImpactLabel(recommendation.confidence_score || recommendation.confidence || 0)}
                             </span>
@@ -1247,6 +1319,11 @@ export default function OpportunitiesPage() {
                             {primaryAction?.summary ||
                               "Review the evidence below, then decide whether to keep this recommendation active or clear it from the queue."}
                           </p>
+                          <p className="mt-3 text-xs uppercase tracking-[0.14em] text-zinc-500">
+                            {recommendationState
+                              ? `${recommendationState.label}. ${recommendationState.detail}`
+                              : "Review the current recommendation state before moving it forward."}
+                          </p>
                         </div>
                       </div>
 
@@ -1287,6 +1364,9 @@ export default function OpportunitiesPage() {
                             </p>
                             <p className="mt-2 text-sm text-zinc-200">
                               {getStatusLabel(selectedRecommendation.status)}
+                            </p>
+                            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
+                              {recommendationState?.nextStep}
                             </p>
                           </div>
                           <div>
@@ -1581,6 +1661,12 @@ export default function OpportunitiesPage() {
                                 ? `Latest error: ${execution.last_error.replace(/_/g, " ")}`
                                 : getExecutionSummary(execution)}
                             </p>
+                            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
+                              {getExecutionStateSummary(execution, {
+                                getMutationCount,
+                                canRollbackExecution,
+                              }).nextStep}
+                            </p>
                           </button>
                         );
                       })}
@@ -1628,6 +1714,9 @@ export default function OpportunitiesPage() {
                             </p>
                             <p className="mt-2 text-sm leading-6 text-zinc-300">
                               {getExecutionSummary(selectedExecution)}
+                            </p>
+                            <p className="mt-3 text-xs uppercase tracking-[0.14em] text-zinc-500">
+                              {executionState?.detail}
                             </p>
                           </div>
                           <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
@@ -1687,6 +1776,9 @@ export default function OpportunitiesPage() {
                             </p>
                             <p className="mt-2 text-sm leading-6 text-rose-100">
                               {selectedExecution.last_error.replace(/_/g, " ")}
+                            </p>
+                            <p className="mt-3 text-xs uppercase tracking-[0.14em] text-rose-200">
+                              Next: {executionState?.nextStep}
                             </p>
                           </div>
                         ) : null}
@@ -1830,7 +1922,10 @@ export default function OpportunitiesPage() {
 
                         {liveExecutionDisabledReason ? (
                           <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-                            Live execution is disabled: {liveExecutionDisabledReason}
+                            <p>Live execution is disabled: {liveExecutionDisabledReason}</p>
+                            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-amber-200">
+                              Next: {setupBlockerState.nextStep}
+                            </p>
                           </div>
                         ) : null}
 
