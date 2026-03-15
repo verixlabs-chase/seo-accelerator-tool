@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
-from app.schemas.reporting import ReportDeliverIn, ReportGenerateIn, ReportOut, ReportScheduleOut, ReportScheduleUpsertIn
+from app.schemas.reporting import ReportDeliverIn, ReportDeliveryEventOut, ReportGenerateIn, ReportOut, ReportScheduleOut, ReportScheduleUpsertIn
 from app.services import reporting_service
 from app.tasks.tasks import (
     reporting_aggregate_kpis,
@@ -114,6 +114,7 @@ def get_report(
 ) -> dict:
     row = reporting_service.get_report(db, tenant_id=user["tenant_id"], report_id=report_id)
     artifacts = reporting_service.get_report_artifacts(db, tenant_id=user["tenant_id"], report_id=report_id)
+    delivery_events = reporting_service.get_report_deliveries(db, tenant_id=user["tenant_id"], report_id=report_id)
     return envelope(
         request,
         {
@@ -122,6 +123,7 @@ def get_report(
                 {"id": a.id, "artifact_type": a.artifact_type, "storage_path": a.storage_path, "created_at": a.created_at.isoformat()}
                 for a in artifacts
             ],
+            "delivery_events": [ReportDeliveryEventOut.model_validate(e).model_dump(mode="json") for e in delivery_events],
         },
     )
 
