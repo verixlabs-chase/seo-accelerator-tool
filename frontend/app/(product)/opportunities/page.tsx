@@ -1426,6 +1426,16 @@ export default function OpportunitiesPage() {
                               <span className="rounded-md border border-[#26272c] bg-[#111214] px-2 py-1 text-xs font-medium text-zinc-200">
                                 {getMutationCount(execution)} mutations
                               </span>
+                              {execution.attempt_count > 1 ? (
+                                <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100">
+                                  {execution.attempt_count} attempts
+                                </span>
+                              ) : null}
+                              {execution.rolled_back_at ? (
+                                <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-1 text-xs font-medium text-zinc-400">
+                                  Rolled back {formatRelativeTime(execution.rolled_back_at)}
+                                </span>
+                              ) : null}
                             </div>
 
                             <p className="mt-3 text-sm leading-6 text-zinc-300">
@@ -1465,7 +1475,7 @@ export default function OpportunitiesPage() {
                           </div>
                         </div>
 
-                        <div className="grid gap-4 md:grid-cols-3">
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                           <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                               Approval state
@@ -1490,7 +1500,58 @@ export default function OpportunitiesPage() {
                               {getMutationCount(selectedExecution)} tracked changes
                             </p>
                           </div>
+                          <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                              Attempts
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-zinc-300">
+                              {selectedExecution.attempt_count}{" "}
+                              {selectedExecution.attempt_count === 1 ? "attempt" : "attempts"}
+                            </p>
+                          </div>
                         </div>
+
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                              Created
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-zinc-300">
+                              {formatRelativeTime(selectedExecution.created_at)}
+                            </p>
+                          </div>
+                          <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                              Executed
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-zinc-300">
+                              {selectedExecution.executed_at
+                                ? formatRelativeTime(selectedExecution.executed_at)
+                                : "Not yet executed"}
+                            </p>
+                          </div>
+                          <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                              Rolled back
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-zinc-300">
+                              {selectedExecution.rolled_back_at
+                                ? formatRelativeTime(selectedExecution.rolled_back_at)
+                                : "No rollback recorded"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {selectedExecution.last_error ? (
+                          <div className="rounded-md border border-rose-500/20 bg-rose-500/10 p-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-400">
+                              Last error
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-rose-100">
+                              {selectedExecution.last_error.replace(/_/g, " ")}
+                            </p>
+                          </div>
+                        ) : null}
 
                         <ActionDrawer
                           title={describeExecutionType(selectedExecution.execution_type)}
