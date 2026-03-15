@@ -40,6 +40,17 @@ class ReportScheduleUpsertIn(BaseModel):
         return value
 
 
+class ReportDeliveryEventOut(BaseModel):
+    id: str
+    delivery_channel: str
+    delivery_status: str
+    recipient: str
+    sent_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ReportScheduleOut(BaseModel):
     id: str
     tenant_id: str

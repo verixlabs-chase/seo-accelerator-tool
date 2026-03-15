@@ -243,6 +243,15 @@ def get_report_artifacts(db: Session, tenant_id: str, report_id: str) -> list[Re
     )
 
 
+def get_report_deliveries(db: Session, tenant_id: str, report_id: str) -> list[ReportDeliveryEvent]:
+    return (
+        db.query(ReportDeliveryEvent)
+        .filter(ReportDeliveryEvent.tenant_id == tenant_id, ReportDeliveryEvent.report_id == report_id)
+        .order_by(ReportDeliveryEvent.created_at.desc())
+        .all()
+    )
+
+
 def deliver_report(db: Session, tenant_id: str, report_id: str, recipient: str) -> dict:
     report = get_report(db, tenant_id, report_id)
     adapter = get_email_adapter()

@@ -38,9 +38,19 @@ type ReportArtifact = {
   created_at?: string;
 };
 
+type ReportDeliveryEvent = {
+  id: string;
+  delivery_channel: string;
+  delivery_status: string;
+  recipient: string;
+  sent_at: string | null;
+  created_at: string;
+};
+
 type ReportDetail = {
   report: ReportItem;
   artifacts: ReportArtifact[];
+  delivery_events?: ReportDeliveryEvent[];
 };
 
 type ReportSchedule = {
@@ -175,6 +185,26 @@ function buildReportSections(report?: ReportItem): ReportSection[] {
       metric: `${coerceNumber(summary.reviews_last_30d)} reviews`,
     },
   ];
+}
+
+function getDeliveryStatusLabel(status?: string) {
+  if (status === "sent") return "Sent";
+  if (status === "failed") return "Failed";
+  if (status === "queued") return "Queued";
+  return toTitleCase(status);
+}
+
+function getDeliveryStatusTone(status?: string) {
+  if (status === "sent") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
+  }
+  if (status === "failed") {
+    return "border-rose-500/20 bg-rose-500/10 text-rose-100";
+  }
+  if (status === "queued") {
+    return "border-amber-500/20 bg-amber-500/10 text-amber-100";
+  }
+  return "border-[#26272c] bg-[#141518] text-zinc-200";
 }
 
 function getScheduleStatusLabel(status?: string) {
@@ -821,6 +851,55 @@ export default function ReportsPage() {
                     </div>
                   ))}
                 </div>
+              </section>
+            ) : null}
+
+            {selectedReportDetail ? (
+              <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Delivery
+                </p>
+                <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                  Delivery history
+                </h2>
+
+                {!selectedReportDetail.delivery_events?.length ? (
+                  <div className="mt-3 rounded-md border border-[#26272c] bg-[#111214] p-4">
+                    <p className="text-sm leading-6 text-zinc-400">
+                      {selectedReportDetail.report.report_status === "delivered"
+                        ? "This report was marked as delivered. No delivery event record is available."
+                        : "This report has not been sent yet. Add a recipient above and use \u201cSend selected report\u201d to deliver it."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {selectedReportDetail.delivery_events.map((event) => (
+                      <div
+                        key={event.id}
+                        className="rounded-md border border-[#26272c] bg-[#111214] p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-white">{event.recipient}</p>
+                            <p className="mt-1 text-sm leading-6 text-zinc-300">
+                              {toTitleCase(event.delivery_channel)}
+                              {event.sent_at
+                                ? ` · ${formatRelativeTime(event.sent_at)}`
+                                : event.delivery_status === "failed"
+                                  ? " · Delivery was not completed"
+                                  : ""}
+                            </p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium ${getDeliveryStatusTone(event.delivery_status)}`}
+                          >
+                            {getDeliveryStatusLabel(event.delivery_status)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
             ) : null}
 
