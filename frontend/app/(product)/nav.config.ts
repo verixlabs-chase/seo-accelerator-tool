@@ -10,6 +10,7 @@ const PRODUCT_NAV_ITEMS: NavItem[] = [
   { href: "/local-visibility", label: "Local SEO" },
   { href: "/site-health", label: "Technical Health" },
   { href: "/competitors", label: "Competitors" },
+  { href: "/citations", label: "Citations" },
 ];
 
 export function buildProductNav(pathname: string): NavItem[] {
