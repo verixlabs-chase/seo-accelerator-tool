@@ -15,9 +15,11 @@ from app.models.strategy_automation_event import StrategyAutomationEvent
 router = APIRouter(prefix='/automation', tags=['automation'])
 
 
-def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
+def _campaign_or_404(db: Session, tenant_id: str, organization_id: str | None, campaign_id: str) -> Campaign:
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id).first()
     if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Campaign not found')
+    if organization_id is not None and campaign.organization_id != organization_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Campaign not found')
     return campaign
 
@@ -50,7 +52,7 @@ def get_automation_timeline(
     user: dict = Depends(require_roles({'tenant_admin'})),
     db: Session = Depends(get_db),
 ) -> dict:
-    _campaign_or_404(db, str(user['tenant_id']), campaign_id)
+    _campaign_or_404(db, str(user['tenant_id']), user.get('organization_id'), campaign_id)
     items = [_serialize_event(row) for row in _event_rows(db, campaign_id)]
     return envelope(request, {'items': items})
 
@@ -62,7 +64,7 @@ def export_automation_events(
     user: dict = Depends(require_roles({'tenant_admin'})),
     db: Session = Depends(get_db),
 ) -> dict:
-    _campaign_or_404(db, str(user['tenant_id']), campaign_id)
+    _campaign_or_404(db, str(user['tenant_id']), user.get('organization_id'), campaign_id)
     events = [_serialize_event(row) for row in _event_rows(db, campaign_id)]
     payload = {
         'campaign_id': campaign_id,

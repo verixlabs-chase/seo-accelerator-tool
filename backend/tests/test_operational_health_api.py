@@ -101,6 +101,12 @@ def test_operational_health_returns_expected_shape(client, db_session) -> None:
 
     assert response.status_code == 200
     payload = response.json()['data']['operational_health']
+    assert payload['truth_scope'] == {
+        'mode': 'process_local',
+        'durable': False,
+        'multi_instance_safe': False,
+        'warning': 'Operational telemetry snapshots include in-memory process state and are not cluster-wide truth.',
+    }
     assert 'recent_p95_latency_ms' in payload
     assert 'recent_p99_latency_ms' in payload
     assert 'queue_depth' in payload

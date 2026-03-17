@@ -20,6 +20,15 @@ _WORKER_INFLIGHT: dict[str, int] = {}
 _RETRY_BACKOFF_SECONDS = (0.01, 0.02, 0.04)
 
 
+def _truth_scope() -> dict[str, Any]:
+    return {
+        'mode': 'process_local',
+        'durable': False,
+        'multi_instance_safe': False,
+        'warning': 'Queue depth and inflight counts reflect only the current process and are not cluster-wide operational truth.',
+    }
+
+
 def dispatch_worker_job(worker_name: str, payload: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     max_queue_depth = max(1, int(settings.max_queue_depth))
@@ -90,11 +99,12 @@ def reset_queue_state() -> None:
     _sync_metrics()
 
 
-def queue_stats() -> dict[str, dict[str, int]]:
+def queue_stats() -> dict[str, Any]:
     with _QUEUE_LOCK:
         return {
             'queue_depth': {key: int(value) for key, value in _QUEUE_DEPTH.items()},
             'worker_inflight_jobs': {key: int(value) for key, value in _WORKER_INFLIGHT.items()},
+            'truth_scope': _truth_scope(),
         }
 
 

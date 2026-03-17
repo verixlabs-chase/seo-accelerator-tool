@@ -122,7 +122,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     else:
         db = db_session.SessionLocal()
         try:
-            seed_local_admin(db)
+            if settings.app_env.lower() == "local" and settings.local_admin_bootstrap_enabled:
+                seed_local_admin(db)
         finally:
             db.close()
         yield

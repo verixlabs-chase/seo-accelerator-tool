@@ -18,6 +18,15 @@ from app.services.provider_telemetry_service import ProviderTelemetryService
 router = APIRouter(prefix="/provider-health", tags=["provider-health"])
 
 
+def _campaign_or_404(db: Session, tenant_id: str, organization_id: str | None, campaign_id: str) -> Campaign:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None or campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if organization_id is not None and campaign.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return campaign
+
+
 @router.get("/summary")
 def provider_health_summary(
     request: Request,
@@ -45,9 +54,7 @@ def wordpress_execution_setup(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None or campaign.tenant_id != user["tenant_id"]:
-        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaign = _campaign_or_404(db, user["tenant_id"], user.get("organization_id"), campaign_id)
 
     settings = get_settings()
     environment = settings.app_env.lower()

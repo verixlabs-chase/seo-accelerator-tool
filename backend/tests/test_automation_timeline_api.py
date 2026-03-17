@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from app.models.campaign import Campaign
 from app.models.strategy_automation_event import StrategyAutomationEvent
+from tests.conftest import create_test_campaign
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -80,3 +81,49 @@ def test_automation_timeline_tenant_scoped(client, db_session) -> None:
         headers={'Authorization': f'Bearer {token_b}'},
     )
     assert response.status_code == 404
+
+
+def test_automation_timeline_and_export_reject_cross_org_campaign_mismatch(client, db_session, create_test_org) -> None:
+    token_a, tenant_a = _login(client, 'a@example.com', 'pass-a')
+    token_b, tenant_b = _login(client, 'b@example.com', 'pass-b')
+
+    org_b = create_test_org(tenant_id=tenant_b, name='Automation Scope Org B')
+    mismatched_campaign = create_test_campaign(
+        db_session,
+        org_b.id,
+        tenant_id=tenant_a,
+        name='Automation Scope Campaign',
+        domain='automation-scope.example',
+    )
+    db_session.add(
+        StrategyAutomationEvent(
+            campaign_id=mismatched_campaign.id,
+            evaluation_date=datetime(2026, 4, 1, tzinfo=UTC),
+            prior_phase='stabilization',
+            new_phase='growth',
+            triggered_rules=json.dumps(['sustained_positive_slope']),
+            momentum_snapshot=json.dumps({'momentum_score': 0.3}),
+            action_summary=json.dumps({'status': 'evaluated'}),
+            decision_hash='c' * 64,
+            version_hash='v1',
+        )
+    )
+    db_session.commit()
+
+    timeline = client.get(
+        f'/api/v1/automation/campaign/{mismatched_campaign.id}/timeline',
+        headers={'Authorization': f'Bearer {token_a}'},
+    )
+    assert timeline.status_code == 404
+
+    export = client.get(
+        f'/api/v1/automation/campaign/{mismatched_campaign.id}/export',
+        headers={'Authorization': f'Bearer {token_a}'},
+    )
+    assert export.status_code == 404
+
+    other_tenant = client.get(
+        f'/api/v1/automation/campaign/{mismatched_campaign.id}/timeline',
+        headers={'Authorization': f'Bearer {token_b}'},
+    )
+    assert other_tenant.status_code == 404

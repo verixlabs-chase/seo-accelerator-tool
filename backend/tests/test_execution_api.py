@@ -185,3 +185,78 @@ def test_execution_api_run_retry_cancel_flow(client, db_session, create_test_org
     assert capped_retry_resp.status_code == 200
     assert capped_retry_resp.json()['data']['attempt_count'] == RETRY_LIMIT
     assert capped_retry_resp.json()['data']['status'] == 'failed'
+
+
+def test_execution_run_rejects_cross_tenant_campaign_mismatch(client, db_session, create_test_org, monkeypatch) -> None:
+    token_a = _login(client, 'a@example.com', 'pass-a')
+    token_b = _login(client, 'b@example.com', 'pass-b')
+
+    user_a = db_session.query(User).filter(User.email == 'a@example.com').first()
+    user_b = db_session.query(User).filter(User.email == 'b@example.com').first()
+    assert user_a is not None
+    assert user_b is not None
+
+    org_a = create_test_org(tenant_id=user_a.tenant_id, name='Execution Scope Org A')
+    org_b = create_test_org(tenant_id=user_b.tenant_id, name='Execution Scope Org B')
+    campaign_a = create_test_campaign(
+        db_session,
+        org_a.id,
+        tenant_id=user_a.tenant_id,
+        name='Execution Scope Campaign A',
+        domain='scope-a.example',
+    )
+    campaign_b = create_test_campaign(
+        db_session,
+        org_b.id,
+        tenant_id=user_b.tenant_id,
+        name='Execution Scope Campaign B',
+        domain='scope-b.example',
+    )
+
+    recommendation = _create_recommendation(db_session, user_a.tenant_id, campaign_a.id, 'improve_internal_links')
+    malformed_execution = RecommendationExecution(
+        recommendation_id=recommendation.id,
+        campaign_id=campaign_b.id,
+        execution_type='improve_internal_links',
+        execution_payload=json.dumps(
+            {
+                'recommendation_id': recommendation.id,
+                'campaign_id': campaign_b.id,
+                'tenant_id': user_a.tenant_id,
+                'metric_name': 'avg_rank',
+                'metric_before': 0.0,
+                'idempotency_key': 'cross-tenant-campaign-mismatch',
+            },
+            sort_keys=True,
+        ),
+        idempotency_key='cross-tenant-campaign-mismatch',
+        deterministic_hash='01234567' * 8,
+        status='scheduled',
+        attempt_count=0,
+    )
+    db_session.add(malformed_execution)
+    db_session.commit()
+
+    called = False
+
+    def _unexpected_execute(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError('execute_recommendation should not be called for a cross-tenant execution')
+
+    monkeypatch.setattr('app.api.v1.executions.execute_recommendation', _unexpected_execute)
+
+    response = client.post(
+        f'/api/v1/executions/{malformed_execution.id}/run',
+        json={'dry_run': False},
+        headers={'Authorization': f'Bearer {token_a}'},
+    )
+    assert response.status_code == 404
+    assert response.json()['errors'][0]['message'] == 'Execution not found'
+    assert called is False
+
+    token_b_response = client.get(
+        f'/api/v1/executions/{malformed_execution.id}',
+        headers={'Authorization': f'Bearer {token_b}'},
+    )
+    assert token_b_response.status_code == 404

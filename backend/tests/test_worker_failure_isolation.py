@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.events import EventType, publish_event
-from app.events.queue import list_failed_jobs, reset_queue_state, retry_failed_job
+from app.events.queue import list_failed_jobs, queue_stats, reset_queue_state, retry_failed_job
 from app.events.subscriber_registry import register_default_subscribers
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle
 from tests.conftest import create_test_campaign
@@ -61,3 +61,18 @@ def test_campaign_cycle_succeeds_even_if_worker_dispatch_fails(db_session, creat
 
     summary = run_campaign_cycle(campaign.id, db=db_session)
     assert summary['campaign_id'] == campaign.id
+
+
+def test_queue_stats_disclose_process_local_truth_scope() -> None:
+    reset_queue_state()
+
+    stats = queue_stats()
+
+    assert stats['queue_depth'] == {}
+    assert stats['worker_inflight_jobs'] == {}
+    assert stats['truth_scope'] == {
+        'mode': 'process_local',
+        'durable': False,
+        'multi_instance_safe': False,
+        'warning': 'Queue depth and inflight counts reflect only the current process and are not cluster-wide operational truth.',
+    }

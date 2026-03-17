@@ -51,6 +51,18 @@ class ReportDeliveryEventOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ReportArtifactOut(BaseModel):
+    id: str
+    artifact_type: str
+    storage_path: str
+    storage_mode: str
+    ready: bool
+    retrievable: bool
+    durable: bool
+    reason: str | None
+    created_at: datetime
+
+
 class ReportScheduleOut(BaseModel):
     id: str
     tenant_id: str

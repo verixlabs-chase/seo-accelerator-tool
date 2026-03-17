@@ -18,6 +18,12 @@ def test_metrics_endpoint(client):
     response = client.get("/api/v1/health/metrics")
     assert response.status_code == 200
     data = response.json()["data"]
+    assert data["truth_scope"] == {
+        "mode": "process_local",
+        "durable": False,
+        "multi_instance_safe": False,
+        "warning": "Metrics are derived from in-memory process state and are not cluster-wide operational truth.",
+    }
     assert "slos" in data
     assert "metrics" in data
     assert "alerts" in data

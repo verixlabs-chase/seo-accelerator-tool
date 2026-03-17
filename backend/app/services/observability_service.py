@@ -73,6 +73,12 @@ def snapshot() -> dict:
     }
 
     return {
+        "truth_scope": {
+            "mode": "process_local",
+            "durable": False,
+            "multi_instance_safe": False,
+            "warning": "Metrics are derived from in-memory process state and are not cluster-wide operational truth.",
+        },
         "slos": {
             "api_availability_target": 0.995,
             "worker_success_rate_target": 0.98,

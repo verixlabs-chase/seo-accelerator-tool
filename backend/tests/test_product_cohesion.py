@@ -59,6 +59,8 @@ def test_dashboard_endpoint_returns_aggregated_payload(client):
     assert "latest_crawl_status" in payload
     assert "report_status_summary" in payload
     assert "slo_health_snapshot" in payload
+    assert payload["slo_health_snapshot"]["truth_scope"]["mode"] == "process_local"
+    assert payload["slo_health_snapshot"]["truth_scope"]["multi_instance_safe"] is False
     assert payload["platform_state"] in {"Healthy", "Degraded", "Critical"}
 
 

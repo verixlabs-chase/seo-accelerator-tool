@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+from tests.conftest import create_test_campaign
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_quota import ProviderQuotaState
 from app.models.tenant import Tenant
@@ -62,3 +63,31 @@ def test_provider_health_summary_aggregation(client, db_session) -> None:
     assert row["breaker_state"] == "closed"
     assert row["consecutive_failures"] == 0
     assert row["remaining_quota"] == 877
+
+
+def test_wordpress_execution_setup_rejects_cross_org_campaign_mismatch(client, db_session, create_test_org) -> None:
+    login_a = client.post("/api/v1/auth/login", json={"email": "a@example.com", "password": "pass-a"})
+    assert login_a.status_code == 200
+    token_a = login_a.json()["data"]["access_token"]
+    tenant_a = login_a.json()["data"]["user"]["tenant_id"]
+
+    login_b = client.post("/api/v1/auth/login", json={"email": "b@example.com", "password": "pass-b"})
+    assert login_b.status_code == 200
+    tenant_b = login_b.json()["data"]["user"]["tenant_id"]
+
+    org_b = create_test_org(tenant_id=tenant_b, name="Provider Health Scope Org B")
+    mismatched_campaign = create_test_campaign(
+        db_session,
+        org_b.id,
+        tenant_id=tenant_a,
+        name="Mismatched Provider Health Campaign",
+        domain="provider-health-scope.example",
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/v1/provider-health/wordpress-execution-setup",
+        params={"campaign_id": mismatched_campaign.id},
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert response.status_code == 404

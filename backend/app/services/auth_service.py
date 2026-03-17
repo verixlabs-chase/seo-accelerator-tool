@@ -19,6 +19,10 @@ VALID_ORG_ROLES = {"org_owner", "org_admin", "org_user"}
 
 
 def seed_local_admin(db: Session) -> None:
+    settings = get_settings()
+    if settings.app_env.lower() != "local" or not settings.local_admin_bootstrap_enabled:
+        return
+
     tenant = db.query(Tenant).filter(Tenant.name == "Default Tenant").first()
     if tenant is None:
         tenant = Tenant(name="Default Tenant")

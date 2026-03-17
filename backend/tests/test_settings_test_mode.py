@@ -15,3 +15,19 @@ def test_get_settings_in_test_mode_without_jwt_secret(monkeypatch) -> None:
         assert settings.jwt_secret == "test-secret-key"
     finally:
         settings_module.get_settings.cache_clear()
+
+
+def test_get_settings_in_test_mode_without_platform_master_key(monkeypatch) -> None:
+    settings_module.get_settings.cache_clear()
+    try:
+        monkeypatch.setenv("APP_ENV", "test")
+        monkeypatch.setenv("JWT_SECRET", "test-secret-key")
+        monkeypatch.delenv("PLATFORM_MASTER_KEY", raising=False)
+        monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+
+        settings = settings_module.get_settings()
+
+        assert settings.app_env == "test"
+        assert settings.platform_master_key == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    finally:
+        settings_module.get_settings.cache_clear()

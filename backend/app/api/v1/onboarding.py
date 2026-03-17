@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_roles
+from app.api.deps import enforce_organization_scope, require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.schemas.onboarding import OnboardingSessionOut, OnboardingStartRequest
@@ -26,9 +26,10 @@ def start_onboarding(
 def get_onboarding_status(
     request: Request,
     tenant_id: str,
-    _user: dict = Depends(require_roles({"platform_owner", "platform_admin", "tenant_admin"})),
+    user: dict = Depends(require_roles({"platform_owner", "platform_admin", "tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
+    enforce_organization_scope(user=user, organization_id=tenant_id)
     row = onboarding_service.get_onboarding_status(db, tenant_id=tenant_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Onboarding session not found")
@@ -39,9 +40,10 @@ def get_onboarding_status(
 def resume_onboarding(
     request: Request,
     tenant_id: str,
-    _user: dict = Depends(require_roles({"platform_owner", "platform_admin", "tenant_admin"})),
+    user: dict = Depends(require_roles({"platform_owner", "platform_admin", "tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
+    enforce_organization_scope(user=user, organization_id=tenant_id)
     try:
         row = onboarding_service.resume_onboarding(db, tenant_id=tenant_id)
     except ValueError as exc:

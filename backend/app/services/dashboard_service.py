@@ -101,6 +101,7 @@ def build_dashboard(db: Session, tenant_id: str, campaign_id: str) -> dict:
             },
         },
         "slo_health_snapshot": {
+            "truth_scope": slo_snapshot.get("truth_scope", {}),
             "slos": slo_snapshot.get("slos", {}),
             "metrics": slo_snapshot.get("metrics", {}),
             "alerts": slo_snapshot.get("alerts", {}),

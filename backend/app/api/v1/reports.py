@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
-from app.schemas.reporting import ReportDeliverIn, ReportDeliveryEventOut, ReportGenerateIn, ReportOut, ReportScheduleOut, ReportScheduleUpsertIn
+from app.schemas.reporting import ReportArtifactOut, ReportDeliverIn, ReportDeliveryEventOut, ReportGenerateIn, ReportOut, ReportScheduleOut, ReportScheduleUpsertIn
 from app.services import reporting_service
 from app.tasks.tasks import (
     reporting_aggregate_kpis,
@@ -55,6 +55,7 @@ def generate_report(
         tenant_id=user["tenant_id"],
         campaign_id=body.campaign_id,
         month_number=body.month_number,
+        organization_id=user["organization_id"],
     )
     background_tasks.add_task(_dispatch_report_generate, user["tenant_id"], body.campaign_id, body.month_number, report.id)
     return envelope(request, ReportOut.model_validate(report).model_dump(mode="json"))
@@ -67,7 +68,12 @@ def list_reports(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    rows = reporting_service.list_reports(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    rows = reporting_service.list_reports(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+        organization_id=user["organization_id"],
+    )
     return envelope(request, {"items": [ReportOut.model_validate(r).model_dump(mode="json") for r in rows]})
 
 
@@ -78,7 +84,12 @@ def get_report_schedule(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    schedule = reporting_service.get_report_schedule(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    schedule = reporting_service.get_report_schedule(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+        organization_id=user["organization_id"],
+    )
     if schedule is None:
         return envelope(request, None)
     return envelope(request, ReportScheduleOut.model_validate(schedule).model_dump(mode="json"))
@@ -100,6 +111,7 @@ def put_report_schedule(
         timezone=body.timezone,
         next_run_at=body.next_run_at,
         enabled=body.enabled,
+        organization_id=user["organization_id"],
     )
     background_tasks.add_task(_dispatch_report_schedule, user["tenant_id"], body.campaign_id)
     return envelope(request, ReportScheduleOut.model_validate(schedule).model_dump(mode="json"))
@@ -112,15 +124,30 @@ def get_report(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = reporting_service.get_report(db, tenant_id=user["tenant_id"], report_id=report_id)
-    artifacts = reporting_service.get_report_artifacts(db, tenant_id=user["tenant_id"], report_id=report_id)
-    delivery_events = reporting_service.get_report_deliveries(db, tenant_id=user["tenant_id"], report_id=report_id)
+    row = reporting_service.get_report(
+        db,
+        tenant_id=user["tenant_id"],
+        report_id=report_id,
+        organization_id=user["organization_id"],
+    )
+    artifacts = reporting_service.get_report_artifacts(
+        db,
+        tenant_id=user["tenant_id"],
+        report_id=report_id,
+        organization_id=user["organization_id"],
+    )
+    delivery_events = reporting_service.get_report_deliveries(
+        db,
+        tenant_id=user["tenant_id"],
+        report_id=report_id,
+        organization_id=user["organization_id"],
+    )
     return envelope(
         request,
         {
             "report": ReportOut.model_validate(row).model_dump(mode="json"),
             "artifacts": [
-                {"id": a.id, "artifact_type": a.artifact_type, "storage_path": a.storage_path, "created_at": a.created_at.isoformat()}
+                ReportArtifactOut.model_validate(reporting_service.artifact_contract(a)).model_dump(mode="json")
                 for a in artifacts
             ],
             "delivery_events": [ReportDeliveryEventOut.model_validate(e).model_dump(mode="json") for e in delivery_events],
@@ -137,6 +164,12 @@ def deliver_report(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    payload = reporting_service.deliver_report(db, tenant_id=user["tenant_id"], report_id=report_id, recipient=body.recipient)
+    payload = reporting_service.deliver_report(
+        db,
+        tenant_id=user["tenant_id"],
+        report_id=report_id,
+        recipient=body.recipient,
+        organization_id=user["organization_id"],
+    )
     background_tasks.add_task(_dispatch_report_delivery, user["tenant_id"], report_id, body.recipient)
     return envelope(request, payload)

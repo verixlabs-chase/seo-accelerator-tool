@@ -162,3 +162,21 @@ def require_roles(required: set[str]) -> Callable:
         return user
 
     return _enforcer
+
+
+def enforce_organization_scope(
+    *,
+    user: dict,
+    organization_id: str,
+    allow_platform: bool = True,
+) -> None:
+    if allow_platform and isinstance(user.get("platform_role"), str):
+        return
+    if user.get("organization_id") != organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": "Organization context does not match request scope.",
+                "reason_code": "organization_scope_mismatch",
+            },
+        )

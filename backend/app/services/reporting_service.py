@@ -22,15 +22,31 @@ from app.services.strategy_engine.thresholds import version_id as strategy_thres
 REPORT_SCHEDULE_MAX_RETRIES = 3
 
 
-def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
+def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str, organization_id: str | None = None) -> Campaign:
     campaign = db.get(Campaign, campaign_id)
     if campaign is None or campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    if organization_id is not None and campaign.organization_id != organization_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     return campaign
 
 
-def aggregate_kpis(db: Session, tenant_id: str, campaign_id: str, month_number: int) -> dict:
-    _campaign_or_404(db, tenant_id, campaign_id)
+def _report_query(db: Session, tenant_id: str, organization_id: str | None = None):
+    query = (
+        db.query(MonthlyReport)
+        .join(Campaign, Campaign.id == MonthlyReport.campaign_id)
+        .filter(
+            MonthlyReport.tenant_id == tenant_id,
+            Campaign.tenant_id == tenant_id,
+        )
+    )
+    if organization_id is not None:
+        query = query.filter(Campaign.organization_id == organization_id)
+    return query
+
+
+def aggregate_kpis(db: Session, tenant_id: str, campaign_id: str, month_number: int, organization_id: str | None = None) -> dict:
+    _campaign_or_404(db, tenant_id, campaign_id, organization_id)
     latest_metric = analytics_service.get_latest_campaign_daily_metric(
         db,
         campaign_id=campaign_id,
@@ -144,9 +160,66 @@ def render_pdf_report(kpis: dict, report_id: str, campaign_name: str) -> str:
     return str(path)
 
 
-def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number: int) -> MonthlyReport:
-    campaign = _campaign_or_404(db, tenant_id, campaign_id)
-    kpis = aggregate_kpis(db, tenant_id, campaign_id, month_number)
+def _artifact_readiness(artifact: ReportArtifact) -> dict:
+    storage_path = (artifact.storage_path or "").strip()
+    if storage_path.startswith("inline://"):
+        return {
+            "artifact_id": artifact.id,
+            "artifact_type": artifact.artifact_type,
+            "storage_mode": "inline_reference",
+            "ready": False,
+            "durable": False,
+            "reason": "inline_placeholder",
+        }
+
+    path = Path(storage_path)
+    if path.is_file():
+        return {
+            "artifact_id": artifact.id,
+            "artifact_type": artifact.artifact_type,
+            "storage_mode": "local_disk",
+            "ready": True,
+            "durable": False,
+            "reason": None,
+        }
+
+    return {
+        "artifact_id": artifact.id,
+        "artifact_type": artifact.artifact_type,
+        "storage_mode": "local_disk" if storage_path else "unknown",
+        "ready": False,
+        "durable": False,
+        "reason": "missing_file" if storage_path else "missing_storage_path",
+    }
+
+
+def artifact_contract(artifact: ReportArtifact) -> dict:
+    readiness = _artifact_readiness(artifact)
+    storage_path = (artifact.storage_path or "").strip()
+    return {
+        "id": artifact.id,
+        "artifact_type": artifact.artifact_type,
+        "storage_path": storage_path,
+        "storage_mode": readiness["storage_mode"],
+        "ready": readiness["ready"],
+        "retrievable": False,
+        "durable": readiness["durable"],
+        "reason": readiness["reason"],
+        "created_at": artifact.created_at,
+    }
+
+
+def _report_delivery_readiness(artifacts: list[ReportArtifact]) -> dict:
+    statuses = [_artifact_readiness(artifact) for artifact in artifacts]
+    return {
+        "ready": any(item["ready"] for item in statuses),
+        "statuses": statuses,
+    }
+
+
+def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number: int, organization_id: str | None = None) -> MonthlyReport:
+    campaign = _campaign_or_404(db, tenant_id, campaign_id, organization_id)
+    kpis = aggregate_kpis(db, tenant_id, campaign_id, month_number, organization_id)
     report = MonthlyReport(
         tenant_id=tenant_id,
         campaign_id=campaign_id,
@@ -185,8 +258,10 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
     return report
 
 
-def list_reports(db: Session, tenant_id: str, campaign_id: str | None = None) -> list[MonthlyReport]:
-    query = db.query(MonthlyReport).filter(MonthlyReport.tenant_id == tenant_id)
+def list_reports(db: Session, tenant_id: str, campaign_id: str | None = None, organization_id: str | None = None) -> list[MonthlyReport]:
+    if campaign_id is not None:
+        _campaign_or_404(db, tenant_id, campaign_id, organization_id)
+    query = _report_query(db, tenant_id, organization_id)
     if campaign_id:
         query = query.filter(MonthlyReport.campaign_id == campaign_id)
     return query.order_by(MonthlyReport.generated_at.desc()).all()
@@ -227,33 +302,65 @@ def get_report_status_summary(db: Session, tenant_id: str, campaign_id: str) -> 
     }
 
 
-def get_report(db: Session, tenant_id: str, report_id: str) -> MonthlyReport:
-    row = db.get(MonthlyReport, report_id)
-    if row is None or row.tenant_id != tenant_id:
+def get_report(db: Session, tenant_id: str, report_id: str, organization_id: str | None = None) -> MonthlyReport:
+    row = _report_query(db, tenant_id, organization_id).filter(MonthlyReport.id == report_id).first()
+    if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
     return row
 
 
-def get_report_artifacts(db: Session, tenant_id: str, report_id: str) -> list[ReportArtifact]:
+def get_report_artifacts(db: Session, tenant_id: str, report_id: str, organization_id: str | None = None) -> list[ReportArtifact]:
+    report = get_report(db, tenant_id, report_id, organization_id)
     return (
         db.query(ReportArtifact)
-        .filter(ReportArtifact.tenant_id == tenant_id, ReportArtifact.report_id == report_id)
+        .filter(
+            ReportArtifact.tenant_id == tenant_id,
+            ReportArtifact.report_id == report_id,
+            ReportArtifact.campaign_id == report.campaign_id,
+        )
         .order_by(ReportArtifact.created_at.desc())
         .all()
     )
 
 
-def get_report_deliveries(db: Session, tenant_id: str, report_id: str) -> list[ReportDeliveryEvent]:
+def get_report_deliveries(db: Session, tenant_id: str, report_id: str, organization_id: str | None = None) -> list[ReportDeliveryEvent]:
+    report = get_report(db, tenant_id, report_id, organization_id)
     return (
         db.query(ReportDeliveryEvent)
-        .filter(ReportDeliveryEvent.tenant_id == tenant_id, ReportDeliveryEvent.report_id == report_id)
+        .filter(
+            ReportDeliveryEvent.tenant_id == tenant_id,
+            ReportDeliveryEvent.report_id == report_id,
+            ReportDeliveryEvent.campaign_id == report.campaign_id,
+        )
         .order_by(ReportDeliveryEvent.created_at.desc())
         .all()
     )
 
 
-def deliver_report(db: Session, tenant_id: str, report_id: str, recipient: str) -> dict:
-    report = get_report(db, tenant_id, report_id)
+def deliver_report(db: Session, tenant_id: str, report_id: str, recipient: str, organization_id: str | None = None) -> dict:
+    report = get_report(db, tenant_id, report_id, organization_id)
+    artifacts = get_report_artifacts(db, tenant_id, report_id, organization_id)
+    readiness = _report_delivery_readiness(artifacts)
+    if not readiness["ready"]:
+        event = ReportDeliveryEvent(
+            tenant_id=tenant_id,
+            campaign_id=report.campaign_id,
+            report_id=report.id,
+            delivery_channel="email",
+            delivery_status="failed",
+            recipient=recipient,
+            sent_at=None,
+        )
+        db.add(event)
+        db.commit()
+        return {
+            "report_id": report.id,
+            "delivery_status": event.delivery_status,
+            "recipient": recipient,
+            "reason": "artifact_not_ready",
+            "artifact_readiness": readiness,
+        }
+
     adapter = get_email_adapter()
     delivery = adapter.send_email(
         recipient=recipient,
@@ -273,7 +380,12 @@ def deliver_report(db: Session, tenant_id: str, report_id: str, recipient: str) 
     report.report_status = "delivered" if status_value == "sent" else "generated"
     db.add(event)
     db.commit()
-    return {"report_id": report.id, "delivery_status": event.delivery_status, "recipient": recipient}
+    return {
+        "report_id": report.id,
+        "delivery_status": event.delivery_status,
+        "recipient": recipient,
+        "artifact_readiness": readiness,
+    }
 
 
 def _validate_timezone(timezone: str) -> str:
@@ -284,8 +396,8 @@ def _validate_timezone(timezone: str) -> str:
     return timezone
 
 
-def get_report_schedule(db: Session, tenant_id: str, campaign_id: str) -> ReportSchedule | None:
-    _campaign_or_404(db, tenant_id, campaign_id)
+def get_report_schedule(db: Session, tenant_id: str, campaign_id: str, organization_id: str | None = None) -> ReportSchedule | None:
+    _campaign_or_404(db, tenant_id, campaign_id, organization_id)
     return (
         db.query(ReportSchedule)
         .filter(ReportSchedule.tenant_id == tenant_id, ReportSchedule.campaign_id == campaign_id)
@@ -301,16 +413,18 @@ def upsert_report_schedule(
     timezone: str,
     next_run_at: datetime,
     enabled: bool,
+    organization_id: str | None = None,
 ) -> ReportSchedule:
-    _campaign_or_404(db, tenant_id, campaign_id)
+    campaign = _campaign_or_404(db, tenant_id, campaign_id, organization_id)
     _validate_timezone(timezone)
     if cadence not in {"daily", "weekly", "monthly"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid cadence")
     normalized_next_run_at = next_run_at if next_run_at.tzinfo else next_run_at.replace(tzinfo=UTC)
-    row = get_report_schedule(db, tenant_id, campaign_id)
+    row = get_report_schedule(db, tenant_id, campaign_id, organization_id)
     if row is None:
         row = ReportSchedule(
             tenant_id=tenant_id,
+            organization_id=campaign.organization_id,
             campaign_id=campaign_id,
             cadence=cadence,
             timezone=timezone,

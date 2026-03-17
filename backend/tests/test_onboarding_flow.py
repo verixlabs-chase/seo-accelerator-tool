@@ -140,3 +140,23 @@ def test_onboarding_campaign_setup_state_transitions(client, db_session, monkeyp
     campaign = db_session.get(Campaign, start_data["campaign_id"])
     assert campaign is not None
     assert campaign.setup_state == "Active"
+
+
+def test_onboarding_status_and_resume_are_org_scoped(client, monkeypatch):
+    monkeypatch.setenv("PLATFORM_MASTER_KEY", MASTER_KEY_B64)
+    monkeypatch.setattr("app.services.onboarding_service._dispatch_crawl_task", lambda *_args, **_kwargs: "task-5")
+
+    token_a = _login(client, "a@example.com", "pass-a")
+    start = client.post("/api/v1/onboarding/start", json=_payload(str(uuid.uuid4())), headers=_headers(token_a))
+    assert start.status_code == 200
+    tenant_id = start.json()["data"]["tenant_id"]
+
+    token_b = _login(client, "b@example.com", "pass-b")
+
+    status_res = client.get(f"/api/v1/onboarding/status/{tenant_id}", headers=_headers(token_b))
+    assert status_res.status_code == 403
+    assert status_res.json()["errors"][0]["details"]["reason_code"] == "organization_scope_mismatch"
+
+    resume_res = client.post(f"/api/v1/onboarding/resume/{tenant_id}", headers=_headers(token_b))
+    assert resume_res.status_code == 403
+    assert resume_res.json()["errors"][0]["details"]["reason_code"] == "organization_scope_mismatch"

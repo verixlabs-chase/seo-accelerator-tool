@@ -29,6 +29,52 @@ def test_production_settings_requires_jwt_secret() -> None:
         )
 
 
+def test_non_test_settings_require_explicit_sensitive_secrets() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_env="local",
+            public_base_url="http://localhost",
+            postgres_dsn="postgresql://user:pass@db:5432/app",
+        )
+
+
+def test_non_test_settings_reject_weak_local_style_secrets() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_env="local",
+            public_base_url="http://localhost",
+            postgres_dsn="postgresql://user:pass@db:5432/app",
+            jwt_secret="dev-secret",
+            platform_master_key="dev-master-key",
+        )
+
+
+def test_local_admin_bootstrap_is_forbidden_outside_local_runtime() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_env="test",
+            public_base_url="http://testserver",
+            postgres_dsn="sqlite:///:memory:",
+            jwt_secret="test-secret-key",
+            platform_master_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            local_admin_bootstrap_enabled=True,
+        )
+
+
 def test_testsettings_uses_safe_default_without_jwt_secret() -> None:
     settings = AppTestSettings(jwt_secret="")
     assert settings.jwt_secret == "test-jwt-secret-32-characters-minimum"
+
+
+def test_local_admin_bootstrap_is_disabled_by_default() -> None:
+    settings = Settings(
+        _env_file=None,
+        postgres_dsn="postgresql://user:pass@db:5432/app",
+        jwt_secret="local-dev-jwt-secret-change-before-shared-use",
+        platform_master_key="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+        public_base_url="http://localhost",
+    )
+    assert settings.local_admin_bootstrap_enabled is False

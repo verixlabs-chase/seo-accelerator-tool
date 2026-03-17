@@ -7,6 +7,7 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.intelligence.recommendation_execution_engine import approve_execution, cancel_execution, execute_recommendation, reject_execution, retry_execution, rollback_execution
+from app.models.campaign import Campaign
 from app.models.execution_mutation import ExecutionMutation
 from app.models.intelligence import StrategyRecommendation
 from app.models.recommendation_execution import RecommendationExecution
@@ -19,7 +20,13 @@ def _tenant_scoped_execution(db: Session, execution_id: str, tenant_id: str) -> 
     return (
         db.query(RecommendationExecution)
         .join(StrategyRecommendation, StrategyRecommendation.id == RecommendationExecution.recommendation_id)
-        .filter(RecommendationExecution.id == execution_id, StrategyRecommendation.tenant_id == tenant_id)
+        .join(Campaign, Campaign.id == RecommendationExecution.campaign_id)
+        .filter(
+            RecommendationExecution.id == execution_id,
+            StrategyRecommendation.tenant_id == tenant_id,
+            Campaign.tenant_id == tenant_id,
+            StrategyRecommendation.campaign_id == RecommendationExecution.campaign_id,
+        )
         .first()
     )
 

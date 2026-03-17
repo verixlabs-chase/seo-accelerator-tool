@@ -16,9 +16,10 @@ class Settings(BaseSettings):
     app_env: str = "local"
     api_v1_prefix: str = "/api/v1"
     public_base_url: str = 'http://localhost'
+    local_admin_bootstrap_enabled: bool = False
 
-    jwt_secret: str = 'test-secret'
-    platform_master_key: str = 'test-master-key'
+    jwt_secret: str
+    platform_master_key: str
     jwt_access_ttl_seconds: int = 900
     jwt_refresh_ttl_seconds: int = 604800
     jwt_algorithm: str = "HS256"
@@ -107,6 +108,22 @@ class Settings(BaseSettings):
     reference_library_enforce_validation: bool = True
     reference_library_seed_path: str = ""
 
+    _WEAK_JWT_SECRET_VALUES = {
+        "",
+        "test-secret",
+        "test-secret-key",
+        "dev-secret",
+        "local-dev-secret",
+        "replace-me",
+    }
+    _WEAK_PLATFORM_MASTER_KEY_VALUES = {
+        "",
+        "test-master-key",
+        "dev-master-key",
+        "local-dev-master-key",
+        "replace-me",
+    }
+
     @model_validator(mode="after")
     def validate_production_guardrails(self) -> "Settings":
         if not self.jwt_secret.strip():
@@ -115,24 +132,28 @@ class Settings(BaseSettings):
             raise ValueError("PLATFORM_MASTER_KEY is required and must not be empty.")
         if not self.public_base_url.strip():
             raise ValueError("PUBLIC_BASE_URL is required and must not be empty.")
+        if self.local_admin_bootstrap_enabled and self.app_env.lower() != "local":
+            raise ValueError("LOCAL_ADMIN_BOOTSTRAP_ENABLED is only allowed when APP_ENV=local.")
+
+        if self.app_env.lower() != "test":
+            if self.jwt_secret in self._WEAK_JWT_SECRET_VALUES or len(self.jwt_secret) < 32:
+                raise ValueError("Non-test runtime requires JWT_SECRET with at least 32 characters and forbids weak default values.")
+            if self.platform_master_key in self._WEAK_PLATFORM_MASTER_KEY_VALUES:
+                raise ValueError("Non-test runtime requires PLATFORM_MASTER_KEY and forbids weak default values.")
+            try:
+                decoded_master_key = base64.b64decode(self.platform_master_key)
+            except (ValueError, binascii.Error) as exc:
+                raise ValueError("Non-test runtime requires PLATFORM_MASTER_KEY to be valid base64.") from exc
+            if len(decoded_master_key) != 32:
+                raise ValueError("Non-test runtime requires PLATFORM_MASTER_KEY to decode to exactly 32 bytes.")
 
         if self.app_env.lower() != "production":
             return self
 
-        if self.jwt_secret in {"", "local-dev-secret", "replace-me"} or len(self.jwt_secret) < 32:
-            raise ValueError("Production requires JWT_SECRET with at least 32 characters.")
         if self.google_oauth_client_secret.strip() in {"replace-me", "local-dev-secret"}:
             raise ValueError("Production forbids weak GOOGLE_OAUTH_CLIENT_SECRET default values.")
         if self.google_oauth_client_id.strip() in {"replace-me", "local-dev-client-id"}:
             raise ValueError("Production forbids weak GOOGLE_OAUTH_CLIENT_ID default values.")
-        if self.platform_master_key in {"", "replace-me", "local-dev-master-key"}:
-            raise ValueError("Production requires PLATFORM_MASTER_KEY and forbids weak default values.")
-        try:
-            decoded_master_key = base64.b64decode(self.platform_master_key)
-        except (ValueError, binascii.Error) as exc:
-            raise ValueError("Production requires PLATFORM_MASTER_KEY to be valid base64.") from exc
-        if len(decoded_master_key) != 32:
-            raise ValueError("Production requires PLATFORM_MASTER_KEY to decode to exactly 32 bytes.")
 
         parsed_public_base = urlparse(self.public_base_url)
         host = (parsed_public_base.hostname or "").lower()

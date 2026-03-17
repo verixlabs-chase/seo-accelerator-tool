@@ -183,6 +183,12 @@ def snapshot_operational_health() -> dict[str, object]:
     replay_drifts = [sample for sample in replay_samples if sample[3]]
 
     return {
+        "truth_scope": {
+            "mode": "process_local",
+            "durable": False,
+            "multi_instance_safe": False,
+            "warning": "Operational telemetry snapshots include in-memory process state and are not cluster-wide truth.",
+        },
         "slo_targets": {
             "api": {
                 "p95_ms": NON_PROVIDER_P95_MS,
