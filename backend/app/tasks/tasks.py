@@ -1309,7 +1309,7 @@ def reporting_process_schedule(self, tenant_id: str, campaign_id: str) -> dict:
     except Exception as exc:
         retry_state = reporting_service.mark_schedule_attempt_failure(db, tenant_id=tenant_id, campaign_id=campaign_id, error_message=str(exc))
         _finish_task_execution(db, execution, "failed", retry_state)
-        if retry_state.get("should_retry"):
+        if retry_state.get("status") != "max_retries_exceeded" and retry_state.get("should_retry"):
             raise
         return retry_state
     finally:

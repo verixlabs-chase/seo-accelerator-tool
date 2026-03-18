@@ -7,7 +7,7 @@ from app.api.response import envelope
 from app.db.session import SessionLocal, get_db
 from app.schemas.crawl import CrawlRunOut, CrawlRunProgressOut, CrawlScheduleRequest, TechnicalIssueOut
 from app.services import crawl_metrics, crawl_service, infra_service
-from app.tasks.tasks import crawl_schedule_campaign
+from app.tasks.tasks import crawl_fetch_batch, crawl_schedule_campaign
 
 router = APIRouter(prefix="/crawl", tags=["crawl"])
 
@@ -16,13 +16,14 @@ def _dispatch_crawl_schedule(campaign_id: str, crawl_run_id: str, tenant_id: str
     try:
         crawl_schedule_campaign.delay(campaign_id=campaign_id, crawl_run_id=crawl_run_id, tenant_id=tenant_id)
     except Exception:
-        db = SessionLocal()
         try:
-            crawl_service.execute_run(db, crawl_run_id=crawl_run_id)
-        except Exception as exc:
-            crawl_service.mark_run_failed(db, crawl_run_id, str(exc))
-        finally:
-            db.close()
+            crawl_fetch_batch.run(crawl_run_id=crawl_run_id)
+        except Exception:
+            db = SessionLocal()
+            try:
+                crawl_service.mark_run_failed(db, crawl_run_id, "crawl dispatch failed")
+            finally:
+                db.close()
 
 
 @router.post("/schedule")
