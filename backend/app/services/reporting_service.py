@@ -99,6 +99,14 @@ def render_html(kpis: dict, campaign_name: str) -> str:
 """.strip()
 
 
+def render_html_report(kpis: dict, report_id: str, campaign_name: str) -> str:
+    out_dir = Path("generated_reports")
+    out_dir.mkdir(exist_ok=True)
+    path = out_dir / f"{report_id}.html"
+    path.write_text(render_html(kpis, campaign_name), encoding="utf-8")
+    return str(path)
+
+
 def _pdf_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
@@ -162,16 +170,6 @@ def render_pdf_report(kpis: dict, report_id: str, campaign_name: str) -> str:
 
 def _artifact_readiness(artifact: ReportArtifact) -> dict:
     storage_path = (artifact.storage_path or "").strip()
-    if storage_path.startswith("inline://"):
-        return {
-            "artifact_id": artifact.id,
-            "artifact_type": artifact.artifact_type,
-            "storage_mode": "inline_reference",
-            "ready": False,
-            "durable": False,
-            "reason": "inline_placeholder",
-        }
-
     path = Path(storage_path)
     if path.is_file():
         return {
@@ -235,7 +233,7 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
         campaign_id=campaign_id,
         report_id=report.id,
         artifact_type="html",
-        storage_path=f"inline://{report.id}.html",
+        storage_path=render_html_report(kpis, report.id, campaign.name),
     )
     pdf_path = render_pdf_report(kpis, report.id, campaign.name)
     pdf_artifact = ReportArtifact(

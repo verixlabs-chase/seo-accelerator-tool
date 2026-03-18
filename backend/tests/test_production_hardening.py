@@ -110,6 +110,7 @@ def test_failure_simulation_reason_codes_and_retry_cap(client, db_session, monke
     monkeypatch.setattr("app.tasks.tasks.entity_service.run_entity_analysis", original_entity_run)
 
     # Worker crash simulation + retry cap enforcement for schedule processor.
+    monkeypatch.setattr("app.api.v1.reports.reporting_process_schedule.delay", lambda **_kwargs: None)
     upsert = client.put(
         "/api/v1/reports/schedule",
         json={
@@ -122,6 +123,16 @@ def test_failure_simulation_reason_codes_and_retry_cap(client, db_session, monke
         headers={"Authorization": f"Bearer {token}"},
     )
     assert upsert.status_code == 200
+    row = (
+        db_session.query(ReportSchedule)
+        .filter(ReportSchedule.tenant_id == tenant_id, ReportSchedule.campaign_id == campaign["id"])
+        .first()
+    )
+    assert row is not None
+    row.retry_count = 0
+    row.last_status = "scheduled"
+    row.enabled = True
+    db_session.commit()
     monkeypatch.setattr(
         "app.tasks.tasks.reporting_service.run_due_report_schedule",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("worker crash")),

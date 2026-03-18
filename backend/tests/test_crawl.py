@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from time import monotonic, sleep
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -44,6 +45,9 @@ def test_crawl_schedule_and_runs(mock_schedule_crawl, mock_delay, client):
     assert scheduled.status_code == 200
     assert scheduled.json()["data"]["status"] == "scheduled"
     mock_schedule_crawl.assert_called_once()
+    deadline = monotonic() + 2.0
+    while mock_delay.call_count == 0 and monotonic() < deadline:
+        sleep(0.01)
     mock_delay.assert_called_once()
 
 

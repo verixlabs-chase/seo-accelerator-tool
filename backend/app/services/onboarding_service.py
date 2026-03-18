@@ -44,7 +44,13 @@ STATE_SEQUENCE = [
 NEXT_STATE = {STATE_SEQUENCE[i]: STATE_SEQUENCE[i + 1] for i in range(len(STATE_SEQUENCE) - 1)}
 
 
-def start_onboarding(db: Session, payload: dict[str, Any]) -> OnboardingSession:
+def start_onboarding(
+    db: Session,
+    payload: dict[str, Any],
+    *,
+    actor_user_id: str | None = None,
+    actor_organization_id: str | None = None,
+) -> OnboardingSession:
     tenant_name = str(payload.get("tenant_name", "")).strip()
     if not tenant_name:
         raise ValueError("tenant_name is required")
@@ -60,6 +66,10 @@ def start_onboarding(db: Session, payload: dict[str, Any]) -> OnboardingSession:
         current_step=INITIALIZED,
         step_payload={
             "input": payload,
+            "actor": {
+                "user_id": actor_user_id,
+                "organization_id": actor_organization_id,
+            },
             "completed_steps": [],
             "idempotency_keys": {},
             "step_results": {},
@@ -93,6 +103,21 @@ def resume_onboarding(db: Session, tenant_id: str) -> OnboardingSession:
 
 def get_onboarding_status(db: Session, tenant_id: str) -> OnboardingSession | None:
     return _latest_session_by_tenant(db, tenant_id)
+
+
+def get_onboarding_actor_scope(session: OnboardingSession | None) -> dict[str, str | None]:
+    if session is None:
+        return {"user_id": None, "organization_id": None}
+    payload = session.step_payload or {}
+    actor = payload.get("actor") if isinstance(payload, dict) else None
+    if not isinstance(actor, dict):
+        return {"user_id": None, "organization_id": None}
+    user_id = actor.get("user_id")
+    organization_id = actor.get("organization_id")
+    return {
+        "user_id": user_id if isinstance(user_id, str) else None,
+        "organization_id": organization_id if isinstance(organization_id, str) else None,
+    }
 
 
 def run_next_step(db: Session, session: OnboardingSession) -> OnboardingSession:

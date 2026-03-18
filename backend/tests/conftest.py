@@ -8,13 +8,14 @@ import shutil
 import tempfile
 import time
 import uuid
+import socket
+import threading
 from datetime import UTC, datetime
 from typing import Callable, Generator
 from pathlib import Path
 import pytest
-from contextlib import asynccontextmanager
-import asyncio
 import httpx
+import uvicorn
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
@@ -313,9 +314,7 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
         database_url = str(apply_migrations["database_url"])
     engine = _create_test_engine(database_url)
     if mode != "sqlite":
-        print("db_session: before reset_external_test_database")
         _reset_external_test_database(engine)
-        print("db_session: after reset_external_test_database")
     test_session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     test_session = test_session_local()
     reset_graph_write_batcher()
@@ -556,44 +555,47 @@ def intelligence_graph(db_session: Session) -> dict[str, object]:
 @pytest.fixture()
 def client(db_session: Session) -> Generator[object, None, None]:
     from app.main import app
-    request_session_local = sessionmaker(
-        bind=db_session.get_bind(),
-        autocommit=False,
-        autoflush=False,
-        class_=Session,
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("127.0.0.1", 0))
+    host, port = server_socket.getsockname()
+    server_socket.close()
+
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level="warning",
+        lifespan="off",
     )
+    server = uvicorn.Server(config)
+    server_thread = threading.Thread(target=server.run, daemon=True)
+    server_thread.start()
 
-    def _override_get_db():
-        request_session = request_session_local()
+    base_url = f"http://{host}:{port}"
+    raw_test_client = httpx.Client(base_url=base_url, timeout=10.0)
+
+    deadline = time.time() + 10
+    last_error: Exception | None = None
+    while time.time() < deadline:
+        if server.started:
+            break
         try:
-            yield request_session
-        finally:
-            request_session.close()
-
-    @asynccontextmanager
-    async def _test_lifespan(_app):
-        yield
-
-    original_lifespan = app.router.lifespan_context
-    app.router.lifespan_context = _test_lifespan
-    app.dependency_overrides[get_db] = _override_get_db
-
-    runner = asyncio.Runner()
-    raw_test_client: httpx.AsyncClient | None = None
-
-    async def _create_async_client() -> httpx.AsyncClient:
-        transport = httpx.ASGITransport(app=app, raise_app_exceptions=True)
-        return httpx.AsyncClient(transport=transport, base_url="http://testserver")
+            raw_test_client.get("/openapi.json")
+            break
+        except Exception as exc:
+            last_error = exc
+            time.sleep(0.05)
+    else:
+        raw_test_client.close()
+        server.should_exit = True
+        server_thread.join(timeout=5)
+        raise RuntimeError(f"Test server did not start: {last_error!r}")
 
     class _Client:
         def request(self, method: str, url: str, **kwargs):
-            nonlocal raw_test_client
-            if raw_test_client is None:
-                raw_test_client = runner.run(_create_async_client())
-            # Persist test-side setup before handing control to a request-scoped session.
             db_session.commit()
             db_session.expire_all()
-            response = runner.run(raw_test_client.request(method, url, **kwargs))
+            response = raw_test_client.request(method, url, **kwargs)
             db_session.expire_all()
             return response
 
@@ -613,8 +615,7 @@ def client(db_session: Session) -> Generator[object, None, None]:
             return self.request("DELETE", url, **kwargs)
 
         def close(self) -> None:
-            if raw_test_client is not None:
-                runner.run(raw_test_client.aclose())
+            raw_test_client.close()
 
     test_client = _Client()
     try:
@@ -623,9 +624,8 @@ def client(db_session: Session) -> Generator[object, None, None]:
         db_session.rollback()
         db_session.expire_all()
         test_client.close()
-        runner.close()
-        app.dependency_overrides.clear()
-        app.router.lifespan_context = original_lifespan
+        server.should_exit = True
+        server_thread.join(timeout=5)
 
 
 

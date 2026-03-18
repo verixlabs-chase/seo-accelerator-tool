@@ -30,11 +30,11 @@ def test_reports_generate_list_get_and_deliver(client):
     artifacts = detail.json()["data"]["artifacts"]
     html_artifact = next(item for item in artifacts if item["artifact_type"] == "html")
     pdf_artifact = next(item for item in artifacts if item["artifact_type"] == "pdf")
-    assert html_artifact["storage_mode"] == "inline_reference"
-    assert html_artifact["ready"] is False
+    assert html_artifact["storage_mode"] == "local_disk"
+    assert html_artifact["ready"] is True
     assert html_artifact["retrievable"] is False
     assert html_artifact["durable"] is False
-    assert html_artifact["reason"] == "inline_placeholder"
+    assert html_artifact["reason"] is None
     assert pdf_artifact["storage_mode"] == "local_disk"
     assert pdf_artifact["ready"] is True
     assert pdf_artifact["retrievable"] is False
@@ -92,7 +92,7 @@ def test_reports_reject_cross_org_campaign_mismatch(client, db_session, create_t
     assert schedule.status_code == 404
 
 
-def test_reports_delivery_fails_when_artifact_is_not_ready(client):
+def test_reports_delivery_fails_when_artifact_is_not_ready(client, db_session):
     token = _login(client, "a@example.com", "pass-a")
     campaign = client.post(
         "/api/v1/campaigns",
@@ -110,16 +110,64 @@ def test_reports_delivery_fails_when_artifact_is_not_ready(client):
 
     detail = client.get(f"/api/v1/reports/{report_id}", headers={"Authorization": f"Bearer {token}"})
     assert detail.status_code == 200
+    artifacts = detail.json()["data"]["artifacts"]
+    html_artifact = next(item for item in artifacts if item["artifact_type"] == "html")
     pdf_artifact = next(item for item in detail.json()["data"]["artifacts"] if item["artifact_type"] == "pdf")
+    assert html_artifact["ready"] is True
     assert pdf_artifact["ready"] is True
     assert pdf_artifact["retrievable"] is False
 
-    from pathlib import Path
+    from app.models.reporting import ReportArtifact
 
-    Path(pdf_artifact["storage_path"]).unlink()
+    first_report_pdf = (
+        db_session.query(ReportArtifact)
+        .filter(
+            ReportArtifact.report_id == report_id,
+            ReportArtifact.artifact_type == "pdf",
+        )
+        .one()
+    )
+    first_report_pdf.storage_path = ""
+    db_session.commit()
+
+    delivered_with_html_remaining = client.post(
+        f"/api/v1/reports/{report_id}/deliver",
+        json={"recipient": "owner@example.com"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert delivered_with_html_remaining.status_code == 200
+    partial_payload = delivered_with_html_remaining.json()["data"]
+    assert partial_payload["delivery_status"] == "sent"
+    assert partial_payload["artifact_readiness"]["ready"] is True
+    assert any(
+        item["artifact_type"] == "html" and item["ready"] is True
+        for item in partial_payload["artifact_readiness"]["statuses"]
+    )
+    assert any(
+        item["artifact_type"] == "pdf" and item["reason"] == "missing_storage_path"
+        for item in partial_payload["artifact_readiness"]["statuses"]
+    )
+
+    generated_missing_all = client.post(
+        "/api/v1/reports/generate",
+        json={"campaign_id": campaign["id"], "month_number": 2},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert generated_missing_all.status_code == 200
+    missing_all_report_id = generated_missing_all.json()["data"]["id"]
+
+    second_report_artifacts = (
+        db_session.query(ReportArtifact)
+        .filter(ReportArtifact.report_id == missing_all_report_id)
+        .all()
+    )
+    assert len(second_report_artifacts) >= 1
+    for artifact in second_report_artifacts:
+        artifact.storage_path = ""
+    db_session.commit()
 
     delivered = client.post(
-        f"/api/v1/reports/{report_id}/deliver",
+        f"/api/v1/reports/{missing_all_report_id}/deliver",
         json={"recipient": "owner@example.com"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -128,12 +176,12 @@ def test_reports_delivery_fails_when_artifact_is_not_ready(client):
     assert payload["delivery_status"] == "failed"
     assert payload["reason"] == "artifact_not_ready"
     assert payload["artifact_readiness"]["ready"] is False
-    assert any(item["reason"] == "missing_file" for item in payload["artifact_readiness"]["statuses"] if item["artifact_type"] == "pdf")
+    assert all(item["reason"] == "missing_storage_path" for item in payload["artifact_readiness"]["statuses"])
 
-    refreshed = client.get(f"/api/v1/reports/{report_id}", headers={"Authorization": f"Bearer {token}"})
+    refreshed = client.get(f"/api/v1/reports/{missing_all_report_id}", headers={"Authorization": f"Bearer {token}"})
     assert refreshed.status_code == 200
     assert refreshed.json()["data"]["report"]["report_status"] == "generated"
     assert refreshed.json()["data"]["delivery_events"][0]["delivery_status"] == "failed"
     refreshed_pdf = next(item for item in refreshed.json()["data"]["artifacts"] if item["artifact_type"] == "pdf")
     assert refreshed_pdf["ready"] is False
-    assert refreshed_pdf["reason"] == "missing_file"
+    assert refreshed_pdf["reason"] == "missing_storage_path"

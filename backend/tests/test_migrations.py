@@ -13,6 +13,7 @@ from app.core.settings import get_settings
 
 def test_migration_upgrade_and_downgrade():
     tmp = Path(tempfile.mkdtemp(prefix="tmp_test_migrations-"))
+    backend_dir = Path(__file__).resolve().parents[1]
     engine = None
     try:
         db_path = tmp / "mig.db"
@@ -21,7 +22,8 @@ def test_migration_upgrade_and_downgrade():
         os.environ["POSTGRES_DSN"] = dsn
         get_settings.cache_clear()
 
-        cfg = Config("alembic.ini")
+        cfg = Config(str(backend_dir / "alembic.ini"))
+        cfg.set_main_option("script_location", str(backend_dir / "alembic"))
         cfg.set_main_option("sqlalchemy.url", dsn)
         cfg.attributes["connection_url"] = dsn
 
