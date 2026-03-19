@@ -37,6 +37,8 @@ def _dispatch_report_delivery(tenant_id: str, report_id: str, recipient: str) ->
 
 def _dispatch_report_schedule(tenant_id: str, campaign_id: str) -> None:
     try:
+        if bool(getattr(getattr(reporting_process_schedule, "app", None), "conf", None) and reporting_process_schedule.app.conf.task_always_eager):
+            return
         reporting_process_schedule.delay(tenant_id=tenant_id, campaign_id=campaign_id)
     except Exception:
         return

@@ -1293,7 +1293,7 @@ def reporting_send_email(self, tenant_id: str, report_id: str, recipient: str) -
         db.close()
 
 
-@celery_app.task(name="reporting.process_schedule", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})
+@celery_app.task(name="reporting.process_schedule", bind=True)
 def reporting_process_schedule(self, tenant_id: str, campaign_id: str) -> dict:
     db = SessionLocal()
     execution = _start_task_execution(
@@ -1310,7 +1310,7 @@ def reporting_process_schedule(self, tenant_id: str, campaign_id: str) -> dict:
         retry_state = reporting_service.mark_schedule_attempt_failure(db, tenant_id=tenant_id, campaign_id=campaign_id, error_message=str(exc))
         _finish_task_execution(db, execution, "failed", retry_state)
         if retry_state.get("status") != "max_retries_exceeded" and retry_state.get("should_retry"):
-            raise
+            self.retry(exc=exc, max_retries=max(0, int(retry_state.get("retry_count", 0) or 0) - 1))
         return retry_state
     finally:
         db.close()
@@ -1506,7 +1506,6 @@ def run_strategy_automation_for_all_campaigns(self, evaluation_date_iso: str | N
         raise
     finally:
         db.close()
-
 
 
 
