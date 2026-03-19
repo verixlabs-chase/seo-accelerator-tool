@@ -28,7 +28,7 @@ jobs:
       - name: Performance Envelope
         env:
           DATABASE_URL: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
-        run: docker compose run --rm test-runner pytest -q backend/tests/test_performance_envelope.py
+        run: docker compose run --rm test-runner pytest -q tests/test_performance_envelope.py
 
       - name: Run Lint
         env:
