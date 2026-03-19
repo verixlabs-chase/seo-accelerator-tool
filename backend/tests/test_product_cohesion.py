@@ -100,6 +100,8 @@ def test_report_schedule_put_get_and_retry_cap(client, db_session, monkeypatch):
             pass
     third = tasks.reporting_process_schedule.run(tenant_id=campaign["tenant_id"], campaign_id=campaign["id"])
     assert third["status"] == "max_retries_exceeded"
+    assert third["retry_count"] == 3
+    assert third["should_retry"] is False
 
     row = (
         db_session.query(ReportSchedule)

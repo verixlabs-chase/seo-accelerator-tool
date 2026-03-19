@@ -80,6 +80,8 @@ def test_failure_simulation_reason_codes_and_retry_cap(client, db_session, monke
         tasks.crawl_fetch_batch.run(crawl_run_id=crawl_run_id)
     crawl_payload = _latest_task(db_session, tenant_id, "crawl.fetch_batch")
     assert crawl_payload["reason_code"] == "timeout"
+    assert crawl_payload["error_type"] == "TimeoutError"
+    assert crawl_payload["retryable"] is True
 
     # Email failure simulation.
     generated = client.post(
