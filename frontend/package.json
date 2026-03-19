@@ -28,6 +28,6 @@
   },
   "overrides": {
     "minimatch": ">=10.2.1",
-    "flatted": "3.4.1"
+    "flatted": "3.4.2"
   }
 }
