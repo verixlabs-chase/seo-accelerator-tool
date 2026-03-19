@@ -65,6 +65,71 @@ jobs:
           source .venv/bin/activate
           alembic upgrade head
 
+      - name: Record runner diagnostics
+        run: |
+          source .venv/bin/activate
+          echo "python --version"
+          python --version
+          echo "which python"
+          which python
+          python --version > backend-runner-info.txt
+          which python >> backend-runner-info.txt
+          pip freeze | sort | tee backend-pip-freeze.txt
+          python - <<'PY' | tee backend-env-sanitized.txt
+          import os
+          from urllib.parse import urlsplit, urlunsplit
+
+          for name in ("DATABASE_URL", "POSTGRES_DSN", "PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD"):
+              value = os.getenv(name)
+              if not value:
+                  print(f"{name}=<unset>")
+                  continue
+              if name in {"DATABASE_URL", "POSTGRES_DSN"}:
+                  parts = urlsplit(value)
+                  sanitized = urlunsplit((parts.scheme, f"{parts.username or '<user>'}:***@{parts.hostname or '<host>'}:{parts.port or ''}", parts.path, parts.query, parts.fragment))
+                  print(f"{name}={sanitized}")
+              elif name == "PGPASSWORD":
+                  print(f"{name}=***")
+              else:
+                  print(f"{name}={value}")
+          PY
+
+      - name: Record Alembic state
+        run: |
+          source .venv/bin/activate
+          {
+            echo "=== alembic current ==="
+            alembic current
+            echo
+            echo "=== alembic heads ==="
+            alembic heads
+          } | tee backend-alembic-current.txt
+
+      - name: Record DB sanity
+        run: |
+          source .venv/bin/activate
+          python - <<'PY' | tee backend-db-sanity.txt
+          import os
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine(os.environ["DATABASE_URL"])
+          with engine.connect() as conn:
+              current_database = conn.execute(text("select current_database()")).scalar_one()
+              current_user = conn.execute(text("select current_user")).scalar_one()
+              table_count = conn.execute(
+                  text(
+                      """
+                      select count(*)
+                      from information_schema.tables
+                      where table_schema = 'public'
+                      """
+                  )
+              ).scalar_one()
+          print(f"current_database={current_database}")
+          print(f"current_user={current_user}")
+          print(f"public_table_count={table_count}")
+          PY
+
       - name: Run tests
         run: |
           source .venv/bin/activate
@@ -76,12 +141,56 @@ jobs:
         run: |
           grep -nE "FAILED|FAILURES|ERROR|Traceback|E[[:space:]]" backend-pytest.log | tail -120 || true
 
+      - name: Print post-failure diagnostics
+        if: failure()
+        run: |
+          source .venv/bin/activate
+          echo "=== alembic current ==="
+          alembic current || true
+          echo
+          echo "=== db sanity ==="
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          try:
+              engine = create_engine(os.environ["DATABASE_URL"])
+              with engine.connect() as conn:
+                  table_count = conn.execute(
+                      text(
+                          """
+                          select count(*)
+                          from information_schema.tables
+                          where table_schema = 'public'
+                          """
+                      )
+                  ).scalar_one()
+              print(f"public_table_count={table_count}")
+          except Exception as exc:
+              print(f"db_sanity_error={exc}")
+          PY
+          echo
+          echo "=== pytest tail ==="
+          tail -n 120 backend-pytest.log || true
+
       - name: Upload backend pytest log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: backend-pytest-log
           path: backend/backend-pytest.log
+
+      - name: Upload backend runner diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-runner-diagnostics
+          path: |
+            backend/backend-pip-freeze.txt
+            backend/backend-alembic-current.txt
+            backend/backend-db-sanity.txt
+            backend/backend-env-sanitized.txt
+            backend/backend-runner-info.txt
 
   deterministic-replay-gate:
     runs-on: ubuntu-latest
