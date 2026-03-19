@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.entitlement_codes import ALL_ENTITLEMENT_CODES
@@ -55,9 +56,20 @@ def ensure_test_tier_profile(db: Session) -> TierProfile:
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
-    db.add(tier_profile)
-    db.flush()
-    return tier_profile
+    try:
+        with db.begin_nested():
+            db.add(tier_profile)
+            db.flush()
+        return tier_profile
+    except IntegrityError:
+        tier_profile = (
+            db.query(TierProfile)
+            .filter(TierProfile.deterministic_hash == deterministic_hash)
+            .first()
+        )
+        if tier_profile is not None:
+            return tier_profile
+        raise
 
 
 def provision_test_organization(db: Session, organization: Organization) -> Organization:
