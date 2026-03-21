@@ -11,6 +11,7 @@ import {
   KpiCard,
   LoadingCard,
   ProductPageIntro,
+  TruthNotice,
   type TimelineEntry,
   type TrustSignal,
 } from "../components";
@@ -1063,6 +1064,13 @@ export default function OpportunitiesPage() {
           title="What needs attention next"
           summary="Use the Action Center to see the most important recommended actions, why they matter, and which one should happen next."
         />
+
+        <TruthNotice title="Recommendations are guidance, not proof of execution.">
+          Recommendation status, approval status, and execution status are separate on purpose. A
+          recommendation can be high priority and still be unreviewed. A queued or approved
+          execution still needs provider readiness and a successful run before it should be treated
+          as a completed business change.
+        </TruthNotice>
 
         {loading ? (
           <LoadingCard

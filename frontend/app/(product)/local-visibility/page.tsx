@@ -10,6 +10,7 @@ import {
   LoadingCard,
   MapCard,
   ProductPageIntro,
+  TruthNotice,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
@@ -355,6 +356,12 @@ export default function LocalVisibilityPage() {
           title="How your business is showing up locally"
           summary="Use this page to understand local visibility, review momentum, and what to focus on next for map-pack performance."
         />
+
+        <TruthNotice title="Local visibility is directional when provider coverage is thin or stale.">
+          Map-pack position, review velocity, and local health summarize the latest captured state
+          in the database. Missing values mean the workspace has not captured enough provider data
+          yet, not that the business has definitively scored zero in the real world.
+        </TruthNotice>
 
         {loading ? (
           <LoadingCard

@@ -35,24 +35,17 @@ export function TopBar({
         <div className="rounded-md border border-[#26272c] bg-[#131417] px-3 py-1.5 text-sm text-zinc-400">
           {dateRangeLabel}
         </div>
-        <div
-          className="min-w-[260px] cursor-not-allowed rounded-md border border-[#26272c] bg-[#0d0e10] px-3 py-2 text-sm text-zinc-600 opacity-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] select-none"
-          title="Search — coming soon"
-          aria-hidden="true"
-        >
-          Search pages, keywords, or locations
+        <div className="rounded-md border border-[#26272c] bg-[#0d0e10] px-3 py-1.5 text-sm text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+          Guided workspace
         </div>
       </div>
 
       <div className={cn("flex items-center gap-2", actions ? "" : "text-zinc-300")}>
         {actions ?? (
           <>
-            <button disabled title="Alerts — coming soon" className="cursor-not-allowed rounded-md border border-[#26272c] bg-white/[0.03] px-3 py-1.5 text-sm text-zinc-500 opacity-50">
-              Alerts
-            </button>
-            <button disabled title="Help — coming soon" className="cursor-not-allowed rounded-md border border-[#26272c] bg-white/[0.03] px-3 py-1.5 text-sm text-zinc-500 opacity-50">
-              Help
-            </button>
+            <div className="rounded-md border border-[#26272c] bg-white/[0.03] px-3 py-1.5 text-sm text-zinc-400">
+              Customer-facing workflows only
+            </div>
             <div className="flex h-9 w-9 items-center justify-center rounded-md border border-accent-500/25 bg-accent-500/10 text-sm font-semibold text-zinc-100 shadow-[0_0_16px_rgba(255,106,26,0.08)]">
               VA
             </div>

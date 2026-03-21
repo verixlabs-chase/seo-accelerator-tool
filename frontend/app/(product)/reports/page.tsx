@@ -10,6 +10,7 @@ import {
   LoadingCard,
   ProductPageIntro,
   ReportPreview,
+  TruthNotice,
   type ReportSection,
   type TrustSignal,
 } from "../components";
@@ -642,6 +643,12 @@ export default function ReportsPage() {
           title="Package results into something you can send"
           summary="Use the Reports Center to create a clear summary of the latest scan and ranking results, then send it to the right person."
         />
+
+        <TruthNotice title="A report record is not the same as a client-ready deliverable.">
+          Generated reports still need review, pending reports are still assembling, and delivery
+          history is the only evidence that a report was actually sent. Use the workflow cards
+          below before treating any report as complete or shareable.
+        </TruthNotice>
 
         {loading ? (
           <LoadingCard

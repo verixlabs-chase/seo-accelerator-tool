@@ -24,9 +24,16 @@ import {
   KpiCard,
   LoadingCard,
   OnboardingWizard,
+  TruthNotice,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
+import {
+  clearAuthSession,
+  getAccessToken,
+  getRefreshToken,
+  updateAccessToken,
+} from "../../lib/authStorage";
 import {
   getCrawlWorkflowState,
   getRankingWorkflowState,
@@ -441,7 +448,7 @@ export default function DashboardPage() {
       }
     }
 
-    let token = localStorage.getItem("access_token");
+    let token = getAccessToken();
     if (!token) {
       router.push("/login");
       throw new Error("No token found. Login first.");
@@ -450,11 +457,9 @@ export default function DashboardPage() {
     let response = await runRequest(token);
 
     if (response.status === 401) {
-      const refreshToken = localStorage.getItem("refresh_token");
+      const refreshToken = getRefreshToken();
       if (!refreshToken) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        localStorage.removeItem("tenant_id");
+        clearAuthSession();
         router.push("/login");
         throw new Error("Session expired. Please log in again.");
       }
@@ -467,14 +472,12 @@ export default function DashboardPage() {
       const refreshJson = await refreshResponse.json().catch(() => ({}));
 
       if (!refreshResponse.ok || !refreshJson?.data?.access_token) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        localStorage.removeItem("tenant_id");
+        clearAuthSession();
         router.push("/login");
         throw new Error("Session expired. Please log in again.");
       }
 
-      localStorage.setItem("access_token", refreshJson.data.access_token);
+      updateAccessToken(refreshJson.data.access_token);
       token = refreshJson.data.access_token;
       response = await runRequest(token);
     }
@@ -488,9 +491,7 @@ export default function DashboardPage() {
 
     if (!response.ok) {
       if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        localStorage.removeItem("tenant_id");
+        clearAuthSession();
         router.push("/login");
       }
 
@@ -1075,6 +1076,15 @@ export default function DashboardPage() {
           <section className="rounded-md border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
             {notice}
           </section>
+        ) : null}
+
+        {!loading ? (
+          <TruthNotice title="Results fill in over time, and manual tools are fallback controls.">
+            The daily briefing and workflow cards are the primary source of truth. A queued scan,
+            ranking check, or report request means the work started, not that the final results are
+            complete. The advanced controls below are for retrying or manually nudging a workflow,
+            not the normal first-value path.
+          </TruthNotice>
         ) : null}
 
         {!loading && campaigns.length === 0 && !showWizard ? (

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { setAuthSession } from "../lib/authStorage";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
 
@@ -28,9 +29,11 @@ export default function LoginPage() {
         setError(json?.error?.message || "Login failed");
         return;
       }
-      localStorage.setItem("access_token", json.data.access_token);
-      localStorage.setItem("refresh_token", json.data.refresh_token);
-      localStorage.setItem("tenant_id", json.data.user.tenant_id);
+      setAuthSession({
+        accessToken: json.data.access_token,
+        refreshToken: json.data.refresh_token,
+        tenantId: json.data.user.tenant_id,
+      });
       router.push("/dashboard");
     } catch {
       setError("Unable to sign in right now. Please try again.");
@@ -93,6 +96,11 @@ export default function LoginPage() {
             {error}
           </p>
         ) : null}
+
+        <p className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm leading-6 text-amber-50">
+          This workspace currently keeps your sign-in in a browser session, not long-term browser
+          storage. Closing the browser window signs you out.
+        </p>
 
         <div className="mt-6 flex items-center justify-between gap-3 text-sm text-zinc-400">
           <span>Wrong workspace?</span>

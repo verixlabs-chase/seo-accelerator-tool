@@ -9,6 +9,7 @@ import {
   KpiCard,
   LoadingCard,
   ProductPageIntro,
+  TruthNotice,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
@@ -301,6 +302,12 @@ export default function CompetitorsPage() {
           title="Track competitors and find visibility gaps"
           summary="Add competitor domains to monitor, then collect a snapshot to pull ranking and signal data. Gap scores show where competitors outrank you so you can prioritise where to catch up."
         />
+
+        <TruthNotice title="Competitor gaps are only as current as the last collected snapshot.">
+          Adding a competitor does not create live coverage by itself. Gap scores and snapshot rows
+          reflect the latest stored crawl of competitor data, and queued snapshot jobs may take time
+          before the database catches up.
+        </TruthNotice>
 
         {loading ? (
           <LoadingCard

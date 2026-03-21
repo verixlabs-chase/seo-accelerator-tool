@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  clearAuthSession,
+  getAccessToken,
+  getRefreshToken,
+  updateAccessToken,
+} from "../lib/authStorage";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
 
 export async function platformApi(path, options = {}) {
@@ -14,7 +21,7 @@ export async function platformApi(path, options = {}) {
     });
   }
 
-  let token = localStorage.getItem("access_token");
+  let token = getAccessToken();
   if (!token) {
     throw new Error("No token found. Login first.");
   }
@@ -22,10 +29,9 @@ export async function platformApi(path, options = {}) {
   let response = await runRequest(token);
 
   if (response.status === 401) {
-    const refreshToken = localStorage.getItem("refresh_token");
+    const refreshToken = getRefreshToken();
     if (!refreshToken) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
+      clearAuthSession();
       throw new Error("Session expired. Please log in again.");
     }
     const refreshResponse = await fetch(`${API_BASE}/auth/refresh`, {
@@ -35,11 +41,10 @@ export async function platformApi(path, options = {}) {
     });
     const refreshJson = await refreshResponse.json().catch(() => ({}));
     if (!refreshResponse.ok || !refreshJson?.data?.access_token) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
+      clearAuthSession();
       throw new Error("Session expired. Please log in again.");
     }
-    localStorage.setItem("access_token", refreshJson.data.access_token);
+    updateAccessToken(refreshJson.data.access_token);
     token = refreshJson.data.access_token;
     response = await runRequest(token);
   }

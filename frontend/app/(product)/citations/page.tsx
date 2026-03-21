@@ -9,6 +9,7 @@ import {
   KpiCard,
   LoadingCard,
   ProductPageIntro,
+  TruthNotice,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
@@ -270,6 +271,12 @@ export default function CitationsPage() {
           title="Submit and track your directory listings"
           summary="Citations are mentions of your business on directories and data aggregators. Submit to a directory to start the listing process, then use the refresh button to check on progress and find your live listing URLs."
         />
+
+        <TruthNotice title="Citation status reflects workflow state, not guaranteed directory publication.">
+          Submitted and pending rows mean the request is in flight. Only a live or verified state,
+          ideally with a listing URL, should be treated as evidence that the directory entry is
+          actually published.
+        </TruthNotice>
 
         {loading ? (
           <LoadingCard
