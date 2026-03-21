@@ -40,6 +40,7 @@ from app.models.organization import Organization
 from app.models.organization_oauth_client import OrganizationOAuthClient
 from app.models.organization_membership import OrganizationMembership
 from app.models.organization_provider_credential import OrganizationProviderCredential
+from app.models.organic_value_baseline_setting import OrganicValueBaselineSetting
 from app.models.portfolio import Portfolio
 from app.models.portfolio_usage_daily import PortfolioUsageDaily
 from app.models.portfolio_policy import PortfolioPolicy
@@ -139,6 +140,7 @@ __all__ = [
     'FleetJob',
     'FleetJobItem',
     'Organization',
+    'OrganicValueBaselineSetting',
     'OrganizationOAuthClient',
     'OrganizationMembership',
     'OrganizationProviderCredential',

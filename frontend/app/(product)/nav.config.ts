@@ -3,6 +3,7 @@ import type { NavItem } from "./components";
 const PRODUCT_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/rankings", label: "Rankings" },
+  { href: "/organic-value", label: "Organic Value" },
   { href: "/reports", label: "Reports" },
   { href: "/opportunities", label: "Opportunities" },
   { href: "/settings", label: "Settings", hidden: true },
