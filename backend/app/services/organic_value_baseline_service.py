@@ -67,7 +67,6 @@ def build_baseline(
 
     current_value = _money(current_payload["current_value"])
     upside_value = _money(upside_payload["value_delta"])
-    expected_projected = _money(scenarios[1]["projected_value"]) if len(scenarios) > 1 else current_value
     confidence = _build_confidence(
         keyword_count=len(rows),
         snapshots=snapshots,
@@ -132,7 +131,7 @@ def build_baseline(
         "Scenario outputs are bounded rank-improvement heuristics built from current keyword economics rows, not production-grade forecasts.",
         "Only tracked keywords with stored ranking and market snapshot data are included in the baseline.",
         "If monthly SEO investment is missing, the ROI baseline remains unavailable rather than guessed.",
-        f"Confidence is an internal product signal based on coverage and input quality; it is not a statistical confidence interval.",
+        "Confidence is an internal product signal based on coverage and input quality; it is not a statistical confidence interval.",
     ]
 
     return {

@@ -25,7 +25,6 @@ from sqlalchemy.pool import NullPool
 import app.db.session as db_session_module
 import app.tasks.tasks as tasks_module
 from app.core.passwords import hash_password
-from app.db.session import get_db
 from app.services.operational_telemetry_service import reset_operational_telemetry
 
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
