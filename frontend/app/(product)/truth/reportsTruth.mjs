@@ -20,7 +20,11 @@ function isPendingStatus(value) {
   );
 }
 
-function getReportWorkflowState(report, campaign) {
+function hasTruthState(truth, state) {
+  return Array.isArray(truth?.states) && truth.states.includes(state);
+}
+
+function getReportWorkflowState(report, campaign, truth) {
   if (!campaign) {
     return {
       label: "Report generation",
@@ -41,6 +45,16 @@ function getReportWorkflowState(report, campaign) {
     };
   }
 
+  if (hasTruthState(truth, "delivery_unverified") && report.report_status === "delivered") {
+    return {
+      label: "Report generation",
+      status: "Delivery unverified",
+      tone: "warning",
+      detail: `Month ${report.month_number} is marked delivered, but this runtime does not verify external inbox delivery.`,
+      nextStep: "Confirm delivery separately before treating this report as a completed client send.",
+    };
+  }
+
   if (report.report_status === "delivered") {
     return {
       label: "Report generation",
@@ -54,10 +68,16 @@ function getReportWorkflowState(report, campaign) {
   if (report.report_status === "generated") {
     return {
       label: "Report generation",
-      status: "Ready to send",
+      status: hasTruthState(truth, "minimal_artifact") || hasTruthState(truth, "non_durable") ? "Preview only" : "Ready to send",
       tone: "warning",
-      detail: `Month ${report.month_number} is built and ready for review, but it has not been delivered yet.`,
-      nextStep: "Review the preview, confirm the recipient, and send it when ready.",
+      detail:
+        hasTruthState(truth, "minimal_artifact") || hasTruthState(truth, "non_durable")
+          ? `Month ${report.month_number} was generated as a minimal local artifact and still needs review before any send.`
+          : `Month ${report.month_number} is built and ready for review, but it has not been delivered yet.`,
+      nextStep:
+        hasTruthState(truth, "minimal_artifact") || hasTruthState(truth, "non_durable")
+          ? "Review the local preview, confirm it is good enough to share, then send it when ready."
+          : "Review the preview, confirm the recipient, and send it when ready.",
     };
   }
 
@@ -90,7 +110,7 @@ function getReportWorkflowState(report, campaign) {
   };
 }
 
-function getDeliveryWorkflowState(detail, report) {
+function getDeliveryWorkflowState(detail, report, truth) {
   const latestEvent = detail?.delivery_events?.[0] || null;
 
   if (!report) {
@@ -116,6 +136,16 @@ function getDeliveryWorkflowState(detail, report) {
         report.report_status === "delivered"
           ? "Use the delivery history below if future events appear."
           : "Confirm the recipient email, then send the selected report.",
+    };
+  }
+
+  if (latestEvent?.delivery_status === "sent" && hasTruthState(truth, "delivery_unverified")) {
+    return {
+      label: "Delivery",
+      status: "Unverified",
+      tone: "warning",
+      detail: `The latest delivery to ${latestEvent.recipient} was marked sent, but this runtime does not verify external inbox delivery.`,
+      nextStep: "Confirm receipt outside the product before treating this report as delivered.",
     };
   }
 
@@ -160,7 +190,7 @@ function getDeliveryWorkflowState(detail, report) {
   };
 }
 
-function getScheduleWorkflowState(schedule, campaign, formatRelativeTime) {
+function getScheduleWorkflowState(schedule, campaign, formatRelativeTime, truth) {
   if (!campaign) {
     return {
       label: "Schedule",
@@ -181,13 +211,23 @@ function getScheduleWorkflowState(schedule, campaign, formatRelativeTime) {
     };
   }
 
+  if (hasTruthState(truth, "stale")) {
+    return {
+      label: "Schedule",
+      status: "Overdue",
+      tone: "warning",
+      detail: "The scheduler has a past-due next run and should not be treated as dependable until it catches up.",
+      nextStep: "Review the next run time and re-save the schedule if it is stuck.",
+    };
+  }
+
   if (schedule.last_status === "scheduled") {
     return {
       label: "Schedule",
       status: "Active",
       tone: "success",
-      detail: `Recurring reports are enabled and the next run is planned for ${schedule.next_run_at ? formatRelativeTime(schedule.next_run_at) : "the configured schedule"}.`,
-      nextStep: "Review the next run time below if you need to change cadence or timezone.",
+      detail: `Recurring reports are enabled and the next run is planned for ${schedule.next_run_at ? formatRelativeTime(schedule.next_run_at) : "the configured schedule"}, but schedule status alone does not prove a report was generated or delivered successfully.`,
+      nextStep: "Review the next run time below and confirm later that a real report record was generated.",
     };
   }
 

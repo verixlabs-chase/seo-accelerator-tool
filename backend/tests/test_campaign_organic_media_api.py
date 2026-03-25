@@ -205,6 +205,7 @@ def test_campaign_organic_value_baseline_endpoint_returns_normalized_v1_contract
     assert any(item["source_type"] == "unavailable" for item in payload["assumptions"])
     assert payload["confidence"]["level"] in {"medium", "high"}
     assert len(payload["caveats"]) >= 3
+    assert payload["truth"]["classification"] in {"heuristic", "operator_assisted"}
 
 
 def test_campaign_organic_value_baseline_endpoint_uses_user_provided_investment_for_ratio(client, db_session) -> None:

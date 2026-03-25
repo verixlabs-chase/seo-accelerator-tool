@@ -12,10 +12,15 @@ import {
   ReportPreview,
   TruthNotice,
   type ReportSection,
+  type RuntimeTruth,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import {
+  buildRuntimeTruthSignal,
+  getRuntimeTruthSummary,
+} from "../truth/runtimeTruth.mjs";
 import {
   getDeliveryWorkflowState,
   getReportWorkflowState,
@@ -59,6 +64,7 @@ type ReportDetail = {
   report: ReportItem;
   artifacts: ReportArtifact[];
   delivery_events?: ReportDeliveryEvent[];
+  truth?: RuntimeTruth;
 };
 
 type ReportSchedule = {
@@ -70,6 +76,7 @@ type ReportSchedule = {
   enabled: boolean;
   retry_count: number;
   last_status: string;
+  truth?: RuntimeTruth;
 };
 
 function coerceNumber(value: number | string | undefined, fallback = 0) {
@@ -260,6 +267,10 @@ function getScheduleStatusTone(status?: string) {
   return "border-[#26272c] bg-[#141518] text-zinc-200";
 }
 
+function hasTruthState(truth: RuntimeTruth | null | undefined, state: string) {
+  return Array.isArray(truth?.states) && truth.states.includes(state);
+}
+
 
 const SCHEDULE_TIMEZONES = [
   "America/New_York",
@@ -283,6 +294,7 @@ export default function ReportsPage() {
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [selectedReportId, setSelectedReportId] = useState("");
   const [selectedReportDetail, setSelectedReportDetail] = useState<ReportDetail | null>(null);
+  const [reportsTruth, setReportsTruth] = useState<RuntimeTruth | null>(null);
   const [monthNumber, setMonthNumber] = useState("1");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -332,6 +344,7 @@ export default function ReportsPage() {
     );
     const items = Array.isArray(response?.items) ? (response.items as ReportItem[]) : [];
     setReports(items);
+    setReportsTruth((response?.truth as RuntimeTruth) || null);
     const nextSelectedId = items[0]?.id || "";
     setSelectedReportId(nextSelectedId);
 
@@ -511,15 +524,15 @@ export default function ReportsPage() {
     [latestReport, selectedReportDetail],
   );
   const reportWorkflow = useMemo(
-    () => getReportWorkflowState(latestReport, selectedCampaign),
-    [latestReport, selectedCampaign],
+    () => getReportWorkflowState(latestReport, selectedCampaign, selectedReportDetail?.truth || reportsTruth),
+    [latestReport, reportsTruth, selectedCampaign, selectedReportDetail?.truth],
   );
   const deliveryWorkflow = useMemo(
-    () => getDeliveryWorkflowState(selectedReportDetail, selectedReportDetail?.report || latestReport),
-    [latestReport, selectedReportDetail],
+    () => getDeliveryWorkflowState(selectedReportDetail, selectedReportDetail?.report || latestReport, selectedReportDetail?.truth || reportsTruth),
+    [latestReport, reportsTruth, selectedReportDetail],
   );
   const scheduleWorkflow = useMemo(
-    () => getScheduleWorkflowState(schedule, selectedCampaign, formatRelativeTime),
+    () => getScheduleWorkflowState(schedule, selectedCampaign, formatRelativeTime, schedule?.truth),
     [schedule, selectedCampaign],
   );
 
@@ -558,9 +571,23 @@ export default function ReportsPage() {
 
     if (latestReport.report_status === "generated") {
       return {
-        title: "Your latest report is ready to send",
-        body: `Month ${latestReport.month_number} was generated ${formatRelativeTime(latestReport.generated_at)}.`,
-        next: "Review the preview, confirm the recipient, and send the report while the update is still fresh.",
+        title: hasTruthState(selectedReportDetail?.truth || reportsTruth, "minimal_artifact")
+          ? "Your latest report is a local preview artifact"
+          : "Your latest report is ready to review",
+        body: hasTruthState(selectedReportDetail?.truth || reportsTruth, "minimal_artifact")
+          ? `Month ${latestReport.month_number} was generated ${formatRelativeTime(latestReport.generated_at)} as a minimal local artifact.`
+          : `Month ${latestReport.month_number} was generated ${formatRelativeTime(latestReport.generated_at)}.`,
+        next: hasTruthState(selectedReportDetail?.truth || reportsTruth, "minimal_artifact")
+          ? "Review the preview first. Generated does not mean premium, durable, or already delivered."
+          : "Review the preview, confirm the recipient, and send the report while the update is still fresh.",
+      };
+    }
+
+    if (latestReport.report_status === "delivered" && hasTruthState(selectedReportDetail?.truth || reportsTruth, "delivery_unverified")) {
+      return {
+        title: "Your latest report is marked delivered, not externally verified",
+        body: `Month ${latestReport.month_number} has a delivered record, but this runtime does not verify real inbox delivery.`,
+        next: "Use the delivery history and external confirmation before treating this as a completed client send.",
       };
     }
 
@@ -571,10 +598,15 @@ export default function ReportsPage() {
         ? "Generate the next report when you want to package a new round of ranking and website updates."
         : "Review the delivery history below before deciding whether to resend or generate a new report.",
     };
-  }, [latestReport, selectedCampaign]);
+  }, [latestReport, reportsTruth, selectedCampaign, selectedReportDetail?.truth]);
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
+      buildRuntimeTruthSignal(
+        "Runtime truth",
+        selectedReportDetail?.truth || reportsTruth,
+        "Reports can exist before deliverability or durable storage are truly confirmed.",
+      ),
       {
         label: "Reports",
         value: reports.length > 0 ? `${reports.length} created` : "None yet",
@@ -582,13 +614,21 @@ export default function ReportsPage() {
       },
       {
         label: "Ready to send",
-        value: generatedCount > 0 ? `${generatedCount} ready` : "Nothing ready",
+        value: generatedCount > 0
+          ? hasTruthState(selectedReportDetail?.truth || reportsTruth, "minimal_artifact")
+            ? `${generatedCount} preview-only`
+            : `${generatedCount} ready`
+          : "Nothing ready",
         tone: generatedCount > 0 ? "info" : "warning",
       },
       {
         label: "Delivered",
-        value: deliveredCount > 0 ? `${deliveredCount} sent` : "Nothing sent yet",
-        tone: deliveredCount > 0 ? "success" : "warning",
+        value: deliveredCount > 0
+          ? hasTruthState(selectedReportDetail?.truth || reportsTruth, "delivery_unverified")
+            ? `${deliveredCount} marked sent`
+            : `${deliveredCount} sent`
+          : "Nothing sent yet",
+        tone: deliveredCount > 0 && !hasTruthState(selectedReportDetail?.truth || reportsTruth, "delivery_unverified") ? "success" : "warning",
       },
       {
         label: "Latest update",
@@ -598,7 +638,7 @@ export default function ReportsPage() {
         tone: latestReport ? "info" : "warning",
       },
     ],
-    [deliveredCount, generatedCount, latestReport, reports.length],
+    [deliveredCount, generatedCount, latestReport, reports.length, reportsTruth, selectedReportDetail?.truth],
   );
 
   return (
@@ -610,7 +650,7 @@ export default function ReportsPage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Live report data"
+      dateRangeLabel="Stored report data"
       topBarActions={
         <>
           <select
@@ -641,7 +681,7 @@ export default function ReportsPage() {
         <ProductPageIntro
           eyebrow="Reports"
           title="Package results into something you can send"
-          summary="Use the Reports Center to create a clear summary of the latest scan and ranking results, then send it to the right person."
+          summary="Use the Reports Center to assemble a stored summary of the latest scan and ranking results, review the local artifacts, and track whether delivery was only requested or actually confirmed."
         />
 
         <TruthNotice title="A report record is not the same as a client-ready deliverable.">
@@ -649,6 +689,15 @@ export default function ReportsPage() {
           history is the only evidence that a report was actually sent. Use the workflow cards
           below before treating any report as complete or shareable.
         </TruthNotice>
+
+        {selectedReportDetail?.truth || reportsTruth ? (
+          <TruthNotice title="Current runtime truth" tone="warning">
+            {getRuntimeTruthSummary(
+              selectedReportDetail?.truth || reportsTruth,
+              "Report runtime status is not available yet.",
+            )}
+          </TruthNotice>
+        ) : null}
 
         {loading ? (
           <LoadingCard
@@ -742,18 +791,18 @@ export default function ReportsPage() {
               <KpiCard
                 label="Reports created"
                 value={String(reports.length)}
-                summary="These are the reports already generated for the active business."
+                summary="These are stored report records generated for the active business."
               />
               <KpiCard
                 label="Ready to send"
                 value={String(generatedCount)}
-                summary="These reports are ready for review and sending. Queued or failed reports are not counted here."
+                summary="These reports are generated records. They may still be minimal local artifacts that need review before sending."
                 tone="highlight"
               />
               <KpiCard
                 label="Delivered"
                 value={String(deliveredCount)}
-                summary="These reports are marked as delivered. Check delivery history below if you need confirmation detail."
+                summary="These reports are marked as delivered in the app. Check delivery history and external confirmation before treating them as verified inbox delivery."
               />
               <KpiCard
                 label="Latest report"
@@ -862,7 +911,7 @@ export default function ReportsPage() {
                   Available reports
                 </h2>
                 <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                  Select a report to review its purpose, see its packaged metrics, and send it if needed.
+                  Select a report to review its purpose, inspect the local artifacts, and decide whether it is safe enough to send.
                 </p>
               </div>
 
@@ -904,7 +953,7 @@ export default function ReportsPage() {
                               {report.report_status === "delivered"
                                 ? "Complete. This report has been shared."
                                 : report.report_status === "generated"
-                                  ? "Ready to send. Review it before delivery."
+                                  ? "Generated. Review the local preview before treating it as client-ready."
                                   : isFailedStatus(report.report_status)
                                     ? "Needs attention. Do not treat this as ready yet."
                                     : isPendingStatus(report.report_status)
@@ -973,6 +1022,9 @@ export default function ReportsPage() {
                           <p className="mt-1 text-sm leading-6 text-zinc-300">
                             {artifact.storage_path || "No storage path available."}
                           </p>
+                          <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
+                            Local artifact only. This file is not remotely retrievable or durable in the current runtime.
+                          </p>
                         </div>
                         <span className="text-xs uppercase tracking-[0.18em] text-zinc-500">
                           {formatRelativeTime(artifact.created_at)}
@@ -1023,7 +1075,9 @@ export default function ReportsPage() {
                             </p>
                             <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
                               {event.delivery_status === "sent"
-                                ? "Complete. The report reached this recipient."
+                                ? hasTruthState(selectedReportDetail.truth, "delivery_unverified")
+                                  ? "Marked sent. Confirm receipt outside the product before treating it as delivered."
+                                  : "Complete. The report reached this recipient."
                                 : event.delivery_status === "failed"
                                   ? "Needs attention. Retry after confirming the recipient."
                                   : isPendingStatus(event.delivery_status)

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   getCrawlWorkflowState,
+  getRankingWorkflowState,
   getReportWorkflowState as getDashboardReportWorkflowState,
 } from "../app/(product)/truth/dashboardTruth.mjs";
 import {
@@ -15,6 +16,13 @@ import {
   getRecommendationStateSummary,
   getSetupBlockerSummary,
 } from "../app/(product)/truth/opportunitiesTruth.mjs";
+import {
+  buildRuntimeTruthSignal,
+  getRuntimeTruthLabel,
+  getRuntimeTruthSummary,
+  getRuntimeTruthTone,
+  pickPrimaryRuntimeTruth,
+} from "../app/(product)/truth/runtimeTruth.mjs";
 import {
   getStepThreeSummary,
   getTaskStatusMeaning,
@@ -46,6 +54,45 @@ test("dashboard truth state marks generated report as action needed, not complet
   assert.match(state.nextStep, /send/i);
 });
 
+test("dashboard ranking truth marks unavailable ranking runtime as needs attention", () => {
+  const state = getRankingWorkflowState(
+    { id: "1", name: "Acme" },
+    [{ keyword: "seo agency", position: 12 }],
+    { keyword: "seo agency", position: 12 },
+    { classification: "unavailable", summary: "Provider is not available in this runtime." },
+  );
+
+  assert.equal(state.status, "Needs attention");
+  assert.match(state.detail, /not available/i);
+  assert.match(state.nextStep, /provider setup/i);
+});
+
+test("dashboard ranking truth marks synthetic ranking runtime as test-only", () => {
+  const state = getRankingWorkflowState(
+    { id: "1", name: "Acme" },
+    [{ keyword: "seo agency", position: 12 }],
+    { keyword: "seo agency", position: 12 },
+    { classification: "synthetic", summary: "Synthetic test data." },
+  );
+
+  assert.equal(state.status, "Test-only");
+  assert.match(state.detail, /synthetic/i);
+  assert.match(state.nextStep, /live market intelligence/i);
+});
+
+test("dashboard ranking truth marks stale ranking runtime as stale", () => {
+  const state = getRankingWorkflowState(
+    { id: "1", name: "Acme" },
+    [{ keyword: "seo agency", position: 12 }],
+    { keyword: "seo agency", position: 12 },
+    { freshness_state: "stale", summary: "Stored ranking snapshots are stale." },
+  );
+
+  assert.equal(state.status, "Stale");
+  assert.match(state.detail, /stale/i);
+  assert.match(state.nextStep, /fresh ranking check/i);
+});
+
 test("dashboard truth state marks pending crawl as in progress, not complete", () => {
   const state = getCrawlWorkflowState(
     { status: "queued", crawl_type: "deep" },
@@ -62,11 +109,23 @@ test("reports truth state marks generated report as ready to send", () => {
   const state = getReportWorkflowState(
     { report_status: "generated", month_number: 3 },
     { id: "1", name: "Acme" },
+    null,
   );
 
   assert.equal(state.status, "Ready to send");
   assert.match(state.detail, /ready for review/i);
   assert.match(state.nextStep, /send/i);
+});
+
+test("reports truth state downgrades generated report with minimal artifact truth to preview only", () => {
+  const state = getReportWorkflowState(
+    { report_status: "generated", month_number: 3 },
+    { id: "1", name: "Acme" },
+    { states: ["generated", "minimal_artifact", "non_durable"] },
+  );
+
+  assert.equal(state.status, "Preview only");
+  assert.match(state.detail, /minimal local artifact/i);
 });
 
 test("reports truth state marks failed report as needs attention", () => {
@@ -88,6 +147,7 @@ test("reports truth state marks queued delivery as in progress", () => {
       ],
     },
     { report_status: "generated", month_number: 3 },
+    null,
   );
 
   assert.equal(state.status, "In progress");
@@ -99,6 +159,7 @@ test("reports truth state marks missing delivery events as action needed when re
   const state = getDeliveryWorkflowState(
     { delivery_events: [] },
     { report_status: "generated", month_number: 3 },
+    null,
   );
 
   assert.equal(state.status, "Action needed");
@@ -111,11 +172,39 @@ test("reports truth state marks exhausted scheduler retries as needs attention",
     { last_status: "max_retries_exceeded", next_run_at: "2026-03-15T10:00:00Z" },
     { id: "1", name: "Acme" },
     formatRelativeTime,
+    null,
   );
 
   assert.equal(state.status, "Needs attention");
   assert.match(state.detail, /exhausted/i);
   assert.match(state.nextStep, /re-save/i);
+});
+
+test("reports delivery truth marks sent event as unverified when runtime cannot verify delivery", () => {
+  const state = getDeliveryWorkflowState(
+    {
+      delivery_events: [
+        { delivery_status: "sent", recipient: "client@example.com" },
+      ],
+    },
+    { report_status: "delivered", month_number: 3 },
+    { states: ["delivery_unverified"] },
+  );
+
+  assert.equal(state.status, "Unverified");
+  assert.match(state.detail, /does not verify external inbox delivery/i);
+});
+
+test("reports schedule truth marks past-due scheduled state as overdue", () => {
+  const state = getScheduleWorkflowState(
+    { last_status: "scheduled", next_run_at: "2026-03-15T10:00:00Z" },
+    { id: "1", name: "Acme" },
+    formatRelativeTime,
+    { states: ["scheduled", "stale"] },
+  );
+
+  assert.equal(state.status, "Overdue");
+  assert.match(state.detail, /past-due next run/i);
 });
 
 test("opportunities truth state distinguishes approved recommendation from execution completion", () => {
@@ -191,6 +280,38 @@ test("opportunities truth state marks blocked wordpress execution as blocked wit
   assert.equal(state.status, "Blocked");
   assert.match(state.detail, /incomplete/i);
   assert.match(state.nextStep, /missing setup requirements/i);
+});
+
+test("runtime truth helpers downgrade unavailable surfaces clearly", () => {
+  const truth = {
+    classification: "unavailable",
+    summary: "Provider is not available in this runtime.",
+  };
+
+  assert.equal(getRuntimeTruthLabel(truth), "Unavailable");
+  assert.equal(getRuntimeTruthTone(truth), "danger");
+  assert.match(getRuntimeTruthSummary(truth), /not available/i);
+});
+
+test("runtime truth signal builder keeps heuristic surfaces out of success state", () => {
+  const signal = buildRuntimeTruthSignal("Runtime truth", {
+    classification: "heuristic",
+    summary: "This surface is heuristic.",
+  });
+
+  assert.equal(signal.label, "Runtime truth");
+  assert.equal(signal.value, "Heuristic");
+  assert.equal(signal.tone, "warning");
+});
+
+test("runtime truth chooser prefers the most severe classification", () => {
+  const truth = pickPrimaryRuntimeTruth([
+    { classification: "provider_backed" },
+    { classification: "heuristic" },
+    { classification: "synthetic" },
+  ]);
+
+  assert.equal(truth.classification, "synthetic");
 });
 
 test("onboarding truth state summarizes queued setup before completion", () => {

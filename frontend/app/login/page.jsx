@@ -21,6 +21,7 @@ export default function LoginPage() {
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
       });
@@ -30,8 +31,6 @@ export default function LoginPage() {
         return;
       }
       setAuthSession({
-        accessToken: json.data.access_token,
-        refreshToken: json.data.refresh_token,
         tenantId: json.data.user.tenant_id,
       });
       router.push("/dashboard");
@@ -98,8 +97,8 @@ export default function LoginPage() {
         ) : null}
 
         <p className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm leading-6 text-amber-50">
-          This workspace currently keeps your sign-in in a browser session, not long-term browser
-          storage. Closing the browser window signs you out.
+          This workspace now uses a server-backed httpOnly session cookie. The browser no longer
+          keeps your auth tokens in JS-accessible storage.
         </p>
 
         <div className="mt-6 flex items-center justify-between gap-3 text-sm text-zinc-400">

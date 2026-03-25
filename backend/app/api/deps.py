@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from app.core.security import decode_token
+from app.core.security import ACCESS_TOKEN_COOKIE_NAME, decode_token
 from app.db.session import get_db
 from app.models.organization_membership import OrganizationMembership
 from app.models.user import User
@@ -32,8 +32,10 @@ def get_current_user(
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> dict:
+    if token is None:
+        token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authentication session")
     payload = decode_token(token)
     if payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")

@@ -1,16 +1,18 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.domain import entitlement_codes
+from app.core.config import get_settings
 from app.events import emit_event
 from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
 from app.providers import get_rank_provider_for_organization
 from app.services.entitlement_service import EntitlementNotFoundError, check_and_consume
-from app.services.provider_credentials_service import ProviderCredentialConfigurationError
+from app.services.provider_credentials_service import ProviderCredentialConfigurationError, resolve_provider_credentials
+from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 
 
 def _get_campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -18,6 +20,108 @@ def _get_campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campa
     if campaign is None or campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     return campaign
+
+
+def build_rank_truth(
+    db: Session,
+    *,
+    organization_id: str | None,
+    tracked_keywords: int,
+    snapshot_count: int,
+    latest_captured_at: str | datetime | None = None,
+    job_queued: bool = False,
+) -> dict:
+    settings = get_settings()
+    backend = getattr(settings, "rank_provider_backend", "synthetic").strip().lower()
+    environment = getattr(settings, "app_env", "").strip().lower()
+
+    states: list[str] = []
+    reasons: list[str] = []
+    provider_state = backend or "unknown"
+    setup_state = "configured"
+    operator_state = "self_serve"
+
+    if tracked_keywords == 0:
+        states.append("unavailable")
+        setup_state = "keywords_missing"
+        reasons.append("no_rank_keywords_configured")
+
+    if backend == "synthetic":
+        if environment == "test":
+            states.append("synthetic")
+            reasons.append("rank_runtime_uses_test_fixture_provider")
+            summary = "Ranking data is coming from a synthetic fixture provider in test mode."
+        else:
+            states.append("unavailable")
+            provider_state = "synthetic_disabled_outside_test"
+            setup_state = "provider_unavailable"
+            operator_state = "operator_assisted"
+            reasons.append("rank_provider_not_available_in_this_runtime")
+            summary = "Ranking collection is not provider-backed in this runtime. The configured synthetic provider is disabled outside test mode."
+    elif backend == "serpapi":
+        provider_name = "dataforseo"
+        if organization_id is None:
+            states.append("unavailable")
+            setup_state = "organization_missing"
+            reasons.append("campaign_missing_organization_scope")
+            summary = "Ranking collection cannot run because the campaign is missing organization scope."
+        else:
+            try:
+                credentials = resolve_provider_credentials(db, organization_id, provider_name)
+            except ProviderCredentialConfigurationError as exc:
+                states.append("unavailable")
+                setup_state = "credentials_missing"
+                operator_state = "operator_assisted"
+                reasons.append(exc.reason_code)
+                summary = "Ranking collection requires operator-configured provider credentials before live checks are reliable."
+            else:
+                if str(credentials.get("api_key", "")).strip():
+                    states.append("provider_backed")
+                    summary = "Ranking collection is configured against a credentialed provider."
+                else:
+                    states.append("unavailable")
+                    setup_state = "credentials_missing"
+                    operator_state = "operator_assisted"
+                    reasons.append("rank_provider_api_key_missing")
+                    summary = "Ranking collection is not configured with live provider credentials yet."
+    elif backend == "http_json":
+        endpoint = getattr(settings, "rank_provider_http_endpoint", "").strip()
+        if not endpoint:
+            states.append("unavailable")
+            setup_state = "provider_endpoint_missing"
+            operator_state = "operator_assisted"
+            reasons.append("rank_provider_http_endpoint_missing")
+            summary = "Ranking collection is not configured with a live HTTP provider endpoint."
+        else:
+            states.append("operator_assisted")
+            reasons.append("rank_provider_depends_on_manual_http_endpoint_setup")
+            summary = "Ranking collection depends on a manually configured HTTP provider endpoint and should be treated as setup-sensitive."
+    else:
+        states.append("unavailable")
+        setup_state = "provider_unknown"
+        reasons.append("rank_provider_backend_unsupported")
+        summary = "Ranking collection is not configured with a supported provider backend."
+
+    freshness_state = freshness_state_from_timestamp(latest_captured_at, stale_after=timedelta(days=7))
+    if freshness_state == "stale":
+        states.append("stale")
+        reasons.append("ranking_snapshot_is_stale")
+    if job_queued:
+        states.append("in_progress")
+        reasons.append("ranking_refresh_queued")
+    if snapshot_count == 0 and tracked_keywords > 0 and "provider_backed" not in states and "synthetic" not in states:
+        states.append("operator_assisted")
+        reasons.append("rankings_have_no_recent_snapshots")
+
+    return build_truth(
+        states=states,
+        summary=summary,
+        provider_state=provider_state,
+        setup_state=setup_state,
+        operator_state=operator_state,
+        freshness_state=freshness_state,
+        reasons=reasons,
+    )
 
 
 
@@ -102,7 +206,7 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
         }
 
     try:
-        provider = get_rank_provider_for_organization(db, tenant_id)
+        provider = get_rank_provider_for_organization(db, str(campaign.organization_id))
     except ProviderCredentialConfigurationError as exc:
         raise HTTPException(
             status_code=exc.status_code,
@@ -242,6 +346,14 @@ def get_snapshots(db: Session, tenant_id: str, campaign_id: str) -> list[Ranking
         .filter(RankingSnapshot.tenant_id == tenant_id, RankingSnapshot.campaign_id == campaign_id)
         .order_by(RankingSnapshot.captured_at.desc())
         .all()
+    )
+
+
+def get_tracked_keyword_count(db: Session, tenant_id: str, campaign_id: str) -> int:
+    return (
+        db.query(CampaignKeyword)
+        .filter(CampaignKeyword.tenant_id == tenant_id, CampaignKeyword.campaign_id == campaign_id)
+        .count()
     )
 
 

@@ -98,7 +98,7 @@ function getCrawlWorkflowState(run, campaign, formatRelativeTime) {
   };
 }
 
-function getRankingWorkflowState(campaign, trends, topKeyword) {
+function getRankingWorkflowState(campaign, trends, topKeyword, truth) {
   if (!campaign) {
     return {
       label: "Search tracking",
@@ -119,16 +119,50 @@ function getRankingWorkflowState(campaign, trends, topKeyword) {
     };
   }
 
+  if (truth?.classification === "unavailable") {
+    return {
+      label: "Search tracking",
+      status: "Needs attention",
+      tone: "danger",
+      detail: truth.summary || "Ranking coverage is not reliably available in this runtime.",
+      nextStep: "Fix provider setup and run a fresh ranking check before treating stored positions as current.",
+    };
+  }
+
+  if (truth?.classification === "synthetic") {
+    return {
+      label: "Search tracking",
+      status: "Test-only",
+      tone: "warning",
+      detail: truth.summary || "The current ranking data is synthetic test data.",
+      nextStep: "Do not treat these positions as live market intelligence.",
+    };
+  }
+
+  if (truth?.freshness_state === "stale") {
+    return {
+      label: "Search tracking",
+      status: "Stale",
+      tone: "warning",
+      detail: truth.summary || "Stored ranking snapshots exist, but they are not fresh enough to read as current movement.",
+      nextStep: "Run a fresh ranking check before acting on gains or drops.",
+    };
+  }
+
   return {
     label: "Search tracking",
-    status: "Complete",
-    tone: "success",
-    detail: `${trends.length} tracked search${trends.length === 1 ? "" : "es"} available. "${topKeyword.keyword || "Top keyword"}" is the latest leading term.`,
-    nextStep: "Open the Rankings page when you want deeper movement detail.",
+    status: "Snapshots available",
+    tone: truth?.classification === "provider_backed" ? "success" : "info",
+    detail: `${trends.length} tracked search${trends.length === 1 ? "" : "es"} available. "${topKeyword.keyword || "Top keyword"}" is the latest leading term, but stored rows should only be treated as live when provider truth is current.`,
+    nextStep: "Open the Rankings page to confirm provider quality and snapshot freshness before acting on movement.",
   };
 }
 
-function getReportWorkflowState(report, campaign) {
+function hasTruthState(truth, state) {
+  return Array.isArray(truth?.states) && truth.states.includes(state);
+}
+
+function getReportWorkflowState(report, campaign, truth) {
   if (!campaign) {
     return {
       label: "Reports",
@@ -149,6 +183,16 @@ function getReportWorkflowState(report, campaign) {
     };
   }
 
+  if (hasTruthState(truth, "delivery_unverified") && report.report_status === "delivered") {
+    return {
+      label: "Reports",
+      status: "Delivery unverified",
+      tone: "warning",
+      detail: `Month ${report.month_number || "current"} is marked delivered, but this runtime does not verify external delivery.`,
+      nextStep: "Open the Reports page and confirm receipt outside the product before treating it as complete.",
+    };
+  }
+
   if (report.report_status === "delivered") {
     return {
       label: "Reports",
@@ -162,10 +206,16 @@ function getReportWorkflowState(report, campaign) {
   if (report.report_status === "generated") {
     return {
       label: "Reports",
-      status: "Action needed",
+      status: hasTruthState(truth, "minimal_artifact") || hasTruthState(truth, "non_durable") ? "Preview only" : "Action needed",
       tone: "warning",
-      detail: `Month ${report.month_number || "current"} is ready to review, but it has not been sent yet.`,
-      nextStep: "Review the report and send it when you are ready to share progress.",
+      detail:
+        hasTruthState(truth, "minimal_artifact") || hasTruthState(truth, "non_durable")
+          ? `Month ${report.month_number || "current"} was generated as a minimal local artifact and still needs review before any send.`
+          : `Month ${report.month_number || "current"} is ready to review, but it has not been sent yet.`,
+      nextStep:
+        hasTruthState(truth, "minimal_artifact") || hasTruthState(truth, "non_durable")
+          ? "Open the Reports page to review the local artifact before deciding whether to send it."
+          : "Review the report and send it when you are ready to share progress.",
     };
   }
 

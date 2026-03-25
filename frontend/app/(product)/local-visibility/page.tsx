@@ -11,10 +11,16 @@ import {
   MapCard,
   ProductPageIntro,
   TruthNotice,
+  type RuntimeTruth,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import {
+  buildRuntimeTruthSignal,
+  getRuntimeTruthSummary,
+  pickPrimaryRuntimeTruth,
+} from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
   id: string;
@@ -50,6 +56,8 @@ type ReviewItem = {
   sentiment?: string;
   reviewed_at?: string;
 };
+
+type LocalResponse<T> = T & { truth?: RuntimeTruth };
 
 function formatRelativeTime(value?: string) {
   if (!value) {
@@ -195,6 +203,10 @@ export default function LocalVisibilityPage() {
   const [mapPack, setMapPack] = useState<MapPack | null>(null);
   const [velocity, setVelocity] = useState<ReviewVelocity | null>(null);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [healthTruth, setHealthTruth] = useState<RuntimeTruth | null>(null);
+  const [mapPackTruth, setMapPackTruth] = useState<RuntimeTruth | null>(null);
+  const [velocityTruth, setVelocityTruth] = useState<RuntimeTruth | null>(null);
+  const [reviewsTruth, setReviewsTruth] = useState<RuntimeTruth | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -228,10 +240,19 @@ export default function LocalVisibilityPage() {
       platformApi(`/reviews?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
     ]);
 
-    setHealth((healthResponse as LocalHealth) || null);
-    setMapPack((mapPackResponse as MapPack) || null);
-    setVelocity((velocityResponse as ReviewVelocity) || null);
-    setReviews(Array.isArray(reviewsResponse?.items) ? (reviewsResponse.items as ReviewItem[]) : []);
+    const normalizedHealth = (healthResponse as LocalResponse<LocalHealth>) || null;
+    const normalizedMapPack = (mapPackResponse as LocalResponse<MapPack>) || null;
+    const normalizedVelocity = (velocityResponse as LocalResponse<ReviewVelocity>) || null;
+    const normalizedReviews = (reviewsResponse as { items?: ReviewItem[]; truth?: RuntimeTruth }) || null;
+
+    setHealth(normalizedHealth || null);
+    setMapPack(normalizedMapPack || null);
+    setVelocity(normalizedVelocity || null);
+    setReviews(Array.isArray(normalizedReviews?.items) ? (normalizedReviews.items as ReviewItem[]) : []);
+    setHealthTruth(normalizedHealth?.truth || null);
+    setMapPackTruth(normalizedMapPack?.truth || null);
+    setVelocityTruth(normalizedVelocity?.truth || null);
+    setReviewsTruth(normalizedReviews?.truth || null);
   }, []);
 
   useEffect(() => {
@@ -277,13 +298,27 @@ export default function LocalVisibilityPage() {
     avgRatingLast30d,
     healthScore,
   });
+  const runtimeTruth = useMemo(
+    () => pickPrimaryRuntimeTruth([mapPackTruth, healthTruth, velocityTruth, reviewsTruth]),
+    [healthTruth, mapPackTruth, reviewsTruth, velocityTruth],
+  );
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
+      buildRuntimeTruthSignal(
+        "Runtime truth",
+        runtimeTruth,
+        "Local visibility can degrade to stale, synthetic, or unavailable data depending on provider setup.",
+      ),
       {
         label: "Map-pack",
         value: mapPackPosition ? `Position ${mapPackPosition}` : "No map-pack data",
-        tone: mapPackPosition && mapPackPosition <= 3 ? "success" : "warning",
+        tone:
+          runtimeTruth?.classification === "unavailable"
+            ? "danger"
+            : mapPackPosition && mapPackPosition <= 3
+              ? "success"
+              : "warning",
       },
       {
         label: "Local health",
@@ -301,7 +336,7 @@ export default function LocalVisibilityPage() {
         tone: avgRatingLast30d >= 4.5 ? "success" : avgRatingLast30d >= 4 ? "info" : "warning",
       },
     ],
-    [avgRatingLast30d, healthScore, mapPackPosition, reviewsLast30d],
+    [avgRatingLast30d, healthScore, mapPackPosition, reviewsLast30d, runtimeTruth],
   );
 
   return (
@@ -357,11 +392,20 @@ export default function LocalVisibilityPage() {
           summary="Use this page to understand local visibility, review momentum, and what to focus on next for map-pack performance."
         />
 
-        <TruthNotice title="Local visibility is directional when provider coverage is thin or stale.">
+        <TruthNotice title="Local visibility is directional when provider coverage is thin, stale, or unavailable.">
           Map-pack position, review velocity, and local health summarize the latest captured state
           in the database. Missing values mean the workspace has not captured enough provider data
           yet, not that the business has definitively scored zero in the real world.
         </TruthNotice>
+
+        {runtimeTruth ? (
+          <TruthNotice title="Current runtime truth" tone="warning">
+            {getRuntimeTruthSummary(
+              runtimeTruth,
+              "Local visibility runtime status is not available yet.",
+            )}
+          </TruthNotice>
+        ) : null}
 
         {loading ? (
           <LoadingCard

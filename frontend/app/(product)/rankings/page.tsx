@@ -20,10 +20,16 @@ import {
   KpiCard,
   LoadingCard,
   ProductPageIntro,
+  TruthNotice,
+  type RuntimeTruth,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import {
+  buildRuntimeTruthSignal,
+  getRuntimeTruthSummary,
+} from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
   id: string;
@@ -39,6 +45,13 @@ type RankTrend = {
   position?: number | string | null;
   delta?: number | null;
   confidence?: number | null;
+};
+
+type RankTrendResponse = {
+  items?: RankTrend[];
+  tracked_keywords?: number;
+  latest_captured_at?: string | null;
+  truth?: RuntimeTruth;
 };
 
 function coerceNumber(value: number | string | null | undefined, fallback = 0) {
@@ -147,6 +160,9 @@ export default function RankingsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [trends, setTrends] = useState<RankTrend[]>([]);
+  const [rankingsTruth, setRankingsTruth] = useState<RuntimeTruth | null>(null);
+  const [trackedKeywordCount, setTrackedKeywordCount] = useState(0);
+  const [latestCapturedAt, setLatestCapturedAt] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -168,14 +184,20 @@ export default function RankingsPage() {
   async function loadTrends(campaignId: string) {
     if (!campaignId) {
       setTrends([]);
+      setRankingsTruth(null);
+      setTrackedKeywordCount(0);
+      setLatestCapturedAt("");
       return;
     }
 
-    const response = await platformApi(
+    const response = (await platformApi(
       `/rank/trends?campaign_id=${encodeURIComponent(campaignId)}`,
       { method: "GET" },
-    );
+    )) as RankTrendResponse;
     setTrends(Array.isArray(response?.items) ? (response.items as RankTrend[]) : []);
+    setRankingsTruth((response?.truth as RuntimeTruth) || null);
+    setTrackedKeywordCount(Number(response?.tracked_keywords || 0));
+    setLatestCapturedAt(response?.latest_captured_at || "");
   }
 
   async function refreshRankings(campaignId: string) {
@@ -188,7 +210,7 @@ export default function RankingsPage() {
 
     try {
       await loadTrends(campaignId);
-      setNotice("Rankings refreshed.");
+      setNotice("Stored ranking rows reloaded. This does not force a new live provider check by itself.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to refresh rankings.");
     } finally {
@@ -293,6 +315,36 @@ export default function RankingsPage() {
       };
     }
 
+    if (rankingsTruth?.classification === "unavailable") {
+      return {
+        title: `${selectedCampaign.name || "This business"} does not have reliable live ranking collection yet`,
+        body: getRuntimeTruthSummary(
+          rankingsTruth,
+          "The current runtime cannot provide trustworthy live rank collection.",
+        ),
+        focus: "Treat any older stored positions as historical context only until provider setup and fresh collection are confirmed.",
+      };
+    }
+
+    if (rankingsTruth?.classification === "synthetic") {
+      return {
+        title: "These rankings are synthetic test data",
+        body: "The current runtime is using a fixture provider, so positions are useful for workflow testing, not real search intelligence.",
+        focus: "Do not treat gains, drops, or page-one counts here as market truth.",
+      };
+    }
+
+    if (rankingsTruth?.freshness_state === "stale") {
+      return {
+        title: "The latest ranking snapshot is stale",
+        body: getRuntimeTruthSummary(
+          rankingsTruth,
+          "Ranking coverage exists, but it is not current enough to read as live movement.",
+        ),
+        focus: "Run a fresh ranking check before using movement or page-one counts for decisions.",
+      };
+    }
+
     if (trackedTerms === 0) {
       return {
         title: `${selectedCampaign.name || "This business"} has no ranking data yet`,
@@ -334,20 +386,26 @@ export default function RankingsPage() {
     biggestDrop,
     biggestWinner,
     pageOneCount,
+    rankingsTruth,
     strongestPosition,
   ]);
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
+      buildRuntimeTruthSignal(
+        "Runtime truth",
+        rankingsTruth,
+        "Rankings can be synthetic, stale, or unavailable depending on provider setup and snapshot freshness.",
+      ),
       {
         label: "Tracked searches",
-        value: trackedTerms > 0 ? `${trackedTerms} active` : "None yet",
-        tone: trackedTerms > 0 ? "success" : "warning",
+        value: trackedKeywordCount > 0 ? `${trackedKeywordCount} configured` : "None yet",
+        tone: trackedKeywordCount > 0 ? "info" : "warning",
       },
       {
-        label: "Page-one terms",
-        value: pageOneCount > 0 ? `${pageOneCount} on page one` : "No page-one terms",
-        tone: pageOneCount > 0 ? "success" : "warning",
+        label: "Latest snapshot",
+        value: latestCapturedAt || "No snapshot yet",
+        tone: latestCapturedAt ? (rankingsTruth?.freshness_state === "stale" ? "warning" : "info") : "warning",
       },
       {
         label: "Improved",
@@ -360,7 +418,7 @@ export default function RankingsPage() {
         tone: droppedTerms > 0 ? "warning" : "success",
       },
     ],
-    [droppedTerms, improvedTerms, pageOneCount, trackedTerms],
+    [droppedTerms, improvedTerms, latestCapturedAt, rankingsTruth, trackedKeywordCount],
   );
 
   return (
@@ -372,7 +430,7 @@ export default function RankingsPage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Live ranking data"
+      dateRangeLabel="Stored ranking snapshots"
       topBarActions={
         <>
           <select
@@ -410,8 +468,22 @@ export default function RankingsPage() {
         <ProductPageIntro
           eyebrow="Rankings"
           title="Where your business shows up in search"
-          summary="Use this page to see your current positions, what moved up or down, and which search terms need attention next."
+          summary="Use this page to review stored ranking snapshots, source quality, and which search terms need attention next without overreading thin or stale data."
         />
+
+        <TruthNotice title="Stored ranking rows are not proof of live search intelligence.">
+          Ranking movement is only as trustworthy as the provider setup and freshness behind it.
+          Synthetic, stale, or setup-thin ranking states should be treated as directional or historical, not live market truth.
+        </TruthNotice>
+
+        {rankingsTruth ? (
+          <TruthNotice title="Current runtime truth" tone="warning">
+            {getRuntimeTruthSummary(
+              rankingsTruth,
+              "Ranking runtime status is not available yet.",
+            )}
+          </TruthNotice>
+        ) : null}
 
         {loading ? (
           <LoadingCard
@@ -466,7 +538,7 @@ export default function RankingsPage() {
             {trackedTerms === 0 ? (
               <EmptyState
                 title="No tracked searches yet"
-                summary="Start your first ranking check from the dashboard. Once searches are tracked, this page will show current positions and movement."
+                summary="Start your first ranking check from the dashboard. Configured terms and fresh provider-backed snapshots are both required before this page should be treated as live ranking intelligence."
                 actionLabel="Go to dashboard"
                 onAction={() => router.push("/dashboard")}
               />
@@ -476,13 +548,13 @@ export default function RankingsPage() {
                   <KpiCard
                     label="Tracked searches"
                     value={String(trackedTerms)}
-                    summary="These are the search terms currently being watched for the active business."
+                    summary="These are configured tracked searches. Configuration alone does not prove fresh live ranking coverage."
                   />
                   <KpiCard
                     label="Page-one terms"
                     value={String(pageOneCount)}
                     changeLabel={pageOneCount > 0 ? "Visible now" : undefined}
-                    summary="These searches are already showing on page one and should be protected."
+                    summary="These counts come from the latest stored snapshot and should only be treated as live when provider truth is current."
                     tone="highlight"
                   />
                   <KpiCard
@@ -492,7 +564,7 @@ export default function RankingsPage() {
                     summary={
                       biggestWinner?.keyword
                         ? `Biggest winner: ${biggestWinner.keyword}.`
-                        : "No upward movement is showing yet."
+                        : "No upward movement is showing in the latest stored snapshot."
                     }
                   />
                   <KpiCard
@@ -502,7 +574,7 @@ export default function RankingsPage() {
                     summary={
                       biggestDrop?.keyword
                         ? `Biggest drop: ${biggestDrop.keyword}.`
-                        : "No drops are showing in the latest ranking set."
+                        : "No drops are showing in the latest stored ranking set."
                     }
                   />
                 </div>
@@ -511,7 +583,7 @@ export default function RankingsPage() {
                   <ChartCard
                     eyebrow="Visibility"
                     title="Best current positions"
-                    summary="Lower positions are better. This highlights the search terms with the strongest current visibility."
+                    summary="Lower positions are better. This chart reflects the latest stored snapshot, not guaranteed live search visibility."
                     chart={
                       <div className="h-72">
                         <ResponsiveContainer width="100%" height="100%">
@@ -549,7 +621,7 @@ export default function RankingsPage() {
                   <ChartCard
                     eyebrow="Movement"
                     title="Largest gains and drops"
-                    summary="Positive numbers mean a term moved up. Negative numbers mean it slipped and may need review."
+                    summary="Positive numbers mean a term moved up in the latest stored comparison. Treat stale or synthetic movement as directional only."
                     chart={
                       <div className="h-72">
                         <ResponsiveContainer width="100%" height="100%">
@@ -592,7 +664,7 @@ export default function RankingsPage() {
                       Which search terms improved or dropped
                     </h2>
                     <p className="mt-1.5 max-w-3xl text-sm leading-6 text-zinc-300">
-                      Start with the dropped terms, then review the rising terms that are getting closer to page one.
+                      Start with dropped terms, but only treat the table as current if the runtime truth above says ranking coverage is fresh enough.
                     </p>
                   </div>
 

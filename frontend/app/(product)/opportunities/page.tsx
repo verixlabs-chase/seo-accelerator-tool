@@ -12,6 +12,7 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  type RuntimeTruth,
   type TimelineEntry,
   type TrustSignal,
 } from "../components";
@@ -22,6 +23,11 @@ import {
   getRecommendationStateSummary,
   getSetupBlockerSummary,
 } from "../truth/opportunitiesTruth.mjs";
+import {
+  buildRuntimeTruthSignal,
+  getRuntimeTruthSummary,
+  pickPrimaryRuntimeTruth,
+} from "../truth/runtimeTruth.mjs";
 
 const EXECUTION_CONSOLE_ENABLED =
   process.env.NEXT_PUBLIC_EXECUTION_CONSOLE_ENABLED !== "false";
@@ -51,6 +57,7 @@ type RecommendationSummary = {
   counts_by_state?: Record<string, number>;
   counts_by_risk_tier?: Record<string, number>;
   average_confidence_score?: number;
+  truth?: RuntimeTruth;
 };
 
 type IntelligenceScoreResponse = {
@@ -59,6 +66,12 @@ type IntelligenceScoreResponse = {
     score_value?: number;
     captured_at?: string;
   };
+  truth?: RuntimeTruth;
+};
+
+type RecommendationListResponse = {
+  items?: Recommendation[];
+  truth?: RuntimeTruth;
 };
 
 type ExecutionResult = {
@@ -665,6 +678,7 @@ export default function OpportunitiesPage() {
   const [dryRunPreview, setDryRunPreview] = useState<DryRunPreview | null>(null);
   const [summary, setSummary] = useState<RecommendationSummary | null>(null);
   const [score, setScore] = useState<IntelligenceScoreResponse | null>(null);
+  const [recommendationsTruth, setRecommendationsTruth] = useState<RuntimeTruth | null>(null);
   const [wordpressSetup, setWordpressSetup] = useState<WordPressExecutionSetup | null>(null);
   const [wordpressSetupError, setWordpressSetupError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -690,6 +704,7 @@ export default function OpportunitiesPage() {
       setRecommendations([]);
       setSummary(null);
       setScore(null);
+      setRecommendationsTruth(null);
       setSelectedRecommendationId("");
       return;
     }
@@ -706,13 +721,15 @@ export default function OpportunitiesPage() {
       }),
     ]);
 
-    const items = Array.isArray(recommendationsResponse?.items)
-      ? (recommendationsResponse.items as Recommendation[])
+    const normalizedRecommendations = (recommendationsResponse as RecommendationListResponse) || null;
+    const items = Array.isArray(normalizedRecommendations?.items)
+      ? (normalizedRecommendations.items as Recommendation[])
       : [];
 
     setRecommendations(items);
     setSummary((summaryResponse as RecommendationSummary) || null);
     setScore((scoreResponse as IntelligenceScoreResponse) || null);
+    setRecommendationsTruth(normalizedRecommendations?.truth || null);
     setSelectedRecommendationId((current) => {
       if (current && items.some((item) => item.id === current)) {
         return current;
@@ -897,6 +914,10 @@ export default function OpportunitiesPage() {
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
+  const runtimeTruth = useMemo(
+    () => pickPrimaryRuntimeTruth([recommendationsTruth, summary?.truth, score?.truth]),
+    [recommendationsTruth, score?.truth, summary?.truth],
+  );
 
   const sortedRecommendations = useMemo(
     () =>
@@ -955,6 +976,11 @@ export default function OpportunitiesPage() {
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
+      buildRuntimeTruthSignal(
+        "Runtime truth",
+        runtimeTruth,
+        "Recommendations and scores are heuristic until execution setup is ready and a run succeeds.",
+      ),
       {
         label: "Open opportunities",
         value: summary?.total_count ? `${summary.total_count} active` : "None yet",
@@ -984,7 +1010,7 @@ export default function OpportunitiesPage() {
               : "warning",
       },
     ],
-    [executions.length, highPriorityCount, score?.score_value, summary?.total_count],
+    [executions.length, highPriorityCount, runtimeTruth, score?.score_value, summary?.total_count],
   );
 
   const primaryAction = selectedRecommendation
@@ -1071,6 +1097,15 @@ export default function OpportunitiesPage() {
           execution still needs provider readiness and a successful run before it should be treated
           as a completed business change.
         </TruthNotice>
+
+        {runtimeTruth ? (
+          <TruthNotice title="Current runtime truth" tone="warning">
+            {getRuntimeTruthSummary(
+              runtimeTruth,
+              "Opportunity runtime status is not available yet.",
+            )}
+          </TruthNotice>
+        ) : null}
 
         {loading ? (
           <LoadingCard

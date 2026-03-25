@@ -1,9 +1,11 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
+from app.models.campaign import Campaign
 from app.schemas.rank import RankingSnapshotOut, RankKeywordIn, RankScheduleIn
 from app.services import rank_service
 from app.tasks.tasks import rank_schedule_window
@@ -52,14 +54,38 @@ def schedule_rank_collection(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    payload = rank_service.run_snapshot_collection(
-        db,
-        tenant_id=user["tenant_id"],
-        campaign_id=body.campaign_id,
-        location_code=body.location_code,
-    )
+    campaign = db.get(Campaign, body.campaign_id)
+    if campaign is None or campaign.tenant_id != user["tenant_id"]:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    tracked_keywords = rank_service.get_tracked_keyword_count(db, tenant_id=user["tenant_id"], campaign_id=body.campaign_id)
+    try:
+        payload = rank_service.run_snapshot_collection(
+            db,
+            tenant_id=user["tenant_id"],
+            campaign_id=body.campaign_id,
+            location_code=body.location_code,
+        )
+    except HTTPException as exc:
+        truth = rank_service.build_rank_truth(
+            db,
+            organization_id=campaign.organization_id,
+            tracked_keywords=tracked_keywords,
+            snapshot_count=0,
+        )
+        exc.detail = {
+            **(exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}),
+            "truth": truth,
+        }
+        raise
     background_tasks.add_task(_dispatch_rank_schedule, body.campaign_id, user["tenant_id"], body.location_code)
-    return envelope(request, payload)
+    truth = rank_service.build_rank_truth(
+        db,
+        organization_id=campaign.organization_id,
+        tracked_keywords=tracked_keywords,
+        snapshot_count=int(payload.get("snapshots_created", 0)),
+        job_queued=True,
+    )
+    return envelope(request, {**payload, "truth": truth})
 
 
 @router.get("/snapshots")
@@ -69,8 +95,19 @@ def get_rank_snapshots(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None or campaign.tenant_id != user["tenant_id"]:
+        raise HTTPException(status_code=404, detail="Campaign not found")
     rows = rank_service.get_snapshots(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    return envelope(request, {"items": [RankingSnapshotOut.model_validate(r).model_dump(mode="json") for r in rows]})
+    items = [RankingSnapshotOut.model_validate(r).model_dump(mode="json") for r in rows]
+    truth = rank_service.build_rank_truth(
+        db,
+        organization_id=campaign.organization_id,
+        tracked_keywords=rank_service.get_tracked_keyword_count(db, tenant_id=user["tenant_id"], campaign_id=campaign_id),
+        snapshot_count=len(items),
+        latest_captured_at=items[0]["captured_at"] if items else None,
+    )
+    return envelope(request, {"items": items, "truth": truth})
 
 
 @router.get("/trends")
@@ -80,5 +117,25 @@ def get_rank_trends(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None or campaign.tenant_id != user["tenant_id"]:
+        raise HTTPException(status_code=404, detail="Campaign not found")
     trends = rank_service.get_trends(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    return envelope(request, {"items": trends})
+    snapshots = rank_service.get_snapshots(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    truth = rank_service.build_rank_truth(
+        db,
+        organization_id=campaign.organization_id,
+        tracked_keywords=rank_service.get_tracked_keyword_count(db, tenant_id=user["tenant_id"], campaign_id=campaign_id),
+        snapshot_count=len(snapshots),
+        latest_captured_at=snapshots[0].captured_at.isoformat() if snapshots else None,
+    )
+    latest_captured_at = snapshots[0].captured_at.isoformat() if snapshots else None
+    return envelope(
+        request,
+        {
+            "items": trends,
+            "latest_captured_at": latest_captured_at,
+            "tracked_keywords": rank_service.get_tracked_keyword_count(db, tenant_id=user["tenant_id"], campaign_id=campaign_id),
+            "truth": truth,
+        },
+    )

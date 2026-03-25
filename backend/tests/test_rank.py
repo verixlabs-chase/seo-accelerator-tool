@@ -43,6 +43,7 @@ def test_rank_keyword_schedule_snapshots_and_trends(client, db_session):
     )
     assert schedule.status_code == 200
     assert schedule.json()["data"]["snapshots_created"] >= 1
+    assert schedule.json()["data"]["truth"]["classification"] in {"synthetic", "in_progress"}
 
     snapshots = client.get(
         f"/api/v1/rank/snapshots?campaign_id={campaign['id']}",
@@ -50,6 +51,7 @@ def test_rank_keyword_schedule_snapshots_and_trends(client, db_session):
     )
     assert snapshots.status_code == 200
     assert len(snapshots.json()["data"]["items"]) >= 1
+    assert snapshots.json()["data"]["truth"]["classification"] == "synthetic"
 
     trends = client.get(
         f"/api/v1/rank/trends?campaign_id={campaign['id']}",
@@ -57,3 +59,5 @@ def test_rank_keyword_schedule_snapshots_and_trends(client, db_session):
     )
     assert trends.status_code == 200
     assert len(trends.json()["data"]["items"]) >= 1
+    assert trends.json()["data"]["tracked_keywords"] == 1
+    assert trends.json()["data"]["truth"]["classification"] == "synthetic"

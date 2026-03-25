@@ -10,10 +10,16 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  type RuntimeTruth,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import {
+  buildRuntimeTruthSignal,
+  getRuntimeTruthSummary,
+  pickPrimaryRuntimeTruth,
+} from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
   id: string;
@@ -52,6 +58,7 @@ type SnapshotResult = {
   job_id: string | null;
   summary: { snapshots_collected: number };
   items: SnapshotItem[];
+  truth?: RuntimeTruth;
 };
 
 function toTitleCase(value?: string) {
@@ -93,6 +100,8 @@ export default function CompetitorsPage() {
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [gaps, setGaps] = useState<GapItem[]>([]);
   const [snapshotResult, setSnapshotResult] = useState<SnapshotResult | null>(null);
+  const [competitorsTruth, setCompetitorsTruth] = useState<RuntimeTruth | null>(null);
+  const [gapsTruth, setGapsTruth] = useState<RuntimeTruth | null>(null);
   const [newDomain, setNewDomain] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [loading, setLoading] = useState(true);
@@ -121,6 +130,7 @@ export default function CompetitorsPage() {
       { method: "GET" },
     );
     setCompetitors(Array.isArray(response?.items) ? (response.items as Competitor[]) : []);
+    setCompetitorsTruth((response?.truth as RuntimeTruth) || null);
   }, []);
 
   const loadGaps = useCallback(async (campaignId: string) => {
@@ -133,6 +143,7 @@ export default function CompetitorsPage() {
       { method: "GET" },
     );
     setGaps(Array.isArray(response?.items) ? (response.items as GapItem[]) : []);
+    setGapsTruth((response?.truth as RuntimeTruth) || null);
   }, []);
 
   async function runAction(action: string, fn: () => Promise<void>) {
@@ -189,6 +200,7 @@ export default function CompetitorsPage() {
         job_id: raw?.job_id ?? null,
         summary: { snapshots_collected: raw?.summary?.snapshots_collected ?? 0 },
         items: Array.isArray(raw?.items) ? (raw.items as SnapshotItem[]) : [],
+        truth: raw?.truth || null,
       });
       await loadGaps(selectedCampaignId);
       setNotice(
@@ -231,9 +243,18 @@ export default function CompetitorsPage() {
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
   const topGap = gaps.length > 0 ? [...gaps].sort((a, b) => b.gap_score - a.gap_score)[0] : null;
+  const runtimeTruth = useMemo(
+    () => pickPrimaryRuntimeTruth([snapshotResult?.truth, gapsTruth, competitorsTruth]),
+    [competitorsTruth, gapsTruth, snapshotResult?.truth],
+  );
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
+      buildRuntimeTruthSignal(
+        "Runtime truth",
+        runtimeTruth,
+        "Competitor tracking can be dataset-backed, synthetic, or unavailable depending on runtime setup.",
+      ),
       {
         label: "Competitors",
         value: competitors.length > 0 ? `${competitors.length} tracked` : "None added",
@@ -257,7 +278,7 @@ export default function CompetitorsPage() {
         tone: snapshotResult?.summary.snapshots_collected ? "success" : "warning",
       },
     ],
-    [competitors.length, gaps, snapshotResult, topGap],
+    [competitors.length, gaps, runtimeTruth, snapshotResult, topGap],
   );
 
   return (
@@ -308,6 +329,15 @@ export default function CompetitorsPage() {
           reflect the latest stored crawl of competitor data, and queued snapshot jobs may take time
           before the database catches up.
         </TruthNotice>
+
+        {runtimeTruth ? (
+          <TruthNotice title="Current runtime truth" tone="warning">
+            {getRuntimeTruthSummary(
+              runtimeTruth,
+              "Competitor runtime status is not available yet.",
+            )}
+          </TruthNotice>
+        ) : null}
 
         {loading ? (
           <LoadingCard

@@ -23,10 +23,16 @@ def test_reports_generate_list_get_and_deliver(client):
     listed = client.get("/api/v1/reports", headers={"Authorization": f"Bearer {token}"})
     assert listed.status_code == 200
     assert len(listed.json()["data"]["items"]) >= 1
+    assert listed.json()["data"]["truth"]["classification"] == "synthetic"
+    assert "generated" in listed.json()["data"]["truth"]["states"]
 
     detail = client.get(f"/api/v1/reports/{report_id}", headers={"Authorization": f"Bearer {token}"})
     assert detail.status_code == 200
     assert len(detail.json()["data"]["artifacts"]) >= 1
+    assert detail.json()["data"]["truth"]["classification"] == "synthetic"
+    assert "minimal_artifact" in detail.json()["data"]["truth"]["states"]
+    assert "non_durable" in detail.json()["data"]["truth"]["states"]
+    assert "delivery_unverified" in detail.json()["data"]["truth"]["states"]
     artifacts = detail.json()["data"]["artifacts"]
     html_artifact = next(item for item in artifacts if item["artifact_type"] == "html")
     pdf_artifact = next(item for item in artifacts if item["artifact_type"] == "pdf")
@@ -48,6 +54,39 @@ def test_reports_generate_list_get_and_deliver(client):
     )
     assert delivered.status_code == 200
     assert delivered.json()["data"]["delivery_status"] == "sent"
+    assert delivered.json()["data"]["truth"]["classification"] == "synthetic"
+    assert "delivery_unverified" in delivered.json()["data"]["truth"]["states"]
+
+
+def test_reports_schedule_truth_exposes_schedule_state(client):
+    token = _login(client, "a@example.com", "pass-a")
+    campaign = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Reporting Schedule Truth", "domain": "reports-schedule.com"},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+
+    missing = client.get(
+        f"/api/v1/reports/schedule?campaign_id={campaign['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert missing.status_code == 200
+    assert missing.json()["data"] is None
+
+    saved = client.put(
+        "/api/v1/reports/schedule",
+        json={
+            "campaign_id": campaign["id"],
+            "cadence": "weekly",
+            "timezone": "UTC",
+            "next_run_at": "2026-01-01T00:00:00Z",
+            "enabled": True,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["data"]["truth"]["classification"] == "operator_assisted"
+    assert "scheduled" in saved.json()["data"]["truth"]["states"]
 
 
 def test_reports_reject_cross_org_campaign_mismatch(client, db_session, create_test_org):

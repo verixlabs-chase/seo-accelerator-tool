@@ -10,10 +10,15 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  type RuntimeTruth,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import {
+  buildRuntimeTruthSignal,
+  getRuntimeTruthSummary,
+} from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
   id: string;
@@ -31,6 +36,7 @@ type CitationItem = {
 type StatusResult = {
   job_id: string | null;
   items: CitationItem[];
+  truth?: RuntimeTruth;
 };
 
 function toTitleCase(value?: string) {
@@ -160,6 +166,7 @@ export default function CitationsPage() {
       setStatusResult({
         job_id: raw?.job_id ?? null,
         items: Array.isArray(raw?.items) ? (raw.items as CitationItem[]) : [],
+        truth: raw?.truth || null,
       });
       setNotice(
         raw?.job_id
@@ -194,6 +201,7 @@ export default function CitationsPage() {
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
 
   const citations = statusResult?.items ?? [];
+  const runtimeTruth = statusResult?.truth ?? null;
   const liveCount = citations.filter(
     (c) => c.submission_status === "live" || c.submission_status === "verified" || c.listing_url,
   ).length;
@@ -204,6 +212,11 @@ export default function CitationsPage() {
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
+      buildRuntimeTruthSignal(
+        "Runtime truth",
+        runtimeTruth,
+        "Citation statuses can reflect workflow progress before live directory publication is confirmed.",
+      ),
       {
         label: "Citations",
         value: citations.length > 0 ? `${citations.length} tracked` : "Not yet loaded",
@@ -225,7 +238,7 @@ export default function CitationsPage() {
         tone: failedCount > 0 ? "danger" : "success",
       },
     ],
-    [citations.length, failedCount, liveCount, pendingCount],
+    [citations.length, failedCount, liveCount, pendingCount, runtimeTruth],
   );
 
   return (
@@ -277,6 +290,15 @@ export default function CitationsPage() {
           ideally with a listing URL, should be treated as evidence that the directory entry is
           actually published.
         </TruthNotice>
+
+        {runtimeTruth ? (
+          <TruthNotice title="Current runtime truth" tone="warning">
+            {getRuntimeTruthSummary(
+              runtimeTruth,
+              "Citation runtime status is not available yet.",
+            )}
+          </TruthNotice>
+        ) : null}
 
         {loading ? (
           <LoadingCard

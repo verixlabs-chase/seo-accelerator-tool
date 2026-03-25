@@ -10,10 +10,15 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  type RuntimeTruth,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import {
+  buildRuntimeTruthSignal,
+  getRuntimeTruthSummary,
+} from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
   id: string;
@@ -81,6 +86,7 @@ type OrganicValueBaseline = {
   top_keywords_by_value: BaselineKeywordDriver[];
   opportunity_drivers: BaselineKeywordDriver[];
   caveats: string[];
+  truth?: RuntimeTruth;
 };
 
 function formatMetric(metric?: BaselineMetric | null) {
@@ -283,6 +289,11 @@ export default function OrganicValuePage() {
   const expectedScenario = baseline?.scenarios.find((item) => item.key === "expected") ?? null;
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
+      buildRuntimeTruthSignal(
+        "Runtime truth",
+        baseline?.truth || null,
+        "Organic value is a modeled baseline, not direct revenue truth.",
+      ),
       {
         label: "Current value",
         value: baseline ? formatMetric(baseline.current_value) : "Awaiting baseline",
@@ -367,6 +378,15 @@ export default function OrganicValuePage() {
           CTR assumptions. They estimate what equivalent traffic may be worth in paid media, not
           actual revenue, margin, or guaranteed ROI.
         </TruthNotice>
+
+        {baseline?.truth ? (
+          <TruthNotice title="Current runtime truth" tone="warning">
+            {getRuntimeTruthSummary(
+              baseline.truth,
+              "Organic value runtime status is not available yet.",
+            )}
+          </TruthNotice>
+        ) : null}
 
         {loading ? (
           <LoadingCard

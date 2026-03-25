@@ -25,15 +25,12 @@ import {
   LoadingCard,
   OnboardingWizard,
   TruthNotice,
+  type RuntimeTruth,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
-import {
-  clearAuthSession,
-  getAccessToken,
-  getRefreshToken,
-  updateAccessToken,
-} from "../../lib/authStorage";
+import { clearAuthSession } from "../../lib/authStorage";
+import { platformApi } from "../../platform/api";
 import {
   getCrawlWorkflowState,
   getRankingWorkflowState,
@@ -42,8 +39,10 @@ import {
   isFailedStatus,
   isPendingStatus,
 } from "../truth/dashboardTruth.mjs";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
+import {
+  buildRuntimeTruthSignal,
+  getRuntimeTruthSummary,
+} from "../truth/runtimeTruth.mjs";
 
 type Me = {
   id?: string;
@@ -70,6 +69,13 @@ type RankTrend = {
   position?: number | string;
   created_at?: string;
   updated_at?: string;
+};
+
+type RankTrendResponse = {
+  items?: RankTrend[];
+  tracked_keywords?: number;
+  latest_captured_at?: string | null;
+  truth?: RuntimeTruth;
 };
 
 type Report = {
@@ -420,85 +426,24 @@ export default function DashboardPage() {
   const [busyAction, setBusyAction] = useState("");
   const [latestRuns, setLatestRuns] = useState<CrawlRun[]>([]);
   const [latestTrends, setLatestTrends] = useState<RankTrend[]>([]);
+  const [latestRankTruth, setLatestRankTruth] = useState<RuntimeTruth | null>(null);
+  const [latestRankCapturedAt, setLatestRankCapturedAt] = useState("");
+  const [trackedKeywordCount, setTrackedKeywordCount] = useState(0);
   const [latestReports, setLatestReports] = useState<Report[]>([]);
+  const [latestReportTruth, setLatestReportTruth] = useState<RuntimeTruth | null>(null);
 
   async function api(path: string, options: RequestInit = {}) {
-    async function runRequest(token: string) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20000);
-
-      try {
-        return await fetch(`${API_BASE}${path}`, {
-          ...options,
-          signal: controller.signal,
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            ...(options.headers || {}),
-          },
-        });
-      } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-          throw new Error("Request timed out. Please try again.");
-        }
-
-        throw err;
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-
-    let token = getAccessToken();
-    if (!token) {
-      router.push("/login");
-      throw new Error("No token found. Login first.");
-    }
-
-    let response = await runRequest(token);
-
-    if (response.status === 401) {
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) {
-        clearAuthSession();
-        router.push("/login");
-        throw new Error("Session expired. Please log in again.");
-      }
-
-      const refreshResponse = await fetch(`${API_BASE}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-      const refreshJson = await refreshResponse.json().catch(() => ({}));
-
-      if (!refreshResponse.ok || !refreshJson?.data?.access_token) {
-        clearAuthSession();
-        router.push("/login");
-        throw new Error("Session expired. Please log in again.");
-      }
-
-      updateAccessToken(refreshJson.data.access_token);
-      token = refreshJson.data.access_token;
-      response = await runRequest(token);
-    }
-
-    let json: any = {};
     try {
-      json = await response.json();
-    } catch {
-      json = {};
-    }
-
-    if (!response.ok) {
-      if (response.status === 401) {
+      return await platformApi(path, options);
+    } catch (err) {
+      if (err instanceof Error && /Session expired|No active session|No token found/i.test(err.message)) {
         clearAuthSession();
         router.push("/login");
+      } else if (err instanceof Error && err.name === "AbortError") {
+        throw new Error("Request timed out. Please try again.");
       }
-
-      throw new Error(json?.error?.message || `Request failed (${response.status})`);
+      throw err;
     }
-
-    return json.data;
   }
 
   async function loadCampaigns() {
@@ -526,8 +471,13 @@ export default function DashboardPage() {
     ]);
 
     setLatestRuns((runsData?.items || []) as CrawlRun[]);
-    setLatestTrends((trendsData?.items || []) as RankTrend[]);
+    const normalizedTrends = (trendsData || {}) as RankTrendResponse;
+    setLatestTrends((normalizedTrends?.items || []) as RankTrend[]);
+    setLatestRankTruth((normalizedTrends?.truth as RuntimeTruth) || null);
+    setLatestRankCapturedAt(normalizedTrends?.latest_captured_at || "");
+    setTrackedKeywordCount(Number(normalizedTrends?.tracked_keywords || 0));
     setLatestReports((reportsData?.items || []) as Report[]);
+    setLatestReportTruth((reportsData?.truth as RuntimeTruth) || null);
   }
 
   async function runAction(label: string, fn: () => Promise<void>) {
@@ -723,6 +673,11 @@ export default function DashboardPage() {
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
+      buildRuntimeTruthSignal(
+        "Rank truth",
+        latestRankTruth,
+        "Ranking rows can be synthetic, stale, or unavailable depending on provider setup.",
+      ),
       {
         label: "Freshness",
         value: latestRuns[0]?.updated_at
@@ -740,13 +695,26 @@ export default function DashboardPage() {
         value: latestRuns[0]?.status ? toTitleCase(latestRuns[0].status) : "Not started",
         tone: latestRuns[0]?.status === "completed" ? "success" : "warning",
       },
+      buildRuntimeTruthSignal(
+        "Report truth",
+        latestReportTruth,
+        "A stored report record is not the same as durable or verified delivery.",
+      ),
       {
-        label: "Rank sync",
-        value: latestTrends.length > 0 ? `${latestTrends.length} keywords tracked` : "No keywords yet",
-        tone: latestTrends.length > 0 ? "success" : "warning",
+        label: "Search tracking",
+        value:
+          trackedKeywordCount > 0
+            ? `${trackedKeywordCount} configured / ${latestTrends.length} with rows`
+            : "No tracked keywords yet",
+        tone:
+          latestRankTruth?.classification === "unavailable"
+            ? "danger"
+            : trackedKeywordCount > 0
+              ? "info"
+              : "warning",
       },
     ],
-    [campaigns.length, latestRuns, latestTrends.length],
+    [campaigns.length, latestRankTruth, latestReportTruth, latestRuns, latestTrends.length, trackedKeywordCount],
   );
 
   const visibilityTrend = useMemo(
@@ -788,8 +756,11 @@ export default function DashboardPage() {
       latestTrends[0]
         ? {
             title: "Ranking snapshot updated",
-            time: formatRelativeTime(latestTrends[0].updated_at || latestTrends[0].created_at),
-            detail: `${latestTrends[0].keyword || "Top keyword"} is currently at position ${coerceNumber(latestTrends[0].position, 0)}.`,
+            time: formatRelativeTime(latestRankCapturedAt || latestTrends[0].updated_at || latestTrends[0].created_at),
+            detail:
+              latestRankTruth?.classification === "synthetic" || latestRankTruth?.classification === "unavailable"
+                ? getRuntimeTruthSummary(latestRankTruth, "Ranking runtime is not currently trustworthy.")
+                : `${latestTrends[0].keyword || "Top keyword"} is currently at position ${coerceNumber(latestTrends[0].position, 0)}.`,
           }
         : null,
       latestReports[0]
@@ -807,7 +778,7 @@ export default function DashboardPage() {
           }
         : null,
     ].filter(Boolean) as Array<{ title: string; time: string; detail: string }>,
-    [latestReports, latestRuns, latestTrends, selectedCampaign],
+    [latestRankCapturedAt, latestRankTruth, latestReports, latestRuns, latestTrends, selectedCampaign],
   );
 
   const topKeyword = latestTrends[0];
@@ -821,10 +792,10 @@ export default function DashboardPage() {
     () => [
       getSetupWorkflowState(selectedCampaign, topRun),
       getCrawlWorkflowState(topRun, selectedCampaign, formatRelativeTime),
-      getRankingWorkflowState(selectedCampaign, latestTrends, topKeyword),
-      getReportWorkflowState(topReport, selectedCampaign),
+      getRankingWorkflowState(selectedCampaign, latestTrends, topKeyword, latestRankTruth),
+      getReportWorkflowState(topReport, selectedCampaign, latestReportTruth),
     ],
-    [latestTrends, selectedCampaign, topKeyword, topReport, topRun],
+    [latestRankTruth, latestReportTruth, latestTrends, selectedCampaign, topKeyword, topReport, topRun],
   );
 
   const summaryState = (() => {
@@ -958,6 +929,25 @@ export default function DashboardPage() {
       };
     }
 
+    if (topReport.report_status === "delivered" && Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("delivery_unverified")) {
+      return {
+        changeTitle: "Latest report delivery is not externally verified",
+        changeBody: `Month ${topReport.month_number || "current"} is marked delivered, but this runtime does not verify real inbox delivery.`,
+        impactTitle: "Why it matters",
+        impactBody: "A delivered record alone is not strong enough to claim the latest update actually reached the recipient.",
+        nextStepTitle: "Confirm delivery outside the product",
+        nextStepBody: "Use the Reports page and external confirmation before treating this as a completed client send.",
+        primaryActionLabel: "Open reports",
+        primaryAction: () => document.getElementById("report-form")?.scrollIntoView({ behavior: "smooth" }),
+        secondaryActionLabel: "Refresh latest results",
+        secondaryAction: () =>
+          void runAction("refresh", async () => {
+            await loadLatest(selectedCampaignId);
+            setNotice("Latest results refreshed.");
+          }),
+      };
+    }
+
     return {
       changeTitle: `"${topKeyword.keyword || "Top search term"}" is at position ${latestKeywordPosition}`,
       changeBody: `Your latest report is ${toTitleCase(topReport.report_status)} and the most recent website scan is ${toTitleCase(topRun.status)}.`,
@@ -967,7 +957,9 @@ export default function DashboardPage() {
         : "Your tracked visibility is established, so the next gains come from consistent checks and targeted follow-up.",
       nextStepTitle: "Keep the latest update moving",
       nextStepBody: topReport.report_status === "generated"
-        ? "Send the latest report so the current progress is shared while it is still fresh."
+        ? Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("minimal_artifact")
+          ? "Review the local report artifact before sending it. Generated does not mean premium or durable."
+          : "Send the latest report so the current progress is shared while it is still fresh."
         : "Refresh your website and ranking checks so the next summary reflects the newest changes.",
       primaryActionLabel: topReport.report_status === "generated" ? "Send latest report" : "Refresh latest results",
       primaryAction: topReport.report_status === "generated"
@@ -1084,6 +1076,15 @@ export default function DashboardPage() {
             ranking check, or report request means the work started, not that the final results are
             complete. The advanced controls below are for retrying or manually nudging a workflow,
             not the normal first-value path.
+          </TruthNotice>
+        ) : null}
+
+        {!loading && latestRankTruth ? (
+          <TruthNotice title="Current ranking runtime truth" tone="warning">
+            {getRuntimeTruthSummary(
+              latestRankTruth,
+              "Ranking runtime status is not available yet.",
+            )}
           </TruthNotice>
         ) : null}
 
@@ -1247,9 +1248,13 @@ export default function DashboardPage() {
             summary={
               topReport
                 ? topReport.report_status === "delivered"
-                  ? `Latest report was delivered for month ${topReport.month_number || "current"}.`
+                  ? Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("delivery_unverified")
+                    ? `Latest report is marked delivered for month ${topReport.month_number || "current"}, but delivery is not externally verified.`
+                    : `Latest report was delivered for month ${topReport.month_number || "current"}.`
                   : topReport.report_status === "generated"
-                    ? "Latest report is ready to review and send."
+                    ? Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("minimal_artifact")
+                      ? "Latest report is a minimal local artifact that still needs review before sending."
+                      : "Latest report is ready to review and send."
                     : isFailedStatus(topReport.report_status)
                       ? `Latest report needs attention after a ${toTitleCase(topReport.report_status)} result.`
                       : isPendingStatus(topReport.report_status)
@@ -1355,9 +1360,13 @@ export default function DashboardPage() {
               title: topReport ? "Reports available." : "No reports yet.",
               body: topReport
                 ? topReport.report_status === "delivered"
-                  ? `Your month ${topReport.month_number} report has already been sent and is the latest shared update.`
+                  ? Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("delivery_unverified")
+                    ? `Your month ${topReport.month_number} report is marked delivered, but the current runtime does not verify inbox delivery.`
+                    : `Your month ${topReport.month_number} report has already been sent and is the latest shared update.`
                   : topReport.report_status === "generated"
-                    ? `Your month ${topReport.month_number} report is ready to review and send.`
+                    ? Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("minimal_artifact")
+                      ? `Your month ${topReport.month_number} report is a minimal local artifact that still needs review before any send.`
+                      : `Your month ${topReport.month_number} report is ready to review and send.`
                     : isFailedStatus(topReport.report_status)
                       ? "Your latest report needs attention before it can be treated as ready to share."
                       : `Your latest report is ${toTitleCase(topReport.report_status)} and still in progress.`
@@ -1582,7 +1591,9 @@ export default function DashboardPage() {
                   </p>
                   <p className="mt-2 text-sm text-zinc-200">
                     {topReport
-                      ? `${toTitleCase(topReport.report_status)} for month ${topReport.month_number || "current"}`
+                      ? topReport.report_status === "delivered" && Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("delivery_unverified")
+                        ? `Marked delivered for month ${topReport.month_number || "current"}`
+                        : `${toTitleCase(topReport.report_status)} for month ${topReport.month_number || "current"}`
                       : "No report has been created yet."}
                   </p>
                 </div>

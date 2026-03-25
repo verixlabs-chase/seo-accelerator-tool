@@ -25,11 +25,43 @@ from app.services.organic_value_baseline_service import (
     build_baseline as build_organic_value_baseline,
     resolve_monthly_seo_investment as resolve_organic_value_monthly_investment,
 )
+from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.services.strategy_engine.schemas import CampaignStrategyOut, StrategyWindow
 from app.services.strategy_build_service import build_campaign_strategy_idempotent
 from app.services import economics_service, lifecycle_service
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+
+
+def _organic_value_truth(payload: dict) -> dict:
+    assumption_sources = {str(item.get("source_type") or "").strip() for item in payload.get("assumptions", [])}
+    states = ["heuristic"]
+    reasons = ["organic_value_is_modeled_from_rank_ctr_and_cpc_inputs"]
+
+    if "user_provided" in assumption_sources:
+        states.append("operator_assisted")
+        reasons.append("organic_value_includes_manual_investment_assumptions")
+    if payload.get("current_value", {}).get("status") != "available":
+        states.append("unavailable")
+        reasons.append("current_value_baseline_not_available")
+    if any(item.get("status") == "unavailable" for item in payload.get("assumptions", [])):
+        states.append("operator_assisted")
+        reasons.append("some_assumptions_are_missing_or_estimated")
+
+    freshness_state = freshness_state_from_timestamp(payload.get("as_of"), stale_after=timedelta(days=31))
+    if freshness_state == "stale":
+        states.append("stale")
+        reasons.append("organic_value_snapshot_is_stale")
+
+    return build_truth(
+        states=states,
+        summary="Organic value is a paid-equivalent heuristic baseline built from stored rankings, CTR assumptions, CPC snapshots, and optional manual investment inputs. It is not revenue truth.",
+        provider_state="provider_derived_and_modeled",
+        setup_state="configured",
+        operator_state="operator_review_required" if "user_provided" in assumption_sources else "self_serve",
+        freshness_state=freshness_state,
+        reasons=reasons,
+    )
 
 
 @router.post("")
@@ -504,7 +536,8 @@ def get_campaign_organic_value_baseline(
         campaign_id=campaign.id,
         monthly_seo_investment=effective_monthly_investment,
     )
-    return envelope(request, OrganicValueBaselineOut.model_validate(payload).model_dump(mode="json"))
+    response_payload = OrganicValueBaselineOut.model_validate(payload).model_dump(mode="json")
+    return envelope(request, {**response_payload, "truth": _organic_value_truth(response_payload)})
 
 def _serialize_keyword_value_row(row: dict[str, object]) -> dict[str, object]:
     return {

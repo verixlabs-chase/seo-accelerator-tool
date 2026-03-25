@@ -41,6 +41,7 @@ def test_recommendation_summary_endpoint(client):
     assert isinstance(payload["counts_by_risk_tier"], dict)
     assert isinstance(payload["average_confidence_score"], float)
     assert "items" not in payload
+    assert payload["truth"]["classification"] == "heuristic"
 
 
 def test_dashboard_endpoint_returns_aggregated_payload(client):

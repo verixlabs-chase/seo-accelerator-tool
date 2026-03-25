@@ -18,6 +18,7 @@ def test_local_health_and_reviews_velocity(client):
     )
     assert health.status_code == 200
     assert "health_score" in health.json()["data"]
+    assert health.json()["data"]["truth"]["classification"] in {"synthetic", "in_progress"}
 
     map_pack = client.get(
         f"/api/v1/local/map-pack?campaign_id={campaign['id']}",
@@ -25,6 +26,7 @@ def test_local_health_and_reviews_velocity(client):
     )
     assert map_pack.status_code == 200
     assert "map_pack_position" in map_pack.json()["data"]
+    assert map_pack.json()["data"]["truth"]["classification"] == "synthetic"
 
     reviews = client.get(
         f"/api/v1/reviews?campaign_id={campaign['id']}",
@@ -32,6 +34,7 @@ def test_local_health_and_reviews_velocity(client):
     )
     assert reviews.status_code == 200
     assert len(reviews.json()["data"]["items"]) >= 1
+    assert reviews.json()["data"]["truth"]["classification"] in {"synthetic", "in_progress"}
 
     velocity = client.get(
         f"/api/v1/reviews/velocity?campaign_id={campaign['id']}",
@@ -40,4 +43,4 @@ def test_local_health_and_reviews_velocity(client):
     assert velocity.status_code == 200
     assert "reviews_last_30d" in velocity.json()["data"]
     assert "avg_rating_last_30d" in velocity.json()["data"]
-
+    assert velocity.json()["data"]["truth"]["classification"] in {"synthetic", "in_progress"}

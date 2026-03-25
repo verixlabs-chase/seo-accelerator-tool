@@ -1,52 +1,35 @@
 "use client";
 
-import {
-  clearAuthSession,
-  getAccessToken,
-  getRefreshToken,
-  updateAccessToken,
-} from "../lib/authStorage";
+import { clearAuthSession } from "../lib/authStorage";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
 
 export async function platformApi(path, options = {}) {
-  async function runRequest(token) {
+  async function runRequest() {
     return fetch(`${API_BASE}${path}`, {
       ...options,
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
         ...(options.headers || {})
       }
     });
   }
 
-  let token = getAccessToken();
-  if (!token) {
-    throw new Error("No token found. Login first.");
-  }
-
-  let response = await runRequest(token);
+  let response = await runRequest();
 
   if (response.status === 401) {
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) {
-      clearAuthSession();
-      throw new Error("Session expired. Please log in again.");
-    }
     const refreshResponse = await fetch(`${API_BASE}/auth/refresh`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken })
     });
     const refreshJson = await refreshResponse.json().catch(() => ({}));
     if (!refreshResponse.ok || !refreshJson?.data?.access_token) {
       clearAuthSession();
       throw new Error("Session expired. Please log in again.");
     }
-    updateAccessToken(refreshJson.data.access_token);
-    token = refreshJson.data.access_token;
-    response = await runRequest(token);
+    response = await runRequest();
   }
 
   const json = await response.json().catch(() => ({}));

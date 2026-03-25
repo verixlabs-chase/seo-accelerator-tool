@@ -15,6 +15,18 @@ export type TrustSignal = {
   tone?: "info" | "success" | "warning" | "danger";
 };
 
+export type RuntimeTruth = {
+  classification?: string;
+  states?: string[];
+  provider_state?: string;
+  setup_state?: string;
+  operator_state?: string;
+  freshness_state?: string;
+  summary?: string;
+  reasons?: string[];
+  generated_at?: string;
+};
+
 export type QuickAction = {
   label: string;
   href?: string;

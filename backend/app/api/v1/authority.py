@@ -1,13 +1,17 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, Query, Request
 from kombu.exceptions import KombuError
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.api.response import envelope
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.authority import Citation
 from app.schemas.authority import BacklinkOut, CitationSubmissionIn, OutreachCampaignIn, OutreachContactIn
 from app.services import authority_service
+from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     authority_sync_backlinks,
     citation_refresh_status,
@@ -18,6 +22,60 @@ from app.tasks.tasks import (
 
 authority_router = APIRouter(prefix="/authority", tags=["authority"])
 citations_router = APIRouter(prefix="/citations", tags=["citations"])
+
+
+def _citation_truth(*, citation_count: int, live_count: int, job_queued: bool, captured_at: str | None = None) -> dict:
+    settings = get_settings()
+    backend = getattr(settings, "authority_provider_backend", "synthetic").strip().lower()
+    environment = getattr(settings, "app_env", "").strip().lower()
+
+    states: list[str] = []
+    reasons: list[str] = []
+    provider_state = backend or "unknown"
+    setup_state = "configured"
+    operator_state = "self_serve"
+
+    if backend == "synthetic":
+        if environment == "test":
+            states.append("synthetic")
+            reasons.append("citation_runtime_uses_test_fixture_provider")
+            summary = "Citation refresh is using a synthetic fixture provider in test mode."
+        else:
+            states.extend(["unavailable", "operator_assisted"])
+            provider_state = "synthetic_disabled_outside_test"
+            setup_state = "provider_unavailable"
+            operator_state = "operator_assisted"
+            reasons.extend(
+                [
+                    "citation_refresh_provider_not_available_in_this_runtime",
+                    "citation_status_can_reflect_workflow_rows_without_live_directory_confirmation",
+                ]
+            )
+            summary = "Citation statuses are workflow records in this runtime. Live directory refresh is not provider-backed here."
+    else:
+        states.append("provider_backed")
+        summary = f"Citation refresh is using the configured {backend} provider."
+
+    freshness_state = freshness_state_from_timestamp(captured_at, stale_after=timedelta(days=7))
+    if freshness_state == "stale":
+        states.append("stale")
+        reasons.append("citation_status_is_stale")
+    if job_queued:
+        states.append("in_progress")
+        reasons.append("citation_refresh_queued")
+    if citation_count > 0 and live_count == 0:
+        states.append("operator_assisted")
+        reasons.append("citation_status_requires_manual_directory_confirmation")
+
+    return build_truth(
+        states=states,
+        summary=summary,
+        provider_state=provider_state,
+        setup_state=setup_state,
+        operator_state=operator_state,
+        freshness_state=freshness_state,
+        reasons=reasons,
+    )
 
 
 @authority_router.post("/outreach-campaigns")
@@ -138,6 +196,13 @@ def get_citation_status(
         .order_by(Citation.updated_at.desc())
         .all()
     )
+    live_count = sum(1 for row in rows if row.submission_status in {"live", "verified"} or row.listing_url)
+    truth = _citation_truth(
+        citation_count=len(rows),
+        live_count=live_count,
+        job_queued=task is not None,
+        captured_at=rows[0].updated_at.isoformat() if rows and rows[0].updated_at else None,
+    )
     return envelope(
         request,
         {
@@ -150,6 +215,7 @@ def get_citation_status(
                     "listing_url": row.listing_url,
                 }
                 for row in rows
-            ]
+            ],
+            "truth": truth,
         },
     )

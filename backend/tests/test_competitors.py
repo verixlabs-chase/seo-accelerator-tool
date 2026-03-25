@@ -29,6 +29,7 @@ def test_competitor_crud_snapshots_and_gaps(client):
     )
     assert listed.status_code == 200
     assert len(listed.json()["data"]["items"]) == 1
+    assert listed.json()["data"]["truth"]["classification"] == "synthetic"
 
     snapshots = client.get(
         f"/api/v1/competitors/snapshots?campaign_id={campaign['id']}",
@@ -37,6 +38,7 @@ def test_competitor_crud_snapshots_and_gaps(client):
     assert snapshots.status_code == 200
     assert snapshots.json()["data"]["summary"]["snapshots_collected"] == 1
     assert len(snapshots.json()["data"]["items"]) >= 1
+    assert snapshots.json()["data"]["truth"]["classification"] in {"synthetic", "in_progress"}
 
     gaps = client.get(
         f"/api/v1/competitors/gaps?campaign_id={campaign['id']}",
@@ -44,4 +46,4 @@ def test_competitor_crud_snapshots_and_gaps(client):
     )
     assert gaps.status_code == 200
     assert len(gaps.json()["data"]["items"]) >= 1
-
+    assert gaps.json()["data"]["truth"]["classification"] == "synthetic"

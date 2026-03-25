@@ -52,4 +52,4 @@ def test_authority_and_citation_endpoints(client):
     )
     assert citation_status.status_code == 200
     assert len(citation_status.json()["data"]["items"]) >= 1
-
+    assert citation_status.json()["data"]["truth"]["classification"] in {"synthetic", "in_progress"}
