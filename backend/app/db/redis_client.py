@@ -8,7 +8,7 @@ from app.core.config import get_settings
 
 def get_redis_client() -> redis.Redis | None:
     settings = get_settings()
-    if settings.app_env.lower() == "test":
+    if settings.app_env.lower() == "test" or settings.hosted_serverless:
         return None
     client = redis.Redis.from_url(settings.redis_url)
     try:

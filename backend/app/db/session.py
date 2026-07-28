@@ -13,20 +13,37 @@ _engine: Engine | None = None
 _session_local: sessionmaker | None = None
 
 
+def _normalize_postgres_dsn(dsn: str) -> str:
+    """Use the installed psycopg v3 driver for common hosted Postgres URLs."""
+    if dsn.startswith("postgres://"):
+        return f"postgresql+psycopg://{dsn.removeprefix('postgres://')}"
+    if dsn.startswith("postgresql://"):
+        return f"postgresql+psycopg://{dsn.removeprefix('postgresql://')}"
+    return dsn
+
+
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
         settings = get_settings()
-        is_sqlite = settings.postgres_dsn.startswith('sqlite')
+        database_url = _normalize_postgres_dsn(settings.postgres_dsn)
+        is_sqlite = database_url.startswith('sqlite')
         connect_args = {'check_same_thread': False} if is_sqlite else {}
+        if settings.hosted_serverless and not is_sqlite:
+            # Supabase transaction mode does not support prepared statements.
+            connect_args['prepare_threshold'] = None
         engine_kwargs: dict = {'pool_pre_ping': True, 'connect_args': connect_args}
-        if not is_sqlite:
+        if settings.hosted_serverless and not is_sqlite:
+            # Supabase's transaction pooler owns connection pooling. Keeping a
+            # process-local pool in an ephemeral function wastes connections.
+            engine_kwargs['poolclass'] = NullPool
+        elif not is_sqlite:
             engine_kwargs['pool_size'] = settings.db_pool_size
             engine_kwargs['max_overflow'] = settings.db_max_overflow
             engine_kwargs['pool_timeout'] = settings.db_pool_timeout_seconds
         if is_sqlite and settings.app_env.lower() == 'test':
             engine_kwargs['poolclass'] = NullPool
-        _engine = create_engine(settings.postgres_dsn, **engine_kwargs)
+        _engine = create_engine(database_url, **engine_kwargs)
         _attach_query_instrumentation(_engine)
     return _engine
 

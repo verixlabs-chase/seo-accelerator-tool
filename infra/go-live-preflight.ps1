@@ -54,7 +54,7 @@ try {
             & $pythonPath -m pip install --upgrade "pip>=25.3"
 
             # Install project dependencies
-            & $pythonPath -m pip install --disable-pip-version-check --no-input --cache-dir $cacheDir -r requirements.txt
+            & $pythonPath -m pip install --disable-pip-version-check --no-input --cache-dir $cacheDir -r requirements-dev.txt
 
             # Install pip-audit
             & $pythonPath -m pip install --disable-pip-version-check --no-input pip-audit

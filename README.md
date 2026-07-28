@@ -1,5 +1,15 @@
 # LSOS Sprint 1 Scaffold
 
+## Hosted deployment without Docker
+
+The application can run in a constrained serverless mode using Supabase
+Postgres plus separate Vercel backend and frontend projects. See
+[`docs/supabase-vercel-deployment.md`](docs/supabase-vercel-deployment.md).
+
+This mode supports the database-backed product core. Persistent Celery workers,
+Celery Beat schedules, Redis event durability, and long crawls still require a
+durable worker runtime and are not provided by Vercel functions.
+
 Initial implementation of Sprint 1 from `Docs/SPRINT_ROADMAP.md`.
 
 ## Included

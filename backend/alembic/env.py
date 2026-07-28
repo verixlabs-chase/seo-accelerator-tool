@@ -29,9 +29,19 @@ def _resolve_sqlalchemy_url() -> tuple[str, str]:
     )
 
 
+def _normalize_postgres_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        return f"postgresql+psycopg://{url.removeprefix('postgres://')}"
+    if url.startswith("postgresql://"):
+        return f"postgresql+psycopg://{url.removeprefix('postgresql://')}"
+    return url
+
+
 resolved_url, url_source = _resolve_sqlalchemy_url()
-config.set_main_option("sqlalchemy.url", resolved_url)
-print(f"[alembic] sqlalchemy.url source={url_source} value={resolved_url}")
+resolved_url = _normalize_postgres_url(resolved_url)
+# ConfigParser treats percent-encoded password characters as interpolation.
+config.set_main_option("sqlalchemy.url", resolved_url.replace("%", "%%"))
+print(f"[alembic] sqlalchemy.url source={url_source}")
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -95,5 +105,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-
-

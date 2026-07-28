@@ -103,7 +103,8 @@ def _emit_statelessness_warnings() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    run_startup_invariants(runtime="api")
+    if settings.startup_invariants_enabled:
+        run_startup_invariants(runtime="api")
     _emit_statelessness_warnings()
     initialize_event_stream()
     register_default_subscribers()
@@ -114,7 +115,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         return
 
     initialize_default_models()
-    if settings.app_env.lower() != "test":
+    if settings.app_env.lower() != "test" and not settings.hosted_serverless:
         # Fail startup loudly when Redis is unavailable.
         get_redis_client()
     if not inspect(db_session.get_engine()).has_table("users"):
@@ -149,7 +150,7 @@ if settings.app_env.lower() != "test":
     app.add_middleware(SecurityHeadersMiddleware, app_env=settings.app_env)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
     allow_origin_regex=r"^http://10\.\d{1,3}\.\d{1,3}\.\d{1,3}:3000$",
     allow_credentials=True,
     allow_methods=["*"],
