@@ -562,7 +562,7 @@ export default function RankingsPage() {
       return {
         title: `${selectedCampaign.name || "This business"} has no ranking data yet`,
         body: "Ranking results will appear here after your first tracked search and ranking check run.",
-        focus: "Go back to the dashboard and start the first ranking check for this business.",
+        focus: "Add this location's highest-value searches above, then run the first live ranking check.",
       };
     }
 
@@ -852,7 +852,10 @@ export default function RankingsPage() {
               </div>
             </section>
 
-            <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+            <section
+              id="keyword-onboarding"
+              className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]"
+            >
               <form
                 onSubmit={addTrackedKeywords}
                 className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]"
@@ -1021,9 +1024,13 @@ export default function RankingsPage() {
             {trackedTerms === 0 ? (
               <EmptyState
                 title="No tracked searches yet"
-                summary="Start your first ranking check from the dashboard. Configured terms and fresh provider-backed snapshots are both required before this page should be treated as live ranking intelligence."
-                actionLabel="Go to dashboard"
-                onAction={() => router.push("/dashboard")}
+                summary="Add this location's target searches above. Configured terms and fresh provider-backed snapshots are both required before this page should be treated as live ranking intelligence."
+                actionLabel="Add tracked searches"
+                onAction={() =>
+                  document
+                    .getElementById("keyword-onboarding")
+                    ?.scrollIntoView({ behavior: "smooth" })
+                }
               />
             ) : (
               <>
