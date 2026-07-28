@@ -465,7 +465,12 @@ def crawl_schedule_campaign(self, campaign_id: str, crawl_run_id: str, tenant_id
             # Commit seeded frontier rows before dispatching follow-up work.
             # In eager task mode, .delay() may execute synchronously.
             db.commit()
-            if not celery_app.conf.task_always_eager:
+            if celery_app.conf.task_always_eager:
+                # Hosted serverless deployments intentionally run Celery eagerly.
+                # Execute the next stage in this background invocation so the
+                # crawl does not remain scheduled with an unprocessed frontier.
+                crawl_fetch_batch.run(crawl_run_id=crawl_run_id)
+            else:
                 crawl_fetch_batch.delay(crawl_run_id=crawl_run_id)
             result = {
                 "campaign_id": campaign_id,
@@ -1507,7 +1512,6 @@ def run_strategy_automation_for_all_campaigns(self, evaluation_date_iso: str | N
         raise
     finally:
         db.close()
-
 
 
 

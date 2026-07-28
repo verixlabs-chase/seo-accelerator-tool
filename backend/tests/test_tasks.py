@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.models.campaign import Campaign
+from app.models.crawl import CrawlRun
 from app.models.task_execution import TaskExecution
 from app.models.user import User
 from app.tasks.celery_app import celery_app
@@ -20,6 +21,45 @@ def test_task_failure_payload_includes_dead_letter_metadata():
     assert payload["dead_letter"] is True
     assert payload["current_retry"] == 3
     assert payload["max_retries"] == 3
+
+
+def test_crawl_schedule_runs_fetch_stage_in_eager_runtime(db_session, monkeypatch):
+    user = db_session.query(User).filter(User.email == "a@example.com").first()
+    assert user is not None
+    campaign = Campaign(
+        tenant_id=user.tenant_id,
+        organization_id=user.tenant_id,
+        name="Eager Crawl Dispatch",
+        domain="eager-crawl.example",
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    run = CrawlRun(
+        tenant_id=user.tenant_id,
+        campaign_id=campaign.id,
+        crawl_type="deep",
+        status="scheduled",
+        seed_url="https://eager-crawl.example",
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    fetch_calls: list[str] = []
+    monkeypatch.setattr(
+        tasks.crawl_fetch_batch,
+        "run",
+        lambda *, crawl_run_id: fetch_calls.append(crawl_run_id) or {"status": "complete"},
+    )
+    monkeypatch.setattr(tasks.celery_app.conf, "task_always_eager", True)
+
+    result = tasks.crawl_schedule_campaign.run(
+        campaign_id=campaign.id,
+        crawl_run_id=run.id,
+        tenant_id=user.tenant_id,
+    )
+
+    assert result["status"] == "queued"
+    assert fetch_calls == [run.id]
 
 
 @pytest.mark.parametrize(
