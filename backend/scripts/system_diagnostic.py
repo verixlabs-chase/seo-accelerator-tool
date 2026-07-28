@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import subprocess
 import sys
 from typing import Tuple
@@ -29,19 +30,23 @@ def check_pypi_connectivity() -> tuple[bool, str]:
     return True, f"PyPI reachable GET={get_response.status_code} HEAD={head_response.status_code}"
 
 
-def check_docker() -> tuple[str, bool, str]:
-    code, out, err = _run_command(["docker", "--version"])
+def check_command(command: list[str], label: str) -> tuple[bool, str]:
+    try:
+        code, out, err = _run_command(command)
+    except OSError as exc:
+        return False, f"{label} unavailable ({exc})"
     if code != 0:
-        return f"unavailable ({err or out})", False, "docker CLI not available"
-    docker_cli = out or "docker version output unavailable"
-    info_code, info_out, info_err = _run_command(["docker", "info"])
-    if info_code != 0:
-        return docker_cli, False, (info_err or info_out or "docker info failed")
-    return docker_cli, True, "docker daemon reachable"
+        return False, f"{label} unavailable ({err or out})"
+    return True, out or f"{label} available"
 
 
 def main() -> int:
     failures: list[str] = []
+    windows_ok = platform.system() == "Windows"
+    print(f"Operating system: {platform.platform()}")
+    if not windows_ok:
+        failures.append("This supported development workflow requires Windows")
+
     print(f"Python version: {sys.version}")
     code, pip_version, pip_err = _run_command([sys.executable, "-m", "pip", "--version"])
     print(f"pip version: {pip_version if pip_version else pip_err}")
@@ -65,11 +70,14 @@ def main() -> int:
     if not pypi_ok:
         failures.append("PyPI unreachable")
 
-    docker_cli, docker_ok, docker_message = check_docker()
-    print(f"Docker CLI version: {docker_cli}")
-    print(f"Docker daemon check: {docker_message}")
-    if not docker_ok:
-        failures.append("Docker daemon unreachable")
+    node_ok, node_message = check_command(["node", "--version"], "Node.js")
+    npm_ok, npm_message = check_command(["npm", "--version"], "npm")
+    print(f"Node.js version: {node_message}")
+    print(f"npm version: {npm_message}")
+    if not node_ok:
+        failures.append("Node.js unavailable")
+    if not npm_ok:
+        failures.append("npm unavailable")
 
     if failures:
         print("DIAGNOSTIC FAILURES:")

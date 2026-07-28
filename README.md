@@ -1,141 +1,94 @@
-# LSOS Sprint 1 Scaffold
+# SEO Accelerator Tool
 
-## Hosted deployment without Docker
+Windows-native FastAPI and Next.js application hosted with Supabase and Vercel.
 
-The application can run in a constrained serverless mode using Supabase
-Postgres plus separate Vercel backend and frontend projects. See
-[`docs/supabase-vercel-deployment.md`](docs/supabase-vercel-deployment.md).
+The supported development workflow requires:
 
-This mode supports the database-backed product core. Persistent Celery workers,
-Celery Beat schedules, Redis event durability, and long crawls still require a
-durable worker runtime and are not provided by Vercel functions.
+- Windows 10 or 11
+- PowerShell 5.1 or PowerShell 7
+- Python 3.12 with the Windows `py` launcher
+- Node.js 22 with npm
+- a Supabase Postgres project
+- a Vercel account for hosted deployments
 
-Initial implementation of Sprint 1 from `Docs/SPRINT_ROADMAP.md`.
+Docker, WSL, Bash, Make, Redis, and a locally installed PostgreSQL server are
+not required.
 
-## Included
+## First-time Windows setup
 
-- FastAPI backend under `backend/` with `/api/v1` routes.
-- Auth endpoints:
-  - `POST /api/v1/auth/login`
-  - `POST /api/v1/auth/refresh`
-  - `GET /api/v1/auth/me`
-- Campaign endpoints:
-  - `POST /api/v1/campaigns`
-  - `GET /api/v1/campaigns`
-- Celery task scaffold:
-  - `ops.healthcheck.snapshot`
-  - `campaigns.bootstrap_month_plan`
-  - `audit.write_event`
-- Alembic migration for foundational tables.
-- Next.js frontend shell with tenant-aware login flow.
-- Docker Compose stack for local API + worker + scheduler + Postgres + Redis + frontend.
-- GitHub Actions CI workflow.
-
-## Run Backend Locally
-
-WSL-friendly local backend flow:
-
-1. Start infrastructure:
-
-```bash
-cp .env.example .env
-docker compose up -d postgres redis mailhog
-```
-
-2. Configure backend env and run the API from the workspace:
-
-```bash
-cd backend
-cp .env.example .env
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-If an older local Postgres volume was created from an incompatible branch and Alembic or auth behaves inconsistently, reset only the local Docker data and migrate again:
-
-```bash
-docker compose down -v
-docker compose up -d postgres redis mailhog
-cd backend
-alembic upgrade head
-```
-
-## Run Tests
+Open PowerShell in the repository:
 
 ```powershell
-cd backend
-pytest
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\windows\Initialize-Development.ps1
 ```
 
-Go-live preflight (runs backend + frontend checks end-to-end):
+The script creates:
+
+- `backend\.venv312`
+- `backend\.env` from the Windows/Supabase template
+- `frontend\.env.local`
+- frontend dependencies from `package-lock.json`
+
+Edit `backend\.env` and replace `[URL-ENCODED-PASSWORD]`. Reserved password
+characters must be percent-encoded, such as `@` to `%40` and `#` to `%23`.
+
+Apply the Supabase schema:
 
 ```powershell
-cd infra
-powershell -ExecutionPolicy Bypass -File .\go-live-preflight.ps1
+.\scripts\windows\Invoke-Migrations.ps1
 ```
 
-If your local network/proxy blocks `pip-audit`, run:
+Start both applications in separate PowerShell windows:
 
 ```powershell
-cd infra
-powershell -ExecutionPolicy Bypass -File .\go-live-preflight.ps1 -SkipSecurityAudit
+.\scripts\windows\Start-Development.ps1
 ```
 
-Optional JS-rendered crawling:
+- Frontend: `http://localhost:3000`
+- Backend health: `http://localhost:8000/api/v1/health`
+
+## Windows commands
 
 ```powershell
-pip install playwright
-python -m playwright install chromium
+# Backend only
+.\scripts\windows\Start-Backend.ps1
+
+# Frontend only
+.\scripts\windows\Start-Frontend.ps1
+
+# Complete backend/frontend validation
+.\scripts\windows\Invoke-Tests.ps1
+
+# Faster repeat validation after dependencies are installed
+.\scripts\windows\Invoke-Tests.ps1 -SkipDependencyInstall
+
+# Reset and recreate the development environment
+.\scripts\reset_dev_env.ps1
 ```
 
-Then set `CRAWL_USE_PLAYWRIGHT=true` in `backend/.env`.
+## Hosting
 
-Default local seeded user after migrations/startup:
-- `admin@local.dev`
-- `admin123!`
+The repository deploys as two Vercel projects:
 
-## Run Frontend Locally
+- `backend` to the FastAPI project
+- `frontend` to the Next.js project
 
-The frontend is separate from Docker Compose in this repo.
+Both use the same Supabase database. GitHub Actions applies Alembic migrations
+from a Windows runner using the `SUPABASE_MIGRATION_DATABASE_URL` repository
+secret. See [Windows development](docs/windows-development.md) and
+[Supabase/Vercel deployment](docs/supabase-vercel-deployment.md).
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Hosted-mode boundary
 
-It defaults to `http://localhost:8000/api/v1`.
+Vercel functions are short-lived. In the current hosted mode:
 
-## Run Backend Services via Docker Compose
+- Celery executes eagerly inside API requests
+- Redis durability and Celery Beat are disabled
+- crawl and automation limits remain conservative
+- long-running workers require a future managed Windows-compatible worker
+  service or protected scheduled endpoints
 
-Compose manages backend infrastructure and backend runtime services. It does not start the Next.js frontend.
-
-```bash
-cp .env.example .env
-docker compose up --build
-```
-
-## Local Troubleshooting
-
-If Docker services look healthy but `http://localhost:8000` still behaves unexpectedly, a stale host-run `uvicorn` process may still be bound to port `8000`. During Docker-based validation, `localhost:8000` should point to the Compose `api` service.
-
-Check what is bound to `8000`:
-
-```bash
-lsof -i :8000
-ss -ltnp | grep 8000
-```
-
-Stop the stale host process, then recreate the Compose API cleanly:
-
-```bash
-kill <PID>
-docker compose up -d --force-recreate api
-```
-
-Go-live execution docs:
-- `Docs/GO_LIVE_HARDENING_AND_RELEASE_EXECUTION.md`
-- `Docs/PROVIDER_STACK_AND_SETUP_CHECKLIST.md`
+The developer and operator workflow is Windows-only. Supabase and Vercel are
+managed services; their internal infrastructure is controlled by those
+providers and does not require Linux access from the user.

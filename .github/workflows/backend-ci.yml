@@ -1,4 +1,4 @@
-﻿name: Backend CI
+name: Backend CI
 
 on:
   push:
@@ -10,47 +10,45 @@ on:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
 
+permissions:
+  contents: read
+
 jobs:
   backend-ci:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: backend
+    env:
+      APP_ENV: test
+      DATABASE_URL: sqlite:///./backend-ci.db
+      POSTGRES_DSN: sqlite:///./backend-ci.db
+      PYTHONUTF8: "1"
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Docker Compose Build
-        run: docker compose build
-
-      - name: Run Tests
-        env:
-          DATABASE_URL: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
-        run: docker compose run --rm test-runner
-
-      - name: Performance Envelope
-        env:
-          DATABASE_URL: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
-        run: docker compose run --rm test-runner pytest -q tests/test_performance_envelope.py
-
-      - name: Run Lint
-        env:
-          DATABASE_URL: postgresql+psycopg://lsos:lsos@postgres:5432/lsos
-        run: docker compose run --rm test-runner ruff check .
-
-      - name: Validate Production Config
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Run lint
+        run: python -m ruff check .
+      - name: Validate migration graph
+        run: python scripts/validate_migrations.py
+      - name: Run performance envelope
+        run: python -m pytest -q tests/test_performance_envelope.py
+      - name: Validate hosted production configuration
         env:
           APP_ENV: production
+          HOSTED_SERVERLESS: "true"
+          STARTUP_INVARIANTS_ENABLED: "false"
           JWT_SECRET: this-is-a-ci-validation-secret-with-32-chars
           PLATFORM_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           PUBLIC_BASE_URL: https://ci.example.com
-          POSTGRES_DSN: postgresql://user:pass@db:5432/app
-          OBJECT_STORAGE_ENDPOINT: https://storage.example.com
-          OBJECT_STORAGE_BUCKET: ci-bucket
-          OBJECT_STORAGE_ACCESS_KEY: ci-access
-          OBJECT_STORAGE_SECRET_KEY: ci-secret
-          SMTP_HOST: smtp.example.com
-          SMTP_USERNAME: ci-user
-          SMTP_PASSWORD: ci-password
-          SMTP_FROM_EMAIL: noreply@example.com
-          OTEL_EXPORTER_ENDPOINT: https://otel.example.com
-          GOOGLE_OAUTH_CLIENT_ID: ci-client-id
-          GOOGLE_OAUTH_CLIENT_SECRET: ci-client-secret
-        run: docker compose run --rm api python scripts/validate_production_config.py
+          POSTGRES_DSN: postgresql://user:pass@db.example.com:6543/app?sslmode=require
+          CELERY_TASK_ALWAYS_EAGER: "true"
+          CELERY_TASK_EAGER_PROPAGATES: "true"
+        run: python scripts/validate_production_config.py

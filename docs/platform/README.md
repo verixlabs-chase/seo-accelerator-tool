@@ -34,7 +34,8 @@ This directory describes the runtime platform implemented by the backend in this
 - Intelligence orchestrator: `backend/app/intelligence/intelligence_orchestrator.py`
 - Knowledge graph: `backend/app/intelligence/knowledge_graph/update_engine.py`, `backend/app/models/knowledge_graph.py`
 - Global graph and industry learning: `backend/app/intelligence/global_graph/graph_service.py`, `backend/app/intelligence/industry_models/industry_learning_pipeline.py`
-- Deployment assets: `docker-compose.yml`, `backend/Dockerfile`
+- Deployment assets: `backend/vercel.json`, `frontend/vercel.json`, Windows
+  PowerShell scripts under `scripts/windows`, and Windows GitHub Actions
 
 ## Runtime summary
 

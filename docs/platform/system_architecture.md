@@ -2,23 +2,15 @@
 
 ## Process model
 
-The platform currently runs as a small service cluster defined in `docker-compose.yml`.
+The supported runtime uses a Windows developer workstation with managed
+Supabase Postgres and separate Vercel API/frontend projects.
 
 ```mermaid
 flowchart LR
-    subgraph Runtime
-        API[api\nuvicorn app.main:app]
-        W[worker\ncelery worker]
-        B[beat\ncelery beat]
-        MH[mailhog]
-    end
-    API --> PG[(PostgreSQL)]
-    API --> R[(Redis)]
-    W --> PG
-    W --> R
-    B --> R
-    B --> PG
-    API --> MH
+    WIN[Windows PowerShell development] --> FE[Next.js]
+    WIN --> API[FastAPI / Vercel functions]
+    FE --> API
+    API --> PG[(Supabase Postgres)]
 ```
 
 ## Boot sequence
@@ -33,13 +25,11 @@ flowchart LR
 - model bootstrap: `app.intelligence.model_registry.initialize_default_models`
 - Redis availability check: `app.db.redis_client.get_redis_client`
 
-### Worker boot
+### Hosted task execution
 
-`backend/app/tasks/celery_app.py` creates the Celery app. In non-test environments it:
-
-- runs startup invariants
-- validates Redis connectivity
-- publishes worker and scheduler heartbeats to Redis keys defined in `backend/app/infra/contracts.py`
+`backend/app/tasks/celery_app.py` remains the task API, but the supported
+Supabase/Vercel mode executes tasks eagerly and uses memory-backed coordination.
+Persistent worker and scheduler processes are not started locally.
 
 ## Data architecture
 
@@ -58,13 +48,9 @@ The engine/session layer is implemented in `backend/app/db/session.py`. It adds 
 
 ### Volatile coordination layer
 
-Redis is used for:
-
-- Celery broker and result backend
-- Redis Streams event transport in `backend/app/events/event_stream.py`
-- worker and scheduler heartbeats
-- rate limiting middleware
-- queue-depth inspection and health probes
+Hosted mode uses eager Celery execution and the in-memory event adapter. Redis
+code remains available for a future durable worker tier but is not a supported
+Windows development dependency.
 
 ## Architectural domains
 
@@ -104,5 +90,5 @@ The platform has a few important boundaries that operators need to preserve:
 
 - API nodes should remain effectively stateless apart from process-local caches and locks. `main.py` explicitly audits a short list of files for module-level mutable state when multiple web workers are configured.
 - SQLAlchemy sessions are not shared across threads. `run_system_cycle` falls back to single-session processing when a session is injected.
-- Redis is a hard dependency outside tests; startup intentionally fails when it is unavailable.
+- Hosted/serverless mode deliberately removes the Redis startup dependency.
 - The intelligence chain mixes synchronous publish and asynchronous queue dispatch. This reduces latency for some steps, but it means failures can surface either inside a request path or later in a worker path.

@@ -1,11 +1,11 @@
 # Supabase + Vercel deployment
 
-This deployment runs:
+This is the supported Windows-managed deployment:
 
 - Supabase transaction-pooled Postgres for application data
 - one Vercel project for the FastAPI backend
 - one Vercel project for the Next.js frontend
-- no Docker and no Redis
+- no Docker, WSL, Bash, local Redis, or local PostgreSQL
 
 ## What works in this mode
 
@@ -30,27 +30,26 @@ same Supabase database without changing the frontend.
 4. Ensure both URLs include `sslmode=require`.
 5. Treat the database password as a server-only secret. Do not expose it using
    a `NEXT_PUBLIC_` variable.
+6. Percent-encode reserved password characters before inserting the password
+   into either URL. For example, encode `@` as `%40`, `#` as `%23`, and `%` as
+   `%25`.
 
 The application continues to own authentication and tables through SQLAlchemy;
 Supabase Auth is not required for this first deployment.
 
 ## 2. Apply the schema
 
-From a machine with Python 3.12:
+From Windows with Python 3.12:
 
 ```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:DATABASE_URL="<Supabase direct or session-pooler migration URL>"
-alembic upgrade head
+.\scripts\windows\Initialize-Development.ps1
+.\scripts\windows\Invoke-Migrations.ps1
 ```
 
 Alternatively, add `SUPABASE_MIGRATION_DATABASE_URL` as a GitHub Actions
 repository secret and manually run the **Supabase migrations** workflow. Use
 the direct or session-pooler URL for this secret, not transaction mode. The
-workflow also runs when migration files change on `main`.
+Windows workflow also runs when migration files change on `main`.
 
 Never run migrations automatically during a Vercel function cold start.
 
@@ -59,7 +58,7 @@ Never run migrations automatically during a Vercel function cold start.
 Import the repository as a Vercel project and set:
 
 - Project root: `backend`
-- Framework preset: Other
+- Framework preset: FastAPI
 - Production branch: `main`
 
 Copy the variables from `backend/.env.supabase.example` into the Vercel project.
