@@ -10,6 +10,7 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  useLocationContext,
   type RuntimeTruth,
   type TrustSignal,
 } from "../components";
@@ -145,8 +146,8 @@ function SourceChip({ sourceType, status }: { sourceType: string; status: string
 export default function OrganicValuePage() {
   const pathname = usePathname();
   const router = useRouter();
+  const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [monthlyInvestment, setMonthlyInvestment] = useState("");
   const [appliedMonthlyInvestment, setAppliedMonthlyInvestment] = useState("");
   const [baseline, setBaseline] = useState<OrganicValueBaseline | null>(null);
@@ -335,27 +336,12 @@ export default function OrganicValuePage() {
       dateRangeLabel="Organic value baseline"
       topBarActions={
         <>
-          <select
-            value={selectedCampaignId}
-            onChange={(event) => {
-              setSelectedCampaignId(event.target.value);
-              setNotice("");
-            }}
-            disabled={campaigns.length === 0}
-            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-100 outline-none"
-          >
-            {campaigns.map((campaign) => (
-              <option key={campaign.id} value={campaign.id}>
-                {campaign.name || campaign.domain || "Unnamed campaign"}
-              </option>
-            ))}
-          </select>
           <button
             onClick={() => void refreshBaseline()}
             disabled={!selectedCampaignId || refreshing}
             className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {refreshing ? "Refreshing..." : "Refresh"}
+            {refreshing ? "Reloading..." : "Reload saved data"}
           </button>
           <button
             onClick={() => router.push("/rankings")}

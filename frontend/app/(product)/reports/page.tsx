@@ -11,6 +11,7 @@ import {
   ProductPageIntro,
   ReportPreview,
   TruthNotice,
+  useLocationContext,
   type ReportSection,
   type RuntimeTruth,
   type TrustSignal,
@@ -289,8 +290,8 @@ const SCHEDULE_TIMEZONES = [
 export default function ReportsPage() {
   const pathname = usePathname();
   const router = useRouter();
+  const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [selectedReportId, setSelectedReportId] = useState("");
   const [selectedReportDetail, setSelectedReportDetail] = useState<ReportDetail | null>(null);
@@ -653,21 +654,6 @@ export default function ReportsPage() {
       dateRangeLabel="Stored report data"
       topBarActions={
         <>
-          <select
-            value={selectedCampaignId}
-            onChange={(event) => {
-              setSelectedCampaignId(event.target.value);
-              setNotice("");
-            }}
-            disabled={campaigns.length === 0}
-            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-100 outline-none"
-          >
-            {campaigns.map((campaign) => (
-              <option key={campaign.id} value={campaign.id}>
-                {campaign.name || campaign.domain || "Unnamed campaign"}
-              </option>
-            ))}
-          </select>
           <button
             onClick={() => router.push("/opportunities")}
             className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100"

@@ -25,6 +25,7 @@ import {
   LoadingCard,
   OnboardingWizard,
   TruthNotice,
+  useLocationContext,
   type RuntimeTruth,
   type TrustSignal,
 } from "../components";
@@ -410,9 +411,13 @@ export default function DashboardPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const {
+    selectedCampaignId,
+    setSelectedCampaignId,
+    reloadLocations,
+  } = useLocationContext();
   const [loading, setLoading] = useState(false);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [campaignName, setCampaignName] = useState("");
   const [campaignDomain, setCampaignDomain] = useState("");
   const [seedUrl, setSeedUrl] = useState("");
@@ -510,6 +515,7 @@ export default function DashboardPage() {
       });
 
       await loadCampaigns();
+      await reloadLocations();
       setSelectedCampaignId(created.id);
       setSeedUrl(withScheme(created.domain || ""));
       setCampaignName("");
@@ -989,13 +995,13 @@ export default function DashboardPage() {
             onClick={() =>
               runAction("refresh", async () => {
                 await loadLatest(selectedCampaignId);
-                setNotice("Latest results refreshed.");
+                setNotice("Latest saved results reloaded.");
               })
             }
             disabled={busyAction !== "" || !selectedCampaignId}
             className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busyAction === "refresh" ? "Refreshing..." : "Refresh"}
+            {busyAction === "refresh" ? "Reloading..." : "Reload latest results"}
           </button>
           <div className="flex h-9 min-w-9 items-center justify-center border border-accent-500/20 bg-accent-500/10 px-3 text-sm font-semibold text-zinc-100">
             {me?.tenant_id ? "TA" : "LS"}

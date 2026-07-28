@@ -11,6 +11,7 @@ import {
   MapCard,
   ProductPageIntro,
   TruthNotice,
+  useLocationContext,
   type RuntimeTruth,
   type TrustSignal,
 } from "../components";
@@ -197,8 +198,8 @@ function LocalMapVisual({ position = 20 }: { position?: number | null }) {
 export default function LocalVisibilityPage() {
   const pathname = usePathname();
   const router = useRouter();
+  const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [health, setHealth] = useState<LocalHealth | null>(null);
   const [mapPack, setMapPack] = useState<MapPack | null>(null);
   const [velocity, setVelocity] = useState<ReviewVelocity | null>(null);
@@ -351,30 +352,15 @@ export default function LocalVisibilityPage() {
       dateRangeLabel="Live local SEO data"
       topBarActions={
         <>
-          <select
-            value={selectedCampaignId}
-            onChange={(event) => {
-              setSelectedCampaignId(event.target.value);
-              setNotice("");
-            }}
-            disabled={campaigns.length === 0}
-            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-100 outline-none"
-          >
-            {campaigns.map((campaign) => (
-              <option key={campaign.id} value={campaign.id}>
-                {campaign.name || campaign.domain || "Unnamed campaign"}
-              </option>
-            ))}
-          </select>
           <button
             onClick={() => {
-              setNotice("Local SEO data refreshed.");
+              setNotice("Saved local visibility data reloaded.");
               void loadLocalData(selectedCampaignId);
             }}
             disabled={!selectedCampaignId}
             className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Refresh
+            Reload saved data
           </button>
           <button
             onClick={() => router.push("/citations")}

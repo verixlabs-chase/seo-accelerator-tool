@@ -10,6 +10,7 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  useLocationContext,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
@@ -132,6 +133,7 @@ function statusClasses(status?: string) {
 export default function LocationsPage() {
   const pathname = usePathname();
   const router = useRouter();
+  const { reloadLocations } = useLocationContext();
   const [me, setMe] = useState<Me | null>(null);
   const [hierarchy, setHierarchy] = useState<Hierarchy | null>(null);
   const [loading, setLoading] = useState(true);
@@ -278,6 +280,7 @@ export default function LocationsPage() {
       }
       setCampaignName("");
       setCampaignDomain("");
+      await reloadLocations();
       return "Campaign created and assigned to the selected business location.";
     });
   }

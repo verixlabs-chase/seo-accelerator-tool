@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bar,
@@ -21,6 +21,7 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  useLocationContext,
   type RuntimeTruth,
   type TrustSignal,
 } from "../components";
@@ -200,9 +201,11 @@ function RankingsTooltip({
 export default function RankingsPage() {
   const pathname = usePathname();
   const router = useRouter();
+  const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
+  const lastSelectedCampaignId = useRef("");
   const [me, setMe] = useState<Me | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [viewMode, setViewMode] = useState<"portfolio" | "location">("portfolio");
   const [trends, setTrends] = useState<RankTrend[]>([]);
   const [trackedKeywords, setTrackedKeywords] = useState<TrackedKeyword[]>([]);
   const [portfolioLocations, setPortfolioLocations] = useState<PortfolioLocation[]>([]);
@@ -276,17 +279,18 @@ export default function RankingsPage() {
     }
   }
 
-  async function refreshRankings(campaignId: string) {
-    if (!campaignId) {
-      return;
-    }
-
+  async function refreshRankings(campaignId?: string) {
     setRefreshing(true);
     setError("");
 
     try {
-      await Promise.all([loadTrends(campaignId), loadPortfolio()]);
-      setNotice("Stored ranking rows reloaded. This does not force a new live provider check by itself.");
+      await Promise.all([
+        campaignId ? loadTrends(campaignId) : Promise.resolve(),
+        loadPortfolio(),
+      ]);
+      setNotice(
+        "Saved ranking data reloaded. Use “Run live check” when you want fresh provider results.",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to refresh rankings.");
     } finally {
@@ -451,6 +455,21 @@ export default function RankingsPage() {
       setError(err instanceof Error ? err.message : "Unable to load rankings.");
     });
   }, [selectedCampaignId, loading]);
+
+  useEffect(() => {
+    if (!selectedCampaignId) {
+      return;
+    }
+    if (!lastSelectedCampaignId.current) {
+      lastSelectedCampaignId.current = selectedCampaignId;
+      return;
+    }
+    if (lastSelectedCampaignId.current !== selectedCampaignId) {
+      lastSelectedCampaignId.current = selectedCampaignId;
+      setViewMode("location");
+      setNotice("");
+    }
+  }, [selectedCampaignId]);
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
@@ -639,41 +658,36 @@ export default function RankingsPage() {
       navItems={navItems}
       trustSignals={trustSignals}
       accountLabel={
-        selectedCampaign
+        viewMode === "portfolio"
+          ? "All locations portfolio"
+          : selectedCampaign
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Stored ranking snapshots"
+      dateRangeLabel={
+        viewMode === "portfolio" ? "Location comparison" : "Saved ranking snapshots"
+      }
       topBarActions={
         <>
-          <select
-            value={selectedCampaignId}
-            onChange={(event) => {
-              setSelectedCampaignId(event.target.value);
-              setNotice("");
-            }}
-            disabled={campaigns.length === 0}
-            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-100 outline-none"
-          >
-            {campaigns.map((campaign) => (
-              <option key={campaign.id} value={campaign.id}>
-                {campaign.name || campaign.domain || "Unnamed campaign"}
-              </option>
-            ))}
-          </select>
+          {viewMode === "location" ? (
+            <button
+              onClick={() => void runLiveCheck()}
+              disabled={busyAction !== "" || trackedKeywords.length === 0 || !selectedCampaignId}
+              className="rounded-md border border-accent-500/35 bg-accent-500/12 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busyAction === "run" ? "Checking..." : "Run live check"}
+            </button>
+          ) : null}
           <button
-            onClick={() => void runLiveCheck()}
-            disabled={busyAction !== "" || trackedKeywords.length === 0 || !selectedCampaignId}
-            className="rounded-md border border-accent-500/35 bg-accent-500/12 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busyAction === "run" ? "Checking..." : "Run live check"}
-          </button>
-          <button
-            onClick={() => void refreshRankings(selectedCampaignId)}
-            disabled={refreshing || !selectedCampaignId}
+            onClick={() =>
+              void refreshRankings(
+                viewMode === "location" ? selectedCampaignId : undefined,
+              )
+            }
+            disabled={refreshing || (viewMode === "location" && !selectedCampaignId)}
             className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {refreshing ? "Refreshing..." : "Refresh"}
+            {refreshing ? "Reloading..." : "Reload saved data"}
           </button>
           <button
             onClick={() => router.push("/dashboard")}
@@ -690,6 +704,51 @@ export default function RankingsPage() {
           title="Where your business shows up in search"
           summary="Use this page to review stored ranking snapshots, source quality, and which search terms need attention next without overreading thin or stale data."
         />
+
+        <section className="flex flex-col gap-3 rounded-md border border-[#303137] bg-[#111214] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div
+            className="inline-flex w-full rounded-md border border-[#26272c] bg-[#0d0e10] p-1 sm:w-auto"
+            role="group"
+            aria-label="Choose rankings view"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode("portfolio");
+                setNotice("");
+              }}
+              aria-pressed={viewMode === "portfolio"}
+              className={`flex-1 rounded px-4 py-2 text-sm font-semibold transition sm:flex-none ${
+                viewMode === "portfolio"
+                  ? "bg-accent-500 text-white"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              All locations
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode("location");
+                setNotice("");
+              }}
+              disabled={!selectedCampaignId}
+              aria-pressed={viewMode === "location"}
+              className={`flex-1 rounded px-4 py-2 text-sm font-semibold transition disabled:opacity-40 sm:flex-none ${
+                viewMode === "location"
+                  ? "bg-accent-500 text-white"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              Selected location
+            </button>
+          </div>
+          <p className="text-sm text-zinc-400">
+            {viewMode === "portfolio"
+              ? "Compare performance across the portfolio."
+              : `Showing ${selectedCampaign?.name || selectedCampaign?.domain || "the selected location"}.`}
+          </p>
+        </section>
 
         <TruthNotice title="Stored ranking rows are not proof of live search intelligence.">
           Ranking movement is only as trustworthy as the provider setup and freshness behind it.
@@ -735,6 +794,7 @@ export default function RankingsPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
+            {viewMode === "portfolio" ? (
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
@@ -814,7 +874,20 @@ export default function RankingsPage() {
                         className="border-t border-[#26272c]"
                       >
                         <td className="px-4 py-3">
-                          <p className="text-sm font-medium text-white">{location.location_name}</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const campaignId = location.campaign_ids[0];
+                              if (campaignId) {
+                                setSelectedCampaignId(campaignId);
+                                setViewMode("location");
+                                setNotice("");
+                              }
+                            }}
+                            className="text-left text-sm font-semibold text-white underline decoration-accent-500/50 underline-offset-4 transition hover:text-accent-200"
+                          >
+                            {location.location_name}
+                          </button>
                           <p className="mt-0.5 text-xs text-zinc-500">
                             {location.primary_city || location.domains[0] || "Location details pending"}
                           </p>
@@ -851,7 +924,10 @@ export default function RankingsPage() {
                 </table>
               </div>
             </section>
+            ) : null}
 
+            {viewMode === "location" ? (
+            <>
             <section
               id="keyword-onboarding"
               className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]"
@@ -1229,6 +1305,8 @@ export default function RankingsPage() {
                 </section>
               </>
             )}
+            </>
+            ) : null}
           </>
         ) : null}
       </section>

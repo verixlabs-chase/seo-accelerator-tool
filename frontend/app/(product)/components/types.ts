@@ -7,6 +7,7 @@ export type NavItem = {
   active?: boolean;
   disabled?: boolean;
   hidden?: boolean;
+  section?: "primary" | "more";
 };
 
 export type TrustSignal = {

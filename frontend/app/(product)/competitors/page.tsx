@@ -10,6 +10,7 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  useLocationContext,
   type RuntimeTruth,
   type TrustSignal,
 } from "../components";
@@ -95,8 +96,8 @@ export default function CompetitorsPage() {
   const pathname = usePathname();
   const router = useRouter();
 
+  const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [gaps, setGaps] = useState<GapItem[]>([]);
   const [snapshotResult, setSnapshotResult] = useState<SnapshotResult | null>(null);
@@ -293,21 +294,6 @@ export default function CompetitorsPage() {
       dateRangeLabel="Live competitor data"
       topBarActions={
         <>
-          <select
-            value={selectedCampaignId}
-            onChange={(event) => {
-              setSelectedCampaignId(event.target.value);
-              setNotice("");
-            }}
-            disabled={campaigns.length === 0}
-            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-100 outline-none"
-          >
-            {campaigns.map((campaign) => (
-              <option key={campaign.id} value={campaign.id}>
-                {campaign.name || campaign.domain || "Unnamed campaign"}
-              </option>
-            ))}
-          </select>
           <button
             onClick={() => router.push("/opportunities")}
             className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100"

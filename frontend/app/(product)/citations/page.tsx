@@ -10,6 +10,7 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  useLocationContext,
   type RuntimeTruth,
   type TrustSignal,
 } from "../components";
@@ -94,8 +95,8 @@ export default function CitationsPage() {
   const pathname = usePathname();
   const router = useRouter();
 
+  const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [statusResult, setStatusResult] = useState<StatusResult | null>(null);
   const [newDirectory, setNewDirectory] = useState("");
   const [loading, setLoading] = useState(true);
@@ -253,22 +254,6 @@ export default function CitationsPage() {
       dateRangeLabel="Live citation data"
       topBarActions={
         <>
-          <select
-            value={selectedCampaignId}
-            onChange={(event) => {
-              setSelectedCampaignId(event.target.value);
-              setNotice("");
-              setError("");
-            }}
-            disabled={campaigns.length === 0}
-            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-100 outline-none"
-          >
-            {campaigns.map((campaign) => (
-              <option key={campaign.id} value={campaign.id}>
-                {campaign.name || campaign.domain || "Unnamed campaign"}
-              </option>
-            ))}
-          </select>
           <button
             onClick={() => router.push("/local-visibility")}
             className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100"

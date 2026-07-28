@@ -12,6 +12,7 @@ import {
   LoadingCard,
   ProductPageIntro,
   TruthNotice,
+  useLocationContext,
   type RuntimeTruth,
   type TimelineEntry,
   type TrustSignal,
@@ -668,8 +669,8 @@ function buildExecutionTimeline(execution: Execution): TimelineEntry[] {
 export default function OpportunitiesPage() {
   const pathname = usePathname();
   const router = useRouter();
+  const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [selectedRecommendationId, setSelectedRecommendationId] = useState("");
   const [executions, setExecutions] = useState<Execution[]>([]);
@@ -1053,27 +1054,12 @@ export default function OpportunitiesPage() {
       dateRangeLabel="Live recommendation data"
       topBarActions={
         <>
-          <select
-            value={selectedCampaignId}
-            onChange={(event) => {
-              setSelectedCampaignId(event.target.value);
-              setNotice("");
-            }}
-            disabled={campaigns.length === 0}
-            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-100 outline-none"
-          >
-            {campaigns.map((campaign) => (
-              <option key={campaign.id} value={campaign.id}>
-                {campaign.name || campaign.domain || "Unnamed campaign"}
-              </option>
-            ))}
-          </select>
           <button
             onClick={() => void refreshCampaignData(selectedCampaignId)}
             disabled={!selectedCampaignId || busyAction !== ""}
             className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Refresh
+            Reload saved data
           </button>
           <button
             onClick={() => router.push("/reports")}

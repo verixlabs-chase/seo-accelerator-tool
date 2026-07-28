@@ -14,6 +14,11 @@ export function SidebarNav({
   title = "InsightOS",
   subtitle = "InsightOS",
 }: SidebarNavProps) {
+  const visibleItems = items.filter((item) => !item.hidden);
+  const primaryItems = visibleItems.filter((item) => item.section !== "more");
+  const moreItems = visibleItems.filter((item) => item.section === "more");
+  const moreIsActive = moreItems.some((item) => item.active);
+
   function NavGlyph({ active = false }: { active?: boolean }) {
     return (
       <span
@@ -25,6 +30,47 @@ export function SidebarNav({
         )}
       />
     );
+  }
+
+  function NavLinks({ links }: { links: NavItem[] }) {
+    return links.map((item) => (
+      item.disabled ? (
+        <div
+          key={item.href}
+          aria-disabled="true"
+          className="flex cursor-not-allowed items-center justify-between border border-transparent px-3 py-2 text-sm text-zinc-600"
+        >
+          <span className="flex items-center gap-2.5 font-medium">
+            <NavGlyph />
+            {item.label}
+          </span>
+          <span className="border border-[#26272c] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+            Coming soon
+          </span>
+        </div>
+      ) : (
+        <Link
+          key={item.href}
+          href={item.href}
+          className={cn(
+            "group flex items-center justify-between rounded-md border px-3 py-2 text-sm transition",
+            item.active
+              ? "border-[#3a2a20] bg-[linear-gradient(90deg,rgba(255,106,26,0.14),rgba(255,106,26,0.02))] text-white shadow-[inset_2px_0_0_0_rgba(255,106,26,1)]"
+              : "border-transparent text-zinc-300 hover:border-[#26272c] hover:bg-white/[0.02] hover:text-white",
+          )}
+        >
+          <span className="flex items-center gap-2.5 font-medium">
+            <NavGlyph active={item.active} />
+            {item.label}
+          </span>
+          {item.badge ? (
+            <span className="border border-accent-500/25 bg-accent-500/10 px-1.5 py-0.5 text-[10px] text-zinc-100">
+              {item.badge}
+            </span>
+          ) : null}
+        </Link>
+      )
+    ));
   }
 
   return (
@@ -39,44 +85,23 @@ export function SidebarNav({
       </div>
 
       <nav className="space-y-1.5">
-        {items.filter((item) => !item.hidden).map((item) => (
-          item.disabled ? (
-            <div
-              key={item.href}
-              aria-disabled="true"
-              className="flex cursor-not-allowed items-center justify-between border border-transparent px-3 py-2 text-sm text-zinc-600"
-            >
-              <span className="flex items-center gap-2.5 font-medium">
-                <NavGlyph />
-                {item.label}
+        <NavLinks links={primaryItems} />
+        {moreItems.length > 0 ? (
+          <details
+            open={moreIsActive ? true : undefined}
+            className="group/more border-t border-[#26272c] pt-3"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500 transition hover:bg-white/[0.02] hover:text-zinc-300">
+              More tools
+              <span aria-hidden="true" className="text-base transition group-open/more:rotate-45">
+                +
               </span>
-              <span className="border border-[#26272c] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                Coming soon
-              </span>
+            </summary>
+            <div className="mt-1 space-y-1">
+              <NavLinks links={moreItems} />
             </div>
-          ) : (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "group flex items-center justify-between rounded-md border px-3 py-2 text-sm transition",
-                item.active
-                  ? "border-[#3a2a20] bg-[linear-gradient(90deg,rgba(255,106,26,0.14),rgba(255,106,26,0.02))] text-white shadow-[inset_2px_0_0_0_rgba(255,106,26,1)]"
-                  : "border-transparent text-zinc-300 hover:border-[#26272c] hover:bg-white/[0.02] hover:text-white",
-              )}
-            >
-              <span className="flex items-center gap-2.5 font-medium">
-                <NavGlyph active={item.active} />
-                {item.label}
-              </span>
-              {item.badge ? (
-                <span className="border border-accent-500/25 bg-accent-500/10 px-1.5 py-0.5 text-[10px] text-zinc-100">
-                  {item.badge}
-                </span>
-              ) : null}
-            </Link>
-          )
-        ))}
+          </details>
+        ) : null}
       </nav>
 
       <div className="mt-auto rounded-md border border-[#26272c] bg-[#111214] p-3">

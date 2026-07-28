@@ -5,6 +5,7 @@ import { cn } from "./utils";
 type TopBarProps = {
   accountLabel: string;
   dateRangeLabel: string;
+  locationSelector?: ReactNode;
   actions?: ReactNode;
   onMenuOpen?: () => void;
 };
@@ -12,6 +13,7 @@ type TopBarProps = {
 export function TopBar({
   accountLabel,
   dateRangeLabel,
+  locationSelector,
   actions,
   onMenuOpen,
 }: TopBarProps) {
@@ -29,6 +31,7 @@ export function TopBar({
             </svg>
           </button>
         ) : null}
+        {locationSelector}
         <div className="rounded-md border border-[#26272c] bg-[#131417] px-3 py-1.5 text-sm text-zinc-200">
           {accountLabel}
         </div>

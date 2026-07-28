@@ -10,6 +10,7 @@ import {
   KpiCard,
   LoadingCard,
   ProductPageIntro,
+  useLocationContext,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
@@ -188,8 +189,8 @@ function parseIssueDetails(detailsJson?: string) {
 export default function SiteHealthPage() {
   const pathname = usePathname();
   const router = useRouter();
+  const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [runs, setRuns] = useState<CrawlRun[]>([]);
   const [issues, setIssues] = useState<TechnicalIssue[]>([]);
   const [metrics, setMetrics] = useState<CrawlMetrics | null>(null);
@@ -455,30 +456,15 @@ export default function SiteHealthPage() {
       dateRangeLabel="Live technical health data"
       topBarActions={
         <>
-          <select
-            value={selectedCampaignId}
-            onChange={(event) => {
-              setSelectedCampaignId(event.target.value);
-              setNotice("");
-            }}
-            disabled={campaigns.length === 0}
-            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-100 outline-none"
-          >
-            {campaigns.map((campaign) => (
-              <option key={campaign.id} value={campaign.id}>
-                {campaign.name || campaign.domain || "Unnamed campaign"}
-              </option>
-            ))}
-          </select>
           <button
             onClick={() => {
-              setNotice("Technical health data refreshed.");
+              setNotice("Saved site health data reloaded.");
               void loadTechnicalData(selectedCampaignId);
             }}
             disabled={!selectedCampaignId}
             className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Refresh
+            Reload saved data
           </button>
           <button
             onClick={() => router.push("/dashboard")}

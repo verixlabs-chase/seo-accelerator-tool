@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 import { MobileNav } from "./MobileNav";
+import { LocationSelector } from "./LocationContext";
 import { SidebarNav } from "./SidebarNav";
 import { TopBar } from "./TopBar";
 import { TrustStatusBar } from "./TrustStatusBar";
@@ -40,6 +41,7 @@ export function AppShell({
               <TopBar
                 accountLabel={accountLabel}
                 dateRangeLabel={dateRangeLabel}
+                locationSelector={<LocationSelector />}
                 actions={topBarActions}
                 onMenuOpen={() => setMobileNavOpen(true)}
               />

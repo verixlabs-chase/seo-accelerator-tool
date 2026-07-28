@@ -1,17 +1,17 @@
 import type { NavItem } from "./components";
 
 const PRODUCT_NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/rankings", label: "Rankings" },
-  { href: "/organic-value", label: "Organic Value" },
-  { href: "/reports", label: "Reports" },
-  { href: "/opportunities", label: "Opportunities" },
+  { href: "/dashboard", label: "Overview", section: "primary" },
+  { href: "/rankings", label: "Rankings", section: "primary" },
+  { href: "/local-visibility", label: "Local Visibility", section: "primary" },
+  { href: "/site-health", label: "Site Health", section: "primary" },
+  { href: "/opportunities", label: "Next Steps", section: "primary" },
+  { href: "/reports", label: "Reports", section: "primary" },
   { href: "/settings", label: "Settings", hidden: true },
-  { href: "/locations", label: "Locations" },
-  { href: "/local-visibility", label: "Local SEO" },
-  { href: "/site-health", label: "Technical Health" },
-  { href: "/competitors", label: "Competitors" },
-  { href: "/citations", label: "Citations" },
+  { href: "/locations", label: "Manage locations", section: "more" },
+  { href: "/organic-value", label: "Organic Value", section: "more" },
+  { href: "/competitors", label: "Competitors", section: "more" },
+  { href: "/citations", label: "Citations", section: "more" },
 ];
 
 export function buildProductNav(pathname: string): NavItem[] {
