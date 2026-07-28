@@ -12,6 +12,7 @@ from app.models.organization_membership import OrganizationMembership
 from app.models.role import Role, UserRole
 from app.models.tenant import Tenant
 from app.models.user import User
+from app.services import provisioning_service
 
 
 VALID_PLATFORM_ROLES = {"platform_owner", "platform_admin"}
@@ -31,12 +32,15 @@ def seed_local_admin(db: Session) -> None:
 
     organization = db.query(Organization).filter(Organization.id == tenant.id).first()
     if organization is None:
+        tier_profile = provisioning_service.ensure_default_tier_profile(db)
         organization = Organization(
             id=tenant.id,
             name=f"default-org-{tenant.id[:8]}",
             plan_type="standard",
             billing_mode="subscription",
             status="active",
+            tier_profile_id=tier_profile.id,
+            tier_version=tier_profile.version,
         )
         db.add(organization)
         db.flush()
@@ -83,6 +87,7 @@ def seed_local_admin(db: Session) -> None:
             )
         )
     db.commit()
+    provisioning_service.ensure_organization_provisioned(db, organization_id=organization.id)
 
 
 def _list_memberships(db: Session, user_id: str) -> list[OrganizationMembership]:

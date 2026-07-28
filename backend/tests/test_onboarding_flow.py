@@ -1,6 +1,8 @@
 import uuid
 
 from app.models.campaign import Campaign
+from app.models.entitlement import Entitlement
+from app.models.organization import Organization
 from app.services import onboarding_service
 
 MASTER_KEY_B64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
@@ -48,6 +50,16 @@ def test_onboarding_happy_path(client, db_session, monkeypatch):
     campaign = db_session.get(Campaign, data["campaign_id"])
     assert campaign is not None
     assert campaign.setup_state == "Active"
+    organization = db_session.get(Organization, data["organization_id"])
+    assert organization is not None
+    assert organization.tier_profile_id
+    assert organization.tier_version == 1
+    entitlement_count = (
+        db_session.query(Entitlement)
+        .filter(Entitlement.organization_id == organization.id)
+        .count()
+    )
+    assert entitlement_count == 9
 
 
 def test_onboarding_failure_then_resume(client, monkeypatch):

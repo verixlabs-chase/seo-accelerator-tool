@@ -13,7 +13,14 @@ from app.models.organization import Organization
 from app.models.organization_provider_credential import OrganizationProviderCredential
 from app.models.reporting import MonthlyReport
 from app.models.tenant import Tenant
-from app.services import crawl_service, intelligence_service, lifecycle_service, provider_credentials_service, reporting_service
+from app.services import (
+    crawl_service,
+    intelligence_service,
+    lifecycle_service,
+    provider_credentials_service,
+    provisioning_service,
+    reporting_service,
+)
 from app.tasks.tasks import crawl_schedule_campaign
 
 
@@ -213,12 +220,15 @@ def _ensure_org_ready(db: Session, session: OnboardingSession, payload: dict[str
     if organization is None:
         organization = db.query(Organization).filter(Organization.id == tenant.id).first()
     if organization is None:
+        tier_profile = provisioning_service.ensure_default_tier_profile(db)
         organization = Organization(
             id=tenant.id,
             name=org_name or f"org-{tenant.id[:8]}",
             plan_type="standard",
             billing_mode="subscription",
             status="active",
+            tier_profile_id=tier_profile.id,
+            tier_version=tier_profile.version,
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
@@ -226,6 +236,7 @@ def _ensure_org_ready(db: Session, session: OnboardingSession, payload: dict[str
         db.commit()
         db.refresh(organization)
 
+    provisioning_service.ensure_organization_provisioned(db, organization_id=organization.id)
     session.tenant_id = tenant.id
     session.organization_id = organization.id
     return {"tenant_id": tenant.id, "organization_id": organization.id}

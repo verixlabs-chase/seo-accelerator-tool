@@ -58,6 +58,16 @@ def test_migration_upgrade_and_downgrade():
             assert enterprise_sponsored_org[1] == "enterprise"
             assert enterprise_sponsored_org[2] == "platform_sponsored"
             assert org_policy[0] == "byo_required"
+            tier_profile_count = conn.execute(text("SELECT count(*) FROM tier_profiles")).scalar()
+            unprovisioned_org_count = conn.execute(
+                text(
+                    "SELECT count(*) FROM organizations o "
+                    "WHERE o.tier_profile_id IS NULL OR o.tier_version IS NULL "
+                    "OR (SELECT count(*) FROM entitlements e WHERE e.organization_id=o.id) < 9"
+                )
+            ).scalar()
+            assert tier_profile_count == 3
+            assert unprovisioned_org_count == 0
         print(f"[migrations-test] alembic_revision={revision}")
         print(f"[migrations-test] table_count={len(tables)}")
 

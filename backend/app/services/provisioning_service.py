@@ -5,9 +5,17 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import json
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain import entitlement_codes
+from app.domain.tier_defaults import (
+    DEFAULT_TIER_CODE,
+    DEFAULT_TIER_DISPLAY_NAME,
+    DEFAULT_TIER_PROFILE_ID,
+    DEFAULT_TIER_VERSION,
+    default_entitlement_template,
+)
 from app.models.entitlement import Entitlement, EntitlementResetPeriod, EntitlementValueType
 from app.models.onboarding_state import (
     ONBOARDING_STATE_ACTIVE,
@@ -55,6 +63,72 @@ class TierProfileValidationError(Exception):
     pass
 
 
+def ensure_default_tier_profile(db: Session) -> TierProfile:
+    """Return the built-in standard tier, creating it for non-migrated local DBs."""
+    tier_profile = (
+        db.query(TierProfile)
+        .filter(
+            TierProfile.tier_code == DEFAULT_TIER_CODE,
+            TierProfile.version == DEFAULT_TIER_VERSION,
+        )
+        .first()
+    )
+    if tier_profile is not None:
+        return tier_profile
+
+    entitlement_template = default_entitlement_template()
+    canonical_template = {
+        "tier_code": DEFAULT_TIER_CODE,
+        "version": DEFAULT_TIER_VERSION,
+        "entitlements": entitlement_template["entitlements"],
+    }
+    tier_profile = TierProfile(
+        id=DEFAULT_TIER_PROFILE_ID,
+        tier_code=DEFAULT_TIER_CODE,
+        display_name=DEFAULT_TIER_DISPLAY_NAME,
+        version=DEFAULT_TIER_VERSION,
+        entitlement_template_json=entitlement_template,
+        deterministic_hash=compute_tier_profile_hash(canonical_template),
+        is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    try:
+        with db.begin_nested():
+            db.add(tier_profile)
+            db.flush()
+        return tier_profile
+    except IntegrityError:
+        tier_profile = (
+            db.query(TierProfile)
+            .filter(
+                TierProfile.tier_code == DEFAULT_TIER_CODE,
+                TierProfile.version == DEFAULT_TIER_VERSION,
+            )
+            .first()
+        )
+        if tier_profile is None:
+            raise
+        return tier_profile
+
+
+def ensure_organization_provisioned(db: Session, *, organization_id: str) -> ProvisioningResult:
+    """Materialize the organization's tier entitlements and provisioning baseline."""
+    organization = db.get(Organization, organization_id)
+    if organization is None:
+        raise ValueError(f"Organization not found: {organization_id}")
+
+    tier_profile = db.get(TierProfile, organization.tier_profile_id) if organization.tier_profile_id else None
+    if tier_profile is None:
+        tier_profile = ensure_default_tier_profile(db)
+
+    return provision_organization(
+        db,
+        organization_id=organization_id,
+        tier_profile_id=tier_profile.id,
+    )
+
+
 def provision_organization(
     db: Session,
     *,
@@ -76,6 +150,10 @@ def provision_organization(
     _validate_tier_profile(tier_profile, normalized_template_rows=normalized_template_rows)
 
     try:
+        organization.tier_profile_id = tier_profile.id
+        organization.tier_version = int(tier_profile.version)
+        organization.updated_at = now
+
         onboarding_state = _ensure_onboarding_state(db, organization_id=organization_id, now=now)
 
         entitlements_created = _ensure_entitlements(
