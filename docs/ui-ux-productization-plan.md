@@ -2,11 +2,14 @@
 
 **Project:** SEO Accelerator Tool (InsightOS)
 **Role:** Product / UX Strategy
-**Status:** Pre-launch recovery planning
+**Status:** Historical recovery plan plus active follow-on sprints
 **Date:** 2026-03-13
+**Reconciled:** 2026-07-28
 **Based on:** Codex audit findings + codebase exploration
 
 ---
+
+> **Current status:** Sprints 1-4 in this document established the tenant shell, onboarding, core routes, and mobile navigation and are now a substantially completed baseline. The active follow-on work begins at Sprint 5 below. The authoritative execution brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
 
 ## 1. Executive Summary
 
@@ -404,6 +407,43 @@ The following sequence minimizes regression risk and allows each change to be te
 13. Update `TopBar.tsx` to show hamburger button on mobile.
 14. Wire recommendation count badge to real API data.
 15. Build minimal `/settings` page.
+
+### Sprint 5 — Location context and information architecture
+
+16. Add a persistent `Viewing: All locations / [location]` selector to the shared authenticated shell.
+17. Preserve the selected location across product-page navigation.
+18. Make page scope explicit in the title area of every location-sensitive page.
+19. Make Rankings portfolio rows switch directly to the selected location.
+20. Separate `All locations` comparison from individual-location detail.
+21. Reduce the primary navigation to core workflows and move secondary tools under More.
+22. Rename ambiguous refresh actions so reloading, checking status, and running paid provider checks cannot be confused.
+
+### Sprint 6 — Rankings and Site Health comprehension
+
+23. Restructure Rankings into explicit portfolio and individual-location modes.
+24. Put the location switcher, strongest phrase, weakest phrase, latest check, and live-check action above the fold.
+25. Rewrite ranking summaries in plain language before showing charts and technical metadata.
+26. Restructure Site Health around a single `Fix this first` priority.
+27. Add `What is wrong`, `Why it matters`, `What to do next`, and `Priority` to each issue group.
+28. Collapse crawl terminology and raw URL evidence under `Technical details`.
+29. Add a visible rescan or opportunity action where the backend supports it.
+
+### Sprint 7 — Local Visibility map
+
+30. Capture or resolve structured city, state/region, country, latitude, and longitude for every business location.
+31. Resolve DataForSEO location identifiers automatically from structured location data.
+32. Add a real interactive map centered on the selected location with a business pin and service-area context.
+33. Add clear setup states for missing coordinates, provider connection, or map-rank coverage.
+34. Add provider-backed geo-grid/map-rank visualization only after the base map and location normalization pass QA.
+35. Keep decorative/base-map presence visually distinct from paid ranking intelligence.
+
+### Sprint 8 — Cross-page cleanup and final visual polish
+
+36. Standardize page introductions, scope labels, primary actions, loading, empty, and error states.
+37. Remove duplicated setup panels from operational pages after setup is complete.
+38. Consolidate location-sensitive controls into shared components.
+39. Verify desktop, tablet, and mobile journeys for switching locations, reading rankings, finding the first technical fix, and opening the map.
+40. Complete the broader visual redesign only after the new hierarchy passes task-based usability checks.
 
 ---
 

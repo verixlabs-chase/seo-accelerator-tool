@@ -1,24 +1,127 @@
 # Claude Next Build Brief
 
+> **Active roadmap status (2026-07-28):** The Workflow Closure phase described later in this brief is substantially shipped. The active next build phase is now **Core UX Closure: location context, navigation clarity, Rankings, Site Health, and Local Visibility**. Where Sections 7-10 conflict with the active sprint sequence below, this status and Section 1A take precedence.
+
 ## 1. Executive Summary
 
-This repo is in the phase where Claude should stop expanding breadth and start converting existing backend capability into safer, more complete user workflows.
+This repo is in the phase where Codex should stop adding destinations and make the existing product easy to understand and operate.
 
 The current truth from the audits and codebase:
 - The platform is backend-heavy and product-thin.
-- The tenant UI is no longer a raw scaffold. It now has a coherent shell and six real buyer-facing product pages: dashboard, rankings, reports, opportunities, local visibility, and site health.
-- Recent UI polish and execution-console work already happened. The next phase should extend those surfaces, not replace them.
+- The tenant UI is no longer a raw scaffold. It now has working routes for dashboard, rankings, organic value, reports, opportunities, locations, local visibility, site health, competitors, and citations.
+- Multi-location data and provider-backed ranking checks work, but active-location context is too subtle and portfolio data is mixed with location detail.
+- Recent workflow-closure work already produced execution, reporting, competitors, and citations surfaces. Route existence is no longer the primary problem.
+- The navigation exposes too many destinations at the same level, and page controls do not make the next action obvious.
+- Local Visibility lacks a real map experience, and Site Health still exposes too much technical language before explaining what matters.
 - The backend already exposes a lot more than the frontend surfaces.
-- The safest next phase is workflow closure, not new architecture.
+- The safest next phase is information-architecture and comprehension work on top of the existing routes, not new architecture.
 
-Recommended build direction for Claude:
-1. Finish execution inbox / approvals / rollback / audit UX on top of the existing opportunities page.
-2. Finish report scheduling / delivery visibility on top of the existing reports page.
-3. Add the competitors workflow as the next net-new tenant product page.
-4. Add the citations workflow after competitors.
-5. Defer broader content / authority / agency surfaces until those higher-value workflows are closed.
+Recommended build direction:
+1. Make the current organization/location scope persistent, prominent, and consistent across every product page.
+2. Separate portfolio comparison from individual-location detail on Rankings and make switching obvious.
+3. Simplify the navigation into a small set of primary workflows with secondary tools grouped under More.
+4. Rewrite Site Health around plain-language priorities and next actions.
+5. Build a real location map before attempting a premium geo-grid layer.
+6. Normalize DataForSEO locations from structured city/state/country data so customers never enter provider-specific strings.
 
-This brief is optimized for safe execution. Claude should work ticket-by-ticket, preserve working behavior, avoid broad rewrites, and stop if a slice requires risky backend changes.
+This brief is optimized for safe execution. Codex should work sprint-by-sprint, preserve working behavior, avoid backend architecture rewrites, and keep truth states explicit.
+
+## 1A. Active Next Sprint Sequence
+
+### Sprint 1 - Location Context and Navigation Clarity
+
+Goal: a user always knows which location they are viewing and where to go next.
+
+Scope:
+- Add one persistent selector to the authenticated shell: `Viewing: All locations / [location name]`.
+- Use the same selected-location state on Dashboard, Rankings, Local Visibility, Site Health, Competitors, Citations, Opportunities, and Reports.
+- Persist the selection across navigation and make scope visible in page headings.
+- Define two explicit modes:
+  - **All locations** for portfolio comparison and rollups.
+  - **One location** for detailed metrics, actions, and provider runs.
+- Make portfolio rows clickable and switch directly into the chosen location.
+- Simplify primary navigation to:
+  - Overview
+  - Rankings
+  - Local Visibility
+  - Site Health
+  - Opportunities
+  - Reports
+- Group Locations, Organic Value, Competitors, and Citations under a clearly labeled secondary menu.
+- Replace ambiguous `Refresh` labels with scoped labels such as `Reload saved data`, `Check for updates`, or `Run live check`.
+
+Acceptance criteria:
+- A first-time user can switch Reno/Lexington without discovering an unlabeled campaign control.
+- The selected location remains active when moving between core pages.
+- Every page states `All locations` or the selected location near its title.
+- Reloading data never appears to be the way to switch locations.
+- Desktop and mobile navigation expose the same hierarchy.
+
+### Sprint 2 - Rankings and Site Health Comprehension
+
+Goal: make two working data modules immediately understandable to a non-technical owner.
+
+Rankings scope:
+- Show the portfolio comparison only in **All locations** mode.
+- Show individual rankings, tracked phrases, latest check time, and run controls only in **Location** mode.
+- Add obvious `All locations`, `Reno`, and `Lexington` switching at the top of the workspace.
+- Keep `Run live check` visually distinct from `Reload saved data`.
+- Add plain-language summaries for page-one status, strongest phrase, and the next ranking opportunity.
+
+Site Health scope:
+- Lead with `Fix this first`, not raw issue groups.
+- For every issue show:
+  - What is wrong
+  - Why it matters
+  - What to do next
+  - Priority
+- Keep raw crawl terminology and affected-URL detail behind an expandable `Technical details` control.
+- Add a clear next action for rescanning, reviewing affected pages, or creating an opportunity.
+
+Acceptance criteria:
+- A business owner can identify the strongest and weakest phrase for one location without reading the portfolio table.
+- A business owner can explain the top technical issue and next action without knowing crawl terminology.
+
+### Sprint 3 - Local Visibility Map and Provider Location Normalization
+
+Goal: make Local Visibility a real location product rather than another summary page.
+
+Scope:
+- Store structured city, state/region, country, and coordinates on business locations.
+- Resolve and store the DataForSEO location code/name automatically; never require a customer to enter an exact provider string.
+- Add a working map centered on the selected business location.
+- Show the business pin, address, and service-area context.
+- Add honest empty and setup states when coordinates or local-provider data are missing.
+- Add a provider-backed geo-grid/map-rank layer only after the base map and location normalization are reliable.
+- Label base-map presence separately from paid map-ranking coverage.
+
+Acceptance criteria:
+- Reno opens on Reno and Lexington opens on Lexington without manual provider formatting.
+- The map is interactive and location-specific.
+- The UI never presents a decorative map as map-ranking intelligence.
+- Paid geo-grid requests are explicit and budget-aware.
+
+### Sprint 4 - Cross-Page UX and Visual Polish
+
+Goal: remove remaining convolution after the core information architecture is stable.
+
+Scope:
+- Standardize page introductions, scope labels, loading states, empty states, error messages, and action placement.
+- Remove duplicated provider setup panels from pages where setup is already complete.
+- Consolidate repeated controls into shared components.
+- Verify the full journey on desktop, tablet, and mobile.
+- Run task-based usability checks:
+  - switch locations
+  - find one location's rankings
+  - identify the first technical fix
+  - open the local map
+  - find the next recommended action
+
+Acceptance criteria:
+- Each task is discoverable without prior instruction.
+- Primary navigation contains no dead ends or equally weighted low-priority tools.
+- The interface uses plain language before technical detail.
+- Visual polish follows the finalized hierarchy rather than masking an unclear workflow.
 
 ## 2. What The Platform Is Today
 
@@ -138,9 +241,9 @@ Preservation rules:
 - Do not refactor shared shell/components unless the ticket requires a small local extension.
 - Do not reorganize the backend architecture during this phase.
 
-## 7. What Claude Should Build Next
+## 7. Historical Workflow Closure Phase (Substantially Shipped)
 
-Claude should build the next phase in this order:
+This sequence is retained as implementation history. Its routes and major UI slices are now substantially present, so it is no longer the active next phase.
 
 ### Phase target
 **Workflow Closure Phase: Execution + Reporting + Competitors + Citations**
@@ -176,12 +279,13 @@ Only after those are complete:
 - broader WordPress provisioning UX
 - agency / portfolio productization
 
-## 8. What Claude Must Not Touch Yet
+## 8. Historical Guardrails For Workflow Closure
+
+The active sprints in Section 1A explicitly authorize scoped shared-shell, navigation, location-context, and multi-location UX changes. The remaining guardrails below still apply: do not use UX work as a reason to rewrite backend architecture or unrelated platform surfaces.
 
 Claude must not touch these areas in this phase unless a ticket explicitly requires a minimal local change:
 
 - Auth architecture and token strategy
-- Global navigation redesign
 - Dashboard rewrite
 - Platform/admin app rewrite
 - Execution engine internals in `backend/app/intelligence/recommendation_execution_engine.py`
@@ -190,7 +294,6 @@ Claude must not touch these areas in this phase unless a ticket explicitly requi
 - Report rendering engine internals beyond exposing status/visibility data
 - Org/tenant/role model
 - Broad CSS/design system rewrite
-- Agency/portfolio/multi-location product surfaces
 
 Do not start:
 - content workspace
@@ -201,7 +304,7 @@ Do not start:
 
 Those are later phases.
 
-## 9. Recommended Next Build Phase
+## 9. Historical Recommended Build Phase
 
 Recommended next build phase:
 
@@ -229,9 +332,9 @@ Non-goals:
 - Do not attempt major intelligence-quality improvements.
 - Do not attempt broad automation hardening beyond UI-safe visibility and gating.
 
-## 10. Exact Ticket Order For Claude
+## 10. Historical Workflow Closure Ticket Order
 
-Claude should implement tickets in this exact order.
+These tickets document the prior Workflow Closure order. Use Section 1A for the active next-sprint order.
 
 ### T1. Execution Inbox Completion
 Scope:

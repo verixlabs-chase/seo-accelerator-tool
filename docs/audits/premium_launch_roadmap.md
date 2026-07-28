@@ -408,6 +408,20 @@ Premium pricing requires a product that feels calm, legible, and authoritative. 
 
 ## Part 9 - Roadmap Phases
 
+### 2026-07-28 roadmap reconciliation
+
+The original phase structure remains correct, but current implementation has advanced: the routes for rankings, local visibility, site health, competitors, citations, locations, opportunities, and reports now exist. The next launch risk is no longer missing destinations; it is unclear location scope, crowded navigation, thin map UX, and technical presentation.
+
+| Observed usability gap | Existing roadmap home | Revised delivery commitment |
+|---|---|---|
+| Location switching is present but easy to miss | Phase 1 navigation; Phase 3 portfolio | Move persistent location context into Phase 1 and require it across all core pages |
+| Rankings mixes portfolio and location detail | Phase 2 rankings | Split `All locations` comparison from individual-location workspaces |
+| Refresh appears related to switching or running checks | Phase 1 product clarity | Use action-specific labels and display the active scope next to the page title |
+| Navigation contains too many equal-weight destinations | Phase 1 information architecture | Reduce primary nav and group secondary tools |
+| Local Visibility has no real map | Phase 2 local visibility | Ship a real location map first, then add provider-backed geo-grid intelligence |
+| Site Health leads with technical issue groups | Phase 2 site health | Lead with plain-language priority, impact, and next action; collapse technical detail |
+| Provider location strings leak into customer setup | Phase 1 integration setup; Phase 2 rankings/local | Normalize structured location data and resolve provider IDs automatically |
+
 ### Phase 0 - Product definition and launch standard
 
 - Objectives: lock product promise, surface inventory, launch bar, and target tier behavior
@@ -423,25 +437,25 @@ Premium pricing requires a product that feels calm, legible, and authoritative. 
 ### Phase 1 - Must-have product polish
 
 - Objectives: replace thin frontend shell with real product structure
-- Workstreams: dashboard, onboarding, navigation, settings, core design system
-- Improve: main dashboard, auth flow, campaign home, integration setup
-- Add: onboarding command center, freshness indicators, visual status semantics
+- Workstreams: dashboard, onboarding, persistent location context, navigation, settings, core design system
+- Improve: main dashboard, auth flow, campaign home, integration setup, cross-page location switching
+- Add: onboarding command center, `All locations / location` selector, freshness indicators, visual status semantics
 - Simplify/remove: form-first workflow on customer home
 - Dependencies: Phase 0 IA and data contracts
 - Risks: frontend work uncovers service gaps
-- Exit criteria: customer can onboard and understand account state without operator help
+- Exit criteria: customer can onboard, switch locations, and understand account state without operator help
 - Pricing impact: makes Solo pricing thinkable, not yet justified
 
 ### Phase 2 - Launch-critical UX, visualization, and reporting
 
 - Objectives: build the surfaces that actually justify value perception
 - Workstreams: local visibility, site health, rankings, opportunities, reports
-- Improve: crawl issue prioritization, rank explanations, report design
-- Add: geo-grid/local market view, issue matrix, action center, premium report templates
+- Improve: crawl issue prioritization, plain-language remediation, portfolio-versus-location rank explanations, report design
+- Add: real location map, provider location normalization, geo-grid/local market view, issue matrix, action center, premium report templates
 - Simplify/remove: raw metric dumps on primary screens
 - Dependencies: Phase 1 design system, stronger data shaping APIs
 - Risks: local visibility requires new collection and rendering logic
-- Exit criteria: owner can see value, risk, and next steps across top workflows
+- Exit criteria: owner can select a location, see its rankings, identify the first technical fix, open a truthful local map, and understand the next action
 - Pricing impact: core unlock for Solo and Multi-location credibility
 
 ### Phase 3 - Agency / portfolio / premium tier readiness

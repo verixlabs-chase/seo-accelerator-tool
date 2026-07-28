@@ -1,5 +1,7 @@
 # Post-UI Feature Fulfillment Ticket Backlog
 
+> **Status update (2026-07-28):** This remains the workflow-fulfillment backlog, but it is no longer the master next-sprint sequence. Execution, reports, competitors, citations, locations, local visibility, and site-health routes are now present. The active next sprints focus on location context, navigation clarity, Rankings/Site Health comprehension, and the Local Visibility map; see [claude-next-build-brief.md](./claude-next-build-brief.md#1a-active-next-sprint-sequence). Remaining tickets in this file should be scheduled behind or alongside that customer-comprehension work, not used to add more top-level destinations.
+
 ## 1. Executive Summary
 
 This backlog turns the feature audit into the next execution phase.
