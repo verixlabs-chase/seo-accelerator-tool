@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from functools import lru_cache
 from hashlib import sha256
 import time
@@ -183,7 +184,8 @@ class SerpApiRankProvider:
         target_host = self._normalize_domain(target_domain)
         if not target_host:
             raise ValueError("SerpAPI rank provider requires target_domain.")
-        gl = (location_code or self.default_gl).strip().lower() or self.default_gl
+        requested_location = (location_code or "").strip()
+        gl = requested_location.lower() if len(requested_location) == 2 else self.default_gl
         params = {
             "engine": self.engine,
             "q": keyword,
@@ -192,6 +194,8 @@ class SerpApiRankProvider:
             "hl": self.default_hl,
             "num": 100,
         }
+        if requested_location and len(requested_location) != 2:
+            params["location"] = requested_location
         proxy = get_proxy_rotation_adapter().next_proxy()
         attempts = 0
         response = None
@@ -224,6 +228,97 @@ class SerpApiRankProvider:
         return {"position": 100, "confidence": 0.65}
 
 
+class DataForSeoRankProvider:
+    def __init__(
+        self,
+        *,
+        login: str,
+        password: str,
+        endpoint: str = "https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
+        timeout_seconds: float = 30.0,
+        language_code: str = "en",
+        depth: int = 100,
+    ) -> None:
+        self.login = login
+        self.password = password
+        self.endpoint = endpoint
+        self.timeout_seconds = timeout_seconds
+        self.language_code = language_code
+        self.depth = max(10, min(int(depth), 100))
+
+    @staticmethod
+    def _normalize_domain(value: str | None) -> str:
+        return SerpApiRankProvider._normalize_domain(value)
+
+    @staticmethod
+    def _normalize_location(value: str) -> str:
+        normalized = value.strip()
+        if normalized.casefold() in {"us", "usa", "united states"}:
+            return "United States"
+        if "united states" not in normalized.casefold():
+            return f"{normalized}, United States"
+        return normalized
+
+    def collect_keyword_snapshot(self, keyword: str, location_code: str, target_domain: str | None = None) -> dict:
+        target_host = self._normalize_domain(target_domain)
+        if not target_host:
+            raise ValueError("DataForSEO rank provider requires target_domain.")
+        credential = base64.b64encode(f"{self.login}:{self.password}".encode("utf-8")).decode("ascii")
+        headers = {
+            "Authorization": f"Basic {credential}",
+            "Content-Type": "application/json",
+        }
+        payload = [
+            {
+                "keyword": keyword,
+                "location_name": self._normalize_location(location_code),
+                "language_code": self.language_code,
+                "depth": self.depth,
+            }
+        ]
+        proxy = get_proxy_rotation_adapter().next_proxy()
+        response = None
+        for attempt in range(3):
+            try:
+                with _build_http_client(proxy) as client:
+                    response = client.post(
+                        self.endpoint,
+                        json=payload,
+                        headers=headers,
+                        timeout=self.timeout_seconds,
+                    )
+                break
+            except Exception:
+                if attempt < 2:
+                    time.sleep(0.25 * (2**attempt))
+        if response is None:
+            raise ValueError("DataForSEO request failed after retries.")
+        response.raise_for_status()
+        body = response.json()
+        tasks = body.get("tasks", []) if isinstance(body, dict) else []
+        if not tasks or not isinstance(tasks[0], dict):
+            raise ValueError("DataForSEO response is missing task results.")
+        task = tasks[0]
+        task_status = int(task.get("status_code", 0) or 0)
+        if task_status and task_status >= 30000:
+            raise ValueError(str(task.get("status_message") or "DataForSEO task failed."))
+        results = task.get("result", [])
+        result = results[0] if isinstance(results, list) and results and isinstance(results[0], dict) else {}
+        items = result.get("items", []) if isinstance(result, dict) else []
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict) or item.get("type") != "organic":
+                continue
+            row_host = self._normalize_domain(str(item.get("url") or item.get("domain") or ""))
+            if row_host and (
+                row_host == target_host
+                or row_host.endswith(f".{target_host}")
+                or target_host.endswith(f".{row_host}")
+            ):
+                position = int(item.get("rank_absolute") or item.get("rank_group") or 100)
+                return {"position": max(1, position), "confidence": 0.95}
+        return {"position": 100, "confidence": 0.7}
+
+
 @lru_cache
 def get_rank_provider() -> RankProvider:
     settings = get_settings()
@@ -232,7 +327,7 @@ def get_rank_provider() -> RankProvider:
         if getattr(settings, "app_env", "").strip().lower() != "test":
             raise ValueError("Synthetic rank provider is fixture-only and unavailable outside APP_ENV=test.")
         return SyntheticRankProvider()
-    if backend in {"http_json", "serpapi"}:
+    if backend in {"dataforseo", "http_json", "serpapi"}:
         raise ValueError("Credentialed rank providers require organization-scoped resolution.")
     raise ValueError(f"Unsupported rank provider backend: {backend}")
 
@@ -244,7 +339,26 @@ def get_rank_provider_for_organization(db: Session, organization_id: str) -> Ran
         if getattr(settings, "app_env", "").strip().lower() != "test":
             raise ValueError("rank_provider_unavailable: synthetic backend is allowed only in test fixture mode.")
         return SyntheticRankProvider()
+    if backend == "dataforseo":
+        resolved = resolve_provider_credentials(db, organization_id, "dataforseo")
+        login = str(resolved.get("login", "")).strip()
+        password = str(resolved.get("password", "")).strip()
+        if not login or not password:
+            raise ValueError("DataForSEO requires configured login and password.")
+        return DataForSeoRankProvider(
+            login=login,
+            password=password,
+            endpoint=getattr(
+                settings,
+                "rank_provider_dataforseo_endpoint",
+                "https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
+            ).strip(),
+            timeout_seconds=float(getattr(settings, "rank_provider_dataforseo_timeout_seconds", 30.0)),
+            language_code=getattr(settings, "rank_provider_dataforseo_language_code", "en").strip(),
+            depth=int(getattr(settings, "rank_provider_dataforseo_depth", 100)),
+        )
     if backend == "serpapi":
+        # Preserve the legacy credential alias used by existing organizations.
         resolved = resolve_provider_credentials(db, organization_id, "dataforseo")
         api_key = str(resolved.get("api_key", "")).strip()
         if not api_key:

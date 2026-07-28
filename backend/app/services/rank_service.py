@@ -1,11 +1,13 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.domain import entitlement_codes
 from app.core.config import get_settings
+from app.domain import entitlement_codes
 from app.events import emit_event
+from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
@@ -58,7 +60,7 @@ def build_rank_truth(
             operator_state = "operator_assisted"
             reasons.append("rank_provider_not_available_in_this_runtime")
             summary = "Ranking collection is not provider-backed in this runtime. The configured synthetic provider is disabled outside test mode."
-    elif backend == "serpapi":
+    elif backend in {"dataforseo", "serpapi"}:
         provider_name = "dataforseo"
         if organization_id is None:
             states.append("unavailable")
@@ -75,14 +77,24 @@ def build_rank_truth(
                 reasons.append(exc.reason_code)
                 summary = "Ranking collection requires operator-configured provider credentials before live checks are reliable."
             else:
-                if str(credentials.get("api_key", "")).strip():
+                credentials_ready = (
+                    bool(str(credentials.get("login", "")).strip())
+                    and bool(str(credentials.get("password", "")).strip())
+                    if backend == "dataforseo"
+                    else bool(str(credentials.get("api_key", "")).strip())
+                )
+                if credentials_ready:
                     states.append("provider_backed")
-                    summary = "Ranking collection is configured against a credentialed provider."
+                    summary = f"Ranking collection is configured against {provider_name}."
                 else:
                     states.append("unavailable")
                     setup_state = "credentials_missing"
                     operator_state = "operator_assisted"
-                    reasons.append("rank_provider_api_key_missing")
+                    reasons.append(
+                        "rank_provider_credentials_missing"
+                        if backend == "dataforseo"
+                        else "rank_provider_api_key_missing"
+                    )
                     summary = "Ranking collection is not configured with live provider credentials yet."
     elif backend == "http_json":
         endpoint = getattr(settings, "rank_provider_http_endpoint", "").strip()
@@ -125,8 +137,33 @@ def build_rank_truth(
 
 
 
-def add_keyword(db: Session, tenant_id: str, campaign_id: str, cluster_name: str, keyword: str, location_code: str) -> CampaignKeyword:
-    _get_campaign_or_404(db, tenant_id, campaign_id)
+def resolve_location_code(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    requested_location_code: str | None = None,
+) -> str:
+    campaign = _get_campaign_or_404(db, tenant_id, campaign_id)
+    requested = (requested_location_code or "").strip()
+    if requested:
+        return requested
+    if campaign.business_location_id:
+        location = db.get(BusinessLocation, campaign.business_location_id)
+        if location is not None and location.organization_id == campaign.organization_id:
+            city = (location.primary_city or "").strip()
+            if city:
+                return city if "united states" in city.casefold() else f"{city}, United States"
+    return "United States"
+
+
+def _get_or_create_cluster(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    cluster_name: str,
+) -> KeywordCluster:
     cluster = (
         db.query(KeywordCluster)
         .filter(
@@ -140,18 +177,130 @@ def add_keyword(db: Session, tenant_id: str, campaign_id: str, cluster_name: str
         cluster = KeywordCluster(tenant_id=tenant_id, campaign_id=campaign_id, name=cluster_name)
         db.add(cluster)
         db.flush()
+    return cluster
 
-    record = CampaignKeyword(
+
+def add_keywords_bulk(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    cluster_name: str,
+    keywords: list[str],
+    location_code: str | None,
+) -> dict:
+    _get_campaign_or_404(db, tenant_id, campaign_id)
+    effective_location = resolve_location_code(
+        db,
         tenant_id=tenant_id,
         campaign_id=campaign_id,
-        cluster_id=cluster.id,
-        keyword=keyword,
+        requested_location_code=location_code,
+    )
+    normalized_cluster = cluster_name.strip() or "Core Terms"
+    cluster = _get_or_create_cluster(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        cluster_name=normalized_cluster,
+    )
+    existing_rows = (
+        db.query(CampaignKeyword)
+        .filter(
+            CampaignKeyword.tenant_id == tenant_id,
+            CampaignKeyword.campaign_id == campaign_id,
+            CampaignKeyword.location_code == effective_location,
+        )
+        .all()
+    )
+    existing_by_keyword = {row.keyword.casefold(): row for row in existing_rows}
+    created: list[CampaignKeyword] = []
+    skipped: list[CampaignKeyword] = []
+    for raw_keyword in keywords:
+        keyword = raw_keyword.strip()
+        if not keyword:
+            continue
+        existing = existing_by_keyword.get(keyword.casefold())
+        if existing is not None:
+            skipped.append(existing)
+            continue
+        record = CampaignKeyword(
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+            cluster_id=cluster.id,
+            keyword=keyword,
+            location_code=effective_location,
+        )
+        db.add(record)
+        db.flush()
+        existing_by_keyword[keyword.casefold()] = record
+        created.append(record)
+    db.commit()
+    for row in created:
+        db.refresh(row)
+    return {
+        "created": created,
+        "skipped": skipped,
+        "location_code": effective_location,
+    }
+
+
+def add_keyword(
+    db: Session,
+    tenant_id: str,
+    campaign_id: str,
+    cluster_name: str,
+    keyword: str,
+    location_code: str | None,
+) -> CampaignKeyword:
+    result = add_keywords_bulk(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        cluster_name=cluster_name,
+        keywords=[keyword],
         location_code=location_code,
     )
-    db.add(record)
+    rows = [*result["created"], *result["skipped"]]
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Keyword is required")
+    return rows[0]
+
+
+def list_keywords(db: Session, *, tenant_id: str, campaign_id: str) -> list[dict]:
+    _get_campaign_or_404(db, tenant_id, campaign_id)
+    rows = (
+        db.query(CampaignKeyword, KeywordCluster)
+        .join(KeywordCluster, KeywordCluster.id == CampaignKeyword.cluster_id)
+        .filter(
+            CampaignKeyword.tenant_id == tenant_id,
+            CampaignKeyword.campaign_id == campaign_id,
+        )
+        .order_by(KeywordCluster.name.asc(), CampaignKeyword.keyword.asc())
+        .all()
+    )
+    return [
+        {
+            "id": keyword.id,
+            "campaign_id": keyword.campaign_id,
+            "keyword": keyword.keyword,
+            "cluster": cluster.name,
+            "location_code": keyword.location_code,
+            "created_at": keyword.created_at.isoformat(),
+        }
+        for keyword, cluster in rows
+    ]
+
+
+def delete_keyword(db: Session, *, tenant_id: str, keyword_id: str) -> None:
+    row = (
+        db.query(CampaignKeyword)
+        .filter(CampaignKeyword.id == keyword_id, CampaignKeyword.tenant_id == tenant_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked keyword not found")
+    db.delete(row)
     db.commit()
-    db.refresh(record)
-    return record
 
 
 
@@ -229,7 +378,7 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
     for kw in keywords:
         snapshot_payload = provider.collect_keyword_snapshot(
             keyword=kw.keyword,
-            location_code=location_code,
+            location_code=kw.location_code,
             target_domain=campaign.domain,
         )
         position = int(snapshot_payload["position"])
@@ -382,3 +531,107 @@ def get_trends(db: Session, tenant_id: str, campaign_id: str) -> list[dict]:
     return trends
 
 
+def get_portfolio_summary(db: Session, *, tenant_id: str) -> dict:
+    campaigns = (
+        db.query(Campaign)
+        .filter(Campaign.tenant_id == tenant_id)
+        .order_by(Campaign.created_at.asc())
+        .all()
+    )
+    grouped: dict[str, dict] = {}
+    latest_captured_at: datetime | None = None
+    organization_id: str | None = None
+    total_snapshots = 0
+    for campaign in campaigns:
+        organization_id = organization_id or campaign.organization_id
+        location = db.get(BusinessLocation, campaign.business_location_id) if campaign.business_location_id else None
+        group_key = location.id if location is not None else f"unassigned:{campaign.id}"
+        group = grouped.setdefault(
+            group_key,
+            {
+                "business_location_id": location.id if location is not None else None,
+                "location_name": location.name if location is not None else campaign.name,
+                "primary_city": location.primary_city if location is not None else None,
+                "status": location.status if location is not None else "unassigned",
+                "campaign_ids": [],
+                "campaign_names": [],
+                "domains": [],
+                "tracked_keywords": 0,
+                "ranked_keywords": 0,
+                "position_sum": 0,
+                "top_10_keywords": 0,
+                "improved_keywords": 0,
+                "declined_keywords": 0,
+                "latest_captured_at": None,
+            },
+        )
+        group["campaign_ids"].append(campaign.id)
+        group["campaign_names"].append(campaign.name)
+        group["domains"].append(campaign.domain)
+        keyword_count = get_tracked_keyword_count(db, tenant_id=tenant_id, campaign_id=campaign.id)
+        rankings = (
+            db.query(Ranking)
+            .filter(Ranking.tenant_id == tenant_id, Ranking.campaign_id == campaign.id)
+            .all()
+        )
+        latest = (
+            db.query(func.max(RankingSnapshot.captured_at), func.count(RankingSnapshot.id))
+            .filter(
+                RankingSnapshot.tenant_id == tenant_id,
+                RankingSnapshot.campaign_id == campaign.id,
+            )
+            .one()
+        )
+        campaign_latest = latest[0]
+        total_snapshots += int(latest[1] or 0)
+        group["tracked_keywords"] += keyword_count
+        group["ranked_keywords"] += len(rankings)
+        group["position_sum"] += sum(int(row.current_position) for row in rankings)
+        group["top_10_keywords"] += sum(1 for row in rankings if row.current_position <= 10)
+        group["improved_keywords"] += sum(1 for row in rankings if (row.delta or 0) > 0)
+        group["declined_keywords"] += sum(1 for row in rankings if (row.delta or 0) < 0)
+        if campaign_latest is not None:
+            if latest_captured_at is None or campaign_latest > latest_captured_at:
+                latest_captured_at = campaign_latest
+            current_group_latest = group["latest_captured_at"]
+            if current_group_latest is None or campaign_latest > current_group_latest:
+                group["latest_captured_at"] = campaign_latest
+
+    items: list[dict] = []
+    for group in grouped.values():
+        ranked_keywords = int(group.pop("ranked_keywords"))
+        position_sum = int(group.pop("position_sum"))
+        group["ranked_keywords"] = ranked_keywords
+        group["average_position"] = round(position_sum / ranked_keywords, 1) if ranked_keywords else None
+        if isinstance(group["latest_captured_at"], datetime):
+            group["latest_captured_at"] = group["latest_captured_at"].isoformat()
+        items.append(group)
+    items.sort(key=lambda item: (str(item["location_name"]).casefold(), str(item["business_location_id"] or "")))
+    tracked_keywords = sum(int(item["tracked_keywords"]) for item in items)
+    ranked_keywords = sum(int(item["ranked_keywords"]) for item in items)
+    position_weighted_sum = sum(
+        float(item["average_position"]) * int(item["ranked_keywords"])
+        for item in items
+        if item["average_position"] is not None
+    )
+    return {
+        "items": items,
+        "summary": {
+            "locations": len(items),
+            "campaigns": len(campaigns),
+            "tracked_keywords": tracked_keywords,
+            "ranked_keywords": ranked_keywords,
+            "average_position": round(position_weighted_sum / ranked_keywords, 1) if ranked_keywords else None,
+            "top_10_keywords": sum(int(item["top_10_keywords"]) for item in items),
+            "improved_keywords": sum(int(item["improved_keywords"]) for item in items),
+            "declined_keywords": sum(int(item["declined_keywords"]) for item in items),
+            "latest_captured_at": latest_captured_at.isoformat() if latest_captured_at else None,
+        },
+        "truth": build_rank_truth(
+            db,
+            organization_id=organization_id,
+            tracked_keywords=tracked_keywords,
+            snapshot_count=total_snapshots,
+            latest_captured_at=latest_captured_at,
+        ),
+    }

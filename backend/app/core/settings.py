@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     rank_provider_http_auth_token: str = ""
     rank_provider_http_keyword_field: str = "keyword"
     rank_provider_http_location_field: str = "location_code"
+    rank_provider_dataforseo_endpoint: str = "https://api.dataforseo.com/v3/serp/google/organic/live/advanced"
+    rank_provider_dataforseo_timeout_seconds: float = 30.0
+    rank_provider_dataforseo_language_code: str = "en"
+    rank_provider_dataforseo_depth: int = 100
     rank_provider_serpapi_api_key: str = ""
     rank_provider_serpapi_endpoint: str = "https://serpapi.com/search.json"
     rank_provider_serpapi_timeout_seconds: float = 15.0

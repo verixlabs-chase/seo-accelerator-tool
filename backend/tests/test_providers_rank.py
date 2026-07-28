@@ -130,6 +130,58 @@ def test_serpapi_rank_provider_returns_100_when_domain_not_found(monkeypatch):
     assert row["confidence"] == 0.65
 
 
+def test_serpapi_rank_provider_uses_city_location(monkeypatch):
+    fake_client = _FakeClient()
+    monkeypatch.setattr(rank.httpx, "Client", lambda: fake_client)
+    provider = rank.SerpApiRankProvider(api_key="k")
+    provider.collect_keyword_snapshot(
+        keyword="junk removal",
+        location_code="Reno, Nevada, United States",
+        target_domain="rank.com",
+    )
+    params = fake_client.calls[0]["params"]
+    assert params["gl"] == "us"
+    assert params["location"] == "Reno, Nevada, United States"
+
+
+def test_dataforseo_rank_provider_matches_target_domain(monkeypatch):
+    class _DataForSeoClient(_FakeClient):
+        def post(self, url: str, json: list, headers: dict, timeout: float):  # noqa: A002
+            self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+            return _FakeResponse(
+                {
+                    "tasks": [
+                        {
+                            "status_code": 20000,
+                            "result": [
+                                {
+                                    "items": [
+                                        {
+                                            "type": "organic",
+                                            "rank_absolute": 6,
+                                            "url": "https://www.rank.com/service",
+                                        }
+                                    ]
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+
+    fake_client = _DataForSeoClient()
+    monkeypatch.setattr(rank.httpx, "Client", lambda: fake_client)
+    provider = rank.DataForSeoRankProvider(login="login", password="password")
+    row = provider.collect_keyword_snapshot(
+        keyword="junk removal",
+        location_code="Reno, Nevada",
+        target_domain="rank.com",
+    )
+    assert row == {"position": 6, "confidence": 0.95}
+    assert fake_client.calls[0]["json"][0]["location_name"] == "Reno, Nevada, United States"
+    assert fake_client.calls[0]["headers"]["Authorization"].startswith("Basic ")
+
+
 def test_get_rank_provider_serpapi_backend(monkeypatch):
     rank.get_rank_provider.cache_clear()
     monkeypatch.setattr(

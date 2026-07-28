@@ -20,7 +20,7 @@ Set these before starting API, worker, and scheduler:
 - `CRAWL_FRONTIER_BATCH_SIZE=25`
 - `CRAWL_MAX_ACTIVE_RUNS_PER_TENANT=5`
 - `CRAWL_MAX_ACTIVE_RUNS_PER_CAMPAIGN=2`
-- `RANK_PROVIDER_BACKEND=synthetic|http|serpapi`
+- `RANK_PROVIDER_BACKEND=synthetic|dataforseo|http_json|serpapi`
 - `LOCAL_PROVIDER_BACKEND=synthetic|provider`
 - `AUTHORITY_PROVIDER_BACKEND=synthetic|provider`
 - `PROXY_PROVIDER_CONFIG_JSON=<json>`

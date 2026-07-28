@@ -419,7 +419,6 @@ export default function DashboardPage() {
   const [crawlType, setCrawlType] = useState("deep");
   const [clusterName, setClusterName] = useState("Core Terms");
   const [keyword, setKeyword] = useState("local seo agency");
-  const [locationCode, setLocationCode] = useState("US");
   const [monthNumber, setMonthNumber] = useState("1");
   const [recipientEmail, setRecipientEmail] = useState("admin@local.dev");
   const [showWizard, setShowWizard] = useState(false);
@@ -567,7 +566,6 @@ export default function DashboardPage() {
           campaign_id: selectedCampaignId,
           cluster_name: clusterName.trim() || "Core Terms",
           keyword: keyword.trim(),
-          location_code: locationCode.trim() || "US",
         }),
       });
 
@@ -575,7 +573,6 @@ export default function DashboardPage() {
         method: "POST",
         body: JSON.stringify({
           campaign_id: selectedCampaignId,
-          location_code: locationCode.trim() || "US",
         }),
       });
 

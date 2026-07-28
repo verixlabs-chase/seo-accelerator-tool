@@ -1,18 +1,66 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class RankKeywordIn(BaseModel):
     campaign_id: str
-    cluster_name: str
-    keyword: str
-    location_code: str = "US"
+    cluster_name: str = Field(default="Core Terms", min_length=1, max_length=120)
+    keyword: str = Field(min_length=1, max_length=255)
+    location_code: str | None = Field(default=None, max_length=255)
+
+    @field_validator("cluster_name", "keyword")
+    @classmethod
+    def normalize_required_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("location_code")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        normalized = (value or "").strip()
+        return normalized or None
+
+
+class RankKeywordBulkIn(BaseModel):
+    campaign_id: str
+    cluster_name: str = Field(default="Core Terms", min_length=1, max_length=120)
+    keywords: list[str] = Field(min_length=1, max_length=100)
+    location_code: str | None = Field(default=None, max_length=255)
+
+    @field_validator("cluster_name")
+    @classmethod
+    def normalize_cluster_name(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("keywords")
+    @classmethod
+    def normalize_keywords(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            keyword = value.strip()
+            if not keyword:
+                continue
+            if len(keyword) > 255:
+                raise ValueError("Keywords must be 255 characters or fewer.")
+            key = keyword.casefold()
+            if key not in seen:
+                normalized.append(keyword)
+                seen.add(key)
+        if not normalized:
+            raise ValueError("At least one non-empty keyword is required.")
+        return normalized
+
+    @field_validator("location_code")
+    @classmethod
+    def normalize_optional_location(cls, value: str | None) -> str | None:
+        normalized = (value or "").strip()
+        return normalized or None
 
 
 class RankScheduleIn(BaseModel):
     campaign_id: str
-    location_code: str = "US"
+    location_code: str | None = Field(default=None, max_length=255)
 
 
 class RankingSnapshotOut(BaseModel):
@@ -26,4 +74,3 @@ class RankingSnapshotOut(BaseModel):
     month_partition: str
 
     model_config = {"from_attributes": True}
-

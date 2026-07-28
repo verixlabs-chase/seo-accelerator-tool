@@ -36,7 +36,12 @@ export async function platformApi(path, options = {}) {
 
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail = json?.error?.message || json?.errors?.[0]?.message || `Request failed (${response.status})`;
+    const detail =
+      json?.error?.message ||
+      json?.errors?.[0]?.message ||
+      json?.detail?.message ||
+      (typeof json?.detail === "string" ? json.detail : "") ||
+      `Request failed (${response.status})`;
     throw new Error(detail);
   }
   return json.data;

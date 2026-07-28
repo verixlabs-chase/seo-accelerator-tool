@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bar,
@@ -35,6 +35,49 @@ type Campaign = {
   id: string;
   name?: string;
   domain?: string;
+  business_location_id?: string | null;
+};
+
+type Me = {
+  organization_id?: string;
+};
+
+type TrackedKeyword = {
+  id: string;
+  campaign_id: string;
+  keyword: string;
+  cluster: string;
+  location_code: string;
+  created_at?: string;
+};
+
+type PortfolioLocation = {
+  business_location_id?: string | null;
+  location_name: string;
+  primary_city?: string | null;
+  status: string;
+  campaign_ids: string[];
+  campaign_names: string[];
+  domains: string[];
+  tracked_keywords: number;
+  ranked_keywords: number;
+  average_position?: number | null;
+  top_10_keywords: number;
+  improved_keywords: number;
+  declined_keywords: number;
+  latest_captured_at?: string | null;
+};
+
+type PortfolioSummary = {
+  locations: number;
+  campaigns: number;
+  tracked_keywords: number;
+  ranked_keywords: number;
+  average_position?: number | null;
+  top_10_keywords: number;
+  improved_keywords: number;
+  declined_keywords: number;
+  latest_captured_at?: string | null;
 };
 
 type RankTrend = {
@@ -157,14 +200,24 @@ function RankingsTooltip({
 export default function RankingsPage() {
   const pathname = usePathname();
   const router = useRouter();
+  const [me, setMe] = useState<Me | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [trends, setTrends] = useState<RankTrend[]>([]);
+  const [trackedKeywords, setTrackedKeywords] = useState<TrackedKeyword[]>([]);
+  const [portfolioLocations, setPortfolioLocations] = useState<PortfolioLocation[]>([]);
+  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
   const [rankingsTruth, setRankingsTruth] = useState<RuntimeTruth | null>(null);
   const [trackedKeywordCount, setTrackedKeywordCount] = useState(0);
   const [latestCapturedAt, setLatestCapturedAt] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [clusterName, setClusterName] = useState("Core services");
+  const [locationTarget, setLocationTarget] = useState("");
+  const [providerLogin, setProviderLogin] = useState("");
+  const [providerPassword, setProviderPassword] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -187,17 +240,40 @@ export default function RankingsPage() {
       setRankingsTruth(null);
       setTrackedKeywordCount(0);
       setLatestCapturedAt("");
+      setTrackedKeywords([]);
       return;
     }
 
-    const response = (await platformApi(
-      `/rank/trends?campaign_id=${encodeURIComponent(campaignId)}`,
-      { method: "GET" },
-    )) as RankTrendResponse;
+    const [response, keywordsResponse] = await Promise.all([
+      platformApi(
+        `/rank/trends?campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      ) as Promise<RankTrendResponse>,
+      platformApi(
+        `/rank/keywords?campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      ),
+    ]);
     setTrends(Array.isArray(response?.items) ? (response.items as RankTrend[]) : []);
+    setTrackedKeywords(
+      Array.isArray(keywordsResponse?.items)
+        ? (keywordsResponse.items as TrackedKeyword[])
+        : [],
+    );
     setRankingsTruth((response?.truth as RuntimeTruth) || null);
     setTrackedKeywordCount(Number(response?.tracked_keywords || 0));
     setLatestCapturedAt(response?.latest_captured_at || "");
+  }
+
+  async function loadPortfolio() {
+    const response = await platformApi("/rank/portfolio", { method: "GET" });
+    setPortfolioLocations(
+      Array.isArray(response?.items) ? (response.items as PortfolioLocation[]) : [],
+    );
+    setPortfolioSummary((response?.summary as PortfolioSummary) || null);
+    if (response?.truth) {
+      setRankingsTruth((current) => current || (response.truth as RuntimeTruth));
+    }
   }
 
   async function refreshRankings(campaignId: string) {
@@ -209,12 +285,138 @@ export default function RankingsPage() {
     setError("");
 
     try {
-      await loadTrends(campaignId);
+      await Promise.all([loadTrends(campaignId), loadPortfolio()]);
       setNotice("Stored ranking rows reloaded. This does not force a new live provider check by itself.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to refresh rankings.");
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  function parseKeywordInput(value: string) {
+    return Array.from(
+      new Set(
+        value
+          .split(/[\n,]/)
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  async function addTrackedKeywords(event: FormEvent) {
+    event.preventDefault();
+    const keywords = parseKeywordInput(keywordInput);
+    if (!selectedCampaignId || keywords.length === 0) {
+      setError("Add at least one search term first.");
+      return;
+    }
+    setBusyAction("keywords");
+    setError("");
+    setNotice("");
+    try {
+      const response = await platformApi("/rank/keywords/bulk", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          cluster_name: clusterName.trim() || "Core services",
+          keywords,
+          location_code: locationTarget.trim() || null,
+        }),
+      });
+      setKeywordInput("");
+      await Promise.all([loadTrends(selectedCampaignId), loadPortfolio()]);
+      const created = Number(response?.created_count || 0);
+      const skipped = Number(response?.skipped_count || 0);
+      setNotice(
+        `${created} search term${created === 1 ? "" : "s"} added for ${response?.location_code || "this location"}${
+          skipped ? `; ${skipped} duplicate${skipped === 1 ? " was" : "s were"} skipped` : ""
+        }.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to add tracked searches.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function removeTrackedKeyword(keywordId: string) {
+    if (!selectedCampaignId) return;
+    setBusyAction(`delete-${keywordId}`);
+    setError("");
+    try {
+      await platformApi(`/rank/keywords/${keywordId}`, { method: "DELETE" });
+      await Promise.all([loadTrends(selectedCampaignId), loadPortfolio()]);
+      setNotice("Tracked search removed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to remove tracked search.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function runLiveCheck() {
+    if (!selectedCampaignId) return;
+    setBusyAction("run");
+    setError("");
+    setNotice("");
+    try {
+      const response = await platformApi("/rank/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          location_code: locationTarget.trim() || null,
+        }),
+      });
+      await Promise.all([loadTrends(selectedCampaignId), loadPortfolio()]);
+      const created = Number(response?.snapshots_created || 0);
+      setNotice(
+        created > 0
+          ? `Live ranking check complete. ${created} fresh position${created === 1 ? "" : "s"} stored.`
+          : "No ranking snapshots were created. Check the provider setup and location keywords below.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to run the live ranking check.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function connectDataForSeo(event: FormEvent) {
+    event.preventDefault();
+    if (!me?.organization_id || !providerLogin.trim() || !providerPassword) {
+      setError("DataForSEO login and password are required.");
+      return;
+    }
+    setBusyAction("provider");
+    setError("");
+    setNotice("");
+    try {
+      await platformApi(
+        `/organizations/${me.organization_id}/provider-credentials/dataforseo`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            auth_mode: "basic",
+            credentials: {
+              login: providerLogin.trim(),
+              password: providerPassword,
+            },
+          }),
+        },
+      );
+      setProviderLogin("");
+      setProviderPassword("");
+      await Promise.all([
+        selectedCampaignId ? loadTrends(selectedCampaignId) : Promise.resolve(),
+        loadPortfolio(),
+      ]);
+      setNotice("DataForSEO credentials saved securely. You can run the first live check now.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save DataForSEO credentials.");
+    } finally {
+      setBusyAction("");
     }
   }
 
@@ -224,8 +426,9 @@ export default function RankingsPage() {
       setError("");
 
       try {
-        await platformApi("/auth/me", { method: "GET" });
-        const items = await loadCampaigns();
+        const currentUser = (await platformApi("/auth/me", { method: "GET" })) as Me;
+        setMe(currentUser);
+        const [items] = await Promise.all([loadCampaigns(), loadPortfolio()]);
         if (items[0]?.id) {
           await loadTrends(items[0].id);
         }
@@ -251,6 +454,16 @@ export default function RankingsPage() {
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
+  const selectedPortfolioLocation =
+    portfolioLocations.find((item) => item.campaign_ids.includes(selectedCampaignId)) ?? null;
+
+  useEffect(() => {
+    setLocationTarget(
+      selectedPortfolioLocation?.primary_city
+        ? `${selectedPortfolioLocation.primary_city}, United States`
+        : "",
+    );
+  }, [selectedPortfolioLocation?.business_location_id, selectedPortfolioLocation?.primary_city]);
 
   const rankedTrends = useMemo(
     () =>
@@ -262,7 +475,7 @@ export default function RankingsPage() {
     [trends],
   );
 
-  const trackedTerms = trends.length;
+  const trackedTerms = trackedKeywordCount;
   const pageOneCount = trends.filter((item) => coerceNumber(item.position, 999) <= 10).length;
   const improvedTerms = trends.filter((item) => (item.delta ?? 0) > 0).length;
   const droppedTerms = trends.filter((item) => (item.delta ?? 0) < 0).length;
@@ -449,6 +662,13 @@ export default function RankingsPage() {
             ))}
           </select>
           <button
+            onClick={() => void runLiveCheck()}
+            disabled={busyAction !== "" || trackedKeywords.length === 0 || !selectedCampaignId}
+            className="rounded-md border border-accent-500/35 bg-accent-500/12 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busyAction === "run" ? "Checking..." : "Run live check"}
+          </button>
+          <button
             onClick={() => void refreshRankings(selectedCampaignId)}
             disabled={refreshing || !selectedCampaignId}
             className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
@@ -515,6 +735,269 @@ export default function RankingsPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
+            <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Multi-location portfolio
+                  </p>
+                  <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                    Compare every location at a glance
+                  </h2>
+                  <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+                    These totals roll up the latest stored ranking for each tracked search.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push("/locations")}
+                  className="rounded-md border border-[#303137] bg-[#17181b] px-3 py-1.5 text-xs font-medium text-zinc-200"
+                >
+                  Manage locations
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <KpiCard
+                  label="Locations"
+                  value={String(portfolioSummary?.locations || 0)}
+                  summary="Physical locations with assigned campaigns."
+                />
+                <KpiCard
+                  label="Tracked searches"
+                  value={String(portfolioSummary?.tracked_keywords || 0)}
+                  summary="Searches configured across the portfolio."
+                />
+                <KpiCard
+                  label="Average position"
+                  value={
+                    portfolioSummary?.average_position === null ||
+                    portfolioSummary?.average_position === undefined
+                      ? "—"
+                      : `#${portfolioSummary.average_position}`
+                  }
+                  summary="Weighted across searches with a stored result."
+                  tone="highlight"
+                />
+                <KpiCard
+                  label="Page-one searches"
+                  value={String(portfolioSummary?.top_10_keywords || 0)}
+                  summary="Latest positions from 1 through 10."
+                />
+                <KpiCard
+                  label="Needs attention"
+                  value={String(portfolioSummary?.declined_keywords || 0)}
+                  summary="Searches that declined in the latest comparison."
+                />
+              </div>
+
+              <div className="mt-4 overflow-x-auto rounded-md border border-[#26272c]">
+                <table className="w-full border-collapse text-left">
+                  <thead className="bg-[#111214]">
+                    <tr>
+                      {["Location", "Tracked", "Avg. position", "Top 10", "Movement", "Latest check"].map(
+                        (label) => (
+                          <th
+                            key={label}
+                            className="px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500"
+                          >
+                            {label}
+                          </th>
+                        ),
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {portfolioLocations.map((location) => (
+                      <tr
+                        key={location.business_location_id || location.campaign_ids.join("-")}
+                        className="border-t border-[#26272c]"
+                      >
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-medium text-white">{location.location_name}</p>
+                          <p className="mt-0.5 text-xs text-zinc-500">
+                            {location.primary_city || location.domains[0] || "Location details pending"}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-zinc-200">
+                          {location.tracked_keywords}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-medium text-zinc-100">
+                          {location.average_position === null ||
+                          location.average_position === undefined
+                            ? "—"
+                            : `#${location.average_position}`}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-zinc-200">
+                          {location.top_10_keywords}
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          <span className="text-emerald-200">
+                            {location.improved_keywords} up
+                          </span>
+                          <span className="mx-1.5 text-zinc-600">/</span>
+                          <span className="text-rose-200">
+                            {location.declined_keywords} down
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-zinc-400">
+                          {location.latest_captured_at
+                            ? new Date(location.latest_captured_at).toLocaleString()
+                            : "Not run yet"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+              <form
+                onSubmit={addTrackedKeywords}
+                className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Location keyword onboarding
+                </p>
+                <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                  Add the searches customers use in {selectedPortfolioLocation?.location_name || "this location"}
+                </h2>
+                <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+                  Paste one search per line or separate them with commas. Duplicates are skipped automatically.
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    Keyword group
+                    <input
+                      value={clusterName}
+                      onChange={(event) => setClusterName(event.target.value)}
+                      placeholder="Core services"
+                      className="mt-1.5 w-full rounded-md border border-[#303137] bg-[#101114] px-3 py-2 text-sm normal-case tracking-normal text-white outline-none placeholder:text-zinc-600"
+                    />
+                  </label>
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    Search location
+                    <input
+                      value={locationTarget}
+                      onChange={(event) => setLocationTarget(event.target.value)}
+                      placeholder="Reno, Nevada, United States"
+                      className="mt-1.5 w-full rounded-md border border-[#303137] bg-[#101114] px-3 py-2 text-sm normal-case tracking-normal text-white outline-none placeholder:text-zinc-600"
+                    />
+                  </label>
+                </div>
+                <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  Search terms
+                  <textarea
+                    value={keywordInput}
+                    onChange={(event) => setKeywordInput(event.target.value)}
+                    rows={5}
+                    placeholder={"junk removal reno\nsame day junk removal\nappliance removal near me"}
+                    className="mt-1.5 w-full resize-y rounded-md border border-[#303137] bg-[#101114] px-3 py-2 text-sm normal-case leading-6 tracking-normal text-white outline-none placeholder:text-zinc-600"
+                  />
+                </label>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-zinc-500">
+                    {trackedKeywords.length} currently configured for this campaign.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={busyAction !== "" || parseKeywordInput(keywordInput).length === 0}
+                    className="rounded-md border border-accent-500/35 bg-accent-500/12 px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "keywords" ? "Adding..." : "Add tracked searches"}
+                  </button>
+                </div>
+              </form>
+
+              <form
+                onSubmit={connectDataForSeo}
+                className="rounded-md border border-[#3a2a20] bg-[#171518] p-5"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Live ranking provider
+                </p>
+                <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                  Connect DataForSEO
+                </h2>
+                <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+                  Credentials are encrypted for this organization and never returned to the browser.
+                </p>
+                <label className="mt-4 block text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  API login
+                  <input
+                    value={providerLogin}
+                    onChange={(event) => setProviderLogin(event.target.value)}
+                    autoComplete="username"
+                    className="mt-1.5 w-full rounded-md border border-[#303137] bg-[#101114] px-3 py-2 text-sm normal-case tracking-normal text-white outline-none"
+                  />
+                </label>
+                <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  API password
+                  <input
+                    type="password"
+                    value={providerPassword}
+                    onChange={(event) => setProviderPassword(event.target.value)}
+                    autoComplete="current-password"
+                    className="mt-1.5 w-full rounded-md border border-[#303137] bg-[#101114] px-3 py-2 text-sm normal-case tracking-normal text-white outline-none"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={busyAction !== "" || !providerLogin.trim() || !providerPassword}
+                  className="mt-4 w-full rounded-md border border-accent-500/35 bg-accent-500/12 px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busyAction === "provider" ? "Saving..." : "Save provider credentials"}
+                </button>
+              </form>
+            </section>
+
+            {trackedKeywords.length > 0 ? (
+              <section className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Configured searches
+                    </p>
+                    <h2 className="mt-1 text-lg font-semibold text-white">
+                      {selectedCampaign?.name || "Selected campaign"}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void runLiveCheck()}
+                    disabled={busyAction !== ""}
+                    className="rounded-md border border-accent-500/35 bg-accent-500/12 px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {busyAction === "run" ? "Checking..." : "Run live ranking check"}
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-2 md:grid-cols-2">
+                  {trackedKeywords.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-3 rounded-md border border-[#26272c] bg-[#111214] px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-zinc-100">{item.keyword}</p>
+                        <p className="mt-0.5 truncate text-xs text-zinc-500">
+                          {item.cluster} · {item.location_code}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void removeTrackedKeyword(item.id)}
+                        disabled={busyAction !== ""}
+                        className="rounded-md border border-[#303137] px-2 py-1 text-xs text-zinc-400 transition hover:text-rose-200 disabled:opacity-50"
+                      >
+                        {busyAction === `delete-${item.id}` ? "Removing..." : "Remove"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                 Summary
