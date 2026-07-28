@@ -263,9 +263,13 @@ export default function SiteHealthPage() {
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
   const latestRun = runs[0] ?? null;
+  const latestRunIssues = useMemo(
+    () => (latestRun ? issues.filter((issue) => issue.crawl_run_id === latestRun.id) : []),
+    [issues, latestRun],
+  );
 
   const severityCounts = useMemo(() => {
-    return issues.reduce(
+    return latestRunIssues.reduce(
       (accumulator, issue) => {
         const key = issue.severity || "low";
         accumulator[key] = (accumulator[key] || 0) + 1;
@@ -273,7 +277,7 @@ export default function SiteHealthPage() {
       },
       {} as Record<string, number>,
     );
-  }, [issues]);
+  }, [latestRunIssues]);
 
   const issueGroups = useMemo(() => {
     const groups = new Map<
@@ -288,7 +292,7 @@ export default function SiteHealthPage() {
 
     const severityRank: Record<string, number> = { high: 3, medium: 2, low: 1 };
 
-    issues.forEach((issue) => {
+    latestRunIssues.forEach((issue) => {
       const code = issue.issue_code || "unknown_issue";
       const existing = groups.get(code);
       if (!existing) {
@@ -319,7 +323,7 @@ export default function SiteHealthPage() {
       }
       return right.count - left.count;
     });
-  }, [issues]);
+  }, [latestRunIssues]);
 
   const topIssue = issueGroups[0] ?? null;
   const scanLaneHealthy = useMemo(() => {
@@ -379,7 +383,7 @@ export default function SiteHealthPage() {
 
   const latestIssueRows = useMemo(
     () =>
-      issues.slice(0, 6).map((issue) => {
+      latestRunIssues.slice(0, 6).map((issue) => {
         const details = parseIssueDetails(issue.details_json);
         const detailText =
           details.status_code !== undefined
@@ -400,7 +404,7 @@ export default function SiteHealthPage() {
           },
         };
       }),
-    [issues],
+    [latestRunIssues],
   );
 
   const trustSignals = useMemo<TrustSignal[]>(
@@ -417,8 +421,8 @@ export default function SiteHealthPage() {
       },
       {
         label: "Total issues",
-        value: issues.length ? `${issues.length} found` : "No issues",
-        tone: issues.length > 0 ? "warning" : "success",
+        value: latestRunIssues.length ? `${latestRunIssues.length} found` : "No issues",
+        tone: latestRunIssues.length > 0 ? "warning" : "success",
       },
       {
         label: "Scan processing",
@@ -436,7 +440,7 @@ export default function SiteHealthPage() {
               : "warning",
       },
     ],
-    [issues.length, latestRun, scanLaneHealthy, severityCounts.high],
+    [latestRun, latestRunIssues.length, scanLaneHealthy, severityCounts.high],
   );
 
   return (
