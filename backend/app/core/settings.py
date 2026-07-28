@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     public_base_url: str = 'http://localhost'
     local_admin_bootstrap_enabled: bool = False
+    hosted_serverless: bool = False
+    startup_invariants_enabled: bool = True
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     jwt_secret: str
     platform_master_key: str
@@ -165,20 +168,24 @@ class Settings(BaseSettings):
         if self.postgres_dsn.startswith("sqlite"):
             raise ValueError("Production requires POSTGRES_DSN backed by PostgreSQL.")
 
-        required = {
-            "OBJECT_STORAGE_ENDPOINT": self.object_storage_endpoint,
-            "OBJECT_STORAGE_BUCKET": self.object_storage_bucket,
-            "OBJECT_STORAGE_ACCESS_KEY": self.object_storage_access_key,
-            "OBJECT_STORAGE_SECRET_KEY": self.object_storage_secret_key,
-            "SMTP_HOST": self.smtp_host,
-            "SMTP_USERNAME": self.smtp_username,
-            "SMTP_PASSWORD": self.smtp_password,
-            "SMTP_FROM_EMAIL": self.smtp_from_email,
-            "OTEL_EXPORTER_ENDPOINT": self.otel_exporter_endpoint,
-        }
-        missing = [key for key, value in required.items() if not str(value).strip()]
-        if missing:
-            raise ValueError(f"Production is missing required settings: {', '.join(missing)}")
+        # A serverless deployment can launch its database-backed core without
+        # optional report storage, email, and telemetry integrations. Individual
+        # features still validate those settings when used.
+        if not self.hosted_serverless:
+            required = {
+                "OBJECT_STORAGE_ENDPOINT": self.object_storage_endpoint,
+                "OBJECT_STORAGE_BUCKET": self.object_storage_bucket,
+                "OBJECT_STORAGE_ACCESS_KEY": self.object_storage_access_key,
+                "OBJECT_STORAGE_SECRET_KEY": self.object_storage_secret_key,
+                "SMTP_HOST": self.smtp_host,
+                "SMTP_USERNAME": self.smtp_username,
+                "SMTP_PASSWORD": self.smtp_password,
+                "SMTP_FROM_EMAIL": self.smtp_from_email,
+                "OTEL_EXPORTER_ENDPOINT": self.otel_exporter_endpoint,
+            }
+            missing = [key for key, value in required.items() if not str(value).strip()]
+            if missing:
+                raise ValueError(f"Production is missing required settings: {', '.join(missing)}")
 
         return self
 
@@ -209,5 +216,4 @@ def get_settings() -> Settings:
             competitor_provider_backend="fixture",
         )
     return Settings()
-
 

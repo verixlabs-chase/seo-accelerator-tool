@@ -315,7 +315,8 @@ _REDIS_STREAM = RedisEventStream()
 
 
 def _use_local() -> bool:
-    return get_settings().app_env.lower() == 'test'
+    settings = get_settings()
+    return settings.app_env.lower() == 'test' or settings.hosted_serverless
 
 
 def get_event_stream() -> _InMemoryEventStream | RedisEventStream:
@@ -389,4 +390,3 @@ def consume_event_batches(
         event_batch_latency_seconds.labels(consumer_name=consumer_name).observe(elapsed)
         batches.append(handled)
     return batches
-

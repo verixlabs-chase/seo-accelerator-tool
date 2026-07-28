@@ -1,3 +1,32 @@
+[project]
+name = "seo-accelerator-api"
+version = "0.1.0"
+description = "FastAPI backend for the SEO Accelerator Tool"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "alembic==1.18.4",
+    "celery==5.6.2",
+    "cryptography==46.0.5",
+    "fastapi==0.132.0",
+    "httpx==0.28.1",
+    "opentelemetry-api==1.39.1",
+    "opentelemetry-exporter-otlp-proto-http==1.39.1",
+    "opentelemetry-instrumentation-fastapi==0.60b1",
+    "opentelemetry-instrumentation-requests==0.60b1",
+    "opentelemetry-sdk==1.39.1",
+    "prometheus-client==0.23.1",
+    "psycopg==3.2.10",
+    "psycopg-binary==3.2.10",
+    "pydantic==2.12.5",
+    "pydantic-settings==2.11.0",
+    "pyjwt==2.10.1",
+    "python-dotenv==1.2.1",
+    "redis==7.1.1",
+    "requests==2.32.5",
+    "sqlalchemy==2.0.46",
+    "uvicorn==0.40.0",
+]
+
 [tool.ruff]
 line-length = 100
 

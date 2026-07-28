@@ -3,7 +3,9 @@
 const LEGACY_ACCESS_TOKEN_KEY = "access_token";
 const LEGACY_REFRESH_TOKEN_KEY = "refresh_token";
 const TENANT_ID_KEY = "tenant_id";
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (process.env.NODE_ENV === "production" ? "/api/v1" : "http://localhost:8000/api/v1");
 
 function getSessionStorage() {
   if (typeof window === "undefined") {

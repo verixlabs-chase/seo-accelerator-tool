@@ -121,7 +121,8 @@ def _record_task_duration(task_id=None, task=None, **_kwargs) -> None:
 def create_celery_app() -> Celery:
     settings = get_settings()
     is_test_env = settings.app_env.lower() == 'test'
-    if not is_test_env:
+    is_eager_runtime = is_test_env or settings.hosted_serverless
+    if not is_eager_runtime:
         run_startup_invariants(runtime=os.getenv('CELERY_RUNTIME', 'celery-worker'))
         # Fail fast when Redis is unavailable in non-test environments.
         get_redis_client()
@@ -156,11 +157,11 @@ def create_celery_app() -> Celery:
                 raise RuntimeError('Retry requested during tests without an underlying exception.')
             return super().retry(*args, **kwargs)
 
-    if is_test_env:
+    if is_eager_runtime:
         broker = 'memory://'
         backend = 'cache+memory://'
         task_always_eager = True
-        task_eager_propagates = True
+        task_eager_propagates = settings.celery_task_eager_propagates if not is_test_env else True
     else:
         broker = settings.celery_broker_url
         backend = settings.celery_result_backend
