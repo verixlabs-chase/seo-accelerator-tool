@@ -571,7 +571,8 @@ def client(db_session: Session) -> Generator[object, None, None]:
     server_thread.start()
 
     base_url = f"http://{host}:{port}"
-    raw_test_client = httpx.Client(base_url=base_url, timeout=10.0)
+    # Full onboarding requests can exceed ten seconds on loaded Windows CI runners.
+    raw_test_client = httpx.Client(base_url=base_url, timeout=30.0)
 
     deadline = time.time() + 10
     last_error: Exception | None = None

@@ -25,7 +25,7 @@ MASTER_KEY_B64 = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
 
 
 def _print_step(message: str) -> None:
-    print(f'\u2714 {message}', flush=True)
+    print(f'[ok] {message}', flush=True)
 
 
 def test_full_platform_lifecycle(db_session, monkeypatch) -> None:
