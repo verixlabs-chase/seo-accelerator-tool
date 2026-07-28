@@ -340,7 +340,12 @@ def get_rank_provider_for_organization(db: Session, organization_id: str) -> Ran
             raise ValueError("rank_provider_unavailable: synthetic backend is allowed only in test fixture mode.")
         return SyntheticRankProvider()
     if backend == "dataforseo":
-        resolved = resolve_provider_credentials(db, organization_id, "dataforseo")
+        resolved = resolve_provider_credentials(
+            db,
+            organization_id,
+            "dataforseo",
+            required_credential_mode="byo_optional",
+        )
         login = str(resolved.get("login", "")).strip()
         password = str(resolved.get("password", "")).strip()
         if not login or not password:

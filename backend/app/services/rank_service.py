@@ -69,7 +69,12 @@ def build_rank_truth(
             summary = "Ranking collection cannot run because the campaign is missing organization scope."
         else:
             try:
-                credentials = resolve_provider_credentials(db, organization_id, provider_name)
+                credentials = resolve_provider_credentials(
+                    db,
+                    organization_id,
+                    provider_name,
+                    required_credential_mode="byo_optional",
+                )
             except ProviderCredentialConfigurationError as exc:
                 states.append("unavailable")
                 setup_state = "credentials_missing"

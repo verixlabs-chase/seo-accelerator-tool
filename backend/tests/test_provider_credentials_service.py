@@ -152,6 +152,32 @@ def test_resolve_without_policy_defaults_to_platform(db_session) -> None:
     assert creds == {"api_key": "platform-key"}
 
 
+def test_required_byo_optional_prefers_org_credential_without_policy(db_session) -> None:
+    org = _create_org(db_session)
+    upsert_platform_provider_credentials(
+        db_session,
+        provider_name="dataforseo",
+        auth_mode="basic",
+        credentials={"login": "platform-login", "password": "platform-password"},
+    )
+    upsert_organization_provider_credentials(
+        db_session,
+        organization_id=org.id,
+        provider_name="dataforseo",
+        auth_mode="basic",
+        credentials={"login": "org-login", "password": "org-password"},
+    )
+
+    creds = resolve_provider_credentials(
+        db_session,
+        org.id,
+        "dataforseo",
+        required_credential_mode="byo_optional",
+    )
+
+    assert creds == {"login": "org-login", "password": "org-password"}
+
+
 def test_no_hardcoded_org_name_logic_in_resolution_path() -> None:
     root = Path(__file__).resolve().parents[1]
     resolver_src = (root / "app" / "services" / "provider_credentials_service.py").read_text(encoding="utf-8").lower()
