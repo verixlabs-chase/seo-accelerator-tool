@@ -49,6 +49,7 @@ from app.models.provider_metric import ProviderExecutionMetric
 from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
 from app.models.platform_provider_credential import PlatformProviderCredential
+from app.models.platform_job import PlatformJob
 from app.models.policy_weights import PolicyWeight
 from app.models.policy_performance import PolicyPerformance
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
@@ -145,6 +146,7 @@ __all__ = [
     'OrganizationMembership',
     'OrganizationProviderCredential',
     'PlatformProviderCredential',
+    'PlatformJob',
     'PolicyWeight',
     'PolicyPerformance',
     'ProviderHealthState',

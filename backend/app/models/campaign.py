@@ -16,6 +16,12 @@ class Campaign(Base):
     organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     portfolio_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("portfolios.id", ondelete="SET NULL"), nullable=True, index=True)
     sub_account_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("sub_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    business_location_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("business_locations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     domain: Mapped[str] = mapped_column(String(320), nullable=False)
     month_number: Mapped[int] = mapped_column(Integer, default=1)

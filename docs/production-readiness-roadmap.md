@@ -1,0 +1,177 @@
+# Production Readiness Roadmap
+
+Date: 2026-07-28
+
+This is the authoritative implementation roadmap for the Supabase and Vercel
+deployment. Older audit and UI planning documents remain useful historical
+context, but their feature inventories are not the current source of truth.
+
+## Deployment target
+
+- Windows-managed development and operations
+- Supabase PostgreSQL
+- Vercel FastAPI backend
+- Vercel Next.js frontend
+- no Docker, WSL, Bash, local PostgreSQL, or local Redis
+
+## Current capability matrix
+
+| Capability | Current production state | Next gate |
+| --- | --- | --- |
+| Authentication | Working with HttpOnly access and refresh cookies | invitations, password recovery, session revocation, organization switcher |
+| Tenant authorization | Enforced in API dependencies and service queries | explicit PostgreSQL RLS and least-privileged runtime database role |
+| Database migrations | Windows GitHub Actions workflow applies Alembic migrations to Supabase | add a disposable PostgreSQL validation environment before production migration |
+| Product frontend | Dashboard plus nine dedicated product routes are implemented | component and browser tests, followed by final UI/UX redesign |
+| Multi-location hierarchy | Account groups, physical locations, hidden execution scopes, location campaigns, nested hierarchy API, and customer workspace are implemented | location KPI rollups, delegated location access, bulk actions, and legacy-record assignment |
+| Interactive report generation | Works, but generated artifacts are local and non-durable on Vercel | upload artifacts to durable object storage |
+| Scheduled report generation | First durable database-backed job type implemented | deploy migration `20260310_0071`, set `CRON_SECRET`, then expand queue coverage |
+| Email delivery | Adapter contract exists; hosted configuration is optional | configure a real SMTP provider and verify delivery outcomes |
+| Crawling | Small request-based crawls can execute eagerly | convert crawl frontier steps to durable jobs before increasing limits |
+| Rankings | Real SerpAPI adapter exists | select backend, configure organization credentials, and validate a live campaign |
+| Local visibility / reviews | Synthetic provider is test-only | implement Google Business Profile production adapter |
+| Citations / backlinks | Synthetic provider is test-only | choose and implement a production authority provider |
+| Competitors | Stored-dataset workflow works | add durable collection and a live upstream provider if required |
+| Recommendations | Heuristic generation and governance are implemented | validate recommendations against live provider inputs |
+| Executions | Approval, dry-run, retry, cancel, rollback, and audit UI exist | validate a real WordPress integration before enabling live mutations |
+| Generic background tasks | Celery runs eagerly in hosted mode | move job types incrementally onto `platform_jobs` |
+| Rate limiting | Disabled in hosted mode because Redis is absent | implement a database or managed edge-compatible limiter |
+| Frontend testing | 30 truth-state tests | component tests and Playwright production-journey coverage |
+| Backend testing | Large SQLite suite and migration validation | PostgreSQL API, concurrency, lease, and RLS integration lanes |
+
+## Durable-job architecture
+
+Migration `20260310_0071` turns the existing `platform_jobs` table into the
+Supabase-backed queue:
+
+- globally unique idempotency keys
+- scheduled availability
+- worker ownership
+- expiring leases
+- stale-lease recovery
+- bounded exponential retry
+- dead-letter state
+- `FOR UPDATE SKIP LOCKED` claims on PostgreSQL
+
+Vercel Cron calls:
+
+```text
+GET /api/v1/internal/jobs/drain
+Authorization: Bearer <CRON_SECRET>
+```
+
+The first registered handler is `reporting.process_schedule`. A due report
+schedule is converted to one idempotent job, leased, executed, and advanced to
+its next run. More handlers should be migrated one at a time with tests.
+
+The committed cron expression is daily at 06:00 UTC so it is valid on Vercel
+Hobby as well as paid plans. Paid plans can increase the frequency after
+monitoring execution duration and database load.
+
+## Multi-location architecture
+
+Migration `20260728_0072` formalizes the customer-facing hierarchy:
+
+```text
+Organization
+  -> SubAccount (client, brand, region, or division)
+    -> BusinessLocation (physical location)
+      -> Campaign
+```
+
+Each business location automatically owns one hidden internal portfolio and,
+when assigned to a subaccount, one execution location. Campaigns inherit the
+business location's subaccount and internal portfolio. The `/locations`
+workspace exposes only the customer concepts and reports legacy unassigned or
+inconsistent records instead of silently blending them into rollups.
+
+## Implementation phases
+
+### Phase 0: production truth and repository hygiene
+
+- maintain this capability matrix
+- archive or label obsolete audit documents
+- remove tracked logs, backups, and temporary test output
+- keep deployment instructions synchronized with production behavior
+
+### Phase 1: durable execution
+
+1. Scheduled reports
+2. Crawl frontier batches
+3. Ranking collection
+4. Local/review collection
+5. Citation and authority refresh
+6. Traffic and analytics synchronization
+7. Intelligence and automation cycles
+
+Each migration requires:
+
+- an idempotency key
+- a bounded unit of work
+- retry classification
+- a terminal dead-letter state
+- a status visible to the user
+- an integration test proving duplicate invocation safety
+
+### Phase 2: database and identity security
+
+- use a least-privileged application database role instead of an owner role
+- set tenant context transactionally
+- add explicit RLS policies for tenant-owned tables
+- test cross-organization reads and writes against PostgreSQL
+- disable automatic table exposure and expose no application tables through
+  Supabase Data API unless there is a deliberate client-side use case
+- add invitations, password recovery, session revocation, and organization switching
+
+Automatic RLS is not a substitute for this phase. It affects new tables only
+and does not define the required policies or application session context.
+
+### Phase 3: live provider truth
+
+- configure and validate rankings
+- connect Google Business Profile and Search Console
+- implement local, review, citation, and authority production adapters
+- configure SMTP and durable report storage
+- expose provider setup and health to organization owners
+
+### Phase 4: workflow closure
+
+Prove one complete production journey:
+
+```text
+create organization
+  -> add business
+  -> crawl website
+  -> collect rankings and local data
+  -> generate recommendation
+  -> approve and dry-run execution
+  -> record outcome
+  -> generate and deliver report
+```
+
+Then complete or deliberately hide Settings, Locations, Content, Authority,
+and agency portfolio features based on launch scope.
+
+### Phase 5: release hardening
+
+- PostgreSQL integration CI
+- eliminate SQLite cross-session write-lock stalls in campaign-cycle tests
+- RLS isolation tests
+- Playwright critical-journey tests
+- Vercel production smoke tests
+- backup and restore drill
+- backward-compatible migration and deployment sequencing
+- alerting for dead-letter jobs, stale leases, provider failures, and delivery failures
+
+### Phase 6: final UI/UX revamp
+
+The visual redesign remains the final implementation phase:
+
+- settle information architecture from proven workflows
+- split monolithic route pages into tested feature components
+- establish final design tokens and interaction patterns
+- complete responsive and accessibility work
+- add visual regression coverage
+- perform final copy, onboarding, and trust-state polish
+
+The final redesign should present verified product behavior. It should not hide
+or compensate for missing providers, non-durable jobs, or ambiguous outcomes.

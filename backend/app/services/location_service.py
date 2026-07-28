@@ -149,19 +149,14 @@ class LocationWriteService:
         organization_id: str,
         name: str | object = UNSET,
         business_location_id: str | None | object = UNSET,
+        sub_account_id: str | object = UNSET,
+        portfolio_id: str | None | object = UNSET,
     ) -> dict[str, object]:
         started_at = monotonic()
         success = False
         try:
             current = db.execute(
-                sa.select(
-                    _LOCATIONS_TABLE.c.id,
-                    _LOCATIONS_TABLE.c.organization_id,
-                    _LOCATIONS_TABLE.c.name,
-                    _LOCATIONS_TABLE.c.business_location_id,
-                    _LOCATIONS_TABLE.c.created_at,
-                    _LOCATIONS_TABLE.c.updated_at,
-                ).where(_LOCATIONS_TABLE.c.id == location_id)
+                sa.select(_LOCATIONS_TABLE).where(_LOCATIONS_TABLE.c.id == location_id)
             ).mappings().first()
             if current is None or current["organization_id"] != organization_id:
                 raise HTTPException(
@@ -169,15 +164,12 @@ class LocationWriteService:
                     detail={"message": "Location not found.", "reason_code": "location_not_found"},
                 )
 
-            next_name = current["name"]
             next_business_location_id = current["business_location_id"]
-            next_updated_at = current["updated_at"]
             update_values: dict[str, object] = {}
 
             if name is not UNSET:
                 normalized_name = str(name).strip()
                 update_values["name"] = normalized_name
-                next_name = normalized_name
 
             if business_location_id is not UNSET:
                 self._validate_business_location_scope(
@@ -187,10 +179,13 @@ class LocationWriteService:
                 )
                 update_values["business_location_id"] = business_location_id
                 next_business_location_id = business_location_id
+            if sub_account_id is not UNSET:
+                update_values["sub_account_id"] = sub_account_id
+            if portfolio_id is not UNSET:
+                update_values["portfolio_id"] = portfolio_id
 
             if update_values:
-                next_updated_at = datetime.now(UTC)
-                update_values["updated_at"] = next_updated_at
+                update_values["updated_at"] = datetime.now(UTC)
                 db.execute(
                     sa.update(_LOCATIONS_TABLE)
                     .where(_LOCATIONS_TABLE.c.id == location_id)
@@ -204,14 +199,10 @@ class LocationWriteService:
                 )
 
             success = True
-            return {
-                "id": location_id,
-                "organization_id": organization_id,
-                "name": next_name,
-                "business_location_id": next_business_location_id,
-                "created_at": current["created_at"],
-                "updated_at": next_updated_at,
-            }
+            updated = db.execute(
+                sa.select(_LOCATIONS_TABLE).where(_LOCATIONS_TABLE.c.id == location_id)
+            ).mappings().one()
+            return dict(updated)
         finally:
             record_service_operation(
                 service="location_write_service",

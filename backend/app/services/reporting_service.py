@@ -451,7 +451,14 @@ def _advance_next_run(next_run_at: datetime, cadence: str) -> datetime:
     return next_run_at + timedelta(days=30)
 
 
-def mark_schedule_attempt_failure(db: Session, tenant_id: str, campaign_id: str, error_message: str) -> dict:
+def mark_schedule_attempt_failure(
+    db: Session,
+    tenant_id: str,
+    campaign_id: str,
+    error_message: str,
+    *,
+    commit: bool = True,
+) -> dict:
     row = get_report_schedule(db, tenant_id, campaign_id)
     if row is None:
         return {"campaign_id": campaign_id, "status": "missing_schedule", "should_retry": False, "retry_count": 0}
@@ -472,7 +479,10 @@ def mark_schedule_attempt_failure(db: Session, tenant_id: str, campaign_id: str,
     else:
         row.last_status = "retry_pending"
         should_retry = True
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return {
         "campaign_id": campaign_id,
         "status": row.last_status,
@@ -483,7 +493,13 @@ def mark_schedule_attempt_failure(db: Session, tenant_id: str, campaign_id: str,
     }
 
 
-def run_due_report_schedule(db: Session, tenant_id: str, campaign_id: str) -> dict:
+def run_due_report_schedule(
+    db: Session,
+    tenant_id: str,
+    campaign_id: str,
+    *,
+    commit: bool = True,
+) -> dict:
     row = get_report_schedule(db, tenant_id, campaign_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report schedule not found")
@@ -498,7 +514,10 @@ def run_due_report_schedule(db: Session, tenant_id: str, campaign_id: str) -> di
     row.retry_count = 0
     row.last_status = "success"
     row.next_run_at = _advance_next_run(next_run, row.cadence)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return {
         "campaign_id": campaign_id,
         "scheduled": True,

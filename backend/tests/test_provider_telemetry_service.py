@@ -88,9 +88,32 @@ def test_provider_telemetry_persistence(
         last_exhausted_at=None,
     )
 
-    metric = db_session.query(ProviderExecutionMetric).one()
-    health = db_session.query(ProviderHealthState).one()
-    quota = db_session.query(ProviderQuotaState).one()
+    metric = (
+        db_session.query(ProviderExecutionMetric)
+        .filter(
+            ProviderExecutionMetric.tenant_id == tenant.id,
+            ProviderExecutionMetric.idempotency_key == "k-1",
+        )
+        .one()
+    )
+    health = (
+        db_session.query(ProviderHealthState)
+        .filter(
+            ProviderHealthState.tenant_id == tenant.id,
+            ProviderHealthState.provider_name == "rank",
+            ProviderHealthState.capability == "rank_snapshot",
+        )
+        .one()
+    )
+    quota = (
+        db_session.query(ProviderQuotaState)
+        .filter(
+            ProviderQuotaState.tenant_id == tenant.id,
+            ProviderQuotaState.provider_name == "rank",
+            ProviderQuotaState.capability == "rank_snapshot",
+        )
+        .one()
+    )
 
     assert metric.provider_name == "rank"
     assert metric.sub_account_id == sub_account.id
@@ -140,5 +163,4 @@ def test_provider_telemetry_failures_are_non_blocking(db_session, monkeypatch, c
         used_count=1,
         remaining_count=9,
     )
-
 

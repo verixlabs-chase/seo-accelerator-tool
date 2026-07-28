@@ -7,7 +7,7 @@ const PRODUCT_NAV_ITEMS: NavItem[] = [
   { href: "/reports", label: "Reports" },
   { href: "/opportunities", label: "Opportunities" },
   { href: "/settings", label: "Settings", hidden: true },
-  { href: "/locations", label: "Locations", hidden: true },
+  { href: "/locations", label: "Locations" },
   { href: "/local-visibility", label: "Local SEO" },
   { href: "/site-health", label: "Technical Health" },
   { href: "/competitors", label: "Competitors" },

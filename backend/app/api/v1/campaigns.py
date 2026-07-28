@@ -10,8 +10,10 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.events import emit_event
 from app.intelligence.signal_assembler import assemble_signals
+from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.organization import Organization
+from app.models.portfolio import Portfolio
 from app.models.sub_account import SubAccount
 from app.models.tenant import Tenant
 from app.schemas.campaign_dashboard import CampaignDashboardOut
@@ -90,6 +92,68 @@ def create_campaign(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization scope mismatch")
 
     sub_account_id = body.sub_account_id
+    business_location_id = body.business_location_id
+    portfolio_id: str | None = None
+    if business_location_id is not None:
+        business_location = (
+            db.query(BusinessLocation)
+            .filter(
+                BusinessLocation.id == business_location_id,
+                BusinessLocation.organization_id == organization_id,
+            )
+            .first()
+        )
+        if business_location is None:
+            return envelope(
+                request,
+                None,
+                {
+                    "code": "business_location_not_found",
+                    "message": "Business location not found in organization scope.",
+                    "details": {"business_location_id": business_location_id},
+                },
+            )
+        if business_location.status != "active":
+            return envelope(
+                request,
+                None,
+                {
+                    "code": "business_location_inactive",
+                    "message": "Business location must be active to attach new campaigns.",
+                    "details": {
+                        "business_location_id": business_location_id,
+                        "status": business_location.status,
+                    },
+                },
+            )
+        if (
+            sub_account_id is not None
+            and business_location.sub_account_id is not None
+            and business_location.sub_account_id != sub_account_id
+        ):
+            return envelope(
+                request,
+                None,
+                {
+                    "code": "business_location_subaccount_mismatch",
+                    "message": "Business location and campaign must use the same subaccount.",
+                    "details": {
+                        "business_location_id": business_location_id,
+                        "sub_account_id": sub_account_id,
+                    },
+                },
+            )
+        sub_account_id = sub_account_id or business_location.sub_account_id
+        portfolio = (
+            db.query(Portfolio)
+            .filter(
+                Portfolio.organization_id == organization_id,
+                Portfolio.business_location_id == business_location_id,
+            )
+            .first()
+        )
+        portfolio_id = portfolio.id if portfolio is not None else None
+
     if sub_account_id is not None:
         sub_account = (
             db.query(SubAccount)
@@ -123,7 +187,9 @@ def create_campaign(
     campaign = Campaign(
         tenant_id=user["tenant_id"],
         organization_id=organization_id,
+        portfolio_id=portfolio_id,
         sub_account_id=sub_account_id,
+        business_location_id=business_location_id,
         name=body.name,
         domain=body.domain,
     )
@@ -133,7 +199,12 @@ def create_campaign(
         db,
         tenant_id=user["tenant_id"],
         event_type="campaign.created",
-        payload={"campaign_id": campaign.id, "setup_state": campaign.setup_state, "sub_account_id": campaign.sub_account_id},
+        payload={
+            "campaign_id": campaign.id,
+            "setup_state": campaign.setup_state,
+            "sub_account_id": campaign.sub_account_id,
+            "business_location_id": campaign.business_location_id,
+        },
     )
     db.commit()
     db.refresh(campaign)

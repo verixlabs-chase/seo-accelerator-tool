@@ -8,6 +8,8 @@ backend/.pip-cache/
 *.pyc
 *.pyo
 *.pyd
+*.bak
+*.log
 *.db
 backend/.env
 frontend/.env.local
@@ -25,6 +27,7 @@ lsos.db
 backend/generated_reports/
 
 backend/artifacts/replay/ci/
+tmp/
 
 .env
 frontend/tsconfig.tsbuildinfo

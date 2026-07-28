@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     local_admin_bootstrap_enabled: bool = False
     hosted_serverless: bool = False
     startup_invariants_enabled: bool = True
+    cron_secret: str = ""
+    durable_job_batch_size: int = 5
+    durable_job_lease_seconds: int = 120
+    durable_job_retry_base_seconds: int = 30
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     jwt_secret: str

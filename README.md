@@ -85,10 +85,22 @@ Vercel functions are short-lived. In the current hosted mode:
 
 - Celery executes eagerly inside API requests
 - Redis durability and Celery Beat are disabled
+- scheduled reports can use the Supabase-backed durable job queue and Vercel Cron
 - crawl and automation limits remain conservative
-- long-running workers require a future managed Windows-compatible worker
-  service or protected scheduled endpoints
+- remaining task types must be migrated to bounded durable jobs before their
+  production limits are increased
 
 The developer and operator workflow is Windows-only. Supabase and Vercel are
 managed services; their internal infrastructure is controlled by those
 providers and does not require Linux access from the user.
+
+See [Production readiness roadmap](docs/production-readiness-roadmap.md) for the
+current capability matrix and implementation order.
+
+## Multi-location structure
+
+The `/locations` workspace organizes a main organization into account groups
+and physical business locations. Creating a scoped business location
+automatically provisions its hidden portfolio and execution record; campaigns
+created from the workspace inherit that location scope. Migration
+`20260728_0072` is required before deploying this route.

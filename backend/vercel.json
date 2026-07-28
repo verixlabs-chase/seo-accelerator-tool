@@ -6,6 +6,12 @@
       "excludeFiles": "{tests/**,scripts/**,wordpress_execution_plugin/**,**/__pycache__/**,**/*.pyc,generated_reports/**}"
     }
   },
+  "crons": [
+    {
+      "path": "/api/v1/internal/jobs/drain",
+      "schedule": "0 6 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

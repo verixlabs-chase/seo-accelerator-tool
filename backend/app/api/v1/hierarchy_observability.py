@@ -6,10 +6,22 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_org_role
 from app.api.response import envelope
 from app.db.session import get_db
+from app.services.account_hierarchy_service import build_account_hierarchy
 from app.services.hierarchy_observability_service import get_location_linkage_stats
 
 
 router = APIRouter(tags=["hierarchy-observability"])
+
+
+@router.get("/organizations/{org_id}/hierarchy")
+def get_account_hierarchy(
+    request: Request,
+    org_id: str,
+    user: dict = Depends(require_org_role({"org_owner", "org_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    _assert_org_scope(user, org_id)
+    return envelope(request, {"hierarchy": build_account_hierarchy(db, organization_id=org_id)})
 
 
 @router.get("/organizations/{org_id}/hierarchy/health")

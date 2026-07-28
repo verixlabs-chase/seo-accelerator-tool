@@ -12,11 +12,12 @@ This is the supported Windows-managed deployment:
 Authentication, tenant data, campaigns, dashboards, and database-backed API
 workflows can run on Vercel. Celery tasks execute eagerly inside the API request.
 
-Vercel functions are not persistent workers. Large crawls, Playwright crawling,
-long report pipelines, scheduled Celery Beat jobs, Redis event durability, and
-high-volume automation are deliberately not claimed as production-capable in
-this mode. Keep crawl limits small. A later worker deployment can consume the
-same Supabase database without changing the frontend.
+Vercel functions are not persistent workers. The `platform_jobs` table and a
+protected Vercel Cron endpoint provide the first durable execution path for
+scheduled report generation. Other Celery tasks still execute eagerly. Large
+crawls, Playwright crawling, Redis event durability, and high-volume automation
+are deliberately not claimed as production-capable yet. Keep crawl limits small
+while additional task types are migrated to durable jobs.
 
 ## 1. Create Supabase
 
@@ -100,7 +101,21 @@ Generate secrets locally:
 
 # PLATFORM_MASTER_KEY
 [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+
+# CRON_SECRET
+[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 ```
+
+Save `CRON_SECRET` in the backend Vercel project for Production, Preview, and
+Development. Vercel automatically sends it to configured cron routes as:
+
+```text
+Authorization: Bearer <CRON_SECRET>
+```
+
+The drain endpoint refuses all requests when the secret is missing and rejects
+non-matching authorization headers. The committed daily schedule is compatible
+with Vercel Hobby. Paid plans can increase its frequency later.
 
 ## Operational boundary
 
@@ -111,7 +126,12 @@ The no-Docker deployment is an intentionally constrained hosted mode:
 - Redis-backed event streams become process-local
 - task calls execute eagerly and must finish before the function timeout
 - Celery Beat schedules do not run
+- scheduled reports use the Supabase-backed `platform_jobs` queue and Vercel Cron
+- all other background task types remain eager until migrated explicitly
 
-For production crawling and automation, add a managed queue/worker or convert
-specific schedules to protected Vercel Cron endpoints. Do not increase function
-timeouts and crawl sizes blindly; crawlers require durable execution.
+For production crawling and automation, migrate bounded work units onto the
+existing durable queue and protected Vercel Cron drain. Do not increase function
+timeouts and crawl sizes blindly; crawlers require leases, retries, and
+idempotent continuation.
+
+See [Production readiness roadmap](production-readiness-roadmap.md).

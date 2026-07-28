@@ -38,7 +38,18 @@ class Location(Base):
     city: Mapped[str | None] = mapped_column(String(120), nullable=True)
     lat: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     lng: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
-    status: Mapped[LocationStatus] = mapped_column(SAEnum(LocationStatus, name="location_status", native_enum=False), nullable=False, default=LocationStatus.ACTIVE, index=True)
+    status: Mapped[LocationStatus] = mapped_column(
+        SAEnum(
+            LocationStatus,
+            name="location_status",
+            native_enum=False,
+            values_callable=lambda enum_type: [item.value for item in enum_type],
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=LocationStatus.ACTIVE,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 

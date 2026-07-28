@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from sqlalchemy.orm import aliased
 
-from app.events import EventType, publish_event
-from app.events.queue import reset_queue_state
-from app.events.subscriber_registry import register_default_subscribers
+from app.events import EventType, publish_event, subscribe
+from app.events.queue import enqueue_learning_event, reset_queue_state
+from app.events.subscriber_registry import register_default_subscribers, reset_registry
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle
 from app.models.experiment import Experiment
 from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode
@@ -45,6 +45,10 @@ def test_experiment_completed_runs_async_learning_loop(db_session) -> None:
 
 
 def test_campaign_cycle_completes_without_running_learning_workers_inline(db_session, create_test_tenant, create_test_org, monkeypatch) -> None:
+    reset_queue_state()
+    reset_registry()
+    subscribe(EventType.OUTCOME_RECORDED.value, enqueue_learning_event)
+
     tenant = create_test_tenant(name='Worker Tenant')
     org = create_test_org(tenant_id=tenant.id, name='Worker Org')
     campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Worker Campaign', domain='worker.example')
@@ -54,7 +58,10 @@ def test_campaign_cycle_completes_without_running_learning_workers_inline(db_ses
     queued: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr('app.events.queue.dispatch_worker_job', lambda worker_name, payload: queued.append((worker_name, dict(payload))) or {'worker': worker_name, 'status': 'queued'})
 
-    summary = run_campaign_cycle(campaign.id, db=db_session)
+    try:
+        summary = run_campaign_cycle(campaign.id, db=db_session)
+    finally:
+        register_default_subscribers(force_reset=True)
 
     assert summary['campaign_id'] == campaign.id
     assert summary['executions_completed'] >= 0

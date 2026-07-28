@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models.platform_job import PlatformJob
+
+JOB_STATUS_QUEUED = "queued"
+JOB_STATUS_RUNNING = "running"
+JOB_STATUS_COMPLETED = "completed"
+JOB_STATUS_FAILED = "failed"
+JOB_STATUS_DEAD_LETTER = "dead_letter"
 
 
 def create_job(
@@ -15,25 +22,97 @@ def create_job(
     entity_type: str,
     entity_id: str | None,
     payload: dict[str, Any] | None = None,
+    tenant_id: str | None = None,
+    idempotency_key: str | None = None,
+    available_at: datetime | None = None,
+    max_retries: int = 3,
 ) -> PlatformJob:
+    if idempotency_key:
+        existing = (
+            db.query(PlatformJob)
+            .filter(PlatformJob.idempotency_key == idempotency_key)
+            .first()
+        )
+        if existing is not None:
+            return existing
+
     row = PlatformJob(
+        tenant_id=tenant_id,
         job_type=job_type,
         entity_type=entity_type,
         entity_id=entity_id,
-        status='queued',
+        idempotency_key=idempotency_key,
+        status=JOB_STATUS_QUEUED,
         payload=payload or {},
+        available_at=available_at or datetime.now(UTC),
+        max_retries=max(0, int(max_retries)),
     )
     db.add(row)
     db.flush()
     return row
 
 
-def start_job(db: Session, job_id: str) -> PlatformJob | None:
+def claim_jobs(
+    db: Session,
+    *,
+    worker_id: str,
+    limit: int,
+    lease_seconds: int,
+    now: datetime | None = None,
+) -> list[PlatformJob]:
+    resolved_now = now or datetime.now(UTC)
+    claim_limit = max(1, min(int(limit), 25))
+    lease_until = resolved_now + timedelta(seconds=max(30, int(lease_seconds)))
+
+    rows = (
+        db.query(PlatformJob)
+        .filter(
+            or_(
+                and_(
+                    PlatformJob.status == JOB_STATUS_QUEUED,
+                    PlatformJob.available_at <= resolved_now,
+                ),
+                and_(
+                    PlatformJob.status == JOB_STATUS_RUNNING,
+                    PlatformJob.lease_expires_at.isnot(None),
+                    PlatformJob.lease_expires_at <= resolved_now,
+                ),
+            )
+        )
+        .order_by(PlatformJob.available_at.asc(), PlatformJob.created_at.asc())
+        .with_for_update(skip_locked=True)
+        .limit(claim_limit)
+        .all()
+    )
+
+    for row in rows:
+        row.status = JOB_STATUS_RUNNING
+        row.started_at = row.started_at or resolved_now
+        row.finished_at = None
+        row.locked_at = resolved_now
+        row.lease_expires_at = lease_until
+        row.locked_by = worker_id
+        row.error = None
+    db.flush()
+    return rows
+
+
+def start_job(
+    db: Session,
+    job_id: str,
+    *,
+    worker_id: str | None = None,
+    lease_seconds: int = 120,
+) -> PlatformJob | None:
     row = db.get(PlatformJob, job_id)
     if row is None:
         return None
-    row.status = 'running'
-    row.started_at = row.started_at or datetime.now(UTC)
+    now = datetime.now(UTC)
+    row.status = JOB_STATUS_RUNNING
+    row.started_at = row.started_at or now
+    row.locked_at = now
+    row.lease_expires_at = now + timedelta(seconds=max(30, int(lease_seconds)))
+    row.locked_by = worker_id
     row.error = None
     db.flush()
     return row
@@ -43,21 +122,91 @@ def complete_job(db: Session, job_id: str, result: dict[str, Any] | None = None)
     row = db.get(PlatformJob, job_id)
     if row is None:
         return None
-    row.status = 'completed'
+    row.status = JOB_STATUS_COMPLETED
     row.result = result or {}
     row.finished_at = datetime.now(UTC)
     row.error = None
+    row.locked_at = None
+    row.lease_expires_at = None
+    row.locked_by = None
     db.flush()
     return row
+
+
+def release_jobs(
+    db: Session,
+    *,
+    job_ids: list[str],
+    worker_id: str,
+    now: datetime | None = None,
+) -> int:
+    if not job_ids:
+        return 0
+    resolved_now = now or datetime.now(UTC)
+    rows = (
+        db.query(PlatformJob)
+        .filter(
+            PlatformJob.id.in_(job_ids),
+            PlatformJob.status == JOB_STATUS_RUNNING,
+            PlatformJob.locked_by == worker_id,
+        )
+        .all()
+    )
+    for row in rows:
+        row.status = JOB_STATUS_QUEUED
+        row.available_at = resolved_now
+        row.locked_at = None
+        row.lease_expires_at = None
+        row.locked_by = None
+    db.flush()
+    return len(rows)
 
 
 def fail_job(db: Session, job_id: str, error: str) -> PlatformJob | None:
     row = db.get(PlatformJob, job_id)
     if row is None:
         return None
-    row.status = 'failed'
+    row.status = JOB_STATUS_FAILED
     row.error = error
     row.retry_count = int(row.retry_count or 0) + 1
     row.finished_at = datetime.now(UTC)
+    row.locked_at = None
+    row.lease_expires_at = None
+    row.locked_by = None
+    db.flush()
+    return row
+
+
+def record_job_failure(
+    db: Session,
+    job_id: str,
+    *,
+    error: str,
+    retry_base_seconds: int = 30,
+) -> PlatformJob | None:
+    row = db.get(PlatformJob, job_id)
+    if row is None:
+        return None
+
+    now = datetime.now(UTC)
+    next_retry_count = int(row.retry_count or 0) + 1
+    row.retry_count = next_retry_count
+    row.error = error[:4000]
+    row.result = None
+    row.locked_at = None
+    row.lease_expires_at = None
+    row.locked_by = None
+
+    if next_retry_count > max(0, int(row.max_retries or 0)):
+        row.status = JOB_STATUS_DEAD_LETTER
+        row.finished_at = now
+    else:
+        delay_seconds = min(
+            3600,
+            max(1, int(retry_base_seconds)) * (2 ** max(0, next_retry_count - 1)),
+        )
+        row.status = JOB_STATUS_QUEUED
+        row.available_at = now + timedelta(seconds=delay_seconds)
+        row.finished_at = None
     db.flush()
     return row

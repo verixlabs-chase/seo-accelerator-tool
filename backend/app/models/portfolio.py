@@ -27,7 +27,18 @@ class Portfolio(Base):
     business_location_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("business_locations.id", ondelete="SET NULL"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     code: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[PortfolioStatus] = mapped_column(SAEnum(PortfolioStatus, name="portfolio_status", native_enum=False), nullable=False, default=PortfolioStatus.ACTIVE, index=True)
+    status: Mapped[PortfolioStatus] = mapped_column(
+        SAEnum(
+            PortfolioStatus,
+            name="portfolio_status",
+            native_enum=False,
+            values_callable=lambda enum_type: [item.value for item in enum_type],
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=PortfolioStatus.ACTIVE,
+        index=True,
+    )
     timezone: Mapped[str] = mapped_column(String(80), nullable=False, default="UTC")
     default_sla_tier: Mapped[str] = mapped_column(String(20), nullable=False, default="standard")
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
