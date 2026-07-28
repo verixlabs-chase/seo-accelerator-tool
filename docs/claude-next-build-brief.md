@@ -28,7 +28,7 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 
 ## 1A. Active Next Sprint Sequence
 
-### Sprint 1 - Location Context and Navigation Clarity
+### Sprint 5 - Location Context and Navigation Clarity
 
 Goal: a user always knows which location they are viewing and where to go next.
 
@@ -57,7 +57,7 @@ Acceptance criteria:
 - Reloading data never appears to be the way to switch locations.
 - Desktop and mobile navigation expose the same hierarchy.
 
-### Sprint 2 - Rankings and Site Health Comprehension
+### Sprint 6 - Rankings and Site Health Comprehension
 
 Goal: make two working data modules immediately understandable to a non-technical owner.
 
@@ -82,7 +82,7 @@ Acceptance criteria:
 - A business owner can identify the strongest and weakest phrase for one location without reading the portfolio table.
 - A business owner can explain the top technical issue and next action without knowing crawl terminology.
 
-### Sprint 3 - Local Visibility Map and Provider Location Normalization
+### Sprint 7 - Local Visibility Map and Provider Location Normalization
 
 Goal: make Local Visibility a real location product rather than another summary page.
 
@@ -101,7 +101,7 @@ Acceptance criteria:
 - The UI never presents a decorative map as map-ranking intelligence.
 - Paid geo-grid requests are explicit and budget-aware.
 
-### Sprint 4 - Cross-Page UX and Visual Polish
+### Sprint 8 - Cross-Page UX and Visual Polish
 
 Goal: remove remaining convolution after the core information architecture is stable.
 
