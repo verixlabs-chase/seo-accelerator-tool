@@ -6,7 +6,8 @@ The repository contains three worker styles.
 
 ### Celery workers
 
-Defined by `backend/app/tasks/celery_app.py` and started through `docker-compose.yml`.
+Defined by `backend/app/tasks/celery_app.py`. In the supported Windows and
+Vercel configuration, Celery runs eagerly without a separate worker process.
 
 Queues:
 
@@ -32,7 +33,8 @@ Routing is based on task-name prefix:
 - `experiment`
 - `outbox`
 
-In tests it runs inline. Outside tests it wraps Celery through `run_intelligence_worker_task`.
+In tests and hosted mode it runs inline. A future durable worker tier may wrap
+Celery through `run_intelligence_worker_task`.
 
 ### Campaign worker pool
 

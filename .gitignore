@@ -10,6 +10,9 @@ backend/.pip-cache/
 *.pyd
 *.db
 backend/.env
+frontend/.env.local
+.vercel/
+frontend/.vercel/
 .next/
 frontend/.next/
 frontend/.npm-cache/

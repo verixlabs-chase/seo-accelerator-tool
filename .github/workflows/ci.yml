@@ -4,211 +4,51 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   backend:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+    runs-on: windows-latest
     defaults:
       run:
+        shell: pwsh
         working-directory: backend
     env:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
-      POSTGRES_DSN: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+      APP_ENV: test
+      DATABASE_URL: sqlite:///./ci.db
+      POSTGRES_DSN: sqlite:///./ci.db
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
-      - name: Wait for Postgres readiness
-        run: |
-          python - <<'PY'
-          import socket
-          import time
-
-          deadline = time.time() + 60
-          while time.time() < deadline:
-              try:
-                  with socket.create_connection(("localhost", 5432), timeout=1):
-                      break
-              except OSError:
-                  time.sleep(1)
-          else:
-              raise SystemExit("Postgres did not become ready in time")
-          PY
-
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
       - name: Install dependencies
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-
-      - name: Apply migrations
-        run: |
-          source .venv/bin/activate
-          alembic upgrade head
-
-      - name: Record runner diagnostics
-        run: |
-          source .venv/bin/activate
-          echo "python --version"
-          python --version
-          echo "which python"
-          which python
-          python --version > backend-runner-info.txt
-          which python >> backend-runner-info.txt
-          pip freeze | sort | tee backend-pip-freeze.txt
-          python - <<'PY' | tee backend-env-sanitized.txt
-          import os
-          from urllib.parse import urlsplit, urlunsplit
-
-          for name in ("DATABASE_URL", "POSTGRES_DSN", "PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD"):
-              value = os.getenv(name)
-              if not value:
-                  print(f"{name}=<unset>")
-                  continue
-              if name in {"DATABASE_URL", "POSTGRES_DSN"}:
-                  parts = urlsplit(value)
-                  sanitized = urlunsplit((parts.scheme, f"{parts.username or '<user>'}:***@{parts.hostname or '<host>'}:{parts.port or ''}", parts.path, parts.query, parts.fragment))
-                  print(f"{name}={sanitized}")
-              elif name == "PGPASSWORD":
-                  print(f"{name}=***")
-              else:
-                  print(f"{name}={value}")
-          PY
-
-      - name: Record Alembic state
-        run: |
-          source .venv/bin/activate
-          {
-            echo "=== alembic current ==="
-            alembic current
-            echo
-            echo "=== alembic heads ==="
-            alembic heads
-          } | tee backend-alembic-current.txt
-
-      - name: Record DB sanity
-        run: |
-          source .venv/bin/activate
-          python - <<'PY' | tee backend-db-sanity.txt
-          import os
-          from sqlalchemy import create_engine, text
-
-          engine = create_engine(os.environ["DATABASE_URL"])
-          with engine.connect() as conn:
-              current_database = conn.execute(text("select current_database()")).scalar_one()
-              current_user = conn.execute(text("select current_user")).scalar_one()
-              table_count = conn.execute(
-                  text(
-                      """
-                      select count(*)
-                      from information_schema.tables
-                      where table_schema = 'public'
-                      """
-                  )
-              ).scalar_one()
-          print(f"current_database={current_database}")
-          print(f"current_user={current_user}")
-          print(f"public_table_count={table_count}")
-          PY
-
-      - name: Run tests
-        run: |
-          source .venv/bin/activate
-          set -o pipefail
-          pytest -q 2>&1 | tee backend-pytest.log
-
-      - name: Print failure summary
-        if: failure()
-        run: |
-          grep -nE "FAILED|FAILURES|ERROR|Traceback|E[[:space:]]" backend-pytest.log | tail -120 || true
-
-      - name: Print post-failure diagnostics
-        if: failure()
-        run: |
-          source .venv/bin/activate
-          echo "=== alembic current ==="
-          alembic current || true
-          echo
-          echo "=== db sanity ==="
-          python - <<'PY'
-          import os
-          from sqlalchemy import create_engine, text
-
-          try:
-              engine = create_engine(os.environ["DATABASE_URL"])
-              with engine.connect() as conn:
-                  table_count = conn.execute(
-                      text(
-                          """
-                          select count(*)
-                          from information_schema.tables
-                          where table_schema = 'public'
-                          """
-                      )
-                  ).scalar_one()
-              print(f"public_table_count={table_count}")
-          except Exception as exc:
-              print(f"db_sanity_error={exc}")
-          PY
-          echo
-          echo "=== pytest tail ==="
-          tail -n 120 backend-pytest.log || true
-
-      - name: Upload backend pytest log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-pytest-log
-          path: backend/backend-pytest.log
-
-      - name: Upload backend runner diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-runner-diagnostics
-          path: |
-            backend/backend-pip-freeze.txt
-            backend/backend-alembic-current.txt
-            backend/backend-db-sanity.txt
-            backend/backend-env-sanitized.txt
-            backend/backend-runner-info.txt
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Validate migrations
+        run: python scripts/validate_migrations.py
+      - name: Run backend tests
+        run: python -m pytest -q
 
   deterministic-replay-gate:
-    runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
-      POSTGRES_DSN: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
-      TZ: UTC
-      PYTHONHASHSEED: "0"
-      LC_ALL: C.UTF-8
-      LANG: C.UTF-8
-      BASELINE_MANIFEST_SHA256: "146adaa9cc23efffe02041855c5addf2cd55637646cdea4474ba6372e1c42118"
+    runs-on: windows-latest
     defaults:
       run:
+        shell: pwsh
         working-directory: backend
+    env:
+      APP_ENV: test
+      DATABASE_URL: sqlite:///./replay-ci.db
+      POSTGRES_DSN: sqlite:///./replay-ci.db
+      TZ: UTC
+      PYTHONHASHSEED: "0"
+      PYTHONUTF8: "1"
+      BASELINE_MANIFEST_SHA256: "146adaa9cc23efffe02041855c5addf2cd55637646cdea4474ba6372e1c42118"
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Detect replay-sensitive changes
         id: replay_changes
         uses: dorny/paths-filter@v3
@@ -230,28 +70,24 @@ jobs:
             baseline_locked:
               - 'backend/artifacts/replay/baseline/v1/**'
               - 'backend/artifacts/replay/baseline/v2/**'
-
-      - name: Setup Python
+      - uses: actions/setup-python@v5
         if: steps.replay_changes.outputs.replay_required == 'true' || steps.replay_changes.outputs.baseline_locked == 'true'
-        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Verify baseline manifest hash integrity
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Verify baseline manifest
         if: steps.replay_changes.outputs.replay_required == 'true' || steps.replay_changes.outputs.baseline_locked == 'true'
         run: >-
           python scripts/replay/verify_baseline_manifest_hash.py
           --manifest artifacts/replay/baseline/v2/manifest.json
-          --expected-sha256 ${BASELINE_MANIFEST_SHA256}
-
+          --expected-sha256 $env:BASELINE_MANIFEST_SHA256
       - name: Install backend requirements
         if: steps.replay_changes.outputs.replay_required == 'true'
-        run: pip install -r requirements.txt
-
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
       - name: Validate migrations
         if: steps.replay_changes.outputs.replay_required == 'true'
         run: python scripts/validate_migrations.py
-
       - name: Run deterministic replay
         if: steps.replay_changes.outputs.replay_required == 'true'
         run: >-
@@ -259,37 +95,28 @@ jobs:
           --manifest app/testing/fixtures/replay_corpus/v2/manifest.json
           --report artifacts/replay/ci/replay_report.json
           --executor app.governance.replay.executor_strategy_engine:execute_case
-
       - name: Enforce baseline immutability
         if: steps.replay_changes.outputs.baseline_locked == 'true'
-        run: |
-          echo "Replay baseline artifacts are immutable and must not be modified in standard changes."
-          exit 1
-
+        run: throw "Replay baseline artifacts are immutable."
       - name: Replay gate not required
         if: steps.replay_changes.outputs.replay_required != 'true' && steps.replay_changes.outputs.baseline_locked != 'true'
-        run: echo "Replay-sensitive paths unchanged; skipping deterministic replay gate."
+        run: Write-Host "Replay-sensitive paths unchanged; skipping deterministic replay gate."
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     defaults:
       run:
+        shell: pwsh
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm install
+      - run: npm ci
+      - run: npm test
       - run: npm run lint
       - run: npm run build
       - run: npm audit --audit-level=high
-
-
-
-
-
-
-
