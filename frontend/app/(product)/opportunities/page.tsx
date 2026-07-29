@@ -1067,6 +1067,17 @@ export default function OpportunitiesPage() {
         },
       )) as IntelligenceCycleResponse;
       await Promise.all([loadCampaigns(), loadOpportunities(selectedCampaignId)]);
+      if (response.status === "running") {
+        setNotice(
+          `${activatedCampaign ? "The campaign was activated. " : ""}A saved-data intelligence cycle is already running for this location. Reload saved data in a moment to see the result.`,
+        );
+        return;
+      }
+      if (response.status !== "completed") {
+        throw new Error(
+          "The saved-data intelligence cycle did not complete. Try again after checking the campaign setup.",
+        );
+      }
       if (response.idempotent_replay) {
         setNotice(
           `${activatedCampaign ? "The campaign was activated. " : ""}Today’s stored-data intelligence cycle was already completed. The existing result was reused and no duplicate work was created.`,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.events.event_bus import publish_event
 from app.events.event_types import EventType
@@ -13,6 +14,14 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
     campaign_id = str(payload.get('campaign_id', '') or '')
     if not recommendation_id:
         return None
+    if get_settings().intelligence_activation_mode != 'autonomous':
+        return {
+            'campaign_id': campaign_id,
+            'recommendation_id': recommendation_id,
+            'status': 'recommendation_only',
+            'executions_scheduled': 0,
+            'executions_completed': 0,
+        }
 
     session = SessionLocal()
     try:

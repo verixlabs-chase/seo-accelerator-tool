@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from app.intelligence import intelligence_orchestrator
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle, run_system_cycle
 from app.models.intelligence import StrategyRecommendation
 from app.models.intelligence_metrics_snapshot import IntelligenceMetricsSnapshot
@@ -126,6 +127,20 @@ def test_recommendation_only_cycle_never_schedules_mutations(
             AssertionError('recommendation-only cycles must not schedule executions')
         ),
     )
+    original_assemble_signals = intelligence_orchestrator.assemble_signals
+    original_compute_features = intelligence_orchestrator.compute_features
+    pipeline_publish_flags: dict[str, bool | None] = {}
+
+    def _assemble_signals(*args, **kwargs):
+        pipeline_publish_flags['signals'] = kwargs.get('publish')
+        return original_assemble_signals(*args, **kwargs)
+
+    def _compute_features(*args, **kwargs):
+        pipeline_publish_flags['features'] = kwargs.get('publish')
+        return original_compute_features(*args, **kwargs)
+
+    monkeypatch.setattr(intelligence_orchestrator, 'assemble_signals', _assemble_signals)
+    monkeypatch.setattr(intelligence_orchestrator, 'compute_features', _compute_features)
 
     summary = run_campaign_cycle(campaign.id, db=db_session)
 
@@ -139,6 +154,7 @@ def test_recommendation_only_cycle_never_schedules_mutations(
     assert summary['recommendations_selected_for_execution'] == 0
     assert summary['executions_scheduled'] == 0
     assert summary['executions_completed'] == 0
+    assert pipeline_publish_flags == {'signals': False, 'features': False}
     recommendation_rows = (
         db_session.query(StrategyRecommendation)
         .filter(StrategyRecommendation.campaign_id == campaign.id)

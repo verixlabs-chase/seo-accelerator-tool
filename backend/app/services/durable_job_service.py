@@ -199,7 +199,13 @@ def run_intelligence_campaign_job_now(
             "result": _json_safe(job.result),
             "error": job.error,
         }
-    if job.status == job_service.JOB_STATUS_RUNNING:
+    lease_expires_at = job.lease_expires_at
+    if lease_expires_at is not None and lease_expires_at.tzinfo is None:
+        lease_expires_at = lease_expires_at.replace(tzinfo=UTC)
+    if (
+        job.status == job_service.JOB_STATUS_RUNNING
+        and (lease_expires_at is None or lease_expires_at > resolved_now)
+    ):
         return {
             "job_id": job.id,
             "status": job.status,

@@ -120,6 +120,11 @@ def test_execution_processor_emits_started_and_completed(monkeypatch: Any) -> No
     )
 
     monkeypatch.setattr(execution_processor, 'SessionLocal', lambda: _FakeSession())
+    monkeypatch.setattr(
+        execution_processor,
+        'get_settings',
+        lambda: SimpleNamespace(intelligence_activation_mode='autonomous'),
+    )
     monkeypatch.setattr(execution_processor, 'schedule_execution', lambda *_args, **_kwargs: scheduled)
     monkeypatch.setattr(execution_processor, 'execute_recommendation', lambda *_args, **_kwargs: completed)
     monkeypatch.setattr(execution_processor, 'publish_event', lambda event_type, _payload: events.append(event_type))
@@ -130,6 +135,29 @@ def test_execution_processor_emits_started_and_completed(monkeypatch: Any) -> No
     assert EventType.EXECUTION_SCHEDULED.value in events
     assert EventType.EXECUTION_STARTED.value in events
     assert EventType.EXECUTION_COMPLETED.value in events
+
+
+def test_execution_processor_stays_recommendation_only(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        execution_processor,
+        'get_settings',
+        lambda: SimpleNamespace(intelligence_activation_mode='recommendation_only'),
+    )
+    monkeypatch.setattr(
+        execution_processor,
+        'SessionLocal',
+        lambda: (_ for _ in ()).throw(AssertionError('recommendation-only mode must not open an execution session')),
+    )
+
+    result = execution_processor.process({'campaign_id': 'campaign-z', 'recommendation_id': 'rec-z'})
+
+    assert result == {
+        'campaign_id': 'campaign-z',
+        'recommendation_id': 'rec-z',
+        'status': 'recommendation_only',
+        'executions_scheduled': 0,
+        'executions_completed': 0,
+    }
 
 
 def test_outcome_processor_returns_dispatch_without_republishing_learning(monkeypatch: Any) -> None:

@@ -189,7 +189,7 @@ def test_internal_job_drain_runs_daily_intelligence_cycle_idempotently(
     assert calls == [campaign.id]
 
 
-def test_tenant_can_run_daily_intelligence_cycle_once(
+def test_tenant_cycle_is_idempotent_and_recovers_expired_lease(
     client,
     db_session,
     monkeypatch,
@@ -249,13 +249,38 @@ def test_tenant_can_run_daily_intelligence_cycle_once(
         "executions_completed": 0,
     }
 
-    second = client.post(
+    job = (
+        db_session.query(PlatformJob)
+        .filter(
+            PlatformJob.job_type == "intelligence.campaign_cycle",
+            PlatformJob.entity_id == campaign.id,
+        )
+        .one()
+    )
+    job.status = "running"
+    job.result = None
+    job.finished_at = None
+    job.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    job.locked_by = "expired-worker"
+    db_session.commit()
+
+    recovered = client.post(
         endpoint,
         headers={"Authorization": f"Bearer {token_a}"},
     )
-    assert second.status_code == 200
-    assert second.json()["data"]["idempotent_replay"] is True
-    assert calls == [campaign.id]
+    assert recovered.status_code == 200
+    recovered_payload = recovered.json()["data"]
+    assert recovered_payload["status"] == "completed"
+    assert recovered_payload["created"] is False
+    assert recovered_payload["idempotent_replay"] is False
+    assert calls == [campaign.id, campaign.id]
+
+    replay = client.post(
+        endpoint,
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["data"]["idempotent_replay"] is True
     assert (
         db_session.query(PlatformJob)
         .filter(

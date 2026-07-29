@@ -92,7 +92,10 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         stage_timings: dict[str, float] = {}
 
         stage_started = perf_counter()
-        signals = assemble_signals(campaign_id, db=session)
+        # This orchestrator already owns every downstream stage. Publishing the
+        # intermediate signal/feature events here would synchronously start a
+        # second copy of the pipeline through the event subscribers.
+        signals = assemble_signals(campaign_id, db=session, publish=False)
         stage_timings['assemble_signals'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
@@ -106,7 +109,7 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         stage_timings['write_temporal_signals'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
-        features = compute_features(campaign_id, db=session, persist=True)
+        features = compute_features(campaign_id, db=session, persist=True, publish=False)
         stage_timings['compute_features'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
