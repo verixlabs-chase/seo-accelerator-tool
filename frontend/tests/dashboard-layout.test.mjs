@@ -24,9 +24,13 @@ test("overview orders real graphs before the supporting metric cards", () => {
   const metricOrderClassIndex = dashboardSource.indexOf(
     'className="order-2 grid gap-4 xl:grid-cols-4"',
   );
+  const summaryOrderClassIndex = dashboardSource.indexOf(
+    'className="order-3 border-l-2',
+  );
 
   assert.notEqual(graphOrderClassIndex, -1);
   assert.notEqual(metricOrderClassIndex, -1);
+  assert.notEqual(summaryOrderClassIndex, -1);
   assert.ok(graphOrderClassIndex > metricOrderClassIndex);
 });
 

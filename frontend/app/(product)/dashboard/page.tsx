@@ -463,9 +463,9 @@ function SearchPerformanceOverview({
 
       {isReady && metrics?.summary ? (
         <div className="flex flex-col gap-4">
-          <div className="rounded-md border border-accent-500/20 bg-accent-500/10 px-4 py-3 text-sm leading-6 text-zinc-100">
+          <p className="order-3 border-l-2 border-accent-500/50 px-3 py-1 text-sm leading-6 text-zinc-300">
             {getSearchConsoleOwnerSummary(metrics, campaign.name || "This location")}
-          </div>
+          </p>
 
           <div className="order-2 grid gap-4 xl:grid-cols-4">
             <KpiCard
@@ -549,7 +549,7 @@ function SearchPerformanceOverview({
             />
           </div>
 
-          <p className="order-3 text-xs leading-5 text-zinc-500">
+          <p className="order-4 text-xs leading-5 text-zinc-500">
             Source:{" "}
             {metrics.connection?.external_resource_name ||
               campaign.domain ||
