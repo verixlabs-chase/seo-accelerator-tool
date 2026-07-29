@@ -24,10 +24,9 @@ Premium pricing is possible only if the product feels like a reliable operating 
 
 | Tier | Customer expectation |
 |---|---|
-| Solo - $699 | A business owner should understand health, visibility, risks, and next actions in minutes without needing an SEO expert. |
-| Multi-location - $1,499 | A manager should compare locations, spot underperformance, and prioritize action across a portfolio. |
-| Agency - $3,999 | An agency should save labor every week through portfolio views, reporting, action workflows, and client-facing clarity. |
-| Enterprise - $8,000+ | Buyers expect reliability, operational control, onboarding quality, support rigor, and premium trust signals, not just feature count. |
+| Solo - $99 | A business owner should understand health, visibility, risks, and next actions in minutes without needing an SEO expert. |
+| Multi-location - $399 | A manager should compare locations, spot underperformance, and prioritize action across a portfolio. |
+| Enterprise - $999+ | Multi-location teams and agencies should gain portfolio workflows, controlled usage, operational reliability, and priority support. |
 
 ### What makes premium pricing collapse immediately
 
@@ -361,10 +360,9 @@ Premium pricing requires a product that feels calm, legible, and authoritative. 
 
 | Tier | Must exist | Optional | What makes it feel overpriced | Current support today | What must be true before credible |
 |---|---|---|---|---|---|
-| Solo - $699 | premium dashboard, strong onboarding, local visibility, site health, clear opportunities, polished reports | limited content or citation extras | complex UI, weak reports, thin local SEO | not supported today | owner-friendly command center and trust layer |
-| Multi-location - $1,499 | strong portfolio view, cross-location reporting, alerts, rollups, bulk workflows | advanced agency branding | no useful comparisons, no prioritization layer | not supported today | real location portfolio UX |
-| Agency - $3,999 | client portfolio workspace, white-label reports, team workflow, bulk actions, client-safe narratives | deeper automation | hierarchy without agency operations | not supported today | agency ops product, not just hierarchy models |
-| Enterprise - $8,000+ | reliability, onboarding, support, dedicated controls, status honesty, premium reporting | dedicated workers, BYO providers | visible instability, weak support, thin controls | not supported today | hardened service, SLA-like behaviors, support process |
+| Solo - $99 | clear dashboard, strong onboarding, local visibility, site health, and useful next actions | limited report and citation extras | complex UI or thin local-search value | partially supported | owner-friendly command center and truthful local rank grid |
+| Multi-location - $399 | portfolio view, cross-location comparison, alerts, rollups, and controlled heat-map usage | advanced branding | no useful comparisons or prioritization | partially supported | real location portfolio UX and enforceable usage limits |
+| Enterprise - $999+ | team and agency portfolio workflows, custom limits, operational controls, priority support, and client-safe reporting | dedicated capacity and BYO providers | visible instability, weak support, or thin controls | not supported today | hardened operations, portfolio workflows, and support process |
 
 ## Part 8 - Trust Checklist
 

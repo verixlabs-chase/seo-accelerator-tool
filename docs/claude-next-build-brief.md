@@ -363,10 +363,19 @@ Margin guardrail:
 
 | Plan | Monthly revenue | Total COGS ceiling at 85% margin | Total COGS ceiling at 80% margin | Initial 5% platform-API budget |
 | --- | ---: | ---: | ---: | ---: |
-| Solo | $699 | $104.85 | $139.80 | $34.95 |
-| Multi-location | $1,499 | $224.85 | $299.80 | $74.95 |
-| Agency | $3,999 | $599.85 | $799.80 | $199.95 |
-| Enterprise starting point | $8,000 | $1,200.00 | $1,600.00 | $400.00 |
+| Solo | $99 | $14.85 | $19.80 | $4.95 |
+| Multi-location | $399 | $59.85 | $79.80 | $19.95 |
+| Enterprise starting point | $999 | $149.85 | $199.80 | $49.95 |
+
+Pricing decision:
+
+- Use `$99/month` rather than `$97/month` for a clearer public price.
+- Multi-location is `$399/month`.
+- Enterprise starts at `$999/month` and uses custom limits or per-location
+  pricing when its approved location, user, provider, or support allowance is
+  exceeded.
+- Agency workflows are packaged inside Enterprise rather than maintained as a
+  separate fourth public tier.
 
 Acceptance criteria:
 

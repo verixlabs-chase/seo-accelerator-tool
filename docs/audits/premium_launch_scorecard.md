@@ -88,9 +88,10 @@ Interpretation:
 
 | Tier | Current readiness |
 |---|---|
-| Solo - $699 | not credible today |
-| Multi-location - $1,499 | not credible today |
-| Agency - $3,999 | not credible today |
-| Enterprise - $8,000+ | not credible today |
+| Solo - $99 | partially credible; local rank-grid and final UX9 cleanup remain |
+| Multi-location - $399 | partially credible; portfolio workflows and usage controls remain |
+| Enterprise - $999+ | not credible until team operations, custom limits, and priority-support behavior exist |
 
-The repo is a strong base for reaching those tiers, but the current product presentation does not justify them yet.
+The repo is a strong base for reaching those tiers. Solo and Multi-location
+pricing now align with an accessible SaaS product, while Enterprise remains a
+starting price that requires the operational capabilities listed above.
