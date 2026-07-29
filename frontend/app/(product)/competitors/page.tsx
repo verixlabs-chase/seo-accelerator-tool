@@ -18,7 +18,6 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getOwnerFriendlyTruthSummary,
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
 
@@ -314,12 +313,6 @@ export default function CompetitorsPage() {
           The page shows the last completed comparison. Run a new check when you need fresher
           information.
         </TruthNotice>
-
-        {runtimeTruth ? (
-          <TruthNotice title="How current is this competitor comparison?" tone="warning">
-            {getOwnerFriendlyTruthSummary(runtimeTruth, "competitor comparisons")}
-          </TruthNotice>
-        ) : null}
 
         {loading ? (
           <LoadingCard

@@ -26,7 +26,6 @@ import {
 } from "../truth/opportunitiesTruth.mjs";
 import {
   buildRuntimeTruthSignal,
-  getOwnerFriendlyTruthSummary,
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
 
@@ -1366,12 +1365,6 @@ export default function OpportunitiesPage() {
           These are recommendations. A suggested change is not complete until it has been reviewed,
           approved, and successfully carried out.
         </TruthNotice>
-
-        {runtimeTruth ? (
-          <TruthNotice title="How current are these recommendations?" tone="warning">
-            {getOwnerFriendlyTruthSummary(runtimeTruth, "recommended next steps")}
-          </TruthNotice>
-        ) : null}
 
         {engineState ? (
           <details className="rounded-md border border-sky-500/20 bg-sky-500/10 p-4 text-sky-50">

@@ -38,6 +38,7 @@ current source of truth.
 | Executions | Approval, dry-run, retry, cancel, rollback, and audit UI exist | validate a real WordPress integration before enabling live mutations |
 | Generic background tasks | Celery runs eagerly in hosted mode | move job types incrementally onto `platform_jobs` |
 | Rate limiting | Disabled in hosted mode because Redis is absent | implement a database or managed edge-compatible limiter |
+| Usage economics | Provider calls and entitlement consumption are counted, but currency cost and margin are not reconciled | add platform-vs-organization credential attribution, cost reservations, reconciliation, and hard monthly spend stops |
 | Frontend testing | 30 truth-state tests | component tests and Playwright production-journey coverage |
 | Backend testing | Large SQLite suite and migration validation | PostgreSQL API, concurrency, lease, and RLS integration lanes |
 
@@ -131,6 +132,7 @@ is designed or implemented.
 2. Crawl frontier batches
 3. Ranking collection
 4. Local/review collection
+   - require estimate, reservation, reconciliation, and organization spend-limit checks before enabling customer-run geo-grid tasks
 5. Citation and authority refresh
 6. Growth G1 search, profile, website analytics, and form-event synchronization
 7. Intelligence and automation cycles
@@ -167,6 +169,8 @@ and does not define the required policies or application session context.
 - implement local, review, citation, and authority production adapters
 - configure SMTP and durable report storage
 - expose provider setup and health to organization owners
+- record provider-reported currency cost and credential ownership for every paid operation
+- prevent platform-paid tasks from dispatching after the organization's hard allowance is exhausted
 
 ### PR4: workflow closure
 

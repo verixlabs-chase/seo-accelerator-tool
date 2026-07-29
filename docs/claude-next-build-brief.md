@@ -1,6 +1,6 @@
 # Claude Next Build Brief
 
-> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. UX Sprints 5-8 are production-verified, and the active build phase is **UX9: Cross-Page UX and Visual Polish**. The next product phase is **Growth G1: Automated Data Connections**, with the scope defined in Section 1B. Where Sections 7-10 conflict with Sections 1A-1B, Sections 1A-1B take precedence.
+> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. UX Sprints 5-8 are production-verified, and the active build phase is **UX9: Cross-Page UX and Visual Polish**. The current UX9 closing slice removes repeated guidance, moves useful data above status framing, and simplifies Website Health around one next action. The next product phase is **Growth G1: Automated Data Connections**, with local rank-grid checks and spend safety defined as explicit G1 slices below. Where Sections 7-10 conflict with Sections 1A-1B, Sections 1A-1B take precedence.
 
 ## 1. Executive Summary
 
@@ -159,6 +159,12 @@ Acceptance criteria:
 Goal: remove remaining convolution after the core information architecture is stable, with the
 primary reader defined as a service-business owner rather than an SEO operator.
 
+> **Closing slice started 2026-07-29:** the Overview lead-in no longer reserves a
+> tall empty column before the Search Console charts. Repeated `Good to know`
+> panels are being replaced by at most one dismissible `InsightOS guide` per
+> page. Reports remain outside this closing slice except for the shared guidance
+> treatment.
+
 Scope:
 - Rewrite customer-facing copy for a person who runs a local or multi-location service business.
 - Lead every page with three owner questions:
@@ -171,6 +177,10 @@ Scope:
   inside optional setup or technical-detail areas unless the term is immediately explained.
 - Never expose a provider name, internal state, or data classification as the main explanation.
 - Standardize page introductions, scope labels, loading states, empty states, error messages, and action placement.
+- Put the first useful chart, decision, or action directly under each page introduction; do not reserve empty grid space for a taller adjacent card.
+- Limit proactive guidance to one dismissible guide per page. Do not stack repeated `Good to know`, freshness, or provider-explanation panels in the main reading flow.
+- Keep source freshness in the shared trust/status surface and put troubleshooting detail behind an optional control.
+- Reduce Website Health to one `Fix this first` decision, one plain-language next action, a compact visual summary, and expandable technical details.
 - Remove duplicated provider setup panels from pages where setup is already complete.
 - Consolidate repeated controls into shared components.
 - Verify the full journey on desktop, tablet, and mobile.
@@ -189,6 +199,9 @@ Acceptance criteria:
   knowing SEO terminology.
 - Every core page presents an owner-level explanation before data-source or system-state detail.
 - Button labels describe the result the owner expects, not the internal process being triggered.
+- No page renders more than one proactive guidance widget, and the user can dismiss it without losing the page's primary data or controls.
+- Overview begins with live performance data when it exists and has no empty desktop column under the daily briefing.
+- Website Health exposes the first fix and its next action before issue counts or technical terminology.
 - Visual polish follows the finalized hierarchy rather than masking an unclear workflow.
 
 ## 1B. Roadmap Tracks and Next Product Phase
@@ -211,13 +224,12 @@ names in issues, commits, and status reports so a number is never ambiguous:
 Goal: replace recurring manual data entry with trustworthy, tenant-safe, and
 location-aware connections for the signals the current product can use.
 
-> **Implementation status (2026-07-29):** Slice G1.1 is implemented in the
-> repository: a customer Data Connections page, signed Google OAuth return flow,
-> per-location Search Console property mappings, initial backfill, and durable
-> scheduled synchronization. Production activation requires migration
-> `20260729_0075`, Google Cloud OAuth credentials, the static callback
-> registration, and a live connection test. Google Business Profile and website
-> analytics/form-event synchronization remain later G1 slices.
+> **Implementation status (2026-07-29):** Slice G1.1 is implemented and
+> production-connected: a customer Data Connections page, signed Google OAuth
+> return flow, per-location Search Console property mappings, initial backfill,
+> durable scheduled synchronization, and owner-facing charts are live. Google
+> Business Profile, local rank-grid collection, website analytics/form-event
+> synchronization, and generalized spend controls remain later G1 slices.
 
 In scope:
 
@@ -263,6 +275,112 @@ G1 acceptance criteria:
 - No call-tracking, CRM, job-management, booked-job, payment, revenue, or sales
   attribution connector, endpoint, job, or schema is added in this phase.
 
+### Growth G1.2 - Local Search Rank Grid
+
+Goal: let an owner run a truthful heat map for one location and one or more
+tracked search phrases without exposing provider mechanics or allowing
+unbounded paid checks.
+
+Scope:
+
+- Use the selected business location's stored coordinates and DataForSEO
+  location metadata; never blend grid points between locations.
+- Let the owner choose tracked phrases, grid size, and search radius, with a
+  safe default of a small grid and the standard queued provider method.
+- Create one durable, idempotent job per grid run and persist the run, phrase,
+  point coordinates, rank, matched business, source, freshness, and provider
+  task identifiers.
+- Render an interactive map whose point colors have one stable meaning:
+  positions 1-3, 4-10, 11-20, 21+, and not found.
+- Show the exact number of checks and estimated platform cost before the owner
+  confirms a run.
+- Reserve estimated usage before dispatch, reconcile it against the
+  provider-reported cost, and release the reservation on terminal failure.
+- Apply organization, tier, location, monthly-usage, and credential-owner
+  checks before any paid provider call.
+- Use the organization's own DataForSEO credentials without charging platform
+  provider spend, while still recording task volume and enforcing safety-rate
+  limits.
+- Keep the current base map visually and semantically separate from rank-grid
+  results.
+- Do not add report automation, call tracking, CRM, job-management, payment, or
+  revenue work in this slice.
+
+Acceptance criteria:
+
+- Reno and Lexington can run and view independent maps for the same phrase.
+- A 5x5 grid for two phrases produces 50 location-specific points and no
+  duplicate provider work when the same idempotency key is retried.
+- The confirmation screen states the grid dimensions, phrase count, total
+  checks, estimated cost, remaining allowance, and expected completion mode.
+- Platform-paid checks stop before dispatch when the organization's hard
+  allowance would be exceeded.
+- Failed provider tasks do not remain charged as completed spend.
+- Sparse, pending, stale, and not-found points are visually distinct and
+  explained in owner language.
+
+### Growth G1.3 - Usage Economics and Margin Guardrails
+
+Goal: know the true variable cost of each organization and prevent platform-paid
+providers or future AI models from pushing the service below its target margin.
+
+Current truth:
+
+- Production intelligence is heuristic/orchestrator code and does not currently
+  call a paid LLM, so there is no production AI-token cost to meter today.
+- The repository already counts entitlements, provider executions, portfolio
+  usage, and provider quota state, but it does not record provider-reported
+  currency cost, credential ownership, reservations, or realized margin.
+- Queue `tokens_per_minute` are rate-limit tokens, not billable AI tokens.
+
+Scope:
+
+- Add an append-only cost ledger with organization, location, campaign,
+  provider, capability, operation, credential owner (`platform` or
+  `organization`), quantity, unit, estimated cost, provider-reported cost,
+  currency, status, idempotency key, and reconciliation timestamps.
+- Add generic AI usage fields before any paid LLM is enabled: provider, model,
+  input tokens, cached-input tokens, output tokens, and price-card version.
+- Version provider/model price cards so historical margin does not change when
+  vendor prices change.
+- Add soft warnings at 50%, 75%, and 90% of the platform-paid allowance and a
+  hard pre-dispatch stop at 100%.
+- Count organization-owned credentials for operational safety and product-tier
+  limits, but exclude their vendor cost from platform COGS.
+- Add an internal margin view showing revenue, platform-paid API cost, hosting,
+  storage, email, other allocated COGS, gross profit, and gross margin by
+  organization and tier.
+- Launch with a conservative platform-paid API budget of 5% of plan revenue
+  while reserving 10% for hosting, storage, email, and support COGS. The 80%
+  floor may use at most 10% for platform-paid APIs only when the remaining COGS
+  still fits inside the other 10%.
+- Keep these controls internal; customer-facing UI shows allowance and recovery
+  actions, not internal margin.
+
+Margin guardrail:
+
+`maximum total COGS = monthly revenue × (1 - target gross margin)`
+
+| Plan | Monthly revenue | Total COGS ceiling at 85% margin | Total COGS ceiling at 80% margin | Initial 5% platform-API budget |
+| --- | ---: | ---: | ---: | ---: |
+| Solo | $699 | $104.85 | $139.80 | $34.95 |
+| Multi-location | $1,499 | $224.85 | $299.80 | $74.95 |
+| Agency | $3,999 | $599.85 | $799.80 | $199.95 |
+| Enterprise starting point | $8,000 | $1,200.00 | $1,600.00 | $400.00 |
+
+Acceptance criteria:
+
+- Every platform-paid provider operation has an estimated, reserved, and
+  reconciled currency cost.
+- Every organization-owned provider operation is distinguishable and excluded
+  from platform vendor COGS.
+- No provider or future LLM task can dispatch after the applicable hard
+  allowance is exhausted.
+- Internal reporting calculates realized gross margin from versioned price
+  cards and provider-reported cost without retroactively changing prior months.
+- A tier cannot be published unless its modeled usage remains at or above the
+  80% margin floor under the approved heavy-use scenario.
+
 ### Later Growth Phases
 
 - **G2 - Business Results and Attribution:** define lead and outcome reporting
@@ -272,6 +390,9 @@ G1 acceptance criteria:
 - **G3 - Revenue-Linked Recommendation Validation:** compare recommendations
   with approved outcome data while retaining evidence, confidence, human
   approval, and observation-only learning controls.
+- **Later reporting phase:** premium report redesign and expanded report
+  automation remain deferred until local rank-grid truth, connection health,
+  and usage economics are reliable.
 
 ## 2. What The Platform Is Today
 

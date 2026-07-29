@@ -1013,15 +1013,6 @@ export default function LocationsPage() {
           </section>
         ) : null}
 
-        {!loading && totals.unassigned_business_locations > 0 ? (
-          <TruthNotice title="Legacy locations need an account group." tone="warning">
-            {totals.unassigned_business_locations} location
-            {totals.unassigned_business_locations === 1 ? "" : "s"} existed before the
-            canonical hierarchy. They remain safe and visible, but should be assigned before
-            using portfolio rollups.
-          </TruthNotice>
-        ) : null}
-
         {!loading && totals.campaigns > 0 ? (
           <div className="flex justify-end">
             <button className={secondaryButtonClass} onClick={() => router.push("/dashboard")}>

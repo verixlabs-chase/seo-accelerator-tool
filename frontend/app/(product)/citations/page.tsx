@@ -18,7 +18,6 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getOwnerFriendlyTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
@@ -274,12 +273,6 @@ export default function CitationsPage() {
           A listing is confirmed only when its status is <strong>Live</strong> or{" "}
           <strong>Verified</strong>, preferably with a link you can open.
         </TruthNotice>
-
-        {runtimeTruth ? (
-          <TruthNotice title="How current are these listing updates?" tone="warning">
-            {getOwnerFriendlyTruthSummary(runtimeTruth, "directory listings")}
-          </TruthNotice>
-        ) : null}
 
         {loading ? (
           <LoadingCard

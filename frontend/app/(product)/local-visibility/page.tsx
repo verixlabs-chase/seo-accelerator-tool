@@ -19,7 +19,6 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getOwnerFriendlyTruthSummary,
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
 
@@ -531,12 +530,6 @@ export default function LocalVisibilityPage() {
           This page shows the latest information saved for this location. If a result is missing,
           InsightOS has not collected enough information yet.
         </TruthNotice>
-
-        {runtimeTruth ? (
-          <TruthNotice title="How current is this local-search information?" tone="warning">
-            {getOwnerFriendlyTruthSummary(runtimeTruth, "local search visibility")}
-          </TruthNotice>
-        ) : null}
 
         {loading || loadingLocalData ? (
           <LoadingCard

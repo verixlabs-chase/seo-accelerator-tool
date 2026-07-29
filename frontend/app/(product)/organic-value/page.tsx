@@ -18,7 +18,6 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getOwnerFriendlyTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
@@ -363,12 +362,6 @@ export default function OrganicValuePage() {
           The estimate uses saved search positions and typical ad costs. It does not predict actual
           leads, sales, profit, or guaranteed return.
         </TruthNotice>
-
-        {baseline?.truth ? (
-          <TruthNotice title="How current is this estimate?" tone="warning">
-            {getOwnerFriendlyTruthSummary(baseline.truth, "the search value estimate")}
-          </TruthNotice>
-        ) : null}
 
         {loading ? (
           <LoadingCard

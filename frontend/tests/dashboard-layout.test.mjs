@@ -38,6 +38,7 @@ test("overview does not render large generic good-to-know panels", () => {
   assert.doesNotMatch(dashboardSource, /<TruthNotice/);
   assert.doesNotMatch(dashboardSource, /Good to know/i);
   assert.doesNotMatch(dashboardSource, /Some checks take time to finish/i);
+  assert.doesNotMatch(dashboardSource, /<ActionDrawer/);
 });
 
 test("overview removes duplicate legacy summaries and placeholder trend charts", () => {

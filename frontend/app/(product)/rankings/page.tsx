@@ -32,7 +32,6 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getOwnerFriendlyTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
@@ -768,12 +767,6 @@ export default function RankingsPage() {
           Saved search positions may be older than what customers see today. Use <strong>Run live
           check</strong> when you need fresh results for this location.
         </TruthNotice>
-
-        {rankingsTruth ? (
-          <TruthNotice title="How current are these search positions?" tone="warning">
-            {getOwnerFriendlyTruthSummary(rankingsTruth, "search positions")}
-          </TruthNotice>
-        ) : null}
 
         {loading ? (
           <LoadingCard

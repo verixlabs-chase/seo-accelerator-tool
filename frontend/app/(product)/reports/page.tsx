@@ -20,7 +20,6 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getOwnerFriendlyTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 import {
   getDeliveryWorkflowState,
@@ -674,15 +673,6 @@ export default function ReportsPage() {
           A report that is still being created is not ready to send. Check the report status and
           delivery history before treating it as complete.
         </TruthNotice>
-
-        {selectedReportDetail?.truth || reportsTruth ? (
-          <TruthNotice title="How current is this report information?" tone="warning">
-            {getOwnerFriendlyTruthSummary(
-              selectedReportDetail?.truth || reportsTruth,
-              "reports and deliveries",
-            )}
-          </TruthNotice>
-        ) : null}
 
         {loading ? (
           <LoadingCard

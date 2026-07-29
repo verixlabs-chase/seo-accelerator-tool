@@ -16,7 +16,6 @@ import {
 } from "recharts";
 
 import {
-  ActionDrawer,
   AppShell,
   ChartCard,
   EmptyState,
@@ -1305,48 +1304,17 @@ export default function DashboardPage() {
       }
     >
       <section className="space-y-6">
-        <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
-          <div className="max-w-4xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-              Daily briefing
-            </p>
-            <h1 className="mt-2 text-4xl font-bold tracking-[-0.05em] text-white md:text-[3.25rem]">
-              What changed for your business today
-            </h1>
-            <p className="mt-2.5 text-sm leading-6 text-zinc-300 md:text-base">
-              Start here to see the latest visibility update, why it matters, and the
-              next action InsightOS recommends.
-            </p>
-          </div>
-
-          <ActionDrawer
-            title={summaryState.nextStepTitle}
-            summary={summaryState.nextStepBody}
-            evidence={[
-              summaryState.changeTitle,
-              summaryState.impactBody,
-              selectedCampaign
-                ? `Active business: ${selectedCampaign.name || "Unnamed campaign"} on ${selectedCampaign.domain || "no domain"}.`
-                : "No active business is selected yet.",
-            ]}
-            actions={
-              <>
-                <button
-                  onClick={summaryState.primaryAction}
-                  disabled={busyAction !== "" && summaryState.primaryActionLabel !== "Refresh latest results"}
-                  className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {summaryState.primaryActionLabel}
-                </button>
-                <button
-                  onClick={summaryState.secondaryAction}
-                  className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200"
-                >
-                  {summaryState.secondaryActionLabel}
-                </button>
-              </>
-            }
-          />
+        <div className="max-w-4xl">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+            Daily briefing
+          </p>
+          <h1 className="mt-2 text-4xl font-bold tracking-[-0.05em] text-white md:text-[3.25rem]">
+            What changed for your business today
+          </h1>
+          <p className="mt-2.5 text-sm leading-6 text-zinc-300 md:text-base">
+            Start with the Google trends below, then use the three short cards to see
+            what changed, why it matters, and what to do next.
+          </p>
         </div>
 
         {loading ? (
