@@ -1,6 +1,7 @@
 "use client";
 
 import { clearAuthSession } from "../lib/authStorage";
+import { getApiErrorDetail } from "../lib/apiError.mjs";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -36,12 +37,7 @@ export async function platformApi(path, options = {}) {
 
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail =
-      json?.error?.message ||
-      json?.errors?.[0]?.message ||
-      json?.detail?.message ||
-      (typeof json?.detail === "string" ? json.detail : "") ||
-      `Request failed (${response.status})`;
+    const detail = getApiErrorDetail(json, response.status);
     throw new Error(detail);
   }
   return json.data;

@@ -33,6 +33,7 @@ import {
   getConnectionPortfolioSummary,
   getConnectionStatusView,
 } from "../app/(product)/truth/dataConnectionsTruth.mjs";
+import { getApiErrorDetail } from "../app/lib/apiError.mjs";
 
 const formatRelativeTime = () => "2 hours ago";
 
@@ -53,6 +54,25 @@ test("data connection portfolio truth reports unmapped locations", () => {
   assert.equal(summary.needsAttention, 1);
   assert.equal(summary.unmapped, 1);
   assert.equal(summary.label, "Setup needs attention");
+});
+
+test("API error truth prefers the actionable structured detail", () => {
+  const detail = getApiErrorDetail(
+    {
+      errors: [
+        {
+          message: "Request failed",
+          details: {
+            message: "Google OAuth is not configured: GOOGLE_OAUTH_CLIENT_ID",
+          },
+        },
+      ],
+    },
+    409,
+  );
+
+  assert.match(detail, /Google OAuth is not configured/i);
+  assert.doesNotMatch(detail, /^Request failed$/i);
 });
 
 test("dashboard truth state marks failed crawl as needs attention with remediation", () => {
