@@ -9,7 +9,7 @@
 
 ---
 
-> **Current status (2026-07-29):** Sprints 1-7 are now a substantially completed, production-verified baseline. Sprint 8, Local Visibility map and provider location normalization, is active. The authoritative execution brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
+> **Current status (2026-07-29):** Sprints 1-8 are now a substantially completed, production-verified baseline. Sprint 9, cross-page UX and visual polish, is active. The authoritative execution brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
 
 ## 1. Executive Summary
 

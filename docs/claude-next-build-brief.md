@@ -1,6 +1,6 @@
 # Claude Next Build Brief
 
-> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. Sprints 5-7 of Core UX Closure are production-verified, and the active next build phase is now **Sprint 8: Local Visibility Map and Provider Location Normalization**. Where Sections 7-10 conflict with the active sprint sequence below, this status and Section 1A take precedence.
+> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. Sprints 5-8 of Core UX Closure are production-verified, and the active next build phase is now **Sprint 9: Cross-Page UX and Visual Polish**. Where Sections 7-10 conflict with the active sprint sequence below, this status and Section 1A take precedence.
 
 ## 1. Executive Summary
 
@@ -28,7 +28,7 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 
 ## 1A. Active Next Sprint Sequence
 
-> **Execution status (2026-07-29):** Sprints 5, 6, and 7 are shipped and production-QA complete for Reno and Lexington. Sprint 8, Local Visibility Map and Provider Location Normalization, is active. Recommendation-only intelligence remains enabled; autonomous customer-site mutations and automatic policy updates remain disabled.
+> **Execution status (2026-07-29):** Sprints 5, 6, 7, and 8 are shipped and production-QA complete for Reno and Lexington. Sprint 9, Cross-Page UX and Visual Polish, is active. Recommendation-only intelligence remains enabled; autonomous customer-site mutations and automatic policy updates remain disabled.
 
 ### Sprint 5 - Location Context and Navigation Clarity
 
@@ -136,6 +136,8 @@ Acceptance criteria:
 ### Sprint 8 - Local Visibility Map and Provider Location Normalization
 
 Goal: make Local Visibility a real location product rather than another summary page.
+
+> **Completed and production-verified (2026-07-29):** Business locations now store structured geography, coordinates, coordinate precision/source, and DataForSEO location metadata. Reno resolves to DataForSEO location `1022653`; Lexington resolves to `1017818`. Both locations open an interactive OpenStreetMap reference map, switch independently, and clearly separate the base map from unavailable paid geo-grid coverage. Address misses fall back to a rate-limited, cached city-center lookup rather than presenting a false exact pin.
 
 Scope:
 - Store structured city, state/region, country, and coordinates on business locations.

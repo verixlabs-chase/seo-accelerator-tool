@@ -415,6 +415,15 @@ export default function LocalVisibilityPage() {
     setLoadingLocalData(true);
     setError("");
     setNotice("");
+    setHealth(null);
+    setMapPack(null);
+    setLocationContext(null);
+    setVelocity(null);
+    setReviews([]);
+    setHealthTruth(null);
+    setMapPackTruth(null);
+    setVelocityTruth(null);
+    setReviewsTruth(null);
     void loadLocalData(selectedCampaignId)
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Unable to load local SEO data.");
@@ -561,7 +570,7 @@ export default function LocalVisibilityPage() {
           />
         ) : null}
 
-        {!loading && campaigns.length > 0 ? (
+        {!loading && !loadingLocalData && campaigns.length > 0 ? (
           <>
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
