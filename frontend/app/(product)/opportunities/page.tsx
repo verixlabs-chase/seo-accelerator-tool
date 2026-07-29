@@ -39,6 +39,7 @@ type Campaign = {
   id: string;
   name?: string;
   domain?: string;
+  setup_state?: string;
 };
 
 type Recommendation = {
@@ -1029,6 +1030,35 @@ export default function OpportunitiesPage() {
     }
 
     await runAction("run-intelligence-cycle", async () => {
+      const currentCampaign =
+        campaigns.find((item) => item.id === selectedCampaignId) ?? null;
+      const activationPath: Record<string, string[]> = {
+        Draft: ["Configured", "BaselineRunning", "Active"],
+        Configured: ["BaselineRunning", "Active"],
+        BaselineRunning: ["Active"],
+        Paused: ["Active"],
+        Active: [],
+      };
+      const currentSetupState = currentCampaign?.setup_state || "Draft";
+      const transitions = activationPath[currentSetupState];
+      if (!transitions) {
+        throw new Error(
+          `Campaign setup state “${currentSetupState}” cannot be activated from this workspace.`,
+        );
+      }
+
+      let activatedCampaign = false;
+      for (const targetState of transitions) {
+        await platformApi(
+          `/campaigns/${encodeURIComponent(selectedCampaignId)}/setup-state`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ target_state: targetState }),
+          },
+        );
+        activatedCampaign = true;
+      }
+
       const response = (await platformApi(
         `/intelligence/cycles/run?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
         {
@@ -1036,15 +1066,15 @@ export default function OpportunitiesPage() {
           body: JSON.stringify({}),
         },
       )) as IntelligenceCycleResponse;
-      await loadOpportunities(selectedCampaignId);
+      await Promise.all([loadCampaigns(), loadOpportunities(selectedCampaignId)]);
       if (response.idempotent_replay) {
         setNotice(
-          "Today’s stored-data intelligence cycle was already completed. The existing result was reused and no duplicate work was created.",
+          `${activatedCampaign ? "The campaign was activated. " : ""}Today’s stored-data intelligence cycle was already completed. The existing result was reused and no duplicate work was created.`,
         );
         return;
       }
       setNotice(
-        `Stored-data intelligence completed with ${response.result?.recommendations_generated || 0} recommendations. Provider checks stayed off and ${response.safety?.executions_scheduled || 0} executions were scheduled.`,
+        `${activatedCampaign ? "The campaign was activated. " : ""}Stored-data intelligence completed with ${response.result?.recommendations_generated || 0} recommendations. Provider checks stayed off and ${response.safety?.executions_scheduled || 0} executions were scheduled.`,
       );
     });
   }
@@ -1275,7 +1305,9 @@ export default function OpportunitiesPage() {
           >
             {busyAction === "run-intelligence-cycle"
               ? "Running intelligence..."
-              : "Run saved-data intelligence"}
+              : selectedCampaign?.setup_state === "Active"
+                ? "Run saved-data intelligence"
+                : "Activate & run saved-data intelligence"}
           </button>
           <button
             onClick={() => router.push("/reports")}
