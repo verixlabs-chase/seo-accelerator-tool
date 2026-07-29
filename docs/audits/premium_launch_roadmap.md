@@ -24,9 +24,9 @@ Premium pricing is possible only if the product feels like a reliable operating 
 
 | Tier | Customer expectation |
 |---|---|
-| Solo - $99 | A business owner should understand health, visibility, risks, and next actions in minutes without needing an SEO expert. |
-| Multi-location - $399 | A manager should compare locations, spot underperformance, and prioritize action across a portfolio. |
-| Enterprise - $999+ | Multi-location teams and agencies should gain portfolio workflows, controlled usage, operational reliability, and priority support. |
+| Solo - $199 | A business owner should receive connected local-search intelligence, understand risks and next actions in minutes, and need fewer separate SEO tools. |
+| Multi-location - $699 | A manager should compare locations, spot underperformance, transfer winning patterns, and prioritize action across a portfolio. |
+| Enterprise - $1,499+ | Multi-location teams and agencies should gain portfolio workflows, controlled usage, operational reliability, API/export options, and priority support. |
 
 ### What makes premium pricing collapse immediately
 
@@ -360,9 +360,9 @@ Premium pricing requires a product that feels calm, legible, and authoritative. 
 
 | Tier | Must exist | Optional | What makes it feel overpriced | Current support today | What must be true before credible |
 |---|---|---|---|---|---|
-| Solo - $99 | clear dashboard, strong onboarding, local visibility, site health, and useful next actions | limited report and citation extras | complex UI or thin local-search value | partially supported | owner-friendly command center and truthful local rank grid |
-| Multi-location - $399 | portfolio view, cross-location comparison, alerts, rollups, and controlled heat-map usage | advanced branding | no useful comparisons or prioritization | partially supported | real location portfolio UX and enforceable usage limits |
-| Enterprise - $999+ | team and agency portfolio workflows, custom limits, operational controls, priority support, and client-safe reporting | dedicated capacity and BYO providers | visible instability, weak support, or thin controls | not supported today | hardened operations, portfolio workflows, and support process |
+| Solo - $199 | connected Search Console and GBP data, local rank grids, site health, keyword/competitor intelligence, reviews/listings visibility, and evidence-backed next actions | advanced reporting and execution | disconnected tools, generic recommendations, or thin local-search value | partially supported | trustworthy local intelligence command center and complete BrightLocal-class tracking |
+| Multi-location - $699 | all Solo capabilities plus portfolio intelligence, cross-location comparison, alerts, rollups, bulk workflows, team access, and controlled provider usage | advanced branding | no useful comparisons, shared-problem detection, or prioritization | partially supported | differentiated multi-location intelligence and enforceable usage limits |
+| Enterprise - $1,499+ | team and agency portfolio workflows, custom limits, API/export, operational controls, priority support, and client-safe reporting | dedicated capacity and BYO providers | visible instability, weak support, or thin controls | not supported today | hardened operations, white-label delivery, portfolio workflows, and support process |
 
 ## Part 8 - Trust Checklist
 

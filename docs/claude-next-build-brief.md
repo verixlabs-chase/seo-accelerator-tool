@@ -1,6 +1,6 @@
 # Claude Next Build Brief
 
-> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. UX Sprints 5-8 are production-verified, and the active build phase is **UX9: Cross-Page UX and Visual Polish**. The current UX9 closing slice removes repeated guidance, moves useful data above status framing, and simplifies Website Health around one next action. The next product phase is **Growth G1: Automated Data Connections**, with local rank-grid checks and spend safety defined as explicit G1 slices below. Where Sections 7-10 conflict with Sections 1A-1B, Sections 1A-1B take precedence.
+> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. UX Sprints 5-8 are production-verified, and the active build phase is **UX9: Cross-Page UX and Visual Polish**. The current UX9 closing slice removes repeated guidance, moves useful data above status framing, and simplifies Website Health around one next action. The post-UX9 roadmap now covers a focused Semrush and BrightLocal replacement for local service businesses: provider truth and local operations in G1.2-G1.7, evidence-backed intelligence in I1, research/content/AI visibility in MKT1-CNT1-AIV1, multi-location intelligence in ML1, commerce in COM1, and Enterprise/reporting in ENT1. Where Sections 7-10 conflict with Sections 1A-1C, Sections 1A-1C take precedence.
 
 ## 1. Executive Summary
 
@@ -12,7 +12,7 @@ The current truth from the audits and codebase:
 - Multi-location data and provider-backed ranking checks work, but active-location context is too subtle and portfolio data is mixed with location detail.
 - Recent workflow-closure work already produced execution, reporting, competitors, and citations surfaces. Route existence is no longer the primary problem.
 - The navigation exposes too many destinations at the same level, and page controls do not make the next action obvious.
-- Local Visibility lacks a real map experience, and Site Health still exposes too much technical language before explaining what matters.
+- Local Visibility has a truthful base map but lacks a real rank-grid/heat-map layer, and Site Health still exposes too much technical language before explaining what matters.
 - The backend already exposes a lot more than the frontend surfaces.
 - The safest next phase is information-architecture and comprehension work on top of the existing routes, not new architecture.
 
@@ -363,15 +363,15 @@ Margin guardrail:
 
 | Plan | Monthly revenue | Total COGS ceiling at 85% margin | Total COGS ceiling at 80% margin | Initial 5% platform-API budget |
 | --- | ---: | ---: | ---: | ---: |
-| Solo | $99 | $14.85 | $19.80 | $4.95 |
-| Multi-location | $399 | $59.85 | $79.80 | $19.95 |
-| Enterprise starting point | $999 | $149.85 | $199.80 | $49.95 |
+| Solo | $199 | $29.85 | $39.80 | $9.95 |
+| Multi-location | $699 | $104.85 | $139.80 | $34.95 |
+| Enterprise starting point | $1,499 | $224.85 | $299.80 | $74.95 |
 
 Pricing decision:
 
-- Use `$99/month` rather than `$97/month` for a clearer public price.
-- Multi-location is `$399/month`.
-- Enterprise starts at `$999/month` and uses custom limits or per-location
+- Solo is `$199/month`.
+- Multi-location is `$699/month`.
+- Enterprise starts at `$1,499/month` and uses custom limits or per-location
   pricing when its approved location, user, provider, or support allowance is
   exceeded.
 - Agency workflows are packaged inside Enterprise rather than maintained as a
@@ -389,6 +389,357 @@ Acceptance criteria:
   cards and provider-reported cost without retroactively changing prior months.
 - A tier cannot be published unless its modeled usage remains at or above the
   80% margin floor under the approved heavy-use scenario.
+
+### Growth G1.4 - Google Business Profile Intelligence
+
+Goal: replace manual GBP audits with a connected, location-aware profile
+workspace that explains what is incomplete, what changed, and what to improve.
+
+Scope:
+
+- Map one Google Business Profile to the correct organization, subaccount,
+  business location, website, and campaign.
+- Synchronize the profile identity, primary and secondary categories, services,
+  hours, special hours, address/service area, phone, website, attributes,
+  description, photos, posts, and supported performance metrics.
+- Audit profile completeness, category fit, NAP consistency, service-area
+  coverage, hour accuracy, photo freshness, and posting cadence.
+- Compare supported profile attributes with the businesses that repeatedly
+  outrank the location in local rank-grid results.
+- Turn audit findings into evidence-backed recommended actions.
+- Allow profile edits, posts, and other supported mutations only through an
+  explicit review and approval workflow. No automatic profile mutation is
+  enabled by default.
+- Preserve profile snapshots so the customer can see what changed and whether
+  visibility improved afterward.
+
+Acceptance criteria:
+
+- Each location is mapped to one verified profile without cross-location
+  blending.
+- Missing or unsupported fields are labeled honestly rather than scored as
+  failures.
+- Every audit recommendation identifies the profile field, evidence, expected
+  benefit, and owner action.
+- A profile mutation cannot run without an authorized connection, explicit
+  approval, audit history, and rollback/recovery guidance where the provider
+  supports it.
+
+### Growth G1.5 - Listings and Citation Intelligence
+
+Goal: replace BrightLocal-style citation tracking and listing management with a
+truthful inventory, consistency audit, and approval-driven correction workflow.
+
+Scope:
+
+- Connect an approved production listings/citation provider; synthetic authority
+  data remains test-only.
+- Discover listings for each physical location and normalize business name,
+  address, phone, website, categories, hours, and status.
+- Classify listings as correct, inconsistent, missing, duplicate, submitted,
+  live, verified, or unavailable without treating submission as publication.
+- Show directory importance, confidence, last verification time, source link,
+  and the exact field differences that need correction.
+- Prioritize listing work by business impact instead of presenting one flat
+  directory checklist.
+- Support approval-driven listing creation, correction, suppression, and
+  verification when the selected provider or directory allows it.
+- Track provider cost and per-location allowance for paid submission or
+  correction work.
+- Keep citation building pay-as-you-go or explicitly allowance-backed; never
+  hide third-party directory fees inside an unlimited action.
+
+Acceptance criteria:
+
+- A user can see which listings are actually live, which are only submitted,
+  and which contain conflicting business details.
+- A correction is tenant- and location-scoped, idempotent, auditable, and
+  cost-confirmed before dispatch.
+- Portfolio views identify consistency problems shared across locations without
+  merging the underlying listing records.
+
+### Growth G1.6 - Reputation Management
+
+Goal: replace BrightLocal-style review monitoring, response, generation, and
+multi-location reputation reporting while adding an intelligence layer.
+
+Scope:
+
+- Ingest reviews from Google and other approved sources with source, rating,
+  text, author metadata allowed by the provider, response status, and freshness.
+- Provide one review inbox with location, source, rating, theme, sentiment,
+  response status, and date filters.
+- Allow approved direct replies where provider APIs permit them; otherwise
+  provide a direct source link and track completion.
+- Generate response drafts and reusable templates, but require human review by
+  default and clearly label AI-generated text.
+- Detect recurring customer themes, urgent negative-review patterns, unanswered
+  reviews, rating changes, and review-velocity gaps against local competitors.
+- Add compliant email, SMS, link, QR, and kiosk review-request campaigns with
+  consent, suppression, delivery, and cost controls.
+- Do not implement review gating, selective suppression of negative customers,
+  fabricated reviews, or other platform-policy violations.
+- Add optional brand-controlled website widgets for selected reviews.
+- Add a multi-location reputation overview with leaderboards, outlier alerts,
+  campaign performance, recent-review velocity, response time, and average
+  rating.
+
+Acceptance criteria:
+
+- New reviews are synchronized durably and cannot duplicate on retry.
+- A user can find and respond to an unanswered review without leaving the
+  active location context when direct response is supported.
+- Review-request campaigns show audience, channel cost, consent state,
+  delivery, feedback, and resulting public-review activity.
+- Intelligence recommendations cite the review evidence and never infer a
+  customer outcome that has not been observed.
+
+### Growth G1.7 - Website Analytics and Form Events
+
+Goal: connect website behavior to search visibility without introducing the
+deferred CRM, call-tracking, job-management, payment, or revenue scope.
+
+Scope:
+
+- Complete Google Analytics connection and per-location property/stream mapping.
+- Ingest sessions, engaged sessions, landing pages, source/medium, and approved
+  conversion events.
+- Add a first-party website form event contract with tenant, location, website,
+  page, event name, and deduplication identifiers.
+- Join Search Console, ranking, crawl, local, and website-event facts at the
+  location and date level without claiming sales attribution.
+- Surface search-to-visit and visit-to-form trends, data freshness, and broken
+  tracking alerts.
+
+Acceptance criteria:
+
+- Reno and Lexington remain independently mapped through Search Console,
+  Analytics, and form-event facts.
+- Duplicate backfills and retries do not duplicate daily metrics or form events.
+- Customer-visible language says `website forms` or `inquiries`, not revenue or
+  booked jobs.
+- No call-tracking, CRM, field-service, payment, or revenue connector is added.
+
+## 1C. Competitive Replacement Product Sprint Sequence
+
+The following sprints begin after the applicable G1 provider truth is reliable.
+Their purpose is to replace the useful local-business workflows of Semrush and
+BrightLocal without copying their tool sprawl.
+
+### Intelligence I1 - Evidence-Backed Action Center
+
+Goal: make the intelligence layer the reason a service business pays for the
+product.
+
+Scope:
+
+- Replace unsupported overall scores and duplicate recommendations with one
+  deduplicated, prioritized action queue.
+- Give every action a location, evidence set, freshness, confidence, expected
+  benefit, estimated effort, dependency, success metric, observation window,
+  and plain-language `why now`.
+- Add a compact Daily Intelligence Brief after the first useful Overview charts:
+  what changed, likely explanation, strongest evidence, and the next action.
+- Add cross-signal diagnoses across Search Console, rankings, geo-grid, GBP,
+  reviews, listings, crawl, competitors, analytics, and form events.
+- Record a pre-action baseline, action event, observation window, post-action
+  measurement, and `helped / did not help / insufficient data` outcome.
+- Keep policy learning and causal claims disabled until minimum sample,
+  calibration, and governance gates pass.
+- Use an LLM only as a cost-capped narrative layer over verified facts; the LLM
+  does not invent scores, evidence, or actions.
+
+Acceptance criteria:
+
+- No active recommendation is duplicated for the same location, evidence, and
+  observation window.
+- No recommendation is shown without supporting evidence or an explicit
+  insufficient-evidence state.
+- Every completed action returns to the user with a measured outcome.
+- A service-business owner can explain the top action without SEO terminology.
+
+### Market MKT1 - Local Keyword and Competitor Research
+
+Goal: replace the Semrush research workflows a local service business actually
+needs.
+
+Scope:
+
+- Add local keyword discovery using services, city/service area, Search Console
+  queries, competitor terms, related searches, and an approved keyword-data
+  provider.
+- Show search volume, intent, CPC, trend, difficulty/competition proxy, current
+  position, map visibility, and business relevance with source/freshness.
+- Cluster phrases by service, problem, location, funnel stage, and target page.
+- Discover real organic and map competitors automatically rather than requiring
+  a manually maintained list.
+- Add keyword gaps, page/content gaps, local-grid overlap, GBP attribute
+  comparisons, and competitor-movement alerts.
+- Convert research findings directly into tracked phrases, content briefs,
+  profile actions, or approved opportunities.
+
+Acceptance criteria:
+
+- A customer can move from `What should I target?` to a location-specific
+  tracked phrase or action without copying data between tools.
+- Provider-derived volume or difficulty is never mixed with platform estimates
+  without a source label.
+- Competitor recommendations identify the exact gap and supporting data.
+
+### Content CNT1 - Content, On-Page, and Authority Workspace
+
+Goal: replace the most useful Semrush content and authority workflows for local
+service businesses.
+
+Scope:
+
+- Productize the existing content-plan, content-asset, internal-link, entity,
+  and execution foundations.
+- Add page inventory, service/location page coverage, content briefs, intent
+  match, title/meta suggestions, schema recommendations, and internal-link plans.
+- Compare target pages with ranking competitors and local customer questions.
+- Connect a production backlink/authority provider for referring domains,
+  anchor distribution, new/lost links, competitor link gaps, and risk signals.
+- Keep listing citations separate from editorial backlinks while combining them
+  in owner-level authority recommendations.
+- Require approval for publishing or website mutations and preserve before/after
+  evidence.
+
+Acceptance criteria:
+
+- Every content recommendation identifies the target phrase, target page,
+  missing coverage, competitor evidence, and completion state.
+- Backlink and authority data comes from a named production source with
+  freshness and cost controls.
+- A user can turn a research gap into a governed content or authority action.
+
+### AI Visibility AIV1 - AI Search and Entity Visibility
+
+Goal: turn the existing deterministic AI Visibility specification into a real
+upper-tier product rather than a documentation-only promise.
+
+Scope:
+
+- Connect an approved provider or governed collection path for prompts,
+  responses, mentions, citations, competitors, and platform metadata across
+  supported AI-search surfaces.
+- Track prompt clusters by service, location, customer question, and buying
+  intent.
+- Surface inclusion frequency, citation presence, position/prominence,
+  competitor share, entity consistency, and volatility over time.
+- Tie AI visibility findings to content, schema, entity, review, and authority
+  actions without guaranteeing inclusion.
+- Add per-plan prompt/check allowances, provider cost reconciliation, and
+  customer-owned credential support where available.
+
+Acceptance criteria:
+
+- Every AI visibility metric identifies platform, prompt set, source, date,
+  model/collection version when available, and known limitations.
+- No static readiness score is presented as proof that an AI system recommends
+  the business.
+- Recommended actions are evidence-backed and flow into the same governed
+  Action Center.
+
+### Multi-Location ML1 - Portfolio Intelligence
+
+Goal: make the $699 plan materially better than repeating a single-location
+dashboard ten times.
+
+Scope:
+
+- Add portfolio scorecards, maps, leaderboards, trends, alerts, and sortable
+  location matrices across rankings, geo-grid coverage, GBP, reviews, listings,
+  website health, search traffic, and action backlog.
+- Detect outliers, shared template problems, regional patterns, and sudden
+  changes.
+- Identify repeatable winning patterns from stronger locations and propose them
+  to weaker locations with human review.
+- Add bulk checks, bulk scheduling, bulk action assignment, location groups,
+  delegated access, and pooled provider allowances.
+- Never expose or transfer one tenant's identifiable data to another tenant.
+  Any future cohort benchmark must be privacy-safe, minimum-sample gated, and
+  governance approved.
+
+Acceptance criteria:
+
+- A multi-location operator can identify the three locations needing attention
+  and why in one minute.
+- Shared issues are grouped without erasing location-specific evidence.
+- Bulk work remains idempotent, approval-gated, cost-confirmed, and auditable.
+
+### Commerce COM1 - Billing, Entitlements, and Self-Service Accounts
+
+Goal: make the $199, $699, and $1,499+ plans enforceable and supportable.
+
+Scope:
+
+- Add checkout, subscription lifecycle, trials, invoices, payment-failure
+  recovery, upgrade/downgrade, cancellation, and plan-change audit history.
+- Enforce location, user, keyword, grid, prompt, crawl, provider, storage, and
+  export allowances through the existing entitlement system.
+- Add invitations, password recovery, session revocation, organization
+  switching, roles, and delegated location access.
+- Show customer-friendly usage and recovery actions without exposing internal
+  margin.
+- Model normal and heavy-use COGS before a tier can be published.
+
+Acceptance criteria:
+
+- A customer can subscribe, onboard, understand usage, recover access, change
+  plans, and resolve payment failure without operator database work.
+- Heavy-use simulations preserve at least the approved 80% margin floor.
+- Platform-paid provider calls stop before dispatch when allowance is exhausted.
+
+### Enterprise ENT1 - Agency, API, White Label, and Reporting
+
+Goal: justify the $1,499+ starting price after the core product is proven.
+
+Scope:
+
+- Add advanced roles, client access, organization audit views, custom limits,
+  bulk export, API access, and priority-support workflows.
+- Add white-label brand settings and client-safe surfaces.
+- Finish durable report storage, scheduling, delivery verification, executive
+  narratives, portfolio reporting, and branded templates.
+- Add reliability/status communication, data export, retention controls, and
+  enterprise onboarding runbooks.
+- Keep dedicated capacity, custom provider contracts, SSO, and contractual SLA
+  commitments quote-based rather than assumed in the base tier.
+
+Acceptance criteria:
+
+- Enterprise customers can operate multiple teams or clients without
+  cross-account leakage.
+- Reports and exports are durable, reproducible, and source/freshness labeled.
+- Custom limits, provider ownership, support commitments, and overages are
+  explicit before purchase.
+
+### BrightLocal Replacement Coverage Map
+
+| BrightLocal-class capability | InsightOS sprint |
+| --- | --- |
+| Local rank tracker and neighborhood geo-grid | G1.2 |
+| GBP audit, profile history, competitor benchmarks, and approved management | G1.4 |
+| Citation audit, listing consistency, creation/correction workflow | G1.5 |
+| Review monitoring, inbox, response, generation, and showcase | G1.6 |
+| Multi-location reputation and local visibility overview | G1.6 and ML1 |
+| AI-prioritized local SEO actions | I1 |
+| Local keyword and competitor research | MKT1 |
+| White-label reports and client access | ENT1 |
+| API and custom-scale access | ENT1 |
+
+### Commercial Readiness Gates
+
+| Public plan | Price | Minimum completed sprints before general sale |
+| --- | ---: | --- |
+| Solo | $199/month | UX9, G1.2-G1.7, I1, MKT1, baseline CNT1, limited AIV1, and COM1 self-service billing/account recovery |
+| Multi-location | $699/month | All Solo gates plus ML1 portfolio intelligence, pooled allowances, team roles, delegated location access, and bulk workflows |
+| Enterprise | $1,499/month starting | All Multi-location gates plus ENT1 API/export, white label, advanced roles, custom limits, durable reporting, onboarding, and priority-support workflows |
+
+An invite-only paid beta may start earlier with explicit limits and known-feature
+disclosures. The public plans above must not be marketed as Semrush or
+BrightLocal replacements until their listed gates pass production QA.
 
 ### Later Growth Phases
 
@@ -427,7 +778,8 @@ Current reality of key user flows:
 - The dashboard still carries operator DNA and some manual controls, but the tenant shell is materially better than earlier audit states.
 - The opportunities page already includes execution list/filter/detail/action behavior.
 - The reports page already supports report list, detail, generation, and delivery.
-- Competitors and citations have backend APIs but no tenant-facing workflow pages.
+- Competitors and citations have tenant-facing pages, but their production data
+  collection and customer workflows remain shallow.
 
 ## 3. What The Platform Is Not Yet
 

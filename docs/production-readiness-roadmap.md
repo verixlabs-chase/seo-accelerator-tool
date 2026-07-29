@@ -31,14 +31,15 @@ current source of truth.
 | Email delivery | Adapter contract exists; hosted configuration is optional | configure a real SMTP provider and verify delivery outcomes |
 | Crawling | Small request-based crawls can execute eagerly | convert crawl frontier steps to durable jobs before increasing limits |
 | Rankings | Real SerpAPI adapter exists | select backend, configure organization credentials, and validate a live campaign |
-| Local visibility / reviews | Synthetic provider is test-only | implement Google Business Profile production adapter |
-| Citations / backlinks | Synthetic provider is test-only | choose and implement a production authority provider |
+| Local visibility / reviews | Base location map is live; synthetic local/review provider is test-only | implement G1.2 rank-grid, G1.4 GBP, and G1.6 reputation providers and workflows |
+| Citations / backlinks | Synthetic provider is test-only | implement G1.5 listings/citations provider first, then CNT1 editorial authority data |
 | Competitors | Stored-dataset workflow works | add durable collection and a live upstream provider if required |
 | Recommendations | Heuristic generation and governance are implemented | validate recommendations against live provider inputs |
 | Executions | Approval, dry-run, retry, cancel, rollback, and audit UI exist | validate a real WordPress integration before enabling live mutations |
 | Generic background tasks | Celery runs eagerly in hosted mode | move job types incrementally onto `platform_jobs` |
 | Rate limiting | Disabled in hosted mode because Redis is absent | implement a database or managed edge-compatible limiter |
 | Usage economics | Provider calls and entitlement consumption are counted, but currency cost and margin are not reconciled | add platform-vs-organization credential attribution, cost reservations, reconciliation, and hard monthly spend stops |
+| Commerce | Tier and entitlement foundations exist, but customer billing is not implemented | implement COM1 checkout, subscription lifecycle, enforced allowances, account recovery, and plan-change workflows |
 | Frontend testing | 30 truth-state tests | component tests and Playwright production-journey coverage |
 | Backend testing | Large SQLite suite and migration validation | PostgreSQL API, concurrency, lease, and RLS integration lanes |
 
@@ -97,13 +98,19 @@ signals while preserving source truth, tenant isolation, and per-location scope.
 Included in G1:
 
 - Google Search Console
+- DataForSEO-backed local rank grids with explicit customer confirmation and
+  allowance checks
 - Google Business Profile
+- approved review monitoring, response, and generation providers
+- approved listing/citation discovery, correction, and submission providers
 - website analytics and website form-conversion events
 - organization-owner connection and reconnection flows
 - external property/profile mapping to the correct subaccount, business
   location, website, and campaign
 - initial backfill, durable scheduled synchronization, retry safety,
   deduplication, freshness, audit history, and user-visible connection health
+- provider cost estimation, reservation, reconciliation, and hard allowance
+  enforcement before platform-paid work
 
 Excluded from G1:
 

@@ -17,9 +17,12 @@
 >
 > **Handoff after UX9:** Begin **Growth G1 - Automated Data Connections** as defined in
 > [claude-next-build-brief.md](./claude-next-build-brief.md#growth-g1---automated-data-connections).
-> G1 includes Search Console, Google Business Profile, and website analytics/form-event
-> synchronization. It explicitly excludes call tracking, CRM, job-management, booked-job,
-> payment, revenue, and sales-attribution connections.
+> G1.1-G1.7 now covers Search Console, local rank grids, usage economics, Google Business
+> Profile intelligence, listings/citations, reputation management, and website
+> analytics/form-event synchronization. The follow-on I1, MKT1, CNT1, AIV1, ML1, COM1,
+> and ENT1 sprints define the focused Semrush and BrightLocal replacement product. Call
+> tracking, CRM, job-management, booked-job, payment, revenue, and sales-attribution
+> connections remain explicitly excluded until separately approved.
 
 ## 1. Executive Summary
 

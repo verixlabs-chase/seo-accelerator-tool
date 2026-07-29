@@ -88,9 +88,9 @@ Interpretation:
 
 | Tier | Current readiness |
 |---|---|
-| Solo - $99 | partially credible; local rank-grid and final UX9 cleanup remain |
-| Multi-location - $399 | partially credible; portfolio workflows and usage controls remain |
-| Enterprise - $999+ | not credible until team operations, custom limits, and priority-support behavior exist |
+| Solo - $199 | not credible until local rank-grid, GBP/reviews, listings/citations, market research, and evidence-backed intelligence are complete |
+| Multi-location - $699 | not credible until portfolio intelligence, bulk workflows, team access, and usage controls are complete |
+| Enterprise - $1,499+ | not credible until API/export, white-label delivery, advanced roles, custom limits, and priority-support behavior exist |
 
 The repo is a strong base for reaching those tiers. Solo and Multi-location
 pricing now align with an accessible SaaS product, while Enterprise remains a
