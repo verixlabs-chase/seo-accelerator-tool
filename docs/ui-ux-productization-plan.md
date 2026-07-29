@@ -9,11 +9,17 @@
 
 ---
 
-> **Current status (2026-07-29):** Sprints 1-8 are now a substantially completed, production-verified baseline. Sprint 9, cross-page UX and visual polish, is active. The authoritative execution brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
+> **Current status (2026-07-29):** Customer UX Sprints UX1-UX8 are now a substantially completed, production-verified baseline. UX9, cross-page UX and visual polish, is active. The authoritative execution brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
 >
 > **Sprint 9 language standard:** Design and write for an owner or manager of a service-based
 > business. Customer-facing screens must explain business meaning first and retain SEO,
 > provider, and system terminology only as optional supporting detail.
+>
+> **Handoff after UX9:** Begin **Growth G1 - Automated Data Connections** as defined in
+> [claude-next-build-brief.md](./claude-next-build-brief.md#growth-g1---automated-data-connections).
+> G1 includes Search Console, Google Business Profile, and website analytics/form-event
+> synchronization. It explicitly excludes call tracking, CRM, job-management, booked-job,
+> payment, revenue, and sales-attribution connections.
 
 ## 1. Executive Summary
 

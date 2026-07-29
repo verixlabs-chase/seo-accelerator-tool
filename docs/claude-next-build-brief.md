@@ -1,6 +1,6 @@
 # Claude Next Build Brief
 
-> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. Sprints 5-8 of Core UX Closure are production-verified, and the active next build phase is now **Sprint 9: Cross-Page UX and Visual Polish**. Where Sections 7-10 conflict with the active sprint sequence below, this status and Section 1A take precedence.
+> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. UX Sprints 5-8 are production-verified, and the active build phase is **UX9: Cross-Page UX and Visual Polish**. The next product phase is **Growth G1: Automated Data Connections**, with the scope defined in Section 1B. Where Sections 7-10 conflict with Sections 1A-1B, Sections 1A-1B take precedence.
 
 ## 1. Executive Summary
 
@@ -26,9 +26,9 @@ Recommended build direction:
 
 This brief is optimized for safe execution. Codex should work sprint-by-sprint, preserve working behavior, avoid backend architecture rewrites, and keep truth states explicit.
 
-## 1A. Active Next Sprint Sequence
+## 1A. Active Customer UX Sprint Sequence
 
-> **Execution status (2026-07-29):** Sprints 5, 6, 7, and 8 are shipped and production-QA complete for Reno and Lexington. Sprint 9, Cross-Page UX and Visual Polish, is active. Recommendation-only intelligence remains enabled; autonomous customer-site mutations and automatic policy updates remain disabled.
+> **Execution status (2026-07-29):** UX5, UX6, UX7, and UX8 are shipped and production-QA complete for Reno and Lexington. UX9, Cross-Page UX and Visual Polish, is active. Recommendation-only intelligence remains enabled; autonomous customer-site mutations and automatic policy updates remain disabled.
 
 ### Sprint 5 - Location Context and Navigation Clarity
 
@@ -190,6 +190,80 @@ Acceptance criteria:
 - Every core page presents an owner-level explanation before data-source or system-state detail.
 - Button labels describe the result the owner expects, not the internal process being triggered.
 - Visual polish follows the finalized hierarchy rather than masking an unclear workflow.
+
+## 1B. Roadmap Tracks and Next Product Phase
+
+Sprint numbers in older documents refer to different bodies of work. Use these
+names in issues, commits, and status reports so a number is never ambiguous:
+
+- **Platform P1-P10:** the historical platform-foundation sequence in
+  [product_overview/sprint_roadmap.md](./product_overview/sprint_roadmap.md).
+- **Customer UX UX1-UX9:** the active usability and productization sequence in
+  Section 1A and [ui-ux-productization-plan.md](./ui-ux-productization-plan.md).
+- **Production Readiness PR0-PR6:** cross-cutting deployment, security, provider,
+  and release gates in
+  [production-readiness-roadmap.md](./production-readiness-roadmap.md).
+- **Growth G1+:** customer data and outcome product phases that begin after UX9
+  meets its acceptance criteria.
+
+### Growth G1 - Automated Data Connections
+
+Goal: replace recurring manual data entry with trustworthy, tenant-safe, and
+location-aware connections for the signals the current product can use.
+
+In scope:
+
+- Google Search Console connection and scheduled synchronization.
+- Google Business Profile connection and scheduled profile, review, and local
+  signal synchronization.
+- Website analytics and website form-conversion events, using an approved
+  analytics/event source selected during technical design.
+- An organization-owner connection flow with truthful connected, syncing,
+  current, stale, failed, and reconnect-required states.
+- Explicit mapping from each external property/profile to its organization,
+  subaccount, business location, website, and campaign.
+- Initial backfill followed by durable, idempotent scheduled synchronization
+  through the Supabase-backed job runner.
+- Retry classification, deduplication, freshness timestamps, source labels,
+  audit history, tenant isolation, and user-visible sync health.
+- Customer-facing summaries that work without asking the business owner to
+  create recurring rows or copy provider data manually.
+
+Explicitly deferred from G1:
+
+- Call-tracking providers, call recordings, call transcripts, and call
+  attribution.
+- CRM connections or synchronization.
+- Field-service and job-management systems.
+- Booked-job, estimate, pipeline, payment, or revenue imports.
+- Sales and revenue attribution models.
+- Autonomous execution, automatic policy updates, or causal claims based on the
+  new signals.
+
+G1 acceptance criteria:
+
+- An organization owner connects each approved source once and subsequent
+  synchronization runs automatically.
+- Reno and Lexington can be mapped and viewed independently without blended
+  location data.
+- Backfill and scheduled jobs are safe to retry and do not create duplicate
+  events or snapshots.
+- Every customer-visible metric identifies its source and freshness, and failed
+  or stale connections provide a clear recovery action.
+- Cross-organization connection metadata and synchronized data remain
+  inaccessible.
+- No call-tracking, CRM, job-management, booked-job, payment, revenue, or sales
+  attribution connector, endpoint, job, or schema is added in this phase.
+
+### Later Growth Phases
+
+- **G2 - Business Results and Attribution:** define lead and outcome reporting
+  only after G1 data quality is proven. Any call-tracking, CRM, job-management,
+  or revenue connection requires a new explicit scope decision before work
+  starts.
+- **G3 - Revenue-Linked Recommendation Validation:** compare recommendations
+  with approved outcome data while retaining evidence, confidence, human
+  approval, and observation-only learning controls.
 
 ## 2. What The Platform Is Today
 

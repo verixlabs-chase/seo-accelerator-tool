@@ -1,15 +1,22 @@
 # SPRINT_ROADMAP.md
 
+> **Track status (reconciled 2026-07-29):** This is the historical
+> **Platform Foundation P1-P10** roadmap. Its sprint numbers are not the active
+> Customer UX sprint numbers. Current UX and Growth execution is governed by
+> [../claude-next-build-brief.md](../claude-next-build-brief.md); Supabase and
+> Vercel readiness gates are governed by
+> [../production-readiness-roadmap.md](../production-readiness-roadmap.md).
+
 ## 1) Delivery Framework
 
-This roadmap defines 9 implementation sprints for LSOS. Each sprint includes objective, deliverables, acceptance criteria, database changes, API additions, Celery tasks, and testing requirements. All increments are production-oriented and multi-tenant safe.
+This roadmap defines 10 historical platform-foundation sprints for LSOS. Each sprint includes objective, deliverables, acceptance criteria, database changes, API additions, Celery tasks, and testing requirements. All increments are production-oriented and multi-tenant safe.
 
 Cadence assumptions:
 - Sprint length: 2 weeks
 - Environments: local -> staging -> production
 - Release model: trunk-based with feature flags for incomplete modules
 
-## 2) Sprint 1: Project Scaffold
+## 2) Platform P1 (legacy Sprint 1): Project Scaffold
 
 Objective:
 - Establish production-ready foundation for API, async workers, tenant isolation, auth, observability, and deployment.
@@ -48,7 +55,7 @@ Testing checklist:
 - Container startup integration test.
 - DB migration rollback/forward validation.
 
-## 3) Sprint 2: Crawl Engine
+## 3) Platform P2 (legacy Sprint 2): Crawl Engine
 
 Objective:
 - Build technical crawl and issue extraction pipeline.
@@ -86,7 +93,7 @@ Testing checklist:
 - Retry/dead-letter behavior for network failures.
 - Performance test for 10k-page campaign cap.
 
-## 4) Sprint 3: Rank Tracking Engine
+## 4) Platform P3 (legacy Sprint 3): Rank Tracking Engine
 
 Objective:
 - Deliver geo-specific rank collection and trend reporting.
@@ -124,7 +131,7 @@ Testing checklist:
 - Geolocation batching correctness.
 - p95 collection runtime under SLO in staging load test.
 
-## 5) Sprint 4: Competitor Engine
+## 5) Platform P4 (legacy Sprint 4): Competitor Engine
 
 Objective:
 - Build competitor discovery, tracking, and comparative intelligence.
@@ -158,7 +165,7 @@ Testing checklist:
 - Competitor merge and dedupe logic.
 - Historical comparison query performance.
 
-## 6) Sprint 5: Content Engine
+## 6) Platform P5 (legacy Sprint 5): Content Engine
 
 Objective:
 - Build content planning, production tracking, and internal linking intelligence.
@@ -192,7 +199,7 @@ Testing checklist:
 - Link recommendation precision on fixture sites.
 - Throughput test for monthly plan generation across 100 campaigns.
 
-## 7) Sprint 6: Local Engine
+## 7) Platform P6 (legacy Sprint 6): Local Engine
 
 Objective:
 - Implement local SEO monitoring: GBP/local presence/review ingestion hooks.
@@ -227,7 +234,7 @@ Testing checklist:
 - Local health score reproducibility.
 - Missing-provider graceful degradation tests.
 
-## 8) Sprint 7: Authority & Citation
+## 8) Platform P7 (legacy Sprint 7): Authority & Citation
 
 Objective:
 - Deliver outreach CRM automation, backlink tracking, and citation workflows.
@@ -264,7 +271,7 @@ Testing checklist:
 - Citation status transition integrity.
 - Backlink snapshot conflict resolution.
 
-## 9) Sprint 8: Campaign Intelligence
+## 9) Platform P8 (legacy Sprint 8): Campaign Intelligence
 
 Objective:
 - Implement strategy scoring, anomaly detection, and recommendation engine.
@@ -298,7 +305,7 @@ Testing checklist:
 - Recommendation generation consistency tests.
 - Snapshot gap handling and fallback logic.
 
-## 10) Sprint 9: Reporting Engine
+## 10) Platform P9 (legacy Sprint 9): Reporting Engine
 
 Objective:
 - Deliver white-label monthly reporting with artifact export and scheduled delivery.
@@ -361,7 +368,8 @@ Governance artifacts required before production go-live:
 - `OBSERVABILITY_SPEC.md`
 - `RELEASE_AND_CHANGE_MANAGEMENT.md`
 
-This roadmap is the governing delivery plan for LSOS implementation.
+This roadmap records the original platform-foundation delivery plan. It is not
+the governing sequence for current Customer UX or Growth work.
 
 ## 13) Future Enhancements Roadmap Integration (V7)
 
@@ -370,17 +378,23 @@ Dependency validation gate (required before "Ready for Implementation"):
 - Feature flag system exists: Yes (central governance is defined in environment/config spec).
 - Audit logging exists: Yes (`audit_logs` schema and `audit.write_event` workflow are defined).
 - RBAC enforcement exists: Yes (RBAC controls are defined in security and architecture specs).
-- Reference Library loader exists: No (loader contract exists in Future Enhancements specs, but no current loader module/contract is defined in baseline roadmap docs).
+- Reference Library loader exists: Yes, materially implemented in the current
+  repository through the data model, migration, service, API, tasks, feature
+  flags, and tests. Production activation and governance still require
+  verification against Platform P10's Definition of Done.
 
 Readiness rule:
-- Any EPIC depending on the missing Reference Library loader is `Blocked - Missing Dependency`.
+- The former missing-loader dependency no longer blocks planning. Each future
+  EPIC still requires a separate readiness review for its other data, provider,
+  governance, security, and release dependencies.
 
 ### Phase 4.5 (After Content Automation Engine)
 
 #### EPIC_ENTITY_DOMINANCE
 
 Implementation status:
-- Blocked - Missing Dependency (Reference Library loader)
+- Planned - Reference Library foundation present; remaining dependencies and
+  phase sequencing require review.
 
 Objective:
 - Measure semantic authority against competitors using entity extraction and gap scoring.
@@ -426,14 +440,16 @@ Acceptance criteria:
 Risk tier considerations:
 - Tier 0 for insight-only scoring views.
 - Tier 1 for draft recommendations derived from dominance gaps.
-- Tier 2+ blocked until Reference Library loader is implemented and validated.
+- Tier 2+ blocked until the existing Reference Library foundation is
+  production-validated for this EPIC.
 
 ### Phase 6 (Inside Campaign Intelligence)
 
 #### EPIC_LOCAL_AUTHORITY_SCORE
 
 Implementation status:
-- Blocked - Missing Dependency (Reference Library loader)
+- Planned - Reference Library foundation present; remaining dependencies and
+  phase sequencing require review.
 
 Objective:
 - Produce a configurable, versioned composite 0-100 local authority score with explainable breakdowns.
@@ -479,14 +495,16 @@ Acceptance criteria:
 Risk tier considerations:
 - Tier 0 for score visibility.
 - Tier 1 for draft strategy recommendations.
-- Tier 2+ only after Reference Library loader and approval workflows are active.
+- Tier 2+ only after the existing Reference Library foundation and approval
+  workflows are production-validated for this EPIC.
 
 ### Phase 6.5 (After Rank Tracking Enhancements)
 
 #### EPIC_SERP_FOOTPRINT
 
 Implementation status:
-- Blocked - Missing Dependency (Reference Library loader)
+- Planned - Reference Library foundation present; remaining dependencies and
+  phase sequencing require review.
 
 Objective:
 - Quantify SERP occupation across organic, local pack, snippet, video, and image features.
@@ -530,14 +548,17 @@ Acceptance criteria:
 Risk tier considerations:
 - Tier 0 for observational analytics.
 - Tier 1 for draft prioritization recommendations.
-- Tier 2 blocked pending Reference Library loader and signal calibration.
+- Tier 2 blocked pending production validation of the existing Reference
+  Library foundation and signal calibration.
 
 ### Phase 7 (Post-Stability / After V1 Release)
 
 #### EPIC_REVENUE_ATTRIBUTION
 
 Implementation status:
-- Blocked - Missing Dependency (Reference Library loader)
+- Deferred - not part of Growth G1. Call ingestion, CRM, job-management, booked
+  jobs, payments, revenue data, and sales attribution require a later explicit
+  scope decision.
 
 Objective:
 - Attribute ranking/page performance to revenue outcomes for ROI analysis.
@@ -590,7 +611,8 @@ Risk tier considerations:
 #### EPIC_PREDICTIVE_RANK
 
 Implementation status:
-- Blocked - Missing Dependency (Reference Library loader)
+- Planned - Reference Library foundation present; remaining dependencies and
+  phase sequencing require review.
 
 Objective:
 - Forecast ranking trajectory using probabilistic models and velocity signals.
@@ -638,7 +660,8 @@ Risk tier considerations:
 #### EPIC_AI_CONVERSION_LAYER
 
 Implementation status:
-- Blocked - Missing Dependency (Reference Library loader)
+- Planned - Reference Library foundation present; remaining dependencies and
+  phase sequencing require review.
 
 Objective:
 - Improve conversion outcomes using behavioral insights and governed A/B experimentation.
@@ -688,7 +711,8 @@ Risk tier considerations:
 #### EPIC_AUTONOMOUS_OUTREACH
 
 Implementation status:
-- Blocked - Missing Dependency (Reference Library loader)
+- Planned - Reference Library foundation present; remaining dependencies and
+  phase sequencing require review.
 
 Objective:
 - Semi-automate prospecting and outreach with AI-assisted classification under strict approval controls.
@@ -736,7 +760,12 @@ Risk tier considerations:
 - Tier 2 for limited, approved sending workflows.
 - Tier 3 for scaled automated sending (approval-gated).
 
-## 14) Next Phase Activation: Sprint 10 - Reference Library Foundation
+## 14) Platform P10 (legacy Sprint 10): Reference Library Foundation
+
+Implementation status:
+- Materially implemented in the current repository. This section now serves as
+  the remaining production-verification and governance checklist, not as an
+  unbuilt prerequisite for current UX or Growth work.
 
 Objective:
 - Implement the minimum shared foundation that unlocks all Future Enhancements EPICs without modifying existing Phase 1-9 production behavior.
@@ -790,10 +819,14 @@ Post-sprint dependency re-check:
 - Feature flag system exists: required and already present.
 - Audit logging exists: required and already present.
 - RBAC enforcement exists: required and already present.
-- Reference Library loader exists: must be set to present after Sprint 10 DoD.
+- Reference Library loader exists: present in the repository; production
+  activation, rollback, RBAC, audit, and schema-governance behavior still need
+  to be verified against the P10 Definition of Done.
 
 Unlock result:
-- On Sprint 10 completion, reclassify Future Enhancements EPICs from `Blocked - Missing Dependency` to `Ready for Implementation` (phase order preserved: 4.5 -> 6 -> 6.5 -> 7).
+- Future Enhancements EPICs are no longer blocked solely by an absent Reference
+  Library implementation. They remain planned or deferred until their separate
+  readiness reviews pass (phase order preserved: 4.5 -> 6 -> 6.5 -> 7).
 
 ## 16) Future Enhancements Wave 1 (New Docs `01`-`10`)
 
@@ -806,7 +839,9 @@ Integration policy for this section:
 
 1. `01_ROI_Attribution_Engine.md`
 - Placement: Phase 7+ (aligned with `EPIC_REVENUE_ATTRIBUTION`)
-- Mode: `Planned`, dependency-gated by Reference Library and governance controls.
+- Mode: `Deferred`, outside Growth G1. Call-tracking, CRM, job-management,
+  booked-job, payment, revenue, and sales-attribution integration requires a
+  later explicit scope decision.
 
 2. `02_SEO_Command_Center.md`
 - Placement: Phase 7+ (cross-module executive surface)

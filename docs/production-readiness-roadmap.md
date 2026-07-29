@@ -2,9 +2,12 @@
 
 Date: 2026-07-28
 
-This is the authoritative implementation roadmap for the Supabase and Vercel
-deployment. Older audit and UI planning documents remain useful historical
-context, but their feature inventories are not the current source of truth.
+This is the authoritative gate roadmap for the Supabase and Vercel deployment.
+Its phases are named **PR0-PR6** and do not replace or renumber customer product
+sprints. Active Customer UX and Growth execution is defined in
+[claude-next-build-brief.md](./claude-next-build-brief.md). Older audit documents
+remain useful historical context, but their feature inventories are not the
+current source of truth.
 
 ## Deployment target
 
@@ -84,23 +87,52 @@ business location's subaccount and internal portfolio. The `/locations`
 workspace exposes only the customer concepts and reports legacy unassigned or
 inconsistent records instead of silently blending them into rollups.
 
+## Next product integration boundary
+
+The next data product phase is **Growth G1 - Automated Data Connections**. Its
+purpose is to remove recurring manual data entry for approved search and website
+signals while preserving source truth, tenant isolation, and per-location scope.
+
+Included in G1:
+
+- Google Search Console
+- Google Business Profile
+- website analytics and website form-conversion events
+- organization-owner connection and reconnection flows
+- external property/profile mapping to the correct subaccount, business
+  location, website, and campaign
+- initial backfill, durable scheduled synchronization, retry safety,
+  deduplication, freshness, audit history, and user-visible connection health
+
+Excluded from G1:
+
+- call-tracking providers and call ingestion
+- CRM connections
+- field-service and job-management systems
+- booked-job, estimate, pipeline, payment, and revenue imports
+- sales or revenue attribution
+
+These exclusions apply to schema, API, job, provider-adapter, and UI work. A
+later phase must receive explicit scope approval before any excluded connection
+is designed or implemented.
+
 ## Implementation phases
 
-### Phase 0: production truth and repository hygiene
+### PR0: production truth and repository hygiene
 
 - maintain this capability matrix
 - archive or label obsolete audit documents
 - remove tracked logs, backups, and temporary test output
 - keep deployment instructions synchronized with production behavior
 
-### Phase 1: durable execution
+### PR1: durable execution
 
 1. Scheduled reports
 2. Crawl frontier batches
 3. Ranking collection
 4. Local/review collection
 5. Citation and authority refresh
-6. Traffic and analytics synchronization
+6. Growth G1 search, profile, website analytics, and form-event synchronization
 7. Intelligence and automation cycles
 
 Each migration requires:
@@ -112,7 +144,7 @@ Each migration requires:
 - a status visible to the user
 - an integration test proving duplicate invocation safety
 
-### Phase 2: database and identity security
+### PR2: database and identity security
 
 - use a least-privileged application database role instead of an owner role
 - set tenant context transactionally
@@ -125,15 +157,18 @@ Each migration requires:
 Automatic RLS is not a substitute for this phase. It affects new tables only
 and does not define the required policies or application session context.
 
-### Phase 3: live provider truth
+### PR3: live provider truth
 
 - configure and validate rankings
 - connect Google Business Profile and Search Console
+- connect the approved website analytics/form-event source
+- keep call-tracking, CRM, job-management, booked-job, payment, revenue, and
+  sales-attribution connections out of Growth G1
 - implement local, review, citation, and authority production adapters
 - configure SMTP and durable report storage
 - expose provider setup and health to organization owners
 
-### Phase 4: workflow closure
+### PR4: workflow closure
 
 Prove one complete production journey:
 
@@ -151,7 +186,7 @@ create organization
 Then complete or deliberately hide Settings, Locations, Content, Authority,
 and agency portfolio features based on launch scope.
 
-### Phase 5: release hardening
+### PR5: release hardening
 
 - PostgreSQL integration CI
 - eliminate SQLite cross-session write-lock stalls in campaign-cycle tests
@@ -162,7 +197,7 @@ and agency portfolio features based on launch scope.
 - backward-compatible migration and deployment sequencing
 - alerting for dead-letter jobs, stale leases, provider failures, and delivery failures
 
-### Phase 6: final UI/UX revamp
+### PR6: final UI/UX revamp
 
 The visual redesign remains the final implementation phase:
 
