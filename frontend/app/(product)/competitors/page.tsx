@@ -18,7 +18,7 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getRuntimeTruthSummary,
+  getOwnerFriendlyTruthSummary,
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
 
@@ -306,22 +306,18 @@ export default function CompetitorsPage() {
       <section className="space-y-6">
         <ProductPageIntro
           eyebrow="Competitors"
-          title="Track competitors and find visibility gaps"
-          summary="Add competitor domains to monitor, then collect a snapshot to pull ranking and signal data. Gap scores show where competitors outrank you so you can prioritise where to catch up."
+          title="See where nearby competitors are ahead"
+          summary="Add a competitor’s website, run a comparison, and see where they are easier to find so you know where to catch up."
         />
 
-        <TruthNotice title="Competitor gaps are only as current as the last collected snapshot.">
-          Adding a competitor does not create live coverage by itself. Gap scores and snapshot rows
-          reflect the latest stored crawl of competitor data, and queued snapshot jobs may take time
-          before the database catches up.
+        <TruthNotice title="Competitor comparisons are not updated automatically.">
+          The page shows the last completed comparison. Run a new check when you need fresher
+          information.
         </TruthNotice>
 
         {runtimeTruth ? (
-          <TruthNotice title="Current runtime truth" tone="warning">
-            {getRuntimeTruthSummary(
-              runtimeTruth,
-              "Competitor runtime status is not available yet.",
-            )}
+          <TruthNotice title="How current is this competitor comparison?" tone="warning">
+            {getOwnerFriendlyTruthSummary(runtimeTruth, "competitor comparisons")}
           </TruthNotice>
         ) : null}
 

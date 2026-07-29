@@ -42,6 +42,7 @@ import {
 } from "../truth/dashboardTruth.mjs";
 import {
   buildRuntimeTruthSignal,
+  getOwnerFriendlyTruthSummary,
   getRuntimeTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 
@@ -1074,20 +1075,16 @@ export default function DashboardPage() {
         ) : null}
 
         {!loading ? (
-          <TruthNotice title="Results fill in over time, and manual tools are fallback controls.">
-            The daily briefing and workflow cards are the primary source of truth. A queued scan,
-            ranking check, or report request means the work started, not that the final results are
-            complete. The advanced controls below are for retrying or manually nudging a workflow,
-            not the normal first-value path.
+          <TruthNotice title="Some checks take time to finish.">
+            A website check, search-position check, or report request may continue working in the
+            background. Use the daily briefing for the latest result. The manual tools below are
+            mainly for retrying a check.
           </TruthNotice>
         ) : null}
 
         {!loading && latestRankTruth ? (
-          <TruthNotice title="Current ranking runtime truth" tone="warning">
-            {getRuntimeTruthSummary(
-              latestRankTruth,
-              "Ranking runtime status is not available yet.",
-            )}
+          <TruthNotice title="How current are the search results?" tone="warning">
+            {getOwnerFriendlyTruthSummary(latestRankTruth, "search positions")}
           </TruthNotice>
         ) : null}
 

@@ -26,7 +26,7 @@ import {
 } from "../truth/opportunitiesTruth.mjs";
 import {
   buildRuntimeTruthSignal,
-  getRuntimeTruthSummary,
+  getOwnerFriendlyTruthSummary,
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
 
@@ -353,7 +353,7 @@ function describeType(type?: string) {
   }
 
   if (normalized.includes("title") || normalized.includes("schema") || normalized.includes("technical")) {
-    return "Fix technical visibility issues";
+    return "Make the website clearer for search";
   }
 
   if (normalized.includes("foundation")) {
@@ -369,18 +369,18 @@ function describeType(type?: string) {
 
 function getEngineSourceLabel(source?: string) {
   if (source === "orchestrator_v1") {
-    return "Deep intelligence pipeline";
+    return "Advanced recommendation review";
   }
   if (source === "mixed_v1") {
-    return "Mixed intelligence layers";
+    return "Combined recommendation review";
   }
   if (source === "heuristic_score_v1") {
-    return "Heuristic score model";
+    return "Basic saved-data review";
   }
   if (source === "heuristic_threshold_v1") {
-    return "Heuristic baseline";
+    return "Basic starting-point review";
   }
-  return "Awaiting intelligence cycle";
+  return "Recommendation review not run yet";
 }
 
 function formatEvidence(value: string) {
@@ -1069,23 +1069,23 @@ export default function OpportunitiesPage() {
       await Promise.all([loadCampaigns(), loadOpportunities(selectedCampaignId)]);
       if (response.status === "running") {
         setNotice(
-          `${activatedCampaign ? "The campaign was activated. " : ""}A saved-data intelligence cycle is already running for this location. Reload saved data in a moment to see the result.`,
+          `${activatedCampaign ? "Recommendations are now active for this location. " : ""}InsightOS is already reviewing the saved information. Check again in a moment to see the result.`,
         );
         return;
       }
       if (response.status !== "completed") {
         throw new Error(
-          "The saved-data intelligence cycle did not complete. Try again after checking the campaign setup.",
+          "InsightOS could not finish reviewing this location. Check the business setup and try again.",
         );
       }
       if (response.idempotent_replay) {
         setNotice(
-          `${activatedCampaign ? "The campaign was activated. " : ""}Today’s stored-data intelligence cycle was already completed. The existing result was reused and no duplicate work was created.`,
+          `${activatedCampaign ? "Recommendations are now active for this location. " : ""}Today’s review was already complete, so the existing recommendations were kept without creating duplicates.`,
         );
         return;
       }
       setNotice(
-        `${activatedCampaign ? "The campaign was activated. " : ""}Stored-data intelligence completed with ${response.result?.recommendations_generated || 0} recommendations. Provider checks stayed off and ${response.safety?.executions_scheduled || 0} executions were scheduled.`,
+        `${activatedCampaign ? "Recommendations are now active for this location. " : ""}Review complete: ${response.result?.recommendations_generated || 0} recommendation${response.result?.recommendations_generated === 1 ? "" : "s"} ready. No paid checks or automatic website changes were started.`,
       );
     });
   }
@@ -1315,10 +1315,10 @@ export default function OpportunitiesPage() {
             className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-sm font-medium text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busyAction === "run-intelligence-cycle"
-              ? "Running intelligence..."
+              ? "Reviewing saved information..."
               : selectedCampaign?.setup_state === "Active"
-                ? "Run saved-data intelligence"
-                : "Activate & run saved-data intelligence"}
+                ? "Check for new recommendations"
+                : "Start recommendations"}
           </button>
           <button
             onClick={() => router.push("/reports")}
@@ -1331,40 +1331,42 @@ export default function OpportunitiesPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
-          eyebrow="Opportunities"
-          title="What needs attention next"
-          summary="Use the Action Center to see the most important recommended actions, why they matter, and which one should happen next."
+          eyebrow="Next steps"
+          title="Your best next steps"
+          summary="See the improvements most likely to help this location, why each one matters, and which action to take first."
         />
 
-        <TruthNotice title="Recommendations are guidance, not proof of execution.">
-          Recommendation status, approval status, and execution status are separate on purpose. A
-          recommendation can be high priority and still be unreviewed. A queued or approved
-          execution still needs provider readiness and a successful run before it should be treated
-          as a completed business change.
+        <TruthNotice title="Nothing changes on your website without review.">
+          These are recommendations. A suggested change is not complete until it has been reviewed,
+          approved, and successfully carried out.
         </TruthNotice>
 
         {runtimeTruth ? (
-          <TruthNotice title="Current runtime truth" tone="warning">
-            {getRuntimeTruthSummary(
-              runtimeTruth,
-              "Opportunity runtime status is not available yet.",
-            )}
+          <TruthNotice title="How current are these recommendations?" tone="warning">
+            {getOwnerFriendlyTruthSummary(runtimeTruth, "these recommended next steps")}
           </TruthNotice>
         ) : null}
 
         {engineState ? (
-          <TruthNotice title="Intelligence engine state" tone="info">
-            {getEngineSourceLabel(engineState.guidance_source)} is using saved campaign data.
-            {engineState.activation_mode === "recommendation_only"
-              ? " Production is in recommendations-only mode, so the engine cannot schedule or execute business changes."
-              : " Autonomous action is enabled only in the isolated test runtime."}
-            {engineState.provider_checks_allowed === false
-              ? " This cycle does not run paid provider checks."
-              : ""}
-            {engineState.learning_state === "observation_only"
-              ? " Learning is observation-only: outcomes can be compared, but policies are not retrained or changed automatically."
-              : ""}
-          </TruthNotice>
+          <details className="rounded-md border border-sky-500/20 bg-sky-500/10 p-4 text-sky-50">
+            <summary className="cursor-pointer text-sm font-semibold text-white">
+              How recommendations are created and kept safe
+            </summary>
+            <div className="mt-3 text-sm leading-6 text-sky-50/85">
+              InsightOS reviews saved information for this location and suggests possible
+              improvements. It cannot automatically change the customer&apos;s website in the
+              current safety mode.
+              <div className="mt-3 border-t border-sky-500/20 pt-3 text-xs text-sky-100/70">
+                System details: {getEngineSourceLabel(engineState.guidance_source)}.
+                {engineState.provider_checks_allowed === false
+                  ? " Paid data checks are off."
+                  : ""}
+                {engineState.learning_state === "observation_only"
+                  ? " Results are observed, but the system does not change its rules automatically."
+                  : ""}
+              </div>
+            </div>
+          </details>
         ) : null}
 
         {loading ? (

@@ -10,6 +10,10 @@
 ---
 
 > **Current status (2026-07-29):** Sprints 1-8 are now a substantially completed, production-verified baseline. Sprint 9, cross-page UX and visual polish, is active. The authoritative execution brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
+>
+> **Sprint 9 language standard:** Design and write for an owner or manager of a service-based
+> business. Customer-facing screens must explain business meaning first and retain SEO,
+> provider, and system terminology only as optional supporting detail.
 
 ## 1. Executive Summary
 
@@ -161,6 +165,17 @@ These principles should govern every decision during recovery and ongoing develo
 2. **No dead ends.** Every button, every link, every CTA must do something. If a feature isn't ready, hide the button. Do not ship inert UI elements.
 
 3. **No jargon without translation.** Every SEO term must have a plain-English equivalent in the UI. "Keyword rankings" = "how high you show up when customers search." Never use internal system terms (cluster, crawl type, location code) in customer-facing copy.
+
+   Sprint 9 vocabulary:
+   - `Rankings` becomes `Search Rankings`.
+   - `Local Visibility` becomes `Local Search`.
+   - `Site Health` becomes `Website Health`.
+   - `Opportunities` becomes `Next Steps`.
+   - `Citations` becomes `Directory Listings`.
+   - `Organic Value` becomes `Search Value`.
+   - `Runtime truth` becomes `How current is this information?`.
+   - `Intelligence cycle` becomes `Check for new recommendations`.
+   - `Provider-backed` is explained as information from a connected live data service.
 
 4. **Show the next step.** At every point in the product, the user should be able to see what to do next. If they've completed setup, show the first insight. If they've seen insights, show recommended actions. The product should always be moving them forward.
 

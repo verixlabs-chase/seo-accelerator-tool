@@ -22,7 +22,7 @@ export function TruthNotice({
   return (
     <section className={`rounded-md border p-4 shadow-[0_0_30px_rgba(0,0,0,0.25)] ${toneClassName(tone)}`}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-current/75">
-        Product truth
+        Good to know
       </p>
       <h2 className="mt-1.5 text-base font-semibold text-white">{title}</h2>
       <div className="mt-2 text-sm leading-6 text-current/85">{children}</div>

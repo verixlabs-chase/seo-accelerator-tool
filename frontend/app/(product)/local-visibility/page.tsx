@@ -19,7 +19,7 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getRuntimeTruthSummary,
+  getOwnerFriendlyTruthSummary,
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
 
@@ -377,7 +377,7 @@ export default function LocalVisibilityPage() {
       );
       setNotice(
         unresolved.length === 0
-          ? "Location map and DataForSEO targeting are ready."
+          ? "The business map and search area are ready."
           : `${resolved} location setup item${resolved === 1 ? "" : "s"} ready. ${unresolved
               .map((item) => item.message)
               .join(" ")}`,
@@ -515,37 +515,33 @@ export default function LocalVisibilityPage() {
             onClick={() => router.push("/citations")}
             className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100"
           >
-            View citations
+            View directory listings
           </button>
         </>
       }
     >
       <section className="space-y-6">
         <ProductPageIntro
-          eyebrow="Local SEO"
-          title="How your business is showing up locally"
-          summary="Use this page to understand local visibility, review momentum, and what to focus on next for map-pack performance."
+          eyebrow="Local search"
+          title="Can nearby customers find your business?"
+          summary="See how visible this location is in nearby searches, whether reviews are helping, and what to improve next."
         />
 
-        <TruthNotice title="Local visibility is directional when provider coverage is thin, stale, or unavailable.">
-          Map-pack position, review velocity, and local health summarize the latest captured state
-          in the database. Missing values mean the workspace has not captured enough provider data
-          yet, not that the business has definitively scored zero in the real world.
+        <TruthNotice title="A missing number does not mean your business has no visibility.">
+          This page shows the latest information saved for this location. If a result is missing,
+          InsightOS has not collected enough information yet.
         </TruthNotice>
 
         {runtimeTruth ? (
-          <TruthNotice title="Current runtime truth" tone="warning">
-            {getRuntimeTruthSummary(
-              runtimeTruth,
-              "Local visibility runtime status is not available yet.",
-            )}
+          <TruthNotice title="How current is this local-search information?" tone="warning">
+            {getOwnerFriendlyTruthSummary(runtimeTruth, "local search visibility")}
           </TruthNotice>
         ) : null}
 
         {loading || loadingLocalData ? (
           <LoadingCard
-            title="Loading local SEO"
-            summary="Pulling local visibility, review momentum, and local health signals for the active business."
+            title="Loading local search results"
+            summary="Checking how easy this location is to find and loading its latest review activity."
           />
         ) : null}
 
@@ -596,15 +592,15 @@ export default function LocalVisibilityPage() {
 
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
-                label="Map-pack position"
+                label="Local search position"
                 value={mapPackPosition ? `#${mapPackPosition}` : "N/A"}
-                summary="Lower is better. This shows how easy it is to find the business in the local map pack."
+                summary="Lower is better. Positions 1–3 are the businesses customers see most prominently on the map."
                 tone="highlight"
               />
               <KpiCard
-                label="Local health"
+                label="Local visibility"
                 value={healthScore ? `${healthScore}` : "0"}
-                summary="This is the current local visibility health score for the active business."
+                summary="A quick summary of how strong this location looks across saved local-search information."
               />
               <KpiCard
                 label="Reviews in 30 days"
@@ -629,10 +625,10 @@ export default function LocalVisibilityPage() {
                 legend={
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-100">
-                      Reference map
+                      Business location map
                     </span>
                     <span className="rounded-md border border-[#3a2a20] bg-amber-500/5 px-3 py-1.5 text-sm text-amber-100">
-                      Not ranking coverage
+                      Map only — not search positions
                     </span>
                     {locationContext?.base_map.status !== "ready" ||
                     locationContext?.provider_location.status !== "ready" ? (
@@ -695,19 +691,19 @@ export default function LocalVisibilityPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <section className="rounded-md border border-[#26272c] bg-[#141518] p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  DataForSEO targeting
+                  Search-area setup
                 </p>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="text-base font-semibold text-white">
                       {locationContext?.provider_location.status === "ready"
                         ? locationContext.provider_location.name
-                        : "Provider location needs setup"}
+                        : "Search area needs setup"}
                     </h2>
                     <p className="mt-1 text-sm leading-6 text-zinc-400">
                       {locationContext?.provider_location.status === "ready"
-                        ? `Automatically matched to location code ${locationContext.provider_location.code}.`
-                        : "The customer never has to type a provider-specific location string."}
+                        ? "This location is ready for live search checks."
+                        : "Add complete city and state details so InsightOS can match the correct search area."}
                     </p>
                   </div>
                   <span
@@ -717,25 +713,25 @@ export default function LocalVisibilityPage() {
                         : "border-amber-500/20 bg-amber-500/10 text-amber-100"
                     }`}
                   >
-                    {locationContext?.provider_location.status === "ready" ? "Resolved" : "Not resolved"}
+                    {locationContext?.provider_location.status === "ready" ? "Ready" : "Needs setup"}
                   </span>
                 </div>
               </section>
 
               <section className="rounded-md border border-[#3a2a20] bg-[#171518] p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Paid map-ranking coverage
+                  Neighborhood search coverage
                 </p>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-base font-semibold text-white">Geo-grid is not enabled</h2>
+                    <h2 className="text-base font-semibold text-white">Area-by-area tracking is not turned on</h2>
                     <p className="mt-1 text-sm leading-6 text-zinc-400">
                       {locationContext?.map_rank_coverage.message ||
-                        "A paid geo-grid run will be a separate, explicit action after the base map passes QA."}
+                        "This optional paid check would show how search position changes across nearby neighborhoods."}
                     </p>
                   </div>
                   <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
-                    No provider spend
+                    No paid checks
                   </span>
                 </div>
               </section>
@@ -825,17 +821,17 @@ export default function LocalVisibilityPage() {
                 Next step
               </p>
               <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                Strengthen your local presence with citations
+                Strengthen your local presence with directory listings
               </h2>
               <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                Directory citations help build local authority and consistency across the web. Submit
-                your business to key directories and track listing status in the Citations workspace.
+                Consistent business details on trusted directories help customers and search
+                engines recognize this location. Add and track those listings in one place.
               </p>
               <button
                 onClick={() => router.push("/citations")}
                 className="mt-4 rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100"
               >
-                Manage citations
+                Manage directory listings
               </button>
             </section>
           </>

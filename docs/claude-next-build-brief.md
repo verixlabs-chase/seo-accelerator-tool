@@ -156,9 +156,20 @@ Acceptance criteria:
 
 ### Sprint 9 - Cross-Page UX and Visual Polish
 
-Goal: remove remaining convolution after the core information architecture is stable.
+Goal: remove remaining convolution after the core information architecture is stable, with the
+primary reader defined as a service-business owner rather than an SEO operator.
 
 Scope:
+- Rewrite customer-facing copy for a person who runs a local or multi-location service business.
+- Lead every page with three owner questions:
+  - What is happening?
+  - Why does it matter to calls, leads, customers, or trust?
+  - What should I do next?
+- Prefer familiar labels such as `Search Rankings`, `Local Search`, `Website Health`,
+  `Next Steps`, and `Directory Listings`.
+- Keep terms such as provider, runtime, heuristic, crawl, geo-grid, citation, and execution
+  inside optional setup or technical-detail areas unless the term is immediately explained.
+- Never expose a provider name, internal state, or data classification as the main explanation.
 - Standardize page introductions, scope labels, loading states, empty states, error messages, and action placement.
 - Remove duplicated provider setup panels from pages where setup is already complete.
 - Consolidate repeated controls into shared components.
@@ -174,6 +185,10 @@ Acceptance criteria:
 - Each task is discoverable without prior instruction.
 - Primary navigation contains no dead ends or equally weighted low-priority tools.
 - The interface uses plain language before technical detail.
+- A service-business owner can explain the purpose of every primary navigation item without
+  knowing SEO terminology.
+- Every core page presents an owner-level explanation before data-source or system-state detail.
+- Button labels describe the result the owner expects, not the internal process being triggered.
 - Visual polish follows the finalized hierarchy rather than masking an unclear workflow.
 
 ## 2. What The Platform Is Today

@@ -18,6 +18,7 @@ import {
 } from "../app/(product)/truth/opportunitiesTruth.mjs";
 import {
   buildRuntimeTruthSignal,
+  getOwnerFriendlyTruthSummary,
   getRuntimeTruthLabel,
   getRuntimeTruthSummary,
   getRuntimeTruthTone,
@@ -291,6 +292,28 @@ test("runtime truth helpers downgrade unavailable surfaces clearly", () => {
   assert.equal(getRuntimeTruthLabel(truth), "Unavailable");
   assert.equal(getRuntimeTruthTone(truth), "danger");
   assert.match(getRuntimeTruthSummary(truth), /not available/i);
+});
+
+test("runtime truth helpers explain data confidence without internal jargon", () => {
+  assert.match(
+    getOwnerFriendlyTruthSummary(
+      { classification: "provider_backed" },
+      "search positions",
+    ),
+    /connected live data service/i,
+  );
+  assert.match(
+    getOwnerFriendlyTruthSummary({ classification: "stale" }, "search positions"),
+    /may not match today’s results/i,
+  );
+  assert.match(
+    getOwnerFriendlyTruthSummary({ classification: "synthetic" }, "search positions"),
+    /sample or test information/i,
+  );
+  assert.match(
+    getOwnerFriendlyTruthSummary({ classification: "unavailable" }, "search positions"),
+    /no reliable information/i,
+  );
 });
 
 test("runtime truth signal builder keeps heuristic surfaces out of success state", () => {

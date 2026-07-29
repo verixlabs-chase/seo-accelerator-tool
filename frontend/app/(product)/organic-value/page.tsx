@@ -18,7 +18,7 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getRuntimeTruthSummary,
+  getOwnerFriendlyTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
@@ -333,7 +333,7 @@ export default function OrganicValuePage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Organic value baseline"
+      dateRangeLabel="Search value estimate"
       topBarActions={
         <>
           <button
@@ -354,30 +354,26 @@ export default function OrganicValuePage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
-          eyebrow="Organic Value + ROI Baseline"
-          title="What your organic visibility is worth right now"
-          summary="This V1 estimates paid-search-equivalent value from tracked keyword rankings, then shows near-term upside and a simple baseline against optional monthly SEO investment."
+          eyebrow="Search value"
+          title="What your search visibility may be worth"
+          summary="Estimate what your current unpaid search traffic might cost to replace with ads, and see where better search positions could add value."
         />
 
-        <TruthNotice title="This is a value baseline, not a revenue forecast.">
-          Current value and scenario outputs are based on stored rankings, search volume, CPC, and
-          CTR assumptions. They estimate what equivalent traffic may be worth in paid media, not
-          actual revenue, margin, or guaranteed ROI.
+        <TruthNotice title="This is an estimate, not a revenue promise.">
+          The estimate uses saved search positions and typical ad costs. It does not predict actual
+          leads, sales, profit, or guaranteed return.
         </TruthNotice>
 
         {baseline?.truth ? (
-          <TruthNotice title="Current runtime truth" tone="warning">
-            {getRuntimeTruthSummary(
-              baseline.truth,
-              "Organic value runtime status is not available yet.",
-            )}
+          <TruthNotice title="How current is this estimate?" tone="warning">
+            {getOwnerFriendlyTruthSummary(baseline.truth, "the search value estimate")}
           </TruthNotice>
         ) : null}
 
         {loading ? (
           <LoadingCard
-            title="Loading organic value baseline"
-            summary="Pulling the latest economics rows, opportunity range, and assumption state for the active business."
+            title="Loading the search value estimate"
+            summary="Using saved search positions and ad-cost information to build this estimate."
           />
         ) : null}
 
@@ -395,8 +391,8 @@ export default function OrganicValuePage() {
 
         {!loading && campaigns.length === 0 ? (
           <EmptyState
-            title="No business is ready for organic value yet"
-            summary="Set up a business and collect keyword economics data before using the baseline."
+            title="There is not enough information for an estimate yet"
+            summary="Set up a business and collect search-position and ad-cost information first."
             actionLabel="Go to dashboard setup"
             onAction={() => router.push("/dashboard")}
           />

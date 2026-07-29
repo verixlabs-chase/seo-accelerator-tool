@@ -91,6 +91,57 @@ function getRuntimeTruthSummary(truth, fallback) {
 }
 
 /**
+ * Translate internal data-state classifications into language a business owner
+ * can use without understanding providers, runtimes, or processing pipelines.
+ *
+ * @param {{ classification?: string } | null | undefined} truth
+ * @param {string} subject
+ * @returns {string}
+ */
+function getOwnerFriendlyTruthSummary(truth, subject = "the selected business") {
+  const classification = truth?.classification || "unknown";
+
+  if (classification === "provider_backed") {
+    return `A connected live data service supplied this information about ${subject}.`;
+  }
+  if (classification === "in_progress") {
+    return `A fresh check is still running. Information about ${subject} may continue to update.`;
+  }
+  if (classification === "scheduled") {
+    return `A fresh check for ${subject} has been requested but is not finished yet.`;
+  }
+  if (classification === "stale") {
+    return `This information about ${subject} was collected earlier and may not match today’s results.`;
+  }
+  if (classification === "synthetic") {
+    return `This is sample or test information about ${subject}. Do not use it to make business decisions.`;
+  }
+  if (classification === "heuristic") {
+    return `This is an estimate about ${subject} based on saved information, not a live measurement.`;
+  }
+  if (classification === "generated") {
+    return `This information about ${subject} was created from business details already saved in the account.`;
+  }
+  if (classification === "operator_assisted") {
+    return `This information about ${subject} includes a manual step and should be reviewed before you act on it.`;
+  }
+  if (classification === "minimal_artifact") {
+    return `Only a basic result is available for ${subject}, so some details may be missing.`;
+  }
+  if (classification === "delivery_unverified") {
+    return `The item for ${subject} was prepared, but successful delivery has not been confirmed.`;
+  }
+  if (classification === "non_durable") {
+    return `This information about ${subject} may not be saved reliably yet. Check again before relying on it.`;
+  }
+  if (classification === "unavailable") {
+    return `No reliable information about ${subject} is available yet. Run the first check or review the setup.`;
+  }
+
+  return `We cannot confirm how current this information about ${subject} is yet.`;
+}
+
+/**
  * @param {string} label
  * @param {{ classification?: string, summary?: string } | null | undefined} truth
  * @param {string | undefined} fallback
@@ -119,6 +170,7 @@ function pickPrimaryRuntimeTruth(truths) {
 
 export {
   buildRuntimeTruthSignal,
+  getOwnerFriendlyTruthSummary,
   getRuntimeTruthLabel,
   getRuntimeTruthSummary,
   getRuntimeTruthTone,

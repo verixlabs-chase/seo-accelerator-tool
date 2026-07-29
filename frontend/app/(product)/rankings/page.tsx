@@ -32,7 +32,7 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getRuntimeTruthSummary,
+  getOwnerFriendlyTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
@@ -714,9 +714,9 @@ export default function RankingsPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
-          eyebrow="Rankings"
+          eyebrow="Search rankings"
           title="Where your business shows up in search"
-          summary="Use this page to review stored ranking snapshots, source quality, and which search terms need attention next without overreading thin or stale data."
+          summary="See which customer searches bring up each location, whether you are moving up or down, and which search phrase to work on next."
         />
 
         <section className="flex flex-col gap-3 rounded-md border border-[#303137] bg-[#111214] p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -764,17 +764,14 @@ export default function RankingsPage() {
           </p>
         </section>
 
-        <TruthNotice title="Stored ranking rows are not proof of live search intelligence.">
-          Ranking movement is only as trustworthy as the provider setup and freshness behind it.
-          Synthetic, stale, or setup-thin ranking states should be treated as directional or historical, not live market truth.
+        <TruthNotice title="Check the update status before making a decision.">
+          Saved search positions may be older than what customers see today. Use <strong>Run live
+          check</strong> when you need fresh results for this location.
         </TruthNotice>
 
         {rankingsTruth ? (
-          <TruthNotice title="Current runtime truth" tone="warning">
-            {getRuntimeTruthSummary(
-              rankingsTruth,
-              "Ranking runtime status is not available yet.",
-            )}
+          <TruthNotice title="How current are these search positions?" tone="warning">
+            {getOwnerFriendlyTruthSummary(rankingsTruth, "these search positions")}
           </TruthNotice>
         ) : null}
 
@@ -813,13 +810,13 @@ export default function RankingsPage() {
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Multi-location portfolio
+                    All business locations
                   </p>
                   <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
                     Compare every location at a glance
                   </h2>
                   <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                    These totals roll up the latest stored ranking for each tracked search.
+                    This compares the latest saved search positions for every location.
                   </p>
                 </div>
                 <button

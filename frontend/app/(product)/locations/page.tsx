@@ -416,9 +416,9 @@ export default function LocationsPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
-          eyebrow="Locations & accounts"
-          title="Run every location from one structure"
-          summary="Group brands, clients, or divisions under the main account. Each physical location receives its own campaign and execution scope while rollups stay connected to the parent business."
+          eyebrow="Business locations"
+          title="Manage every location in one place"
+          summary="Keep the main business and each physical location connected, while giving every location its own website, search results, and recommended actions."
         />
 
         <TruthNotice
@@ -429,8 +429,7 @@ export default function LocationsPage() {
           }
           tone={hierarchyTruth.tone === "success" ? "info" : "warning"}
         >
-          {hierarchyTruth.summary} Internal portfolios and execution records are managed
-          automatically and are intentionally hidden from this workspace.
+          {hierarchyTruth.summary} InsightOS handles the behind-the-scenes records automatically.
         </TruthNotice>
 
         {loading ? (
@@ -457,7 +456,7 @@ export default function LocationsPage() {
             <KpiCard
               label="Account groups"
               value={String(totals.subaccounts)}
-              summary="Clients, brands, or operating divisions under the main account."
+              summary="Brands, clients, or divisions connected to the main account."
             />
             <KpiCard
               label="Business locations"
@@ -466,9 +465,9 @@ export default function LocationsPage() {
               tone={totals.business_locations > 0 ? "highlight" : undefined}
             />
             <KpiCard
-              label="Campaigns"
+              label="Tracking workspaces"
               value={String(totals.campaigns)}
-              summary="SEO campaigns explicitly assigned across the location portfolio."
+              summary="Locations with their own website and search tracking."
             />
             <KpiCard
               label="Needs assignment"
@@ -493,12 +492,12 @@ export default function LocationsPage() {
                   Guided setup
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  Build the hierarchy in three steps
+                  Add a business location in three steps
                 </h2>
               </div>
               <p className="max-w-xl text-sm leading-5 text-zinc-400">
-                Account group → physical location → SEO campaign. The technical execution
-                records are created behind the scenes.
+                Choose the business group, add the physical location, then connect its website.
+                InsightOS handles the technical setup behind the scenes.
               </p>
             </div>
 

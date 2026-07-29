@@ -278,7 +278,7 @@ export default function SiteHealthPage() {
           await loadTechnicalData(items[0].id);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to load technical health data.");
+        setError(err instanceof Error ? err.message : "Unable to load website health information.");
       } finally {
         setLoading(false);
       }
@@ -293,7 +293,7 @@ export default function SiteHealthPage() {
     }
 
     void loadTechnicalData(selectedCampaignId).catch((err) => {
-      setError(err instanceof Error ? err.message : "Unable to load technical health data.");
+      setError(err instanceof Error ? err.message : "Unable to load website health information.");
     });
   }, [selectedCampaignId, loading, loadTechnicalData]);
 
@@ -375,7 +375,7 @@ export default function SiteHealthPage() {
     if (!selectedCampaign) {
       return {
         title: "No business is selected yet",
-        body: "Set up a business first so InsightOS can scan the site and find technical issues.",
+        body: "Set up a business first so InsightOS can scan the website and find problems.",
         next: "Go back to the dashboard to run the first website scan.",
       };
     }
@@ -383,14 +383,14 @@ export default function SiteHealthPage() {
     if (!latestRun) {
       return {
         title: `${selectedCampaign.name || "This business"} has not been scanned yet`,
-        body: "Technical health starts with a website scan. No scan has run for this business yet.",
+        body: "Website health starts with a website scan. No scan has run for this business yet.",
         next: "Run the first website scan, then return here to review what needs fixing first.",
       };
     }
 
     if (!topIssue) {
       return {
-        title: "No technical issues are currently flagged",
+        title: "No website problems are currently flagged",
         body: `The latest ${latestRun.crawl_type || "website"} scan is ${toTitleCase(latestRun.status)} and no issues are currently listed.`,
         next: "Keep scanning regularly so new problems are caught early.",
       };
@@ -563,15 +563,15 @@ export default function SiteHealthPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
-          eyebrow="Site health"
-          title="What the website scan found"
-          summary="Use this page to see which technical issues matter most, what should be fixed first, and what to keep watching after the latest scan."
+          eyebrow="Website health"
+          title="Is your website helping or hurting you?"
+          summary="See problems that could keep customers or search engines from using your website, which one to fix first, and the next practical step."
         />
 
         {loading ? (
           <LoadingCard
-            title="Loading technical health"
-            summary="Pulling the latest scan state, issue groups, and technical fix priorities for the active business."
+            title="Checking the latest website results"
+            summary="Loading the newest website scan and putting the most important problems first."
           />
         ) : null}
 
@@ -589,8 +589,8 @@ export default function SiteHealthPage() {
 
         {!loading && campaigns.length === 0 ? (
           <EmptyState
-            title="No business is ready for technical health yet"
-            summary="Set up a business first so InsightOS can scan the website and find technical issues."
+            title="Set up a business before checking the website"
+            summary="Add the business and website first. InsightOS can then find pages that may be broken, unclear, or difficult to find in search."
             actionLabel="Go to dashboard setup"
             onAction={() => router.push("/dashboard")}
           />
@@ -642,18 +642,18 @@ export default function SiteHealthPage() {
 
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
-                label="High severity"
+                label="Fix first"
                 value={String(severityCounts.high || 0)}
                 summary="These issues are the most likely to block visibility or break important pages."
                 tone="highlight"
               />
               <KpiCard
-                label="Medium severity"
+                label="Fix next"
                 value={String(severityCounts.medium || 0)}
                 summary="These issues weaken search clarity and should be fixed after the critical ones."
               />
               <KpiCard
-                label="Low severity"
+                label="Smaller improvements"
                 value={String(severityCounts.low || 0)}
                 summary="These issues are smaller cleanup items, but they still improve site quality."
               />
@@ -712,7 +712,7 @@ export default function SiteHealthPage() {
                   <p className="text-sm text-zinc-400">
                     {(severityCounts.high || 0) > 0
                       ? `${severityCounts.high} problem${severityCounts.high === 1 ? "" : "s"} should be handled before the rest.`
-                      : "No urgent technical problems are currently flagged."}
+                      : "No urgent website problems are currently flagged."}
                   </p>
                 }
               />
@@ -829,7 +829,7 @@ export default function SiteHealthPage() {
             {runs.length === 0 ? (
               <EmptyState
                 title="No website scans have run yet"
-                summary="Run your first website scan from the dashboard to see technical issues and fix priorities here."
+                summary="Run your first website scan from the dashboard to find broken pages, unclear page information, and other fixes."
                 actionLabel="Go to dashboard"
                 onAction={() => router.push("/dashboard")}
               />

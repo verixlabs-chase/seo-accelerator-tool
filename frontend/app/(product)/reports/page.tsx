@@ -20,7 +20,7 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getRuntimeTruthSummary,
+  getOwnerFriendlyTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 import {
   getDeliveryWorkflowState,
@@ -207,7 +207,7 @@ function buildReportSections(report?: ReportItem): ReportSection[] {
       metric: `${coerceNumber(summary.rank_snapshots)} snapshots`,
     },
     {
-      title: "Technical health",
+      title: "Website health",
       summary: "This section highlights how many website issues were found when the report was assembled.",
       metric: `${coerceNumber(summary.technical_issues)} issues`,
     },
@@ -666,21 +666,20 @@ export default function ReportsPage() {
       <section className="space-y-6">
         <ProductPageIntro
           eyebrow="Reports"
-          title="Package results into something you can send"
-          summary="Use the Reports Center to assemble a stored summary of the latest scan and ranking results, review the local artifacts, and track whether delivery was only requested or actually confirmed."
+          title="Create a clear update you can share"
+          summary="Bring the latest website and search results into one report, review it, and confirm whether it was actually sent."
         />
 
-        <TruthNotice title="A report record is not the same as a client-ready deliverable.">
-          Generated reports still need review, pending reports are still assembling, and delivery
-          history is the only evidence that a report was actually sent. Use the workflow cards
-          below before treating any report as complete or shareable.
+        <TruthNotice title="Review a report before sharing it.">
+          A report that is still being created is not ready to send. Check the report status and
+          delivery history before treating it as complete.
         </TruthNotice>
 
         {selectedReportDetail?.truth || reportsTruth ? (
-          <TruthNotice title="Current runtime truth" tone="warning">
-            {getRuntimeTruthSummary(
+          <TruthNotice title="How current is this report information?" tone="warning">
+            {getOwnerFriendlyTruthSummary(
               selectedReportDetail?.truth || reportsTruth,
-              "Report runtime status is not available yet.",
+              "reports and deliveries",
             )}
           </TruthNotice>
         ) : null}

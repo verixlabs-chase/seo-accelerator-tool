@@ -18,7 +18,7 @@ import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
-  getRuntimeTruthSummary,
+  getOwnerFriendlyTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
@@ -185,7 +185,7 @@ export default function CitationsPage() {
         await platformApi("/auth/me", { method: "GET" });
         await loadCampaigns();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to load citations.");
+        setError(err instanceof Error ? err.message : "Unable to load directory listings.");
       } finally {
         setLoading(false);
       }
@@ -219,7 +219,7 @@ export default function CitationsPage() {
         "Citation statuses can reflect workflow progress before live directory publication is confirmed.",
       ),
       {
-        label: "Citations",
+        label: "Directory listings",
         value: citations.length > 0 ? `${citations.length} tracked` : "Not yet loaded",
         tone: citations.length > 0 ? "success" : "warning",
       },
@@ -251,44 +251,40 @@ export default function CitationsPage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Live citation data"
+      dateRangeLabel="Latest directory listing data"
       topBarActions={
         <>
           <button
             onClick={() => router.push("/local-visibility")}
             className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100"
           >
-            Local SEO
+            Local Search
           </button>
         </>
       }
     >
       <section className="space-y-6">
         <ProductPageIntro
-          eyebrow="Citations"
-          title="Submit and track your directory listings"
-          summary="Citations are mentions of your business on directories and data aggregators. Submit to a directory to start the listing process, then use the refresh button to check on progress and find your live listing URLs."
+          eyebrow="Directory listings"
+          title="Keep your business listings accurate"
+          summary="Track where your business appears on sites such as Google and other directories. Start a listing request, check its progress, and open confirmed listings."
         />
 
-        <TruthNotice title="Citation status reflects workflow state, not guaranteed directory publication.">
-          Submitted and pending rows mean the request is in flight. Only a live or verified state,
-          ideally with a listing URL, should be treated as evidence that the directory entry is
-          actually published.
+        <TruthNotice title="A submitted listing may not be live yet.">
+          A listing is confirmed only when its status is <strong>Live</strong> or{" "}
+          <strong>Verified</strong>, preferably with a link you can open.
         </TruthNotice>
 
         {runtimeTruth ? (
-          <TruthNotice title="Current runtime truth" tone="warning">
-            {getRuntimeTruthSummary(
-              runtimeTruth,
-              "Citation runtime status is not available yet.",
-            )}
+          <TruthNotice title="How current are these listing updates?" tone="warning">
+            {getOwnerFriendlyTruthSummary(runtimeTruth, "directory listings")}
           </TruthNotice>
         ) : null}
 
         {loading ? (
           <LoadingCard
-            title="Loading citations"
-            summary="Setting up the citations workspace for the active business."
+            title="Loading directory listings"
+            summary="Checking saved listing requests and their latest status."
           />
         ) : null}
 
@@ -307,7 +303,7 @@ export default function CitationsPage() {
         {!loading && campaigns.length === 0 ? (
           <EmptyState
             title="No business is ready yet"
-            summary="Set up a business first so InsightOS can manage directory citations."
+            summary="Set up a business first so InsightOS can manage its directory listings."
             actionLabel="Go to dashboard setup"
             onAction={() => router.push("/dashboard")}
           />
@@ -317,7 +313,7 @@ export default function CitationsPage() {
           <>
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
-                label="Citations tracked"
+                label="Listings tracked"
                 value={statusResult ? String(citations.length) : "—"}
                 summary={
                   statusResult
@@ -363,11 +359,11 @@ export default function CitationsPage() {
                   Submit
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  Add a directory citation
+                  Add a directory listing
                 </h2>
                 <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                  Enter the name of a directory or data aggregator. Once submitted, a background job
-                  queues the listing for processing. Use the refresh button to monitor progress.
+                  Enter the name of the directory where you want the business listed. Start the
+                  request, then check back for a confirmed listing link.
                 </p>
 
                 <div className="mt-4 space-y-3">
@@ -388,19 +384,18 @@ export default function CitationsPage() {
                     disabled={busyAction !== "" || !newDirectory.trim()}
                     className="w-full rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {busyAction === "submit" ? "Submitting..." : "Submit citation"}
+                    {busyAction === "submit" ? "Starting..." : "Start listing request"}
                   </button>
                 </div>
 
                 <div className="mt-5 rounded-md border border-[#26272c] bg-[#111214] p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    How citations work
+                    How listing requests work
                   </p>
                   <p className="mt-2 text-sm leading-6 text-zinc-400">
-                    Submitting creates a record and queues a background job. The directory provider
-                    then processes the listing, which can take time. Use{" "}
-                    <span className="text-zinc-300">Refresh status</span> on the right to pull the
-                    latest updates. Live listings will show a URL when the directory confirms them.
+                    Directory approval can take time. Use{" "}
+                    <span className="text-zinc-300">Check for updates</span> to pull the latest
+                    status. Confirmed listings include a link when one is available.
                   </p>
                 </div>
               </section>
@@ -417,7 +412,7 @@ export default function CitationsPage() {
                     <p className="mt-1.5 text-sm leading-6 text-zinc-300">
                       {statusResult
                         ? "Showing the current database state. Refresh again to pull the latest updates from each directory."
-                        : "Load the current status of all citations for this business. This queues a background refresh job."}
+                        : "Check the current status of every directory listing for this business."}
                     </p>
                   </div>
                   <button
@@ -442,8 +437,8 @@ export default function CitationsPage() {
                   </div>
                 ) : citations.length === 0 ? (
                   <EmptyState
-                    title="No citations found for this business"
-                    summary="Submit a directory citation using the form on the left to get started."
+                    title="No directory listings found for this business"
+                    summary="Start a listing request using the form on the left."
                   />
                 ) : (
                   <div className="space-y-3">
