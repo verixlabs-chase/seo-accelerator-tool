@@ -20,11 +20,9 @@ import {
   AppShell,
   ChartCard,
   EmptyState,
-  InsightCard,
   KpiCard,
   LoadingCard,
   OnboardingWizard,
-  TruthNotice,
   useLocationContext,
   type RuntimeTruth,
   type TrustSignal,
@@ -44,7 +42,6 @@ import {
 } from "../truth/dashboardTruth.mjs";
 import {
   buildRuntimeTruthSignal,
-  getOwnerFriendlyTruthSummary,
   getRuntimeTruthSummary,
 } from "../truth/runtimeTruth.mjs";
 
@@ -309,105 +306,6 @@ function TrendTooltip({
   );
 }
 
-function VisibilityTrendChart({
-  data,
-}: {
-  data: Array<{ label: string; visibility: number; baseline: number }>;
-}) {
-  return (
-    <div className="h-72">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data}>
-          <defs>
-            <linearGradient id="visibilityFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#FF6A1A" stopOpacity={0.34} />
-              <stop offset="95%" stopColor="#FF6A1A" stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
-          <XAxis
-            dataKey="label"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: "#71717a", fontSize: 12 }}
-          />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: "#71717a", fontSize: 12 }}
-            width={36}
-          />
-          <Tooltip content={<TrendTooltip />} />
-          <Area
-            type="monotone"
-            dataKey="visibility"
-            stroke="#FF6A1A"
-            strokeWidth={2.2}
-            fill="url(#visibilityFill)"
-            name="Visibility"
-          />
-          <Line
-            type="monotone"
-            dataKey="baseline"
-            stroke="#FF944F"
-            strokeWidth={1.75}
-            strokeDasharray="4 5"
-            dot={false}
-            name="Baseline"
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function RankingTrendChart({
-  data,
-}: {
-  data: Array<{ label: string; momentum: number; benchmark: number }>;
-}) {
-  return (
-    <div className="h-72">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
-          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
-          <XAxis
-            dataKey="label"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: "#71717a", fontSize: 12 }}
-          />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: "#71717a", fontSize: 12 }}
-            width={36}
-          />
-          <Tooltip content={<TrendTooltip />} />
-          <Line
-            type="monotone"
-            dataKey="momentum"
-            stroke="#FF6A1A"
-            strokeWidth={2.2}
-            dot={{ r: 0 }}
-            activeDot={{ r: 4, fill: "#FF6A1A", stroke: "#0a0a0a", strokeWidth: 2 }}
-            name="Momentum"
-          />
-          <Line
-            type="monotone"
-            dataKey="benchmark"
-            stroke="#FF944F"
-            strokeWidth={1.75}
-            dot={false}
-            strokeDasharray="5 6"
-            name="Benchmark"
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 function SearchConsoleTrendChart({
   data,
 }: {
@@ -474,27 +372,215 @@ function SearchConsoleTrendChart({
   );
 }
 
-function MiniSpark({
-  bars,
-  color,
+function SearchPositionTrendChart({
+  data,
 }: {
-  bars: number[];
-  color: string;
+  data: Array<{ label: string; avgPosition: number | null }>;
 }) {
+  const positionData = data.filter((point) => point.avgPosition !== null);
+
   return (
-    <div className="flex h-16 items-end gap-1">
-      {bars.map((bar, index) => (
-        <span
-          key={`${color}-${index}`}
-          className="w-1.5"
-          style={{
-            height: `${bar}%`,
-            background: color,
-            opacity: 0.88,
-          }}
-        />
-      ))}
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={positionData}>
+          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+          <XAxis
+            dataKey="label"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#71717a", fontSize: 11 }}
+            minTickGap={22}
+          />
+          <YAxis
+            reversed
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#71717a", fontSize: 11 }}
+            width={42}
+          />
+          <Tooltip content={<TrendTooltip />} />
+          <Line
+            type="monotone"
+            dataKey="avgPosition"
+            stroke="#FF6A1A"
+            strokeWidth={2.4}
+            dot={false}
+            activeDot={{ r: 4, fill: "#FF6A1A", stroke: "#0a0a0a", strokeWidth: 2 }}
+            name="Average position"
+          />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
+  );
+}
+
+function SearchPerformanceOverview({
+  campaign,
+  metrics,
+  trend,
+  onOpenSettings,
+}: {
+  campaign: Campaign;
+  metrics: SearchConsoleMetrics | null;
+  trend: Array<{
+    label: string;
+    clicks: number;
+    impressions: number;
+    avgPosition: number | null;
+  }>;
+  onOpenSettings: () => void;
+}) {
+  const isReady = metrics?.data_status === "ready" && Boolean(metrics.summary);
+
+  return (
+    <section id="performance-overview" className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SectionHeading
+          eyebrow="Performance overview"
+          title={`How customers found ${campaign.name || "this location"} on Google`}
+          summary={
+            isReady
+              ? `Real Google Search data from ${formatMetricDate(
+                  metrics?.date_from,
+                )} through ${formatMetricDate(metrics?.date_to)}.`
+              : "Connect this location's Google website property to see search appearances, visits, and position trends."
+          }
+        />
+        <span
+          className={`mb-4 rounded-md border px-2.5 py-1 text-xs font-semibold ${
+            isReady
+              ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+              : "border-amber-500/25 bg-amber-500/10 text-amber-100"
+          }`}
+        >
+          {isReady
+            ? `Updated through ${formatMetricDate(metrics?.date_to)}`
+            : metrics?.data_status === "not_connected"
+              ? "Connection needed"
+              : "Waiting for Google data"}
+        </span>
+      </div>
+
+      {isReady && metrics?.summary ? (
+        <>
+          <div className="rounded-md border border-accent-500/20 bg-accent-500/10 px-4 py-3 text-sm leading-6 text-zinc-100">
+            {getSearchConsoleOwnerSummary(metrics, campaign.name || "This location")}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-4">
+            <KpiCard
+              label="Visits from Google"
+              value={metrics.summary.clicks.toLocaleString("en-US")}
+              changeLabel={formatChange(
+                metrics.comparison?.clicks_change_percent,
+                "visits",
+              )}
+              summary="People who clicked from Google Search and reached your website."
+              tone="highlight"
+            />
+            <KpiCard
+              label="Times you appeared"
+              value={metrics.summary.impressions.toLocaleString("en-US")}
+              changeLabel={formatChange(
+                metrics.comparison?.impressions_change_percent,
+                "appearances",
+              )}
+              summary="How often your website appeared in Google search results."
+            />
+            <KpiCard
+              label="Appearance-to-visit rate"
+              value={`${metrics.summary.ctr_percent.toFixed(1)}%`}
+              changeLabel={
+                metrics.comparison?.ctr_change_points === null ||
+                metrics.comparison?.ctr_change_points === undefined
+                  ? "New baseline"
+                  : `${
+                      metrics.comparison.ctr_change_points >= 0 ? "Up " : "Down "
+                    }${Math.abs(metrics.comparison.ctr_change_points).toFixed(1)} pts`
+              }
+              summary="The percentage of Google appearances that became website visits."
+            />
+            <KpiCard
+              label="Average Google position"
+              value={
+                metrics.summary.avg_position === null ||
+                metrics.summary.avg_position === undefined
+                  ? "—"
+                  : `#${metrics.summary.avg_position.toFixed(1)}`
+              }
+              changeLabel={
+                metrics.comparison?.position_improvement === null ||
+                metrics.comparison?.position_improvement === undefined
+                  ? "New baseline"
+                  : metrics.comparison.position_improvement === 0
+                    ? "No change"
+                    : metrics.comparison.position_improvement > 0
+                      ? `Improved ${metrics.comparison.position_improvement.toFixed(1)}`
+                      : `Dropped ${Math.abs(
+                          metrics.comparison.position_improvement,
+                        ).toFixed(1)}`
+              }
+              summary="Your average placement across Google searches. A smaller number is better."
+            />
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <ChartCard
+              eyebrow="Customer discovery"
+              title="Google appearances and website visits"
+              summary="The light area shows how often you appeared. The orange line shows visits."
+              chart={<SearchConsoleTrendChart data={trend} />}
+              footer={
+                <p className="text-sm leading-5 text-zinc-300">
+                  Compared with the prior {metrics.comparison?.period_days || 14} available days.
+                </p>
+              }
+            />
+            <ChartCard
+              eyebrow="Search position"
+              title="Average Google position by day"
+              summary="Lines moving upward are better because a smaller position number is closer to the top."
+              chart={<SearchPositionTrendChart data={trend} />}
+              footer={
+                <p className="text-sm leading-5 text-zinc-300">
+                  Search Console normally reports data a couple of days behind.
+                </p>
+              }
+            />
+          </div>
+
+          <p className="text-xs leading-5 text-zinc-500">
+            Source:{" "}
+            {metrics.connection?.external_resource_name ||
+              campaign.domain ||
+              "Google Search Console"}
+            . Last synced {formatRelativeTime(metrics.connection?.last_success_at || undefined)}.
+          </p>
+        </>
+      ) : metrics ? (
+        <EmptyState
+          title={
+            metrics.data_status === "not_connected"
+              ? "Connect Search Console for this location"
+              : "Search Console is connected, but data has not arrived yet"
+          }
+          summary={
+            metrics.data_status === "not_connected"
+              ? "Choose this location's Google Search Console website property in Settings, then run the first sync."
+              : "Open Settings to check the connection and run a sync."
+          }
+          actionLabel="Open connection settings"
+          onAction={onOpenSettings}
+        />
+      ) : (
+        <LoadingCard
+          title="Loading Google performance"
+          summary={`Checking the Search Console results saved for ${
+            campaign.name || "this location"
+          }.`}
+        />
+      )}
+    </section>
   );
 }
 
@@ -942,39 +1028,16 @@ export default function DashboardPage() {
     ],
   );
 
-  const visibilityTrend = useMemo(
-    () =>
-      latestTrends.slice(0, 7).map((trend, index) => {
-        const position = coerceNumber(trend.position, 0);
-        const visibility = position > 0 ? Math.max(0, 101 - position) : 0;
-        return {
-          label: trend.keyword?.slice(0, 10) || `KW ${index + 1}`,
-          visibility,
-          baseline: Math.max(0, visibility - 8),
-        };
-      }),
-    [latestTrends],
-  );
-
-  const rankingTrend = useMemo(
-    () =>
-      latestTrends.slice(0, 7).map((trend, index) => {
-        const position = coerceNumber(trend.position, 100);
-        return {
-          label: trend.keyword?.slice(0, 10) || `KW ${index + 1}`,
-          momentum: Math.max(1, 101 - position),
-          benchmark: Math.max(1, 96 - position),
-        };
-      }),
-    [latestTrends],
-  );
-
   const searchConsoleTrend = useMemo(
     () =>
       (searchConsoleMetrics?.points || []).map((point) => ({
         label: formatMetricDate(point.date),
         clicks: Number(point.clicks || 0),
         impressions: Number(point.impressions || 0),
+        avgPosition:
+          point.avg_position === null || point.avg_position === undefined
+            ? null
+            : Number(point.avg_position),
       })),
     [searchConsoleMetrics],
   );
@@ -1305,20 +1368,6 @@ export default function DashboardPage() {
           </section>
         ) : null}
 
-        {!loading ? (
-          <TruthNotice title="Some checks take time to finish.">
-            A website check, search-position check, or report request may continue working in the
-            background. Use the daily briefing for the latest result. The manual tools below are
-            mainly for retrying a check.
-          </TruthNotice>
-        ) : null}
-
-        {!loading && latestRankTruth ? (
-          <TruthNotice title="How current are the search results?" tone="warning">
-            {getOwnerFriendlyTruthSummary(latestRankTruth, "search positions")}
-          </TruthNotice>
-        ) : null}
-
         {!loading && campaigns.length === 0 && !showWizard ? (
           <EmptyState
             title="Welcome to InsightOS"
@@ -1343,6 +1392,15 @@ export default function DashboardPage() {
                 }
               });
             }}
+          />
+        ) : null}
+
+        {selectedCampaign ? (
+          <SearchPerformanceOverview
+            campaign={selectedCampaign}
+            metrics={searchConsoleMetrics}
+            trend={searchConsoleTrend}
+            onOpenSettings={() => router.push("/settings")}
           />
         ) : null}
 
@@ -1399,372 +1457,6 @@ export default function DashboardPage() {
             ))}
           </div>
         </section>
-
-        <SectionHeading
-          eyebrow="At a glance"
-          title="Your current visibility summary"
-          summary="These cards show the latest state of setup, website scans, tracked searches, and reporting for the active business."
-        />
-        <div className="grid gap-4 xl:grid-cols-4">
-          <KpiCard
-            label="Businesses"
-            value={String(campaigns.length)}
-            changeLabel={selectedCampaign ? "Active now" : "Needs setup"}
-            summary={
-              selectedCampaign
-                ? `Current workspace: ${selectedCampaign.name || "Unnamed campaign"} on ${selectedCampaign.domain || "no domain"}.`
-                : "Add your business to start scans, rankings, and reports."
-            }
-            visual={
-              <MiniSpark
-                bars={[24, 34, 42, 50, 62, 76, Math.min(96, campaigns.length * 18 || 14)]}
-                color="#22c55e"
-              />
-            }
-            tone="highlight"
-          />
-          <KpiCard
-            label="Website scan"
-            value={topRun?.status ? toTitleCase(topRun.status) : "None"}
-            changeLabel={topRun?.crawl_type ? toTitleCase(topRun.crawl_type) : undefined}
-            summary={
-              topRun
-                ? isFailedStatus(topRun.status)
-                  ? `Most recent crawl ended as ${toTitleCase(topRun.status)} and needs attention.`
-                  : isPendingStatus(topRun.status)
-                    ? `Most recent crawl is ${toTitleCase(topRun.status)}. Results may still be filling in.`
-                    : `Most recent crawl completed ${formatRelativeTime(topRun.updated_at || topRun.created_at)}.`
-                : "No website scan has run for the active business yet."
-            }
-            visual={
-              <MiniSpark
-                bars={[18, 26, 38, 44, 58, 68, topRun ? 84 : 20]}
-                color="#FF6A1A"
-              />
-            }
-          />
-          <KpiCard
-            label="Tracked searches"
-            value={String(latestTrends.length)}
-            changeLabel={
-              topKeyword?.position ? `Best ${coerceNumber(topKeyword.position)}` : undefined
-            }
-            summary={
-              topKeyword
-                ? `${topKeyword.keyword || "Top search"} is leading the current trend set.`
-                : "No search position snapshots exist yet for this business."
-            }
-            visual={
-              <MiniSpark
-                bars={[
-                  16,
-                  22,
-                  31,
-                  40,
-                  52,
-                  66,
-                  Math.min(92, latestTrends.length * 9 || 12),
-                ]}
-                color="#FF944F"
-              />
-            }
-          />
-          <KpiCard
-            label="Reports"
-            value={String(latestReports.length)}
-            changeLabel={
-              topReport?.month_number ? `Month ${topReport.month_number}` : undefined
-            }
-            summary={
-              topReport
-                ? topReport.report_status === "delivered"
-                  ? Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("delivery_unverified")
-                    ? `Latest report is marked delivered for month ${topReport.month_number || "current"}, but delivery is not externally verified.`
-                    : `Latest report was delivered for month ${topReport.month_number || "current"}.`
-                  : topReport.report_status === "generated"
-                    ? Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("minimal_artifact")
-                      ? "Latest report is a minimal local artifact that still needs review before sending."
-                      : "Latest report is ready to review and send."
-                    : isFailedStatus(topReport.report_status)
-                      ? `Latest report needs attention after a ${toTitleCase(topReport.report_status)} result.`
-                      : isPendingStatus(topReport.report_status)
-                        ? `Latest report is ${toTitleCase(topReport.report_status)} and still being prepared.`
-                        : `Latest report status is ${toTitleCase(topReport.report_status)}.`
-                : "Create a report once your latest scan and ranking data are ready."
-            }
-            visual={
-              <MiniSpark
-                bars={[20, 28, 36, 48, 54, 62, Math.min(90, latestReports.length * 20 || 14)]}
-                color="#FF7F3F"
-              />
-            }
-          />
-        </div>
-
-        {selectedCampaign ? (
-          <section className="space-y-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <SectionHeading
-                eyebrow="Google Search Console"
-                title={`How people found ${selectedCampaign.name || "this location"} on Google`}
-                summary={
-                  searchConsoleMetrics?.data_status === "ready"
-                    ? `Showing ${searchConsoleMetrics.data_days} available days, from ${formatMetricDate(
-                        searchConsoleMetrics.date_from,
-                      )} through ${formatMetricDate(
-                        searchConsoleMetrics.date_to,
-                      )}. Google normally reports this data a couple of days behind.`
-                    : "Connect the Google website property for this location to see real search appearances and visits."
-                }
-              />
-              <span
-                className={`mb-4 rounded-md border px-2.5 py-1 text-xs font-semibold ${
-                  searchConsoleMetrics?.data_status === "ready"
-                    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
-                    : "border-amber-500/25 bg-amber-500/10 text-amber-100"
-                }`}
-              >
-                {searchConsoleMetrics?.data_status === "ready"
-                  ? "Google data is current"
-                  : searchConsoleMetrics?.data_status === "not_connected"
-                    ? "Connection needed"
-                    : "Waiting for data"}
-              </span>
-            </div>
-
-            {searchConsoleMetrics?.data_status === "ready" &&
-            searchConsoleMetrics.summary ? (
-              <>
-                <div className="grid gap-4 xl:grid-cols-4">
-                  <KpiCard
-                    label="Visits from Google"
-                    value={searchConsoleMetrics.summary.clicks.toLocaleString("en-US")}
-                    changeLabel={formatChange(
-                      searchConsoleMetrics.comparison?.clicks_change_percent,
-                      "visits",
-                    )}
-                    summary="People who clicked your business in Google Search and reached your website."
-                    tone="highlight"
-                  />
-                  <KpiCard
-                    label="Times you appeared"
-                    value={searchConsoleMetrics.summary.impressions.toLocaleString("en-US")}
-                    changeLabel={formatChange(
-                      searchConsoleMetrics.comparison?.impressions_change_percent,
-                      "appearances",
-                    )}
-                    summary="How many times pages from your website appeared in Google search results."
-                  />
-                  <KpiCard
-                    label="Appearance-to-visit rate"
-                    value={`${searchConsoleMetrics.summary.ctr_percent.toFixed(1)}%`}
-                    changeLabel={
-                      searchConsoleMetrics.comparison?.ctr_change_points === null ||
-                      searchConsoleMetrics.comparison?.ctr_change_points === undefined
-                        ? "New baseline"
-                        : `${
-                            searchConsoleMetrics.comparison.ctr_change_points >= 0 ? "Up " : "Down "
-                          }${Math.abs(
-                            searchConsoleMetrics.comparison.ctr_change_points,
-                          ).toFixed(1)} pts`
-                    }
-                    summary="The percentage of Google appearances that turned into a website visit."
-                  />
-                  <KpiCard
-                    label="Average Google position"
-                    value={
-                      searchConsoleMetrics.summary.avg_position === null ||
-                      searchConsoleMetrics.summary.avg_position === undefined
-                        ? "—"
-                        : `#${searchConsoleMetrics.summary.avg_position.toFixed(1)}`
-                    }
-                    changeLabel={
-                      searchConsoleMetrics.comparison?.position_improvement === null ||
-                      searchConsoleMetrics.comparison?.position_improvement === undefined
-                        ? "New baseline"
-                        : searchConsoleMetrics.comparison.position_improvement === 0
-                          ? "No change"
-                          : searchConsoleMetrics.comparison.position_improvement > 0
-                            ? `Improved ${searchConsoleMetrics.comparison.position_improvement.toFixed(1)}`
-                            : `Dropped ${Math.abs(
-                                searchConsoleMetrics.comparison.position_improvement,
-                              ).toFixed(1)}`
-                    }
-                    summary="Your average placement across Google searches. A smaller number is better."
-                  />
-                </div>
-
-                <div className="grid gap-5 xl:grid-cols-[1.45fr_0.55fr]">
-                  <ChartCard
-                    eyebrow="Google search activity"
-                    title="Appearances and website visits by day"
-                    summary="The light area shows how often you appeared. The orange line shows visits to your website."
-                    chart={<SearchConsoleTrendChart data={searchConsoleTrend} />}
-                    footer={
-                      <p className="text-sm leading-5 text-zinc-300">
-                        Compared with the prior{" "}
-                        {searchConsoleMetrics.comparison?.period_days || 14} available days.
-                      </p>
-                    }
-                  />
-                  <BriefingCard
-                    eyebrow="Plain-language readout"
-                    title="What these numbers mean"
-                    body={getSearchConsoleOwnerSummary(
-                      searchConsoleMetrics,
-                      selectedCampaign.name || "This location",
-                    )}
-                  />
-                </div>
-
-                <p className="text-xs leading-5 text-zinc-500">
-                  Source:{" "}
-                  {searchConsoleMetrics.connection?.external_resource_name ||
-                    selectedCampaign.domain ||
-                    "Google Search Console"}
-                  . Last synced{" "}
-                  {formatRelativeTime(searchConsoleMetrics.connection?.last_success_at || undefined)}.
-                  Data stays tied to the selected location.
-                </p>
-              </>
-            ) : searchConsoleMetrics ? (
-              <EmptyState
-                title={
-                  searchConsoleMetrics.data_status === "not_connected"
-                    ? "Connect Search Console for this location"
-                    : "Search Console is connected, but data has not arrived yet"
-                }
-                summary={
-                  searchConsoleMetrics.data_status === "not_connected"
-                    ? "Choose this location's Google Search Console website property in Settings, then run the first sync."
-                    : "Open Settings to check the connection and run a sync. Google data can be a couple of days behind."
-                }
-                actionLabel="Open connection settings"
-                onAction={() => router.push("/settings")}
-              />
-            ) : (
-              <LoadingCard
-                title="Loading Google search data"
-                summary={`Checking the Search Console results saved for ${
-                  selectedCampaign.name || "this location"
-                }.`}
-              />
-            )}
-          </section>
-        ) : null}
-
-        <SectionHeading
-          eyebrow="Trends"
-          title="How visibility is moving"
-          summary="Use these charts to see how often your business appears in search and whether search positions are improving."
-        />
-        <div className="grid gap-5 xl:grid-cols-2">
-          <ChartCard
-            eyebrow="Trend"
-            title="How often customers find you"
-            summary="This shows your online visibility based on where you appear in search results."
-            chart={
-              visibilityTrend.length > 0 ? (
-                <VisibilityTrendChart data={visibilityTrend} />
-              ) : (
-                <EmptyState
-                  title="No visibility data yet"
-                  summary="Run a search position check to populate this chart."
-                  actionLabel="Check search positions"
-                  onAction={() => document.getElementById("rank-form")?.scrollIntoView({ behavior: "smooth" })}
-                />
-              )
-            }
-            footer={
-              <p className="text-sm leading-5 text-zinc-300">
-                Updates automatically when new search position data arrives.
-              </p>
-            }
-          />
-          <ChartCard
-            eyebrow="Trend"
-            title="Search position movement"
-            summary="Track whether your search positions are improving over time."
-            chart={
-              rankingTrend.length > 0 ? (
-                <RankingTrendChart data={rankingTrend} />
-              ) : (
-                <EmptyState
-                  title="No ranking history yet"
-                  summary="Add a search term and run a position check to see your trends."
-                  actionLabel="Add search term"
-                  onAction={() => document.getElementById("rank-form")?.scrollIntoView({ behavior: "smooth" })}
-                />
-              )
-            }
-            footer={
-              <p className="text-sm leading-5 text-zinc-300">
-                Shows movement for your tracked search terms over time.
-              </p>
-            }
-          />
-        </div>
-
-        <SectionHeading
-          eyebrow="Highlights"
-          title="The clearest takeaways right now"
-          summary="These quick reads explain where the active business stands and where the next useful action lives."
-        />
-        <div className="grid gap-5 xl:grid-cols-3">
-          <InsightCard
-            insight={{
-              title: selectedCampaign ? "Your business is connected." : "Business setup required.",
-              body: selectedCampaign
-                ? `${selectedCampaign.name || "Your business"} is ready for scans, tracked searches, and reporting.`
-                : "Add your business to start tracking how customers find you online.",
-              tone: selectedCampaign ? "success" : "warning",
-              action: {
-                label: selectedCampaign ? "View business" : "Set up business",
-                onClick: () => document.getElementById("campaign-form")?.scrollIntoView({ behavior: "smooth" }),
-              },
-            }}
-          />
-          <InsightCard
-            insight={{
-              title: topKeyword ? "Search positions tracked." : "No search terms tracked yet.",
-              body: topKeyword
-                ? `"${topKeyword.keyword || "Your top term"}" is currently at position ${coerceNumber(topKeyword.position)} in search results.`
-                : "Add a search term to see where your business shows up when customers search.",
-              tone: topKeyword ? "info" : "warning",
-              action: {
-                label: topKeyword ? "View positions" : "Add search term",
-                onClick: () => document.getElementById("rank-form")?.scrollIntoView({ behavior: "smooth" }),
-              },
-            }}
-          />
-          <InsightCard
-            insight={{
-              title: topReport ? "Reports available." : "No reports yet.",
-              body: topReport
-                ? topReport.report_status === "delivered"
-                  ? Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("delivery_unverified")
-                    ? `Your month ${topReport.month_number} report is marked delivered, but the current runtime does not verify inbox delivery.`
-                    : `Your month ${topReport.month_number} report has already been sent and is the latest shared update.`
-                  : topReport.report_status === "generated"
-                    ? Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("minimal_artifact")
-                      ? `Your month ${topReport.month_number} report is a minimal local artifact that still needs review before any send.`
-                      : `Your month ${topReport.month_number} report is ready to review and send.`
-                    : isFailedStatus(topReport.report_status)
-                      ? "Your latest report needs attention before it can be treated as ready to share."
-                      : `Your latest report is ${toTitleCase(topReport.report_status)} and still in progress.`
-                : "Create a report once you have search position data.",
-              tone: topReport
-                ? topReport.report_status === "delivered"
-                  ? "success"
-                  : "info"
-                : "warning",
-              action: {
-                label: topReport ? "View reports" : "Create report",
-                onClick: () => document.getElementById("report-form")?.scrollIntoView({ behavior: "smooth" }),
-              },
-            }}
-          />
-        </div>
 
         <details className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
           <summary className="cursor-pointer list-none">
@@ -1940,57 +1632,6 @@ export default function DashboardPage() {
           <TimelineCard recentActivity={recentActivity} />
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[1fr_0.55fr]">
-          <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-            <SectionHeading
-              eyebrow="Visibility context"
-              title="What this workspace is tracking"
-              summary="Use this section to confirm the active business and make sure the current results belong to the right website."
-            />
-            <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-              <p className="text-sm leading-6 text-zinc-300">
-                {selectedCampaign
-                  ? `${selectedCampaign.name || "Unnamed campaign"} on ${selectedCampaign.domain || "no domain"} is the active workspace.`
-                  : "No business is active yet."}
-              </p>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <div className="rounded-md border border-[#26272c] bg-[#141518] p-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Latest website scan
-                  </p>
-                  <p className="mt-2 text-sm text-zinc-200">
-                    {topRun
-                      ? `${toTitleCase(topRun.status)} ${formatRelativeTime(topRun.updated_at || topRun.created_at)}`
-                      : "No website scan has run yet."}
-                  </p>
-                </div>
-                <div className="rounded-md border border-[#26272c] bg-[#141518] p-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Latest report
-                  </p>
-                  <p className="mt-2 text-sm text-zinc-200">
-                    {topReport
-                      ? topReport.report_status === "delivered" && Array.isArray(latestReportTruth?.states) && latestReportTruth.states.includes("delivery_unverified")
-                        ? `Marked delivered for month ${topReport.month_number || "current"}`
-                        : `${toTitleCase(topReport.report_status)} for month ${topReport.month_number || "current"}`
-                      : "No report has been created yet."}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        {me ? (
-          <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-              Account context
-            </p>
-            <p className="mt-2 text-sm leading-5 text-zinc-300">
-              Signed in and connected to the active workspace. Advanced account identifiers stay out of the main flow so this page can focus on business status and next steps.
-            </p>
-          </section>
-        ) : null}
       </section>
     </AppShell>
   );
