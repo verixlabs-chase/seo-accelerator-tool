@@ -1457,6 +1457,9 @@ export default function OpportunitiesPage() {
               </p>
               <div className="mt-4 grid gap-4 xl:grid-cols-3">
                 {[recommendationState, executionState, setupBlockerState]
+                  .map((state) =>
+                    state === setupBlockerState && !selectedExecution ? null : state,
+                  )
                   .filter(Boolean)
                   .map((state) => (
                     <div
@@ -1584,7 +1587,7 @@ export default function OpportunitiesPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                            Opportunity detail
+                            Recommendation details
                           </p>
                           <h2 className="mt-1.5 text-2xl font-semibold tracking-[-0.03em] text-white">
                             {describeType(selectedRecommendation.recommendation_type)}
@@ -1668,7 +1671,7 @@ export default function OpportunitiesPage() {
                         <div className="grid gap-4 md:grid-cols-4">
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                              Expected impact
+                              Likely benefit
                             </p>
                             <p className="mt-2 text-sm text-zinc-200">
                               {getImpactLabel(
@@ -1680,13 +1683,13 @@ export default function OpportunitiesPage() {
                           </div>
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                              Source
+                              How this was found
                             </p>
                             <p className="mt-2 text-sm text-zinc-200">
                               {getEngineSourceLabel(selectedRecommendation.engine_source)}
                             </p>
                             <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
-                              Saved campaign signals
+                              Saved business information
                             </p>
                           </div>
                           <div>
@@ -1775,6 +1778,14 @@ export default function OpportunitiesPage() {
               </div>
             )}
 
+            <details className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-white">
+                Advanced workflow tools
+                <span className="text-xs font-normal text-zinc-500">
+                  Progress history and website change controls
+                </span>
+              </summary>
+              <div className="mt-5 space-y-6 border-t border-[#26272c] pt-5">
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -2409,6 +2420,8 @@ export default function OpportunitiesPage() {
                 </div>
               )}
             </section>
+              </div>
+            </details>
           </>
         ) : null}
       </section>

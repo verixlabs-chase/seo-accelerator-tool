@@ -13,7 +13,7 @@ export function MapCard({ title, summary, map, legend }: MapCardProps) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            Local visibility
+            Business location
           </p>
           <h3 className="mt-1.5 text-base font-semibold tracking-[-0.02em] text-white">
             {title}

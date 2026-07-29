@@ -158,7 +158,7 @@ function getMapPackSummary(position?: number | null) {
 
 function getReviewsSummary(reviewsLast30d = 0, avgRating = 0) {
   if (reviewsLast30d === 0) {
-    return "No recent reviews were captured in the last 30 days, so review momentum is weak.";
+    return "No recent reviews were captured in the last 30 days, so new review activity is low.";
   }
 
   if (avgRating >= 4.5) {
@@ -200,7 +200,7 @@ function buildNextStep({
   }
 
   if (reviewsLast30d < 3) {
-    return "Focus on review momentum next. The business needs more fresh reviews to stay competitive locally.";
+    return "Ask more recent customers for reviews. Fresh reviews help the business stay competitive locally.";
   }
 
   if (avgRatingLast30d > 0 && avgRatingLast30d < 4.2) {
@@ -471,7 +471,7 @@ export default function LocalVisibilityPage() {
               : "warning",
       },
       {
-        label: "Local health",
+        label: "Local strength",
         value: healthScore ? `${healthScore}/100` : "No health score",
         tone: healthScore >= 70 ? "success" : healthScore >= 50 ? "info" : "warning",
       },
@@ -649,7 +649,7 @@ export default function LocalVisibilityPage() {
                   Reviews
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  Review momentum
+                  New review activity
                 </h2>
                 <p className="mt-1.5 text-sm leading-6 text-zinc-300">
                   Reviews influence local trust. This summary shows whether recent review activity is helping or holding the business back.
@@ -666,7 +666,7 @@ export default function LocalVisibilityPage() {
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
                       {reviewsLast30d >= 3
                         ? "Fresh review activity is present."
-                        : "Review velocity is light and needs attention."}
+                        : "New review activity is low and needs attention."}
                     </p>
                   </div>
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
