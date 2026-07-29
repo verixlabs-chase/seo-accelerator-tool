@@ -17,6 +17,19 @@ test("overview shows real performance before workflow details", () => {
   assert.ok(performanceIndex < workflowIndex);
 });
 
+test("overview orders real graphs before the supporting metric cards", () => {
+  const graphOrderClassIndex = dashboardSource.indexOf(
+    'className="order-1 grid gap-5 xl:grid-cols-2"',
+  );
+  const metricOrderClassIndex = dashboardSource.indexOf(
+    'className="order-2 grid gap-4 xl:grid-cols-4"',
+  );
+
+  assert.notEqual(graphOrderClassIndex, -1);
+  assert.notEqual(metricOrderClassIndex, -1);
+  assert.ok(graphOrderClassIndex > metricOrderClassIndex);
+});
+
 test("overview does not render large generic good-to-know panels", () => {
   assert.doesNotMatch(dashboardSource, /<TruthNotice/);
   assert.doesNotMatch(dashboardSource, /Good to know/i);

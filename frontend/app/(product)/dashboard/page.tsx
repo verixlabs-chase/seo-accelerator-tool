@@ -462,12 +462,12 @@ function SearchPerformanceOverview({
       </div>
 
       {isReady && metrics?.summary ? (
-        <>
+        <div className="flex flex-col gap-4">
           <div className="rounded-md border border-accent-500/20 bg-accent-500/10 px-4 py-3 text-sm leading-6 text-zinc-100">
             {getSearchConsoleOwnerSummary(metrics, campaign.name || "This location")}
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-4">
+          <div className="order-2 grid gap-4 xl:grid-cols-4">
             <KpiCard
               label="Visits from Google"
               value={metrics.summary.clicks.toLocaleString("en-US")}
@@ -524,7 +524,7 @@ function SearchPerformanceOverview({
             />
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-2">
+          <div className="order-1 grid gap-5 xl:grid-cols-2">
             <ChartCard
               eyebrow="Customer discovery"
               title="Google appearances and website visits"
@@ -549,14 +549,14 @@ function SearchPerformanceOverview({
             />
           </div>
 
-          <p className="text-xs leading-5 text-zinc-500">
+          <p className="order-3 text-xs leading-5 text-zinc-500">
             Source:{" "}
             {metrics.connection?.external_resource_name ||
               campaign.domain ||
               "Google Search Console"}
             . Last synced {formatRelativeTime(metrics.connection?.last_success_at || undefined)}.
           </p>
-        </>
+        </div>
       ) : metrics ? (
         <EmptyState
           title={
