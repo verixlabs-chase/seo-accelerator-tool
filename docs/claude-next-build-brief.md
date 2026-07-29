@@ -1,6 +1,6 @@
 # Claude Next Build Brief
 
-> **Active roadmap status (2026-07-28):** The Workflow Closure phase described later in this brief is substantially shipped. The active next build phase is now **Core UX Closure: location context, navigation clarity, Rankings, Site Health, and Local Visibility**. Where Sections 7-10 conflict with the active sprint sequence below, this status and Section 1A take precedence.
+> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. Sprints 5-7 of Core UX Closure are production-verified, and the active next build phase is now **Sprint 8: Local Visibility Map and Provider Location Normalization**. Where Sections 7-10 conflict with the active sprint sequence below, this status and Section 1A take precedence.
 
 ## 1. Executive Summary
 
@@ -28,7 +28,7 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 
 ## 1A. Active Next Sprint Sequence
 
-> **Execution status (2026-07-29):** Sprints 5 and 6 are shipped and production-QA complete for Reno and Lexington. Sprint 7, Intelligence Activation and Safety, is active. Recommendation-only scheduling, runtime disclosure, and observation-only outcome tracking are implemented; autonomous customer-site mutations and automatic policy updates remain disabled.
+> **Execution status (2026-07-29):** Sprints 5, 6, and 7 are shipped and production-QA complete for Reno and Lexington. Sprint 8, Local Visibility Map and Provider Location Normalization, is active. Recommendation-only intelligence remains enabled; autonomous customer-site mutations and automatic policy updates remain disabled.
 
 ### Sprint 5 - Location Context and Navigation Clarity
 
@@ -93,6 +93,8 @@ Acceptance criteria:
 
 Goal: turn the existing deep intelligence architecture into a safe, durable
 recommendation system before presenting it as autonomous intelligence.
+
+> **Completed and production-verified 2026-07-29:** Reno and Lexington each completed a serverless-safe stored-data cycle that generated two orchestrator recommendations and produced three active recommendations total per location. Repeat runs reused the same daily job without duplication. Both execution inboxes remained at zero, provider checks stayed off, both campaigns are Active, and the production API health check returned `ok`.
 
 Scope:
 - Add an explicit production activation mode that defaults to

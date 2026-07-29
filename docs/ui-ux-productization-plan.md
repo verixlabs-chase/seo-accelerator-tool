@@ -9,7 +9,7 @@
 
 ---
 
-> **Current status:** Sprints 1-4 in this document established the tenant shell, onboarding, core routes, and mobile navigation and are now a substantially completed baseline. The active follow-on work begins at Sprint 5 below. The authoritative execution brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
+> **Current status (2026-07-29):** Sprints 1-7 are now a substantially completed, production-verified baseline. Sprint 8, Local Visibility map and provider location normalization, is active. The authoritative execution brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
 
 ## 1. Executive Summary
 
@@ -432,6 +432,8 @@ The following sequence minimizes regression risk and allows each change to be te
 29a. Add visual issue-priority, affected-page, and scan-history views without introducing a synthetic health score.
 
 ### Sprint 7 — Intelligence activation and safety
+
+**Completed 2026-07-29.** Reno and Lexington both passed production cycle, repeat-run idempotency, recommendation-only safety, and zero-execution verification. Each cycle generated two orchestrator recommendations from saved data, with provider checks, mutation scheduling, mutation execution, policy updates, and causal claims disabled.
 
 30. Add a production activation mode that defaults to recommendation-only execution.
 31. Tenant-scope every intelligence simulation, metric, outcome, and recommendation read.
