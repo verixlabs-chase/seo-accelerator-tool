@@ -2,9 +2,10 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from app.api.v1 import internal_jobs
-from app.services import durable_job_service
+from app.models.campaign import Campaign
 from app.models.platform_job import PlatformJob
 from app.models.reporting import MonthlyReport, ReportSchedule
+from app.services import durable_job_service
 from tests.conftest import create_test_campaign
 
 
@@ -186,3 +187,87 @@ def test_internal_job_drain_runs_daily_intelligence_cycle_idempotently(
     assert second_payload["claimed"] == 0
     assert second_payload["processed"] == 0
     assert calls == [campaign.id]
+
+
+def test_tenant_can_run_daily_intelligence_cycle_once(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    token_a = _login(client, "a@example.com", "pass-a")
+    token_b = _login(client, "b@example.com", "pass-b")
+    campaign_payload = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Manual Intelligence Cycle", "domain": "manual-cycle.example"},
+        headers={"Authorization": f"Bearer {token_a}"},
+    ).json()["data"]
+    campaign = db_session.get(Campaign, campaign_payload["id"])
+    assert campaign is not None
+    campaign.setup_state = "Active"
+    db_session.commit()
+
+    calls: list[str] = []
+
+    def _run_campaign_cycle(campaign_id: str, db) -> dict:  # noqa: ANN001
+        calls.append(campaign_id)
+        return {
+            "campaign_id": campaign_id,
+            "activation": {
+                "mode": "recommendation_only",
+                "mutation_scheduling_enabled": False,
+                "mutation_execution_enabled": False,
+            },
+            "recommendations_generated": 3,
+            "executions_scheduled": 0,
+            "executions_completed": 0,
+        }
+
+    monkeypatch.setattr(
+        durable_job_service,
+        "run_campaign_cycle",
+        _run_campaign_cycle,
+    )
+    endpoint = (
+        "/api/v1/intelligence/cycles/run"
+        f"?campaign_id={campaign.id}"
+    )
+    first = client.post(
+        endpoint,
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert first.status_code == 200
+    first_payload = first.json()["data"]
+    assert first_payload["status"] == "completed"
+    assert first_payload["created"] is True
+    assert first_payload["idempotent_replay"] is False
+    assert first_payload["safety"] == {
+        "provider_checks_allowed": False,
+        "activation_mode": "recommendation_only",
+        "mutation_scheduling_enabled": False,
+        "mutation_execution_enabled": False,
+        "executions_scheduled": 0,
+        "executions_completed": 0,
+    }
+
+    second = client.post(
+        endpoint,
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert second.status_code == 200
+    assert second.json()["data"]["idempotent_replay"] is True
+    assert calls == [campaign.id]
+    assert (
+        db_session.query(PlatformJob)
+        .filter(
+            PlatformJob.job_type == "intelligence.campaign_cycle",
+            PlatformJob.entity_id == campaign.id,
+        )
+        .count()
+        == 1
+    )
+
+    cross_tenant = client.post(
+        endpoint,
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert cross_tenant.status_code == 404

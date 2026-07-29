@@ -1,14 +1,15 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from kombu.exceptions import KombuError
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
+from app.models.campaign import Campaign
 from app.schemas.intelligence import AdvanceMonthIn, IntelligenceScoreOut, RecommendationOut, RecommendationTransitionIn
-from app.services import intelligence_service
+from app.services import durable_job_service, intelligence_service
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
 from app.services.recommendation_outcome_service import (
     get_campaign_outcome_history,
@@ -197,6 +198,55 @@ def get_intelligence_outcomes(
         ],
     )
     return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.post("/cycles/run")
+def run_intelligence_cycle(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None or campaign.tenant_id != user["tenant_id"]:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if campaign.setup_state.lower() != "active":
+        raise HTTPException(status_code=400, detail="Campaign must be active")
+
+    job = durable_job_service.run_intelligence_campaign_job_now(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
+    result = job.get("result") if isinstance(job.get("result"), dict) else {}
+    activation = (
+        result.get("activation")
+        if isinstance(result.get("activation"), dict)
+        else {}
+    )
+    safety = {
+        "provider_checks_allowed": False,
+        "activation_mode": activation.get("mode", "recommendation_only"),
+        "mutation_scheduling_enabled": bool(
+            activation.get("mutation_scheduling_enabled", False)
+        ),
+        "mutation_execution_enabled": bool(
+            activation.get("mutation_execution_enabled", False)
+        ),
+        "executions_scheduled": int(result.get("executions_scheduled", 0) or 0),
+        "executions_completed": int(result.get("executions_completed", 0) or 0),
+    }
+    if (
+        safety["mutation_scheduling_enabled"]
+        or safety["mutation_execution_enabled"]
+        or safety["executions_scheduled"] > 0
+        or safety["executions_completed"] > 0
+    ):
+        raise HTTPException(
+            status_code=500,
+            detail="Intelligence cycle violated recommendation-only safety constraints",
+        )
+    return envelope(request, {**job, "safety": safety})
 
 
 @intelligence_router.post("/recommendations/{recommendation_id}/measure-outcome")

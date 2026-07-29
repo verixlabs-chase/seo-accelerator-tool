@@ -122,24 +122,119 @@ def enqueue_due_intelligence_campaign_jobs(
         .all()
     )
     for campaign in rows:
-        job_service.create_job(
+        create_intelligence_campaign_job(
             db,
-            tenant_id=campaign.tenant_id,
-            job_type=INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE,
-            entity_type="campaign",
-            entity_id=campaign.id,
-            idempotency_key=f"intelligence-cycle:{campaign.id}:{cycle_date}",
-            payload={
-                "tenant_id": campaign.tenant_id,
-                "campaign_id": campaign.id,
-                "cycle_date": cycle_date,
-                "provider_checks_allowed": False,
-            },
+            campaign=campaign,
+            cycle_date=cycle_date,
             available_at=resolved_now,
-            max_retries=2,
         )
     db.flush()
     return len(rows)
+
+
+def create_intelligence_campaign_job(
+    db: Session,
+    *,
+    campaign: Campaign,
+    cycle_date: str,
+    available_at: datetime | None = None,
+) -> PlatformJob:
+    return job_service.create_job(
+        db,
+        tenant_id=campaign.tenant_id,
+        job_type=INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE,
+        entity_type="campaign",
+        entity_id=campaign.id,
+        idempotency_key=f"intelligence-cycle:{campaign.id}:{cycle_date}",
+        payload={
+            "tenant_id": campaign.tenant_id,
+            "campaign_id": campaign.id,
+            "cycle_date": cycle_date,
+            "provider_checks_allowed": False,
+        },
+        available_at=available_at or datetime.now(UTC),
+        max_retries=2,
+    )
+
+
+def run_intelligence_campaign_job_now(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    resolved_now = now or datetime.now(UTC)
+    campaign = db.get(Campaign, campaign_id)
+    if (
+        campaign is None
+        or campaign.tenant_id != tenant_id
+        or campaign.setup_state.lower() != "active"
+    ):
+        raise ValueError("Campaign must be active and tenant-scoped.")
+
+    cycle_date = resolved_now.date().isoformat()
+    idempotency_key = f"intelligence-cycle:{campaign.id}:{cycle_date}"
+    existing = (
+        db.query(PlatformJob)
+        .filter(PlatformJob.idempotency_key == idempotency_key)
+        .first()
+    )
+    job = create_intelligence_campaign_job(
+        db,
+        campaign=campaign,
+        cycle_date=cycle_date,
+        available_at=resolved_now,
+    )
+    created = existing is None
+    db.commit()
+    db.refresh(job)
+
+    if job.status == job_service.JOB_STATUS_COMPLETED:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": created,
+            "idempotent_replay": True,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    if job.status == job_service.JOB_STATUS_RUNNING:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": created,
+            "idempotent_replay": False,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    if job.status == job_service.JOB_STATUS_DEAD_LETTER:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": created,
+            "idempotent_replay": False,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+
+    job_service.start_job(
+        db,
+        job.id,
+        worker_id=f"tenant-intelligence-{uuid.uuid4()}",
+        lease_seconds=get_settings().durable_job_lease_seconds,
+    )
+    db.commit()
+    execution = execute_claimed_job(db, job_id=job.id)
+    refreshed = db.get(PlatformJob, job.id)
+    return {
+        "job_id": job.id,
+        "status": execution["status"],
+        "created": created,
+        "idempotent_replay": False,
+        "result": _json_safe(refreshed.result if refreshed is not None else None),
+        "error": refreshed.error if refreshed is not None else None,
+    }
 
 
 def _record_handler_failure(

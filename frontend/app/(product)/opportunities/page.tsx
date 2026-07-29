@@ -131,6 +131,26 @@ type OutcomeHistoryResponse = {
   truth?: RuntimeTruth;
 };
 
+type IntelligenceCycleResponse = {
+  status?: string;
+  created?: boolean;
+  idempotent_replay?: boolean;
+  result?: {
+    recommendations_generated?: number;
+    recommendations_selected_by_simulation?: number;
+    executions_scheduled?: number;
+    executions_completed?: number;
+  };
+  safety?: {
+    provider_checks_allowed?: boolean;
+    activation_mode?: string;
+    mutation_scheduling_enabled?: boolean;
+    mutation_execution_enabled?: boolean;
+    executions_scheduled?: number;
+    executions_completed?: number;
+  };
+};
+
 type ExecutionResult = {
   status?: string;
   notes?: string;
@@ -1002,6 +1022,33 @@ export default function OpportunitiesPage() {
     });
   }
 
+  async function runStoredDataIntelligenceCycle() {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+
+    await runAction("run-intelligence-cycle", async () => {
+      const response = (await platformApi(
+        `/intelligence/cycles/run?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      )) as IntelligenceCycleResponse;
+      await loadOpportunities(selectedCampaignId);
+      if (response.idempotent_replay) {
+        setNotice(
+          "Today’s stored-data intelligence cycle was already completed. The existing result was reused and no duplicate work was created.",
+        );
+        return;
+      }
+      setNotice(
+        `Stored-data intelligence completed with ${response.result?.recommendations_generated || 0} recommendations. Provider checks stayed off and ${response.safety?.executions_scheduled || 0} executions were scheduled.`,
+      );
+    });
+  }
+
   async function transitionExecution(
     executionId: string,
     action: "approve" | "reject" | "run" | "retry" | "cancel" | "rollback",
@@ -1220,6 +1267,15 @@ export default function OpportunitiesPage() {
             className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Reload saved data
+          </button>
+          <button
+            onClick={() => void runStoredDataIntelligenceCycle()}
+            disabled={!selectedCampaignId || busyAction !== ""}
+            className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-sm font-medium text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busyAction === "run-intelligence-cycle"
+              ? "Running intelligence..."
+              : "Run saved-data intelligence"}
           </button>
           <button
             onClick={() => router.push("/reports")}
