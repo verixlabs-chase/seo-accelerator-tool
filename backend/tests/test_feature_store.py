@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from app.intelligence.feature_store import compute_features
+from app.intelligence.temporal_ingestion import write_temporal_signals
 from app.models.content import ContentAsset
 from app.models.crawl import CrawlPageResult, TechnicalIssue
 from app.models.temporal import MomentumMetric, TemporalSignalSnapshot, TemporalSignalType
@@ -99,3 +100,52 @@ def test_compute_features_returns_expected_keys_and_persists(db_session, create_
         .count()
     )
     assert persisted >= 4
+
+
+def test_temporal_signal_writes_are_batched_and_idempotent(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+) -> None:
+    tenant = create_test_tenant(name='Temporal Batch Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Temporal Batch Org')
+    campaign = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=tenant.id,
+        name='Temporal Batch Campaign',
+        domain='temporal-batch.example',
+    )
+    observed_at = datetime.now(UTC)
+    payload = {
+        'avg_rank': 12.5,
+        'content_count': 4,
+        'not_numeric': 'unknown',
+    }
+
+    first = write_temporal_signals(
+        campaign.id,
+        payload,
+        db=db_session,
+        observed_at=observed_at,
+        source='batch_test',
+    )
+    second = write_temporal_signals(
+        campaign.id,
+        payload,
+        db=db_session,
+        observed_at=observed_at,
+        source='batch_test',
+    )
+
+    assert first == {'inserted': 2, 'skipped': 1}
+    assert second == {'inserted': 0, 'skipped': 3}
+    assert (
+        db_session.query(TemporalSignalSnapshot)
+        .filter(
+            TemporalSignalSnapshot.campaign_id == campaign.id,
+            TemporalSignalSnapshot.source == 'batch_test',
+        )
+        .count()
+        == 2
+    )

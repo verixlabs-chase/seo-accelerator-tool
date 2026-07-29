@@ -47,7 +47,7 @@ def write_temporal_signals(
             raise ValueError(f'Campaign not found: {campaign_id}')
 
         _ = tenant_id or campaign.tenant_id
-        inserted = 0
+        candidates: list[tuple[str, float, TemporalSignalType, float, str]] = []
         skipped = 0
 
         for metric_name, raw_value in signals.items():
@@ -65,24 +65,29 @@ def write_temporal_signals(
                 observed_at=observed,
                 source=source,
             )
+            candidates.append((metric_name, numeric, signal_type, confidence, version_hash))
 
-            existing = (
-                session.query(TemporalSignalSnapshot)
-                .filter(
-                    TemporalSignalSnapshot.campaign_id == campaign_id,
-                    TemporalSignalSnapshot.signal_type == signal_type,
-                    TemporalSignalSnapshot.metric_name == metric_name,
-                    TemporalSignalSnapshot.observed_at == observed,
-                    TemporalSignalSnapshot.source == source,
-                    TemporalSignalSnapshot.version_hash == version_hash,
+        candidate_hashes = [item[4] for item in candidates]
+        existing_hashes = (
+            {
+                str(version_hash)
+                for (version_hash,) in (
+                    session.query(TemporalSignalSnapshot.version_hash)
+                    .filter(
+                        TemporalSignalSnapshot.campaign_id == campaign_id,
+                        TemporalSignalSnapshot.observed_at == observed,
+                        TemporalSignalSnapshot.source == source,
+                        TemporalSignalSnapshot.version_hash.in_(candidate_hashes),
+                    )
+                    .all()
                 )
-                .first()
-            )
-            if existing is not None:
-                skipped += 1
-                continue
+            }
+            if candidate_hashes
+            else set()
+        )
 
-            row = TemporalSignalSnapshot(
+        rows = [
+            TemporalSignalSnapshot(
                 campaign_id=campaign_id,
                 signal_type=signal_type,
                 metric_name=metric_name,
@@ -92,8 +97,13 @@ def write_temporal_signals(
                 confidence=confidence,
                 version_hash=version_hash,
             )
-            session.add(row)
-            inserted += 1
+            for metric_name, numeric, signal_type, confidence, version_hash in candidates
+            if version_hash not in existing_hashes
+        ]
+        skipped += len(candidates) - len(rows)
+        inserted = len(rows)
+        if rows:
+            session.add_all(rows)
 
         if inserted > 0:
             session.flush()

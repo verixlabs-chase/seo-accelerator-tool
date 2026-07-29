@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from hashlib import sha256
 import re
 from time import perf_counter
@@ -32,6 +32,7 @@ from app.core.metrics import campaign_execution_lock_wait
 from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.models.intelligence import StrategyRecommendation
+from app.models.intelligence_metrics_snapshot import IntelligenceMetricsSnapshot
 from app.models.recommendation_execution import RecommendationExecution
 from app.models.recommendation_outcome import RecommendationOutcome
 from app.utils.enum_guard import ensure_enum
@@ -88,6 +89,7 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
 
         cycle_started_at = datetime.now(UTC)
         activation_mode = get_settings().intelligence_activation_mode
+        recommendation_only = activation_mode != 'autonomous'
         campaign_started_perf = perf_counter()
         stage_timings: dict[str, float] = {}
 
@@ -109,7 +111,13 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         stage_timings['write_temporal_signals'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
-        features = compute_features(campaign_id, db=session, persist=True, publish=False)
+        features = compute_features(
+            campaign_id,
+            db=session,
+            persist=True,
+            publish=False,
+            signals=signals,
+        )
         stage_timings['compute_features'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
@@ -124,7 +132,11 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         stage_timings['detect_patterns'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
-        cohort_patterns = discover_cohort_patterns(session, campaign_id=campaign_id, features=features)
+        cohort_patterns = (
+            []
+            if recommendation_only
+            else discover_cohort_patterns(session, campaign_id=campaign_id, features=features)
+        )
         stage_timings['discover_cohort_patterns'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
@@ -147,6 +159,7 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             legacy_policies=legacy_policies,
             cycle_started_at=cycle_started_at,
             activation_mode=activation_mode,
+            include_transfer_strategies=not recommendation_only,
         )
         legacy_packaging = build_legacy_packaging(
             campaign_id=campaign.id,
@@ -163,6 +176,16 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             session,
             campaign_id=campaign.id,
             recommendations=recommendations,
+            twin_state=(
+                _build_precomputed_twin_state(
+                    campaign_id=campaign.id,
+                    signals=signals,
+                    features=features,
+                )
+                if recommendation_only
+                else None
+            ),
+            persist_simulations=not recommendation_only,
         )
         stage_timings['digital_twin_selection'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
@@ -191,7 +214,20 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         stage_timings['policy_learning'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
-        metrics_snapshot = compute_campaign_metrics(campaign_id, db=session, metric_date=cycle_started_at.date())
+        metrics_snapshot = (
+            _record_recommendation_only_metrics(
+                session,
+                campaign_id=campaign_id,
+                metric_date=cycle_started_at.date(),
+                signals_processed=len(signals),
+                features_computed=len(features),
+                patterns_detected=len(direct_patterns) + len(cohort_patterns) + len(legacy_patterns),
+                recommendations_generated=len(recommendations),
+                simulation_result=simulation_result,
+            )
+            if recommendation_only
+            else compute_campaign_metrics(campaign_id, db=session, metric_date=cycle_started_at.date())
+        )
         stage_timings['metrics_aggregation'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         total_runtime_ms = round((perf_counter() - campaign_started_perf) * 1000.0, 3)
@@ -203,6 +239,11 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         return {
             'campaign_id': campaign_id,
             'pipeline_version': PIPELINE_VERSION,
+            'runtime_profile': (
+                'serverless_recommendation_only'
+                if recommendation_only
+                else 'autonomous_full'
+            ),
             'activation': {
                 'mode': activation_mode,
                 'recommendation_generation_enabled': True,
@@ -394,6 +435,7 @@ def _generate_and_persist_recommendations(
     activation_mode: str,
     legacy_patterns: list[dict[str, Any]] | None = None,
     legacy_policies: list[dict[str, Any]] | None = None,
+    include_transfer_strategies: bool = True,
 ) -> list[StrategyRecommendation]:
     all_patterns = sorted(
         direct_patterns + cohort_patterns + list(legacy_patterns or []),
@@ -407,7 +449,11 @@ def _generate_and_persist_recommendations(
         for recommendation in generate_recommendations(policy)
     ]
 
-    transfer_payload = transfer_strategies(campaign.id, db=db)
+    transfer_payload = (
+        transfer_strategies(campaign.id, db=db)
+        if include_transfer_strategies
+        else {'strategies': []}
+    )
     transfer_strategies_list = transfer_payload.get('strategies', [])
     if isinstance(transfer_strategies_list, list):
         for strategy in transfer_strategies_list:
@@ -432,7 +478,9 @@ def _generate_and_persist_recommendations(
                 }
             )
 
-    persisted: list[StrategyRecommendation] = []
+    normalized_recommendations: list[
+        tuple[dict[str, Any], str, str, str, str]
+    ] = []
     for recommendation in policy_recommendations:
         raw_recommendation_type = str(recommendation.get('recommendation_type', 'policy::unknown::action'))
         action = str(recommendation.get('action', 'unknown_action'))
@@ -451,16 +499,46 @@ def _generate_and_persist_recommendations(
             recommendation_type=recommendation_type,
             action=action,
         )
+        normalized_recommendations.append(
+            (
+                recommendation,
+                action,
+                recommendation_type,
+                policy_id,
+                idempotency_key,
+            )
+        )
 
-        existing = (
+    idempotency_keys = [item[4] for item in normalized_recommendations]
+    existing_rows = (
+        (
             db.query(StrategyRecommendation)
             .filter(
                 StrategyRecommendation.tenant_id == campaign.tenant_id,
                 StrategyRecommendation.campaign_id == campaign.id,
-                StrategyRecommendation.idempotency_key == idempotency_key,
+                StrategyRecommendation.idempotency_key.in_(idempotency_keys),
             )
-            .first()
+            .all()
         )
+        if idempotency_keys
+        else []
+    )
+    rows_by_idempotency_key = {
+        str(row.idempotency_key): row
+        for row in existing_rows
+        if row.idempotency_key
+    }
+
+    persisted: list[StrategyRecommendation] = []
+    new_rows: list[StrategyRecommendation] = []
+    for (
+        recommendation,
+        action,
+        recommendation_type,
+        policy_id,
+        idempotency_key,
+    ) in normalized_recommendations:
+        existing = rows_by_idempotency_key.get(idempotency_key)
         if existing is not None:
             persisted.append(existing)
             continue
@@ -508,8 +586,12 @@ def _generate_and_persist_recommendations(
             build_hash=_hash_payload({'policy_id': contract_payload.policy_id, 'action': action, 'idempotency_key': idempotency_key}),
         )
         db.add(row)
-        db.flush()
+        rows_by_idempotency_key[idempotency_key] = row
+        new_rows.append(row)
         persisted.append(row)
+
+    if new_rows:
+        db.flush()
 
     if not persisted:
         fallback_key = f'{campaign.id}:{cycle_started_at.date().isoformat()}:fallback:stabilize_foundations'
@@ -584,11 +666,98 @@ def _execute_scheduled_executions(db: Session, executions: list[RecommendationEx
     return completed
 
 
+def _build_precomputed_twin_state(
+    *,
+    campaign_id: str,
+    signals: dict[str, float],
+    features: dict[str, float],
+) -> DigitalTwinState:
+    technical_issue_count = int(float(signals.get('technical_issue_count', 0.0) or 0.0))
+    issue_density = max(0.0, float(features.get('technical_issue_density', 0.0) or 0.0))
+    inferred_pages = (
+        max(1, int(round(technical_issue_count / issue_density)))
+        if technical_issue_count > 0 and issue_density > 0
+        else max(1, int(float(signals.get('content_count', 0.0) or 0.0)))
+    )
+    internal_link_ratio = max(
+        0.0,
+        min(1.0, float(features.get('internal_link_ratio', 1.0) or 1.0)),
+    )
+    return DigitalTwinState(
+        campaign_id=campaign_id,
+        avg_rank=float(signals.get('avg_rank', 100.0) or 100.0),
+        traffic_estimate=float(signals.get('sessions', 0.0) or 0.0),
+        technical_issue_count=technical_issue_count,
+        internal_link_count=max(0, int(round(inferred_pages * internal_link_ratio))),
+        content_page_count=int(float(signals.get('content_count', 0.0) or 0.0)),
+        review_velocity=float(signals.get('review_velocity', 0.0) or 0.0),
+        local_health_score=float(signals.get('local_health', 0.0) or 0.0),
+        momentum_score=float(signals.get('ranking_velocity', 0.0) or 0.0),
+    )
+
+
+def _record_recommendation_only_metrics(
+    db: Session,
+    *,
+    campaign_id: str,
+    metric_date: date,
+    signals_processed: int,
+    features_computed: int,
+    patterns_detected: int,
+    recommendations_generated: int,
+    simulation_result: dict[str, Any],
+) -> IntelligenceMetricsSnapshot:
+    snapshot = (
+        db.query(IntelligenceMetricsSnapshot)
+        .filter(
+            IntelligenceMetricsSnapshot.campaign_id == campaign_id,
+            IntelligenceMetricsSnapshot.metric_date == metric_date,
+        )
+        .first()
+    )
+    if snapshot is None:
+        snapshot = IntelligenceMetricsSnapshot(
+            campaign_id=campaign_id,
+            metric_date=metric_date,
+        )
+        db.add(snapshot)
+
+    candidates_evaluated = int(simulation_result.get('candidates_evaluated', 0) or 0)
+    snapshot.signals_processed = signals_processed
+    snapshot.features_computed = features_computed
+    snapshot.patterns_detected = patterns_detected
+    snapshot.recommendations_generated = recommendations_generated
+    snapshot.executions_run = 0
+    snapshot.policy_updates_applied = 0
+    snapshot.simulations_run = candidates_evaluated
+    snapshot.avg_predicted_rank_delta = round(
+        float(simulation_result.get('predicted_rank_delta', 0.0) or 0.0),
+        6,
+    )
+    snapshot.avg_confidence = round(
+        float(simulation_result.get('confidence', 0.0) or 0.0),
+        6,
+    )
+    snapshot.optimizer_selection_rate = (
+        round(1.0 / candidates_evaluated, 6)
+        if candidates_evaluated > 0
+        else 0.0
+    )
+    snapshot.avg_prediction_error_rank = 0.0
+    snapshot.avg_prediction_error_traffic = 0.0
+    snapshot.prediction_accuracy_score = 0.0
+    snapshot.created_at = datetime.now(UTC)
+    db.flush()
+    return snapshot
+
+
 def _select_recommendations_via_digital_twin(
     db: Session,
     *,
     campaign_id: str,
     recommendations: list[StrategyRecommendation],
+    twin_state: DigitalTwinState | None = None,
+    persist_simulations: bool = True,
 ) -> tuple[list[StrategyRecommendation], dict[str, Any]]:
     ordered = sorted(recommendations, key=lambda row: row.id)
     if not ordered:
@@ -608,8 +777,12 @@ def _select_recommendations_via_digital_twin(
         by_strategy_id[strategy_id] = recommendation
 
     try:
-        twin_state = DigitalTwinState.from_campaign_data(db, campaign_id)
-        winning = optimize_strategy(twin_state, candidate_strategies, db=db)
+        resolved_twin_state = twin_state or DigitalTwinState.from_campaign_data(db, campaign_id)
+        winning = optimize_strategy(
+            resolved_twin_state,
+            candidate_strategies,
+            db=db if persist_simulations else None,
+        )
     except Exception as exc:  # pragma: no cover
         return ordered, {
             'status': 'failed_open',
@@ -632,6 +805,9 @@ def _select_recommendations_via_digital_twin(
         'selected_recommendation_ids': [selected.id],
         'expected_value': float(winning.get('expected_value', 0.0) or 0.0),
         'simulation_id': simulation.get('simulation_id'),
+        'candidates_evaluated': len(candidate_strategies),
+        'predicted_rank_delta': float(simulation.get('predicted_rank_delta', 0.0) or 0.0),
+        'confidence': float(simulation.get('confidence', 0.0) or 0.0),
     }
 
 

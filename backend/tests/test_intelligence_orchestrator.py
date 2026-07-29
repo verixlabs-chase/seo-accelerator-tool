@@ -127,6 +127,12 @@ def test_recommendation_only_cycle_never_schedules_mutations(
             AssertionError('recommendation-only cycles must not schedule executions')
         ),
     )
+    monkeypatch.setattr(
+        'app.intelligence.intelligence_orchestrator.transfer_strategies',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError('recommendation-only cycles must use the serverless-safe profile')
+        ),
+    )
     original_assemble_signals = intelligence_orchestrator.assemble_signals
     original_compute_features = intelligence_orchestrator.compute_features
     pipeline_publish_flags: dict[str, bool | None] = {}
@@ -150,6 +156,7 @@ def test_recommendation_only_cycle_never_schedules_mutations(
         'mutation_scheduling_enabled': False,
         'mutation_execution_enabled': False,
     }
+    assert summary['runtime_profile'] == 'serverless_recommendation_only'
     assert summary['recommendations_generated'] > 0
     assert summary['recommendations_selected_for_execution'] == 0
     assert summary['executions_scheduled'] == 0

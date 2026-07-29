@@ -19,14 +19,15 @@ def compute_features(
     *,
     persist: bool = True,
     publish: bool = True,
+    signals: dict[str, float] | None = None,
 ) -> dict[str, float]:
     owns_session = db is None
     session = db or SessionLocal()
     try:
-        signals = assemble_signals(campaign_id, db=session, publish=False)
+        resolved_signals = signals or assemble_signals(campaign_id, db=session, publish=False)
 
-        technical_issue_count = float(signals.get('technical_issue_count', 0.0))
-        content_count = max(float(signals.get('content_count', 0.0)), 1.0)
+        technical_issue_count = float(resolved_signals.get('technical_issue_count', 0.0))
+        content_count = max(float(resolved_signals.get('content_count', 0.0)), 1.0)
 
         crawled_pages = float(
             session.query(CrawlPageResult)
