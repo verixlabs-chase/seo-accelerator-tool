@@ -143,6 +143,7 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             legacy_patterns=legacy_patterns,
             legacy_policies=legacy_policies,
             cycle_started_at=cycle_started_at,
+            activation_mode=activation_mode,
         )
         legacy_packaging = build_legacy_packaging(
             campaign_id=campaign.id,
@@ -387,6 +388,7 @@ def _generate_and_persist_recommendations(
     direct_patterns: list[dict[str, Any]],
     cohort_patterns: list[dict[str, Any]],
     cycle_started_at: datetime,
+    activation_mode: str,
     legacy_patterns: list[dict[str, Any]] | None = None,
     legacy_policies: list[dict[str, Any]] | None = None,
 ) -> list[StrategyRecommendation]:
@@ -489,7 +491,14 @@ def _generate_and_persist_recommendations(
             evidence_json=evidence_json,
             risk_tier=contract_payload.risk_tier,
             rollback_plan_json=json.dumps(contract_payload.rollback_plan, sort_keys=True),
-            status=ensure_enum(StrategyRecommendationStatus.APPROVED, StrategyRecommendationStatus),
+            status=ensure_enum(
+                (
+                    StrategyRecommendationStatus.APPROVED
+                    if activation_mode == 'autonomous'
+                    else StrategyRecommendationStatus.GENERATED
+                ),
+                StrategyRecommendationStatus,
+            ),
             idempotency_key=idempotency_key,
             input_hash=_hash_payload(features),
             output_hash=_hash_payload(contract_payload.model_dump(mode='json')),
@@ -534,7 +543,14 @@ def _generate_and_persist_recommendations(
                 evidence_json=json.dumps({'evidence': fallback_payload.evidence, 'patterns': all_patterns, 'features': features}, sort_keys=True),
                 risk_tier=fallback_payload.risk_tier,
                 rollback_plan_json=json.dumps(fallback_payload.rollback_plan, sort_keys=True),
-                status=ensure_enum(StrategyRecommendationStatus.APPROVED, StrategyRecommendationStatus),
+                status=ensure_enum(
+                    (
+                        StrategyRecommendationStatus.APPROVED
+                        if activation_mode == 'autonomous'
+                        else StrategyRecommendationStatus.GENERATED
+                    ),
+                    StrategyRecommendationStatus,
+                ),
                 idempotency_key=fallback_key,
                 input_hash=_hash_payload(features),
                 output_hash=_hash_payload(fallback_payload.model_dump(mode='json')),
@@ -728,4 +744,3 @@ def _current_window(now: datetime):
     from app.services.strategy_engine.schemas import StrategyWindow
 
     return StrategyWindow(date_from=now.replace(day=1), date_to=now)
-

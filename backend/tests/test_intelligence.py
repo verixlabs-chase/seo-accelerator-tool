@@ -1,7 +1,11 @@
+from datetime import UTC, datetime
+import json
+
 import pytest
 from fastapi import HTTPException
 
 from app.models.campaign import Campaign
+from app.models.intelligence import StrategyRecommendation
 from app.models.tenant import Tenant
 from app.schemas.intelligence import IntelligenceScoreOut, RecommendationOut
 from app.services import intelligence_service
@@ -41,6 +45,7 @@ def test_intelligence_score_recommendations_and_advance_month(db_session):
     assert "rollback_plan" in first
     assert isinstance(first["rollback_plan"], dict)
     assert len(first["rollback_plan"]) >= 1
+    assert first["engine_source"] == "heuristic_threshold_v1"
 
     with pytest.raises(HTTPException) as invalid_transition:
         intelligence_service.transition_recommendation_state(
@@ -86,3 +91,72 @@ def test_intelligence_score_recommendations_and_advance_month(db_session):
         override=True,
     )
     assert advanced["advanced_to_month"] == 2
+
+
+def test_deep_recommendation_contract_exposes_evidence_and_engine_source():
+    payload = RecommendationOut.model_validate(
+        {
+            "id": "recommendation-id",
+            "tenant_id": "tenant-id",
+            "campaign_id": "campaign-id",
+            "recommendation_type": "policy::technical_health::fix_titles",
+            "rationale": "Fix missing page titles.",
+            "confidence": 0.84,
+            "confidence_score": 0.84,
+            "evidence_json": json.dumps(
+                {
+                    "evidence": ["12 pages are missing titles"],
+                    "policy_id": "technical_health",
+                }
+            ),
+            "risk_tier": 2,
+            "rollback_plan_json": json.dumps({"steps": ["restore prior titles"]}),
+            "status": "GENERATED",
+            "created_at": datetime.now(UTC),
+        }
+    ).model_dump(mode="json")
+
+    assert payload["evidence"] == ["12 pages are missing titles"]
+    assert payload["engine_source"] == "orchestrator_v1"
+
+
+def test_deep_recommendation_can_enter_human_review(db_session):
+    tenant = db_session.query(Tenant).filter(Tenant.name == "Tenant A").first()
+    assert tenant is not None
+    campaign = Campaign(
+        tenant_id=tenant.id,
+        organization_id=tenant.id,
+        name="Deep Recommendation Campaign",
+        domain="deep-recommendation.example",
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    recommendation = StrategyRecommendation(
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_type="policy::technical_health::fix_titles",
+        rationale="Fix missing page titles.",
+        confidence=0.84,
+        confidence_score=0.84,
+        evidence_json=json.dumps(
+            {
+                "evidence": ["12 pages are missing titles"],
+                "policy_id": "technical_health",
+            }
+        ),
+        risk_tier=2,
+        rollback_plan_json=json.dumps({"steps": ["restore prior titles"]}),
+        status="GENERATED",
+    )
+    db_session.add(recommendation)
+    db_session.commit()
+
+    reviewed = intelligence_service.transition_recommendation_state(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_id=recommendation.id,
+        target_state="VALIDATED",
+    )
+
+    assert reviewed.status == "VALIDATED"

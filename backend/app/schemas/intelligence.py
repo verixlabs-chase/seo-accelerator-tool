@@ -40,7 +40,21 @@ class RecommendationOut(BaseModel):
             return []
         if isinstance(data, list):
             return [str(item) for item in data]
+        if isinstance(data, dict) and isinstance(data.get("evidence"), list):
+            return [str(item) for item in data["evidence"]]
         return []
+
+    @computed_field(return_type=str)
+    def engine_source(self) -> str:
+        if self.recommendation_type.startswith(("policy::", "transfer::")):
+            return "orchestrator_v1"
+        try:
+            data = json.loads(self.evidence_json or "[]")
+        except json.JSONDecodeError:
+            data = []
+        if isinstance(data, dict) and data.get("policy_id"):
+            return "orchestrator_v1"
+        return "heuristic_threshold_v1"
 
     @computed_field(return_type=dict)
     def rollback_plan(self) -> dict:

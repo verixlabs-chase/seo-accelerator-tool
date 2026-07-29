@@ -15,6 +15,7 @@ from app.utils.enum_guard import ensure_enum
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.local import LocalHealthSnapshot
 from app.models.rank import Ranking
+from app.services.intelligence_runtime_service import build_intelligence_engine_state
 
 RECOMMENDATION_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "DRAFT": {"GENERATED"},
@@ -242,7 +243,8 @@ def _validate_recommendation_payload(rec: StrategyRecommendation) -> None:
         evidence = json.loads(rec.evidence_json or "[]")
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="evidence_json must be valid JSON list") from exc
-    if not isinstance(evidence, list) or len(evidence) == 0:
+    evidence_items = evidence.get("evidence") if isinstance(evidence, dict) else evidence
+    if not isinstance(evidence_items, list) or len(evidence_items) == 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="evidence must be a non-empty array")
     try:
         rollback_plan = json.loads(rec.rollback_plan_json or "{}")
@@ -339,12 +341,21 @@ def get_recommendation_summary(db: Session, tenant_id: str, campaign_id: str) ->
         .filter(StrategyRecommendation.tenant_id == tenant_id, StrategyRecommendation.campaign_id == campaign_id)
         .scalar()
     )
+    recommendation_rows = (
+        db.query(StrategyRecommendation)
+        .filter(
+            StrategyRecommendation.tenant_id == tenant_id,
+            StrategyRecommendation.campaign_id == campaign_id,
+        )
+        .all()
+    )
     return {
         "campaign_id": campaign_id,
         "total_count": int(total),
         "counts_by_state": {str(state): int(count) for state, count in by_state_rows},
         "counts_by_risk_tier": {str(risk): int(count) for risk, count in by_risk_rows},
         "average_confidence_score": round(float(avg_confidence), 4) if avg_confidence is not None else 0.0,
+        "engine": build_intelligence_engine_state(recommendation_rows),
     }
 
 
@@ -374,8 +385,6 @@ def advance_month(db: Session, tenant_id: str, campaign_id: str, override: bool)
     campaign.month_number = min(12, campaign.month_number + 1)
     db.commit()
     return {"campaign_id": campaign.id, "advanced_to_month": campaign.month_number, "override": override}
-
-
 
 
 

@@ -9,6 +9,7 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.schemas.intelligence import AdvanceMonthIn, IntelligenceScoreOut, RecommendationOut, RecommendationTransitionIn
 from app.services import intelligence_service
+from app.services.intelligence_runtime_service import build_intelligence_engine_state
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     campaigns_evaluate_monthly_rules,
@@ -27,9 +28,21 @@ def _intelligence_truth(
     has_items: bool,
     captured_at: str | None = None,
     summary: str,
+    engine: dict | None = None,
 ) -> dict:
-    states = ["heuristic"]
-    reasons = ["intelligence_surfaces_are_threshold_and_rule_driven"]
+    engine = engine or {}
+    orchestrator_count = int(engine.get("orchestrator_recommendation_count", 0) or 0)
+    heuristic_count = int(engine.get("heuristic_recommendation_count", 0) or 0)
+    states = ["generated"] if orchestrator_count and not heuristic_count else ["heuristic"]
+    reasons = (
+        ["stored_data_orchestrator_generated_guidance"]
+        if orchestrator_count
+        else ["intelligence_surfaces_are_threshold_and_rule_driven"]
+    )
+    if orchestrator_count and heuristic_count:
+        reasons.append("guidance_contains_orchestrator_and_threshold_recommendations")
+    if engine.get("activation_mode") == "recommendation_only":
+        reasons.append("recommendation_only_mode_blocks_mutation_scheduling_and_execution")
     if not has_items:
         states.append("in_progress" if job_queued else "unavailable")
     if job_queued:
@@ -42,7 +55,11 @@ def _intelligence_truth(
     return build_truth(
         states=states,
         summary=summary,
-        provider_state="heuristic_model",
+        provider_state=(
+            "stored_data_orchestrator"
+            if orchestrator_count
+            else "heuristic_model"
+        ),
         setup_state="configured",
         operator_state="operator_review_required",
         freshness_state=freshness_state,
@@ -63,11 +80,13 @@ def get_intelligence_score(
         task = None
     score = intelligence_service.get_latest_score(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     score_payload = IntelligenceScoreOut.model_validate(score).model_dump(mode="json")
+    engine = build_intelligence_engine_state([], fallback_source="heuristic_score_v1")
     truth = _intelligence_truth(
         job_queued=task is not None,
         has_items=score is not None,
         captured_at=score_payload.get("captured_at"),
         summary="Opportunity score is heuristic. It summarizes stored crawl, ranking, content, and local signals, not live provider-backed execution readiness.",
+        engine=engine,
     )
     return envelope(
         request,
@@ -75,6 +94,7 @@ def get_intelligence_score(
             "job_id": task.id if task is not None else None,
             "score_value": score_payload["score_value"],
             "latest_score": score_payload,
+            "engine": engine,
             "truth": truth,
         },
     )
@@ -93,17 +113,25 @@ def get_intelligence_recommendations(
         task = None
     recs = intelligence_service.get_recommendations(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     items = [RecommendationOut.model_validate(r).model_dump(mode="json") for r in recs]
+    engine = build_intelligence_engine_state(recs)
+    has_orchestrator_guidance = engine["orchestrator_recommendation_count"] > 0
     truth = _intelligence_truth(
         job_queued=task is not None,
         has_items=len(items) > 0,
         captured_at=items[0]["created_at"] if items else None,
-        summary="Recommendations are heuristic guidance. They still require operator review and, where relevant, provider-ready execution before they should be treated as complete.",
+        summary=(
+            "Recommendations include stored-data orchestrator guidance. Production remains recommendation-only: operator review is required and no business changes are scheduled or executed automatically."
+            if has_orchestrator_guidance
+            else "Recommendations are heuristic guidance. They require operator review and do not schedule or execute business changes automatically."
+        ),
+        engine=engine,
     )
     return envelope(
         request,
         {
             "job_id": task.id if task is not None else None,
             "items": items,
+            "engine": engine,
             "truth": truth,
         },
     )

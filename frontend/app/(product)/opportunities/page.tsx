@@ -48,9 +48,25 @@ type Recommendation = {
   confidence?: number;
   confidence_score?: number;
   evidence?: string[];
+  engine_source?: string;
   risk_tier?: number;
   status?: string;
   created_at?: string;
+};
+
+type IntelligenceEngineState = {
+  activation_mode?: string;
+  guidance_source?: string;
+  orchestrator_recommendation_count?: number;
+  heuristic_recommendation_count?: number;
+  data_scope?: string;
+  provider_checks_allowed?: boolean;
+  mutation_scheduling_enabled?: boolean;
+  mutation_execution_enabled?: boolean;
+  operator_review_required?: boolean;
+  learning_state?: string;
+  cycle_schedule?: string;
+  last_generated_at?: string | null;
 };
 
 type RecommendationSummary = {
@@ -58,6 +74,7 @@ type RecommendationSummary = {
   counts_by_state?: Record<string, number>;
   counts_by_risk_tier?: Record<string, number>;
   average_confidence_score?: number;
+  engine?: IntelligenceEngineState;
   truth?: RuntimeTruth;
 };
 
@@ -67,11 +84,13 @@ type IntelligenceScoreResponse = {
     score_value?: number;
     captured_at?: string;
   };
+  engine?: IntelligenceEngineState;
   truth?: RuntimeTruth;
 };
 
 type RecommendationListResponse = {
   items?: Recommendation[];
+  engine?: IntelligenceEngineState;
   truth?: RuntimeTruth;
 };
 
@@ -288,6 +307,29 @@ function describeType(type?: string) {
   }
 
   return toTitleCase(type);
+}
+
+function getEngineSourceLabel(source?: string) {
+  if (source === "orchestrator_v1") {
+    return "Deep intelligence pipeline";
+  }
+  if (source === "mixed_v1") {
+    return "Mixed intelligence layers";
+  }
+  if (source === "heuristic_score_v1") {
+    return "Heuristic score model";
+  }
+  if (source === "heuristic_threshold_v1") {
+    return "Heuristic baseline";
+  }
+  return "Awaiting intelligence cycle";
+}
+
+function formatEvidence(value: string) {
+  if (/^[a-z0-9_:.-]+$/i.test(value) && value.includes("_")) {
+    return toTitleCase(value);
+  }
+  return value;
 }
 
 function describeExecutionType(type?: string) {
@@ -680,6 +722,7 @@ export default function OpportunitiesPage() {
   const [summary, setSummary] = useState<RecommendationSummary | null>(null);
   const [score, setScore] = useState<IntelligenceScoreResponse | null>(null);
   const [recommendationsTruth, setRecommendationsTruth] = useState<RuntimeTruth | null>(null);
+  const [engineState, setEngineState] = useState<IntelligenceEngineState | null>(null);
   const [wordpressSetup, setWordpressSetup] = useState<WordPressExecutionSetup | null>(null);
   const [wordpressSetupError, setWordpressSetupError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -706,6 +749,7 @@ export default function OpportunitiesPage() {
       setSummary(null);
       setScore(null);
       setRecommendationsTruth(null);
+      setEngineState(null);
       setSelectedRecommendationId("");
       return;
     }
@@ -731,6 +775,12 @@ export default function OpportunitiesPage() {
     setSummary((summaryResponse as RecommendationSummary) || null);
     setScore((scoreResponse as IntelligenceScoreResponse) || null);
     setRecommendationsTruth(normalizedRecommendations?.truth || null);
+    setEngineState(
+      normalizedRecommendations?.engine ||
+        (summaryResponse as RecommendationSummary)?.engine ||
+        (scoreResponse as IntelligenceScoreResponse)?.engine ||
+        null,
+    );
     setSelectedRecommendationId((current) => {
       if (current && items.some((item) => item.id === current)) {
         return current;
@@ -993,9 +1043,13 @@ export default function OpportunitiesPage() {
         tone: highPriorityCount > 0 ? "warning" : "success",
       },
       {
-        label: "Execution inbox",
-        value: executions.length > 0 ? `${executions.length} items` : "Inbox clear",
-        tone: executions.length > 0 ? "info" : "success",
+        label: "Guidance model",
+        value: getEngineSourceLabel(engineState?.guidance_source),
+        tone:
+          engineState?.guidance_source === "orchestrator_v1" ||
+          engineState?.guidance_source === "mixed_v1"
+            ? "success"
+            : "info",
       },
       {
         label: "Score",
@@ -1011,7 +1065,13 @@ export default function OpportunitiesPage() {
               : "warning",
       },
     ],
-    [executions.length, highPriorityCount, runtimeTruth, score?.score_value, summary?.total_count],
+    [
+      engineState?.guidance_source,
+      highPriorityCount,
+      runtimeTruth,
+      score?.score_value,
+      summary?.total_count,
+    ],
   );
 
   const primaryAction = selectedRecommendation
@@ -1090,6 +1150,21 @@ export default function OpportunitiesPage() {
               runtimeTruth,
               "Opportunity runtime status is not available yet.",
             )}
+          </TruthNotice>
+        ) : null}
+
+        {engineState ? (
+          <TruthNotice title="Intelligence engine state" tone="info">
+            {getEngineSourceLabel(engineState.guidance_source)} is using saved campaign data.
+            {engineState.activation_mode === "recommendation_only"
+              ? " Production is in recommendations-only mode, so the engine cannot schedule or execute business changes."
+              : " Autonomous action is enabled only in the isolated test runtime."}
+            {engineState.provider_checks_allowed === false
+              ? " This cycle does not run paid provider checks."
+              : ""}
+            {engineState.learning_state === "inactive_noop"
+              ? " Automated learning is not active yet; recommendations do not retrain themselves from outcomes."
+              : ""}
           </TruthNotice>
         ) : null}
 
@@ -1258,13 +1333,16 @@ export default function OpportunitiesPage() {
                             </span>
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
-                          <span
-                            className={`rounded-md border px-2 py-1 text-xs font-medium ${getStatusTone(recommendation.status)}`}
-                          >
-                            {getStatusLabel(recommendation.status)}
-                          </span>
+                            <span
+                              className={`rounded-md border px-2 py-1 text-xs font-medium ${getStatusTone(recommendation.status)}`}
+                            >
+                              {getStatusLabel(recommendation.status)}
+                            </span>
                             <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-1 text-xs font-medium text-zinc-200">
                               {getImpactLabel(recommendation.confidence_score || recommendation.confidence || 0)}
+                            </span>
+                            <span className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-100">
+                              {getEngineSourceLabel(recommendation.engine_source)}
                             </span>
                           </div>
                         </button>
@@ -1295,6 +1373,9 @@ export default function OpportunitiesPage() {
                             className={`rounded-md border px-2 py-1 text-xs font-medium ${getStatusTone(selectedRecommendation.status)}`}
                           >
                             {getStatusLabel(selectedRecommendation.status)}
+                          </span>
+                          <span className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-100">
+                            {getEngineSourceLabel(selectedRecommendation.engine_source)}
                           </span>
                         </div>
                       </div>
@@ -1346,7 +1427,7 @@ export default function OpportunitiesPage() {
                         {selectedRecommendation.evidence?.length ? (
                           <ul className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
                             {selectedRecommendation.evidence.map((item) => (
-                              <li key={item}>{item}</li>
+                              <li key={item}>• {formatEvidence(item)}</li>
                             ))}
                           </ul>
                         ) : (
@@ -1357,7 +1438,7 @@ export default function OpportunitiesPage() {
                       </div>
 
                       <div className="mt-5 rounded-md border border-[#26272c] bg-[#111214] p-4">
-                        <div className="grid gap-4 md:grid-cols-3">
+                        <div className="grid gap-4 md:grid-cols-4">
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                               Expected impact
@@ -1368,6 +1449,17 @@ export default function OpportunitiesPage() {
                                   selectedRecommendation.confidence ||
                                   0,
                               )}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                              Source
+                            </p>
+                            <p className="mt-2 text-sm text-zinc-200">
+                              {getEngineSourceLabel(selectedRecommendation.engine_source)}
+                            </p>
+                            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
+                              Saved campaign signals
                             </p>
                           </div>
                           <div>

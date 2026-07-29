@@ -28,6 +28,9 @@ def test_recommendation_summary_endpoint(client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert recs.status_code == 200
+    recommendation_payload = recs.json()["data"]
+    assert recommendation_payload["engine"]["guidance_source"] == "heuristic_threshold_v1"
+    assert recommendation_payload["items"][0]["engine_source"] == "heuristic_threshold_v1"
 
     summary = client.get(
         f"/api/v1/recommendations/summary?campaign_id={campaign['id']}",
@@ -42,6 +45,9 @@ def test_recommendation_summary_endpoint(client):
     assert isinstance(payload["average_confidence_score"], float)
     assert "items" not in payload
     assert payload["truth"]["classification"] == "heuristic"
+    assert payload["engine"]["guidance_source"] == "heuristic_threshold_v1"
+    assert payload["engine"]["operator_review_required"] is True
+    assert payload["engine"]["learning_state"] == "inactive_noop"
 
 
 def test_dashboard_endpoint_returns_aggregated_payload(client):

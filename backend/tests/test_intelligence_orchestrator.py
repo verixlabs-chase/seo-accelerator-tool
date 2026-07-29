@@ -139,6 +139,13 @@ def test_recommendation_only_cycle_never_schedules_mutations(
     assert summary['recommendations_selected_for_execution'] == 0
     assert summary['executions_scheduled'] == 0
     assert summary['executions_completed'] == 0
+    recommendation_rows = (
+        db_session.query(StrategyRecommendation)
+        .filter(StrategyRecommendation.campaign_id == campaign.id)
+        .all()
+    )
+    assert recommendation_rows
+    assert all(row.status == "GENERATED" for row in recommendation_rows)
     assert (
         db_session.query(RecommendationExecution)
         .filter(RecommendationExecution.campaign_id == campaign.id)
