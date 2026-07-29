@@ -77,7 +77,7 @@ def build_intelligence_engine_state(
         "mutation_scheduling_enabled": activation_mode == "autonomous",
         "mutation_execution_enabled": activation_mode == "autonomous",
         "operator_review_required": True,
-        "learning_state": "inactive_noop",
+        "learning_state": "observation_only",
         "cycle_schedule": "daily_vercel_cron",
         "last_generated_at": last_generated_at,
     }

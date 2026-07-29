@@ -90,7 +90,7 @@ def compute_campaign_metrics(
             session,
             AuditLog,
             AuditLog.created_at,
-            [AuditLog.event_type == 'recommendation.outcome_recorded', AuditLog.payload_json.like(f'%{campaign_id}%')],
+            [AuditLog.event_type == 'policy.updated', AuditLog.payload_json.like(f'%{campaign_id}%')],
             day_start,
             day_end,
         )

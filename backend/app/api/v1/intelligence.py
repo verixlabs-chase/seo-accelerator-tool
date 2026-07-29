@@ -10,6 +10,10 @@ from app.db.session import get_db
 from app.schemas.intelligence import AdvanceMonthIn, IntelligenceScoreOut, RecommendationOut, RecommendationTransitionIn
 from app.services import intelligence_service
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
+from app.services.recommendation_outcome_service import (
+    get_campaign_outcome_history,
+    measure_recommendation_outcome,
+)
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     campaigns_evaluate_monthly_rules,
@@ -154,6 +158,80 @@ def transition_recommendation(
         target_state=body.target_state,
     )
     return envelope(request, RecommendationOut.model_validate(row).model_dump(mode="json"))
+
+
+@intelligence_router.get("/outcomes")
+def get_intelligence_outcomes(
+    request: Request,
+    campaign_id: str = Query(...),
+    limit: int = Query(default=50, ge=1, le=200),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = get_campaign_outcome_history(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+        limit=limit,
+    )
+    truth = build_truth(
+        states=["heuristic"] + (["unavailable"] if payload["count"] == 0 else []),
+        summary=(
+            "Outcome history compares saved opportunity-score checkpoints. It can show change over time, but it does not prove that a recommendation caused the change."
+        ),
+        provider_state="stored_data_model",
+        setup_state="configured",
+        operator_state="operator_review_required",
+        freshness_state=(
+            freshness_state_from_timestamp(
+                payload["summary"]["latest_measured_at"],
+                stale_after=timedelta(days=30),
+            )
+            if payload["count"]
+            else "unknown"
+        ),
+        reasons=[
+            "outcomes_compare_heuristic_score_checkpoints",
+            "observation_only_learning_does_not_update_policies",
+            "causal_claims_are_disabled",
+        ],
+    )
+    return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.post("/recommendations/{recommendation_id}/measure-outcome")
+def measure_intelligence_outcome(
+    request: Request,
+    recommendation_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    outcome, created = measure_recommendation_outcome(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+        recommendation_id=recommendation_id,
+    )
+    history = get_campaign_outcome_history(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+        limit=50,
+    )
+    item = next(
+        (item for item in history["items"] if item["id"] == outcome.id),
+        None,
+    )
+    return envelope(
+        request,
+        {
+            "created": created,
+            "outcome": item,
+            "summary": history["summary"],
+            "learning": history["learning"],
+        },
+    )
 
 
 @campaign_intelligence_router.post("/campaigns/{campaign_id}/advance-month")

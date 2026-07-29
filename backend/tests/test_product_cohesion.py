@@ -47,7 +47,7 @@ def test_recommendation_summary_endpoint(client):
     assert payload["truth"]["classification"] == "heuristic"
     assert payload["engine"]["guidance_source"] == "heuristic_threshold_v1"
     assert payload["engine"]["operator_review_required"] is True
-    assert payload["engine"]["learning_state"] == "inactive_noop"
+    assert payload["engine"]["learning_state"] == "observation_only"
 
 
 def test_dashboard_endpoint_returns_aggregated_payload(client):

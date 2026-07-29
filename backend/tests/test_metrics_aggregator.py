@@ -102,7 +102,7 @@ def test_compute_campaign_metrics_persists_snapshot(db_session, create_test_tena
     db_session.add(
         AuditLog(
             tenant_id=tenant.id,
-            event_type='recommendation.outcome_recorded',
+            event_type='policy.updated',
             payload_json=json.dumps({'payload': {'campaign_id': campaign.id}}),
             created_at=now,
         )

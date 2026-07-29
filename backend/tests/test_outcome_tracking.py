@@ -108,3 +108,57 @@ def test_record_outcome_rolls_back_without_emitting_event_on_portfolio_failure(d
     assert published == []
     assert emitted == []
     assert db_session.query(RecommendationOutcome).filter(RecommendationOutcome.recommendation_id == rec.id).count() == 0
+
+
+def test_observation_only_outcome_skips_learning_mutations(db_session, monkeypatch) -> None:
+    tenant = Tenant(name='Observed Outcome Tenant', status='Active')
+    db_session.add(tenant)
+    db_session.flush()
+    campaign = Campaign(
+        tenant_id=tenant.id,
+        name='Observed Outcome Campaign',
+        domain='observed-outcome.example',
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    recommendation = StrategyRecommendation(
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_type='observed_recommendation',
+        rationale='observe only',
+        confidence=0.8,
+        confidence_score=0.8,
+        evidence_json='{}',
+        rollback_plan_json='{}',
+        status=ensure_enum(
+            StrategyRecommendationStatus.APPROVED,
+            StrategyRecommendationStatus,
+        ),
+    )
+    db_session.add(recommendation)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        'app.intelligence.outcome_tracker.run_portfolio_cycle',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError('observation-only outcomes must not update portfolios')
+        ),
+    )
+    monkeypatch.setattr(
+        'app.intelligence.outcome_tracker.record_experiment_outcome',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError('observation-only outcomes must not update experiments')
+        ),
+    )
+
+    outcome = record_outcome(
+        db_session,
+        recommendation_id=recommendation.id,
+        campaign_id=campaign.id,
+        metric_before=50.0,
+        metric_after=55.0,
+        measurement_kind='opportunity_score',
+        observation_only=True,
+    )
+
+    assert outcome.delta == 5.0

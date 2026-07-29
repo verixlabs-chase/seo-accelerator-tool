@@ -28,7 +28,7 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 
 ## 1A. Active Next Sprint Sequence
 
-> **Execution status (2026-07-29):** Sprints 5 and 6 are shipped and production-QA complete for Reno and Lexington. Sprint 7, Intelligence Activation and Safety, is active. It must make the existing intelligence architecture operational on Supabase and Vercel without enabling autonomous customer-site mutations.
+> **Execution status (2026-07-29):** Sprints 5 and 6 are shipped and production-QA complete for Reno and Lexington. Sprint 7, Intelligence Activation and Safety, is active. Recommendation-only scheduling, runtime disclosure, and observation-only outcome tracking are implemented; autonomous customer-site mutations and automatic policy updates remain disabled.
 
 ### Sprint 5 - Location Context and Navigation Clarity
 
@@ -110,8 +110,10 @@ Scope:
 - Clearly distinguish the simple heuristic score/recommendation service from
   the deeper orchestrator pipeline in API truth metadata and the Opportunities
   UI.
-- Keep the no-op learning path visibly inactive until enough real outcomes
-  exist to measure recommendation quality.
+- Capture recommendation-score checkpoints and run learning in
+  **observation-only** mode until enough real outcomes exist to review
+  recommendation quality.
+- Do not update policies or make causal claims from observation-only outcomes.
 - Require an explicit governance policy and human approval before any future
   execution mode can deliver a customer-site mutation.
 
@@ -123,6 +125,9 @@ Acceptance criteria:
 - Repeating the same scheduled cycle is idempotent.
 - Every surfaced recommendation includes evidence, confidence, freshness, and
   an honest model/runtime label.
+- Chosen recommendations can record deduplicated before/after score
+  checkpoints with tenant-scoped history.
+- Outcome history explicitly disables policy updates and causal claims.
 - The test suite proves the safe activation mode, tenant isolation, durable
   scheduling, and unchanged Opportunities lifecycle behavior.
 

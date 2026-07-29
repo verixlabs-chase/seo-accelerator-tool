@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.settings import get_settings
 from app.events import EventType, emit_event, publish_event
 from app.intelligence.experiments.experiment_engine import record_experiment_outcome
 from app.intelligence.portfolio.portfolio_engine import run_portfolio_cycle
@@ -32,6 +33,8 @@ def record_outcome(
     metric_after: float,
     simulation_id: str | None = None,
     measured_at: datetime | None = None,
+    measurement_kind: str = 'execution_metric',
+    observation_only: bool | None = None,
     emit_learning_event: bool = True,
 ) -> RecommendationOutcome:
     before = float(metric_before)
@@ -54,12 +57,22 @@ def record_outcome(
         'recommendation_id': recommendation_id,
         'simulation_id': simulation_id,
         'outcome_id': row.id,
+        'metric_before': row.metric_before,
+        'metric_after': row.metric_after,
         'delta': row.delta,
+        'measurement_kind': measurement_kind,
         'measured_at': row.measured_at.isoformat(),
     }
 
-    run_portfolio_cycle(db, row)
-    _experiment_outcome, experiment_event = record_experiment_outcome(db, outcome=row)
+    observation_only_mode = (
+        observation_only
+        if observation_only is not None
+        else get_settings().intelligence_activation_mode != 'autonomous'
+    )
+    experiment_event = None
+    if not observation_only_mode:
+        run_portfolio_cycle(db, row)
+        _experiment_outcome, experiment_event = record_experiment_outcome(db, outcome=row)
     db.commit()
     db.refresh(row)
 
@@ -72,7 +85,12 @@ def record_outcome(
                 'campaign_id': campaign_id,
                 'recommendation_id': recommendation_id,
                 'simulation_id': simulation_id,
+                'outcome_id': row.id,
+                'metric_before': row.metric_before,
+                'metric_after': row.metric_after,
                 'delta': row.delta,
+                'measurement_kind': measurement_kind,
+                'observation_only': observation_only_mode,
                 'measured_at': row.measured_at.isoformat(),
             },
         )
@@ -99,6 +117,7 @@ def record_execution_outcome(
         simulation_id=simulation_id,
         metric_before=metric_before,
         metric_after=metric_after,
+        measurement_kind='execution_metric',
         emit_learning_event=True,
     )
 

@@ -94,6 +94,43 @@ type RecommendationListResponse = {
   truth?: RuntimeTruth;
 };
 
+type RecommendationOutcome = {
+  id: string;
+  recommendation_id: string;
+  recommendation_type?: string;
+  recommendation_rationale?: string;
+  recommendation_status?: string;
+  engine_source?: string;
+  measurement_kind?: string;
+  metric_label?: string;
+  metric_before?: number;
+  metric_after?: number;
+  delta?: number;
+  direction?: string;
+  measured_at?: string;
+  causal_proof?: boolean;
+};
+
+type OutcomeHistoryResponse = {
+  count?: number;
+  summary?: {
+    improved_count?: number;
+    declined_count?: number;
+    unchanged_count?: number;
+    average_score_delta?: number;
+    latest_measured_at?: string | null;
+  };
+  learning?: {
+    state?: string;
+    observations_recorded?: number;
+    policy_updates_enabled?: boolean;
+    causal_claims_allowed?: boolean;
+    minimum_outcomes_before_review?: number;
+  };
+  items?: RecommendationOutcome[];
+  truth?: RuntimeTruth;
+};
+
 type ExecutionResult = {
   status?: string;
   notes?: string;
@@ -330,6 +367,38 @@ function formatEvidence(value: string) {
     return toTitleCase(value);
   }
   return value;
+}
+
+function canMeasureOutcome(status?: string) {
+  return ["APPROVED", "SCHEDULED", "EXECUTED", "ROLLED_BACK"].includes(status || "");
+}
+
+function getOutcomeDirectionLabel(direction?: string) {
+  if (direction === "improved") {
+    return "Score improved";
+  }
+  if (direction === "declined") {
+    return "Score declined";
+  }
+  if (direction === "no_material_change") {
+    return "No measurable change";
+  }
+  return "Change recorded";
+}
+
+function getOutcomeTone(direction?: string) {
+  if (direction === "improved") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
+  }
+  if (direction === "declined") {
+    return "border-rose-500/20 bg-rose-500/10 text-rose-100";
+  }
+  return "border-amber-500/20 bg-amber-500/10 text-amber-100";
+}
+
+function formatScoreDelta(delta?: number) {
+  const normalized = Number(delta || 0);
+  return `${normalized > 0 ? "+" : ""}${normalized.toFixed(1)} points`;
 }
 
 function describeExecutionType(type?: string) {
@@ -723,6 +792,7 @@ export default function OpportunitiesPage() {
   const [score, setScore] = useState<IntelligenceScoreResponse | null>(null);
   const [recommendationsTruth, setRecommendationsTruth] = useState<RuntimeTruth | null>(null);
   const [engineState, setEngineState] = useState<IntelligenceEngineState | null>(null);
+  const [outcomeHistory, setOutcomeHistory] = useState<OutcomeHistoryResponse | null>(null);
   const [wordpressSetup, setWordpressSetup] = useState<WordPressExecutionSetup | null>(null);
   const [wordpressSetupError, setWordpressSetupError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -750,11 +820,12 @@ export default function OpportunitiesPage() {
       setScore(null);
       setRecommendationsTruth(null);
       setEngineState(null);
+      setOutcomeHistory(null);
       setSelectedRecommendationId("");
       return;
     }
 
-    const [recommendationsResponse, summaryResponse, scoreResponse] = await Promise.all([
+    const [recommendationsResponse, summaryResponse, scoreResponse, outcomeResponse] = await Promise.all([
       platformApi(`/intelligence/recommendations?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
@@ -762,6 +833,9 @@ export default function OpportunitiesPage() {
         method: "GET",
       }),
       platformApi(`/intelligence/score?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }),
+      platformApi(`/intelligence/outcomes?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
     ]);
@@ -781,6 +855,7 @@ export default function OpportunitiesPage() {
         (scoreResponse as IntelligenceScoreResponse)?.engine ||
         null,
     );
+    setOutcomeHistory((outcomeResponse as OutcomeHistoryResponse) || null);
     setSelectedRecommendationId((current) => {
       if (current && items.some((item) => item.id === current)) {
         return current;
@@ -899,6 +974,31 @@ export default function OpportunitiesPage() {
       await loadOpportunities(selectedCampaignId);
       setSelectedRecommendationId(recommendationId);
       setNotice(`${successNotice} Check the workflow state on this page to confirm what should happen next.`);
+    });
+  }
+
+  async function measureRecommendationOutcome(recommendationId: string) {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+
+    await runAction(`${recommendationId}:measure-outcome`, async () => {
+      const response = await platformApi(
+        `/intelligence/recommendations/${recommendationId}/measure-outcome?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      const outcome = response?.outcome as RecommendationOutcome | undefined;
+      setSelectedRecommendationId(recommendationId);
+      setNotice(
+        response?.created
+          ? `Progress measured: ${getOutcomeDirectionLabel(outcome?.direction).toLowerCase()} (${formatScoreDelta(outcome?.delta)}). This is an observation, not proof that the recommendation caused the change.`
+          : "The saved score has not changed since the latest measurement, so no duplicate outcome was added.",
+      );
     });
   }
 
@@ -1162,8 +1262,8 @@ export default function OpportunitiesPage() {
             {engineState.provider_checks_allowed === false
               ? " This cycle does not run paid provider checks."
               : ""}
-            {engineState.learning_state === "inactive_noop"
-              ? " Automated learning is not active yet; recommendations do not retrain themselves from outcomes."
+            {engineState.learning_state === "observation_only"
+              ? " Learning is observation-only: outcomes can be compared, but policies are not retrained or changed automatically."
               : ""}
           </TruthNotice>
         ) : null}
@@ -1502,6 +1602,20 @@ export default function OpportunitiesPage() {
                             </button>
                           ) : null}
 
+                          {canMeasureOutcome(selectedRecommendation.status) ? (
+                            <button
+                              onClick={() =>
+                                void measureRecommendationOutcome(selectedRecommendation.id)
+                              }
+                              disabled={busyAction !== ""}
+                              className="rounded-md border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {busyAction === `${selectedRecommendation.id}:measure-outcome`
+                                ? "Measuring..."
+                                : "Measure saved-data progress"}
+                            </button>
+                          ) : null}
+
                           {shouldAllowArchive(selectedRecommendation.status) ? (
                             <button
                               onClick={() =>
@@ -1533,6 +1647,106 @@ export default function OpportunitiesPage() {
                 </section>
               </div>
             )}
+
+            <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Outcome history
+                  </p>
+                  <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                    What changed after recommendations were chosen
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                    InsightOS compares saved opportunity-score checkpoints. This shows whether the
+                    overall score moved; it does not claim that one recommendation caused the
+                    change.
+                  </p>
+                </div>
+                <span className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-100">
+                  Observation-only learning
+                </span>
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-4">
+                <KpiCard
+                  label="Measurements"
+                  value={String(outcomeHistory?.count || 0)}
+                  summary="Saved before-and-after score checkpoints for this business."
+                />
+                <KpiCard
+                  label="Improved"
+                  value={String(outcomeHistory?.summary?.improved_count || 0)}
+                  summary="Measurements where the saved opportunity score increased."
+                />
+                <KpiCard
+                  label="No clear change"
+                  value={String(outcomeHistory?.summary?.unchanged_count || 0)}
+                  summary="Measurements where the score stayed effectively the same."
+                />
+                <KpiCard
+                  label="Declined"
+                  value={String(outcomeHistory?.summary?.declined_count || 0)}
+                  summary="Measurements that need review because the saved score decreased."
+                  tone={
+                    (outcomeHistory?.summary?.declined_count || 0) > 0
+                      ? "highlight"
+                      : "default"
+                  }
+                />
+              </div>
+
+              {outcomeHistory?.items?.length ? (
+                <div className="mt-5 space-y-3">
+                  {outcomeHistory.items.map((outcome) => (
+                    <button
+                      key={outcome.id}
+                      onClick={() => setSelectedRecommendationId(outcome.recommendation_id)}
+                      className="w-full rounded-md border border-[#26272c] bg-[#111214] p-4 text-left"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            {describeType(outcome.recommendation_type)}
+                          </p>
+                          <p className="mt-1 text-sm text-zinc-300">
+                            {outcome.metric_label || "Opportunity score"}:{" "}
+                            {Number(outcome.metric_before || 0).toFixed(1)} →{" "}
+                            {Number(outcome.metric_after || 0).toFixed(1)} (
+                            {formatScoreDelta(outcome.delta)})
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <span
+                            className={`rounded-md border px-2 py-1 text-xs font-medium ${getOutcomeTone(outcome.direction)}`}
+                          >
+                            {getOutcomeDirectionLabel(outcome.direction)}
+                          </span>
+                          <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-1 text-xs font-medium text-zinc-300">
+                            {formatRelativeTime(outcome.measured_at)}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-5 rounded-md border border-dashed border-[#34363c] bg-[#111214] p-5">
+                  <p className="text-sm font-medium text-white">
+                    No outcomes have been measured yet.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">
+                    Review and choose a recommendation first. After work has had time to affect the
+                    saved campaign signals, use “Measure saved-data progress” on that recommendation.
+                  </p>
+                </div>
+              )}
+
+              <p className="mt-4 text-xs uppercase tracking-[0.14em] text-zinc-500">
+                Policy updates disabled · Causal claims disabled ·{" "}
+                {outcomeHistory?.learning?.observations_recorded || 0} observations recorded
+              </p>
+            </section>
 
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               {WORDPRESS_EXECUTION_SETUP_UI_ENABLED ? (

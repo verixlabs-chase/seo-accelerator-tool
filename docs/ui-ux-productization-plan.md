@@ -439,7 +439,8 @@ The following sequence minimizes regression risk and allows each change to be te
 33. Generate idempotent recommendations, simulations, and metrics from stored campaign signals without triggering paid provider checks.
 34. Keep mutation scheduling and execution disabled during recommendation-only cycles.
 35. Surface evidence, confidence, freshness, and model/runtime truth on Opportunities.
-36. Keep learning visibly inactive until real recommendation outcomes provide enough history.
+36. Capture deduplicated recommendation-score checkpoints and expose plain-language outcome history.
+36a. Run learning in observation-only mode with policy updates and causal claims disabled until enough real outcomes exist for review.
 37. Verify Reno and Lexington cycles, cross-tenant isolation, repeat-run idempotency, and zero mutation delivery.
 
 ### Sprint 8 — Local Visibility map

@@ -10,6 +10,7 @@ from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode
 from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.learning_report import LearningReport
 from app.models.strategy_evolution_log import StrategyEvolutionLog
+from app.intelligence.workers.learning_worker import process as process_learning_observation
 
 
 def test_experiment_event_is_processed_by_background_worker_chain(db_session) -> None:
@@ -61,3 +62,21 @@ def test_queue_dispatch_returns_inline_result_in_tests(db_session) -> None:
     assert result['mode'] == 'inline'
     assert result['result']['causal']['policy_id'] == 'add_location_pages'
     assert result['result']['evolution']['registered_policies'][0]['policy_id'] == 'add_location_pages_cluster'
+
+
+def test_learning_worker_records_observation_without_policy_updates() -> None:
+    result = process_learning_observation(
+        {
+            'outcome_id': 'outcome-1',
+            'campaign_id': 'campaign-1',
+            'recommendation_id': 'recommendation-1',
+            'measurement_kind': 'opportunity_score',
+            'delta': 4.5,
+        }
+    )
+
+    assert result['status'] == 'observed'
+    assert result['mode'] == 'observation_only'
+    assert result['policy_updates_applied'] == 0
+    assert result['causal_claim_created'] is False
+    assert result['observation']['direction'] == 'improved'
