@@ -211,6 +211,14 @@ names in issues, commits, and status reports so a number is never ambiguous:
 Goal: replace recurring manual data entry with trustworthy, tenant-safe, and
 location-aware connections for the signals the current product can use.
 
+> **Implementation status (2026-07-29):** Slice G1.1 is implemented in the
+> repository: a customer Data Connections page, signed Google OAuth return flow,
+> per-location Search Console property mappings, initial backfill, and durable
+> scheduled synchronization. Production activation requires migration
+> `20260729_0075`, Google Cloud OAuth credentials, the static callback
+> registration, and a live connection test. Google Business Profile and website
+> analytics/form-event synchronization remain later G1 slices.
+
 In scope:
 
 - Google Search Console connection and scheduled synchronization.

@@ -6,6 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from starlette.responses import RedirectResponse
 
 from app.api.deps import get_current_user
 from app.api.response import envelope
@@ -14,6 +15,7 @@ from app.services.google_oauth_service import (
     GOOGLE_PROVIDER_NAME,
     GOOGLE_OAUTH_SCOPE_TARGET_GSC,
     GoogleOAuthError,
+    build_customer_oauth_return_url,
     build_google_oauth_authorization_url,
     exchange_google_authorization_code,
     upsert_organization_google_oauth_client,
@@ -39,6 +41,7 @@ def google_oauth_start(
     request: Request,
     organization_id: str,
     scope_target: Literal["gsc", "gbp"] = Query(default=GOOGLE_OAUTH_SCOPE_TARGET_GSC),
+    return_path: str | None = Query(default=None, max_length=500),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -55,6 +58,7 @@ def google_oauth_start(
             organization_id=organization_id,
             user_id=user["id"],
             scope_target=scope_target,
+            return_path=return_path,
             db=db,
         )
     except GoogleOAuthError as exc:
@@ -71,20 +75,62 @@ def google_oauth_start(
     )
 
 
-@public_router.get("/organizations/{organization_id}/providers/google/oauth/callback")
+@public_router.get(
+    "/providers/google/oauth/callback",
+    response_model=None,
+)
+def google_oauth_callback_static(
+    request: Request,
+    code: str = Query(..., min_length=1),
+    state: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+):
+    return _complete_google_oauth_callback(
+        request=request,
+        code=code,
+        state=state,
+        db=db,
+    )
+
+
+@public_router.get(
+    "/organizations/{organization_id}/providers/google/oauth/callback",
+    response_model=None,
+)
 def google_oauth_callback(
     request: Request,
     organization_id: str,
     code: str = Query(..., min_length=1),
     state: str = Query(..., min_length=1),
     db: Session = Depends(get_db),
-) -> dict:
+):
+    return _complete_google_oauth_callback(
+        request=request,
+        code=code,
+        state=state,
+        db=db,
+        expected_organization_id=organization_id,
+    )
+
+
+def _complete_google_oauth_callback(
+    *,
+    request: Request,
+    code: str,
+    state: str,
+    db: Session,
+    expected_organization_id: str | None = None,
+):
     try:
         state_payload = validate_google_oauth_state(state)
     except GoogleOAuthError as exc:
         _raise_oauth_http_error(exc)
 
-    if state_payload["organization_id"] != organization_id:
+    organization_id = str(state_payload["organization_id"])
+    if (
+        expected_organization_id is not None
+        and organization_id != expected_organization_id
+    ):
         raise HTTPException(
             status_code=400,
             detail={
@@ -115,6 +161,12 @@ def google_oauth_callback(
             status_code=exc.status_code,
             detail={"message": str(exc), "reason_code": exc.reason_code},
         ) from exc
+    return_path = state_payload.get("return_path")
+    if isinstance(return_path, str) and return_path:
+        return RedirectResponse(
+            build_customer_oauth_return_url(return_path, status="connected"),
+            status_code=303,
+        )
     return envelope(
         request,
         {

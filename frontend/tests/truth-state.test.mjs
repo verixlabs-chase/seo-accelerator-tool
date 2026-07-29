@@ -29,8 +29,31 @@ import {
   getTaskStatusMeaning,
   summarizeTaskCounts,
 } from "../app/(product)/truth/onboardingTruth.mjs";
+import {
+  getConnectionPortfolioSummary,
+  getConnectionStatusView,
+} from "../app/(product)/truth/dataConnectionsTruth.mjs";
 
 const formatRelativeTime = () => "2 hours ago";
+
+test("data connection truth distinguishes current, stale, and reconnect states", () => {
+  assert.equal(getConnectionStatusView({ status: "current" }).label, "Up to date");
+  assert.equal(getConnectionStatusView({ status: "stale" }).label, "Needs an update");
+  const reconnect = getConnectionStatusView({ status: "reconnect_required" });
+  assert.equal(reconnect.label, "Reconnect Google");
+  assert.match(reconnect.summary, /access expired or was removed/i);
+});
+
+test("data connection portfolio truth reports unmapped locations", () => {
+  const summary = getConnectionPortfolioSummary(
+    [{ status: "current" }, { status: "failed" }],
+    3,
+  );
+  assert.equal(summary.current, 1);
+  assert.equal(summary.needsAttention, 1);
+  assert.equal(summary.unmapped, 1);
+  assert.equal(summary.label, "Setup needs attention");
+});
 
 test("dashboard truth state marks failed crawl as needs attention with remediation", () => {
   const state = getCrawlWorkflowState(

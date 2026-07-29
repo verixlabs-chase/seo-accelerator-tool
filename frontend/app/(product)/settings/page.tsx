@@ -1,0 +1,576 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+
+import {
+  AppShell,
+  EmptyState,
+  LoadingCard,
+  ProductPageIntro,
+  TruthNotice,
+  type TrustSignal,
+} from "../components";
+import { buildProductNav } from "../nav.config";
+import { platformApi } from "../../platform/api";
+import {
+  getConnectionPortfolioSummary,
+  getConnectionStatusView,
+} from "../truth/dataConnectionsTruth.mjs";
+
+type Me = {
+  organization_id?: string;
+  org_role?: string;
+};
+
+type Campaign = {
+  id: string;
+  name: string;
+  domain: string;
+  setup_state: string;
+  business_location_id?: string | null;
+};
+
+type SearchConsoleResource = {
+  id: string;
+  name: string;
+  permission_level: string;
+  resource_scope: string;
+};
+
+type DataConnection = {
+  id: string;
+  provider_name: string;
+  business_location_id: string;
+  business_location_name?: string | null;
+  campaign_id: string;
+  campaign_name?: string | null;
+  campaign_domain?: string | null;
+  external_resource_id: string;
+  external_resource_name?: string | null;
+  resource_scope: string;
+  status: string;
+  last_success_at?: string | null;
+  next_sync_at?: string | null;
+  last_error_message?: string | null;
+  source_truth: string;
+};
+
+type ConnectionsPayload = {
+  google_oauth: {
+    connected: boolean;
+    updated_at?: string | null;
+  };
+  connections: DataConnection[];
+};
+
+const primaryButtonClass =
+  "inline-flex items-center justify-center rounded-md border border-accent-500/40 bg-accent-500/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-accent-500/70 hover:bg-accent-500/25 disabled:cursor-not-allowed disabled:opacity-50";
+const secondaryButtonClass =
+  "inline-flex items-center justify-center rounded-md border border-[#303137] bg-[#17181b] px-3.5 py-2 text-sm font-medium text-zinc-100 transition hover:bg-[#1d1e22] disabled:cursor-not-allowed disabled:opacity-50";
+const selectClass =
+  "w-full rounded-md border border-[#303137] bg-[#101114] px-3 py-2.5 text-sm text-white outline-none transition focus:border-accent-500/60 disabled:opacity-50";
+
+function formatTimestamp(value?: string | null) {
+  if (!value) return "Not synced yet";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Time unavailable";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function toneClasses(tone: string) {
+  if (tone === "success") return "border-emerald-500/25 bg-emerald-500/10 text-emerald-100";
+  if (tone === "danger") return "border-rose-500/25 bg-rose-500/10 text-rose-100";
+  if (tone === "warning") return "border-amber-500/25 bg-amber-500/10 text-amber-100";
+  return "border-sky-500/25 bg-sky-500/10 text-sky-100";
+}
+
+export default function SettingsPage() {
+  const pathname = usePathname();
+  const [me, setMe] = useState<Me | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [payload, setPayload] = useState<ConnectionsPayload | null>(null);
+  const [resources, setResources] = useState<SearchConsoleResource[]>([]);
+  const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [loadingResources, setLoadingResources] = useState(false);
+  const [busyAction, setBusyAction] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const organizationId = me?.organization_id || "";
+  const manageableCampaigns = useMemo(
+    () => campaigns.filter((campaign) => Boolean(campaign.business_location_id)),
+    [campaigns],
+  );
+  const connections = payload?.connections || [];
+  const connectionByCampaign = useMemo(
+    () => new Map(connections.map((connection) => [connection.campaign_id, connection])),
+    [connections],
+  );
+  const portfolioSummary = useMemo(
+    () => getConnectionPortfolioSummary(connections, manageableCampaigns.length),
+    [connections, manageableCampaigns.length],
+  );
+
+  const loadConnections = useCallback(async (orgId: string) => {
+    const next = (await platformApi(
+      `/organizations/${orgId}/data-connections`,
+      { method: "GET" },
+    )) as ConnectionsPayload;
+    setPayload(next);
+    setResourceDrafts((current) => {
+      const seeded = { ...current };
+      for (const connection of next.connections || []) {
+        if (!seeded[connection.campaign_id]) {
+          seeded[connection.campaign_id] = connection.external_resource_id;
+        }
+      }
+      return seeded;
+    });
+    return next;
+  }, []);
+
+  const loadResources = useCallback(async (orgId: string) => {
+    setLoadingResources(true);
+    setError("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${orgId}/data-connections/google-search-console/resources`,
+        { method: "GET" },
+      )) as { resources?: SearchConsoleResource[] };
+      setResources(response.resources || []);
+      if ((response.resources || []).length === 0) {
+        setNotice(
+          "Google is connected, but no Search Console websites were returned. Confirm that this Google account has access to the website.",
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load Search Console websites.");
+    } finally {
+      setLoadingResources(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    async function loadPage() {
+      setLoading(true);
+      setError("");
+      try {
+        const currentUser = (await platformApi("/auth/me", { method: "GET" })) as Me;
+        if (!currentUser.organization_id) {
+          throw new Error("An organization is required to manage data connections.");
+        }
+        setMe(currentUser);
+        const [campaignResponse, connectionResponse] = await Promise.all([
+          platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
+          loadConnections(currentUser.organization_id),
+        ]);
+        setCampaigns(campaignResponse.items || []);
+        const googleReturned = new URLSearchParams(window.location.search).get("google");
+        if (googleReturned === "connected") {
+          setNotice("Google Search Console is connected. Match each location to its website next.");
+          window.history.replaceState({}, "", "/settings");
+          await loadResources(currentUser.organization_id);
+        } else if (connectionResponse.google_oauth.connected) {
+          setNotice("");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to load data connections.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    void loadPage();
+  }, [loadConnections, loadResources]);
+
+  async function connectGoogle() {
+    if (!organizationId) return;
+    setBusyAction("oauth");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/providers/google/oauth/start?scope_target=gsc&return_path=${encodeURIComponent("/settings")}`,
+        { method: "POST" },
+      )) as { authorization_url?: string };
+      if (!response.authorization_url) {
+        throw new Error("Google did not return a connection link.");
+      }
+      window.location.assign(response.authorization_url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to start the Google connection.");
+      setBusyAction("");
+    }
+  }
+
+  async function saveMapping(campaign: Campaign) {
+    if (!organizationId) return;
+    const resourceId = resourceDrafts[campaign.id] || "";
+    const resource = resources.find((item) => item.id === resourceId);
+    if (!resourceId || !resource) {
+      setError("Choose a Search Console website for this location.");
+      return;
+    }
+    setBusyAction(`mapping-${campaign.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const mappingResponse = (await platformApi(
+        `/organizations/${organizationId}/data-connections/google-search-console/mappings/${campaign.id}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            external_resource_id: resource.id,
+            external_resource_name: resource.name,
+          }),
+        },
+      )) as { connection?: DataConnection };
+      const connectionId = mappingResponse.connection?.id;
+      if (!connectionId) throw new Error("The website mapping was not saved.");
+      const syncResponse = (await platformApi(
+        `/organizations/${organizationId}/data-connections/${connectionId}/sync`,
+        { method: "POST" },
+      )) as { job?: { status?: string } };
+      await loadConnections(organizationId);
+      if (syncResponse.job?.status === "completed") {
+        setNotice(`${campaign.name} is connected and its first Search Console history is ready.`);
+      } else {
+        setNotice(`${campaign.name} is connected. Its first automatic update has been queued.`);
+      }
+    } catch (err) {
+      await loadConnections(organizationId).catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Unable to save this website connection.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function syncConnection(connection: DataConnection) {
+    if (!organizationId) return;
+    if (connection.status === "reconnect_required") {
+      await connectGoogle();
+      return;
+    }
+    setBusyAction(`sync-${connection.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-connections/${connection.id}/sync`,
+        { method: "POST" },
+      )) as { job?: { status?: string; idempotent_replay?: boolean } };
+      await loadConnections(organizationId);
+      setNotice(
+        response.job?.idempotent_replay
+          ? `${connection.business_location_name || connection.campaign_name} is already up to date for the latest available Search Console day.`
+          : response.job?.status === "completed"
+            ? `${connection.business_location_name || connection.campaign_name} was updated successfully.`
+            : "The update is queued and will continue automatically.",
+      );
+    } catch (err) {
+      await loadConnections(organizationId).catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Unable to update this connection.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
+  const trustSignals = useMemo<TrustSignal[]>(
+    () => [
+      {
+        label: "Google",
+        value: payload?.google_oauth.connected ? "Connected" : "Not connected",
+        tone: payload?.google_oauth.connected ? "success" : "warning",
+      },
+      {
+        label: "Locations mapped",
+        value: `${connections.length}/${manageableCampaigns.length}`,
+        tone: connections.length === manageableCampaigns.length && connections.length > 0
+          ? "success"
+          : "warning",
+      },
+      {
+        label: "Automatic data",
+        value: portfolioSummary.label,
+        tone: portfolioSummary.tone as TrustSignal["tone"],
+      },
+      {
+        label: "Scope",
+        value: "Search Console only",
+        tone: "info",
+      },
+    ],
+    [connections.length, manageableCampaigns.length, payload, portfolioSummary],
+  );
+
+  return (
+    <AppShell
+      navItems={navItems}
+      trustSignals={trustSignals}
+      accountLabel="Data connections"
+      dateRangeLabel="Automatic updates"
+      topBarActions={
+        <button
+          className={primaryButtonClass}
+          disabled={busyAction === "oauth"}
+          onClick={() => void connectGoogle()}
+        >
+          {payload?.google_oauth.connected ? "Reconnect Google" : "Connect Google"}
+        </button>
+      }
+    >
+      <section className="space-y-6">
+        <ProductPageIntro
+          eyebrow="Settings · Data connections"
+          title="Keep your search data updated automatically"
+          summary="Connect Google once, match each business location to its website, and let InsightOS collect the latest Search Console results on schedule."
+        />
+
+        <TruthNotice title="This phase does not connect sales systems." tone="info">
+          Search Console is the first automatic source. Call tracking, CRM, job-management,
+          booked-job, payment, and revenue connections are intentionally not included.
+        </TruthNotice>
+
+        {error ? (
+          <div className="rounded-md border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {error}
+          </div>
+        ) : null}
+        {notice ? (
+          <div className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            {notice}
+          </div>
+        ) : null}
+
+        {loading ? (
+          <LoadingCard
+            title="Loading data connections"
+            summary="Checking Google access, location mappings, and the latest automatic updates."
+          />
+        ) : (
+          <>
+            <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">
+                      Google Search Console
+                    </h2>
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        payload?.google_oauth.connected
+                          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                          : "border-amber-500/25 bg-amber-500/10 text-amber-100"
+                      }`}
+                    >
+                      {payload?.google_oauth.connected ? "Google connected" : "Connection required"}
+                    </span>
+                  </div>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
+                    Shows how often your website appears in Google Search, how many visits it
+                    earns, and its average search position. Search Console normally reports with
+                    a short delay, so the newest available day may be about two days old.
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    className={secondaryButtonClass}
+                    disabled={!payload?.google_oauth.connected || loadingResources}
+                    onClick={() => void loadResources(organizationId)}
+                  >
+                    {loadingResources ? "Loading websites..." : "Load available websites"}
+                  </button>
+                  <button
+                    className={primaryButtonClass}
+                    disabled={busyAction === "oauth"}
+                    onClick={() => void connectGoogle()}
+                  >
+                    {payload?.google_oauth.connected ? "Reconnect Google" : "Connect Google"}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {!payload?.google_oauth.connected ? (
+              <EmptyState
+                title="Connect Google to begin"
+                summary="You will approve read-only Search Console access. InsightOS stores the connection securely and never receives your Google password."
+                actionLabel="Connect Google Search Console"
+                onAction={() => void connectGoogle()}
+              />
+            ) : manageableCampaigns.length === 0 ? (
+              <EmptyState
+                title="Add a business location first"
+                summary="Every automatic data source must map to a real business location so results never blend between accounts."
+                actionLabel="Manage locations"
+                onAction={() => window.location.assign("/locations")}
+              />
+            ) : (
+              <section className="space-y-3">
+                <div>
+                  <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">
+                    Match websites to locations
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    Each location keeps its own mapping and sync history. A shared domain property
+                    represents the whole website unless that location owns a separate URL-prefix property.
+                  </p>
+                </div>
+
+                {manageableCampaigns.map((campaign) => {
+                  const connection = connectionByCampaign.get(campaign.id);
+                  const statusView = connection ? getConnectionStatusView(connection) : null;
+                  const selectedResource = resourceDrafts[campaign.id] || connection?.external_resource_id || "";
+                  return (
+                    <article
+                      key={campaign.id}
+                      className="rounded-md border border-[#292a2f] bg-[#141518] p-5"
+                    >
+                      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)_auto] lg:items-center">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold text-white">{campaign.name}</h3>
+                            {statusView ? (
+                              <span
+                                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClasses(statusView.tone)}`}
+                              >
+                                {statusView.label}
+                              </span>
+                            ) : (
+                              <span className="rounded-full border border-zinc-500/25 bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-300">
+                                Website not matched
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-1 text-sm text-zinc-400">
+                            {connection?.business_location_name || campaign.domain}
+                          </p>
+                          <p className="mt-2 text-xs leading-5 text-zinc-500">
+                            {connection
+                              ? `${statusView?.summary} Last successful update: ${formatTimestamp(connection.last_success_at)}.`
+                              : "Choose the Search Console property that belongs to this location's website."}
+                          </p>
+                          {connection?.last_error_message ? (
+                            <p className="mt-2 text-xs leading-5 text-rose-200">
+                              {connection.last_error_message}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor={`resource-${campaign.id}`}
+                            className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500"
+                          >
+                            Search Console website
+                          </label>
+                          <select
+                            id={`resource-${campaign.id}`}
+                            className={selectClass}
+                            value={selectedResource}
+                            disabled={resources.length === 0 || Boolean(connection?.last_success_at)}
+                            onChange={(event) =>
+                              setResourceDrafts((current) => ({
+                                ...current,
+                                [campaign.id]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">
+                              {resources.length === 0
+                                ? "Load available websites first"
+                                : "Choose a website"}
+                            </option>
+                            {resources.map((resource) => (
+                              <option key={resource.id} value={resource.id}>
+                                {resource.name} · {resource.permission_level.replaceAll("_", " ")}
+                              </option>
+                            ))}
+                            {connection && !resources.some((resource) => resource.id === connection.external_resource_id) ? (
+                              <option value={connection.external_resource_id}>
+                                {connection.external_resource_name || connection.external_resource_id}
+                              </option>
+                            ) : null}
+                          </select>
+                          {connection ? (
+                            <p className="mt-1.5 text-xs text-zinc-500">
+                              {connection.resource_scope === "domain_property"
+                                ? "Whole-domain website property"
+                                : "URL-prefix website property"}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="flex lg:justify-end">
+                          {connection ? (
+                            <button
+                              className={secondaryButtonClass}
+                              disabled={
+                                busyAction === `sync-${connection.id}` ||
+                                connection.status === "syncing"
+                              }
+                              onClick={() => void syncConnection(connection)}
+                            >
+                              {busyAction === `sync-${connection.id}`
+                                ? "Updating..."
+                                : statusView?.action || "Check now"}
+                            </button>
+                          ) : (
+                            <button
+                              className={primaryButtonClass}
+                              disabled={
+                                busyAction === `mapping-${campaign.id}` ||
+                                !selectedResource
+                              }
+                              onClick={() => void saveMapping(campaign)}
+                            >
+                              {busyAction === `mapping-${campaign.id}`
+                                ? "Connecting..."
+                                : "Connect and start first sync"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            )}
+
+            <section className="grid gap-3 md:grid-cols-2">
+              <article className="rounded-md border border-[#292a2f] bg-[#141518] p-5 opacity-80">
+                <span className="rounded-full border border-zinc-500/25 bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-300">
+                  Planned next
+                </span>
+                <h2 className="mt-3 text-lg font-semibold text-white">Google Business Profile</h2>
+                <p className="mt-2 text-sm leading-6 text-zinc-400">
+                  Profile details, reviews, and local search activity will use the same secure
+                  organization connection and per-location mapping pattern.
+                </p>
+              </article>
+              <article className="rounded-md border border-[#292a2f] bg-[#141518] p-5 opacity-80">
+                <span className="rounded-full border border-zinc-500/25 bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-300">
+                  Planned after GBP
+                </span>
+                <h2 className="mt-3 text-lg font-semibold text-white">
+                  Website analytics and forms
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-zinc-400">
+                  Visits and website form events will be added after Search Console synchronization
+                  is proven reliable. No CRM or call-tracking dependency is planned.
+                </p>
+              </article>
+            </section>
+          </>
+        )}
+      </section>
+    </AppShell>
+  );
+}

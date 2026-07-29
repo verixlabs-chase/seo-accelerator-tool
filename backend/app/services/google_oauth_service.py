@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin, urlparse
 
 import jwt
 import requests  # type: ignore[import-untyped]
@@ -32,6 +32,7 @@ def build_google_oauth_authorization_url(
     organization_id: str,
     user_id: str,
     scope_target: str = GOOGLE_OAUTH_SCOPE_TARGET_GSC,
+    return_path: str | None = None,
     db: Session | None = None,
 ) -> tuple[str, str]:
     settings = get_settings()
@@ -39,7 +40,12 @@ def build_google_oauth_authorization_url(
         organization_id=organization_id,
         db=db,
     )
-    state = create_google_oauth_state(organization_id=organization_id, user_id=user_id)
+    state = create_google_oauth_state(
+        organization_id=organization_id,
+        user_id=user_id,
+        scope_target=scope_target,
+        return_path=return_path,
+    )
     redirect_uri = _build_google_oauth_redirect_uri(organization_id)
     params = {
         "client_id": client_id,
@@ -54,7 +60,13 @@ def build_google_oauth_authorization_url(
     return f"{settings.google_oauth_auth_endpoint}?{urlencode(params)}", state
 
 
-def create_google_oauth_state(*, organization_id: str, user_id: str) -> str:
+def create_google_oauth_state(
+    *,
+    organization_id: str,
+    user_id: str,
+    scope_target: str | None = None,
+    return_path: str | None = None,
+) -> str:
     settings = get_settings()
     now = datetime.now(UTC)
     payload = {
@@ -65,6 +77,10 @@ def create_google_oauth_state(*, organization_id: str, user_id: str) -> str:
         "iat": int(now.timestamp()),
         "exp": int(now.timestamp()) + settings.google_oauth_state_ttl_seconds,
     }
+    if scope_target:
+        payload["scope_target"] = scope_target
+    if return_path:
+        payload["return_path"] = _validate_return_path(return_path)
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
@@ -105,7 +121,19 @@ def validate_google_oauth_state(state: str) -> dict[str, Any]:
             reason_code="oauth_state_invalid",
             status_code=400,
         )
+    return_path = payload.get("return_path")
+    if return_path is not None:
+        payload["return_path"] = _validate_return_path(str(return_path))
     return payload
+
+
+def build_customer_oauth_return_url(return_path: str, *, status: str) -> str:
+    safe_path = _validate_return_path(return_path)
+    settings = get_settings()
+    base_url = (settings.customer_app_base_url or settings.public_base_url).rstrip("/") + "/"
+    resolved = urljoin(base_url, safe_path.lstrip("/"))
+    separator = "&" if "?" in resolved else "?"
+    return f"{resolved}{separator}{urlencode({'google': status})}"
 
 
 def exchange_google_authorization_code(*, code: str, organization_id: str, db: Session | None = None) -> dict[str, Any]:
@@ -254,9 +282,10 @@ def _normalize_token_payload(response: requests.Response, *, require_refresh_tok
 
 
 def _build_google_oauth_redirect_uri(organization_id: str) -> str:
+    del organization_id
     settings = get_settings()
     base_url = settings.public_base_url.rstrip("/")
-    return f"{base_url}/api/v1/organizations/{organization_id}/providers/google/oauth/callback"
+    return f"{base_url}/api/v1/providers/google/oauth/callback"
 
 
 def upsert_organization_google_oauth_client(
@@ -361,6 +390,25 @@ def _resolve_google_oauth_scope(scope_target: str) -> str:
         return settings.google_oauth_scope_gbp
     # Backward-compatible fallback for callers that still rely on the legacy single scope setting.
     return settings.google_oauth_scope
+
+
+def _validate_return_path(return_path: str) -> str:
+    normalized = return_path.strip()
+    parsed = urlparse(normalized)
+    if (
+        not normalized.startswith("/")
+        or normalized.startswith("//")
+        or parsed.scheme
+        or parsed.netloc
+        or "\r" in normalized
+        or "\n" in normalized
+    ):
+        raise GoogleOAuthError(
+            "Google OAuth return path is invalid.",
+            reason_code="oauth_return_path_invalid",
+            status_code=400,
+        )
+    return normalized
 
 
 def _encrypt_payload(data: dict[str, Any]) -> tuple[str, str, str]:

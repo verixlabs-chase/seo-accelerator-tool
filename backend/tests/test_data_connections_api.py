@@ -1,0 +1,278 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from app.models.data_connection import DataConnection
+from app.models.platform_job import PlatformJob
+from app.services import data_connections_service, traffic_fact_service
+
+
+def _login(client, email: str = "org-admin@example.com", password: str = "pass-org-admin") -> tuple[str, str]:
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    return payload["access_token"], payload["user"]["organization_id"]
+
+
+def _create_location_campaign(client, token: str, organization_id: str, *, suffix: str) -> tuple[str, str]:
+    headers = {"Authorization": f"Bearer {token}"}
+    location_response = client.post(
+        f"/api/v1/organizations/{organization_id}/business-locations",
+        headers=headers,
+        json={
+            "name": f"Connection Location {suffix}",
+            "domain": f"{suffix}.example.com",
+            "city": "Austin",
+            "region": "Texas",
+            "country_code": "US",
+        },
+    )
+    assert location_response.status_code == 200
+    location_id = location_response.json()["data"]["business_location"]["id"]
+    campaign_response = client.post(
+        "/api/v1/campaigns",
+        headers=headers,
+        json={
+            "name": f"Connection Campaign {suffix}",
+            "domain": f"{suffix}.example.com",
+            "business_location_id": location_id,
+        },
+    )
+    assert campaign_response.status_code == 200
+    campaign_id = campaign_response.json()["data"]["id"]
+    return location_id, campaign_id
+
+
+def _map_connection(client, token: str, organization_id: str, campaign_id: str, *, domain: str) -> dict:
+    response = client.put(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-search-console/mappings/{campaign_id}"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "external_resource_id": f"sc-domain:{domain}",
+            "external_resource_name": domain,
+        },
+    )
+    assert response.status_code == 200
+    return response.json()["data"]["connection"]
+
+
+def test_data_connections_list_is_tenant_scoped(client, db_session) -> None:
+    token, organization_id = _login(client)
+    _location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="tenant-scope",
+    )
+    mapped = _map_connection(
+        client,
+        token,
+        organization_id,
+        campaign_id,
+        domain="tenant-scope.example.com",
+    )
+
+    response = client.get(
+        f"/api/v1/organizations/{organization_id}/data-connections",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["google_oauth"]["connected"] is False
+    assert [item["id"] for item in payload["connections"]] == [mapped["id"]]
+    assert payload["connections"][0]["business_location_name"] == "Connection Location tenant-scope"
+    assert "shared website property" in payload["connections"][0]["source_truth"]
+    assert db_session.query(DataConnection).filter(
+        DataConnection.organization_id == organization_id
+    ).count() == 1
+
+    other_token, other_org = _login(client, "b@example.com", "pass-b")
+    cross_scope = client.get(
+        f"/api/v1/organizations/{organization_id}/data-connections",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert other_org != organization_id
+    assert cross_scope.status_code == 403
+
+
+def test_search_console_resource_discovery_uses_owner_connection_flow(client, monkeypatch) -> None:
+    token, organization_id = _login(client)
+    monkeypatch.setattr(
+        data_connections_service,
+        "discover_search_console_resources",
+        lambda _db, org_id: [
+            {
+                "id": "sc-domain:example.com",
+                "name": "example.com",
+                "permission_level": "siteOwner",
+                "resource_scope": "domain_property",
+            }
+        ]
+        if org_id == organization_id
+        else [],
+    )
+
+    response = client.get(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            "google-search-console/resources"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    resources = response.json()["data"]["resources"]
+    assert resources[0]["id"] == "sc-domain:example.com"
+    assert resources[0]["permission_level"] == "siteOwner"
+
+
+def test_search_console_mapping_requires_business_location(client) -> None:
+    token, organization_id = _login(client)
+    campaign_response = client.post(
+        "/api/v1/campaigns",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Unassigned Connection", "domain": "unassigned.example.com"},
+    )
+    assert campaign_response.status_code == 200
+    campaign_id = campaign_response.json()["data"]["id"]
+
+    response = client.put(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-search-console/mappings/{campaign_id}"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+        json={"external_resource_id": "sc-domain:unassigned.example.com"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["errors"][0]["details"]["reason_code"] == "business_location_required"
+
+
+def test_search_console_sync_is_durable_and_idempotent(client, db_session, monkeypatch) -> None:
+    token, organization_id = _login(client)
+    _location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="durable-sync",
+    )
+    mapped = _map_connection(
+        client,
+        token,
+        organization_id,
+        campaign_id,
+        domain="durable-sync.example.com",
+    )
+    calls: list[dict] = []
+
+    def _sync(**kwargs):
+        calls.append(kwargs)
+        return traffic_fact_service.TrafficFactSyncResult(
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            start_date=kwargs["start_date"],
+            end_date=kwargs["end_date"],
+            requested_days=28,
+            provider_calls=1,
+            inserted_rows=28,
+            updated_rows=0,
+            skipped_rows=0,
+        )
+
+    monkeypatch.setattr(
+        traffic_fact_service,
+        "sync_search_console_daily_metrics_for_campaign",
+        _sync,
+    )
+    endpoint = (
+        f"/api/v1/organizations/{organization_id}/data-connections/{mapped['id']}/sync"
+    )
+    first = client.post(endpoint, headers={"Authorization": f"Bearer {token}"})
+    second = client.post(endpoint, headers={"Authorization": f"Bearer {token}"})
+
+    assert first.status_code == 200
+    assert first.json()["data"]["job"]["status"] == "completed"
+    assert first.json()["data"]["connection"]["status"] == "current"
+    assert second.status_code == 200
+    assert second.json()["data"]["job"]["idempotent_replay"] is True
+    assert len(calls) == 1
+    assert calls[0]["site_url"] == "sc-domain:durable-sync.example.com"
+    assert db_session.query(PlatformJob).filter(
+        PlatformJob.entity_id == mapped["id"]
+    ).count() == 1
+
+    connection = db_session.get(DataConnection, mapped["id"])
+    db_session.refresh(connection)
+    assert connection is not None
+    assert connection.status == "current"
+    assert connection.last_success_at is not None
+    assert connection.next_sync_at is not None
+    assert connection.sync_cursor.get("last_metric_date")
+
+
+def test_search_console_sync_failure_is_visible_without_cross_tenant_leak(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    token, organization_id = _login(client)
+    _location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="failed-sync",
+    )
+    mapped = _map_connection(
+        client,
+        token,
+        organization_id,
+        campaign_id,
+        domain="failed-sync.example.com",
+    )
+
+    def _fail(**_kwargs):
+        raise RuntimeError("Search Console dependency unavailable")
+
+    monkeypatch.setattr(
+        traffic_fact_service,
+        "sync_search_console_daily_metrics_for_campaign",
+        _fail,
+    )
+    response = client.post(
+        f"/api/v1/organizations/{organization_id}/data-connections/{mapped['id']}/sync",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["job"]["status"] == "queued"
+    connection = db_session.get(DataConnection, mapped["id"])
+    db_session.refresh(connection)
+    assert connection is not None
+    assert connection.status == "failed"
+    assert connection.last_error_code == "sync_failed"
+    assert connection.last_error_message == "Search Console dependency unavailable"
+
+
+def test_effective_connection_status_marks_old_success_stale(monkeypatch) -> None:
+    connection = DataConnection(
+        tenant_id="tenant",
+        organization_id="organization",
+        business_location_id="location",
+        campaign_id="campaign",
+        provider_name=data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER,
+        external_resource_id="sc-domain:example.com",
+        status="current",
+        last_success_at=datetime(2026, 7, 1, tzinfo=UTC),
+    )
+
+    status = data_connections_service.effective_connection_status(
+        connection,
+        now=datetime(2026, 7, 29, tzinfo=UTC),
+    )
+
+    assert status == "stale"

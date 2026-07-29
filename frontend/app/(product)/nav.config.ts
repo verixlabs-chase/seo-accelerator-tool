@@ -7,7 +7,7 @@ const PRODUCT_NAV_ITEMS: NavItem[] = [
   { href: "/site-health", label: "Website Health", section: "primary" },
   { href: "/opportunities", label: "Next Steps", section: "primary" },
   { href: "/reports", label: "Reports", section: "primary" },
-  { href: "/settings", label: "Settings", hidden: true },
+  { href: "/settings", label: "Data connections", section: "more" },
   { href: "/locations", label: "Manage locations", section: "more" },
   { href: "/organic-value", label: "Search Value", section: "more" },
   { href: "/competitors", label: "Competitors", section: "more" },

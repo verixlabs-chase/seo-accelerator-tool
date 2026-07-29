@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 import json
 from time import monotonic
 from typing import Any
@@ -12,14 +12,21 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle
 from app.models.campaign import Campaign
+from app.models.data_connection import DataConnection
 from app.models.platform_job import PlatformJob
 from app.models.reporting import ReportSchedule
-from app.services import job_service, reporting_service
+from app.services import (
+    data_connections_service,
+    job_service,
+    reporting_service,
+    traffic_fact_service,
+)
 
 JobHandler = Callable[[Session, PlatformJob], dict[str, Any]]
 
 REPORT_SCHEDULE_JOB_TYPE = "reporting.process_schedule"
 INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE = "intelligence.campaign_cycle"
+SEARCH_CONSOLE_SYNC_JOB_TYPE = "data_connections.search_console_sync"
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -56,10 +63,221 @@ def _intelligence_campaign_cycle_handler(
     return run_campaign_cycle(campaign_id, db=db)
 
 
+def _search_console_sync_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    connection_id = str(job.payload.get("connection_id") or job.entity_id or "").strip()
+    connection = db.get(DataConnection, connection_id) if connection_id else None
+    if (
+        not tenant_id
+        or connection is None
+        or connection.tenant_id != tenant_id
+        or connection.provider_name != data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER
+        or connection.status == data_connections_service.CONNECTION_STATUS_DISCONNECTED
+    ):
+        raise ValueError("Search Console sync job has no active tenant-scoped connection.")
+    campaign = db.get(Campaign, connection.campaign_id)
+    if (
+        campaign is None
+        or campaign.tenant_id != tenant_id
+        or campaign.organization_id != connection.organization_id
+        or campaign.business_location_id != connection.business_location_id
+    ):
+        raise ValueError("Search Console connection mapping is no longer valid.")
+
+    start_date, end_date = _search_console_sync_window(connection, payload=job.payload)
+    data_connections_service.mark_sync_started(db, connection)
+    result = traffic_fact_service.sync_search_console_daily_metrics_for_campaign(
+        db=db,
+        campaign=campaign,
+        start_date=start_date,
+        end_date=end_date,
+        site_url=connection.external_resource_id,
+    )
+    data_connections_service.mark_sync_succeeded(
+        db,
+        connection,
+        metric_end_date=end_date.isoformat(),
+    )
+    return {
+        "connection_id": connection.id,
+        "campaign_id": campaign.id,
+        "business_location_id": connection.business_location_id,
+        "provider_name": connection.provider_name,
+        "external_resource_id": connection.external_resource_id,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "requested_days": result.requested_days,
+        "provider_calls": result.provider_calls,
+        "inserted_rows": result.inserted_rows,
+        "updated_rows": result.updated_rows,
+        "skipped_rows": result.skipped_rows,
+        "status": result.status,
+    }
+
+
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
     INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
+    SEARCH_CONSOLE_SYNC_JOB_TYPE: _search_console_sync_handler,
 }
+
+
+def _search_console_sync_window(
+    connection: DataConnection,
+    *,
+    payload: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> tuple[date, date]:
+    resolved_now = now or datetime.now(UTC)
+    settings = get_settings()
+    end_date = resolved_now.date() - timedelta(
+        days=max(0, int(settings.data_connection_sync_delay_days))
+    )
+    payload = payload or {}
+    payload_start = str(payload.get("start_date") or "").strip()
+    payload_end = str(payload.get("end_date") or "").strip()
+    if payload_start and payload_end:
+        return date.fromisoformat(payload_start), date.fromisoformat(payload_end)
+
+    cursor_date_raw = str((connection.sync_cursor or {}).get("last_metric_date") or "").strip()
+    if cursor_date_raw:
+        cursor_date = date.fromisoformat(cursor_date_raw)
+        start_date = min(cursor_date + timedelta(days=1), end_date)
+    else:
+        start_date = end_date - timedelta(
+            days=max(1, int(settings.data_connection_initial_backfill_days)) - 1
+        )
+    return start_date, end_date
+
+
+def create_search_console_sync_job(
+    db: Session,
+    *,
+    connection: DataConnection,
+    now: datetime | None = None,
+) -> PlatformJob:
+    resolved_now = now or datetime.now(UTC)
+    start_date, end_date = _search_console_sync_window(connection, now=resolved_now)
+    return job_service.create_job(
+        db,
+        tenant_id=connection.tenant_id,
+        job_type=SEARCH_CONSOLE_SYNC_JOB_TYPE,
+        entity_type="data_connection",
+        entity_id=connection.id,
+        idempotency_key=f"search-console-sync:{connection.id}:{end_date.isoformat()}",
+        payload={
+            "tenant_id": connection.tenant_id,
+            "organization_id": connection.organization_id,
+            "connection_id": connection.id,
+            "campaign_id": connection.campaign_id,
+            "business_location_id": connection.business_location_id,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        },
+        available_at=resolved_now,
+        max_retries=2,
+    )
+
+
+def enqueue_due_data_connection_jobs(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    limit: int = 25,
+) -> int:
+    resolved_now = now or datetime.now(UTC)
+    rows = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.provider_name == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER,
+            DataConnection.status != data_connections_service.CONNECTION_STATUS_DISCONNECTED,
+            DataConnection.next_sync_at.isnot(None),
+            DataConnection.next_sync_at <= resolved_now,
+        )
+        .order_by(DataConnection.next_sync_at.asc(), DataConnection.id.asc())
+        .with_for_update(skip_locked=True)
+        .limit(max(1, min(int(limit), 100)))
+        .all()
+    )
+    for connection in rows:
+        create_search_console_sync_job(db, connection=connection, now=resolved_now)
+    db.flush()
+    return len(rows)
+
+
+def run_search_console_sync_now(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    connection_id: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    resolved_now = now or datetime.now(UTC)
+    connection = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.id == connection_id,
+            DataConnection.tenant_id == tenant_id,
+            DataConnection.organization_id == organization_id,
+            DataConnection.provider_name == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER,
+            DataConnection.status != data_connections_service.CONNECTION_STATUS_DISCONNECTED,
+        )
+        .first()
+    )
+    if connection is None:
+        raise ValueError("Search Console connection not found.")
+
+    _start_date, end_date = _search_console_sync_window(connection, now=resolved_now)
+    idempotency_key = f"search-console-sync:{connection.id}:{end_date.isoformat()}"
+    existing = (
+        db.query(PlatformJob)
+        .filter(PlatformJob.idempotency_key == idempotency_key)
+        .first()
+    )
+    job = create_search_console_sync_job(db, connection=connection, now=resolved_now)
+    created = existing is None
+    db.commit()
+    db.refresh(job)
+    if job.status == job_service.JOB_STATUS_COMPLETED:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": False,
+            "idempotent_replay": True,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    if job.status in {job_service.JOB_STATUS_RUNNING, job_service.JOB_STATUS_DEAD_LETTER}:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": False,
+            "idempotent_replay": False,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+
+    job_service.start_job(
+        db,
+        job.id,
+        worker_id=f"tenant-data-connection-{uuid.uuid4()}",
+        lease_seconds=get_settings().durable_job_lease_seconds,
+    )
+    db.commit()
+    execution = execute_claimed_job(db, job_id=job.id)
+    refreshed = db.get(PlatformJob, job.id)
+    return {
+        "job_id": job.id,
+        "status": execution["status"],
+        "created": created,
+        "idempotent_replay": False,
+        "result": _json_safe(refreshed.result if refreshed is not None else None),
+        "error": refreshed.error if refreshed is not None else None,
+    }
 
 
 def enqueue_due_report_schedule_jobs(
@@ -251,6 +469,15 @@ def _record_handler_failure(
     tenant_id: str | None,
     error: Exception,
 ) -> None:
+    if job_type == SEARCH_CONSOLE_SYNC_JOB_TYPE:
+        connection_id = str(payload.get("connection_id") or "").strip()
+        if connection_id:
+            data_connections_service.mark_sync_failed(
+                db,
+                connection_id=connection_id,
+                error=error,
+            )
+        return
     if job_type != REPORT_SCHEDULE_JOB_TYPE:
         return
     campaign_id = str(payload.get("campaign_id") or "").strip()
@@ -343,6 +570,10 @@ def drain_platform_jobs(
         db,
         limit=resolved_batch_size * 5,
     )
+    due_data_connections_seen = enqueue_due_data_connection_jobs(
+        db,
+        limit=resolved_batch_size * 5,
+    )
     db.commit()
 
     claimed = job_service.claim_jobs(
@@ -378,6 +609,7 @@ def drain_platform_jobs(
         "worker_id": resolved_worker_id,
         "due_report_schedules_seen": due_schedules_seen,
         "due_intelligence_campaigns_seen": due_intelligence_campaigns_seen,
+        "due_data_connections_seen": due_data_connections_seen,
         "claimed": len(claimed_ids),
         "processed": len(results),
         "deferred": len(deferred_ids),

@@ -115,6 +115,7 @@ def sync_search_console_daily_metrics_for_campaign(
     campaign: Campaign,
     start_date: date | str,
     end_date: date | str,
+    site_url: str | None = None,
 ) -> TrafficFactSyncResult:
     resolved_start = _coerce_date(start_date)
     resolved_end = _coerce_date(end_date)
@@ -152,8 +153,10 @@ def sync_search_console_daily_metrics_for_campaign(
             replay_skipped=True,
         )
 
-    credentials = resolve_provider_credentials(db, organization_id, 'google')
-    site_url = _resolve_site_url(credentials=credentials, campaign=campaign)
+    resolved_site_url = str(site_url or "").strip()
+    if not resolved_site_url:
+        credentials = resolve_provider_credentials(db, organization_id, 'google')
+        resolved_site_url = _resolve_site_url(credentials=credentials, campaign=campaign)
     adapter = SearchConsoleProviderAdapter(db=db)
 
     metrics_by_day: dict[date, dict[str, float]] = {}
@@ -166,7 +169,7 @@ def sync_search_console_daily_metrics_for_campaign(
                 payload={
                     'organization_id': organization_id,
                     'campaign_id': campaign.id,
-                    'site_url': site_url,
+                    'site_url': resolved_site_url,
                     'start_date': range_start.isoformat(),
                     'end_date': range_end.isoformat(),
                     'dimensions': ['date'],
@@ -550,4 +553,3 @@ def _resolve_property_id(*, credentials: dict[str, Any]) -> str:
 
 def _replay_mode_enabled() -> bool:
     return os.getenv('LSOS_REPLAY_MODE', '0').strip() == '1' or os.getenv('REPLAY_MODE', '0').strip() == '1'
-

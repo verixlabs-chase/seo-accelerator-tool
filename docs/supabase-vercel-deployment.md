@@ -13,8 +13,9 @@ Authentication, tenant data, campaigns, dashboards, and database-backed API
 workflows can run on Vercel. Celery tasks execute eagerly inside the API request.
 
 Vercel functions are not persistent workers. The `platform_jobs` table and a
-protected Vercel Cron endpoint provide the first durable execution path for
-scheduled report generation. Other Celery tasks still execute eagerly. Large
+protected Vercel Cron endpoint provide durable execution for scheduled reports,
+recommendation-only intelligence cycles, and Google Search Console connection
+synchronization. Other Celery tasks still execute eagerly. Large
 crawls, Playwright crawling, Redis event durability, and high-volume automation
 are deliberately not claimed as production-capable yet. Keep crawl limits small
 while additional task types are migrated to durable jobs.
@@ -93,10 +94,36 @@ Redeploy the frontend whenever `API_PROXY_TARGET` changes.
 
 ## 5. OAuth and production settings
 
-If Google OAuth is enabled, register the callback URL produced from the backend
-`PUBLIC_BASE_URL`. Add the frontend production URL to `CORS_ORIGINS` for direct
-API calls. Preview deployments normally use the same-origin proxy and do not
-need wildcard CORS.
+Growth G1 uses one static Google OAuth callback for every organization:
+
+```text
+https://your-api-project.vercel.app/api/v1/providers/google/oauth/callback
+```
+
+Create a Google Cloud OAuth web client, enable the Google Search Console API,
+and register that exact authorized redirect URI. Then set these backend
+variables:
+
+```text
+GOOGLE_OAUTH_CLIENT_ID=<web-client-id>
+GOOGLE_OAUTH_CLIENT_SECRET=<web-client-secret>
+GOOGLE_OAUTH_SCOPE_GSC=https://www.googleapis.com/auth/webmasters.readonly
+CUSTOMER_APP_BASE_URL=https://your-frontend-project.vercel.app
+DATA_CONNECTION_INITIAL_BACKFILL_DAYS=28
+DATA_CONNECTION_SYNC_DELAY_DAYS=2
+DATA_CONNECTION_SYNC_INTERVAL_HOURS=24
+```
+
+`PUBLIC_BASE_URL` remains the backend Vercel project URL and is used to build
+the registered callback. `CUSTOMER_APP_BASE_URL` is the customer-facing
+frontend destination after OAuth completes. Add the frontend production URL to
+`CORS_ORIGINS` for direct API use. Preview deployments normally use the
+same-origin proxy and do not need wildcard CORS.
+
+The Search Console authorization is read-only. OAuth access and refresh tokens
+are encrypted through the existing organization credential store. Website
+property identifiers and per-location mappings are stored separately in
+`data_connections`; raw tokens are never exposed to the frontend.
 
 Generate secrets locally:
 
@@ -131,8 +158,9 @@ The no-Docker deployment is an intentionally constrained hosted mode:
 - Redis-backed event streams become process-local
 - task calls execute eagerly and must finish before the function timeout
 - Celery Beat schedules do not run
-- scheduled reports and recommendation-only intelligence cycles use the
-  Supabase-backed `platform_jobs` queue and Vercel Cron
+- scheduled reports, recommendation-only intelligence cycles, and Search
+  Console synchronization use the Supabase-backed `platform_jobs` queue and
+  Vercel Cron
 - intelligence cycles use stored campaign signals and cannot schedule or
   execute site mutations while
   `INTELLIGENCE_ACTIVATION_MODE=recommendation_only`

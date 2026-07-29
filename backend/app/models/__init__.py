@@ -6,6 +6,7 @@ from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+from app.models.data_connection import DataConnection
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap
@@ -133,6 +134,7 @@ __all__ = [
     'OnboardingState',
     'OnboardingSession',
     'SearchConsoleDailyMetric',
+    'DataConnection',
     'RuntimeVersionLock',
     'Portfolio',
     'PortfolioUsageDaily',

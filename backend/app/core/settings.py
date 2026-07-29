@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     traffic_fact_sync_hour_utc: int = 2
     traffic_fact_sync_minute_utc: int = 0
     traffic_fact_max_staleness_days: int = 2
+    data_connection_initial_backfill_days: int = 28
+    data_connection_sync_delay_days: int = 2
+    data_connection_sync_interval_hours: int = 24
+    customer_app_base_url: str = ""
     google_oauth_access_token_skew_seconds: int = 60
     rank_provider_http_endpoint: str = ""
     rank_provider_http_timeout_seconds: float = 15.0

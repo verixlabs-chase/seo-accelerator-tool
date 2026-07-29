@@ -81,9 +81,57 @@ def test_google_oauth_start_returns_org_scoped_state(client) -> None:
     parsed = urlparse(data["authorization_url"])
     query = parse_qs(parsed.query)
     assert query["state"][0] == data["state"]
+    assert query["redirect_uri"][0] == "https://example.com/api/v1/providers/google/oauth/callback"
     state_payload = validate_google_oauth_state(data["state"])
     assert state_payload["organization_id"] == organization_id
     assert state_payload["user_id"] == user["id"]
+
+
+def test_google_oauth_callback_can_return_to_customer_settings(client, monkeypatch) -> None:
+    token, organization_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    start = client.post(
+        f"/api/v1/organizations/{organization_id}/providers/google/oauth/start",
+        params={"scope_target": "gsc", "return_path": "/settings"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert start.status_code == 200
+    state = start.json()["data"]["state"]
+    state_payload = validate_google_oauth_state(state)
+    assert state_payload["scope_target"] == "gsc"
+    assert state_payload["return_path"] == "/settings"
+
+    monkeypatch.setattr(
+        "app.api.v1.google_oauth.exchange_google_authorization_code",
+        lambda *, code, organization_id, db: {
+            "access_token": "access-secret",
+            "refresh_token": "refresh-secret",
+            "expires_in": 3600,
+            "expires_at": 2000000000,
+            "token_type": "Bearer",
+            "scope": "https://www.googleapis.com/auth/webmasters.readonly",
+            "obtained_at": 1999996400,
+        },
+    )
+    callback = client.get(
+        "/api/v1/providers/google/oauth/callback",
+        params={"code": "oauth-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert callback.status_code == 303
+    assert callback.headers["location"] == "https://example.com/settings?google=connected"
+
+
+def test_google_oauth_start_rejects_external_return_url(client) -> None:
+    token, organization_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    response = client.post(
+        f"/api/v1/organizations/{organization_id}/providers/google/oauth/start",
+        params={"return_path": "https://attacker.example/settings"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["errors"][0]["details"]["reason_code"] == "oauth_return_path_invalid"
 
 
 def test_google_oauth_callback_stores_encrypted_org_credentials(client, db_session, monkeypatch) -> None:
