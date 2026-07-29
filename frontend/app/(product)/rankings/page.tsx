@@ -7,6 +7,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,6 +18,7 @@ import {
 import {
   AppShell,
   ChartCard,
+  ChartEmptyState,
   EmptyState,
   KpiCard,
   LoadingCard,
@@ -96,6 +99,14 @@ type RankTrendResponse = {
   tracked_keywords?: number;
   latest_captured_at?: string | null;
   truth?: RuntimeTruth;
+};
+
+type RankingSnapshot = {
+  id: string;
+  keyword_id: string;
+  position: number;
+  confidence?: number | null;
+  captured_at: string;
 };
 
 function coerceNumber(value: number | string | null | undefined, fallback = 0) {
@@ -207,6 +218,7 @@ export default function RankingsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [viewMode, setViewMode] = useState<"portfolio" | "location">("portfolio");
   const [trends, setTrends] = useState<RankTrend[]>([]);
+  const [snapshots, setSnapshots] = useState<RankingSnapshot[]>([]);
   const [trackedKeywords, setTrackedKeywords] = useState<TrackedKeyword[]>([]);
   const [portfolioLocations, setPortfolioLocations] = useState<PortfolioLocation[]>([]);
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
@@ -244,10 +256,11 @@ export default function RankingsPage() {
       setTrackedKeywordCount(0);
       setLatestCapturedAt("");
       setTrackedKeywords([]);
+      setSnapshots([]);
       return;
     }
 
-    const [response, keywordsResponse] = await Promise.all([
+    const [response, keywordsResponse, snapshotsResponse] = await Promise.all([
       platformApi(
         `/rank/trends?campaign_id=${encodeURIComponent(campaignId)}`,
         { method: "GET" },
@@ -256,11 +269,20 @@ export default function RankingsPage() {
         `/rank/keywords?campaign_id=${encodeURIComponent(campaignId)}`,
         { method: "GET" },
       ),
+      platformApi(
+        `/rank/snapshots?campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      ),
     ]);
     setTrends(Array.isArray(response?.items) ? (response.items as RankTrend[]) : []);
     setTrackedKeywords(
       Array.isArray(keywordsResponse?.items)
         ? (keywordsResponse.items as TrackedKeyword[])
+        : [],
+    );
+    setSnapshots(
+      Array.isArray(snapshotsResponse?.items)
+        ? (snapshotsResponse.items as RankingSnapshot[])
         : [],
     );
     setRankingsTruth((response?.truth as RuntimeTruth) || null);
@@ -499,23 +521,99 @@ export default function RankingsPage() {
   const improvedTerms = trends.filter((item) => (item.delta ?? 0) > 0).length;
   const droppedTerms = trends.filter((item) => (item.delta ?? 0) < 0).length;
 
-  const biggestWinner = useMemo(
-    () =>
-      [...trends]
-        .filter((item) => (item.delta ?? 0) > 0)
-        .sort((left, right) => (right.delta ?? 0) - (left.delta ?? 0))[0] ?? null,
-    [trends],
-  );
-
-  const biggestDrop = useMemo(
-    () =>
-      [...trends]
-        .filter((item) => (item.delta ?? 0) < 0)
-        .sort((left, right) => (left.delta ?? 0) - (right.delta ?? 0))[0] ?? null,
-    [trends],
-  );
-
   const strongestPosition = rankedTrends[0] ?? null;
+  const weakestPosition = rankedTrends[rankedTrends.length - 1] ?? null;
+  const nextOpportunity =
+    rankedTrends.find((trend) => {
+      const position = coerceNumber(trend.position, 999);
+      return position > 10 && position <= 30;
+    }) ?? null;
+
+  const rankingDistributionData = useMemo(() => {
+    const buckets = [
+      { label: "Top 3", minimum: 1, maximum: 3, count: 0 },
+      { label: "4–10", minimum: 4, maximum: 10, count: 0 },
+      { label: "11–20", minimum: 11, maximum: 20, count: 0 },
+      { label: "21–50", minimum: 21, maximum: 50, count: 0 },
+      { label: "51+", minimum: 51, maximum: Number.POSITIVE_INFINITY, count: 0 },
+    ];
+
+    trends.forEach((trend) => {
+      const position = coerceNumber(trend.position, 999);
+      const bucket = buckets.find(
+        (item) => position >= item.minimum && position <= item.maximum,
+      );
+      if (bucket) {
+        bucket.count += 1;
+      }
+    });
+
+    return buckets;
+  }, [trends]);
+
+  const rankingHistory = useMemo(() => {
+    const keywordById = new Map(
+      trackedKeywords.map((keyword) => [keyword.id, keyword.keyword]),
+    );
+    const buckets = new Map<
+      string,
+      { timestamp: number; label: string; positions: Record<string, number> }
+    >();
+
+    snapshots.forEach((snapshot) => {
+      const capturedAt = new Date(snapshot.captured_at);
+      if (Number.isNaN(capturedAt.getTime())) {
+        return;
+      }
+      capturedAt.setSeconds(0, 0);
+      const key = capturedAt.toISOString();
+      const existing = buckets.get(key) ?? {
+        timestamp: capturedAt.getTime(),
+        label: capturedAt.toLocaleString(undefined, {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        }),
+        positions: {},
+      };
+      existing.positions[snapshot.keyword_id] = snapshot.position;
+      buckets.set(key, existing);
+    });
+
+    const keywordIds = Array.from(
+      new Set(snapshots.map((snapshot) => snapshot.keyword_id)),
+    ).slice(0, 5);
+    const data = [...buckets.values()]
+      .sort((left, right) => left.timestamp - right.timestamp)
+      .slice(-12)
+      .map((bucket) => ({
+        label: bucket.label,
+        ...bucket.positions,
+      }));
+
+    return {
+      data,
+      series: keywordIds.map((keywordId) => ({
+        id: keywordId,
+        label: keywordById.get(keywordId) || "Tracked phrase",
+      })),
+    };
+  }, [snapshots, trackedKeywords]);
+
+  const portfolioChartData = useMemo(
+    () =>
+      portfolioLocations
+        .filter((location) => location.average_position !== null)
+        .map((location) => ({
+          label:
+            location.location_name.length > 20
+              ? `${location.location_name.slice(0, 20)}…`
+              : location.location_name,
+          position: location.average_position ?? 0,
+        })),
+    [portfolioLocations],
+  );
 
   const positionChartData = useMemo(
     () =>
@@ -537,90 +635,6 @@ export default function RankingsPage() {
         })),
     [trends],
   );
-
-  const summary = useMemo(() => {
-    if (!selectedCampaign) {
-      return {
-        title: "No business is selected yet",
-        body: "Set up a business first so InsightOS can show where you appear in search.",
-        focus: "Return to the dashboard to finish setup and start your first ranking check.",
-      };
-    }
-
-    if (rankingsTruth?.classification === "unavailable") {
-      return {
-        title: `${selectedCampaign.name || "This business"} does not have reliable live ranking collection yet`,
-        body: getRuntimeTruthSummary(
-          rankingsTruth,
-          "The current runtime cannot provide trustworthy live rank collection.",
-        ),
-        focus: "Treat any older stored positions as historical context only until provider setup and fresh collection are confirmed.",
-      };
-    }
-
-    if (rankingsTruth?.classification === "synthetic") {
-      return {
-        title: "These rankings are synthetic test data",
-        body: "The current runtime is using a fixture provider, so positions are useful for workflow testing, not real search intelligence.",
-        focus: "Do not treat gains, drops, or page-one counts here as market truth.",
-      };
-    }
-
-    if (rankingsTruth?.freshness_state === "stale") {
-      return {
-        title: "The latest ranking snapshot is stale",
-        body: getRuntimeTruthSummary(
-          rankingsTruth,
-          "Ranking coverage exists, but it is not current enough to read as live movement.",
-        ),
-        focus: "Run a fresh ranking check before using movement or page-one counts for decisions.",
-      };
-    }
-
-    if (trackedTerms === 0) {
-      return {
-        title: `${selectedCampaign.name || "This business"} has no ranking data yet`,
-        body: "Ranking results will appear here after your first tracked search and ranking check run.",
-        focus: "Add this location's highest-value searches above, then run the first live ranking check.",
-      };
-    }
-
-    if (droppedTerms > improvedTerms && biggestDrop?.keyword) {
-      return {
-        title: `${droppedTerms} tracked searches dropped in the latest update`,
-        body: `The biggest drop was "${biggestDrop.keyword}" at ${formatDelta(biggestDrop.delta)}. This is the first term to review.`,
-        focus: "Check the dropped terms first, then refresh rankings after any page or content updates.",
-      };
-    }
-
-    if (biggestWinner?.keyword) {
-      return {
-        title: `${improvedTerms} tracked searches improved`,
-        body: `The strongest gain was "${biggestWinner.keyword}" at ${formatDelta(biggestWinner.delta)}.`,
-        focus: pageOneCount > 0
-          ? "Protect the terms already on page one and watch any rising terms that are close behind."
-          : "Keep watching the rising terms that are moving closer to page one.",
-      };
-    }
-
-    return {
-      title: `${pageOneCount} tracked searches are on page one`,
-      body: strongestPosition?.keyword
-        ? `"${strongestPosition.keyword}" is your strongest visible term right now at position ${coerceNumber(strongestPosition.position, 0)}.`
-        : "Your ranking set is stable right now.",
-      focus: "Watch for drops on page-one terms first, then review the terms just outside the top 10.",
-    };
-  }, [
-    selectedCampaign,
-    trackedTerms,
-    droppedTerms,
-    improvedTerms,
-    biggestDrop,
-    biggestWinner,
-    pageOneCount,
-    rankingsTruth,
-    strongestPosition,
-  ]);
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
@@ -851,6 +865,56 @@ export default function RankingsPage() {
                 />
               </div>
 
+              <div className="mt-4">
+                <ChartCard
+                  eyebrow="Location comparison"
+                  title="Average search position by location"
+                  summary="Lower position numbers are better. Use this comparison to see which location is currently closest to page one."
+                  chart={
+                    portfolioChartData.length > 0 ? (
+                      <div className="h-72">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={portfolioChartData}>
+                            <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+                            <XAxis
+                              dataKey="label"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fill: "#a1a1aa", fontSize: 12 }}
+                            />
+                            <YAxis
+                              reversed
+                              domain={[100, 1]}
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fill: "#71717a", fontSize: 12 }}
+                              width={36}
+                            />
+                            <Tooltip content={<RankingsTooltip />} />
+                            <Bar
+                              dataKey="position"
+                              name="Average position"
+                              fill="#FF6A1A"
+                              radius={[6, 6, 0, 0]}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <ChartEmptyState
+                        title="No location comparison yet"
+                        summary="Run at least one live ranking check for a location to add it to this chart."
+                      />
+                    )
+                  }
+                  footer={
+                    <p className="text-sm text-zinc-400">
+                      Select a location in the table below to see its individual phrases and history.
+                    </p>
+                  }
+                />
+              </div>
+
               <div className="mt-4 overflow-x-auto rounded-md border border-[#26272c]">
                 <table className="w-full border-collapse text-left">
                   <thead className="bg-[#111214]">
@@ -928,6 +992,215 @@ export default function RankingsPage() {
 
             {viewMode === "location" ? (
             <>
+            <section className="rounded-md border border-[#3a2a20] bg-[linear-gradient(135deg,rgba(255,106,26,0.12),rgba(20,21,24,0.96)_48%)] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-300">
+                Your ranking story
+              </p>
+              <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-[-0.03em] text-white">
+                    {strongestPosition?.keyword
+                      ? `${strongestPosition.keyword} is currently your strongest phrase`
+                      : "Run a ranking check to establish your strongest phrase"}
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                    {nextOpportunity?.keyword
+                      ? `Focus next on “${nextOpportunity.keyword}” at position ${coerceNumber(nextOpportunity.position, 0)}. It is the closest tracked phrase outside page one.`
+                      : pageOneCount > 0
+                        ? `${pageOneCount} tracked phrase${pageOneCount === 1 ? " is" : "s are"} already on page one. Protect those positions and watch for declines.`
+                        : "Add tracked phrases and run a live check before making ranking decisions."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void runLiveCheck()}
+                  disabled={busyAction !== "" || trackedKeywords.length === 0}
+                  className="shrink-0 rounded-md border border-accent-500/40 bg-accent-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_0_18px_rgba(255,106,26,0.16)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busyAction === "run" ? "Checking..." : "Run live check"}
+                </button>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <KpiCard
+                  label="Strongest phrase"
+                  value={
+                    strongestPosition
+                      ? `#${coerceNumber(strongestPosition.position, 0)}`
+                      : "—"
+                  }
+                  summary={
+                    strongestPosition?.keyword ||
+                    "No stored ranking is available for this location."
+                  }
+                  tone="highlight"
+                />
+                <KpiCard
+                  label="Weakest phrase"
+                  value={
+                    weakestPosition
+                      ? `#${coerceNumber(weakestPosition.position, 0)}`
+                      : "—"
+                  }
+                  summary={
+                    weakestPosition?.keyword ||
+                    "No stored ranking is available for this location."
+                  }
+                />
+                <KpiCard
+                  label="Page one"
+                  value={`${pageOneCount}/${trackedTerms}`}
+                  summary={
+                    pageOneCount > 0
+                      ? "Tracked phrases currently appearing in positions 1–10."
+                      : "No tracked phrases are on page one yet."
+                  }
+                />
+                <KpiCard
+                  label="Latest check"
+                  value={latestCapturedAt ? "Stored" : "Not run"}
+                  summary={
+                    latestCapturedAt
+                      ? new Date(latestCapturedAt).toLocaleString()
+                      : "Run a live check to create the first ranking snapshot."
+                  }
+                />
+              </div>
+            </section>
+
+            <div className="grid gap-5 xl:grid-cols-2">
+              <ChartCard
+                eyebrow="History"
+                title="How tracked phrases changed over time"
+                summary="Each line is one tracked phrase. Lower position numbers are better, and the newest check appears on the right."
+                chart={
+                  rankingHistory.data.length >= 2 && rankingHistory.series.length > 0 ? (
+                    <div className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={rankingHistory.data}>
+                          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+                          <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#71717a", fontSize: 12 }}
+                          />
+                          <YAxis
+                            reversed
+                            domain={[100, 1]}
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#71717a", fontSize: 12 }}
+                            width={36}
+                          />
+                          <Tooltip content={<RankingsTooltip />} />
+                          {rankingHistory.series.map((series, index) => (
+                            <Line
+                              key={series.id}
+                              type="monotone"
+                              dataKey={series.id}
+                              name={series.label}
+                              stroke={["#FF6A1A", "#38bdf8", "#22c55e", "#f59e0b", "#a78bfa"][index]}
+                              strokeWidth={2.5}
+                              dot={{ r: 3 }}
+                              connectNulls
+                            />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <ChartEmptyState
+                      title="One check is not a trend"
+                      summary="Run another live check later to see whether each phrase improved, declined, or stayed stable."
+                    />
+                  )
+                }
+                footer={
+                  <div className="flex flex-wrap gap-3">
+                    {rankingHistory.series.map((series, index) => (
+                      <span key={series.id} className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{
+                            backgroundColor: ["#FF6A1A", "#38bdf8", "#22c55e", "#f59e0b", "#a78bfa"][index],
+                          }}
+                        />
+                        {series.label}
+                      </span>
+                    ))}
+                  </div>
+                }
+              />
+
+              <ChartCard
+                eyebrow="Position distribution"
+                title="How close your phrases are to page one"
+                summary="This groups current positions so you can see whether the next opportunity is close or still needs substantial work."
+                chart={
+                  trends.length > 0 ? (
+                    <div className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={rankingDistributionData}>
+                          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+                          <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#a1a1aa", fontSize: 12 }}
+                          />
+                          <YAxis
+                            allowDecimals={false}
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#71717a", fontSize: 12 }}
+                            width={28}
+                          />
+                          <Tooltip content={<RankingsTooltip />} />
+                          <Bar dataKey="count" name="Tracked phrases" radius={[6, 6, 0, 0]}>
+                            {rankingDistributionData.map((entry, index) => (
+                              <Cell
+                                key={entry.label}
+                                fill={
+                                  index <= 1
+                                    ? "#22c55e"
+                                    : index === 2
+                                      ? "#FF6A1A"
+                                      : "#52525b"
+                                }
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <ChartEmptyState
+                      title="No positions to group yet"
+                      summary="Run the first live ranking check to see how many phrases are on page one or close behind."
+                    />
+                  )
+                }
+                footer={
+                  <p className="text-sm text-zinc-400">
+                    {nextOpportunity?.keyword
+                      ? `Best near-term opportunity: “${nextOpportunity.keyword}” at #${coerceNumber(nextOpportunity.position, 0)}.`
+                      : "No tracked phrase is currently between positions 11 and 30."}
+                  </p>
+                }
+              />
+            </div>
+
+            <details
+              id="ranking-setup"
+              className="rounded-md border border-[#26272c] bg-[#111214] p-4"
+            >
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-zinc-100">
+                Ranking setup and tracked phrases
+                <span className="text-xs font-normal text-zinc-500">
+                  {trackedKeywords.length} configured · expand to manage
+                </span>
+              </summary>
+              <div className="mt-5 space-y-5 border-t border-[#26272c] pt-5">
             <section
               id="keyword-onboarding"
               className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]"
@@ -1076,75 +1349,28 @@ export default function RankingsPage() {
                 </div>
               </section>
             ) : null}
-
-            <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Summary
-              </p>
-              <div className="mt-3 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-                <div>
-                  <h2 className="text-2xl font-semibold tracking-[-0.03em] text-white">
-                    {summary.title}
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">{summary.body}</p>
-                </div>
-                <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    What to watch next
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">{summary.focus}</p>
-                </div>
               </div>
-            </section>
+            </details>
 
             {trackedTerms === 0 ? (
               <EmptyState
                 title="No tracked searches yet"
                 summary="Add this location's target searches above. Configured terms and fresh provider-backed snapshots are both required before this page should be treated as live ranking intelligence."
                 actionLabel="Add tracked searches"
-                onAction={() =>
+                onAction={() => {
+                  const setup = document.getElementById(
+                    "ranking-setup",
+                  ) as HTMLDetailsElement | null;
+                  if (setup) {
+                    setup.open = true;
+                  }
                   document
                     .getElementById("keyword-onboarding")
-                    ?.scrollIntoView({ behavior: "smooth" })
-                }
+                    ?.scrollIntoView({ behavior: "smooth" });
+                }}
               />
             ) : (
               <>
-                <div className="grid gap-4 xl:grid-cols-4">
-                  <KpiCard
-                    label="Tracked searches"
-                    value={String(trackedTerms)}
-                    summary="These are configured tracked searches. Configuration alone does not prove fresh live ranking coverage."
-                  />
-                  <KpiCard
-                    label="Page-one terms"
-                    value={String(pageOneCount)}
-                    changeLabel={pageOneCount > 0 ? "Visible now" : undefined}
-                    summary="These counts come from the latest stored snapshot and should only be treated as live when provider truth is current."
-                    tone="highlight"
-                  />
-                  <KpiCard
-                    label="Improved"
-                    value={String(improvedTerms)}
-                    changeLabel={biggestWinner ? formatDelta(biggestWinner.delta) : undefined}
-                    summary={
-                      biggestWinner?.keyword
-                        ? `Biggest winner: ${biggestWinner.keyword}.`
-                        : "No upward movement is showing in the latest stored snapshot."
-                    }
-                  />
-                  <KpiCard
-                    label="Dropped"
-                    value={String(droppedTerms)}
-                    changeLabel={biggestDrop ? formatDelta(biggestDrop.delta) : undefined}
-                    summary={
-                      biggestDrop?.keyword
-                        ? `Biggest drop: ${biggestDrop.keyword}.`
-                        : "No drops are showing in the latest stored ranking set."
-                    }
-                  />
-                </div>
-
                 <div className="grid gap-5 xl:grid-cols-2">
                   <ChartCard
                     eyebrow="Visibility"

@@ -28,6 +28,8 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 
 ## 1A. Active Next Sprint Sequence
 
+> **Execution status (2026-07-29):** Sprint 5 location persistence, Rankings drill-down, and navigation hierarchy are shipped. Sprint 6 is active. Its scope includes customer-facing data visualization as well as plain-language comprehension; charts must explain what happened, why it matters, and what to do next.
+
 ### Sprint 5 - Location Context and Navigation Clarity
 
 Goal: a user always knows which location they are viewing and where to go next.
@@ -67,6 +69,8 @@ Rankings scope:
 - Add obvious `All locations`, `Reno`, and `Lexington` switching at the top of the workspace.
 - Keep `Run live check` visually distinct from `Reload saved data`.
 - Add plain-language summaries for page-one status, strongest phrase, and the next ranking opportunity.
+- Add a portfolio location-comparison chart, current-position distribution, and per-phrase history using stored ranking snapshots.
+- Add honest sparse-data states when there are not enough live checks to establish a trend.
 
 Site Health scope:
 - Lead with `Fix this first`, not raw issue groups.
@@ -77,10 +81,13 @@ Site Health scope:
   - Priority
 - Keep raw crawl terminology and affected-URL detail behind an expandable `Technical details` control.
 - Add a clear next action for rescanning, reviewing affected pages, or creating an opportunity.
+- Visualize current priority, affected-page concentration, and issue-count history without inventing an unsupported health score.
+- Keep visual severity semantics consistent: urgent, next, monitor, and insufficient data.
 
 Acceptance criteria:
 - A business owner can identify the strongest and weakest phrase for one location without reading the portfolio table.
 - A business owner can explain the top technical issue and next action without knowing crawl terminology.
+- Every chart includes a plain-language interpretation and remains truthful with zero, one, or multiple stored checks.
 
 ### Sprint 7 - Local Visibility Map and Provider Location Normalization
 

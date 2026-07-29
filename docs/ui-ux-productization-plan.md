@@ -423,10 +423,13 @@ The following sequence minimizes regression risk and allows each change to be te
 23. Restructure Rankings into explicit portfolio and individual-location modes.
 24. Put the location switcher, strongest phrase, weakest phrase, latest check, and live-check action above the fold.
 25. Rewrite ranking summaries in plain language before showing charts and technical metadata.
+25a. Add visual portfolio comparison, current-position distribution, and stored per-phrase ranking history.
+25b. Add explicit zero-data and one-check states so a single snapshot is never presented as a trend.
 26. Restructure Site Health around a single `Fix this first` priority.
 27. Add `What is wrong`, `Why it matters`, `What to do next`, and `Priority` to each issue group.
 28. Collapse crawl terminology and raw URL evidence under `Technical details`.
 29. Add a visible rescan or opportunity action where the backend supports it.
+29a. Add visual issue-priority, affected-page, and scan-history views without introducing a synthetic health score.
 
 ### Sprint 7 — Local Visibility map
 

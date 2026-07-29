@@ -2,9 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import {
   AppShell,
+  ChartCard,
+  ChartEmptyState,
   ComparisonTable,
   EmptyState,
   KpiCard,
@@ -162,18 +176,6 @@ function issueFix(issueCode?: string) {
   }
 }
 
-function severityTone(severity?: string) {
-  if (severity === "high") {
-    return "border-rose-500/20 bg-rose-500/10 text-rose-100";
-  }
-
-  if (severity === "medium") {
-    return "border-amber-500/20 bg-amber-500/10 text-amber-100";
-  }
-
-  return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
-}
-
 function parseIssueDetails(detailsJson?: string) {
   if (!detailsJson) {
     return {};
@@ -184,6 +186,40 @@ function parseIssueDetails(detailsJson?: string) {
   } catch {
     return {};
   }
+}
+
+function SiteHealthTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value?: number; name?: string; color?: string }>;
+  label?: string;
+}) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-2.5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+        {label}
+      </p>
+      <div className="mt-2 space-y-1.5">
+        {payload.map((entry) => (
+          <div key={entry.name} className="flex min-w-40 items-center gap-2 text-sm text-zinc-200">
+            <span
+              className="h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: entry.color }}
+            />
+            <span>{entry.name}</span>
+            <span className="ml-auto font-semibold text-white">{entry.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function SiteHealthPage() {
@@ -367,6 +403,56 @@ export default function SiteHealthPage() {
     };
   }, [latestRun, selectedCampaign, topIssue]);
 
+  const priorityChartData = useMemo(
+    () => [
+      { label: "Fix now", count: severityCounts.high || 0, color: "#f43f5e" },
+      { label: "Fix next", count: severityCounts.medium || 0, color: "#f59e0b" },
+      { label: "Monitor", count: severityCounts.low || 0, color: "#71717a" },
+    ],
+    [severityCounts.high, severityCounts.low, severityCounts.medium],
+  );
+
+  const issueTypeChartData = useMemo(
+    () =>
+      issueGroups.slice(0, 6).map((group) => ({
+        label:
+          issueLabel(group.issueCode).length > 22
+            ? `${issueLabel(group.issueCode).slice(0, 22)}…`
+            : issueLabel(group.issueCode),
+        count: group.count,
+        severity: group.highestSeverity,
+      })),
+    [issueGroups],
+  );
+
+  const scanHistoryData = useMemo(() => {
+    const issueCounts = issues.reduce((counts, issue) => {
+      const runId = issue.crawl_run_id || "";
+      if (runId) {
+        counts[runId] = (counts[runId] || 0) + 1;
+      }
+      return counts;
+    }, {} as Record<string, number>);
+
+    return [...runs]
+      .sort(
+        (left, right) =>
+          new Date(left.created_at || 0).getTime() -
+          new Date(right.created_at || 0).getTime(),
+      )
+      .slice(-10)
+      .map((run) => ({
+        label: run.created_at
+          ? new Date(run.created_at).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            })
+          : "Scan",
+        issues: issueCounts[run.id] || 0,
+        pages: run.pages_discovered || 0,
+      }));
+  }, [issues, runs]);
+
   const issueTableRows = useMemo(
     () =>
       issueGroups.slice(0, 8).map((group) => ({
@@ -453,7 +539,7 @@ export default function SiteHealthPage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Live technical health data"
+      dateRangeLabel="Latest website scan"
       topBarActions={
         <>
           <button
@@ -477,7 +563,7 @@ export default function SiteHealthPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
-          eyebrow="Technical health"
+          eyebrow="Site health"
           title="What the website scan found"
           summary="Use this page to see which technical issues matter most, what should be fixed first, and what to keep watching after the latest scan."
         />
@@ -514,7 +600,7 @@ export default function SiteHealthPage() {
           <>
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Summary
+                Recommended action
               </p>
               <div className="mt-3 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
                 <div>
@@ -525,9 +611,31 @@ export default function SiteHealthPage() {
                 </div>
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Fix first
+                    What to do next
                   </p>
                   <p className="mt-2 text-sm leading-6 text-zinc-300">{topSummary.next}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {topIssue ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          document
+                            .getElementById("issue-details")
+                            ?.scrollIntoView({ behavior: "smooth" })
+                        }
+                        className="rounded-md border border-accent-500/35 bg-accent-500/12 px-3 py-2 text-sm font-semibold text-white"
+                      >
+                        Review affected pages
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => router.push("/dashboard")}
+                      className="rounded-md border border-[#303137] bg-[#17181b] px-3 py-2 text-sm font-medium text-zinc-200"
+                    >
+                      Run another scan
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
@@ -560,6 +668,164 @@ export default function SiteHealthPage() {
               />
             </div>
 
+            <div className="grid gap-5 xl:grid-cols-2">
+              <ChartCard
+                eyebrow="Current priorities"
+                title="What needs attention first"
+                summary="Problems are grouped into a simple order: urgent fixes, important follow-up work, and lower-risk cleanup."
+                chart={
+                  latestRunIssues.length > 0 ? (
+                    <div className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={priorityChartData}>
+                          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+                          <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#a1a1aa", fontSize: 12 }}
+                          />
+                          <YAxis
+                            allowDecimals={false}
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#71717a", fontSize: 12 }}
+                            width={28}
+                          />
+                          <Tooltip content={<SiteHealthTooltip />} />
+                          <Bar dataKey="count" name="Problems" radius={[6, 6, 0, 0]}>
+                            {priorityChartData.map((entry) => (
+                              <Cell key={entry.label} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <ChartEmptyState
+                      title="No problems are flagged"
+                      summary="The latest scan did not return any technical issues. Run scans regularly to catch new problems."
+                    />
+                  )
+                }
+                footer={
+                  <p className="text-sm text-zinc-400">
+                    {(severityCounts.high || 0) > 0
+                      ? `${severityCounts.high} problem${severityCounts.high === 1 ? "" : "s"} should be handled before the rest.`
+                      : "No urgent technical problems are currently flagged."}
+                  </p>
+                }
+              />
+
+              <ChartCard
+                eyebrow="Affected pages"
+                title="Which problems are most widespread"
+                summary="The tallest bars affect the most pages. Severity still determines which problem should be handled first."
+                chart={
+                  issueTypeChartData.length > 0 ? (
+                    <div className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={issueTypeChartData}>
+                          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+                          <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#a1a1aa", fontSize: 11 }}
+                            interval={0}
+                          />
+                          <YAxis
+                            allowDecimals={false}
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#71717a", fontSize: 12 }}
+                            width={28}
+                          />
+                          <Tooltip content={<SiteHealthTooltip />} />
+                          <Bar dataKey="count" name="Affected pages" radius={[6, 6, 0, 0]}>
+                            {issueTypeChartData.map((entry) => (
+                              <Cell
+                                key={entry.label}
+                                fill={
+                                  entry.severity === "high"
+                                    ? "#f43f5e"
+                                    : entry.severity === "medium"
+                                      ? "#f59e0b"
+                                      : "#71717a"
+                                }
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <ChartEmptyState
+                      title="No affected pages to compare"
+                      summary="Issue types will appear here when a website scan finds something that needs attention."
+                    />
+                  )
+                }
+                footer={
+                  <p className="text-sm text-zinc-400">
+                    {topIssue
+                      ? `${issueLabel(topIssue.issueCode)} affects ${topIssue.count} page${topIssue.count === 1 ? "" : "s"} and should be reviewed first.`
+                      : "There is no affected-page action to take from the latest scan."}
+                  </p>
+                }
+              />
+            </div>
+
+            <ChartCard
+              eyebrow="Scan history"
+              title="Are website problems increasing or decreasing?"
+              summary="This compares stored scans over time. Fewer problems is better, but a scan that covers more pages can uncover additional work."
+              chart={
+                scanHistoryData.length >= 2 ? (
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={scanHistoryData}>
+                        <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+                        <XAxis
+                          dataKey="label"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#71717a", fontSize: 12 }}
+                        />
+                        <YAxis
+                          allowDecimals={false}
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#71717a", fontSize: 12 }}
+                          width={36}
+                        />
+                        <Tooltip content={<SiteHealthTooltip />} />
+                        <Line
+                          type="monotone"
+                          dataKey="issues"
+                          name="Problems found"
+                          stroke="#FF6A1A"
+                          strokeWidth={3}
+                          dot={{ r: 4 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <ChartEmptyState
+                    title="One scan is not a trend"
+                    summary="Run another website scan later to see which problems were fixed, remained, or appeared."
+                  />
+                )
+              }
+              footer={
+                <p className="text-sm text-zinc-400">
+                  Latest coverage: {latestRun?.pages_discovered || 0} pages discovered and{" "}
+                  {latestRunIssues.length} problems recorded.
+                </p>
+              }
+            />
+
             {runs.length === 0 ? (
               <EmptyState
                 title="No website scans have run yet"
@@ -569,107 +835,40 @@ export default function SiteHealthPage() {
               />
             ) : (
               <>
-                <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-                  <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Scan state
-                    </p>
-                    <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                      Latest scan and what it means
-                    </h2>
-                    <div className="mt-4 space-y-3">
-                      <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                        <p className="text-sm font-medium text-white">Latest scan status</p>
-                        <p className="mt-2 text-sm leading-6 text-zinc-300">
-                          {latestRun
-                            ? `${toTitleCase(latestRun.status)} ${formatRelativeTime(latestRun.finished_at || latestRun.created_at)}`
-                            : "No scan available."}
-                        </p>
-                      </div>
-                      <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                        <p className="text-sm font-medium text-white">Coverage</p>
-                        <p className="mt-2 text-sm leading-6 text-zinc-300">
-                          {latestRun?.pages_discovered
-                            ? `${latestRun.pages_discovered} pages were discovered in the latest scan.`
-                            : "The latest scan did not report discovered pages yet."}
-                        </p>
-                      </div>
-                      <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                        <p className="text-sm font-medium text-white">Scan processing</p>
-                        <p className="mt-2 text-sm leading-6 text-zinc-300">
-                          {scanLaneHealthy === null
-                            ? "No scan processing metrics are available yet."
-                            : scanLaneHealthy
-                              ? "The scan system is processing normally."
-                              : "The scan system is showing signs of delay, so results may refresh more slowly than usual."}
-                        </p>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Priority buckets
-                    </p>
-                    <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                      Which issues matter most
-                    </h2>
-                    <div className="mt-4 space-y-3">
-                      {[
-                        {
-                          key: "high",
-                          title: "Fix first",
-                          summary: "These issues can block pages from performing properly in search.",
-                        },
-                        {
-                          key: "medium",
-                          title: "Fix next",
-                          summary: "These issues weaken search clarity and reduce page quality.",
-                        },
-                        {
-                          key: "low",
-                          title: "Clean up after",
-                          summary: "These issues are smaller, but still worth cleaning up once the bigger problems are handled.",
-                        },
-                      ].map((bucket) => (
-                        <div key={bucket.key} className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-medium text-white">{bucket.title}</p>
-                              <p className="mt-2 text-sm leading-6 text-zinc-300">{bucket.summary}</p>
-                            </div>
-                            <span className={`rounded-md border px-2 py-1 text-xs font-medium ${severityTone(bucket.key)}`}>
-                              {severityCounts[bucket.key] || 0}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
+                <div id="issue-details">
+                  <ComparisonTable
+                    title="Issues and recommended fixes"
+                    columns={[
+                      { key: "issue", label: "What is wrong" },
+                      { key: "severity", label: "Priority" },
+                      { key: "affected", label: "Pages affected" },
+                      { key: "impact", label: "Why it matters" },
+                      { key: "first_fix", label: "What to do next" },
+                    ]}
+                    rows={issueTableRows}
+                  />
                 </div>
 
-                <ComparisonTable
-                  title="Top issue groups"
-                  columns={[
-                    { key: "issue", label: "Issue" },
-                    { key: "severity", label: "Severity" },
-                    { key: "affected", label: "Affected Pages" },
-                    { key: "impact", label: "Why It Matters" },
-                    { key: "first_fix", label: "Fix First" },
-                  ]}
-                  rows={issueTableRows}
-                />
-
-                <ComparisonTable
-                  title="Most recent issue detections"
-                  columns={[
-                    { key: "issue", label: "Issue" },
-                    { key: "severity", label: "Severity" },
-                    { key: "detected", label: "Detected" },
-                    { key: "detail", label: "Detail" },
-                  ]}
-                  rows={latestIssueRows}
-                />
+                <details className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-zinc-100">
+                    Technical details
+                    <span className="text-xs font-normal text-zinc-500">
+                      Raw scan evidence · expand to review
+                    </span>
+                  </summary>
+                  <div className="mt-5 border-t border-[#26272c] pt-5">
+                    <ComparisonTable
+                      title="Most recent issue detections"
+                      columns={[
+                        { key: "issue", label: "Issue" },
+                        { key: "severity", label: "Severity" },
+                        { key: "detected", label: "Detected" },
+                        { key: "detail", label: "Stored detail" },
+                      ]}
+                      rows={latestIssueRows}
+                    />
+                  </div>
+                </details>
               </>
             )}
           </>
