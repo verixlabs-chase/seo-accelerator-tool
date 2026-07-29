@@ -131,7 +131,11 @@ The no-Docker deployment is an intentionally constrained hosted mode:
 - Redis-backed event streams become process-local
 - task calls execute eagerly and must finish before the function timeout
 - Celery Beat schedules do not run
-- scheduled reports use the Supabase-backed `platform_jobs` queue and Vercel Cron
+- scheduled reports and recommendation-only intelligence cycles use the
+  Supabase-backed `platform_jobs` queue and Vercel Cron
+- intelligence cycles use stored campaign signals and cannot schedule or
+  execute site mutations while
+  `INTELLIGENCE_ACTIVATION_MODE=recommendation_only`
 - all other background task types remain eager until migrated explicitly
 
 For production crawling and automation, migrate bounded work units onto the

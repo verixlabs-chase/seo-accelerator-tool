@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.enums import StrategyRecommendationStatus
 from app.intelligence.digital_twin.strategy_optimizer import optimize_strategy
@@ -86,6 +87,7 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             raise ValueError(f'Campaign not found: {campaign_id}')
 
         cycle_started_at = datetime.now(UTC)
+        activation_mode = get_settings().intelligence_activation_mode
         campaign_started_perf = perf_counter()
         stage_timings: dict[str, float] = {}
 
@@ -161,11 +163,19 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         stage_timings['digital_twin_selection'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
-        scheduled_executions = _schedule_recommendation_executions(session, selected_recommendations)
+        scheduled_executions = (
+            _schedule_recommendation_executions(session, selected_recommendations)
+            if activation_mode == 'autonomous'
+            else []
+        )
         stage_timings['execution_scheduling'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         stage_started = perf_counter()
-        completed_executions = _execute_scheduled_executions(session, scheduled_executions)
+        completed_executions = (
+            _execute_scheduled_executions(session, scheduled_executions)
+            if activation_mode == 'autonomous'
+            else []
+        )
         stage_timings['execution_runtime'] = round((perf_counter() - stage_started) * 1000.0, 3)
 
         outcomes_recorded = _count_outcomes_since(session, campaign_id, cycle_started_at)
@@ -189,6 +199,12 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
         return {
             'campaign_id': campaign_id,
             'pipeline_version': PIPELINE_VERSION,
+            'activation': {
+                'mode': activation_mode,
+                'recommendation_generation_enabled': True,
+                'mutation_scheduling_enabled': activation_mode == 'autonomous',
+                'mutation_execution_enabled': activation_mode == 'autonomous',
+            },
             'cycle_started_at': cycle_started_at.isoformat(),
             'signals_processed': len(signals),
             'temporal_signals_inserted': int(temporal_write_result.get('inserted', 0)),
@@ -198,7 +214,10 @@ def run_campaign_cycle(campaign_id: str, db: Session | None = None) -> dict[str,
             'cohort_patterns_detected': len(cohort_patterns),
             'recommendations_generated': len(recommendations),
             'recommendation_ids': sorted([row.id for row in recommendations]),
-            'recommendations_selected_for_execution': len(selected_recommendations),
+            'recommendations_selected_by_simulation': len(selected_recommendations),
+            'recommendations_selected_for_execution': (
+                len(selected_recommendations) if activation_mode == 'autonomous' else 0
+            ),
             'selected_recommendation_ids': sorted([row.id for row in selected_recommendations]),
             'digital_twin_selection': simulation_result,
             'legacy_packaging': legacy_packaging,
@@ -709,5 +728,4 @@ def _current_window(now: datetime):
     from app.services.strategy_engine.schemas import StrategyWindow
 
     return StrategyWindow(date_from=now.replace(day=1), date_to=now)
-
 

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     durable_job_batch_size: int = 5
     durable_job_lease_seconds: int = 120
     durable_job_retry_base_seconds: int = 30
+    intelligence_activation_mode: str = "recommendation_only"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     jwt_secret: str
@@ -137,6 +138,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_guardrails(self) -> "Settings":
+        intelligence_mode = self.intelligence_activation_mode.strip().lower()
+        if intelligence_mode not in {"recommendation_only", "autonomous"}:
+            raise ValueError(
+                "INTELLIGENCE_ACTIVATION_MODE must be recommendation_only or autonomous."
+            )
+        if intelligence_mode == "autonomous" and self.app_env.lower() != "test":
+            raise ValueError(
+                "Autonomous intelligence execution is disabled outside the test runtime."
+            )
+        self.intelligence_activation_mode = intelligence_mode
+
         if not self.jwt_secret.strip():
             raise ValueError("JWT_SECRET is required and must not be empty.")
         if not self.platform_master_key.strip():
@@ -222,6 +234,7 @@ def get_settings() -> Settings:
             celery_broker_url="memory://",
             celery_result_backend="cache+memory://",
             competitor_provider_backend="fixture",
+            intelligence_activation_mode="autonomous",
         )
     return Settings()
 

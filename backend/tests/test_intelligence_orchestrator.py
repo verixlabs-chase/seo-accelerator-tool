@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle, run_system_cycle
 from app.models.intelligence import StrategyRecommendation
 from app.models.intelligence_metrics_snapshot import IntelligenceMetricsSnapshot
@@ -94,3 +96,52 @@ def test_run_system_cycle_processes_active_campaigns(db_session, create_test_ten
     assert summary['campaigns_processed'] >= 1
     assert active_campaign.id in summary['campaign_ids']
     assert draft_campaign.id not in summary['campaign_ids']
+
+
+def test_recommendation_only_cycle_never_schedules_mutations(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    tenant = create_test_tenant(name='Recommendation Only Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Recommendation Only Org')
+    campaign = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=tenant.id,
+        name='Recommendation Only Campaign',
+        domain='recommendation-only.example',
+    )
+    campaign.setup_state = 'Active'
+    db_session.commit()
+
+    monkeypatch.setattr(
+        'app.intelligence.intelligence_orchestrator.get_settings',
+        lambda: SimpleNamespace(intelligence_activation_mode='recommendation_only'),
+    )
+    monkeypatch.setattr(
+        'app.intelligence.intelligence_orchestrator._schedule_recommendation_executions',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError('recommendation-only cycles must not schedule executions')
+        ),
+    )
+
+    summary = run_campaign_cycle(campaign.id, db=db_session)
+
+    assert summary['activation'] == {
+        'mode': 'recommendation_only',
+        'recommendation_generation_enabled': True,
+        'mutation_scheduling_enabled': False,
+        'mutation_execution_enabled': False,
+    }
+    assert summary['recommendations_generated'] > 0
+    assert summary['recommendations_selected_for_execution'] == 0
+    assert summary['executions_scheduled'] == 0
+    assert summary['executions_completed'] == 0
+    assert (
+        db_session.query(RecommendationExecution)
+        .filter(RecommendationExecution.campaign_id == campaign.id)
+        .count()
+        == 0
+    )

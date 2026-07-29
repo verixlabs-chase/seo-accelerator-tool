@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
+from app.models.campaign import Campaign
 from app.models.digital_twin_simulation import DigitalTwinSimulation
 from app.models.recommendation_outcome import RecommendationOutcome
 from app.schemas.digital_twin_simulation import DigitalTwinSimulationOut
@@ -21,7 +22,10 @@ def get_campaign_simulations(
     db: Session = Depends(get_db),
     user: dict = Depends(require_roles({'tenant_admin'})),
 ) -> dict:
-    _ = user
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None or campaign.tenant_id != user['tenant_id']:
+        raise HTTPException(status_code=404, detail='Campaign not found')
+
     rows = (
         db.query(DigitalTwinSimulation)
         .filter(DigitalTwinSimulation.campaign_id == campaign_id)

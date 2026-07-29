@@ -28,7 +28,7 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 
 ## 1A. Active Next Sprint Sequence
 
-> **Execution status (2026-07-29):** Sprint 5 location persistence, Rankings drill-down, and navigation hierarchy are shipped. Sprint 6 is active. Its scope includes customer-facing data visualization as well as plain-language comprehension; charts must explain what happened, why it matters, and what to do next.
+> **Execution status (2026-07-29):** Sprints 5 and 6 are shipped and production-QA complete for Reno and Lexington. Sprint 7, Intelligence Activation and Safety, is active. It must make the existing intelligence architecture operational on Supabase and Vercel without enabling autonomous customer-site mutations.
 
 ### Sprint 5 - Location Context and Navigation Clarity
 
@@ -89,7 +89,44 @@ Acceptance criteria:
 - A business owner can explain the top technical issue and next action without knowing crawl terminology.
 - Every chart includes a plain-language interpretation and remains truthful with zero, one, or multiple stored checks.
 
-### Sprint 7 - Local Visibility Map and Provider Location Normalization
+### Sprint 7 - Intelligence Activation and Safety
+
+Goal: turn the existing deep intelligence architecture into a safe, durable
+recommendation system before presenting it as autonomous intelligence.
+
+Scope:
+- Add an explicit production activation mode that defaults to
+  **recommendation only**.
+- Run campaign intelligence from stored crawl, ranking, content, and local
+  signals without triggering paid provider checks.
+- Keep mutation scheduling and execution disabled during recommendation-only
+  cycles.
+- Tenant-scope every intelligence score, recommendation, simulation, metric,
+  execution, and outcome query.
+- Add a durable serverless cadence for active campaigns using the existing
+  Vercel cron and database-backed job system.
+- Persist idempotent signals, recommendations, simulations, and metrics so the
+  engine can build history without duplicating work.
+- Clearly distinguish the simple heuristic score/recommendation service from
+  the deeper orchestrator pipeline in API truth metadata and the Opportunities
+  UI.
+- Keep the no-op learning path visibly inactive until enough real outcomes
+  exist to measure recommendation quality.
+- Require an explicit governance policy and human approval before any future
+  execution mode can deliver a customer-site mutation.
+
+Acceptance criteria:
+- Reno and Lexington can complete a stored-data intelligence cycle through the
+  serverless job runner.
+- Recommendation-only cycles create no scheduled or completed mutations.
+- Cross-tenant intelligence reads return `404`.
+- Repeating the same scheduled cycle is idempotent.
+- Every surfaced recommendation includes evidence, confidence, freshness, and
+  an honest model/runtime label.
+- The test suite proves the safe activation mode, tenant isolation, durable
+  scheduling, and unchanged Opportunities lifecycle behavior.
+
+### Sprint 8 - Local Visibility Map and Provider Location Normalization
 
 Goal: make Local Visibility a real location product rather than another summary page.
 
@@ -108,7 +145,7 @@ Acceptance criteria:
 - The UI never presents a decorative map as map-ranking intelligence.
 - Paid geo-grid requests are explicit and budget-aware.
 
-### Sprint 8 - Cross-Page UX and Visual Polish
+### Sprint 9 - Cross-Page UX and Visual Polish
 
 Goal: remove remaining convolution after the core information architecture is stable.
 

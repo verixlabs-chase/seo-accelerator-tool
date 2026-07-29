@@ -96,3 +96,21 @@ def test_simulation_api_returns_history(client, db_session) -> None:
     assert selected['actual_traffic_delta'] == 1.0
     assert selected['prediction_error_rank'] == abs(selected['predicted_rank_delta'] - 1.0)
     assert selected['prediction_error_traffic'] == abs(selected['predicted_traffic_delta'] - 1.0)
+
+
+def test_simulation_api_hides_other_tenant_campaigns(client) -> None:
+    token_a = _login(client, 'a@example.com', 'pass-a')
+    token_b = _login(client, 'b@example.com', 'pass-b')
+    campaign_b = _create_campaign(
+        client,
+        token_b,
+        'Other Tenant Simulation Campaign',
+        'other-tenant-simulation.example',
+    )
+
+    response = client.get(
+        '/api/v1/intelligence/simulations/campaign/' + campaign_b['id'],
+        headers={'Authorization': 'Bearer ' + token_a},
+    )
+
+    assert response.status_code == 404

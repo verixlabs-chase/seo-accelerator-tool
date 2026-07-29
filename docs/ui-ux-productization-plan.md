@@ -431,22 +431,33 @@ The following sequence minimizes regression risk and allows each change to be te
 29. Add a visible rescan or opportunity action where the backend supports it.
 29a. Add visual issue-priority, affected-page, and scan-history views without introducing a synthetic health score.
 
-### Sprint 7 — Local Visibility map
+### Sprint 7 — Intelligence activation and safety
 
-30. Capture or resolve structured city, state/region, country, latitude, and longitude for every business location.
-31. Resolve DataForSEO location identifiers automatically from structured location data.
-32. Add a real interactive map centered on the selected location with a business pin and service-area context.
-33. Add clear setup states for missing coordinates, provider connection, or map-rank coverage.
-34. Add provider-backed geo-grid/map-rank visualization only after the base map and location normalization pass QA.
-35. Keep decorative/base-map presence visually distinct from paid ranking intelligence.
+30. Add a production activation mode that defaults to recommendation-only execution.
+31. Tenant-scope every intelligence simulation, metric, outcome, and recommendation read.
+32. Add database-backed intelligence-cycle jobs to the Vercel cron runner.
+33. Generate idempotent recommendations, simulations, and metrics from stored campaign signals without triggering paid provider checks.
+34. Keep mutation scheduling and execution disabled during recommendation-only cycles.
+35. Surface evidence, confidence, freshness, and model/runtime truth on Opportunities.
+36. Keep learning visibly inactive until real recommendation outcomes provide enough history.
+37. Verify Reno and Lexington cycles, cross-tenant isolation, repeat-run idempotency, and zero mutation delivery.
 
-### Sprint 8 — Cross-page cleanup and final visual polish
+### Sprint 8 — Local Visibility map
 
-36. Standardize page introductions, scope labels, primary actions, loading, empty, and error states.
-37. Remove duplicated setup panels from operational pages after setup is complete.
-38. Consolidate location-sensitive controls into shared components.
-39. Verify desktop, tablet, and mobile journeys for switching locations, reading rankings, finding the first technical fix, and opening the map.
-40. Complete the broader visual redesign only after the new hierarchy passes task-based usability checks.
+38. Capture or resolve structured city, state/region, country, latitude, and longitude for every business location.
+39. Resolve DataForSEO location identifiers automatically from structured location data.
+40. Add a real interactive map centered on the selected location with a business pin and service-area context.
+41. Add clear setup states for missing coordinates, provider connection, or map-rank coverage.
+42. Add provider-backed geo-grid/map-rank visualization only after the base map and location normalization pass QA.
+43. Keep decorative/base-map presence visually distinct from paid ranking intelligence.
+
+### Sprint 9 — Cross-page cleanup and final visual polish
+
+44. Standardize page introductions, scope labels, primary actions, loading, empty, and error states.
+45. Remove duplicated setup panels from operational pages after setup is complete.
+46. Consolidate location-sensitive controls into shared components.
+47. Verify desktop, tablet, and mobile journeys for switching locations, reading rankings, finding the first technical fix, and opening the map.
+48. Complete the broader visual redesign only after the new hierarchy passes task-based usability checks.
 
 ---
 

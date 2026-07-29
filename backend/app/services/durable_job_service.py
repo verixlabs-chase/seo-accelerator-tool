@@ -10,6 +10,8 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.intelligence.intelligence_orchestrator import run_campaign_cycle
+from app.models.campaign import Campaign
 from app.models.platform_job import PlatformJob
 from app.models.reporting import ReportSchedule
 from app.services import job_service, reporting_service
@@ -17,6 +19,7 @@ from app.services import job_service, reporting_service
 JobHandler = Callable[[Session, PlatformJob], dict[str, Any]]
 
 REPORT_SCHEDULE_JOB_TYPE = "reporting.process_schedule"
+INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE = "intelligence.campaign_cycle"
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -36,8 +39,26 @@ def _report_schedule_handler(db: Session, job: PlatformJob) -> dict[str, Any]:
     )
 
 
+def _intelligence_campaign_cycle_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    campaign_id = str(job.payload.get("campaign_id") or job.entity_id or "").strip()
+    campaign = db.get(Campaign, campaign_id) if campaign_id else None
+    if (
+        not tenant_id
+        or campaign is None
+        or campaign.tenant_id != tenant_id
+        or campaign.setup_state.lower() != "active"
+    ):
+        raise ValueError("Intelligence cycle job has no active tenant-scoped campaign.")
+    return run_campaign_cycle(campaign_id, db=db)
+
+
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
+    INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
 }
 
 
@@ -80,6 +101,42 @@ def enqueue_due_report_schedule_jobs(
             },
             available_at=resolved_now,
             max_retries=max(0, reporting_service.REPORT_SCHEDULE_MAX_RETRIES - 1),
+        )
+    db.flush()
+    return len(rows)
+
+
+def enqueue_due_intelligence_campaign_jobs(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    limit: int = 25,
+) -> int:
+    resolved_now = now or datetime.now(UTC)
+    cycle_date = resolved_now.date().isoformat()
+    rows = (
+        db.query(Campaign)
+        .filter(Campaign.setup_state.in_(["Active", "active"]))
+        .order_by(Campaign.created_at.asc(), Campaign.id.asc())
+        .limit(max(1, min(int(limit), 100)))
+        .all()
+    )
+    for campaign in rows:
+        job_service.create_job(
+            db,
+            tenant_id=campaign.tenant_id,
+            job_type=INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE,
+            entity_type="campaign",
+            entity_id=campaign.id,
+            idempotency_key=f"intelligence-cycle:{campaign.id}:{cycle_date}",
+            payload={
+                "tenant_id": campaign.tenant_id,
+                "campaign_id": campaign.id,
+                "cycle_date": cycle_date,
+                "provider_checks_allowed": False,
+            },
+            available_at=resolved_now,
+            max_retries=2,
         )
     db.flush()
     return len(rows)
@@ -181,6 +238,10 @@ def drain_platform_jobs(
         db,
         limit=resolved_batch_size * 5,
     )
+    due_intelligence_campaigns_seen = enqueue_due_intelligence_campaign_jobs(
+        db,
+        limit=resolved_batch_size * 5,
+    )
     db.commit()
 
     claimed = job_service.claim_jobs(
@@ -215,6 +276,7 @@ def drain_platform_jobs(
     return {
         "worker_id": resolved_worker_id,
         "due_report_schedules_seen": due_schedules_seen,
+        "due_intelligence_campaigns_seen": due_intelligence_campaigns_seen,
         "claimed": len(claimed_ids),
         "processed": len(results),
         "deferred": len(deferred_ids),

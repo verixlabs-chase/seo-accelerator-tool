@@ -2,8 +2,10 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from app.api.v1 import internal_jobs
+from app.services import durable_job_service
 from app.models.platform_job import PlatformJob
 from app.models.reporting import MonthlyReport, ReportSchedule
+from tests.conftest import create_test_campaign
 
 
 def _login(client, email: str, password: str) -> str:
@@ -101,3 +103,86 @@ def test_internal_job_drain_processes_due_report_schedule(
     if schedule.next_run_at.tzinfo is None:
         comparison_now = comparison_now.replace(tzinfo=None)
     assert schedule.next_run_at > comparison_now
+
+
+def test_internal_job_drain_runs_daily_intelligence_cycle_idempotently(
+    client,
+    db_session,
+    create_test_tenant,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    tenant = create_test_tenant(name="Durable Intelligence Tenant")
+    organization = create_test_org(
+        tenant_id=tenant.id,
+        name="Durable Intelligence Org",
+    )
+    campaign = create_test_campaign(
+        db_session,
+        organization.id,
+        tenant_id=tenant.id,
+        name="Durable Intelligence Campaign",
+        domain="durable-intelligence.example",
+    )
+    campaign.setup_state = "Active"
+    db_session.commit()
+
+    calls: list[str] = []
+
+    def _run_campaign_cycle(campaign_id: str, db) -> dict:  # noqa: ANN001
+        calls.append(campaign_id)
+        return {
+            "campaign_id": campaign_id,
+            "activation": {
+                "mode": "recommendation_only",
+                "mutation_scheduling_enabled": False,
+                "mutation_execution_enabled": False,
+            },
+            "recommendations_generated": 1,
+            "executions_scheduled": 0,
+            "executions_completed": 0,
+        }
+
+    monkeypatch.setattr(
+        durable_job_service,
+        "run_campaign_cycle",
+        _run_campaign_cycle,
+    )
+    monkeypatch.setattr(
+        internal_jobs,
+        "get_settings",
+        lambda: SimpleNamespace(cron_secret="test-cron-secret"),
+    )
+
+    first = client.get(
+        "/api/v1/internal/jobs/drain",
+        headers={"Authorization": "Bearer test-cron-secret"},
+    )
+    assert first.status_code == 200
+    first_payload = first.json()["data"]
+    assert first_payload["due_intelligence_campaigns_seen"] == 1
+    assert first_payload["processed"] == 1
+    assert calls == [campaign.id]
+
+    job = (
+        db_session.query(PlatformJob)
+        .filter(
+            PlatformJob.job_type == "intelligence.campaign_cycle",
+            PlatformJob.entity_id == campaign.id,
+        )
+        .one()
+    )
+    assert job.status == "completed"
+    assert job.result["activation"]["mode"] == "recommendation_only"
+    assert job.result["executions_scheduled"] == 0
+
+    second = client.get(
+        "/api/v1/internal/jobs/drain",
+        headers={"Authorization": "Bearer test-cron-secret"},
+    )
+    assert second.status_code == 200
+    second_payload = second.json()["data"]
+    assert second_payload["due_intelligence_campaigns_seen"] == 1
+    assert second_payload["claimed"] == 0
+    assert second_payload["processed"] == 0
+    assert calls == [campaign.id]

@@ -78,3 +78,17 @@ def test_local_admin_bootstrap_is_disabled_by_default() -> None:
         public_base_url="http://localhost",
     )
     assert settings.local_admin_bootstrap_enabled is False
+    assert settings.intelligence_activation_mode == "recommendation_only"
+
+
+def test_autonomous_intelligence_is_forbidden_outside_test_runtime() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_env="local",
+            postgres_dsn="postgresql://user:pass@db:5432/app",
+            jwt_secret="local-dev-jwt-secret-change-before-shared-use",
+            platform_master_key="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+            public_base_url="http://localhost",
+            intelligence_activation_mode="autonomous",
+        )
