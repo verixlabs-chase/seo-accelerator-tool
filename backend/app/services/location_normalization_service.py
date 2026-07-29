@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from datetime import UTC, datetime
 from decimal import Decimal
+from time import sleep
 from typing import Any
 
 import httpx
@@ -200,6 +201,7 @@ def _resolve_coordinates(location: BusinessLocation) -> dict[str, Any]:
         ),
         "Accept-Language": "en",
     }
+    used_city_fallback = False
     try:
         with httpx.Client(timeout=settings.location_resolver_timeout_seconds) as client:
             response = client.get(
@@ -207,8 +209,29 @@ def _resolve_coordinates(location: BusinessLocation) -> dict[str, Any]:
                 params=params,
                 headers=headers,
             )
-        response.raise_for_status()
-        rows = response.json()
+            response.raise_for_status()
+            rows = response.json()
+            if (
+                (not isinstance(rows, list) or not rows)
+                and (location.address_line1 or location.postal_code)
+            ):
+                # The public Nominatim service permits at most one request per
+                # second. Wait before falling back from an exact address to the
+                # city center, then cache the result so this is not repeated.
+                sleep(1.05)
+                city_params = {
+                    key: value
+                    for key, value in params.items()
+                    if key not in {"street", "postalcode"}
+                }
+                response = client.get(
+                    settings.location_geocoder_endpoint,
+                    params=city_params,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                rows = response.json()
+                used_city_fallback = True
     except (httpx.HTTPError, ValueError, TypeError):
         return {
             "status": "unavailable",
@@ -229,10 +252,14 @@ def _resolve_coordinates(location: BusinessLocation) -> dict[str, Any]:
         }
     return {
         "status": "resolved",
-        "message": "Base-map coordinates were resolved and cached.",
+        "message": (
+            "The exact address was not found, so city-center coordinates were resolved and cached."
+            if used_city_fallback
+            else "Base-map coordinates were resolved and cached."
+        ),
         "latitude": latitude,
         "longitude": longitude,
-        "precision": "exact" if location.address_line1 else "city_center",
+        "precision": "exact" if location.address_line1 and not used_city_fallback else "city_center",
     }
 
 

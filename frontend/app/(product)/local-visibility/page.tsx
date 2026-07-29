@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import {
@@ -300,9 +300,11 @@ export default function LocalVisibilityPage() {
   const [velocityTruth, setVelocityTruth] = useState<RuntimeTruth | null>(null);
   const [reviewsTruth, setReviewsTruth] = useState<RuntimeTruth | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingLocalData, setLoadingLocalData] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [resolvingLocation, setResolvingLocation] = useState(false);
+  const loadSequenceRef = useRef(0);
 
   const loadCampaigns = useCallback(async () => {
     const response = await platformApi("/campaigns", { method: "GET" });
@@ -318,6 +320,7 @@ export default function LocalVisibilityPage() {
   }, []);
 
   const loadLocalData = useCallback(async (campaignId: string) => {
+    const requestSequence = ++loadSequenceRef.current;
     if (!campaignId) {
       setHealth(null);
       setMapPack(null);
@@ -339,6 +342,9 @@ export default function LocalVisibilityPage() {
     const normalizedMapPack = (mapPackResponse as LocalResponse<MapPack>) || null;
     const normalizedVelocity = (velocityResponse as LocalResponse<ReviewVelocity>) || null;
     const normalizedReviews = (reviewsResponse as { items?: ReviewItem[]; truth?: RuntimeTruth }) || null;
+    if (requestSequence !== loadSequenceRef.current) {
+      return;
+    }
 
     setHealth(normalizedHealth || null);
     setMapPack(normalizedMapPack || null);
@@ -390,10 +396,7 @@ export default function LocalVisibilityPage() {
 
       try {
         await platformApi("/auth/me", { method: "GET" });
-        const items = await loadCampaigns();
-        if (items[0]?.id) {
-          await loadLocalData(items[0].id);
-        }
+        await loadCampaigns();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load local SEO data.");
       } finally {
@@ -402,17 +405,22 @@ export default function LocalVisibilityPage() {
     }
 
     void loadPage();
-  }, [loadCampaigns, loadLocalData]);
+  }, [loadCampaigns]);
 
   useEffect(() => {
-    if (!selectedCampaignId || loading) {
+    if (!selectedCampaignId) {
       return;
     }
 
-    void loadLocalData(selectedCampaignId).catch((err) => {
-      setError(err instanceof Error ? err.message : "Unable to load local SEO data.");
-    });
-  }, [selectedCampaignId, loading, loadLocalData]);
+    setLoadingLocalData(true);
+    setError("");
+    setNotice("");
+    void loadLocalData(selectedCampaignId)
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Unable to load local SEO data.");
+      })
+      .finally(() => setLoadingLocalData(false));
+  }, [selectedCampaignId, loadLocalData]);
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
@@ -525,7 +533,7 @@ export default function LocalVisibilityPage() {
           </TruthNotice>
         ) : null}
 
-        {loading ? (
+        {loading || loadingLocalData ? (
           <LoadingCard
             title="Loading local SEO"
             summary="Pulling local visibility, review momentum, and local health signals for the active business."
