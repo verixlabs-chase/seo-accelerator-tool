@@ -179,6 +179,21 @@ def test_migration_upgrade_and_downgrade():
         assert "sub_account_id" in campaign_cols
         assert "business_location_id" in campaign_cols
         assert "sub_account_id" in business_location_cols
+        assert {
+            "city",
+            "region",
+            "country_code",
+            "address_line1",
+            "postal_code",
+            "latitude",
+            "longitude",
+            "coordinate_precision",
+            "coordinate_source",
+            "provider_location_code",
+            "provider_location_name",
+            "provider_location_type",
+            "provider_location_resolved_at",
+        }.issubset(business_location_cols)
         assert "ix_campaigns_business_location_id" in campaign_indexes
         assert "ix_business_locations_sub_account_id" in business_location_indexes
         assert "sub_account_id" in report_schedule_cols

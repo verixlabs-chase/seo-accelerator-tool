@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from kombu.exceptions import KombuError
 from sqlalchemy.orm import Session
 
@@ -9,11 +9,70 @@ from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.services import local_service
+from app.services.location_normalization_service import (
+    LocationContextError,
+    get_campaign_location_context,
+    normalize_campaign_location,
+)
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import local_collect_profile_snapshot, local_compute_health_score, reviews_compute_velocity, reviews_ingest
 
 local_router = APIRouter(prefix="/local", tags=["local"])
 reviews_router = APIRouter(prefix="/reviews", tags=["reviews"])
+
+
+@local_router.get("/location-context")
+def get_location_context(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = get_campaign_location_context(
+            db,
+            tenant_id=user["tenant_id"],
+            campaign_id=campaign_id,
+        )
+    except LocationContextError as exc:
+        _raise_location_context_error(exc)
+    return envelope(request, payload)
+
+
+@local_router.post("/location-context/resolve")
+def resolve_location_context(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = normalize_campaign_location(
+            db,
+            tenant_id=user["tenant_id"],
+            campaign_id=campaign_id,
+        )
+        db.commit()
+    except LocationContextError as exc:
+        db.rollback()
+        _raise_location_context_error(exc)
+    return envelope(request, payload)
+
+
+def _raise_location_context_error(exc: LocationContextError) -> None:
+    reason = str(exc)
+    response_status = (
+        status.HTTP_404_NOT_FOUND
+        if reason in {"campaign_not_found", "business_location_not_found"}
+        else status.HTTP_409_CONFLICT
+    )
+    raise HTTPException(
+        status_code=response_status,
+        detail={
+            "message": "Location context is not available for this campaign.",
+            "reason_code": reason,
+        },
+    ) from exc
 
 
 def _local_provider_truth(*, has_data: bool, job_queued: bool, captured_at: str | None = None) -> dict:

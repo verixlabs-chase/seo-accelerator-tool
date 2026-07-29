@@ -43,6 +43,16 @@ type BusinessLocation = {
   name: string;
   domain?: string | null;
   primary_city?: string | null;
+  city?: string | null;
+  region?: string | null;
+  country_code?: string | null;
+  address_line1?: string | null;
+  postal_code?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinate_precision?: string | null;
+  provider_location_code?: string | null;
+  provider_location_name?: string | null;
   status: string;
   campaigns: Campaign[];
   execution_locations: ExecutionLocation[];
@@ -145,10 +155,22 @@ export default function LocationsPage() {
   const [locationName, setLocationName] = useState("");
   const [locationDomain, setLocationDomain] = useState("");
   const [locationCity, setLocationCity] = useState("");
+  const [locationRegion, setLocationRegion] = useState("");
+  const [locationCountryCode, setLocationCountryCode] = useState("US");
   const [locationSubaccountId, setLocationSubaccountId] = useState("");
   const [campaignName, setCampaignName] = useState("");
   const [campaignDomain, setCampaignDomain] = useState("");
   const [campaignLocationId, setCampaignLocationId] = useState("");
+  const [editingLocationId, setEditingLocationId] = useState("");
+  const [geoDraft, setGeoDraft] = useState({
+    city: "",
+    region: "",
+    country_code: "US",
+    address_line1: "",
+    postal_code: "",
+    latitude: "",
+    longitude: "",
+  });
 
   const organizationId = me?.organization_id || "";
 
@@ -251,6 +273,9 @@ export default function LocationsPage() {
             sub_account_id: locationSubaccountId,
             domain: locationDomain.trim() || null,
             primary_city: locationCity.trim() || null,
+            city: locationCity.trim() || null,
+            region: locationRegion.trim() || null,
+            country_code: locationCountryCode.trim().toUpperCase() || "US",
           }),
         },
       );
@@ -258,6 +283,8 @@ export default function LocationsPage() {
       setLocationName("");
       setLocationDomain("");
       setLocationCity("");
+      setLocationRegion("");
+      setLocationCountryCode("US");
       if (createdId) setCampaignLocationId(createdId);
       return "Business location created with its internal execution scope.";
     });
@@ -296,6 +323,48 @@ export default function LocationsPage() {
         },
       );
       return `${location.name} was archived. Historical campaigns remain available.`;
+    });
+  }
+
+  function beginEditLocation(location: BusinessLocation) {
+    setEditingLocationId(location.id);
+    setGeoDraft({
+      city: location.city || location.primary_city || "",
+      region: location.region || "",
+      country_code: location.country_code || "US",
+      address_line1: location.address_line1 || "",
+      postal_code: location.postal_code || "",
+      latitude: location.latitude == null ? "" : String(location.latitude),
+      longitude: location.longitude == null ? "" : String(location.longitude),
+    });
+  }
+
+  async function saveLocationDetails(location: BusinessLocation) {
+    if (!organizationId) return;
+    const hasLatitude = geoDraft.latitude.trim() !== "";
+    const hasLongitude = geoDraft.longitude.trim() !== "";
+    if (hasLatitude !== hasLongitude) {
+      setError("Latitude and longitude must be saved together.");
+      return;
+    }
+    await runMutation(`geo-${location.id}`, async () => {
+      await platformApi(
+        `/organizations/${organizationId}/business-locations/${location.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            city: geoDraft.city.trim() || null,
+            region: geoDraft.region.trim() || null,
+            country_code: geoDraft.country_code.trim().toUpperCase() || "US",
+            address_line1: geoDraft.address_line1.trim() || null,
+            postal_code: geoDraft.postal_code.trim() || null,
+            latitude: hasLatitude ? Number(geoDraft.latitude) : null,
+            longitude: hasLongitude ? Number(geoDraft.longitude) : null,
+          }),
+        },
+      );
+      setEditingLocationId("");
+      return `${location.name} map details were saved. Provider targeting will resolve automatically from this structured location.`;
     });
   }
 
@@ -505,6 +574,25 @@ export default function LocationsPage() {
                     />
                   </label>
                   <label className={labelClass}>
+                    State / region
+                    <input
+                      value={locationRegion}
+                      onChange={(event) => setLocationRegion(event.target.value)}
+                      placeholder="Texas"
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className={labelClass}>
+                    Country code
+                    <input
+                      value={locationCountryCode}
+                      onChange={(event) => setLocationCountryCode(event.target.value)}
+                      placeholder="US"
+                      maxLength={2}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className={labelClass}>
                     Domain
                     <input
                       value={locationDomain}
@@ -668,16 +756,153 @@ export default function LocationsPage() {
                                 .join(" · ") || "Location details not added"}
                             </p>
                           </div>
-                          {location.status === "active" ? (
+                          <div className="flex items-center gap-2">
                             <button
                               className={secondaryButtonClass}
-                              disabled={busyAction === `archive-${location.id}`}
-                              onClick={() => void archiveLocation(location)}
+                              onClick={() => beginEditLocation(location)}
                             >
-                              Archive
+                              Map details
                             </button>
-                          ) : null}
+                            {location.status === "active" ? (
+                              <button
+                                className={secondaryButtonClass}
+                                disabled={busyAction === `archive-${location.id}`}
+                                onClick={() => void archiveLocation(location)}
+                              >
+                                Archive
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
+
+                        {editingLocationId === location.id ? (
+                          <div className="mt-4 rounded-md border border-accent-500/20 bg-[#111214] p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-white">Map and provider location</p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                  City, state/region, and country drive automatic DataForSEO matching. Coordinates may be left blank and resolved from Local Visibility.
+                                </p>
+                              </div>
+                              <button
+                                className={secondaryButtonClass}
+                                onClick={() => setEditingLocationId("")}
+                              >
+                                Close
+                              </button>
+                            </div>
+                            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                              <label className={labelClass}>
+                                City
+                                <input
+                                  value={geoDraft.city}
+                                  onChange={(event) =>
+                                    setGeoDraft((current) => ({ ...current, city: event.target.value }))
+                                  }
+                                  className={inputClass}
+                                />
+                              </label>
+                              <label className={labelClass}>
+                                State / region
+                                <input
+                                  value={geoDraft.region}
+                                  onChange={(event) =>
+                                    setGeoDraft((current) => ({ ...current, region: event.target.value }))
+                                  }
+                                  className={inputClass}
+                                />
+                              </label>
+                              <label className={labelClass}>
+                                Country
+                                <input
+                                  value={geoDraft.country_code}
+                                  maxLength={2}
+                                  onChange={(event) =>
+                                    setGeoDraft((current) => ({
+                                      ...current,
+                                      country_code: event.target.value,
+                                    }))
+                                  }
+                                  className={inputClass}
+                                />
+                              </label>
+                              <label className={`${labelClass} sm:col-span-2`}>
+                                Street address (optional)
+                                <input
+                                  value={geoDraft.address_line1}
+                                  onChange={(event) =>
+                                    setGeoDraft((current) => ({
+                                      ...current,
+                                      address_line1: event.target.value,
+                                    }))
+                                  }
+                                  className={inputClass}
+                                />
+                              </label>
+                              <label className={labelClass}>
+                                Postal code
+                                <input
+                                  value={geoDraft.postal_code}
+                                  onChange={(event) =>
+                                    setGeoDraft((current) => ({
+                                      ...current,
+                                      postal_code: event.target.value,
+                                    }))
+                                  }
+                                  className={inputClass}
+                                />
+                              </label>
+                              <label className={labelClass}>
+                                Latitude (optional)
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={geoDraft.latitude}
+                                  onChange={(event) =>
+                                    setGeoDraft((current) => ({
+                                      ...current,
+                                      latitude: event.target.value,
+                                    }))
+                                  }
+                                  className={inputClass}
+                                />
+                              </label>
+                              <label className={labelClass}>
+                                Longitude (optional)
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={geoDraft.longitude}
+                                  onChange={(event) =>
+                                    setGeoDraft((current) => ({
+                                      ...current,
+                                      longitude: event.target.value,
+                                    }))
+                                  }
+                                  className={inputClass}
+                                />
+                              </label>
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-xs text-zinc-500">
+                                {location.provider_location_name
+                                  ? `DataForSEO: ${location.provider_location_name} (${location.provider_location_code})`
+                                  : "DataForSEO location has not been resolved yet."}
+                              </p>
+                              <button
+                                className={primaryButtonClass}
+                                disabled={
+                                  !geoDraft.city.trim() ||
+                                  !geoDraft.region.trim() ||
+                                  busyAction === `geo-${location.id}`
+                                }
+                                onClick={() => void saveLocationDetails(location)}
+                              >
+                                {busyAction === `geo-${location.id}` ? "Saving…" : "Save map details"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
 
                         {location.performance?.data_available ? (
                           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">

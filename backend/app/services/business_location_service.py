@@ -26,6 +26,19 @@ _BUSINESS_LOCATIONS_TABLE = sa.Table(
     sa.Column("name", sa.String(length=255)),
     sa.Column("domain", sa.String(length=255)),
     sa.Column("primary_city", sa.String(length=255)),
+    sa.Column("city", sa.String(length=120)),
+    sa.Column("region", sa.String(length=120)),
+    sa.Column("country_code", sa.String(length=2)),
+    sa.Column("address_line1", sa.String(length=255)),
+    sa.Column("postal_code", sa.String(length=32)),
+    sa.Column("latitude", sa.Numeric(9, 6)),
+    sa.Column("longitude", sa.Numeric(9, 6)),
+    sa.Column("coordinate_precision", sa.String(length=30)),
+    sa.Column("coordinate_source", sa.String(length=50)),
+    sa.Column("provider_location_code", sa.String(length=32)),
+    sa.Column("provider_location_name", sa.String(length=255)),
+    sa.Column("provider_location_type", sa.String(length=50)),
+    sa.Column("provider_location_resolved_at", sa.DateTime(timezone=True)),
     sa.Column("status", sa.String(length=50)),
     sa.Column("created_at", sa.DateTime(timezone=True)),
     sa.Column("updated_at", sa.DateTime(timezone=True)),
@@ -65,6 +78,13 @@ def create_business_location_with_portfolio(
     name: str,
     domain: str | None,
     primary_city: str | None,
+    city: str | None = None,
+    region: str | None = None,
+    country_code: str = "US",
+    address_line1: str | None = None,
+    postal_code: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
     sub_account_id: str | None = None,
 ) -> dict[str, object]:
     started_at = monotonic()
@@ -74,7 +94,16 @@ def create_business_location_with_portfolio(
         business_location_id = str(uuid.uuid4())
         normalized_name = name
         normalized_domain = _normalize_optional(domain)
-        normalized_city = _normalize_optional(primary_city)
+        normalized_city = _normalize_optional(city) or _normalize_optional(primary_city)
+        normalized_region = _normalize_optional(region)
+        normalized_country_code = country_code.strip().upper()
+        normalized_address_line1 = _normalize_optional(address_line1)
+        normalized_postal_code = _normalize_optional(postal_code)
+        _validate_coordinates(latitude, longitude)
+        coordinate_precision = "exact" if normalized_address_line1 and latitude is not None else (
+            "manual" if latitude is not None else None
+        )
+        coordinate_source = "manual" if latitude is not None else None
         resolved_sub_account = _resolve_active_subaccount(
             db,
             organization_id=organization_id,
@@ -90,6 +119,19 @@ def create_business_location_with_portfolio(
                     name=normalized_name,
                     domain=normalized_domain,
                     primary_city=normalized_city,
+                    city=normalized_city,
+                    region=normalized_region,
+                    country_code=normalized_country_code,
+                    address_line1=normalized_address_line1,
+                    postal_code=normalized_postal_code,
+                    latitude=latitude,
+                    longitude=longitude,
+                    coordinate_precision=coordinate_precision,
+                    coordinate_source=coordinate_source,
+                    provider_location_code=None,
+                    provider_location_name=None,
+                    provider_location_type=None,
+                    provider_location_resolved_at=None,
                     status="active",
                     created_at=now,
                     updated_at=now,
@@ -133,8 +175,11 @@ def create_business_location_with_portfolio(
                 sub_account_id=resolved_sub_account.id,
                 location_code=_build_execution_location_code(business_location_id),
                 name=normalized_name,
-                country_code="US",
+                country_code=normalized_country_code,
+                region=normalized_region,
                 city=normalized_city,
+                lat=latitude,
+                lng=longitude,
                 business_location_id=business_location_id,
             )
             execution_location_id = str(execution_location["id"])
@@ -147,6 +192,19 @@ def create_business_location_with_portfolio(
             "name": normalized_name,
             "domain": normalized_domain,
             "primary_city": normalized_city,
+            "city": normalized_city,
+            "region": normalized_region,
+            "country_code": normalized_country_code,
+            "address_line1": normalized_address_line1,
+            "postal_code": normalized_postal_code,
+            "latitude": latitude,
+            "longitude": longitude,
+            "coordinate_precision": coordinate_precision,
+            "coordinate_source": coordinate_source,
+            "provider_location_code": None,
+            "provider_location_name": None,
+            "provider_location_type": None,
+            "provider_location_resolved_at": None,
             "status": "active",
             "created_at": now,
             "updated_at": now,
@@ -217,12 +275,49 @@ def update_business_location(
         row.name = str(changes["name"]).strip()
     if "domain" in changes:
         row.domain = _normalize_optional(str(changes["domain"])) if changes["domain"] is not None else None
-    if "primary_city" in changes:
+    if "city" in changes:
+        row.city = _normalize_optional(str(changes["city"])) if changes["city"] is not None else None
+        row.primary_city = row.city
+    elif "primary_city" in changes:
         row.primary_city = (
             _normalize_optional(str(changes["primary_city"]))
             if changes["primary_city"] is not None
             else None
         )
+        row.city = row.primary_city
+    if "region" in changes:
+        row.region = _normalize_optional(str(changes["region"])) if changes["region"] is not None else None
+    if "country_code" in changes and changes["country_code"] is not None:
+        row.country_code = str(changes["country_code"]).strip().upper()
+    if "address_line1" in changes:
+        row.address_line1 = (
+            _normalize_optional(str(changes["address_line1"]))
+            if changes["address_line1"] is not None
+            else None
+        )
+    if "postal_code" in changes:
+        row.postal_code = (
+            _normalize_optional(str(changes["postal_code"]))
+            if changes["postal_code"] is not None
+            else None
+        )
+    if "latitude" in changes or "longitude" in changes:
+        next_latitude = changes.get("latitude", row.latitude)
+        next_longitude = changes.get("longitude", row.longitude)
+        _validate_coordinates(next_latitude, next_longitude)
+        row.latitude = next_latitude
+        row.longitude = next_longitude
+        if next_latitude is None:
+            row.coordinate_precision = None
+            row.coordinate_source = None
+        else:
+            row.coordinate_precision = "exact" if row.address_line1 else "manual"
+            row.coordinate_source = "manual"
+    if {"city", "primary_city", "region", "country_code"} & changes.keys():
+        row.provider_location_code = None
+        row.provider_location_name = None
+        row.provider_location_type = None
+        row.provider_location_resolved_at = None
     if "status" in changes and changes["status"] is not None:
         next_status = str(changes["status"]).strip().lower()
         if next_status not in ALLOWED_BUSINESS_LOCATION_STATUSES:
@@ -250,6 +345,12 @@ def update_business_location(
             location.portfolio_id = portfolio.id
         if row.status in ALLOWED_BUSINESS_LOCATION_STATUSES:
             location.status = LocationStatus(row.status)
+        location.name = row.name
+        location.country_code = row.country_code
+        location.region = row.region
+        location.city = row.city or row.primary_city
+        location.lat = row.latitude
+        location.lng = row.longitude
 
     linked_campaigns = (
         db.query(Campaign)
@@ -273,8 +374,11 @@ def update_business_location(
             sub_account_id=row.sub_account_id,
             location_code=_build_execution_location_code(row.id),
             name=row.name,
-            country_code="US",
-            city=row.primary_city,
+            country_code=row.country_code,
+            region=row.region,
+            city=row.city or row.primary_city,
+            lat=row.latitude,
+            lng=row.longitude,
             status_value=row.status,
             business_location_id=row.id,
         )
@@ -311,3 +415,14 @@ def _normalize_optional(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _validate_coordinates(latitude: object, longitude: object) -> None:
+    if (latitude is None) != (longitude is None):
+        raise BusinessLocationInvariantError("coordinates_must_be_paired")
+    if latitude is None:
+        return
+    lat = float(latitude)
+    lng = float(longitude)
+    if not -90 <= lat <= 90 or not -180 <= lng <= 180:
+        raise BusinessLocationInvariantError("coordinates_out_of_range")

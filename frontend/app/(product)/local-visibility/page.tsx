@@ -58,6 +58,52 @@ type ReviewItem = {
   reviewed_at?: string;
 };
 
+type LocationContext = {
+  campaign_id: string;
+  business_location_id: string;
+  name: string;
+  domain?: string | null;
+  address: {
+    line1?: string | null;
+    city?: string | null;
+    region?: string | null;
+    postal_code?: string | null;
+    country_code: string;
+    country_name: string;
+    formatted: string;
+  };
+  coordinates: {
+    latitude?: number | null;
+    longitude?: number | null;
+    precision?: string | null;
+    source?: string | null;
+    status: "ready" | "missing";
+  };
+  provider_location: {
+    code?: string | null;
+    name?: string | null;
+    type?: string | null;
+    resolved_at?: string | null;
+    status: "ready" | "missing";
+  };
+  base_map: {
+    status: "ready" | "setup_required";
+    coverage_type: "reference_map";
+    message: string;
+  };
+  map_rank_coverage: {
+    status: string;
+    coverage_type: "paid_geo_grid";
+    is_paid: boolean;
+    message: string;
+  };
+  resolution_attempts?: Array<{
+    target: string;
+    status: string;
+    message: string;
+  }>;
+};
+
 type LocalResponse<T> = T & { truth?: RuntimeTruth };
 
 function formatRelativeTime(value?: string) {
@@ -168,28 +214,72 @@ function buildNextStep({
   return "Keep the local profile active and continue collecting fresh reviews while watching map-pack movement.";
 }
 
-function LocalMapVisual({ position = 20 }: { position?: number | null }) {
-  const safePosition = position || 20;
+function formatPrecision(value?: string | null) {
+  if (value === "city_center") return "City-center reference";
+  if (value === "exact") return "Exact address";
+  if (value === "manual") return "Saved pin";
+  return "Location reference";
+}
+
+function LocationBaseMap({ context }: { context: LocationContext | null }) {
+  const latitude = context?.coordinates.latitude;
+  const longitude = context?.coordinates.longitude;
+  if (
+    context?.coordinates.status !== "ready" ||
+    typeof latitude !== "number" ||
+    typeof longitude !== "number"
+  ) {
+    return (
+      <div className="grid min-h-80 place-items-center bg-[radial-gradient(circle_at_30%_30%,rgba(255,106,26,0.12),transparent_28%),linear-gradient(180deg,#0c0d0f_0%,#101114_100%)] p-6 text-center">
+        <div className="max-w-sm">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-accent-500/30 bg-accent-500/10 text-xl">
+            +
+          </div>
+          <p className="mt-4 text-base font-semibold text-white">Map setup is incomplete</p>
+          <p className="mt-2 text-sm leading-6 text-zinc-400">
+            Save a city and state/region, then resolve the location to place this business on a real map.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const latitudeSpan = 0.13;
+  const longitudeSpan = 0.17;
+  const bbox = [
+    longitude - longitudeSpan,
+    latitude - latitudeSpan,
+    longitude + longitudeSpan,
+    latitude + latitudeSpan,
+  ].join(",");
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(
+    bbox,
+  )}&layer=mapnik&marker=${encodeURIComponent(`${latitude},${longitude}`)}`;
+  const openMapUrl = `https://www.openstreetmap.org/?mlat=${encodeURIComponent(
+    latitude,
+  )}&mlon=${encodeURIComponent(longitude)}#map=12/${latitude}/${longitude}`;
 
   return (
-    <div className="grid min-h-72 place-items-center bg-[radial-gradient(circle_at_30%_30%,rgba(255,106,26,0.18),transparent_22%),linear-gradient(180deg,#0c0d0f_0%,#101114_100%)] p-6">
-      <div className="grid w-full max-w-sm grid-cols-3 gap-3">
-        {Array.from({ length: 9 }).map((_, index) => {
-          const slot = index + 1;
-          const isBusiness = slot === Math.min(safePosition, 9);
-          return (
-            <div
-              key={slot}
-              className={`flex h-20 items-center justify-center rounded-md border text-sm font-semibold ${
-                isBusiness
-                  ? "border-accent-500/40 bg-accent-500/15 text-zinc-100"
-                  : "border-[#26272c] bg-[#141518] text-zinc-500"
-              }`}
-            >
-              {isBusiness ? `You #${safePosition}` : `#${slot}`}
-            </div>
-          );
-        })}
+    <div className="bg-[#0c0d0f]">
+      <iframe
+        src={mapUrl}
+        title={`Interactive reference map for ${context.name}`}
+        className="h-80 w-full border-0"
+        loading="lazy"
+        referrerPolicy="strict-origin-when-cross-origin"
+      />
+      <div className="flex flex-col gap-2 border-t border-[#26272c] bg-[#111214] px-4 py-3 text-xs text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
+        <span>
+          {formatPrecision(context.coordinates.precision)} · approximately a 10-mile planning view
+        </span>
+        <a
+          href={openMapUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-accent-400 hover:text-accent-300"
+        >
+          Open larger map · © OpenStreetMap
+        </a>
       </div>
     </div>
   );
@@ -202,6 +292,7 @@ export default function LocalVisibilityPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [health, setHealth] = useState<LocalHealth | null>(null);
   const [mapPack, setMapPack] = useState<MapPack | null>(null);
+  const [locationContext, setLocationContext] = useState<LocationContext | null>(null);
   const [velocity, setVelocity] = useState<ReviewVelocity | null>(null);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [healthTruth, setHealthTruth] = useState<RuntimeTruth | null>(null);
@@ -211,6 +302,7 @@ export default function LocalVisibilityPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [resolvingLocation, setResolvingLocation] = useState(false);
 
   const loadCampaigns = useCallback(async () => {
     const response = await platformApi("/campaigns", { method: "GET" });
@@ -229,16 +321,18 @@ export default function LocalVisibilityPage() {
     if (!campaignId) {
       setHealth(null);
       setMapPack(null);
+      setLocationContext(null);
       setVelocity(null);
       setReviews([]);
       return;
     }
 
-    const [healthResponse, mapPackResponse, velocityResponse, reviewsResponse] = await Promise.all([
+    const [healthResponse, mapPackResponse, velocityResponse, reviewsResponse, contextResponse] = await Promise.all([
       platformApi(`/local/health?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi(`/local/map-pack?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi(`/reviews/velocity?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi(`/reviews?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
+      platformApi(`/local/location-context?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
     ]);
 
     const normalizedHealth = (healthResponse as LocalResponse<LocalHealth>) || null;
@@ -250,11 +344,44 @@ export default function LocalVisibilityPage() {
     setMapPack(normalizedMapPack || null);
     setVelocity(normalizedVelocity || null);
     setReviews(Array.isArray(normalizedReviews?.items) ? (normalizedReviews.items as ReviewItem[]) : []);
+    setLocationContext((contextResponse as LocationContext) || null);
     setHealthTruth(normalizedHealth?.truth || null);
     setMapPackTruth(normalizedMapPack?.truth || null);
     setVelocityTruth(normalizedVelocity?.truth || null);
     setReviewsTruth(normalizedReviews?.truth || null);
   }, []);
+
+  const resolveMapLocation = useCallback(async () => {
+    if (!selectedCampaignId) return;
+    setResolvingLocation(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/local/location-context/resolve?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      )) as LocationContext;
+      setLocationContext(response);
+      const attempts = response.resolution_attempts || [];
+      const resolved = attempts.filter((item) =>
+        ["resolved", "already_resolved"].includes(item.status),
+      ).length;
+      const unresolved = attempts.filter(
+        (item) => !["resolved", "already_resolved"].includes(item.status),
+      );
+      setNotice(
+        unresolved.length === 0
+          ? "Location map and DataForSEO targeting are ready."
+          : `${resolved} location setup item${resolved === 1 ? "" : "s"} ready. ${unresolved
+              .map((item) => item.message)
+              .join(" ")}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to resolve this location.");
+    } finally {
+      setResolvingLocation(false);
+    }
+  }, [selectedCampaignId]);
 
   useEffect(() => {
     async function loadPage() {
@@ -312,6 +439,11 @@ export default function LocalVisibilityPage() {
         "Local visibility can degrade to stale, synthetic, or unavailable data depending on provider setup.",
       ),
       {
+        label: "Base map",
+        value: locationContext?.base_map.status === "ready" ? "Ready" : "Setup needed",
+        tone: locationContext?.base_map.status === "ready" ? "success" : "warning",
+      },
+      {
         label: "Map-pack",
         value: mapPackPosition ? `Position ${mapPackPosition}` : "No map-pack data",
         tone:
@@ -337,7 +469,7 @@ export default function LocalVisibilityPage() {
         tone: avgRatingLast30d >= 4.5 ? "success" : avgRatingLast30d >= 4 ? "info" : "warning",
       },
     ],
-    [avgRatingLast30d, healthScore, mapPackPosition, reviewsLast30d, runtimeTruth],
+    [avgRatingLast30d, healthScore, locationContext?.base_map.status, mapPackPosition, reviewsLast30d, runtimeTruth],
   );
 
   return (
@@ -471,13 +603,31 @@ export default function LocalVisibilityPage() {
 
             <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
               <MapCard
-                title={mapPack?.profile_name || "Local profile visibility"}
-                summary={getMapPackSummary(mapPackPosition)}
-                map={<LocalMapVisual position={mapPackPosition} />}
+                title={locationContext?.name || mapPack?.profile_name || "Business location"}
+                summary={
+                  locationContext?.address.formatted ||
+                  "Add structured location details before placing this business on the map."
+                }
+                map={<LocationBaseMap context={locationContext} />}
                 legend={
-                  <span className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200">
-                    {mapPack?.provider?.toUpperCase() || "GBP"}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-100">
+                      Reference map
+                    </span>
+                    <span className="rounded-md border border-[#3a2a20] bg-amber-500/5 px-3 py-1.5 text-sm text-amber-100">
+                      Not ranking coverage
+                    </span>
+                    {locationContext?.base_map.status !== "ready" ||
+                    locationContext?.provider_location.status !== "ready" ? (
+                      <button
+                        onClick={() => void resolveMapLocation()}
+                        disabled={resolvingLocation}
+                        className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:opacity-50"
+                      >
+                        {resolvingLocation ? "Resolving…" : "Resolve location"}
+                      </button>
+                    ) : null}
+                  </div>
                 }
               />
 
@@ -521,6 +671,55 @@ export default function LocalVisibilityPage() {
                           : "Review quality is a local trust risk."}
                     </p>
                   </div>
+                </div>
+              </section>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <section className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  DataForSEO targeting
+                </p>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-white">
+                      {locationContext?.provider_location.status === "ready"
+                        ? locationContext.provider_location.name
+                        : "Provider location needs setup"}
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-zinc-400">
+                      {locationContext?.provider_location.status === "ready"
+                        ? `Automatically matched to location code ${locationContext.provider_location.code}.`
+                        : "The customer never has to type a provider-specific location string."}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${
+                      locationContext?.provider_location.status === "ready"
+                        ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100"
+                        : "border-amber-500/20 bg-amber-500/10 text-amber-100"
+                    }`}
+                  >
+                    {locationContext?.provider_location.status === "ready" ? "Resolved" : "Not resolved"}
+                  </span>
+                </div>
+              </section>
+
+              <section className="rounded-md border border-[#3a2a20] bg-[#171518] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Paid map-ranking coverage
+                </p>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-white">Geo-grid is not enabled</h2>
+                    <p className="mt-1 text-sm leading-6 text-zinc-400">
+                      {locationContext?.map_rank_coverage.message ||
+                        "A paid geo-grid run will be a separate, explicit action after the base map passes QA."}
+                    </p>
+                  </div>
+                  <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
+                    No provider spend
+                  </span>
                 </div>
               </section>
             </div>

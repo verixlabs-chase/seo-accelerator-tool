@@ -38,7 +38,7 @@ def test_modern_runtime_preserves_legacy_diagnostic_coverage(
 
     monkeypatch.setattr(
         'app.intelligence.intelligence_orchestrator._select_recommendations_via_digital_twin',
-        lambda _db, *, campaign_id, recommendations: (
+        lambda _db, *, campaign_id, recommendations, **_kwargs: (
             recommendations,
             {'status': 'stubbed', 'campaign_id': campaign_id, 'selected_recommendation_ids': [row.id for row in recommendations]},
         ),

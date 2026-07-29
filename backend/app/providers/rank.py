@@ -255,6 +255,16 @@ class DataForSeoRankProvider:
         normalized = value.strip()
         if normalized.casefold() in {"us", "usa", "united states"}:
             return "United States"
+        parts = [part.strip() for part in normalized.split(",") if part.strip()]
+        known_countries = {
+            "australia",
+            "canada",
+            "new zealand",
+            "united kingdom",
+            "united states",
+        }
+        if parts and parts[-1].casefold() in known_countries:
+            return normalized
         if "united states" not in normalized.casefold():
             return f"{normalized}, United States"
         return normalized

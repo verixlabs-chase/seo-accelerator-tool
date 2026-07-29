@@ -39,6 +39,13 @@ def create_business_location(
             name=body.name,
             domain=body.domain,
             primary_city=body.primary_city,
+            city=body.city,
+            region=body.region,
+            country_code=body.country_code,
+            address_line1=body.address_line1,
+            postal_code=body.postal_code,
+            latitude=body.latitude,
+            longitude=body.longitude,
             sub_account_id=body.sub_account_id,
         )
         db.commit()

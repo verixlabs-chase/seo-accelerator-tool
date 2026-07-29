@@ -18,7 +18,16 @@ def test_business_location_create_auto_creates_internal_portfolio(client, db_ses
 
     response = client.post(
         f"/api/v1/organizations/{org_id}/business-locations",
-        json={"name": "Main Street", "domain": "example.com", "primary_city": "Austin"},
+        json={
+            "name": "Main Street",
+            "domain": "example.com",
+            "primary_city": "Austin",
+            "city": "Austin",
+            "region": "Texas",
+            "country_code": "US",
+            "latitude": 30.2672,
+            "longitude": -97.7431,
+        },
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -30,6 +39,12 @@ def test_business_location_create_auto_creates_internal_portfolio(client, db_ses
     assert business_location["name"] == "Main Street"
     assert business_location["domain"] == "example.com"
     assert business_location["primary_city"] == "Austin"
+    assert business_location["city"] == "Austin"
+    assert business_location["region"] == "Texas"
+    assert business_location["country_code"] == "US"
+    assert business_location["latitude"] == 30.2672
+    assert business_location["longitude"] == -97.7431
+    assert business_location["coordinate_precision"] == "manual"
 
     portfolio = db_session.execute(
         text(

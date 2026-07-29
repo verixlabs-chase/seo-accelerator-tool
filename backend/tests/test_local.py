@@ -1,3 +1,8 @@
+from sqlalchemy import text
+
+from app.services import location_normalization_service
+
+
 def _login(client, email, password):
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
@@ -44,3 +49,124 @@ def test_local_health_and_reviews_velocity(client):
     assert "reviews_last_30d" in velocity.json()["data"]
     assert "avg_rating_last_30d" in velocity.json()["data"]
     assert velocity.json()["data"]["truth"]["classification"] in {"synthetic", "in_progress"}
+
+
+def test_location_context_resolves_and_caches_map_and_provider_metadata(
+    client,
+    db_session,
+    monkeypatch,
+):
+    token = _login(client, "org-admin@example.com", "pass-org-admin")
+    me = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+    org_id = me["organization_id"]
+    subaccount = client.post(
+        f"/api/v1/organizations/{org_id}/subaccounts",
+        json={"name": "Western Region"},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]["subaccount"]
+    business_location = client.post(
+        f"/api/v1/organizations/{org_id}/business-locations",
+        json={
+            "name": "Reno",
+            "sub_account_id": subaccount["id"],
+            "domain": "reno.example",
+            "city": "Reno",
+            "region": "NV",
+            "country_code": "US",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]["business_location"]
+    campaign = client.post(
+        "/api/v1/campaigns",
+        json={
+            "name": "Reno SEO",
+            "domain": "reno.example",
+            "business_location_id": business_location["id"],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+
+    before = client.get(
+        f"/api/v1/local/location-context?campaign_id={campaign['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert before.status_code == 200
+    assert before.json()["data"]["base_map"]["status"] == "setup_required"
+    assert before.json()["data"]["map_rank_coverage"] == {
+        "status": "not_enabled",
+        "coverage_type": "paid_geo_grid",
+        "is_paid": True,
+        "message": (
+            "Paid geo-grid ranking coverage is not enabled. "
+            "The base map does not represent search rankings."
+        ),
+    }
+
+    monkeypatch.setattr(
+        location_normalization_service,
+        "_resolve_coordinates",
+        lambda _location: {
+            "status": "resolved",
+            "message": "resolved",
+            "latitude": 39.5296,
+            "longitude": -119.8138,
+            "precision": "city_center",
+        },
+    )
+    monkeypatch.setattr(
+        location_normalization_service,
+        "_resolve_dataforseo_location",
+        lambda _db, *, organization_id, location: {
+            "status": "resolved",
+            "message": "resolved",
+            "location_code": "1022653",
+            "location_name": "Reno, Nevada, United States",
+            "location_type": "City",
+        },
+    )
+    resolved = client.post(
+        f"/api/v1/local/location-context/resolve?campaign_id={campaign['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resolved.status_code == 200
+    payload = resolved.json()["data"]
+    assert payload["base_map"]["status"] == "ready"
+    assert payload["coordinates"]["precision"] == "city_center"
+    assert payload["provider_location"]["status"] == "ready"
+    assert payload["provider_location"]["name"] == "Reno, Nevada, United States"
+    assert payload["provider_location"]["code"] == "1022653"
+
+    execution_location = db_session.execute(
+        text(
+            """
+            SELECT region, city, lat, lng
+            FROM locations
+            WHERE business_location_id = :business_location_id
+            """
+        ),
+        {"business_location_id": business_location["id"]},
+    ).mappings().one()
+    assert execution_location["region"] == "NV"
+    assert execution_location["city"] == "Reno"
+    assert float(execution_location["lat"]) == 39.5296
+    assert float(execution_location["lng"]) == -119.8138
+
+
+def test_location_context_does_not_cross_tenant_scope(client):
+    token_a = _login(client, "a@example.com", "pass-a")
+    token_b = _login(client, "b@example.com", "pass-b")
+    campaign_b = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Other tenant", "domain": "other.example"},
+        headers={"Authorization": f"Bearer {token_b}"},
+    ).json()["data"]
+
+    response = client.get(
+        f"/api/v1/local/location-context?campaign_id={campaign_b['id']}",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert response.status_code == 404
+    assert response.json()["errors"][0]["details"]["reason_code"] == "campaign_not_found"

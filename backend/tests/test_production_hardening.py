@@ -34,8 +34,12 @@ def _create_campaign(client, token, name="Hardening Campaign", domain="hardening
 def _latest_task(db_session, tenant_id: str, task_name: str) -> dict:
     row = (
         db_session.query(TaskExecution)
-        .filter(TaskExecution.tenant_id == tenant_id, TaskExecution.task_name == task_name)
-        .order_by(TaskExecution.created_at.desc())
+        .filter(
+            TaskExecution.tenant_id == tenant_id,
+            TaskExecution.task_name == task_name,
+            TaskExecution.status == "failed",
+        )
+        .order_by(TaskExecution.updated_at.desc(), TaskExecution.created_at.desc())
         .first()
     )
     assert row is not None

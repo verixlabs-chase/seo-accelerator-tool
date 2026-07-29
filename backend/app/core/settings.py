@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     rank_provider_dataforseo_timeout_seconds: float = 30.0
     rank_provider_dataforseo_language_code: str = "en"
     rank_provider_dataforseo_depth: int = 100
+    dataforseo_locations_endpoint: str = "https://api.dataforseo.com/v3/serp/google/locations"
+    location_geocoder_endpoint: str = "https://nominatim.openstreetmap.org/search"
+    location_resolver_timeout_seconds: float = 20.0
     rank_provider_serpapi_api_key: str = ""
     rank_provider_serpapi_endpoint: str = "https://serpapi.com/search.json"
     rank_provider_serpapi_timeout_seconds: float = 15.0

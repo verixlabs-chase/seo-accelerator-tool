@@ -156,9 +156,22 @@ def resolve_location_code(
     if campaign.business_location_id:
         location = db.get(BusinessLocation, campaign.business_location_id)
         if location is not None and location.organization_id == campaign.organization_id:
-            city = (location.primary_city or "").strip()
+            provider_name = (location.provider_location_name or "").strip()
+            if provider_name:
+                return provider_name
+            city = (location.city or location.primary_city or "").strip()
             if city:
-                return city if "united states" in city.casefold() else f"{city}, United States"
+                region = (location.region or "").strip()
+                country_code = (location.country_code or "US").strip().upper()
+                country_name = {
+                    "US": "United States",
+                    "CA": "Canada",
+                    "GB": "United Kingdom",
+                    "AU": "Australia",
+                    "NZ": "New Zealand",
+                }.get(country_code, country_code)
+                parts = [city, region, country_name]
+                return ", ".join(part for part in parts if part)
     return "United States"
 
 
