@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  getSearchConsoleOwnerSummary,
   getCrawlWorkflowState,
   getRankingWorkflowState,
   getReportWorkflowState as getDashboardReportWorkflowState,
+  isDashboardDataCurrent,
 } from "../app/(product)/truth/dashboardTruth.mjs";
 import {
   getDeliveryWorkflowState,
@@ -36,6 +38,32 @@ import {
 import { getApiErrorDetail } from "../app/lib/apiError.mjs";
 
 const formatRelativeTime = () => "2 hours ago";
+
+test("dashboard only applies the newest response for the active location", () => {
+  assert.equal(isDashboardDataCurrent("reno", "reno", 4, 4), true);
+  assert.equal(isDashboardDataCurrent("reno", "lexington", 4, 4), false);
+  assert.equal(isDashboardDataCurrent("lexington", "lexington", 3, 4), false);
+});
+
+test("Search Console summary translates metrics into owner-friendly language", () => {
+  const summary = getSearchConsoleOwnerSummary(
+    {
+      data_status: "ready",
+      summary: {
+        clicks: 42,
+        impressions: 2100,
+        ctr_percent: 2,
+        avg_position: 8.75,
+      },
+    },
+    "Lexington",
+  );
+
+  assert.match(summary, /42 visits/i);
+  assert.match(summary, /2,100 Google appearances/i);
+  assert.match(summary, /2\.0% of appearances became visits/i);
+  assert.match(summary, /average search position was 8\.8/i);
+});
 
 test("data connection truth distinguishes current, stale, and reconnect states", () => {
   assert.equal(getConnectionStatusView({ status: "current" }).label, "Up to date");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import {
@@ -33,10 +33,12 @@ import { buildProductNav } from "../nav.config";
 import { clearAuthSession } from "../../lib/authStorage";
 import { platformApi } from "../../platform/api";
 import {
+  getSearchConsoleOwnerSummary,
   getCrawlWorkflowState,
   getRankingWorkflowState,
   getReportWorkflowState,
   getSetupWorkflowState,
+  isDashboardDataCurrent,
   isFailedStatus,
   isPendingStatus,
 } from "../truth/dashboardTruth.mjs";
@@ -49,6 +51,7 @@ import {
 type Me = {
   id?: string;
   tenant_id?: string;
+  organization_id?: string;
 };
 
 type Campaign = {
@@ -86,6 +89,42 @@ type Report = {
   report_status?: string;
   created_at?: string;
   updated_at?: string;
+};
+
+type SearchConsolePoint = {
+  date: string;
+  clicks: number;
+  impressions: number;
+  ctr_percent: number;
+  avg_position?: number | null;
+};
+
+type SearchConsoleMetrics = {
+  campaign_id: string;
+  data_status: "not_connected" | "no_data" | "ready";
+  date_from?: string | null;
+  date_to?: string | null;
+  data_days: number;
+  summary?: {
+    clicks: number;
+    impressions: number;
+    ctr_percent: number;
+    avg_position?: number | null;
+  } | null;
+  comparison?: {
+    period_days: number;
+    clicks_change_percent?: number | null;
+    impressions_change_percent?: number | null;
+    ctr_change_points?: number | null;
+    position_improvement?: number | null;
+  } | null;
+  connection?: {
+    status: string;
+    last_success_at?: string | null;
+    external_resource_name?: string | null;
+    source_truth?: string;
+  } | null;
+  points: SearchConsolePoint[];
 };
 
 type WorkflowState = {
@@ -152,6 +191,30 @@ function coerceNumber(value: number | string | undefined, fallback = 0) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatMetricDate(value?: string | null) {
+  if (!value) {
+    return "No data yet";
+  }
+  const parsed = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(parsed);
+}
+
+function formatChange(value?: number | null, noun = "visits") {
+  if (value === null || value === undefined) {
+    return "New baseline";
+  }
+  if (value === 0) {
+    return `No change in ${noun}`;
+  }
+  return `${value > 0 ? "Up" : "Down"} ${Math.abs(value).toFixed(1)}%`;
 }
 
 function getWorkflowToneClass(tone: string) {
@@ -345,6 +408,72 @@ function RankingTrendChart({
   );
 }
 
+function SearchConsoleTrendChart({
+  data,
+}: {
+  data: Array<{ label: string; clicks: number; impressions: number }>;
+}) {
+  return (
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data}>
+          <defs>
+            <linearGradient id="searchImpressionsFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#FF944F" stopOpacity={0.28} />
+              <stop offset="95%" stopColor="#FF944F" stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+          <XAxis
+            dataKey="label"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#71717a", fontSize: 11 }}
+            minTickGap={22}
+          />
+          <YAxis
+            yAxisId="clicks"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#71717a", fontSize: 11 }}
+            width={34}
+            allowDecimals={false}
+          />
+          <YAxis
+            yAxisId="impressions"
+            orientation="right"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#71717a", fontSize: 11 }}
+            width={46}
+            allowDecimals={false}
+          />
+          <Tooltip content={<TrendTooltip />} />
+          <Area
+            yAxisId="impressions"
+            type="monotone"
+            dataKey="impressions"
+            stroke="#FF944F"
+            strokeWidth={1.8}
+            fill="url(#searchImpressionsFill)"
+            name="Times shown"
+          />
+          <Line
+            yAxisId="clicks"
+            type="monotone"
+            dataKey="clicks"
+            stroke="#FF6A1A"
+            strokeWidth={2.4}
+            dot={false}
+            activeDot={{ r: 4, fill: "#FF6A1A", stroke: "#0a0a0a", strokeWidth: 2 }}
+            name="Visits"
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 function MiniSpark({
   bars,
   color,
@@ -436,6 +565,11 @@ export default function DashboardPage() {
   const [trackedKeywordCount, setTrackedKeywordCount] = useState(0);
   const [latestReports, setLatestReports] = useState<Report[]>([]);
   const [latestReportTruth, setLatestReportTruth] = useState<RuntimeTruth | null>(null);
+  const [searchConsoleMetrics, setSearchConsoleMetrics] =
+    useState<SearchConsoleMetrics | null>(null);
+  const latestLoadRequestRef = useRef(0);
+  const activeCampaignRef = useRef(selectedCampaignId);
+  activeCampaignRef.current = selectedCampaignId;
 
   async function api(path: string, options: RequestInit = {}) {
     try {
@@ -464,16 +598,49 @@ export default function DashboardPage() {
     return items;
   }
 
-  async function loadLatest(campaignId: string) {
+  function clearLatestData() {
+    setLatestRuns([]);
+    setLatestTrends([]);
+    setLatestRankTruth(null);
+    setLatestRankCapturedAt("");
+    setTrackedKeywordCount(0);
+    setLatestReports([]);
+    setLatestReportTruth(null);
+    setSearchConsoleMetrics(null);
+  }
+
+  async function loadLatest(
+    campaignId: string,
+    organizationId = me?.organization_id || "",
+  ) {
     if (!campaignId) {
-      return;
+      return false;
     }
 
-    const [runsData, trendsData, reportsData] = await Promise.all([
+    const requestSequence = latestLoadRequestRef.current + 1;
+    latestLoadRequestRef.current = requestSequence;
+    const [runsData, trendsData, reportsData, searchConsoleData] = await Promise.all([
       api(`/crawl/runs?campaign_id=${encodeURIComponent(campaignId)}`),
       api(`/rank/trends?campaign_id=${encodeURIComponent(campaignId)}`),
       api(`/reports?campaign_id=${encodeURIComponent(campaignId)}`),
+      organizationId
+        ? api(
+            `/organizations/${encodeURIComponent(organizationId)}/data-connections/` +
+              `google-search-console/metrics/${encodeURIComponent(campaignId)}?days=28`,
+          )
+        : Promise.resolve(null),
     ]);
+
+    if (
+      !isDashboardDataCurrent(
+        campaignId,
+        activeCampaignRef.current,
+        requestSequence,
+        latestLoadRequestRef.current,
+      )
+    ) {
+      return false;
+    }
 
     setLatestRuns((runsData?.items || []) as CrawlRun[]);
     const normalizedTrends = (trendsData || {}) as RankTrendResponse;
@@ -483,6 +650,8 @@ export default function DashboardPage() {
     setTrackedKeywordCount(Number(normalizedTrends?.tracked_keywords || 0));
     setLatestReports((reportsData?.items || []) as Report[]);
     setLatestReportTruth((reportsData?.truth as RuntimeTruth) || null);
+    setSearchConsoleMetrics((searchConsoleData as SearchConsoleMetrics | null) || null);
+    return true;
   }
 
   async function runAction(label: string, fn: () => Promise<void>) {
@@ -522,7 +691,6 @@ export default function DashboardPage() {
       setCampaignName("");
       setCampaignDomain("");
       setNotice("Campaign created.");
-      await loadLatest(created.id);
     });
   }
 
@@ -650,11 +818,7 @@ export default function DashboardPage() {
       try {
         const user = (await api("/auth/me", { method: "GET" })) as Me;
         setMe(user);
-        const items = await loadCampaigns();
-
-        if (items.length > 0) {
-          await loadLatest(items[0].id);
-        }
+        await loadCampaigns();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Session invalid");
       } finally {
@@ -668,10 +832,44 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const selected = campaigns.find((item) => item.id === selectedCampaignId);
-    if (selected && !seedUrl) {
+    if (selected) {
       setSeedUrl(withScheme(selected.domain || ""));
     }
-  }, [campaigns, seedUrl, selectedCampaignId]);
+  }, [campaigns, selectedCampaignId]);
+
+  /* eslint-disable react-hooks/exhaustive-deps */
+  useEffect(() => {
+    const organizationId = me?.organization_id || "";
+    if (!selectedCampaignId || !organizationId) {
+      if (!selectedCampaignId) {
+        latestLoadRequestRef.current += 1;
+        clearLatestData();
+      }
+      return;
+    }
+
+    const campaignId = selectedCampaignId;
+    clearLatestData();
+    setLoading(true);
+    setError("");
+
+    void loadLatest(campaignId, organizationId)
+      .catch((err) => {
+        if (activeCampaignRef.current === campaignId) {
+          setError(err instanceof Error ? err.message : "Unable to load this location.");
+        }
+      })
+      .finally(() => {
+        if (activeCampaignRef.current === campaignId) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      latestLoadRequestRef.current += 1;
+    };
+  }, [me?.organization_id, selectedCampaignId]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
 
@@ -717,8 +915,31 @@ export default function DashboardPage() {
               ? "info"
               : "warning",
       },
+      {
+        label: "Google Search Console",
+        value:
+          searchConsoleMetrics?.data_status === "ready"
+            ? `Through ${formatMetricDate(searchConsoleMetrics.date_to)}`
+            : searchConsoleMetrics?.data_status === "not_connected"
+              ? "Not connected"
+              : "Awaiting Google data",
+        tone:
+          searchConsoleMetrics?.data_status === "ready"
+            ? "success"
+            : searchConsoleMetrics?.connection?.status === "failed"
+              ? "danger"
+              : "warning",
+      },
     ],
-    [campaigns.length, latestRankTruth, latestReportTruth, latestRuns, latestTrends.length, trackedKeywordCount],
+    [
+      campaigns.length,
+      latestRankTruth,
+      latestReportTruth,
+      latestRuns,
+      latestTrends.length,
+      searchConsoleMetrics,
+      trackedKeywordCount,
+    ],
   );
 
   const visibilityTrend = useMemo(
@@ -746,6 +967,16 @@ export default function DashboardPage() {
         };
       }),
     [latestTrends],
+  );
+
+  const searchConsoleTrend = useMemo(
+    () =>
+      (searchConsoleMetrics?.points || []).map((point) => ({
+        label: formatMetricDate(point.date),
+        clicks: Number(point.clicks || 0),
+        impressions: Number(point.impressions || 0),
+      })),
+    [searchConsoleMetrics],
   );
 
   const recentActivity = useMemo(
@@ -1110,7 +1341,6 @@ export default function DashboardPage() {
                   setSelectedCampaignId(matchedCampaign.id);
                   setSeedUrl(withScheme(matchedCampaign.domain || campaignDomain));
                 }
-                void loadLatest(campaignId);
               });
             }}
           />
@@ -1270,6 +1500,158 @@ export default function DashboardPage() {
             }
           />
         </div>
+
+        {selectedCampaign ? (
+          <section className="space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <SectionHeading
+                eyebrow="Google Search Console"
+                title={`How people found ${selectedCampaign.name || "this location"} on Google`}
+                summary={
+                  searchConsoleMetrics?.data_status === "ready"
+                    ? `Showing ${searchConsoleMetrics.data_days} available days, from ${formatMetricDate(
+                        searchConsoleMetrics.date_from,
+                      )} through ${formatMetricDate(
+                        searchConsoleMetrics.date_to,
+                      )}. Google normally reports this data a couple of days behind.`
+                    : "Connect the Google website property for this location to see real search appearances and visits."
+                }
+              />
+              <span
+                className={`mb-4 rounded-md border px-2.5 py-1 text-xs font-semibold ${
+                  searchConsoleMetrics?.data_status === "ready"
+                    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                    : "border-amber-500/25 bg-amber-500/10 text-amber-100"
+                }`}
+              >
+                {searchConsoleMetrics?.data_status === "ready"
+                  ? "Google data is current"
+                  : searchConsoleMetrics?.data_status === "not_connected"
+                    ? "Connection needed"
+                    : "Waiting for data"}
+              </span>
+            </div>
+
+            {searchConsoleMetrics?.data_status === "ready" &&
+            searchConsoleMetrics.summary ? (
+              <>
+                <div className="grid gap-4 xl:grid-cols-4">
+                  <KpiCard
+                    label="Visits from Google"
+                    value={searchConsoleMetrics.summary.clicks.toLocaleString("en-US")}
+                    changeLabel={formatChange(
+                      searchConsoleMetrics.comparison?.clicks_change_percent,
+                      "visits",
+                    )}
+                    summary="People who clicked your business in Google Search and reached your website."
+                    tone="highlight"
+                  />
+                  <KpiCard
+                    label="Times you appeared"
+                    value={searchConsoleMetrics.summary.impressions.toLocaleString("en-US")}
+                    changeLabel={formatChange(
+                      searchConsoleMetrics.comparison?.impressions_change_percent,
+                      "appearances",
+                    )}
+                    summary="How many times pages from your website appeared in Google search results."
+                  />
+                  <KpiCard
+                    label="Appearance-to-visit rate"
+                    value={`${searchConsoleMetrics.summary.ctr_percent.toFixed(1)}%`}
+                    changeLabel={
+                      searchConsoleMetrics.comparison?.ctr_change_points === null ||
+                      searchConsoleMetrics.comparison?.ctr_change_points === undefined
+                        ? "New baseline"
+                        : `${
+                            searchConsoleMetrics.comparison.ctr_change_points >= 0 ? "Up " : "Down "
+                          }${Math.abs(
+                            searchConsoleMetrics.comparison.ctr_change_points,
+                          ).toFixed(1)} pts`
+                    }
+                    summary="The percentage of Google appearances that turned into a website visit."
+                  />
+                  <KpiCard
+                    label="Average Google position"
+                    value={
+                      searchConsoleMetrics.summary.avg_position === null ||
+                      searchConsoleMetrics.summary.avg_position === undefined
+                        ? "—"
+                        : `#${searchConsoleMetrics.summary.avg_position.toFixed(1)}`
+                    }
+                    changeLabel={
+                      searchConsoleMetrics.comparison?.position_improvement === null ||
+                      searchConsoleMetrics.comparison?.position_improvement === undefined
+                        ? "New baseline"
+                        : searchConsoleMetrics.comparison.position_improvement === 0
+                          ? "No change"
+                          : searchConsoleMetrics.comparison.position_improvement > 0
+                            ? `Improved ${searchConsoleMetrics.comparison.position_improvement.toFixed(1)}`
+                            : `Dropped ${Math.abs(
+                                searchConsoleMetrics.comparison.position_improvement,
+                              ).toFixed(1)}`
+                    }
+                    summary="Your average placement across Google searches. A smaller number is better."
+                  />
+                </div>
+
+                <div className="grid gap-5 xl:grid-cols-[1.45fr_0.55fr]">
+                  <ChartCard
+                    eyebrow="Google search activity"
+                    title="Appearances and website visits by day"
+                    summary="The light area shows how often you appeared. The orange line shows visits to your website."
+                    chart={<SearchConsoleTrendChart data={searchConsoleTrend} />}
+                    footer={
+                      <p className="text-sm leading-5 text-zinc-300">
+                        Compared with the prior{" "}
+                        {searchConsoleMetrics.comparison?.period_days || 14} available days.
+                      </p>
+                    }
+                  />
+                  <BriefingCard
+                    eyebrow="Plain-language readout"
+                    title="What these numbers mean"
+                    body={getSearchConsoleOwnerSummary(
+                      searchConsoleMetrics,
+                      selectedCampaign.name || "This location",
+                    )}
+                  />
+                </div>
+
+                <p className="text-xs leading-5 text-zinc-500">
+                  Source:{" "}
+                  {searchConsoleMetrics.connection?.external_resource_name ||
+                    selectedCampaign.domain ||
+                    "Google Search Console"}
+                  . Last synced{" "}
+                  {formatRelativeTime(searchConsoleMetrics.connection?.last_success_at || undefined)}.
+                  Data stays tied to the selected location.
+                </p>
+              </>
+            ) : searchConsoleMetrics ? (
+              <EmptyState
+                title={
+                  searchConsoleMetrics.data_status === "not_connected"
+                    ? "Connect Search Console for this location"
+                    : "Search Console is connected, but data has not arrived yet"
+                }
+                summary={
+                  searchConsoleMetrics.data_status === "not_connected"
+                    ? "Choose this location's Google Search Console website property in Settings, then run the first sync."
+                    : "Open Settings to check the connection and run a sync. Google data can be a couple of days behind."
+                }
+                actionLabel="Open connection settings"
+                onAction={() => router.push("/settings")}
+              />
+            ) : (
+              <LoadingCard
+                title="Loading Google search data"
+                summary={`Checking the Search Console results saved for ${
+                  selectedCampaign.name || "this location"
+                }.`}
+              />
+            )}
+          </section>
+        ) : null}
 
         <SectionHeading
           eyebrow="Trends"
@@ -1447,14 +1829,11 @@ export default function DashboardPage() {
                   </label>
                   <select
                     value={selectedCampaignId}
-                    onChange={async (event) => {
+                    onChange={(event) => {
                       const nextId = event.target.value;
                       setSelectedCampaignId(nextId);
                       const selected = campaigns.find((item) => item.id === nextId);
                       setSeedUrl(withScheme(selected?.domain || ""));
-                      await runAction("refresh", async () => {
-                        await loadLatest(nextId);
-                      });
                     }}
                     className="mt-2 w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
                   >

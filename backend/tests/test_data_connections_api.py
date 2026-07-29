@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from app.models.data_connection import DataConnection
+from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.platform_job import PlatformJob
 from app.services import data_connections_service, traffic_fact_service
 
@@ -151,6 +152,92 @@ def test_search_console_mapping_requires_business_location(client) -> None:
 
     assert response.status_code == 409
     assert response.json()["errors"][0]["details"]["reason_code"] == "business_location_required"
+
+
+def test_search_console_metrics_returns_location_scoped_stored_data(client, db_session) -> None:
+    token, organization_id = _login(client)
+    _location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="metrics-location",
+    )
+    _map_connection(
+        client,
+        token,
+        organization_id,
+        campaign_id,
+        domain="metrics-location.example.com",
+    )
+    start_date = date(2026, 7, 1)
+    for index in range(28):
+        metric_date = start_date + timedelta(days=index)
+        db_session.add(
+            SearchConsoleDailyMetric(
+                organization_id=organization_id,
+                campaign_id=campaign_id,
+                metric_date=metric_date,
+                clicks=2 if index < 14 else 4,
+                impressions=100 if index < 14 else 200,
+                avg_position=12.0 if index < 14 else 9.0,
+                deterministic_hash=f"{index:064d}",
+            )
+        )
+    db_session.commit()
+
+    response = client.get(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-search-console/metrics/{campaign_id}?days=28"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["data_status"] == "ready"
+    assert payload["campaign_id"] == campaign_id
+    assert payload["data_days"] == 28
+    assert payload["date_from"] == "2026-07-01"
+    assert payload["date_to"] == "2026-07-28"
+    assert payload["summary"] == {
+        "clicks": 84,
+        "impressions": 4200,
+        "ctr_percent": 2.0,
+        "avg_position": 10.0,
+    }
+    assert payload["comparison"]["period_days"] == 14
+    assert payload["comparison"]["clicks_change_percent"] == 100.0
+    assert payload["comparison"]["impressions_change_percent"] == 100.0
+    assert payload["comparison"]["position_improvement"] == 3.0
+    assert len(payload["points"]) == 28
+    assert payload["points"][0]["date"] == "2026-07-01"
+    assert payload["points"][-1]["date"] == "2026-07-28"
+
+
+def test_search_console_metrics_explains_when_location_is_not_connected(client) -> None:
+    token, organization_id = _login(client)
+    _location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="metrics-unmapped",
+    )
+
+    response = client.get(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-search-console/metrics/{campaign_id}"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["data_status"] == "not_connected"
+    assert payload["connection"] is None
+    assert payload["summary"] is None
+    assert payload["points"] == []
 
 
 def test_search_console_sync_is_durable_and_idempotent(client, db_session, monkeypatch) -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -94,6 +94,31 @@ def get_search_console_resources(
             "resources": resources,
         },
     )
+
+
+@router.get(
+    "/organizations/{organization_id}/data-connections/"
+    "google-search-console/metrics/{campaign_id}"
+)
+def get_search_console_metrics(
+    request: Request,
+    organization_id: str,
+    campaign_id: str,
+    days: int = Query(default=28, ge=7, le=90),
+    user: dict = Depends(require_org_role({"org_user"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    enforce_organization_scope(user=user, organization_id=organization_id, allow_platform=False)
+    try:
+        payload = data_connections_service.get_search_console_metrics(
+            db,
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            days=days,
+        )
+    except data_connections_service.DataConnectionError as exc:
+        _raise_connection_error(exc)
+    return envelope(request, payload)
 
 
 @router.put(

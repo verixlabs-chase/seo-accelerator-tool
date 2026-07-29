@@ -18,6 +18,44 @@ function isPendingStatus(value) {
   );
 }
 
+function isDashboardDataCurrent(
+  requestCampaignId,
+  activeCampaignId,
+  requestSequence,
+  latestRequestSequence,
+) {
+  return (
+    Boolean(requestCampaignId) &&
+    requestCampaignId === activeCampaignId &&
+    requestSequence === latestRequestSequence
+  );
+}
+
+function getSearchConsoleOwnerSummary(payload, locationName = "this location") {
+  if (!payload || payload.data_status === "not_connected") {
+    return `Connect Google Search Console to see how people find ${locationName} in Google Search.`;
+  }
+
+  if (payload.data_status !== "ready" || !payload.summary) {
+    return `Google Search Console is connected for ${locationName}, but no search activity has been stored yet.`;
+  }
+
+  const clicks = Number(payload.summary.clicks || 0);
+  const impressions = Number(payload.summary.impressions || 0);
+  const ctr = Number(payload.summary.ctr_percent || 0);
+  const position = payload.summary.avg_position;
+  const positionText =
+    position === null || position === undefined
+      ? "Google has not reported an average position yet"
+      : `the average search position was ${Number(position).toFixed(1)}`;
+
+  return `${locationName} received ${clicks.toLocaleString("en-US")} visit${
+    clicks === 1 ? "" : "s"
+  } from ${impressions.toLocaleString("en-US")} Google appearances. ${ctr.toFixed(
+    1,
+  )}% of appearances became visits, and ${positionText}.`;
+}
+
 function getSetupWorkflowState(campaign, run) {
   if (!campaign) {
     return {
@@ -249,10 +287,12 @@ function getReportWorkflowState(report, campaign, truth) {
 }
 
 export {
+  getSearchConsoleOwnerSummary,
   getCrawlWorkflowState,
   getRankingWorkflowState,
   getReportWorkflowState,
   getSetupWorkflowState,
+  isDashboardDataCurrent,
   isFailedStatus,
   isPendingStatus,
 };

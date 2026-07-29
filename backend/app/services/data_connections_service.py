@@ -12,6 +12,7 @@ from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
 from app.models.organization_provider_credential import OrganizationProviderCredential
+from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.services.provider_credentials_service import (
     ProviderCredentialConfigurationError,
     resolve_provider_credentials,
@@ -111,6 +112,172 @@ def serialize_connection(
         ),
         "updated_at": _iso(connection.updated_at),
     }
+
+
+def get_search_console_metrics(
+    db: Session,
+    *,
+    organization_id: str,
+    campaign_id: str,
+    days: int = 28,
+) -> dict[str, Any]:
+    campaign = (
+        db.query(Campaign)
+        .filter(
+            Campaign.id == campaign_id,
+            Campaign.organization_id == organization_id,
+        )
+        .first()
+    )
+    if campaign is None:
+        raise DataConnectionError(
+            "Campaign not found in this organization.",
+            reason_code="campaign_not_found",
+            status_code=404,
+        )
+
+    connection = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.organization_id == organization_id,
+            DataConnection.campaign_id == campaign_id,
+            DataConnection.provider_name == GOOGLE_SEARCH_CONSOLE_PROVIDER,
+        )
+        .first()
+    )
+    if connection is None:
+        return {
+            "organization_id": organization_id,
+            "campaign_id": campaign_id,
+            "provider_name": GOOGLE_SEARCH_CONSOLE_PROVIDER,
+            "data_status": "not_connected",
+            "connection": None,
+            "date_from": None,
+            "date_to": None,
+            "days_requested": days,
+            "data_days": 0,
+            "summary": None,
+            "comparison": None,
+            "points": [],
+        }
+
+    location = (
+        db.query(BusinessLocation)
+        .filter(
+            BusinessLocation.id == connection.business_location_id,
+            BusinessLocation.organization_id == organization_id,
+        )
+        .first()
+    )
+    rows = list(
+        reversed(
+            db.query(SearchConsoleDailyMetric)
+            .filter(
+                SearchConsoleDailyMetric.organization_id == organization_id,
+                SearchConsoleDailyMetric.campaign_id == campaign_id,
+            )
+            .order_by(SearchConsoleDailyMetric.metric_date.desc())
+            .limit(days)
+            .all()
+        )
+    )
+    summary = _summarize_search_console_rows(rows) if rows else None
+    comparison = None
+    comparison_period_days = len(rows) // 2
+    if comparison_period_days > 0:
+        previous_rows = rows[-comparison_period_days * 2 : -comparison_period_days]
+        current_rows = rows[-comparison_period_days:]
+        if len(previous_rows) == len(current_rows):
+            previous = _summarize_search_console_rows(previous_rows)
+            current = _summarize_search_console_rows(current_rows)
+            comparison = {
+                "period_days": comparison_period_days,
+                "clicks_change_percent": _percent_change(
+                    current["clicks"],
+                    previous["clicks"],
+                ),
+                "impressions_change_percent": _percent_change(
+                    current["impressions"],
+                    previous["impressions"],
+                ),
+                "ctr_change_points": round(
+                    current["ctr_percent"] - previous["ctr_percent"],
+                    2,
+                ),
+                "position_improvement": (
+                    round(previous["avg_position"] - current["avg_position"], 2)
+                    if previous["avg_position"] is not None
+                    and current["avg_position"] is not None
+                    else None
+                ),
+            }
+
+    return {
+        "organization_id": organization_id,
+        "campaign_id": campaign_id,
+        "provider_name": GOOGLE_SEARCH_CONSOLE_PROVIDER,
+        "data_status": "ready" if rows else "no_data",
+        "connection": serialize_connection(
+            connection,
+            campaign=campaign,
+            location=location,
+        ),
+        "date_from": rows[0].metric_date.isoformat() if rows else None,
+        "date_to": rows[-1].metric_date.isoformat() if rows else None,
+        "days_requested": days,
+        "data_days": len(rows),
+        "summary": summary,
+        "comparison": comparison,
+        "points": [
+            {
+                "date": row.metric_date.isoformat(),
+                "clicks": row.clicks,
+                "impressions": row.impressions,
+                "ctr_percent": (
+                    round((row.clicks / row.impressions) * 100, 2)
+                    if row.impressions > 0
+                    else 0.0
+                ),
+                "avg_position": (
+                    round(row.avg_position, 2)
+                    if row.avg_position is not None
+                    else None
+                ),
+            }
+            for row in rows
+        ],
+    }
+
+
+def _summarize_search_console_rows(
+    rows: list[SearchConsoleDailyMetric],
+) -> dict[str, int | float | None]:
+    clicks = sum(row.clicks for row in rows)
+    impressions = sum(row.impressions for row in rows)
+    position_rows = [
+        row
+        for row in rows
+        if row.avg_position is not None and row.impressions > 0
+    ]
+    position_impressions = sum(row.impressions for row in position_rows)
+    avg_position = (
+        sum(float(row.avg_position) * row.impressions for row in position_rows)
+        / position_impressions
+        if position_impressions > 0
+        else None
+    )
+    return {
+        "clicks": clicks,
+        "impressions": impressions,
+        "ctr_percent": round((clicks / impressions) * 100, 2) if impressions > 0 else 0.0,
+        "avg_position": round(avg_position, 2) if avg_position is not None else None,
+    }
+
+
+def _percent_change(current: int, previous: int) -> float | None:
+    if previous == 0:
+        return None
+    return round(((current - previous) / previous) * 100, 1)
 
 
 def effective_connection_status(connection: DataConnection, *, now: datetime | None = None) -> str:
