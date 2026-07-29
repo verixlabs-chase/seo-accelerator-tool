@@ -11,11 +11,5 @@
       "path": "/api/v1/internal/jobs/drain",
       "schedule": "0 6 * * *"
     }
-  ],
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api/index.py"
-    }
   ]
 }

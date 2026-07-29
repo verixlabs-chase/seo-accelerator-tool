@@ -62,6 +62,11 @@ Import the repository as a Vercel project and set:
 - Framework preset: FastAPI
 - Production branch: `main`
 
+Vercel detects `backend/api/index.py` as the FastAPI entrypoint. Do not add a
+catch-all rewrite to that file: current Vercel backend routing preserves API
+paths automatically, while an internal rewrite changes the path received by
+FastAPI and makes `/api/v1/*` return `404`.
+
 Copy the variables from `backend/.env.supabase.example` into the Vercel project.
 Replace every placeholder. Deploy, then check:
 
