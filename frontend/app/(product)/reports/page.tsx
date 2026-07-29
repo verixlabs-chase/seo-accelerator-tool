@@ -604,7 +604,7 @@ export default function ReportsPage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Runtime truth",
+        "Report status",
         selectedReportDetail?.truth || reportsTruth,
         "Reports can exist before deliverability or durable storage are truly confirmed.",
       ),

@@ -317,13 +317,13 @@ test("runtime truth helpers explain data confidence without internal jargon", ()
 });
 
 test("runtime truth signal builder keeps heuristic surfaces out of success state", () => {
-  const signal = buildRuntimeTruthSignal("Runtime truth", {
+  const signal = buildRuntimeTruthSignal("Data status", {
     classification: "heuristic",
     summary: "This surface is heuristic.",
   });
 
-  assert.equal(signal.label, "Runtime truth");
-  assert.equal(signal.value, "Heuristic");
+  assert.equal(signal.label, "Data status");
+  assert.equal(signal.value, "Estimate");
   assert.equal(signal.tone, "warning");
 });
 

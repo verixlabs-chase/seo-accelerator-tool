@@ -252,7 +252,7 @@ export default function CompetitorsPage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Runtime truth",
+        "Comparison status",
         runtimeTruth,
         "Competitor tracking can be dataset-backed, synthetic, or unavailable depending on runtime setup.",
       ),

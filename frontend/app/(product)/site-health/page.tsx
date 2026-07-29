@@ -391,14 +391,14 @@ export default function SiteHealthPage() {
     if (!topIssue) {
       return {
         title: "No website problems are currently flagged",
-        body: `The latest ${latestRun.crawl_type || "website"} scan is ${toTitleCase(latestRun.status)} and no issues are currently listed.`,
+        body: `The latest website scan is ${toTitleCase(latestRun.status)} and no problems are currently listed.`,
         next: "Keep scanning regularly so new problems are caught early.",
       };
     }
 
     return {
       title: `${issueLabel(topIssue.issueCode)} should be fixed first`,
-      body: `${topIssue.count} pages are affected, and the highest severity is ${topIssue.highestSeverity}. ${issueImpact(topIssue.issueCode)}`,
+      body: `${topIssue.count} page${topIssue.count === 1 ? " is" : "s are"} affected, and the highest priority is ${topIssue.highestSeverity}. ${issueImpact(topIssue.issueCode)}`,
       next: issueFix(topIssue.issueCode),
     };
   }, [latestRun, selectedCampaign, topIssue]);
@@ -662,7 +662,7 @@ export default function SiteHealthPage() {
                 value={String(latestRun?.pages_discovered || 0)}
                 summary={
                   latestRun
-                    ? `Latest ${latestRun.crawl_type || "website"} scan was ${toTitleCase(latestRun.status)} ${formatRelativeTime(latestRun.finished_at || latestRun.created_at)}.`
+                    ? `Latest website scan was ${toTitleCase(latestRun.status)} ${formatRelativeTime(latestRun.finished_at || latestRun.created_at)}.`
                     : "No website scan has run yet."
                 }
               />
@@ -704,7 +704,7 @@ export default function SiteHealthPage() {
                   ) : (
                     <ChartEmptyState
                       title="No problems are flagged"
-                      summary="The latest scan did not return any technical issues. Run scans regularly to catch new problems."
+                      summary="The latest scan did not find any website problems. Run scans regularly to catch new ones."
                     />
                   )
                 }
@@ -821,7 +821,7 @@ export default function SiteHealthPage() {
               footer={
                 <p className="text-sm text-zinc-400">
                   Latest coverage: {latestRun?.pages_discovered || 0} pages discovered and{" "}
-                  {latestRunIssues.length} problems recorded.
+                  {latestRunIssues.length} problem{latestRunIssues.length === 1 ? "" : "s"} recorded.
                 </p>
               }
             />

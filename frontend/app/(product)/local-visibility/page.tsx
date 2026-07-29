@@ -142,18 +142,18 @@ function getHealthLabel(score = 0) {
 
 function getMapPackSummary(position?: number | null) {
   if (!position) {
-    return "Map-pack position has not been captured yet.";
+    return "A position in local map results has not been captured yet.";
   }
 
   if (position <= 3) {
-    return `The business is showing inside the top 3 map-pack spots at position ${position}.`;
+    return `The business is in the top three local map results at position ${position}.`;
   }
 
   if (position <= 10) {
-    return `The business is visible locally at position ${position}, but it is outside the top map-pack tier.`;
+    return `The business is visible in local map results at position ${position}, but it is outside the top three.`;
   }
 
-  return `The business is currently hard to find in the map pack at position ${position}.`;
+  return `The business is currently hard to find in local map results at position ${position}.`;
 }
 
 function getReviewsSummary(reviewsLast30d = 0, avgRating = 0) {
@@ -196,7 +196,7 @@ function buildNextStep({
   healthScore: number;
 }) {
   if ((mapPackPosition || 99) > 3) {
-    return "Focus on improving local profile visibility first. The business is not yet in the top map-pack positions.";
+    return "Improve the local business listing first. This location is not yet in the top three local map results.";
   }
 
   if (reviewsLast30d < 3) {
@@ -208,10 +208,10 @@ function buildNextStep({
   }
 
   if (healthScore < 70) {
-    return "Focus on local consistency next. The overall local health score is not strong enough yet.";
+    return "Check that the business name, address, phone number, and services are consistent everywhere customers may find them.";
   }
 
-  return "Keep the local profile active and continue collecting fresh reviews while watching map-pack movement.";
+  return "Keep the local business listing active, continue asking for fresh reviews, and watch whether its map position improves.";
 }
 
 function formatPrecision(value?: string | null) {
@@ -451,9 +451,9 @@ export default function LocalVisibilityPage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Runtime truth",
+        "Data status",
         runtimeTruth,
-        "Local visibility can degrade to stale, synthetic, or unavailable data depending on provider setup.",
+        "Local-search information may be old or unavailable when a live data connection is not ready.",
       ),
       {
         label: "Base map",
@@ -461,8 +461,8 @@ export default function LocalVisibilityPage() {
         tone: locationContext?.base_map.status === "ready" ? "success" : "warning",
       },
       {
-        label: "Map-pack",
-        value: mapPackPosition ? `Position ${mapPackPosition}` : "No map-pack data",
+        label: "Local map results",
+        value: mapPackPosition ? `Position ${mapPackPosition}` : "Not checked yet",
         tone:
           runtimeTruth?.classification === "unavailable"
             ? "danger"
@@ -498,7 +498,7 @@ export default function LocalVisibilityPage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Live local SEO data"
+      dateRangeLabel="Latest local search data"
       topBarActions={
         <>
           <button
@@ -726,8 +726,8 @@ export default function LocalVisibilityPage() {
                   <div>
                     <h2 className="text-base font-semibold text-white">Area-by-area tracking is not turned on</h2>
                     <p className="mt-1 text-sm leading-6 text-zinc-400">
-                      {locationContext?.map_rank_coverage.message ||
-                        "This optional paid check would show how search position changes across nearby neighborhoods."}
+                      This optional paid check would show how the location appears across nearby
+                      neighborhoods. The business map above does not show search positions.
                     </p>
                   </div>
                   <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
@@ -740,7 +740,7 @@ export default function LocalVisibilityPage() {
             <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
               <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Local health
+                  Local search strength
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
                   What local issues to watch
@@ -750,14 +750,14 @@ export default function LocalVisibilityPage() {
                     <p className="text-sm font-medium text-white">Visibility strength</p>
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
                       {healthScore >= 80
-                        ? "The business has a strong local health score and is in a defensible position."
+                        ? "This location has a strong local-search foundation."
                         : healthScore >= 60
                           ? "The business has a workable local base, but it still needs focused improvements."
                           : "The local foundation is weak, and local visibility needs focused attention."}
                     </p>
                   </div>
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                    <p className="text-sm font-medium text-white">Map-pack competitiveness</p>
+                    <p className="text-sm font-medium text-white">Position in local map results</p>
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
                       {getMapPackSummary(mapPackPosition)}
                     </p>
@@ -765,7 +765,8 @@ export default function LocalVisibilityPage() {
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                     <p className="text-sm font-medium text-white">Last local update</p>
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
-                      Health updated {formatRelativeTime(health?.captured_at)} and review velocity updated {formatRelativeTime(velocity?.captured_at)}.
+                      Visibility updated {formatRelativeTime(health?.captured_at)} and new review
+                      activity updated {formatRelativeTime(velocity?.captured_at)}.
                     </p>
                   </div>
                 </div>

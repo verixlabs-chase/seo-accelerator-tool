@@ -678,7 +678,7 @@ export default function DashboardPage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Rank truth",
+        "Search data",
         latestRankTruth,
         "Ranking rows can be synthetic, stale, or unavailable depending on provider setup.",
       ),
@@ -700,7 +700,7 @@ export default function DashboardPage() {
         tone: latestRuns[0]?.status === "completed" ? "success" : "warning",
       },
       buildRuntimeTruthSignal(
-        "Report truth",
+        "Report status",
         latestReportTruth,
         "A stored report record is not the same as durable or verified delivery.",
       ),

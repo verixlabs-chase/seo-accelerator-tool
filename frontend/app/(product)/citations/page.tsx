@@ -214,7 +214,7 @@ export default function CitationsPage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Runtime truth",
+        "Listing status",
         runtimeTruth,
         "Citation statuses can reflect workflow progress before live directory publication is confirmed.",
       ),

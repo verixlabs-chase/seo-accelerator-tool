@@ -272,14 +272,14 @@ function getPriorityTone(riskTier = 0) {
 
 function getImpactLabel(confidenceScore = 0) {
   if (confidenceScore >= 0.8) {
-    return "Expected impact: strong";
+    return "Likely benefit: strong";
   }
 
   if (confidenceScore >= 0.6) {
-    return "Expected impact: moderate";
+    return "Likely benefit: moderate";
   }
 
-  return "Expected impact: exploratory";
+  return "Possible benefit — more evidence needed";
 }
 
 function getWorkflowToneClass(tone: string) {
@@ -365,6 +365,32 @@ function describeType(type?: string) {
   }
 
   return toTitleCase(type);
+}
+
+function describeRecommendationReason(reason?: string | null) {
+  if (!reason) {
+    return "InsightOS identified this as a useful improvement to review.";
+  }
+
+  const normalized = reason.toLowerCase();
+  if (
+    normalized.includes("google business profile") &&
+    normalized.includes("review acquisition velocity")
+  ) {
+    return "This location is not getting enough new Google reviews.";
+  }
+  if (
+    normalized.includes("content throughput") ||
+    normalized.includes("backlink acquisition velocity")
+  ) {
+    return "Search visibility is steady, but growth may require more useful service content and more trusted websites linking to it.";
+  }
+
+  return reason
+    .replace(/Google Business Profile/gi, "Google business listing")
+    .replace(/review acquisition velocity/gi, "new review activity")
+    .replace(/acquisition velocity/gi, "new activity")
+    .replace(/content throughput/gi, "new content");
 }
 
 function getEngineSourceLabel(source?: string) {
@@ -455,7 +481,7 @@ function nextActionForStatus(status?: string) {
     return {
       label: "Mark reviewed",
       targetState: "VALIDATED",
-      summary: "Use this when you agree the recommendation deserves to stay in the active queue.",
+      summary: "Choose this after you have read the recommendation and want to keep it.",
     };
   }
 
@@ -471,7 +497,7 @@ function nextActionForStatus(status?: string) {
     return {
       label: "Queue for follow-up",
       targetState: "SCHEDULED",
-      summary: "Use this when the recommendation should move from planned to queued.",
+      summary: "Choose this when you are ready for the team to follow up on this action.",
     };
   }
 
@@ -1206,7 +1232,7 @@ export default function OpportunitiesPage() {
 
     return {
       title: `${describeType(selectedRecommendation.recommendation_type)} needs attention`,
-      body: selectedRecommendation.rationale || "This is the clearest next opportunity the system has identified.",
+      body: describeRecommendationReason(selectedRecommendation.rationale),
       next:
         nextActionForStatus(selectedRecommendation.status)?.summary ||
         "Review the evidence first, then decide whether this action should stay active or be dismissed.",
@@ -1216,12 +1242,12 @@ export default function OpportunitiesPage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Runtime truth",
+        "Recommendation status",
         runtimeTruth,
         "Recommendations and scores are heuristic until execution setup is ready and a run succeeds.",
       ),
       {
-        label: "Open opportunities",
+        label: "Recommended actions",
         value: summary?.total_count ? `${summary.total_count} active` : "None yet",
         tone: (summary?.total_count || 0) > 0 ? "info" : "warning",
       },
@@ -1231,7 +1257,7 @@ export default function OpportunitiesPage() {
         tone: highPriorityCount > 0 ? "warning" : "success",
       },
       {
-        label: "Guidance model",
+        label: "Recommendation method",
         value: getEngineSourceLabel(engineState?.guidance_source),
         tone:
           engineState?.guidance_source === "orchestrator_v1" ||
@@ -1240,7 +1266,7 @@ export default function OpportunitiesPage() {
             : "info",
       },
       {
-        label: "Score",
+        label: "Overall score",
         value:
           score?.score_value !== undefined && score?.score_value !== null
             ? `${score.score_value}/100`
@@ -1299,7 +1325,7 @@ export default function OpportunitiesPage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Live recommendation data"
+      dateRangeLabel="Saved recommendations"
       topBarActions={
         <>
           <button
@@ -1343,7 +1369,7 @@ export default function OpportunitiesPage() {
 
         {runtimeTruth ? (
           <TruthNotice title="How current are these recommendations?" tone="warning">
-            {getOwnerFriendlyTruthSummary(runtimeTruth, "these recommended next steps")}
+            {getOwnerFriendlyTruthSummary(runtimeTruth, "recommended next steps")}
           </TruthNotice>
         ) : null}
 
@@ -1524,7 +1550,7 @@ export default function OpportunitiesPage() {
                                 {describeType(recommendation.recommendation_type)}
                               </p>
                               <p className="mt-1 text-sm leading-6 text-zinc-300">
-                                {recommendation.rationale || "No explanation was provided for this recommendation."}
+                                {describeRecommendationReason(recommendation.rationale)}
                               </p>
                             </div>
                             <span
@@ -1587,7 +1613,7 @@ export default function OpportunitiesPage() {
                             What needs attention
                           </p>
                           <p className="mt-2 text-sm leading-6 text-zinc-300">
-                            {selectedRecommendation.rationale || "This recommendation needs review."}
+                            {describeRecommendationReason(selectedRecommendation.rationale)}
                           </p>
                         </div>
                         <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">

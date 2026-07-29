@@ -639,7 +639,7 @@ export default function RankingsPage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Runtime truth",
+        "Data status",
         rankingsTruth,
         "Rankings can be synthetic, stale, or unavailable depending on provider setup and snapshot freshness.",
       ),
@@ -771,7 +771,7 @@ export default function RankingsPage() {
 
         {rankingsTruth ? (
           <TruthNotice title="How current are these search positions?" tone="warning">
-            {getOwnerFriendlyTruthSummary(rankingsTruth, "these search positions")}
+            {getOwnerFriendlyTruthSummary(rankingsTruth, "search positions")}
           </TruthNotice>
         ) : null}
 

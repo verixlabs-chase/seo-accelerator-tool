@@ -43,10 +43,10 @@ function getRuntimeTruthLabel(truth) {
   const classification = truth?.classification || "unknown";
 
   if (classification === "provider_backed") {
-    return "Provider-backed";
+    return "Live source";
   }
   if (classification === "heuristic") {
-    return "Heuristic";
+    return "Estimate";
   }
   if (classification === "generated") {
     return "Generated";
@@ -55,30 +55,30 @@ function getRuntimeTruthLabel(truth) {
     return "Scheduled";
   }
   if (classification === "synthetic") {
-    return "Synthetic";
+    return "Test data";
   }
   if (classification === "operator_assisted") {
-    return "Operator-assisted";
+    return "Manual review";
   }
   if (classification === "minimal_artifact") {
-    return "Minimal artifact";
+    return "Basic preview";
   }
   if (classification === "delivery_unverified") {
-    return "Delivery unverified";
+    return "Delivery not confirmed";
   }
   if (classification === "non_durable") {
-    return "Non-durable";
+    return "Save not confirmed";
   }
   if (classification === "stale") {
-    return "Stale";
+    return "Needs update";
   }
   if (classification === "in_progress") {
-    return "In progress";
+    return "Updating";
   }
   if (classification === "unavailable") {
     return "Unavailable";
   }
-  return "Unknown";
+  return "Checking";
 }
 
 /**

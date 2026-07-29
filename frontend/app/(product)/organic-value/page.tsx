@@ -291,7 +291,7 @@ export default function OrganicValuePage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Runtime truth",
+        "Estimate status",
         baseline?.truth || null,
         "Organic value is a modeled baseline, not direct revenue truth.",
       ),
