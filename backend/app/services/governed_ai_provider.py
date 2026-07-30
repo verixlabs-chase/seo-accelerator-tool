@@ -86,7 +86,9 @@ class MistralGovernedAIProvider:
                         "You explain deterministic SEO intelligence to a service-business "
                         "owner. Use only the supplied JSON evidence. Preserve the selected "
                         "action, evidence identifiers, uncertainty, risk, and approval "
-                        "requirements exactly. Never promise rankings, leads, or revenue. "
+                        "requirements exactly. Copy selected_action_id and approval_required "
+                        "exactly from deterministic_selection; those fields are owned by the "
+                        "deterministic engine, not by you. Never promise rankings, leads, or revenue. "
                         f"Prompt contract: {prompt_template_version}."
                     ),
                 },
@@ -172,6 +174,16 @@ class MistralGovernedAIProvider:
                 payload = json.loads(content)
                 if not isinstance(payload, dict):
                     raise ValueError("response content must be an object")
+                deterministic_selection = context.get("deterministic_selection")
+                if isinstance(deterministic_selection, dict):
+                    # Control fields belong to the deterministic intelligence engine.
+                    # The provider supplies explanatory language only.
+                    payload["selected_action_id"] = deterministic_selection.get(
+                        "selected_action_id"
+                    )
+                    payload["approval_required"] = bool(
+                        deterministic_selection.get("approval_required")
+                    )
             except (ValueError, TypeError, json.JSONDecodeError) as exc:
                 raise GovernedAIProviderError(
                     "The AI provider returned an invalid structured response.",
@@ -203,4 +215,3 @@ def _usage_int(payload: dict[str, Any], *keys: str) -> int:
         except (TypeError, ValueError):
             continue
     return 0
-

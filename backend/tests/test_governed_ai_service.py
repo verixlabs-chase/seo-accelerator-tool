@@ -297,7 +297,7 @@ def test_mistral_adapter_uses_strict_schema_and_records_usage() -> None:
                                 '"selected_action_id":null,'
                                 '"evidence_used":["campaign:1"],'
                                 '"uncertainties":[],'
-                                '"approval_required":false}'
+                                '"approval_required":true}'
                             )
                         }
                     }
@@ -337,6 +337,8 @@ def test_mistral_adapter_uses_strict_schema_and_records_usage() -> None:
     assert response.provider_request_id == "request-123"
     assert response.input_tokens == 321
     assert response.output_tokens == 45
+    assert response.payload["selected_action_id"] is None
+    assert response.payload["approval_required"] is False
 
 
 def test_governed_brief_api_returns_safe_fallback_without_provider(client) -> None:

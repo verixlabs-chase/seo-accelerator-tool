@@ -476,6 +476,18 @@ def generate_governed_brief(
         row.error_code = "ai_output_validation_failed"
         row.rejection_reason = str(exc)[:2000]
         row.completed_at = occurred_at
+        logger.warning(
+            "Governed AI output failed deterministic validation",
+            extra={
+                "organization_id": row.organization_id,
+                "campaign_id": row.campaign_id,
+                "provider_name": row.provider_name,
+                "model_name": row.model_name,
+                "provider_state": row.provider_state,
+                "error_code": row.error_code,
+                "run_id": row.id,
+            },
+        )
         db.commit()
         db.refresh(row)
         return _response(db, row, idempotent_replay=False)
