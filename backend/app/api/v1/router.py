@@ -37,6 +37,7 @@ from app.api.v1 import (
     system_operational,
     strategy_memory,
     tenants,
+    usage_economics,
 )
 
 tenant_api_router = APIRouter()
@@ -78,9 +79,11 @@ tenant_api_router.include_router(subaccounts.router)
 tenant_api_router.include_router(business_locations.router)
 tenant_api_router.include_router(locations.router)
 tenant_api_router.include_router(hierarchy_observability.router)
+tenant_api_router.include_router(usage_economics.tenant_router)
 
 control_plane_api_router = APIRouter()
 control_plane_api_router.include_router(internal_jobs.router)
 control_plane_api_router.include_router(provider_credentials.control_plane_router)
 control_plane_api_router.include_router(platform_control.router)
 control_plane_api_router.include_router(system_operational.router)
+control_plane_api_router.include_router(usage_economics.control_plane_router)

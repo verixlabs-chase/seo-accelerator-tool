@@ -4,11 +4,13 @@
 > the TR1 security/recovery implementation is published. Tenant isolation,
 > Windows-native recovery tooling, bounded key rotation, sanitized evidence
 > capture, and deployment rollback controls are in place. The production
-> frontend/API rollback-and-restore drill passed. TR1 remains the active gate
-> until the platform-owner operational capture, isolated Supabase restore
-> drill, and live secret-rotation drills are completed and reviewed. **G1.3:
-> Usage Economics and Margin Guardrails** is the next product sprint and may
-> begin after those operator-controlled gates close. The remaining roadmap
+> frontend/API rollback-and-restore drill passed. TR1 remains a continuous
+> release gate until the platform-owner operational capture, isolated Supabase
+> restore drill, and live secret-rotation drills are completed and reviewed.
+> **G1.3: Usage Economics and Margin Guardrails** is implemented and is the
+> current release candidate; **I1.1: Live Website Performance and CWV
+> Experience** follows after G1.3 migration and production verification. The
+> remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7,
 > evidence-backed intelligence in I1, research/content/AI visibility in
@@ -439,6 +441,23 @@ Acceptance criteria:
 
 Goal: know the true variable cost of each organization and prevent platform-paid
 providers or future AI models from pushing the service below its target margin.
+
+> **Implementation status (2026-07-30):** The G1.3 release candidate is
+> implemented. Revision `20260730_0078` adds versioned provider price cards, an
+> append-only and tenant-isolated reservation/reconciliation ledger, versioned
+> non-provider cost allocations, canonical Solo/Multi-location/Enterprise plan
+> economics, and generic model/token fields before a paid LLM is enabled. The
+> current platform-paid DataForSEO rank path reserves its depth- and
+> operator-adjusted maximum before dispatch, reconciles the provider-reported
+> task cost, and releases failed reservations. Paid-capable rank backends
+> without an active price card fail closed. Organization-owned credentials are
+> recorded but excluded from platform COGS. Customer Settings shows only paid
+> data allowance and recovery guidance; the platform organization view shows
+> revenue, API spend, allocated COGS, gross profit, gross margin, and the 80%
+> heavy-use publication test. Local migration validation, focused backend
+> tests, the uncapped suite tail, Ruff, frontend tests/lint, and the production
+> frontend build are green. Supabase migration, hosted deployment, and
+> authenticated production verification remain release steps.
 
 Current truth:
 

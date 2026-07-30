@@ -16,8 +16,16 @@ from app.models.provider_health import ProviderHealthState
 from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
 from app.services.audit_service import write_audit_log
+from app.services.cost_economics_service import CostEconomicsError, resolve_plan_economics
 
-ALLOWED_PLAN_TYPES = {"internal_anchor", "standard", "enterprise"}
+ALLOWED_PLAN_TYPES = {
+    "internal_anchor",
+    "standard",
+    "pro",
+    "solo",
+    "multi_location",
+    "enterprise",
+}
 ALLOWED_BILLING_MODES = {"platform_sponsored", "subscription", "custom_contract"}
 ALLOWED_ORG_STATUSES = {"active", "suspended", "archived"}
 
@@ -101,6 +109,13 @@ def patch_org_plan(
 ) -> dict:
     if body.plan_type not in ALLOWED_PLAN_TYPES:
         raise HTTPException(status_code=400, detail="Invalid plan_type")
+    try:
+        resolve_plan_economics(body.plan_type)
+    except CostEconomicsError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
     org = _org_or_404(db, organization_id)
     previous = org.plan_type
     org.plan_type = body.plan_type

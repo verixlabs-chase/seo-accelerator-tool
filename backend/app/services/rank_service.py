@@ -1,3 +1,6 @@
+import math
+import re
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -12,8 +15,18 @@ from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
 from app.providers import get_rank_provider_for_organization
+from app.services.cost_economics_service import (
+    CostEconomicsError,
+    reconcile_provider_cost,
+    release_provider_cost,
+    reserve_provider_cost,
+)
 from app.services.entitlement_service import EntitlementNotFoundError, check_and_consume
-from app.services.provider_credentials_service import ProviderCredentialConfigurationError, resolve_provider_credentials
+from app.services.provider_credentials_service import (
+    ProviderCredentialConfigurationError,
+    resolve_provider_credential_owner,
+    resolve_provider_credentials,
+)
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 
 
@@ -392,13 +405,93 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
         ) from exc
     now = datetime.now(UTC)
     month_partition = now.strftime("%Y-%m")
+    collection_id = str(uuid.uuid4())
+    settings = get_settings()
+    provider_backend = getattr(settings, "rank_provider_backend", "synthetic").strip().lower()
+    credential_owner: str | None = None
+    provider_cost_identity: tuple[str, str, str, int] | None = None
+    if provider_backend == "dataforseo":
+        try:
+            credential_owner = resolve_provider_credential_owner(
+                db,
+                str(campaign.organization_id),
+                "dataforseo",
+                required_credential_mode="byo_optional",
+            )
+        except ProviderCredentialConfigurationError as exc:
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail={"message": str(exc), "reason_code": exc.reason_code},
+            ) from exc
+        depth = int(getattr(settings, "rank_provider_dataforseo_depth", 100))
+        provider_cost_identity = (
+            "dataforseo",
+            "rank_tracking",
+            "google_organic_live_advanced",
+            max(1, math.ceil(depth / 10)),
+        )
+    elif provider_backend in {"serpapi", "http_json"}:
+        # These are paid-capable backends. They intentionally fail closed until
+        # a matching, versioned price card and credential owner are configured.
+        credential_provider = "dataforseo" if provider_backend == "serpapi" else "rank_http"
+        try:
+            credential_owner = resolve_provider_credential_owner(
+                db,
+                str(campaign.organization_id),
+                credential_provider,
+            )
+        except ProviderCredentialConfigurationError as exc:
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail={"message": str(exc), "reason_code": exc.reason_code},
+            ) from exc
+        provider_cost_identity = (
+            provider_backend,
+            "rank_tracking",
+            "keyword_snapshot",
+            1,
+        )
     created = 0
     for kw in keywords:
-        snapshot_payload = provider.collect_keyword_snapshot(
-            keyword=kw.keyword,
-            location_code=kw.location_code,
-            target_domain=campaign.domain,
-        )
+        reservation = None
+        if provider_cost_identity is not None and credential_owner is not None:
+            provider_name, capability, operation, quantity = provider_cost_identity
+            if provider_name == "dataforseo":
+                quantity *= _dataforseo_keyword_cost_multiplier(kw.keyword)
+            try:
+                reservation = reserve_provider_cost(
+                    db,
+                    organization_id=str(campaign.organization_id),
+                    business_location_id=campaign.business_location_id,
+                    campaign_id=campaign.id,
+                    provider_name=provider_name,
+                    capability=capability,
+                    operation=operation,
+                    credential_owner=credential_owner,
+                    quantity=quantity,
+                    idempotency_key=f"rank:{collection_id}:{kw.id}",
+                )
+            except CostEconomicsError as exc:
+                raise HTTPException(
+                    status_code=exc.status_code,
+                    detail={"message": str(exc), "reason_code": exc.reason_code},
+                ) from exc
+        try:
+            snapshot_payload = provider.collect_keyword_snapshot(
+                keyword=kw.keyword,
+                location_code=kw.location_code,
+                target_domain=campaign.domain,
+            )
+        except Exception:
+            if reservation is not None:
+                release_provider_cost(db, reservation=reservation)
+            raise
+        if reservation is not None:
+            reconcile_provider_cost(
+                db,
+                reservation=reservation,
+                provider_reported_cost=snapshot_payload.get("provider_reported_cost"),
+            )
         position = int(snapshot_payload["position"])
         confidence = float(snapshot_payload["confidence"])
         previous = (
@@ -459,6 +552,38 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
         "snapshots_created": created,
         "status": "success",
     }
+
+
+_DATAFORSEO_MULTIPLIED_OPERATORS = (
+    "allinanchor:",
+    "allintext:",
+    "allintitle:",
+    "allinurl:",
+    "cache:",
+    "define:",
+    "filetype:",
+    "id:",
+    "inanchor:",
+    "info:",
+    "intext:",
+    "intitle:",
+    "inurl:",
+    "link:",
+    "site:",
+)
+
+
+def _dataforseo_keyword_cost_multiplier(keyword: str) -> int:
+    """Reserve the documented 5x multiplier for every advanced search operator."""
+    normalized = keyword.casefold()
+    operator_names = sorted(
+        (operator.removesuffix(":") for operator in _DATAFORSEO_MULTIPLIED_OPERATORS),
+        key=len,
+        reverse=True,
+    )
+    pattern = rf"(?<![a-z0-9_])(?:{'|'.join(re.escape(name) for name in operator_names)}):"
+    operator_count = len(re.findall(pattern, normalized))
+    return 5**operator_count
 
 
 

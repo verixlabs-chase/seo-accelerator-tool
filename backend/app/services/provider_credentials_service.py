@@ -30,6 +30,61 @@ def resolve_provider_credentials(
     required_credential_mode: str | None = None,
     require_org_oauth: bool = False,
 ) -> dict[str, Any]:
+    selected_row = _select_provider_credential_row(
+        db,
+        organization_id=organization_id,
+        provider_name=provider_name,
+        required_credential_mode=required_credential_mode,
+        require_org_oauth=require_org_oauth,
+    )
+    if selected_row is None:
+        return {}
+
+    credentials = _decrypt_payload(selected_row.encrypted_secret_blob)
+    if selected_row.auth_mode == "oauth2":
+        credentials = _refresh_oauth2_credentials_if_needed(
+            db,
+            row=selected_row,
+            provider_name=provider_name,
+            credentials=credentials,
+        )
+    return credentials
+
+
+def resolve_provider_credential_owner(
+    db: Session,
+    organization_id: str,
+    provider_name: str,
+    *,
+    required_credential_mode: str | None = None,
+    require_org_oauth: bool = False,
+) -> str:
+    selected_row = _select_provider_credential_row(
+        db,
+        organization_id=organization_id,
+        provider_name=provider_name,
+        required_credential_mode=required_credential_mode,
+        require_org_oauth=require_org_oauth,
+    )
+    if isinstance(selected_row, OrganizationProviderCredential):
+        return "organization"
+    if isinstance(selected_row, PlatformProviderCredential):
+        return "platform"
+    raise ProviderCredentialConfigurationError(
+        f"Credentials are not configured for provider '{provider_name}'.",
+        reason_code="provider_credentials_missing",
+        status_code=409,
+    )
+
+
+def _select_provider_credential_row(
+    db: Session,
+    *,
+    organization_id: str,
+    provider_name: str,
+    required_credential_mode: str | None,
+    require_org_oauth: bool,
+) -> OrganizationProviderCredential | PlatformProviderCredential | None:
     policy = (
         db.query(ProviderPolicy)
         .filter(
@@ -79,17 +134,8 @@ def resolve_provider_credentials(
         )
 
     if selected_row is None:
-        return {}
-
-    credentials = _decrypt_payload(selected_row.encrypted_secret_blob)
-    if selected_row.auth_mode == "oauth2":
-        credentials = _refresh_oauth2_credentials_if_needed(
-            db,
-            row=selected_row,
-            provider_name=provider_name,
-            credentials=credentials,
-        )
-    return credentials
+        return None
+    return selected_row
 
 
 def upsert_provider_policy(

@@ -309,6 +309,9 @@ class DataForSeoRankProvider:
         if not tasks or not isinstance(tasks[0], dict):
             raise ValueError("DataForSEO response is missing task results.")
         task = tasks[0]
+        task_cost = task.get("cost")
+        if task_cost is None and isinstance(body, dict):
+            task_cost = body.get("cost")
         task_status = int(task.get("status_code", 0) or 0)
         if task_status and task_status >= 30000:
             raise ValueError(str(task.get("status_message") or "DataForSEO task failed."))
@@ -325,8 +328,20 @@ class DataForSeoRankProvider:
                 or target_host.endswith(f".{row_host}")
             ):
                 position = int(item.get("rank_absolute") or item.get("rank_group") or 100)
-                return {"position": max(1, position), "confidence": 0.95}
-        return {"position": 100, "confidence": 0.7}
+                payload = {
+                    "position": max(1, position),
+                    "confidence": 0.95,
+                }
+                if task_cost is not None:
+                    payload.update(provider_reported_cost=task_cost, cost_currency="USD")
+                return payload
+        payload = {
+            "position": 100,
+            "confidence": 0.7,
+        }
+        if task_cost is not None:
+            payload.update(provider_reported_cost=task_cost, cost_currency="USD")
+        return payload
 
 
 @lru_cache

@@ -15,7 +15,9 @@ class FeatureGate:
 
 PLAN_LEVELS: dict[str, int] = {
     "standard": 1,
+    "solo": 1,
     "pro": 2,
+    "multi_location": 2,
     "enterprise": 3,
     "internal_anchor": 4,
 }

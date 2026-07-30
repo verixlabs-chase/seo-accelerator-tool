@@ -64,6 +64,29 @@ type ConnectionsPayload = {
   connections: DataConnection[];
 };
 
+type UsageAllowance = {
+  plan: {
+    code: string;
+    name: string;
+  };
+  period: {
+    start: string;
+    end: string;
+  };
+  allowance: {
+    currency: string;
+    monthly: number;
+    used: number;
+    reserved: number;
+    remaining: number;
+    percent_committed: number;
+    warning_level?: number | null;
+    blocked: boolean;
+  };
+  organization_owned_operations: number;
+  recovery_actions: string[];
+};
+
 const primaryButtonClass =
   "inline-flex items-center justify-center rounded-md border border-accent-500/40 bg-accent-500/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-accent-500/70 hover:bg-accent-500/25 disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryButtonClass =
@@ -95,6 +118,7 @@ export default function SettingsPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [payload, setPayload] = useState<ConnectionsPayload | null>(null);
+  const [usageAllowance, setUsageAllowance] = useState<UsageAllowance | null>(null);
   const [resources, setResources] = useState<SearchConsoleResource[]>([]);
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -167,11 +191,13 @@ export default function SettingsPage() {
           throw new Error("An organization is required to manage data connections.");
         }
         setMe(currentUser);
-        const [campaignResponse, connectionResponse] = await Promise.all([
+        const [campaignResponse, connectionResponse, allowanceResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
+          platformApi("/usage/allowance", { method: "GET" }) as Promise<UsageAllowance>,
         ]);
         setCampaigns(campaignResponse.items || []);
+        setUsageAllowance(allowanceResponse);
         const googleReturned = new URLSearchParams(window.location.search).get("google");
         if (googleReturned === "connected") {
           setNotice("Google Search Console is connected. Match each location to its website next.");
@@ -302,12 +328,18 @@ export default function SettingsPage() {
         tone: portfolioSummary.tone as TrustSignal["tone"],
       },
       {
-        label: "Scope",
-        value: "Search Console only",
-        tone: "info",
+        label: "Paid data allowance",
+        value: usageAllowance
+          ? `${usageAllowance.allowance.percent_committed.toFixed(1)}% committed`
+          : "Checking",
+        tone: usageAllowance?.allowance.blocked
+          ? "danger"
+          : usageAllowance?.allowance.warning_level
+            ? "warning"
+            : "info",
       },
     ],
-    [connections.length, manageableCampaigns.length, payload, portfolioSummary],
+    [connections.length, manageableCampaigns.length, payload, portfolioSummary, usageAllowance],
   );
 
   return (
@@ -356,6 +388,51 @@ export default function SettingsPage() {
           />
         ) : (
           <>
+            {usageAllowance ? (
+              <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      {usageAllowance.plan.name} paid data allowance
+                    </p>
+                    <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-white">
+                      ${usageAllowance.allowance.remaining.toFixed(2)} remaining this month
+                    </h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
+                      Used ${usageAllowance.allowance.used.toFixed(2)} and holding $
+                      {usageAllowance.allowance.reserved.toFixed(2)} for work that is still running.
+                      Checks made with your own provider account do not reduce this allowance.
+                    </p>
+                  </div>
+                  <div className="min-w-[220px]">
+                    <div className="flex items-center justify-between text-xs text-zinc-400">
+                      <span>{usageAllowance.allowance.percent_committed.toFixed(1)}% committed</span>
+                      <span>${usageAllowance.allowance.monthly.toFixed(2)} monthly</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#24252a]">
+                      <div
+                        className={`h-full rounded-full ${
+                          usageAllowance.allowance.blocked
+                            ? "bg-rose-400"
+                            : usageAllowance.allowance.warning_level
+                              ? "bg-amber-400"
+                              : "bg-emerald-400"
+                        }`}
+                        style={{
+                          width: `${Math.min(100, usageAllowance.allowance.percent_committed)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                {usageAllowance.recovery_actions.length > 0 ? (
+                  <div className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                    {usageAllowance.recovery_actions[0]}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
