@@ -64,19 +64,16 @@ def decrypt_payload(encrypted_secret_blob: str) -> dict[str, Any]:
         ) from exc
 
     algorithm = str(payload.get("alg", "AES-256-CBC"))
-    master_key = get_master_key()
+    master_keys = get_master_keys()
     try:
-        if algorithm == "AES-256-GCM":
-            dek = _aes256_gcm_decrypt(encrypted_dek, master_key, dek_iv)
-            plaintext = _aes256_gcm_decrypt(ciphertext, dek, payload_iv)
-        elif algorithm == "AES-256-CBC":
-            dek = _aes256_cbc_decrypt(encrypted_dek, master_key, dek_iv)
-            plaintext = _aes256_cbc_decrypt(ciphertext, dek, payload_iv)
-        else:
-            raise CredentialCryptoError(
-                f"Unsupported credential algorithm '{algorithm}'.",
-                reason_code="invalid_credential_payload",
-            )
+        plaintext = _decrypt_with_rotation(
+            algorithm=algorithm,
+            encrypted_dek=encrypted_dek,
+            dek_iv=dek_iv,
+            ciphertext=ciphertext,
+            payload_iv=payload_iv,
+            master_keys=master_keys,
+        )
     except CredentialCryptoError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -107,7 +104,7 @@ def get_master_key() -> bytes:
             reason_code="master_key_missing",
         )
     try:
-        key = base64.b64decode(raw)
+        key = base64.b64decode(raw, validate=True)
     except Exception as exc:  # noqa: BLE001
         raise CredentialCryptoError(
             "PLATFORM_MASTER_KEY must be valid base64.",
@@ -119,6 +116,87 @@ def get_master_key() -> bytes:
             reason_code="master_key_invalid",
         )
     return key
+
+
+def get_master_keys() -> tuple[bytes, ...]:
+    active_key = get_master_key()
+    raw_previous = os.getenv("PLATFORM_PREVIOUS_MASTER_KEYS_JSON", "[]").strip() or "[]"
+    try:
+        previous_values = json.loads(raw_previous)
+    except json.JSONDecodeError as exc:
+        raise CredentialCryptoError(
+            "PLATFORM_PREVIOUS_MASTER_KEYS_JSON must be a JSON array.",
+            reason_code="master_key_invalid",
+        ) from exc
+    if not isinstance(previous_values, list) or any(
+        not isinstance(value, str) or not value.strip()
+        for value in previous_values
+    ):
+        raise CredentialCryptoError(
+            "PLATFORM_PREVIOUS_MASTER_KEYS_JSON must contain non-empty strings.",
+            reason_code="master_key_invalid",
+        )
+    normalized_previous = [value.strip() for value in previous_values]
+    if len(normalized_previous) > 2:
+        raise CredentialCryptoError(
+            "PLATFORM_PREVIOUS_MASTER_KEYS_JSON supports at most two previous keys.",
+            reason_code="master_key_invalid",
+        )
+    if len(normalized_previous) != len(set(normalized_previous)):
+        raise CredentialCryptoError(
+            "PLATFORM_PREVIOUS_MASTER_KEYS_JSON must not contain duplicate keys.",
+            reason_code="master_key_invalid",
+        )
+    keys = [active_key]
+    for raw_value in normalized_previous:
+        try:
+            decoded = base64.b64decode(raw_value, validate=True)
+        except Exception as exc:  # noqa: BLE001
+            raise CredentialCryptoError(
+                "Previous credential master keys must be valid base64.",
+                reason_code="master_key_invalid",
+            ) from exc
+        if len(decoded) != 32:
+            raise CredentialCryptoError(
+                "Previous credential master keys must decode to 32 bytes.",
+                reason_code="master_key_invalid",
+            )
+        if decoded in keys:
+            raise CredentialCryptoError(
+                "PLATFORM_PREVIOUS_MASTER_KEYS_JSON must not include the active key.",
+                reason_code="master_key_invalid",
+            )
+        keys.append(decoded)
+    return tuple(keys)
+
+
+def _decrypt_with_rotation(
+    *,
+    algorithm: str,
+    encrypted_dek: bytes,
+    dek_iv: bytes,
+    ciphertext: bytes,
+    payload_iv: bytes,
+    master_keys: tuple[bytes, ...],
+) -> bytes:
+    if algorithm not in {"AES-256-GCM", "AES-256-CBC"}:
+        raise CredentialCryptoError(
+            f"Unsupported credential algorithm '{algorithm}'.",
+            reason_code="invalid_credential_payload",
+        )
+    for master_key in master_keys:
+        try:
+            if algorithm == "AES-256-GCM":
+                dek = _aes256_gcm_decrypt(encrypted_dek, master_key, dek_iv)
+                return _aes256_gcm_decrypt(ciphertext, dek, payload_iv)
+            dek = _aes256_cbc_decrypt(encrypted_dek, master_key, dek_iv)
+            return _aes256_cbc_decrypt(ciphertext, dek, payload_iv)
+        except Exception:  # noqa: BLE001
+            continue
+    raise CredentialCryptoError(
+        "Credential payload is not decryptable with the active or transition keys.",
+        reason_code="invalid_credential_payload",
+    )
 
 
 def _b64e(raw: bytes) -> str:

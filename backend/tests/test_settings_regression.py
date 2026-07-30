@@ -92,3 +92,30 @@ def test_autonomous_intelligence_is_forbidden_outside_test_runtime() -> None:
             public_base_url="http://localhost",
             intelligence_activation_mode="autonomous",
         )
+
+
+def test_rotation_key_lists_reject_duplicates_and_weak_values() -> None:
+    active_jwt = "active-jwt-secret-with-at-least-32-characters"
+    active_master_key = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+    with pytest.raises(ValidationError, match="must not include JWT_SECRET"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            hosted_serverless=True,
+            public_base_url="https://example.com",
+            postgres_dsn="postgresql://user:pass@db:5432/app",
+            jwt_secret=active_jwt,
+            jwt_previous_secrets_json=f'["{active_jwt}"]',
+            platform_master_key=active_master_key,
+        )
+    with pytest.raises(ValidationError, match="Previous JWT secrets"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            hosted_serverless=True,
+            public_base_url="https://example.com",
+            postgres_dsn="postgresql://user:pass@db:5432/app",
+            jwt_secret=active_jwt,
+            jwt_previous_secrets_json='["weak"]',
+            platform_master_key=active_master_key,
+        )

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.session import set_session_security_context
 from app.models.campaign import Campaign
 from app.models.user import User
+from scripts.verify_restore_integrity import _rls_behavior_probe
 from tests.conftest import create_test_campaign
 
 
@@ -113,3 +114,22 @@ def test_platform_context_can_inspect_multiple_organizations(db_session: Session
     finally:
         platform_session.rollback()
         platform_session.close()
+
+
+def test_restore_verifier_rls_probe_is_non_persistent(db_session: Session) -> None:
+    before_count = db_session.query(Campaign).count()
+    db_session.commit()
+
+    with db_session.get_bind().begin() as connection:
+        result = _rls_behavior_probe(connection)
+
+    db_session.expire_all()
+    assert result == {
+        "passed": True,
+        "visible_own_campaign": True,
+        "visible_cross_tenant_campaign": False,
+        "cross_tenant_update_rows": 0,
+        "cross_tenant_insert_blocked": True,
+        "persisted_rows": False,
+    }
+    assert db_session.query(Campaign).count() == before_count

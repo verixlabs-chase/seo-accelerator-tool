@@ -138,6 +138,20 @@ Generate secrets locally:
 [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 ```
 
+Keep rotation settings explicit in Vercel:
+
+```text
+JWT_PREVIOUS_SECRETS_JSON=[]
+PLATFORM_PREVIOUS_MASTER_KEYS_JSON=[]
+CREDENTIAL_MASTER_KEY_REFERENCE=env:PLATFORM_MASTER_KEY
+CREDENTIAL_MASTER_KEY_VERSION=v1
+```
+
+The previous-key arrays are used only during a controlled rotation. Do not add
+an old key until the new active key is ready to deploy, and remove transition
+keys after sessions or encrypted credential rows have been migrated. Follow
+[the TR1 security and recovery runbook](./platform/runbooks/tr1_security_recovery.md).
+
 Save `CRON_SECRET` in the backend Vercel project for Production, Preview, and
 Development. Vercel automatically sends it to configured cron routes as:
 

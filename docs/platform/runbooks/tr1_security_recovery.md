@@ -19,7 +19,14 @@ It is intentionally Windows-friendly and does not require Docker for local use.
   expired leases, retry backlog, and oldest-due age.
 - CI runs a real PostgreSQL cross-organization read/write isolation test.
 - `verify_restore_integrity.py` validates schema head, required tables, tenant
-  relationships, RLS coverage, and the application role on a restored database.
+  relationships, exact baseline counts, RLS coverage, and rollback-only
+  cross-organization read/write behavior on a restored database.
+- JWT and credential encryption keys support bounded transition-key windows;
+  new material is written only with the active key.
+- `rotate_credential_master_key.py` verifies or atomically rewraps all stored
+  provider credentials without printing plaintext.
+- The Windows operator script and manual GitHub workflow produce sanitized
+  operational, restore, and credential-rotation evidence.
 
 ## Production rollout order
 
@@ -75,6 +82,16 @@ Tokens issued before this release remain temporarily compatible. Their first
 successful refresh creates a durable session and rotates them into the new
 model.
 
+The Windows evidence collector performs this sequence without writing tokens or
+passwords to its output:
+
+```powershell
+$env:TR1_API_BASE_URL = 'https://your-api-project.vercel.app'
+$env:TR1_PLATFORM_EMAIL = '<platform owner email>'
+$env:TR1_PLATFORM_PASSWORD = '<platform owner password>'
+.\scripts\windows\Invoke-TR1Drill.ps1 -Drill Operational
+```
+
 ## Durable-job alert checks
 
 The platform-owner endpoint `GET /api/v1/system/operational-health` includes:
@@ -103,18 +120,60 @@ $env:RESTORED_DATABASE_URL = '<restored database URL>'
 4. From `backend`, run:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\verify_restore_integrity.py
+.\.venv\Scripts\python.exe scripts\verify_restore_integrity.py `
+  --baseline artifacts\tr1\pre-restore-baseline.json `
+  --output artifacts\tr1\restore-evidence.json
 ```
 
 5. Save the JSON output with the incident/change ticket.
-6. Run the PostgreSQL RLS test suite against the restored target.
-7. Record restore start/end time, recovery point, row-count comparison,
+6. Confirm the rollback-only RLS behavior probe passed. Do **not** run the
+   normal pytest PostgreSQL fixture against a restored database; that fixture
+   intentionally drops and rebuilds `public`.
+7. Record restore start/end time, recovery point, exact row-count comparison,
    schema head, RLS result, orphan result, and reviewer.
 8. Destroy the isolated recovery target after evidence retention is complete.
 
 The drill passes only when the verifier returns exit code `0`, cross-tenant
 tests pass, and the restored row counts are reconciled with the selected
 recovery point.
+
+## Secret rotation drill
+
+### JWT signing secret
+
+1. Generate a new secret of at least 32 random characters.
+2. In Vercel, set the new value as `JWT_SECRET` and set
+   `JWT_PREVIOUS_SECRETS_JSON` to a JSON array containing the old secret.
+3. Redeploy and run the operational evidence collector. Existing sessions must
+   refresh successfully, and newly issued tokens must use the new key.
+4. Revoke remaining sessions or wait through the approved refresh-token grace
+   period.
+5. Set `JWT_PREVIOUS_SECRETS_JSON=[]`, redeploy, and run the evidence collector
+   again.
+
+### Credential encryption master key
+
+1. Generate 32 random bytes encoded as base64.
+2. Set the new value as `PLATFORM_MASTER_KEY`, put the old key in
+   `PLATFORM_PREVIOUS_MASTER_KEYS_JSON`, and increment
+   `CREDENTIAL_MASTER_KEY_VERSION`.
+3. Redeploy. Search Console and other stored provider credentials remain
+   decryptable through the transition key.
+4. Set `CREDENTIAL_ROTATION_DATABASE_URL` to the direct PostgreSQL URL and run:
+
+```powershell
+.\scripts\windows\Invoke-TR1Drill.ps1 -Drill CredentialRotationDryRun
+.\.venv\Scripts\python.exe scripts\rotate_credential_master_key.py `
+  --apply `
+  --confirm-version $env:CREDENTIAL_MASTER_KEY_VERSION `
+  --output artifacts\tr1\credential-rotation-applied.json
+```
+
+5. Verify Google Search Console synchronization, then set
+   `PLATFORM_PREVIOUS_MASTER_KEYS_JSON=[]` and redeploy.
+
+The rotation command decrypts and immediately re-encrypts in memory, commits
+all credential rows atomically, and never prints credential plaintext.
 
 ## Rollback
 
@@ -127,6 +186,16 @@ If RLS causes a production regression:
 4. If a migration rollback is explicitly approved, take a fresh backup first,
    then downgrade one revision and verify tenant integrity.
 
+For the scheduled TR1 deployment drill, use two backward-compatible app
+deployments:
+
+1. Record the current frontend and API deployment IDs and health results.
+2. Promote the immediately previous successful deployment for each project.
+3. Verify API health, login, and one Reno/Lexington location switch.
+4. Promote the current deployment again.
+5. Repeat health and authenticated smoke checks and retain the deployment IDs,
+   timestamps, and results. Do not downgrade the database for this drill.
+
 ## Evidence required to close TR1
 
 - PostgreSQL CI isolation job: green on 2026-07-30
@@ -134,7 +203,9 @@ If RLS causes a production regression:
 - production API health: HTTP 200 after RLS-enabled redeploy on 2026-07-30
 - production authenticated dashboard session: green on 2026-07-30
 - production Reno/Lexington location-switch smoke test: green on 2026-07-30
-- published Windows regression: 593 passed, 15 skipped on 2026-07-30
+- local Windows regression: 602 passed, 16 environment-specific skips on
+  2026-07-30
+- closeout slice PostgreSQL CI and deployment: publication still required
 - operational-health durable-job state: capture still required with a
   platform-owner session
 - isolated backup/PITR restore drill: captured and reviewed

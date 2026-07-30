@@ -277,15 +277,18 @@ website mutations.
 Goal: prove that the hosted Supabase and Vercel system can protect customer
 data, recover safely, and run durable work before paid automation expands.
 
-> **Implementation status (2026-07-30):** TR1 is in progress. The first
-> production-hardening slice adds PostgreSQL-enforced RLS and transaction-local
-> tenant context, rotating and revocable authentication sessions, durable
-> database-backed job health, a PostgreSQL isolation CI gate, and a
-> Windows-compatible restore-integrity verifier. Revision `20260730_0077` is
-> applied in Supabase, RLS enforcement is active in Vercel, the production API
-> health and two-location customer journey are green, and all published CI
-> gates pass. The isolated Supabase restore, secret-rotation, and
-> deployment-rollback drills remain required before TR1 is marked complete.
+> **Implementation status (2026-07-30):** TR1 is in closeout. PostgreSQL RLS,
+> transaction-local tenant context, rotating and revocable sessions, durable
+> database-backed job health, and the PostgreSQL isolation gate are active.
+> The closeout slice adds zero-downtime JWT and credential-key transitions,
+> atomic credential rewrapping, a rollback-only behavioral RLS restore probe,
+> sanitized operational evidence capture, Windows-native drill commands, and a
+> manual GitHub drill workflow. Revision `20260730_0077` is applied in
+> Supabase, RLS enforcement is active in Vercel, the production API health and
+> two-location customer journey are green, and the local backend regression is
+> 602 passed with 16 environment-specific skips. The closeout slice still
+> requires published CI plus isolated Supabase restore, live secret-rotation,
+> and Vercel deployment-rollback evidence before TR1 is marked complete.
 
 Scope:
 

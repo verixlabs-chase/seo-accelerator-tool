@@ -50,11 +50,25 @@ def create_token(
 
 
 def decode_token(token: str) -> dict[str, Any]:
-    settings = get_settings()
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        return decode_signed_payload(token)
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+
+
+def decode_signed_payload(token: str) -> dict[str, Any]:
+    settings = get_settings()
+    expired_error: jwt.ExpiredSignatureError | None = None
+    for secret in settings.jwt_verification_secrets():
+        try:
+            return jwt.decode(token, secret, algorithms=[settings.jwt_algorithm])
+        except jwt.ExpiredSignatureError as exc:
+            expired_error = exc
+        except jwt.PyJWTError:
+            continue
+    if expired_error is not None:
+        raise expired_error
+    raise jwt.InvalidTokenError("Token signature did not match an active or transition key.")
 
 
 def _cookie_secure() -> bool:

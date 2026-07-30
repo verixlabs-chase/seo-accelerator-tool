@@ -1,6 +1,7 @@
 import os
 import base64
 import binascii
+import json
 import sys
 from functools import lru_cache
 from urllib.parse import urlparse
@@ -27,7 +28,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     jwt_secret: str
+    jwt_previous_secrets_json: str = "[]"
     platform_master_key: str
+    platform_previous_master_keys_json: str = "[]"
     jwt_access_ttl_seconds: int = 900
     jwt_refresh_ttl_seconds: int = 604800
     jwt_algorithm: str = "HS256"
@@ -148,6 +151,54 @@ class Settings(BaseSettings):
         "replace-me",
     }
 
+    @staticmethod
+    def _rotation_secret_list(raw_value: str, *, setting_name: str) -> list[str]:
+        try:
+            parsed = json.loads(raw_value or "[]")
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{setting_name} must be a JSON array of strings.") from exc
+        if not isinstance(parsed, list) or any(
+            not isinstance(value, str) or not value.strip()
+            for value in parsed
+        ):
+            raise ValueError(f"{setting_name} must be a JSON array of non-empty strings.")
+        normalized = [value.strip() for value in parsed]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError(f"{setting_name} must not contain duplicate values.")
+        if len(normalized) > 2:
+            raise ValueError(f"{setting_name} supports at most two previous keys.")
+        return normalized
+
+    def jwt_verification_secrets(self) -> tuple[str, ...]:
+        previous = self._rotation_secret_list(
+            self.jwt_previous_secrets_json,
+            setting_name="JWT_PREVIOUS_SECRETS_JSON",
+        )
+        return (self.jwt_secret, *previous)
+
+    def credential_master_keys(self) -> tuple[bytes, ...]:
+        encoded_keys = [
+            self.platform_master_key,
+            *self._rotation_secret_list(
+                self.platform_previous_master_keys_json,
+                setting_name="PLATFORM_PREVIOUS_MASTER_KEYS_JSON",
+            ),
+        ]
+        decoded_keys: list[bytes] = []
+        for encoded_key in encoded_keys:
+            try:
+                decoded = base64.b64decode(encoded_key, validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise ValueError(
+                    "Credential master keys must be valid base64."
+                ) from exc
+            if len(decoded) != 32:
+                raise ValueError(
+                    "Credential master keys must decode to exactly 32 bytes."
+                )
+            decoded_keys.append(decoded)
+        return tuple(decoded_keys)
+
     @model_validator(mode="after")
     def validate_production_guardrails(self) -> "Settings":
         intelligence_mode = self.intelligence_activation_mode.strip().lower()
@@ -167,20 +218,41 @@ class Settings(BaseSettings):
             raise ValueError("PLATFORM_MASTER_KEY is required and must not be empty.")
         if not self.public_base_url.strip():
             raise ValueError("PUBLIC_BASE_URL is required and must not be empty.")
+        previous_jwt_secrets = self._rotation_secret_list(
+            self.jwt_previous_secrets_json,
+            setting_name="JWT_PREVIOUS_SECRETS_JSON",
+        )
+        previous_master_keys = self._rotation_secret_list(
+            self.platform_previous_master_keys_json,
+            setting_name="PLATFORM_PREVIOUS_MASTER_KEYS_JSON",
+        )
+        if self.jwt_secret in previous_jwt_secrets:
+            raise ValueError("JWT_PREVIOUS_SECRETS_JSON must not include JWT_SECRET.")
+        if self.platform_master_key in previous_master_keys:
+            raise ValueError(
+                "PLATFORM_PREVIOUS_MASTER_KEYS_JSON must not include PLATFORM_MASTER_KEY."
+            )
         if self.local_admin_bootstrap_enabled and self.app_env.lower() != "local":
             raise ValueError("LOCAL_ADMIN_BOOTSTRAP_ENABLED is only allowed when APP_ENV=local.")
 
         if self.app_env.lower() != "test":
             if self.jwt_secret in self._WEAK_JWT_SECRET_VALUES or len(self.jwt_secret) < 32:
                 raise ValueError("Non-test runtime requires JWT_SECRET with at least 32 characters and forbids weak default values.")
+            if any(
+                secret in self._WEAK_JWT_SECRET_VALUES or len(secret) < 32
+                for secret in previous_jwt_secrets
+            ):
+                raise ValueError(
+                    "Previous JWT secrets must contain at least 32 characters and cannot use weak defaults."
+                )
             if self.platform_master_key in self._WEAK_PLATFORM_MASTER_KEY_VALUES:
                 raise ValueError("Non-test runtime requires PLATFORM_MASTER_KEY and forbids weak default values.")
-            try:
-                decoded_master_key = base64.b64decode(self.platform_master_key)
-            except (ValueError, binascii.Error) as exc:
-                raise ValueError("Non-test runtime requires PLATFORM_MASTER_KEY to be valid base64.") from exc
-            if len(decoded_master_key) != 32:
-                raise ValueError("Non-test runtime requires PLATFORM_MASTER_KEY to decode to exactly 32 bytes.")
+            if any(
+                key in self._WEAK_PLATFORM_MASTER_KEY_VALUES
+                for key in previous_master_keys
+            ):
+                raise ValueError("Previous credential master keys cannot use weak defaults.")
+            self.credential_master_keys()
 
         if self.app_env.lower() != "production":
             return self

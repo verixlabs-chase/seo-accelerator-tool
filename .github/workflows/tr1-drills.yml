@@ -1,0 +1,66 @@
+name: TR1 manual drills
+
+on:
+  workflow_dispatch:
+    inputs:
+      drill:
+        description: Production-safe TR1 evidence drill
+        required: true
+        type: choice
+        options:
+          - operational
+          - restore
+          - credential-rotation-dry-run
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: backend
+    env:
+      PYTHONUTF8: "1"
+      TR1_API_BASE_URL: ${{ vars.TR1_API_BASE_URL }}
+      TR1_PLATFORM_EMAIL: ${{ secrets.TR1_PLATFORM_EMAIL }}
+      TR1_PLATFORM_PASSWORD: ${{ secrets.TR1_PLATFORM_PASSWORD }}
+      RESTORED_DATABASE_URL: ${{ secrets.TR1_RESTORED_DATABASE_URL }}
+      CREDENTIAL_ROTATION_DATABASE_URL: ${{ secrets.TR1_CREDENTIAL_ROTATION_DATABASE_URL }}
+      PLATFORM_MASTER_KEY: ${{ secrets.TR1_PLATFORM_MASTER_KEY }}
+      PLATFORM_PREVIOUS_MASTER_KEYS_JSON: ${{ secrets.TR1_PLATFORM_PREVIOUS_MASTER_KEYS_JSON }}
+      CREDENTIAL_MASTER_KEY_VERSION: ${{ vars.TR1_CREDENTIAL_MASTER_KEY_VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend requirements
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Capture operational evidence
+        if: inputs.drill == 'operational'
+        run: >-
+          python scripts/capture_tr1_operational_evidence.py
+          --output artifacts/tr1/operational-evidence.json
+      - name: Verify isolated restore
+        if: inputs.drill == 'restore'
+        run: >-
+          python scripts/verify_restore_integrity.py
+          --output artifacts/tr1/restore-evidence.json
+      - name: Verify credential rotation inputs
+        if: inputs.drill == 'credential-rotation-dry-run'
+        run: >-
+          python scripts/rotate_credential_master_key.py
+          --output artifacts/tr1/credential-rotation-evidence.json
+      - name: Upload sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tr1-${{ inputs.drill }}-${{ github.run_id }}
+          path: backend/artifacts/tr1/*.json
+          if-no-files-found: error
+          retention-days: 30

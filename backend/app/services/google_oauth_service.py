@@ -10,6 +10,7 @@ import requests  # type: ignore[import-untyped]
 from sqlalchemy.orm import Session
 
 from app.core.crypto import CredentialCryptoError, decrypt_payload, encrypt_payload
+from app.core.security import decode_signed_payload
 from app.core.settings import get_settings
 from app.models.organization import Organization
 from app.models.organization_oauth_client import OrganizationOAuthClient
@@ -85,9 +86,8 @@ def create_google_oauth_state(
 
 
 def validate_google_oauth_state(state: str) -> dict[str, Any]:
-    settings = get_settings()
     try:
-        payload = jwt.decode(state, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        payload = decode_signed_payload(state)
     except jwt.ExpiredSignatureError as exc:
         raise GoogleOAuthError(
             "Google OAuth state expired.",
