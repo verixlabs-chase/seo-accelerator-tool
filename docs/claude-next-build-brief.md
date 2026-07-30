@@ -9,7 +9,8 @@
 > restore drill, and live secret-rotation drills are completed and reviewed.
 > **G1.3: Usage Economics and Margin Guardrails** is production-released;
 > **I1.1: Live Website Performance and CWV Experience** is production-released;
-> **I1.3: Governed AI Runtime API** is active. Its first vertical slice adds a
+> **I1.3: Governed AI Runtime API** is active and its first vertical slice is
+> production-verified. It adds a
 > Mistral-first, explain-only runtime over deterministic intelligence, strict
 > structured-output validation, tenant-scoped audit history, and hard cost
 > controls. **I1.5: Pluggable and Local Model Gateway** now preserves a future
@@ -829,7 +830,7 @@ Goal: add a real, metered AI provider layer that makes the deterministic
 intelligence useful in conversation and content workflows while the lexicon and
 policy engine retain decision authority.
 
-> **First vertical slice implemented locally 2026-07-30:** the Opportunities
+> **First vertical slice production-verified 2026-07-30:** the Opportunities
 > workspace can request a plain-language explanation of the current
 > engine-selected action. The provider-neutral gateway uses Mistral Small 4,
 > strict JSON-schema output, evidence and action allow-list validation,
@@ -838,10 +839,10 @@ policy engine retain decision authority.
 > persists organization, campaign, location, lexicon, prompt template, hashes,
 > evidence references, model, tokens, cost, validation state, and rejection
 > reason under database RLS. Mistral has no database, Google, WordPress, or tool
-> access and cannot execute changes. Production migration, provider-key
-> configuration, and live-output verification remain release gates for this
-> slice; daily briefs, evidence Q&A, and governed drafting remain later I1.3
-> slices.
+> access and cannot execute changes. The production migration, provider key,
+> restricted-role pricing access, deterministic control-field enforcement, and
+> live validated-output/cost audit have passed. Daily briefs, evidence Q&A, and
+> governed drafting remain later I1.3 slices.
 
 Runtime sequence:
 
