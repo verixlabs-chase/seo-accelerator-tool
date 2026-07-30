@@ -129,10 +129,13 @@ If RLS causes a production regression:
 
 ## Evidence required to close TR1
 
-- PostgreSQL CI isolation job: green
-- migration workflow: green
-- production login/session smoke test: green
-- production cross-location read/write smoke test: green
-- operational-health durable-job state: captured
+- PostgreSQL CI isolation job: green on 2026-07-30
+- migration workflow: revision `20260730_0077` applied on 2026-07-30
+- production API health: HTTP 200 after RLS-enabled redeploy on 2026-07-30
+- production authenticated dashboard session: green on 2026-07-30
+- production Reno/Lexington location-switch smoke test: green on 2026-07-30
+- published Windows regression: 593 passed, 15 skipped on 2026-07-30
+- operational-health durable-job state: capture still required with a
+  platform-owner session
 - isolated backup/PITR restore drill: captured and reviewed
 - secret-rotation and deployment-rollback drills: captured and reviewed

@@ -270,9 +270,11 @@ data, recover safely, and run durable work before paid automation expands.
 > production-hardening slice adds PostgreSQL-enforced RLS and transaction-local
 > tenant context, rotating and revocable authentication sessions, durable
 > database-backed job health, a PostgreSQL isolation CI gate, and a
-> Windows-compatible restore-integrity verifier. Production migration, smoke
-> tests, and the isolated Supabase restore drill remain required before TR1 is
-> marked complete.
+> Windows-compatible restore-integrity verifier. Revision `20260730_0077` is
+> applied in Supabase, RLS enforcement is active in Vercel, the production API
+> health and two-location customer journey are green, and all published CI
+> gates pass. The isolated Supabase restore, secret-rotation, and
+> deployment-rollback drills remain required before TR1 is marked complete.
 
 Scope:
 
