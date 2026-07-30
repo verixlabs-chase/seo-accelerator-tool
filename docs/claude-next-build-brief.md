@@ -7,10 +7,9 @@
 > frontend/API rollback-and-restore drill passed. TR1 remains a continuous
 > release gate until the platform-owner operational capture, isolated Supabase
 > restore drill, and live secret-rotation drills are completed and reviewed.
-> **G1.3: Usage Economics and Margin Guardrails** is implemented and is the
-> current release candidate; **I1.1: Live Website Performance and CWV
-> Experience** follows after G1.3 migration and production verification. The
-> remaining roadmap
+> **G1.3: Usage Economics and Margin Guardrails** is production-released;
+> **I1.1: Live Website Performance and CWV Experience** is the next product
+> sprint. The remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7,
 > evidence-backed intelligence in I1, research/content/AI visibility in
@@ -442,8 +441,8 @@ Acceptance criteria:
 Goal: know the true variable cost of each organization and prevent platform-paid
 providers or future AI models from pushing the service below its target margin.
 
-> **Implementation status (2026-07-30):** The G1.3 release candidate is
-> implemented. Revision `20260730_0078` adds versioned provider price cards, an
+> **Implementation status (2026-07-30):** G1.3 is production-released. Revision
+> `20260730_0078` adds versioned provider price cards, an
 > append-only and tenant-isolated reservation/reconciliation ledger, versioned
 > non-provider cost allocations, canonical Solo/Multi-location/Enterprise plan
 > economics, and generic model/token fields before a paid LLM is enabled. The
@@ -456,8 +455,14 @@ providers or future AI models from pushing the service below its target margin.
 > revenue, API spend, allocated COGS, gross profit, gross margin, and the 80%
 > heavy-use publication test. Local migration validation, focused backend
 > tests, the uncapped suite tail, Ruff, frontend tests/lint, and the production
-> frontend build are green. Supabase migration, hosted deployment, and
-> authenticated production verification remain release steps.
+> frontend build are green. Supabase migration run `#10` applied the revision;
+> Backend run `#151` and CI run `#291` passed; Vercel API deployment
+> `FoHtmCxKrpwRP3w8ToMuE676VWKx` and frontend deployment
+> `9knRiaDgyRVQFDx9gWzJXUzNxYC9` reached Production/Ready; and the production
+> API health endpoint returned HTTP 200. The only deferred observation is an
+> authenticated visual smoke of the customer allowance card: the existing
+> browser session expired, so this requires a fresh customer login and does not
+> block the deployed server-side allowance enforcement.
 
 Current truth:
 
