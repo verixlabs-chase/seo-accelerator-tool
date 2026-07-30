@@ -27,7 +27,7 @@ from app.services.governed_ai_provider import (
 
 
 FEATURE = "intelligence_brief"
-PROMPT_TEMPLATE_VERSION = "insightos-intelligence-brief-v2"
+PROMPT_TEMPLATE_VERSION = "insightos-intelligence-brief-v3"
 MISTRAL_CAPABILITY = "governed_ai"
 MISTRAL_OPERATION = "intelligence_brief"
 MONTHLY_ACTION_LIMITS = {

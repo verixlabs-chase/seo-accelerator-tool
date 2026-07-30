@@ -46,7 +46,7 @@ export function TruthNotice({
     [selectedCampaignId, today],
   );
   const cacheKey = useMemo(
-    () => `insightos-daily-guide:${selectedCampaignId}:${today}`,
+    () => `insightos-daily-guide-v2:${selectedCampaignId}:${today}`,
     [selectedCampaignId, today],
   );
   const [isVisible, setIsVisible] = useState(false);
@@ -92,7 +92,7 @@ export function TruthNotice({
           output.summary.trim()
         ) {
           const guide = {
-            summary: shorten(output.summary, 260),
+            summary: shorten(simplifyGuideText(output.summary), 260),
             generatedByAi: true,
           };
           window.localStorage.setItem(cacheKey, JSON.stringify(guide));
@@ -174,4 +174,18 @@ function shorten(value: string, maxLength: number) {
     return normalized;
   }
   return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function simplifyGuideText(value: string) {
+  return value
+    .replace(/deterministic SEO intelligence/gi, "InsightOS")
+    .replace(/deterministic intelligence/gi, "InsightOS")
+    .replace(/intelligence engine/gi, "recommendation system")
+    .replace(/composite score/gi, "overall search visibility score")
+    .replace(/\bGBP\b/g, "Google Business Profile")
+    .replace(/review acquisition velocity/gi, "new review activity")
+    .replace(/content throughput/gi, "new content")
+    .replace(/backlink acquisition velocity/gi, "new trusted links")
+    .replace(/\bheuristic\b/gi, "estimate")
+    .replace(/\bprovider\b/gi, "data source");
 }

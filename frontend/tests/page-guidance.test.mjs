@@ -68,6 +68,8 @@ test("the shared guide is daily, AI-written, cached, and dismissible", () => {
   assert.match(source, /intelligence\/brief/);
   assert.match(source, /method: "POST"/);
   assert.match(source, /insightos-daily-guide/);
+  assert.match(source, /simplifyGuideText/);
+  assert.match(source, /deterministic SEO intelligence/);
   assert.match(source, /localStorage\.setItem\(cacheKey/);
   assert.match(source, /sessionStorage\.setItem\(storageKey, "dismissed"\)/);
   assert.match(source, /aria-label="Close daily guidance"/);

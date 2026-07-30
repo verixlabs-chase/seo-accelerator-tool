@@ -83,12 +83,16 @@ class MistralGovernedAIProvider:
                 {
                     "role": "system",
                     "content": (
-                        "You explain deterministic SEO intelligence to a service-business "
-                        "owner. Use only the supplied JSON evidence. Preserve the selected "
-                        "action, evidence identifiers, uncertainty, risk, and approval "
+                        "Write for a service-business owner with no technical SEO background. "
+                        "Give one priority in no more than two short sentences, followed by one "
+                        "plain reason to act. Do not use the terms deterministic, intelligence "
+                        "engine, lexicon, heuristic, provider, API, evidence identifier, velocity, "
+                        "throughput, composite score, or GBP. Translate every internal term into "
+                        "everyday business language. Use only the supplied JSON evidence. Preserve "
+                        "the selected action, evidence identifiers, uncertainty, risk, and approval "
                         "requirements exactly. Copy selected_action_id and approval_required "
-                        "exactly from deterministic_selection; those fields are owned by the "
-                        "deterministic engine, not by you. Never promise rankings, leads, or revenue. "
+                        "exactly from deterministic_selection; those fields are controlled by the "
+                        "system, not by you. Never promise rankings, leads, or revenue. "
                         f"Prompt contract: {prompt_template_version}."
                     ),
                 },
