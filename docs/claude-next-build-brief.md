@@ -8,8 +8,8 @@
 > release gate until the platform-owner operational capture, isolated Supabase
 > restore drill, and live secret-rotation drills are completed and reviewed.
 > **G1.3: Usage Economics and Margin Guardrails** is production-released;
-> **I1.1: Live Website Performance and CWV Experience** is the next product
-> sprint. The remaining roadmap
+> **I1.1: Live Website Performance and CWV Experience** is production-released;
+> **I1.3: Governed AI Runtime API** is the next product sprint. The remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7,
 > evidence-backed intelligence in I1, research/content/AI visibility in
@@ -247,7 +247,7 @@ names in issues, commits, and status reports so a number is never ambiguous:
 
 ### Recommended Execution Order From The Current State
 
-This is the default delivery order as of 2026-07-29. Track identifiers below
+This is the default delivery order as of 2026-07-30. Track identifiers below
 remain stable even if a release needs to split one scope into smaller tickets.
 
 | Order | Sprint | Customer result |
@@ -255,8 +255,8 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 1 | **Release R1 - UX9 and I1.0 production closeout** | The current UX polish and canonical intelligence lexicon are migrated, configured, activated, and verified in production. |
 | 2 | **TR1 - Security, Reliability, and Recovery Gate** | Tenant isolation, durable execution, monitoring, backups, restore drills, and safe release controls are proven before paid automation expands. |
 | 3 | **G1.3 - Usage Economics and Margin Guardrails** | Paid provider and AI work cannot overspend the organization's allowance or silently damage gross margin. |
-| 4 | **I1.1 - Live Website Performance and CWV Experience** | Customers see their actual field and lab website measurements, Google thresholds, history, source, freshness, and plain-language meaning. |
-| 5 | **I1.3 - Governed AI Runtime API** | Mistral-first AI becomes standard across plans and can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
+| 4 | **I1.1 - Live Website Performance and CWV Experience — released** | Customers see their actual field and lab website measurements, Google thresholds, history, source, freshness, and plain-language meaning. |
+| 5 | **I1.3 - Governed AI Runtime API — next** | Mistral-first AI becomes standard across plans and can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
 | 6 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Customers can compare the measured baseline with a conservative outcome range for approved recommendations. |
 | 7 | **I1.4 - Evidence-Backed Action Center** | The intelligence output becomes one understandable, prioritized queue with outcomes and follow-up measurement. |
 | 8 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
@@ -762,6 +762,20 @@ Acceptance criteria:
 - Charts remain usable on mobile, do not rely on color alone, and provide
   exact accessible values.
 - No UI claims that passing Core Web Vitals guarantees a ranking improvement.
+
+Production evidence (2026-07-30):
+
+- Database revision `20260730_0079` is applied in Supabase with tenant-scoped
+  RLS for persisted field and lab measurements.
+- Commits `4d7ddff` and `04b226c` are deployed to the Vercel frontend and API.
+- The production Reno desktop test returned Lighthouse `96/100` using version
+  `13.4.1`; the largest reported opportunity was unused CSS.
+- Google Chrome UX Report did not have enough Reno traffic for a field result.
+  The product correctly shows `not enough real-user data`, the origin fallback,
+  and the active lexicon thresholds instead of reporting a false pass.
+- The Google key is restricted to the Chrome UX Report and PageSpeed Insights
+  APIs. Manual retries are safely deduplicated while allowing a new test after
+  provider configuration changes.
 
 ### Intelligence I1.2 - Improvement Forecasting and Scenario Modeling
 
