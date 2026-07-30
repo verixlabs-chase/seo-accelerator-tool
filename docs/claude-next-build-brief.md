@@ -12,7 +12,10 @@
 > **I1.3: Governed AI Runtime API** is active. Its first vertical slice adds a
 > Mistral-first, explain-only runtime over deterministic intelligence, strict
 > structured-output validation, tenant-scoped audit history, and hard cost
-> controls. The remaining roadmap
+> controls. **I1.5: Pluggable and Local Model Gateway** now preserves a future
+> path for approved hosted, customer-owned, and local-model APIs without making
+> the product depend on one vendor or weakening the intelligence contract. The
+> remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7,
 > evidence-backed intelligence in I1, research/content/AI visibility in
@@ -262,26 +265,27 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 5 | **I1.3 - Governed AI Runtime API — active** | Mistral-first AI becomes standard across plans and can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
 | 6 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Customers can compare the measured baseline with a conservative outcome range for approved recommendations. |
 | 7 | **I1.4 - Evidence-Backed Action Center** | The intelligence output becomes one understandable, prioritized queue with outcomes and follow-up measurement. |
-| 8 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
-| 9 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
-| 10 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, risks, and next actions. |
-| 11 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
-| 12 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
-| 13 | **G1.4-G1.7 - Connected Local and Website Signals** | GBP, listings, reviews, analytics, and form events replace remaining recurring manual entry. |
-| 14 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 15 | **CNT1 - Content, On-Page, and Authority Workspace** | Research and intelligence produce governed page, content, metadata, schema, link, and authority work. |
-| 16 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 17 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 18 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 19 | **PA1 - Product Analytics and Customer Feedback** | The team can measure activation, first value, feature adoption, recommendation outcomes, automation trust, and churn risk. |
-| 20 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 21 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 22 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 23 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
-| 24 | **ML1 - Portfolio Intelligence** | Multi-location operators can find outliers, shared problems, and reusable wins quickly. |
-| 25 | **COM1 - Billing, Entitlements, and Self-Service Accounts** | The commercial plans and active-location allowances become enforceable and self-service. |
-| 26 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 27 | **ENT1 - Agency, API, White Label, and Reporting** | Enterprise and agency workflows justify the upper-tier price. |
+| 8 | **I1.5 - Pluggable and Local Model Gateway** | Platform routing can switch approved AI providers, while an Enterprise owner can connect a customer-controlled compatible model endpoint without changing the intelligence engine or exposing credentials. |
+| 9 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
+| 10 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
+| 11 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, risks, and next actions. |
+| 12 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
+| 13 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 14 | **G1.4-G1.7 - Connected Local and Website Signals** | GBP, listings, reviews, analytics, and form events replace remaining recurring manual entry. |
+| 15 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 16 | **CNT1 - Content, On-Page, and Authority Workspace** | Research and intelligence produce governed page, content, metadata, schema, link, and authority work. |
+| 17 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 18 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 19 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 20 | **PA1 - Product Analytics and Customer Feedback** | The team can measure activation, first value, feature adoption, recommendation outcomes, automation trust, and churn risk. |
+| 21 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 22 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 23 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 24 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
+| 25 | **ML1 - Portfolio Intelligence** | Multi-location operators can find outliers, shared problems, and reusable wins quickly. |
+| 26 | **COM1 - Billing, Entitlements, and Self-Service Accounts** | The commercial plans and active-location allowances become enforceable and self-service. |
+| 27 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 28 | **ENT1 - Agency, API, White Label, and Reporting** | Enterprise and agency workflows justify the upper-tier price. |
 
 Release R1 is complete as of 2026-07-30. The I1.0 migration is applied, hosted
 CrUX configuration is active, the API is deployed, the first standards check
@@ -859,6 +863,9 @@ Scope:
   structured output and tool-contract behavior fit the bounded daily/weekly
   action workload at a low unit cost. Keep a benchmarked Gemini adapter as an
   optional fallback; no product workflow depends on one vendor-specific SDK.
+- Preserve a stable adapter boundary for future OpenAI-compatible hosted or
+  local-model APIs. I1.3 does not add arbitrary endpoint connectivity or a
+  customer-side relay; that operational and security scope belongs to I1.5.
 - Include governed AI actions in every paid plan. Plan differences are monthly
   action/token allowances, concurrency, history, bulk scope, and model-routing
   policy rather than whether the intelligence explanation works at all.
@@ -922,6 +929,75 @@ Acceptance criteria:
   insufficient-evidence state.
 - Every completed action returns to the user with a measured outcome.
 - A service-business owner can explain the top action without SEO terminology.
+
+### Intelligence I1.5 - Pluggable and Local Model Gateway
+
+Goal: let the platform route between approved managed models and let an
+authorized Enterprise owner connect a customer-controlled model API without
+changing the deterministic intelligence engine, weakening validation, or
+exposing model credentials to the browser.
+
+Scheduling note:
+
+- This sprint follows I1.2-I1.4 and does not block the current Mistral-first
+  rollout.
+- Customer-supplied endpoints and local-model relays are Enterprise-only.
+  Solo and Multi-location use the platform-managed governed AI route and cannot
+  add arbitrary model endpoints.
+- A Vercel deployment cannot call `localhost` on a customer's computer. A local
+  model must be exposed through an approved reachable HTTPS endpoint or a
+  separately installed, outbound-only customer relay.
+
+Scope:
+
+- Add a versioned model-provider registry with adapter type, endpoint, model
+  identifier, supported capabilities, ownership, enabled features, health,
+  latency, last validation, and active/standby state.
+- Support the existing Mistral adapter plus a constrained OpenAI-compatible API
+  adapter suitable for approved services such as Ollama, LM Studio, vLLM, or
+  another compatible runtime.
+- Add platform-level provider selection and feature-level routing with a safe
+  default and one-click rollback. Expose customer-controlled provider selection,
+  test connection, and benchmark results only to authorized Enterprise owners
+  and platform administrators.
+- Store credentials server-side as encrypted secrets. Never return API keys or
+  local endpoint credentials to customer JavaScript, logs, prompts, or model
+  output.
+- Protect custom endpoints with HTTPS requirements, DNS/IP validation,
+  private-network and metadata-service blocking, redirect limits, timeouts,
+  response-size limits, egress allow-lists, and auditable administrator
+  approval to prevent server-side request forgery.
+- Define an optional customer-side relay for truly local models. It makes only
+  outbound authenticated connections, receives bounded decision packets, and
+  cannot query the InsightOS database or execute website changes.
+- Run the same structured-output contract, evidence/action allow-lists,
+  hallucination checks, retention rules, deterministic fallback, concurrency,
+  and entitlement controls for every provider.
+- Record provider, model, endpoint identity hash, credential ownership, tokens
+  when reported, duration, estimated platform cost, validation result, and
+  fallback reason in the existing AI audit and cost ledgers.
+- Add an owner-friendly Settings screen that shows provider name, model,
+  connection status, supported actions, privacy boundary, last test, and a
+  plain-language warning when a selected local model is too weak or
+  incompatible.
+
+Acceptance criteria:
+
+- Switching providers never changes the deterministic facts, diagnoses,
+  allowed actions, approval policy, or tenant boundary supplied to the model.
+- A provider cannot become active until health, schema-conformance,
+  supported-claim, latency, and bounded-output tests pass.
+- Solo and Multi-location users cannot create, edit, select, or supply
+  credentials for a custom or local-model endpoint.
+- A failed or unreachable customer endpoint falls back to the approved platform
+  route or deterministic narrative according to organization policy.
+- Custom endpoints cannot reach loopback, link-local, cloud metadata, or
+  unapproved private-network targets from the hosted backend.
+- The local relay can be revoked and disconnected without redeploying InsightOS
+  or leaving an active credential.
+- An organization can prove which provider and model produced every narrative
+  while platform margin reporting excludes customer-owned compute cost and
+  still counts usage against product safety limits.
 
 ### Reporting RPT1 - Premium Reporting and Delivery
 
@@ -1486,7 +1562,7 @@ Acceptance criteria:
 | --- | ---: | --- |
 | Solo | $299/month · 1 active location | R1, TR1, G1.2-G1.7, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1, WP1.1-WP1.2, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
 | Multi-location | $699/month · up to 10 active locations | All Solo gates plus ML1 portfolio intelligence, pooled AI/provider allowances, team roles, delegated location access, and bulk workflows |
-| Enterprise | From $1,999/month · 11-20 active locations | All Multi-location gates plus ENT1 API/export, white label, advanced roles, custom limits and per-location pricing above 20, durable reporting, onboarding, and priority-support workflows |
+| Enterprise | From $1,999/month · 11-20 active locations | All Multi-location gates plus ENT1 API/export, white label, advanced roles, custom limits and per-location pricing above 20, durable reporting, onboarding, priority-support workflows, and I1.5 customer-owned or local-model API access |
 
 An invite-only paid beta may start earlier with explicit limits and known-feature
 disclosures. The public plans above must not be marketed as Semrush or
