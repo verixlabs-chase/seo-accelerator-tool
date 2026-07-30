@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -104,7 +106,15 @@ def get_search_console_metrics(
     request: Request,
     organization_id: str,
     campaign_id: str,
-    days: int = Query(default=28, ge=7, le=90),
+    days: int = Query(default=90, ge=7, le=480),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    comparison_mode: str = Query(
+        default="previous_period",
+        pattern="^(previous_period|previous_year|custom|none)$",
+    ),
+    comparison_date_from: date | None = Query(default=None),
+    comparison_date_to: date | None = Query(default=None),
     user: dict = Depends(require_org_role({"org_user"})),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -115,6 +125,11 @@ def get_search_console_metrics(
             organization_id=organization_id,
             campaign_id=campaign_id,
             days=days,
+            date_from=date_from,
+            date_to=date_to,
+            comparison_mode=comparison_mode,
+            comparison_date_from=comparison_date_from,
+            comparison_date_to=comparison_date_to,
         )
     except data_connections_service.DataConnectionError as exc:
         _raise_connection_error(exc)

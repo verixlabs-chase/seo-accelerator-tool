@@ -43,6 +43,12 @@ import {
   buildRuntimeTruthSignal,
   getRuntimeTruthSummary,
 } from "../truth/runtimeTruth.mjs";
+import {
+  alignSearchComparisonPoints,
+  buildSearchMetricsQuery,
+  SEARCH_COMPARISON_OPTIONS,
+  SEARCH_DATE_RANGE_OPTIONS,
+} from "../truth/dashboardDateRanges.mjs";
 
 type Me = {
   id?: string;
@@ -101,6 +107,7 @@ type SearchConsoleMetrics = {
   date_from?: string | null;
   date_to?: string | null;
   data_days: number;
+  coverage_percent?: number;
   summary?: {
     clicks: number;
     impressions: number;
@@ -108,7 +115,20 @@ type SearchConsoleMetrics = {
     avg_position?: number | null;
   } | null;
   comparison?: {
+    mode?: string;
+    label?: string;
+    date_from?: string;
+    date_to?: string;
     period_days: number;
+    data_days?: number;
+    coverage_percent?: number;
+    is_complete?: boolean;
+    summary?: {
+      clicks: number;
+      impressions: number;
+      ctr_percent: number;
+      avg_position?: number | null;
+    } | null;
     clicks_change_percent?: number | null;
     impressions_change_percent?: number | null;
     ctr_change_points?: number | null;
@@ -121,6 +141,28 @@ type SearchConsoleMetrics = {
     source_truth?: string;
   } | null;
   points: SearchConsolePoint[];
+  comparison_points?: SearchConsolePoint[];
+};
+
+type SearchDateRangeForm = {
+  rangePreset: "28" | "90" | "180" | "365" | "custom";
+  comparisonMode: "previous_period" | "previous_year" | "custom" | "none";
+  dateFrom: string;
+  dateTo: string;
+  comparisonDateFrom: string;
+  comparisonDateTo: string;
+};
+
+type SearchComparisonChartPoint = {
+  periodDay: number;
+  label: string;
+  comparisonLabel: string;
+  clicks: number | null;
+  impressions: number | null;
+  avgPosition: number | null;
+  comparisonClicks: number | null;
+  comparisonImpressions: number | null;
+  comparisonAvgPosition: number | null;
 };
 
 type WorkflowState = {
@@ -203,6 +245,23 @@ function formatMetricDate(value?: string | null) {
   }).format(parsed);
 }
 
+function formatDateInput(daysAgo: number) {
+  const value = new Date();
+  value.setUTCDate(value.getUTCDate() - daysAgo);
+  return value.toISOString().slice(0, 10);
+}
+
+function buildDefaultSearchDateRangeForm(): SearchDateRangeForm {
+  return {
+    rangePreset: "90",
+    comparisonMode: "previous_period",
+    dateFrom: formatDateInput(91),
+    dateTo: formatDateInput(2),
+    comparisonDateFrom: formatDateInput(181),
+    comparisonDateTo: formatDateInput(92),
+  };
+}
+
 function formatChange(value?: number | null, noun = "visits") {
   if (value === null || value === undefined) {
     return "New baseline";
@@ -277,7 +336,12 @@ function TrendTooltip({
   label,
 }: {
   active?: boolean;
-  payload?: Array<{ color?: string; value?: number; name?: string }>;
+  payload?: Array<{
+    color?: string;
+    value?: number;
+    name?: string;
+    payload?: { comparisonLabel?: string };
+  }>;
   label?: string;
 }) {
   if (!active || !payload || payload.length === 0) {
@@ -289,6 +353,11 @@ function TrendTooltip({
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
         {label}
       </p>
+      {payload[0]?.payload?.comparisonLabel ? (
+        <p className="mt-1 text-xs text-zinc-500">
+          Compared with {payload[0].payload.comparisonLabel}
+        </p>
+      ) : null}
       <div className="mt-2 space-y-1.5">
         {payload.map((entry) => (
           <div key={entry.name} className="flex items-center gap-2 text-sm text-zinc-200">
@@ -308,8 +377,14 @@ function TrendTooltip({
 function SearchConsoleTrendChart({
   data,
 }: {
-  data: Array<{ label: string; clicks: number; impressions: number }>;
+  data: SearchComparisonChartPoint[];
 }) {
+  const hasComparison = data.some(
+    (point) =>
+      point.comparisonClicks !== null ||
+      point.comparisonImpressions !== null,
+  );
+
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
@@ -365,6 +440,32 @@ function SearchConsoleTrendChart({
             activeDot={{ r: 4, fill: "#FF6A1A", stroke: "#0a0a0a", strokeWidth: 2 }}
             name="Visits"
           />
+          {hasComparison ? (
+            <>
+              <Line
+                yAxisId="impressions"
+                type="monotone"
+                dataKey="comparisonImpressions"
+                stroke="#94a3b8"
+                strokeWidth={1.6}
+                strokeDasharray="6 5"
+                dot={false}
+                connectNulls
+                name="Times shown — comparison"
+              />
+              <Line
+                yAxisId="clicks"
+                type="monotone"
+                dataKey="comparisonClicks"
+                stroke="#38bdf8"
+                strokeWidth={2}
+                strokeDasharray="6 5"
+                dot={false}
+                connectNulls
+                name="Visits — comparison"
+              />
+            </>
+          ) : null}
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -374,9 +475,16 @@ function SearchConsoleTrendChart({
 function SearchPositionTrendChart({
   data,
 }: {
-  data: Array<{ label: string; avgPosition: number | null }>;
+  data: SearchComparisonChartPoint[];
 }) {
-  const positionData = data.filter((point) => point.avgPosition !== null);
+  const positionData = data.filter(
+    (point) =>
+      point.avgPosition !== null ||
+      point.comparisonAvgPosition !== null,
+  );
+  const hasComparison = positionData.some(
+    (point) => point.comparisonAvgPosition !== null,
+  );
 
   return (
     <div className="h-72">
@@ -407,9 +515,158 @@ function SearchPositionTrendChart({
             activeDot={{ r: 4, fill: "#FF6A1A", stroke: "#0a0a0a", strokeWidth: 2 }}
             name="Average position"
           />
+          {hasComparison ? (
+            <Line
+              type="monotone"
+              dataKey="comparisonAvgPosition"
+              stroke="#38bdf8"
+              strokeWidth={2}
+              strokeDasharray="6 5"
+              dot={false}
+              connectNulls
+              name="Comparison position"
+            />
+          ) : null}
         </LineChart>
       </ResponsiveContainer>
     </div>
+  );
+}
+
+function SearchDateComparisonControls({
+  value,
+  onChange,
+  onApply,
+  error,
+  loading,
+}: {
+  value: SearchDateRangeForm;
+  onChange: (next: SearchDateRangeForm) => void;
+  onApply: () => void;
+  error: string;
+  loading: boolean;
+}) {
+  const inputClassName =
+    "mt-1.5 w-full rounded-md border border-[#303137] bg-[#101114] px-3 py-2 text-sm text-white outline-none focus:border-accent-500/60";
+
+  return (
+    <section className="rounded-md border border-[#303137] bg-[#111214] p-4">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
+        <label className="min-w-52 flex-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+          Show results from
+          <select
+            aria-label="Choose Google performance date range"
+            value={value.rangePreset}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                rangePreset: event.target.value as SearchDateRangeForm["rangePreset"],
+              })
+            }
+            className={inputClassName}
+          >
+            {SEARCH_DATE_RANGE_OPTIONS.map((option: { value: string; label: string }) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {value.rangePreset === "custom" ? (
+          <>
+            <label className="min-w-44 flex-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              Start date
+              <input
+                aria-label="Google performance start date"
+                type="date"
+                value={value.dateFrom}
+                onChange={(event) => onChange({ ...value, dateFrom: event.target.value })}
+                className={inputClassName}
+              />
+            </label>
+            <label className="min-w-44 flex-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              End date
+              <input
+                aria-label="Google performance end date"
+                type="date"
+                value={value.dateTo}
+                onChange={(event) => onChange({ ...value, dateTo: event.target.value })}
+                className={inputClassName}
+              />
+            </label>
+          </>
+        ) : null}
+
+        <label className="min-w-56 flex-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+          Compare with
+          <select
+            aria-label="Choose Google performance comparison"
+            value={value.comparisonMode}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                comparisonMode: event.target
+                  .value as SearchDateRangeForm["comparisonMode"],
+              })
+            }
+            className={inputClassName}
+          >
+            {SEARCH_COMPARISON_OPTIONS.map(
+              (option: { value: string; label: string }) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+
+        {value.comparisonMode === "custom" ? (
+          <>
+            <label className="min-w-44 flex-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              Compare from
+              <input
+                aria-label="Comparison start date"
+                type="date"
+                value={value.comparisonDateFrom}
+                onChange={(event) =>
+                  onChange({ ...value, comparisonDateFrom: event.target.value })
+                }
+                className={inputClassName}
+              />
+            </label>
+            <label className="min-w-44 flex-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              Compare through
+              <input
+                aria-label="Comparison end date"
+                type="date"
+                value={value.comparisonDateTo}
+                onChange={(event) =>
+                  onChange({ ...value, comparisonDateTo: event.target.value })
+                }
+                className={inputClassName}
+              />
+            </label>
+          </>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={loading}
+          className="rounded-md border border-accent-500/40 bg-accent-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {loading ? "Updating..." : "Update charts"}
+        </button>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs leading-5 text-zinc-500">
+          Choose up to 16 months of saved Google history. Dashed lines show the comparison dates.
+        </p>
+        {error ? <p className="text-xs font-medium text-rose-200">{error}</p> : null}
+      </div>
+    </section>
   );
 }
 
@@ -418,16 +675,21 @@ function SearchPerformanceOverview({
   metrics,
   trend,
   onOpenSettings,
+  dateRangeForm,
+  onDateRangeFormChange,
+  onApplyDateRange,
+  dateRangeError,
+  dateRangeLoading,
 }: {
   campaign: Campaign;
   metrics: SearchConsoleMetrics | null;
-  trend: Array<{
-    label: string;
-    clicks: number;
-    impressions: number;
-    avgPosition: number | null;
-  }>;
+  trend: SearchComparisonChartPoint[];
   onOpenSettings: () => void;
+  dateRangeForm: SearchDateRangeForm;
+  onDateRangeFormChange: (next: SearchDateRangeForm) => void;
+  onApplyDateRange: () => void;
+  dateRangeError: string;
+  dateRangeLoading: boolean;
 }) {
   const isReady = metrics?.data_status === "ready" && Boolean(metrics.summary);
 
@@ -459,6 +721,16 @@ function SearchPerformanceOverview({
               : "Waiting for Google data"}
         </span>
       </div>
+
+      {metrics?.data_status !== "not_connected" ? (
+        <SearchDateComparisonControls
+          value={dateRangeForm}
+          onChange={onDateRangeFormChange}
+          onApply={onApplyDateRange}
+          error={dateRangeError}
+          loading={dateRangeLoading}
+        />
+      ) : null}
 
       {isReady && metrics?.summary ? (
         <div className="flex flex-col gap-4">
@@ -527,18 +799,32 @@ function SearchPerformanceOverview({
             <ChartCard
               eyebrow="Customer discovery"
               title="Google appearances and website visits"
-              summary="The light area shows how often you appeared. The orange line shows visits."
+              summary={
+                metrics.comparison
+                  ? "Solid orange shows the selected dates. Dashed blue and gray show the comparison dates."
+                  : "The light area shows how often you appeared. The orange line shows visits."
+              }
               chart={<SearchConsoleTrendChart data={trend} />}
               footer={
                 <p className="text-sm leading-5 text-zinc-300">
-                  Compared with the prior {metrics.comparison?.period_days || 14} available days.
+                  {metrics.comparison
+                    ? `Compared with ${formatMetricDate(
+                        metrics.comparison.date_from,
+                      )}–${formatMetricDate(metrics.comparison.date_to)}. ${
+                        metrics.comparison.data_days ?? 0
+                      } of ${metrics.comparison.period_days} comparison days are available.`
+                    : "Comparison is turned off for this view."}
                 </p>
               }
             />
             <ChartCard
               eyebrow="Search position"
               title="Average Google position by day"
-              summary="Lines moving upward are better because a smaller position number is closer to the top."
+              summary={
+                metrics.comparison
+                  ? "Orange is the selected period and dashed blue is the comparison. Higher on the chart is better."
+                  : "Lines moving upward are better because a smaller position number is closer to the top."
+              }
               chart={<SearchPositionTrendChart data={trend} />}
               footer={
                 <p className="text-sm leading-5 text-zinc-300">
@@ -561,14 +847,18 @@ function SearchPerformanceOverview({
           title={
             metrics.data_status === "not_connected"
               ? "Connect Search Console for this location"
-              : "Search Console is connected, but data has not arrived yet"
+              : "No Google data is saved for these dates"
           }
           summary={
             metrics.data_status === "not_connected"
               ? "Choose this location's Google Search Console website property in Settings, then run the first sync."
-              : "Open Settings to check the connection and run a sync."
+              : "Choose another date range above, or open Settings and sync this location to bring in more history."
           }
-          actionLabel="Open connection settings"
+          actionLabel={
+            metrics.data_status === "not_connected"
+              ? "Connect Search Console"
+              : "Check saved Google history"
+          }
           onAction={onOpenSettings}
         />
       ) : (
@@ -652,6 +942,12 @@ export default function DashboardPage() {
   const [latestReportTruth, setLatestReportTruth] = useState<RuntimeTruth | null>(null);
   const [searchConsoleMetrics, setSearchConsoleMetrics] =
     useState<SearchConsoleMetrics | null>(null);
+  const [searchDateRangeForm, setSearchDateRangeForm] =
+    useState<SearchDateRangeForm>(() => buildDefaultSearchDateRangeForm());
+  const [searchMetricsQuery, setSearchMetricsQuery] = useState(() =>
+    buildSearchMetricsQuery(buildDefaultSearchDateRangeForm()),
+  );
+  const [dateRangeError, setDateRangeError] = useState("");
   const latestLoadRequestRef = useRef(0);
   const activeCampaignRef = useRef(selectedCampaignId);
   activeCampaignRef.current = selectedCampaignId;
@@ -667,6 +963,18 @@ export default function DashboardPage() {
         throw new Error("Request timed out. Please try again.");
       }
       throw err;
+    }
+  }
+
+  function applySearchDateRange() {
+    try {
+      const query = buildSearchMetricsQuery(searchDateRangeForm);
+      setDateRangeError("");
+      setSearchMetricsQuery(query);
+    } catch (err) {
+      setDateRangeError(
+        err instanceof Error ? err.message : "Choose valid dates before updating.",
+      );
     }
   }
 
@@ -711,7 +1019,7 @@ export default function DashboardPage() {
       organizationId
         ? api(
             `/organizations/${encodeURIComponent(organizationId)}/data-connections/` +
-              `google-search-console/metrics/${encodeURIComponent(campaignId)}?days=28`,
+              `google-search-console/metrics/${encodeURIComponent(campaignId)}?${searchMetricsQuery}`,
           )
         : Promise.resolve(null),
     ]);
@@ -953,7 +1261,7 @@ export default function DashboardPage() {
     return () => {
       latestLoadRequestRef.current += 1;
     };
-  }, [me?.organization_id, selectedCampaignId]);
+  }, [me?.organization_id, searchMetricsQuery, selectedCampaignId]);
   /* eslint-enable react-hooks/exhaustive-deps */
 
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
@@ -1029,15 +1337,30 @@ export default function DashboardPage() {
 
   const searchConsoleTrend = useMemo(
     () =>
-      (searchConsoleMetrics?.points || []).map((point) => ({
-        label: formatMetricDate(point.date),
-        clicks: Number(point.clicks || 0),
-        impressions: Number(point.impressions || 0),
-        avgPosition:
-          point.avg_position === null || point.avg_position === undefined
-            ? null
-            : Number(point.avg_position),
-      })),
+      alignSearchComparisonPoints(
+        searchConsoleMetrics?.points || [],
+        searchConsoleMetrics?.comparison_points || [],
+      ).map(
+        (point: {
+          periodDay: number;
+          date: string | null;
+          comparisonDate: string | null;
+          clicks: number | null;
+          impressions: number | null;
+          avgPosition: number | null;
+          comparisonClicks: number | null;
+          comparisonImpressions: number | null;
+          comparisonAvgPosition: number | null;
+        }) => ({
+          ...point,
+          label: point.date
+            ? formatMetricDate(point.date)
+            : `Day ${point.periodDay}`,
+          comparisonLabel: point.comparisonDate
+            ? formatMetricDate(point.comparisonDate)
+            : "",
+        }),
+      ),
     [searchConsoleMetrics],
   );
 
@@ -1282,7 +1605,13 @@ export default function DashboardPage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Live API data"
+      dateRangeLabel={
+        searchConsoleMetrics?.date_from && searchConsoleMetrics?.date_to
+          ? `${formatMetricDate(searchConsoleMetrics.date_from)}–${formatMetricDate(
+              searchConsoleMetrics.date_to,
+            )}`
+          : "Live API data"
+      }
       topBarActions={
         <>
           <button
@@ -1369,6 +1698,11 @@ export default function DashboardPage() {
             metrics={searchConsoleMetrics}
             trend={searchConsoleTrend}
             onOpenSettings={() => router.push("/settings")}
+            dateRangeForm={searchDateRangeForm}
+            onDateRangeFormChange={setSearchDateRangeForm}
+            onApplyDateRange={applySearchDateRange}
+            dateRangeError={dateRangeError}
+            dateRangeLoading={loading}
           />
         ) : null}
 

@@ -102,6 +102,7 @@ def _search_console_sync_handler(
     data_connections_service.mark_sync_succeeded(
         db,
         connection,
+        metric_start_date=start_date.isoformat(),
         metric_end_date=end_date.isoformat(),
     )
     return {
@@ -161,15 +162,47 @@ def _search_console_sync_window(
     if payload_start and payload_end:
         return date.fromisoformat(payload_start), date.fromisoformat(payload_end)
 
-    cursor_date_raw = str((connection.sync_cursor or {}).get("last_metric_date") or "").strip()
+    sync_cursor = dict(connection.sync_cursor or {})
+    cursor_date_raw = str(sync_cursor.get("last_metric_date") or "").strip()
+    target_backfill_days = max(
+        1,
+        min(
+            int(settings.data_connection_initial_backfill_days),
+            data_connections_service.MAX_SEARCH_CONSOLE_RANGE_DAYS,
+        ),
+    )
     if cursor_date_raw:
         cursor_date = date.fromisoformat(cursor_date_raw)
+        history_start_raw = str(sync_cursor.get("history_start_date") or "").strip()
+        history_start = date.fromisoformat(history_start_raw) if history_start_raw else None
+        stored_history_days = (
+            (cursor_date - history_start).days + 1
+            if history_start is not None and history_start <= cursor_date
+            else 0
+        )
+        if stored_history_days < target_backfill_days:
+            backfill_end = min(cursor_date, end_date)
+            return (
+                backfill_end - timedelta(days=target_backfill_days - 1),
+                backfill_end,
+            )
         start_date = min(cursor_date + timedelta(days=1), end_date)
     else:
-        start_date = end_date - timedelta(
-            days=max(1, int(settings.data_connection_initial_backfill_days)) - 1
-        )
+        start_date = end_date - timedelta(days=target_backfill_days - 1)
     return start_date, end_date
+
+
+def _search_console_sync_idempotency_key(
+    connection_id: str,
+    *,
+    start_date: date,
+    end_date: date,
+) -> str:
+    del start_date
+    # v2 intentionally separates the 16-month history rollout from older
+    # 28-day jobs while keeping repeat requests for the same reporting day
+    # idempotent after the initial backfill completes.
+    return f"search-console-sync:{connection_id}:v2:{end_date.isoformat()}"
 
 
 def create_search_console_sync_job(
@@ -186,7 +219,11 @@ def create_search_console_sync_job(
         job_type=SEARCH_CONSOLE_SYNC_JOB_TYPE,
         entity_type="data_connection",
         entity_id=connection.id,
-        idempotency_key=f"search-console-sync:{connection.id}:{end_date.isoformat()}",
+        idempotency_key=_search_console_sync_idempotency_key(
+            connection.id,
+            start_date=start_date,
+            end_date=end_date,
+        ),
         payload={
             "tenant_id": connection.tenant_id,
             "organization_id": connection.organization_id,
@@ -250,8 +287,12 @@ def run_search_console_sync_now(
     if connection is None:
         raise ValueError("Search Console connection not found.")
 
-    _start_date, end_date = _search_console_sync_window(connection, now=resolved_now)
-    idempotency_key = f"search-console-sync:{connection.id}:{end_date.isoformat()}"
+    start_date, end_date = _search_console_sync_window(connection, now=resolved_now)
+    idempotency_key = _search_console_sync_idempotency_key(
+        connection.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
     existing = db.query(PlatformJob).filter(PlatformJob.idempotency_key == idempotency_key).first()
     job = create_search_console_sync_job(db, connection=connection, now=resolved_now)
     created = existing is None

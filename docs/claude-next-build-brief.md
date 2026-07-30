@@ -164,6 +164,12 @@ primary reader defined as a service-business owner rather than an SEO operator.
 > panels are being replaced by at most one dismissible `InsightOS guide` per
 > page. Reports remain outside this closing slice except for the shared guidance
 > treatment.
+>
+> **Historical comparison slice completed 2026-07-30:** Overview Search Console
+> visualizations now support 28-day, 3-month, 6-month, 12-month, and custom
+> ranges, with previous-period, prior-year, custom-period, or no comparison.
+> The stored-history target is now 480 days, and every chart reports actual
+> coverage instead of presenting a partial comparison as complete.
 
 Scope:
 - Rewrite customer-facing copy for a person who runs a local or multi-location service business.
@@ -183,6 +189,9 @@ Scope:
 - Reduce Website Health to one `Fix this first` decision, one plain-language next action, a compact visual summary, and expandable technical details.
 - Remove duplicated provider setup panels from pages where setup is already complete.
 - Consolidate repeated controls into shared components.
+- Let owners change the date range directly above historical charts and compare
+  against the previous period, the same dates last year, or independently chosen
+  dates without leaving the page.
 - Verify the full journey on desktop, tablet, and mobile.
 - Run task-based usability checks:
   - switch locations
@@ -202,6 +211,8 @@ Acceptance criteria:
 - No page renders more than one proactive guidance widget, and the user can dismiss it without losing the page's primary data or controls.
 - Overview begins with live performance data when it exists and has no empty desktop column under the daily briefing.
 - Website Health exposes the first fix and its next action before issue counts or technical terminology.
+- Overview supports more than 14 days of Search Console history, labels both
+  comparison periods, and discloses incomplete historical coverage.
 - Visual polish follows the finalized hierarchy rather than masking an unclear workflow.
 
 ## 1B. Roadmap Tracks and Next Product Phase

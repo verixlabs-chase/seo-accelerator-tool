@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
@@ -20,6 +20,7 @@ from app.services.provider_credentials_service import (
 
 
 GOOGLE_SEARCH_CONSOLE_PROVIDER = "google_search_console"
+MAX_SEARCH_CONSOLE_RANGE_DAYS = 480
 CONNECTION_STATUS_CONNECTED = "connected"
 CONNECTION_STATUS_SYNCING = "syncing"
 CONNECTION_STATUS_CURRENT = "current"
@@ -119,7 +120,12 @@ def get_search_console_metrics(
     *,
     organization_id: str,
     campaign_id: str,
-    days: int = 28,
+    days: int = 90,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    comparison_mode: str = "previous_period",
+    comparison_date_from: date | None = None,
+    comparison_date_to: date | None = None,
 ) -> dict[str, Any]:
     campaign = (
         db.query(Campaign)
@@ -159,6 +165,7 @@ def get_search_console_metrics(
             "summary": None,
             "comparison": None,
             "points": [],
+            "comparison_points": [],
         }
 
     location = (
@@ -169,48 +176,122 @@ def get_search_console_metrics(
         )
         .first()
     )
-    rows = list(
-        reversed(
-            db.query(SearchConsoleDailyMetric)
-            .filter(
-                SearchConsoleDailyMetric.organization_id == organization_id,
-                SearchConsoleDailyMetric.campaign_id == campaign_id,
-            )
-            .order_by(SearchConsoleDailyMetric.metric_date.desc())
-            .limit(days)
-            .all()
+    latest_metric_date = (
+        db.query(SearchConsoleDailyMetric.metric_date)
+        .filter(
+            SearchConsoleDailyMetric.organization_id == organization_id,
+            SearchConsoleDailyMetric.campaign_id == campaign_id,
         )
+        .order_by(SearchConsoleDailyMetric.metric_date.desc())
+        .limit(1)
+        .scalar()
+    )
+    if latest_metric_date is None:
+        return {
+            "organization_id": organization_id,
+            "campaign_id": campaign_id,
+            "provider_name": GOOGLE_SEARCH_CONSOLE_PROVIDER,
+            "data_status": "no_data",
+            "connection": serialize_connection(
+                connection,
+                campaign=campaign,
+                location=location,
+            ),
+            "date_from": None,
+            "date_to": None,
+            "days_requested": days,
+            "data_days": 0,
+            "summary": None,
+            "comparison": None,
+            "points": [],
+            "comparison_points": [],
+        }
+
+    (
+        primary_start,
+        primary_end,
+        comparison_start,
+        comparison_end,
+        normalized_comparison_mode,
+    ) = _resolve_search_console_periods(
+        latest_metric_date=latest_metric_date,
+        days=days,
+        date_from=date_from,
+        date_to=date_to,
+        comparison_mode=comparison_mode,
+        comparison_date_from=comparison_date_from,
+        comparison_date_to=comparison_date_to,
+    )
+    rows = _search_console_rows_for_period(
+        db,
+        organization_id=organization_id,
+        campaign_id=campaign_id,
+        date_from=primary_start,
+        date_to=primary_end,
     )
     summary = _summarize_search_console_rows(rows) if rows else None
     comparison = None
-    comparison_period_days = len(rows) // 2
-    if comparison_period_days > 0:
-        previous_rows = rows[-comparison_period_days * 2 : -comparison_period_days]
-        current_rows = rows[-comparison_period_days:]
-        if len(previous_rows) == len(current_rows):
-            previous = _summarize_search_console_rows(previous_rows)
-            current = _summarize_search_console_rows(current_rows)
-            comparison = {
-                "period_days": comparison_period_days,
-                "clicks_change_percent": _percent_change(
-                    current["clicks"],
-                    previous["clicks"],
-                ),
-                "impressions_change_percent": _percent_change(
-                    current["impressions"],
-                    previous["impressions"],
-                ),
-                "ctr_change_points": round(
-                    current["ctr_percent"] - previous["ctr_percent"],
+    comparison_rows: list[SearchConsoleDailyMetric] = []
+    if comparison_start is not None and comparison_end is not None:
+        comparison_rows = _search_console_rows_for_period(
+            db,
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            date_from=comparison_start,
+            date_to=comparison_end,
+        )
+        comparison_summary = (
+            _summarize_search_console_rows(comparison_rows)
+            if comparison_rows
+            else None
+        )
+        comparison_period_days = (comparison_end - comparison_start).days + 1
+        comparison = {
+            "mode": normalized_comparison_mode,
+            "label": _comparison_label(normalized_comparison_mode),
+            "date_from": comparison_start.isoformat(),
+            "date_to": comparison_end.isoformat(),
+            "period_days": comparison_period_days,
+            "data_days": len(comparison_rows),
+            "coverage_percent": round(
+                (len(comparison_rows) / comparison_period_days) * 100,
+                1,
+            ),
+            "is_complete": len(comparison_rows) == comparison_period_days,
+            "summary": comparison_summary,
+            "clicks_change_percent": (
+                _percent_change(summary["clicks"], comparison_summary["clicks"])
+                if summary is not None and comparison_summary is not None
+                else None
+            ),
+            "impressions_change_percent": (
+                _percent_change(
+                    summary["impressions"],
+                    comparison_summary["impressions"],
+                )
+                if summary is not None and comparison_summary is not None
+                else None
+            ),
+            "ctr_change_points": (
+                round(
+                    summary["ctr_percent"] - comparison_summary["ctr_percent"],
                     2,
-                ),
-                "position_improvement": (
-                    round(previous["avg_position"] - current["avg_position"], 2)
-                    if previous["avg_position"] is not None
-                    and current["avg_position"] is not None
-                    else None
-                ),
-            }
+                )
+                if summary is not None and comparison_summary is not None
+                else None
+            ),
+            "position_improvement": (
+                round(
+                    comparison_summary["avg_position"] - summary["avg_position"],
+                    2,
+                )
+                if summary is not None
+                and comparison_summary is not None
+                and comparison_summary["avg_position"] is not None
+                and summary["avg_position"] is not None
+                else None
+            ),
+        }
 
     return {
         "organization_id": organization_id,
@@ -222,30 +303,162 @@ def get_search_console_metrics(
             campaign=campaign,
             location=location,
         ),
-        "date_from": rows[0].metric_date.isoformat() if rows else None,
-        "date_to": rows[-1].metric_date.isoformat() if rows else None,
-        "days_requested": days,
+        "date_from": primary_start.isoformat(),
+        "date_to": primary_end.isoformat(),
+        "days_requested": (primary_end - primary_start).days + 1,
         "data_days": len(rows),
+        "coverage_percent": round(
+            (len(rows) / ((primary_end - primary_start).days + 1)) * 100,
+            1,
+        ),
         "summary": summary,
         "comparison": comparison,
-        "points": [
-            {
-                "date": row.metric_date.isoformat(),
-                "clicks": row.clicks,
-                "impressions": row.impressions,
-                "ctr_percent": (
-                    round((row.clicks / row.impressions) * 100, 2)
-                    if row.impressions > 0
-                    else 0.0
-                ),
-                "avg_position": (
-                    round(row.avg_position, 2)
-                    if row.avg_position is not None
-                    else None
-                ),
-            }
-            for row in rows
+        "points": [_serialize_search_console_point(row) for row in rows],
+        "comparison_points": [
+            _serialize_search_console_point(row)
+            for row in comparison_rows
         ],
+    }
+
+
+def _resolve_search_console_periods(
+    *,
+    latest_metric_date: date,
+    days: int,
+    date_from: date | None,
+    date_to: date | None,
+    comparison_mode: str,
+    comparison_date_from: date | None,
+    comparison_date_to: date | None,
+) -> tuple[date, date, date | None, date | None, str]:
+    if (date_from is None) != (date_to is None):
+        raise DataConnectionError(
+            "Choose both a start date and an end date.",
+            reason_code="incomplete_date_range",
+        )
+    if date_from is not None and date_to is not None:
+        primary_start, primary_end = _validate_metric_period(
+            date_from,
+            date_to,
+            label="selected",
+        )
+    else:
+        normalized_days = max(7, min(int(days), MAX_SEARCH_CONSOLE_RANGE_DAYS))
+        primary_end = latest_metric_date
+        primary_start = primary_end - timedelta(days=normalized_days - 1)
+
+    mode = str(comparison_mode or "previous_period").strip().lower()
+    if mode == "none":
+        return primary_start, primary_end, None, None, mode
+
+    primary_period_days = (primary_end - primary_start).days + 1
+    if mode == "previous_period":
+        resolved_comparison_end = primary_start - timedelta(days=1)
+        resolved_comparison_start = resolved_comparison_end - timedelta(
+            days=primary_period_days - 1
+        )
+    elif mode == "previous_year":
+        resolved_comparison_start = _shift_year(primary_start, years=-1)
+        resolved_comparison_end = _shift_year(primary_end, years=-1)
+    elif mode == "custom":
+        if comparison_date_from is None or comparison_date_to is None:
+            raise DataConnectionError(
+                "Choose both comparison dates.",
+                reason_code="incomplete_comparison_range",
+            )
+        resolved_comparison_start, resolved_comparison_end = _validate_metric_period(
+            comparison_date_from,
+            comparison_date_to,
+            label="comparison",
+        )
+    else:
+        raise DataConnectionError(
+            "Choose a supported comparison option.",
+            reason_code="invalid_comparison_mode",
+        )
+
+    return (
+        primary_start,
+        primary_end,
+        resolved_comparison_start,
+        resolved_comparison_end,
+        mode,
+    )
+
+
+def _validate_metric_period(
+    period_start: date,
+    period_end: date,
+    *,
+    label: str,
+) -> tuple[date, date]:
+    if period_end < period_start:
+        raise DataConnectionError(
+            f"The {label} end date must be on or after its start date.",
+            reason_code="invalid_date_range",
+        )
+    period_days = (period_end - period_start).days + 1
+    if period_days > MAX_SEARCH_CONSOLE_RANGE_DAYS:
+        raise DataConnectionError(
+            f"The {label} date range cannot exceed {MAX_SEARCH_CONSOLE_RANGE_DAYS} days.",
+            reason_code="date_range_too_large",
+        )
+    return period_start, period_end
+
+
+def _shift_year(value: date, *, years: int) -> date:
+    try:
+        return value.replace(year=value.year + years)
+    except ValueError:
+        return value.replace(year=value.year + years, day=28)
+
+
+def _comparison_label(mode: str) -> str:
+    if mode == "previous_year":
+        return "Same dates last year"
+    if mode == "custom":
+        return "Chosen comparison dates"
+    return "Previous period"
+
+
+def _search_console_rows_for_period(
+    db: Session,
+    *,
+    organization_id: str,
+    campaign_id: str,
+    date_from: date,
+    date_to: date,
+) -> list[SearchConsoleDailyMetric]:
+    return (
+        db.query(SearchConsoleDailyMetric)
+        .filter(
+            SearchConsoleDailyMetric.organization_id == organization_id,
+            SearchConsoleDailyMetric.campaign_id == campaign_id,
+            SearchConsoleDailyMetric.metric_date >= date_from,
+            SearchConsoleDailyMetric.metric_date <= date_to,
+        )
+        .order_by(SearchConsoleDailyMetric.metric_date.asc())
+        .all()
+    )
+
+
+def _serialize_search_console_point(
+    row: SearchConsoleDailyMetric,
+) -> dict[str, str | int | float | None]:
+    return {
+        "date": row.metric_date.isoformat(),
+        "clicks": row.clicks,
+        "impressions": row.impressions,
+        "ctr_percent": (
+            round((row.clicks / row.impressions) * 100, 2)
+            if row.impressions > 0
+            else 0.0
+        ),
+        "avg_position": (
+            round(row.avg_position, 2)
+            if row.avg_position is not None
+            else None
+        ),
     }
 
 
@@ -508,6 +721,7 @@ def mark_sync_succeeded(
     db: Session,
     connection: DataConnection,
     *,
+    metric_start_date: str,
     metric_end_date: str,
     now: datetime | None = None,
 ) -> None:
@@ -520,9 +734,20 @@ def mark_sync_succeeded(
     )
     connection.last_error_code = None
     connection.last_error_message = None
+    sync_cursor = dict(connection.sync_cursor or {})
+    previous_start_raw = str(sync_cursor.get("history_start_date") or "").strip()
+    previous_end_raw = str(sync_cursor.get("last_metric_date") or "").strip()
+    resolved_start = date.fromisoformat(metric_start_date)
+    resolved_end = date.fromisoformat(metric_end_date)
+    if previous_start_raw:
+        resolved_start = min(resolved_start, date.fromisoformat(previous_start_raw))
+    if previous_end_raw:
+        resolved_end = max(resolved_end, date.fromisoformat(previous_end_raw))
     connection.sync_cursor = {
-        **dict(connection.sync_cursor or {}),
-        "last_metric_date": metric_end_date,
+        **sync_cursor,
+        "history_start_date": resolved_start.isoformat(),
+        "last_metric_date": resolved_end.isoformat(),
+        "history_days": (resolved_end - resolved_start).days + 1,
     }
     connection.updated_at = resolved_now
     db.flush()

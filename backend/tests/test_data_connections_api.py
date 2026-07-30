@@ -169,17 +169,17 @@ def test_search_console_metrics_returns_location_scoped_stored_data(client, db_s
         campaign_id,
         domain="metrics-location.example.com",
     )
-    start_date = date(2026, 7, 1)
-    for index in range(28):
+    start_date = date(2026, 6, 3)
+    for index in range(56):
         metric_date = start_date + timedelta(days=index)
         db_session.add(
             SearchConsoleDailyMetric(
                 organization_id=organization_id,
                 campaign_id=campaign_id,
                 metric_date=metric_date,
-                clicks=2 if index < 14 else 4,
-                impressions=100 if index < 14 else 200,
-                avg_position=12.0 if index < 14 else 9.0,
+                clicks=2 if index < 28 else 4,
+                impressions=100 if index < 28 else 200,
+                avg_position=12.0 if index < 28 else 9.0,
                 deterministic_hash=f"{index:064d}",
             )
         )
@@ -197,22 +197,134 @@ def test_search_console_metrics_returns_location_scoped_stored_data(client, db_s
     payload = response.json()["data"]
     assert payload["data_status"] == "ready"
     assert payload["campaign_id"] == campaign_id
+    assert payload["days_requested"] == 28
     assert payload["data_days"] == 28
+    assert payload["coverage_percent"] == 100.0
     assert payload["date_from"] == "2026-07-01"
     assert payload["date_to"] == "2026-07-28"
     assert payload["summary"] == {
-        "clicks": 84,
-        "impressions": 4200,
+        "clicks": 112,
+        "impressions": 5600,
         "ctr_percent": 2.0,
-        "avg_position": 10.0,
+        "avg_position": 9.0,
     }
-    assert payload["comparison"]["period_days"] == 14
+    assert payload["comparison"]["mode"] == "previous_period"
+    assert payload["comparison"]["date_from"] == "2026-06-03"
+    assert payload["comparison"]["date_to"] == "2026-06-30"
+    assert payload["comparison"]["period_days"] == 28
+    assert payload["comparison"]["data_days"] == 28
+    assert payload["comparison"]["is_complete"] is True
     assert payload["comparison"]["clicks_change_percent"] == 100.0
     assert payload["comparison"]["impressions_change_percent"] == 100.0
     assert payload["comparison"]["position_improvement"] == 3.0
     assert len(payload["points"]) == 28
+    assert len(payload["comparison_points"]) == 28
     assert payload["points"][0]["date"] == "2026-07-01"
     assert payload["points"][-1]["date"] == "2026-07-28"
+
+
+def test_search_console_metrics_compares_custom_date_ranges(client, db_session) -> None:
+    token, organization_id = _login(client)
+    _location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="custom-metrics-range",
+    )
+    _map_connection(
+        client,
+        token,
+        organization_id,
+        campaign_id,
+        domain="custom-metrics-range.example.com",
+    )
+    start_date = date(2026, 6, 1)
+    for index in range(40):
+        metric_date = start_date + timedelta(days=index)
+        is_july = metric_date.month == 7
+        db_session.add(
+            SearchConsoleDailyMetric(
+                organization_id=organization_id,
+                campaign_id=campaign_id,
+                metric_date=metric_date,
+                clicks=6 if is_july else 3,
+                impressions=300 if is_july else 150,
+                avg_position=8.0 if is_july else 11.0,
+                deterministic_hash=f"custom-{index:056d}",
+            )
+        )
+    db_session.commit()
+
+    response = client.get(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-search-console/metrics/{campaign_id}"
+            "?date_from=2026-07-01&date_to=2026-07-10"
+            "&comparison_mode=custom"
+            "&comparison_date_from=2026-06-01"
+            "&comparison_date_to=2026-06-10"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["date_from"] == "2026-07-01"
+    assert payload["date_to"] == "2026-07-10"
+    assert payload["days_requested"] == 10
+    assert payload["summary"]["clicks"] == 60
+    assert payload["comparison"]["mode"] == "custom"
+    assert payload["comparison"]["date_from"] == "2026-06-01"
+    assert payload["comparison"]["date_to"] == "2026-06-10"
+    assert payload["comparison"]["summary"]["clicks"] == 30
+    assert payload["comparison"]["clicks_change_percent"] == 100.0
+    assert payload["comparison"]["position_improvement"] == 3.0
+    assert len(payload["points"]) == 10
+    assert len(payload["comparison_points"]) == 10
+
+
+def test_search_console_metrics_rejects_invalid_custom_date_ranges(
+    client,
+    db_session,
+) -> None:
+    token, organization_id = _login(client)
+    _location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="invalid-metrics-range",
+    )
+    _map_connection(
+        client,
+        token,
+        organization_id,
+        campaign_id,
+        domain="invalid-metrics-range.example.com",
+    )
+    db_session.add(
+        SearchConsoleDailyMetric(
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            metric_date=date(2026, 7, 10),
+            clicks=1,
+            impressions=10,
+            avg_position=10.0,
+            deterministic_hash="invalid-range".ljust(64, "0"),
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-search-console/metrics/{campaign_id}"
+            "?date_from=2026-07-10&date_to=2026-07-01"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["errors"][0]["details"]["reason_code"] == "invalid_date_range"
 
 
 def test_search_console_metrics_explains_when_location_is_not_connected(client) -> None:
@@ -289,6 +401,7 @@ def test_search_console_sync_is_durable_and_idempotent(client, db_session, monke
     assert second.json()["data"]["job"]["idempotent_replay"] is True
     assert len(calls) == 1
     assert calls[0]["site_url"] == "sc-domain:durable-sync.example.com"
+    assert (calls[0]["end_date"] - calls[0]["start_date"]).days + 1 == 480
     assert db_session.query(PlatformJob).filter(
         PlatformJob.entity_id == mapped["id"]
     ).count() == 1
@@ -300,6 +413,8 @@ def test_search_console_sync_is_durable_and_idempotent(client, db_session, monke
     assert connection.last_success_at is not None
     assert connection.next_sync_at is not None
     assert connection.sync_cursor.get("last_metric_date")
+    assert connection.sync_cursor.get("history_start_date")
+    assert connection.sync_cursor.get("history_days") == 480
 
 
 def test_search_console_sync_failure_is_visible_without_cross_tenant_leak(
