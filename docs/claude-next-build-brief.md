@@ -192,6 +192,17 @@ primary reader defined as a service-business owner rather than an SEO operator.
 > ranges, with previous-period, prior-year, custom-period, or no comparison.
 > The stored-history target is now 480 days, and every chart reports actual
 > coverage instead of presenting a partial comparison as complete.
+>
+> **Plain-language hierarchy completed and production-verified 2026-07-30:**
+> all 11 customer routes now lead with a compact, route-specific `Start here`
+> instruction and exactly one dismissible daily guide. The guide uses the
+> governed AI brief, is cached once per location and day across the workspace,
+> and falls back safely when AI is unavailable. Internal labels such as
+> `Deterministic summary`, `Data status`, and `Live source` were removed from
+> the customer reading flow. Next Steps now leads with one recommended action,
+> while its explanation and progress details are collapsed until requested.
+> The same progressive-disclosure treatment is applied to detailed report,
+> settings, website-health, and workflow controls.
 
 Scope:
 - Rewrite customer-facing copy for a person who runs a local or multi-location service business.
