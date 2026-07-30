@@ -71,3 +71,7 @@ class AdvanceMonthIn(BaseModel):
 
 class RecommendationTransitionIn(BaseModel):
     target_state: str
+
+
+class GenerateIntelligenceBriefIn(BaseModel):
+    retry_failed: bool = False

@@ -71,3 +71,18 @@ test("the shared guide is dismissible for the browser session", () => {
   assert.match(source, /aria-label="Close page guidance"/);
   assert.doesNotMatch(source, /Good to know/i);
 });
+
+test("opportunities keeps AI subordinate to deterministic intelligence", () => {
+  const pagePath = fileURLToPath(
+    new URL("../app/(product)/opportunities/page.tsx", import.meta.url),
+  );
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /A plain-language explanation of your next move/);
+  assert.match(source, /Decision authority: intelligence engine/);
+  assert.match(source, /AI role: explain only/);
+  assert.match(source, /Automatic\s+changes: off/);
+  assert.match(source, /cannot change the action/);
+  assert.match(source, /retry_failed/);
+  assert.doesNotMatch(source, /reconciled_cost/);
+});

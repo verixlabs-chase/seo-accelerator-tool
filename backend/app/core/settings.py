@@ -137,6 +137,14 @@ class Settings(BaseSettings):
     pagespeed_api_key: str = ""
     website_performance_collection_interval_hours: int = 168
     website_performance_http_timeout_seconds: float = 45.0
+    ai_provider_backend: str = "mistral"
+    mistral_api_key: str = ""
+    mistral_api_endpoint: str = "https://api.mistral.ai/v1/chat/completions"
+    mistral_model: str = "mistral-small-2603"
+    ai_provider_timeout_seconds: float = 30.0
+    ai_provider_max_attempts: int = 2
+    ai_max_input_tokens: int = 12_000
+    ai_max_output_tokens: int = 800
 
     _WEAK_JWT_SECRET_VALUES = {
         "",
@@ -214,6 +222,16 @@ class Settings(BaseSettings):
                 "Autonomous intelligence execution is disabled outside the test runtime."
             )
         self.intelligence_activation_mode = intelligence_mode
+        ai_backend = self.ai_provider_backend.strip().lower()
+        if ai_backend not in {"disabled", "mistral"}:
+            raise ValueError(
+                "AI_PROVIDER_BACKEND must be disabled or mistral."
+            )
+        if self.ai_provider_max_attempts < 1 or self.ai_provider_max_attempts > 3:
+            raise ValueError("AI_PROVIDER_MAX_ATTEMPTS must be between 1 and 3.")
+        if self.ai_max_input_tokens < 1 or self.ai_max_output_tokens < 1:
+            raise ValueError("AI token ceilings must be positive.")
+        self.ai_provider_backend = ai_backend
 
         if not self.jwt_secret.strip():
             raise ValueError("JWT_SECRET is required and must not be empty.")

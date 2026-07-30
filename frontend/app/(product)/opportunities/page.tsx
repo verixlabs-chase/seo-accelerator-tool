@@ -151,6 +151,52 @@ type IntelligenceCycleResponse = {
   };
 };
 
+type GovernedIntelligenceAction = {
+  action_id: string;
+  display_name: string;
+  why_it_matters?: string;
+  steps?: string[];
+  risk_tier?: number;
+  effort?: string;
+  approval_required?: boolean;
+};
+
+type GovernedIntelligenceBrief = {
+  id: string;
+  status: "validated" | "fallback" | "rejected" | "failed";
+  provider_state?: string;
+  provider_name?: string;
+  model_name?: string;
+  output: {
+    summary: string;
+    why_now: string;
+    selected_action_id?: string | null;
+    evidence_used?: string[];
+    uncertainties?: string[];
+    approval_required: boolean;
+    selected_action?: GovernedIntelligenceAction | null;
+  };
+  created_at?: string;
+};
+
+type GovernedIntelligenceBriefResponse = {
+  item?: GovernedIntelligenceBrief | null;
+  runtime?: {
+    backend?: string;
+    model?: string;
+    configured?: boolean;
+    decision_authority?: string;
+    ai_role?: string;
+    automatic_execution?: boolean;
+  };
+  allowance?: {
+    monthly_actions?: number;
+    used?: number;
+    remaining?: number;
+  };
+  idempotent_replay?: boolean;
+};
+
 type ExecutionResult = {
   status?: string;
   notes?: string;
@@ -839,6 +885,12 @@ export default function OpportunitiesPage() {
   const [recommendationsTruth, setRecommendationsTruth] = useState<RuntimeTruth | null>(null);
   const [engineState, setEngineState] = useState<IntelligenceEngineState | null>(null);
   const [outcomeHistory, setOutcomeHistory] = useState<OutcomeHistoryResponse | null>(null);
+  const [intelligenceBrief, setIntelligenceBrief] =
+    useState<GovernedIntelligenceBrief | null>(null);
+  const [intelligenceRuntime, setIntelligenceRuntime] =
+    useState<GovernedIntelligenceBriefResponse["runtime"] | null>(null);
+  const [intelligenceAllowance, setIntelligenceAllowance] =
+    useState<GovernedIntelligenceBriefResponse["allowance"] | null>(null);
   const [wordpressSetup, setWordpressSetup] = useState<WordPressExecutionSetup | null>(null);
   const [wordpressSetupError, setWordpressSetupError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -867,11 +919,20 @@ export default function OpportunitiesPage() {
       setRecommendationsTruth(null);
       setEngineState(null);
       setOutcomeHistory(null);
+      setIntelligenceBrief(null);
+      setIntelligenceRuntime(null);
+      setIntelligenceAllowance(null);
       setSelectedRecommendationId("");
       return;
     }
 
-    const [recommendationsResponse, summaryResponse, scoreResponse, outcomeResponse] = await Promise.all([
+    const [
+      recommendationsResponse,
+      summaryResponse,
+      scoreResponse,
+      outcomeResponse,
+      briefResponse,
+    ] = await Promise.all([
       platformApi(`/intelligence/recommendations?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
@@ -882,6 +943,9 @@ export default function OpportunitiesPage() {
         method: "GET",
       }),
       platformApi(`/intelligence/outcomes?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }),
+      platformApi(`/intelligence/brief?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
     ]);
@@ -902,6 +966,10 @@ export default function OpportunitiesPage() {
         null,
     );
     setOutcomeHistory((outcomeResponse as OutcomeHistoryResponse) || null);
+    const normalizedBrief = (briefResponse as GovernedIntelligenceBriefResponse) || null;
+    setIntelligenceBrief(normalizedBrief?.item || null);
+    setIntelligenceRuntime(normalizedBrief?.runtime || null);
+    setIntelligenceAllowance(normalizedBrief?.allowance || null);
     setSelectedRecommendationId((current) => {
       if (current && items.some((item) => item.id === current)) {
         return current;
@@ -1112,6 +1180,42 @@ export default function OpportunitiesPage() {
       setNotice(
         `${activatedCampaign ? "Recommendations are now active for this location. " : ""}Review complete: ${response.result?.recommendations_generated || 0} recommendation${response.result?.recommendations_generated === 1 ? "" : "s"} ready. No paid checks or automatic website changes were started.`,
       );
+    });
+  }
+
+  async function explainIntelligenceBrief() {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+
+    await runAction("explain-intelligence-brief", async () => {
+      const response = (await platformApi(
+        `/intelligence/brief?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            retry_failed: Boolean(
+              intelligenceBrief && intelligenceBrief.status !== "validated",
+            ),
+          }),
+        },
+      )) as GovernedIntelligenceBriefResponse;
+      setIntelligenceBrief(response.item || null);
+      setIntelligenceRuntime(response.runtime || null);
+      setIntelligenceAllowance(response.allowance || null);
+
+      if (response.item?.status === "validated") {
+        setNotice(
+          response.idempotent_replay
+            ? "The current plain-language explanation is already up to date."
+            : "Plain-language explanation ready. InsightOS kept the engine's evidence, action, and approval rules unchanged.",
+        );
+      } else {
+        setNotice(
+          "The AI explanation was not available, so InsightOS kept a deterministic summary instead. Your saved recommendations still work.",
+        );
+      }
     });
   }
 
@@ -1435,6 +1539,141 @@ export default function OpportunitiesPage() {
                   </p>
                   <p className="mt-2 text-sm leading-6 text-zinc-300">{topSummary.next}</p>
                 </div>
+              </div>
+            </section>
+
+            <section className="rounded-md border border-violet-500/20 bg-[linear-gradient(135deg,rgba(139,92,246,0.09),rgba(20,21,24,0.96)_52%)] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="max-w-3xl">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-200/70">
+                    Intelligence explained simply
+                  </p>
+                  <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                    A plain-language explanation of your next move
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">
+                    InsightOS uses the intelligence engine to choose the evidence and safest
+                    next action. AI can explain that decision, but it cannot change the action,
+                    invent evidence, or touch your website.
+                  </p>
+                </div>
+                <button
+                  onClick={() => void explainIntelligenceBrief()}
+                  disabled={!selectedCampaignId || busyAction !== ""}
+                  className="rounded-md border border-violet-400/30 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busyAction === "explain-intelligence-brief"
+                    ? "Preparing explanation..."
+                    : intelligenceBrief
+                      ? "Refresh explanation"
+                      : "Explain my next step"}
+                </button>
+              </div>
+
+              {intelligenceBrief ? (
+                <div className="mt-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                  <div className="rounded-md border border-violet-500/15 bg-[#111214]/90 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                          intelligenceBrief.status === "validated"
+                            ? "border-violet-400/25 bg-violet-500/10 text-violet-100"
+                            : "border-amber-500/20 bg-amber-500/10 text-amber-100"
+                        }`}
+                      >
+                        {intelligenceBrief.status === "validated"
+                          ? "AI-assisted explanation"
+                          : "Deterministic summary"}
+                      </span>
+                      <span className="text-xs text-zinc-500">
+                        {formatRelativeTime(intelligenceBrief.created_at)}
+                      </span>
+                    </div>
+                    <p className="mt-4 text-base font-medium leading-7 text-white">
+                      {intelligenceBrief.output.summary}
+                    </p>
+                    <p className="mt-3 text-sm leading-6 text-zinc-300">
+                      {intelligenceBrief.output.why_now}
+                    </p>
+                    {intelligenceBrief.output.uncertainties?.length ? (
+                      <details className="mt-4 border-t border-[#26272c] pt-3">
+                        <summary className="cursor-pointer text-sm font-medium text-zinc-300">
+                          What is still uncertain
+                        </summary>
+                        <ul className="mt-2 space-y-1 text-sm leading-6 text-zinc-400">
+                          {intelligenceBrief.output.uncertainties.map((item) => (
+                            <li key={item}>• {item}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-md border border-[#26272c] bg-[#111214]/90 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Engine-selected action
+                    </p>
+                    {intelligenceBrief.output.selected_action ? (
+                      <>
+                        <h3 className="mt-2 text-base font-semibold text-white">
+                          {intelligenceBrief.output.selected_action.display_name}
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-zinc-300">
+                          {intelligenceBrief.output.selected_action.why_it_matters}
+                        </p>
+                        {intelligenceBrief.output.selected_action.steps?.length ? (
+                          <ol className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
+                            {intelligenceBrief.output.selected_action.steps
+                              .slice(0, 3)
+                              .map((step, index) => (
+                                <li key={step}>
+                                  <span className="mr-2 text-violet-300">{index + 1}.</span>
+                                  {step}
+                                </li>
+                              ))}
+                          </ol>
+                        ) : null}
+                        {intelligenceBrief.output.approval_required ? (
+                          <p className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm leading-6 text-amber-100">
+                            Review and approve this action before anyone carries it out.
+                          </p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-zinc-300">
+                        No lexicon-approved action is attached to the current evidence yet.
+                        Refresh the saved-data review after more information arrives.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 rounded-md border border-dashed border-violet-400/20 bg-[#111214]/80 p-4">
+                  <p className="text-sm font-medium text-white">
+                    No explanation has been prepared for this business yet.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">
+                    Choose “Explain my next step” to turn the current verified recommendation
+                    into a short business-owner summary.
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-violet-500/15 pt-4 text-xs text-zinc-500">
+                <span>
+                  Decision authority: intelligence engine · AI role: explain only · Automatic
+                  changes: off
+                </span>
+                {intelligenceRuntime?.configured &&
+                intelligenceAllowance?.remaining !== undefined ? (
+                  <span>
+                    {intelligenceAllowance.remaining} explanations remaining this month
+                  </span>
+                ) : (
+                  <span>
+                    AI connection pending; deterministic guidance remains available
+                  </span>
+                )}
               </div>
             </section>
 

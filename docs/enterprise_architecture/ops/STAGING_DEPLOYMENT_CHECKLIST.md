@@ -35,6 +35,11 @@ Set these before starting API, worker, and scheduler:
 - `CWV_STANDARDS_PROBE_ORIGIN=https://web.dev`
 - `CWV_STANDARDS_REVIEW_INTERVAL_DAYS=30`
 - `WEBSITE_PERFORMANCE_COLLECTION_INTERVAL_HOURS=168`
+- `AI_PROVIDER_BACKEND=mistral`
+- `MISTRAL_API_KEY=<server-side Mistral Studio key>`
+- `MISTRAL_MODEL=mistral-small-2603`
+- `AI_MAX_INPUT_TOKENS=12000`
+- `AI_MAX_OUTPUT_TOKENS=800`
 
 If using production-like staging, also set:
 

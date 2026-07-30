@@ -227,6 +227,37 @@ def reserve_provider_cost(
     return row
 
 
+def calculate_provider_cost(
+    db: Session,
+    *,
+    provider_name: str,
+    capability: str,
+    operation: str,
+    quantity: Decimal | int | float | str,
+    model_name: str | None = None,
+    input_tokens: int | None = None,
+    cached_input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    now: datetime | None = None,
+) -> Decimal:
+    occurred_at = _as_utc(now or datetime.now(UTC))
+    price_card = _find_price_card(
+        db,
+        provider_name=provider_name,
+        capability=capability,
+        operation=operation,
+        model_name=model_name,
+        now=occurred_at,
+    )
+    return _estimate_cost(
+        price_card,
+        quantity=Decimal(str(quantity)),
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
 def reconcile_provider_cost(
     db: Session,
     *,

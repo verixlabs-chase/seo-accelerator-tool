@@ -18,6 +18,7 @@ from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard
+from app.models.governed_ai import GovernedAIRun
 from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
@@ -153,6 +154,7 @@ __all__ = [
     "CostLedgerEntry",
     "OrganizationCostAllocation",
     "ProviderPriceCard",
+    "GovernedAIRun",
     "LocalProfile",
     "LocalHealthSnapshot",
     "Review",

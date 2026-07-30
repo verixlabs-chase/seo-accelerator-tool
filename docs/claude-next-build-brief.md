@@ -9,7 +9,10 @@
 > restore drill, and live secret-rotation drills are completed and reviewed.
 > **G1.3: Usage Economics and Margin Guardrails** is production-released;
 > **I1.1: Live Website Performance and CWV Experience** is production-released;
-> **I1.3: Governed AI Runtime API** is the next product sprint. The remaining roadmap
+> **I1.3: Governed AI Runtime API** is active. Its first vertical slice adds a
+> Mistral-first, explain-only runtime over deterministic intelligence, strict
+> structured-output validation, tenant-scoped audit history, and hard cost
+> controls. The remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7,
 > evidence-backed intelligence in I1, research/content/AI visibility in
@@ -256,7 +259,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 2 | **TR1 - Security, Reliability, and Recovery Gate** | Tenant isolation, durable execution, monitoring, backups, restore drills, and safe release controls are proven before paid automation expands. |
 | 3 | **G1.3 - Usage Economics and Margin Guardrails** | Paid provider and AI work cannot overspend the organization's allowance or silently damage gross margin. |
 | 4 | **I1.1 - Live Website Performance and CWV Experience — released** | Customers see their actual field and lab website measurements, Google thresholds, history, source, freshness, and plain-language meaning. |
-| 5 | **I1.3 - Governed AI Runtime API — next** | Mistral-first AI becomes standard across plans and can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
+| 5 | **I1.3 - Governed AI Runtime API — active** | Mistral-first AI becomes standard across plans and can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
 | 6 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Customers can compare the measured baseline with a conservative outcome range for approved recommendations. |
 | 7 | **I1.4 - Evidence-Backed Action Center** | The intelligence output becomes one understandable, prioritized queue with outcomes and follow-up measurement. |
 | 8 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
@@ -821,6 +824,20 @@ Acceptance criteria:
 Goal: add a real, metered AI provider layer that makes the deterministic
 intelligence useful in conversation and content workflows while the lexicon and
 policy engine retain decision authority.
+
+> **First vertical slice implemented locally 2026-07-30:** the Opportunities
+> workspace can request a plain-language explanation of the current
+> engine-selected action. The provider-neutral gateway uses Mistral Small 4,
+> strict JSON-schema output, evidence and action allow-list validation,
+> deterministic fallback, idempotency, per-plan monthly and concurrency limits,
+> bounded input/output tokens, and reserve/reconcile cost accounting. Every run
+> persists organization, campaign, location, lexicon, prompt template, hashes,
+> evidence references, model, tokens, cost, validation state, and rejection
+> reason under database RLS. Mistral has no database, Google, WordPress, or tool
+> access and cannot execute changes. Production migration, provider-key
+> configuration, and live-output verification remain release gates for this
+> slice; daily briefs, evidence Q&A, and governed drafting remain later I1.3
+> slices.
 
 Runtime sequence:
 

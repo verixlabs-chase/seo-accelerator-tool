@@ -1,0 +1,206 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import time
+from typing import Any, Protocol
+
+import httpx
+
+
+class GovernedAIProviderError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        provider_may_have_processed: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.provider_may_have_processed = provider_may_have_processed
+
+
+@dataclass(frozen=True)
+class GovernedAIProviderResponse:
+    payload: dict[str, Any]
+    provider_request_id: str | None
+    model_name: str
+    input_tokens: int
+    output_tokens: int
+
+
+class GovernedAIProvider(Protocol):
+    name: str
+    model_name: str
+
+    def generate(
+        self,
+        *,
+        context: dict[str, Any],
+        output_schema: dict[str, Any],
+        prompt_template_version: str,
+    ) -> GovernedAIProviderResponse: ...
+
+
+class MistralGovernedAIProvider:
+    name = "mistral"
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        endpoint: str,
+        model_name: str,
+        timeout_seconds: float,
+        max_output_tokens: int,
+        max_attempts: int,
+        client: httpx.Client | None = None,
+    ) -> None:
+        self.api_key = api_key.strip()
+        self.endpoint = endpoint
+        self.model_name = model_name
+        self.timeout_seconds = timeout_seconds
+        self.max_output_tokens = max_output_tokens
+        self.max_attempts = max(1, max_attempts)
+        self._client = client
+
+    def generate(
+        self,
+        *,
+        context: dict[str, Any],
+        output_schema: dict[str, Any],
+        prompt_template_version: str,
+    ) -> GovernedAIProviderResponse:
+        if not self.api_key:
+            raise GovernedAIProviderError(
+                "Mistral is not configured.",
+                code="ai_provider_not_configured",
+            )
+        request_payload = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You explain deterministic SEO intelligence to a service-business "
+                        "owner. Use only the supplied JSON evidence. Preserve the selected "
+                        "action, evidence identifiers, uncertainty, risk, and approval "
+                        "requirements exactly. Never promise rankings, leads, or revenue. "
+                        f"Prompt contract: {prompt_template_version}."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(context, sort_keys=True, separators=(",", ":")),
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "governed_intelligence_brief",
+                    "schema": output_schema,
+                    "strict": True,
+                },
+            },
+            "temperature": 0,
+            "random_seed": 7,
+            "max_tokens": self.max_output_tokens,
+            "safe_prompt": True,
+        }
+        owned_client = self._client is None
+        client = self._client or httpx.Client(timeout=self.timeout_seconds)
+        try:
+            response: httpx.Response | None = None
+            for attempt in range(self.max_attempts):
+                try:
+                    response = client.post(
+                        self.endpoint,
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=request_payload,
+                    )
+                except (httpx.TimeoutException, httpx.TransportError) as exc:
+                    if attempt + 1 < self.max_attempts:
+                        time.sleep(0.25 * (2**attempt))
+                        continue
+                    raise GovernedAIProviderError(
+                        "The AI provider could not be reached.",
+                        code="ai_provider_unavailable",
+                        provider_may_have_processed=isinstance(
+                            exc,
+                            httpx.TimeoutException,
+                        ),
+                    ) from exc
+                if response.status_code in {429, 500, 502, 503, 504}:
+                    if attempt + 1 < self.max_attempts:
+                        time.sleep(0.25 * (2**attempt))
+                        continue
+                break
+
+            if response is None:
+                raise GovernedAIProviderError(
+                    "The AI provider did not return a response.",
+                    code="ai_provider_unavailable",
+                )
+            if response.status_code != 200:
+                code = {
+                    401: "ai_provider_authentication_failed",
+                    402: "ai_provider_payment_required",
+                    429: "ai_provider_rate_limited",
+                }.get(response.status_code, "ai_provider_request_failed")
+                raise GovernedAIProviderError(
+                    f"Mistral returned HTTP {response.status_code}.",
+                    code=code,
+                    provider_may_have_processed=response.status_code >= 500,
+                )
+            try:
+                body = response.json()
+                choices = body.get("choices") if isinstance(body, dict) else None
+                message = (
+                    choices[0].get("message")
+                    if isinstance(choices, list)
+                    and choices
+                    and isinstance(choices[0], dict)
+                    else None
+                )
+                content = message.get("content") if isinstance(message, dict) else None
+                if not isinstance(content, str):
+                    raise ValueError("missing response content")
+                payload = json.loads(content)
+                if not isinstance(payload, dict):
+                    raise ValueError("response content must be an object")
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise GovernedAIProviderError(
+                    "The AI provider returned an invalid structured response.",
+                    code="ai_provider_invalid_response",
+                    provider_may_have_processed=True,
+                ) from exc
+            usage = body.get("usage") if isinstance(body, dict) else {}
+            usage = usage if isinstance(usage, dict) else {}
+            return GovernedAIProviderResponse(
+                payload=payload,
+                provider_request_id=str(body.get("id")) if body.get("id") else None,
+                model_name=str(body.get("model") or self.model_name),
+                input_tokens=_usage_int(usage, "prompt_tokens", "input_tokens"),
+                output_tokens=_usage_int(
+                    usage,
+                    "completion_tokens",
+                    "output_tokens",
+                ),
+            )
+        finally:
+            if owned_client:
+                client.close()
+
+
+def _usage_int(payload: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        try:
+            return max(0, int(payload.get(key) or 0))
+        except (TypeError, ValueError):
+            continue
+    return 0
+

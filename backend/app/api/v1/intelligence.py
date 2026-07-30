@@ -8,8 +8,14 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.models.campaign import Campaign
-from app.schemas.intelligence import AdvanceMonthIn, IntelligenceScoreOut, RecommendationOut, RecommendationTransitionIn
-from app.services import durable_job_service, intelligence_service
+from app.schemas.intelligence import (
+    AdvanceMonthIn,
+    GenerateIntelligenceBriefIn,
+    IntelligenceScoreOut,
+    RecommendationOut,
+    RecommendationTransitionIn,
+)
+from app.services import durable_job_service, governed_ai_service, intelligence_service
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
 from app.services.recommendation_outcome_service import (
     get_campaign_outcome_history,
@@ -140,6 +146,39 @@ def get_intelligence_recommendations(
             "truth": truth,
         },
     )
+
+
+@intelligence_router.get("/brief")
+def get_intelligence_brief(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_ai_service.latest_governed_brief(
+        db,
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/brief")
+def generate_intelligence_brief(
+    request: Request,
+    body: GenerateIntelligenceBriefIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_ai_service.generate_governed_brief(
+        db,
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        requested_by_user_id=user["user_id"],
+        retry_failed=body.retry_failed,
+    )
+    return envelope(request, payload)
 
 
 @intelligence_router.post("/recommendations/{recommendation_id}/transition")
