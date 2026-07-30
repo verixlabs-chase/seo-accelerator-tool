@@ -17,11 +17,13 @@ from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
 from app.models.platform_job import PlatformJob
 from app.models.reporting import ReportSchedule
+from app.models.website_performance import WebsitePerformanceMeasurement
 from app.services import (
     data_connections_service,
     job_service,
     reporting_service,
     traffic_fact_service,
+    website_performance_service,
 )
 
 JobHandler = Callable[[Session, PlatformJob], dict[str, Any]]
@@ -30,6 +32,7 @@ REPORT_SCHEDULE_JOB_TYPE = "reporting.process_schedule"
 INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE = "intelligence.campaign_cycle"
 SEARCH_CONSOLE_SYNC_JOB_TYPE = "data_connections.search_console_sync"
 CWV_STANDARDS_CHECK_JOB_TYPE = "reference_library.cwv_standards_check"
+WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE = "website_performance.collect"
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -137,11 +140,43 @@ def _cwv_standards_check_handler(
     )
 
 
+def _website_performance_collection_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    campaign_id = str(job.payload.get("campaign_id") or job.entity_id or "").strip()
+    form_factor = str(job.payload.get("form_factor") or "").strip().lower()
+    campaign = db.get(Campaign, campaign_id) if campaign_id else None
+    if (
+        not tenant_id
+        or campaign is None
+        or campaign.tenant_id != tenant_id
+        or campaign.setup_state.lower() != "active"
+    ):
+        raise ValueError("Website performance job has no active tenant-scoped campaign.")
+    rows = website_performance_service.collect_campaign_performance(
+        db,
+        campaign=campaign,
+        form_factor=form_factor,
+    )
+    return {
+        "campaign_id": campaign.id,
+        "business_location_id": campaign.business_location_id,
+        "form_factor": form_factor,
+        "measurements": [
+            website_performance_service.serialize_measurement(row)
+            for row in rows
+        ],
+    }
+
+
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
     INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
     SEARCH_CONSOLE_SYNC_JOB_TYPE: _search_console_sync_handler,
     CWV_STANDARDS_CHECK_JOB_TYPE: _cwv_standards_check_handler,
+    WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE: _website_performance_collection_handler,
 }
 
 
@@ -460,6 +495,161 @@ def enqueue_due_cwv_standards_check(
     return 1
 
 
+def create_website_performance_job(
+    db: Session,
+    *,
+    campaign: Campaign,
+    form_factor: str,
+    collection_date: date,
+    available_at: datetime | None = None,
+) -> PlatformJob:
+    if form_factor not in {"mobile", "desktop"}:
+        raise ValueError("form_factor must be mobile or desktop.")
+    return job_service.create_job(
+        db,
+        tenant_id=campaign.tenant_id,
+        job_type=WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE,
+        entity_type="campaign",
+        entity_id=campaign.id,
+        idempotency_key=(
+            f"website-performance:{campaign.id}:{form_factor}:"
+            f"{collection_date.isoformat()}"
+        ),
+        payload={
+            "tenant_id": campaign.tenant_id,
+            "organization_id": campaign.organization_id,
+            "campaign_id": campaign.id,
+            "business_location_id": campaign.business_location_id,
+            "form_factor": form_factor,
+            "collection_date": collection_date.isoformat(),
+        },
+        available_at=available_at or datetime.now(UTC),
+        max_retries=2,
+    )
+
+
+def enqueue_due_website_performance_jobs(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    limit: int = 25,
+) -> int:
+    settings = get_settings()
+    if not settings.crux_api_key.strip():
+        return 0
+    resolved_now = now or datetime.now(UTC)
+    refresh_after = resolved_now - timedelta(
+        hours=max(1, int(settings.website_performance_collection_interval_hours))
+    )
+    rows = (
+        db.query(Campaign)
+        .filter(Campaign.setup_state.in_(["Active", "active"]))
+        .order_by(Campaign.created_at.asc(), Campaign.id.asc())
+        .limit(max(1, min(int(limit), 100)))
+        .all()
+    )
+    created = 0
+    for campaign in rows:
+        for form_factor in ("mobile", "desktop"):
+            latest = (
+                db.query(WebsitePerformanceMeasurement)
+                .filter(
+                    WebsitePerformanceMeasurement.campaign_id == campaign.id,
+                    WebsitePerformanceMeasurement.form_factor == form_factor,
+                )
+                .order_by(WebsitePerformanceMeasurement.captured_at.desc())
+                .first()
+            )
+            if latest is not None:
+                captured_at = latest.captured_at
+                if captured_at.tzinfo is None:
+                    captured_at = captured_at.replace(tzinfo=UTC)
+                if captured_at >= refresh_after:
+                    continue
+            create_website_performance_job(
+                db,
+                campaign=campaign,
+                form_factor=form_factor,
+                collection_date=resolved_now.date(),
+                available_at=resolved_now,
+            )
+            created += 1
+    db.flush()
+    return created
+
+
+def run_website_performance_job_now(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    form_factor: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    resolved_now = now or datetime.now(UTC)
+    campaign = db.get(Campaign, campaign_id)
+    if (
+        campaign is None
+        or campaign.tenant_id != tenant_id
+        or campaign.setup_state.lower() != "active"
+    ):
+        raise ValueError("Campaign must be active and tenant-scoped.")
+    idempotency_key = (
+        f"website-performance:{campaign.id}:{form_factor}:"
+        f"{resolved_now.date().isoformat()}"
+    )
+    existing = (
+        db.query(PlatformJob)
+        .filter(PlatformJob.idempotency_key == idempotency_key)
+        .first()
+    )
+    job = create_website_performance_job(
+        db,
+        campaign=campaign,
+        form_factor=form_factor,
+        collection_date=resolved_now.date(),
+        available_at=resolved_now,
+    )
+    created = existing is None
+    db.commit()
+    db.refresh(job)
+    if job.status == job_service.JOB_STATUS_COMPLETED:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": False,
+            "idempotent_replay": True,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    if job.status in {job_service.JOB_STATUS_RUNNING, job_service.JOB_STATUS_DEAD_LETTER}:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": created,
+            "idempotent_replay": False,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    job_service.start_job(
+        db,
+        job.id,
+        worker_id=f"tenant-performance-{uuid.uuid4()}",
+        lease_seconds=get_settings().durable_job_lease_seconds,
+    )
+    db.commit()
+    execution = execute_claimed_job(db, job_id=job.id)
+    refreshed = db.get(PlatformJob, job.id)
+    return {
+        "job_id": job.id,
+        "status": execution["status"],
+        "created": created,
+        "idempotent_replay": False,
+        "result": _json_safe(refreshed.result if refreshed is not None else None),
+        "error": refreshed.error if refreshed is not None else None,
+    }
+
+
 def run_intelligence_campaign_job_now(
     db: Session,
     *,
@@ -655,6 +845,10 @@ def drain_platform_jobs(
         limit=resolved_batch_size * 5,
     )
     due_cwv_standards_checks_seen = enqueue_due_cwv_standards_check(db)
+    due_website_performance_jobs_seen = enqueue_due_website_performance_jobs(
+        db,
+        limit=resolved_batch_size * 5,
+    )
     db.commit()
 
     claimed = job_service.claim_jobs(
@@ -692,6 +886,7 @@ def drain_platform_jobs(
         "due_intelligence_campaigns_seen": due_intelligence_campaigns_seen,
         "due_data_connections_seen": due_data_connections_seen,
         "due_cwv_standards_checks_seen": due_cwv_standards_checks_seen,
+        "due_website_performance_jobs_seen": due_website_performance_jobs_seen,
         "claimed": len(claimed_ids),
         "processed": len(results),
         "deferred": len(deferred_ids),

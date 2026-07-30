@@ -134,6 +134,9 @@ class Settings(BaseSettings):
     crux_api_key: str = ""
     cwv_standards_probe_origin: str = "https://web.dev"
     cwv_standards_review_interval_days: int = 30
+    pagespeed_api_key: str = ""
+    website_performance_collection_interval_hours: int = 168
+    website_performance_http_timeout_seconds: float = 45.0
 
     _WEAK_JWT_SECRET_VALUES = {
         "",

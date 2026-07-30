@@ -28,7 +28,7 @@ def test_customer_allowance_hides_internal_margin(client, db_session) -> None:
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["plan"]["name"] == "Solo"
-    assert data["allowance"]["monthly"] == 9.95
+    assert data["allowance"]["monthly"] == 14.95
     assert "gross_margin_percent" not in data
     assert "revenue" not in data
 
@@ -64,7 +64,7 @@ def test_platform_margin_view_and_versioned_allocation(client, db_session) -> No
     )
     assert margin_response.status_code == 200
     margin = margin_response.json()["data"]
-    assert margin["revenue"] == 1499.0
+    assert margin["revenue"] == 1999.0
     assert margin["allocation_status"] == "configured"
     assert margin["modeled_heavy_use"]["publishable"] is True
     assert (

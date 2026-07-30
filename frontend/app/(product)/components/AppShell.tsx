@@ -27,6 +27,9 @@ export function AppShell({
   topBarActions,
 }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const hasActionableTrustSignal = trustSignals.some(
+    (signal) => signal.tone === "warning" || signal.tone === "danger",
+  );
 
   return (
     <div className="lsos-theme-dark min-h-screen bg-[radial-gradient(circle_at_22%_0%,rgba(255,106,26,0.12),transparent_16%),radial-gradient(circle_at_70%_12%,rgba(255,255,255,0.035),transparent_22%),linear-gradient(180deg,#09090a_0%,#0b0b0c_48%,#101114_100%)] font-sans text-zinc-50">
@@ -46,9 +49,11 @@ export function AppShell({
                 onMenuOpen={() => setMobileNavOpen(true)}
               />
             </div>
-            <div className="border-b border-[#26272c] bg-[#111214]">
-              <TrustStatusBar signals={trustSignals} />
-            </div>
+            {hasActionableTrustSignal ? (
+              <div className="border-b border-[#26272c] bg-[#111214]">
+                <TrustStatusBar signals={trustSignals} />
+              </div>
+            ) : null}
             <main className="lsos-scrollbar flex-1 overflow-y-auto px-4 py-4 md:px-5 xl:px-6">
               {children}
             </main>

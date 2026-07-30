@@ -27,7 +27,7 @@ class PlanEconomics:
     maximum_api_budget_percent: Decimal = Decimal("0.10")
     non_api_reserve_percent: Decimal = Decimal("0.10")
     gross_margin_floor_percent: Decimal = Decimal("0.80")
-    version: str = "public-pricing-2026-07-30-v1"
+    version: str = "public-pricing-2026-07-30-v2"
 
     @property
     def initial_api_budget(self) -> Decimal:
@@ -35,16 +35,16 @@ class PlanEconomics:
 
 
 PLAN_ECONOMICS: dict[str, PlanEconomics] = {
-    "solo": PlanEconomics(code="solo", name="Solo", monthly_revenue=Decimal("199.00")),
+    "solo": PlanEconomics(code="solo", name="Solo", monthly_revenue=Decimal("299.00")),
     "multi_location": PlanEconomics(
         code="multi_location",
         name="Multi-location",
-        monthly_revenue=Decimal("699.00"),
+        monthly_revenue=Decimal("999.00"),
     ),
     "enterprise": PlanEconomics(
         code="enterprise",
         name="Enterprise",
-        monthly_revenue=Decimal("1499.00"),
+        monthly_revenue=Decimal("1999.00"),
     ),
 }
 

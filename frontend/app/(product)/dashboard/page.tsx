@@ -746,6 +746,13 @@ function SearchPerformanceOverview({
                 metrics.comparison?.clicks_change_percent,
                 "visits",
               )}
+              changeTone={
+                !metrics.comparison?.clicks_change_percent
+                  ? "neutral"
+                  : metrics.comparison.clicks_change_percent > 0
+                    ? "positive"
+                    : "negative"
+              }
               summary="People who clicked from Google Search and reached your website."
               tone="highlight"
             />
@@ -756,6 +763,13 @@ function SearchPerformanceOverview({
                 metrics.comparison?.impressions_change_percent,
                 "appearances",
               )}
+              changeTone={
+                !metrics.comparison?.impressions_change_percent
+                  ? "neutral"
+                  : metrics.comparison.impressions_change_percent > 0
+                    ? "positive"
+                    : "negative"
+              }
               summary="How often your website appeared in Google search results."
             />
             <KpiCard
@@ -768,6 +782,13 @@ function SearchPerformanceOverview({
                   : `${
                       metrics.comparison.ctr_change_points >= 0 ? "Up " : "Down "
                     }${Math.abs(metrics.comparison.ctr_change_points).toFixed(1)} pts`
+              }
+              changeTone={
+                !metrics.comparison?.ctr_change_points
+                  ? "neutral"
+                  : metrics.comparison.ctr_change_points > 0
+                    ? "positive"
+                    : "negative"
               }
               summary="The percentage of Google appearances that became website visits."
             />
@@ -790,6 +811,13 @@ function SearchPerformanceOverview({
                       : `Dropped ${Math.abs(
                           metrics.comparison.position_improvement,
                         ).toFixed(1)}`
+              }
+              changeTone={
+                !metrics.comparison?.position_improvement
+                  ? "neutral"
+                  : metrics.comparison.position_improvement > 0
+                    ? "positive"
+                    : "negative"
               }
               summary="Your average placement across Google searches. A smaller number is better."
             />

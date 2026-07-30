@@ -94,6 +94,7 @@ from app.models.threshold_bundle import ThresholdBundle
 from app.models.tier_profile import TierProfile
 from app.models.usage_ledger import UsageLedger
 from app.models.user import User
+from app.models.website_performance import WebsitePerformanceMeasurement
 
 __all__ = [
     "Tenant",
@@ -212,4 +213,5 @@ __all__ = [
     "ReportSchedule",
     "ReportTemplateVersion",
     "UsageLedger",
+    "WebsitePerformanceMeasurement",
 ]

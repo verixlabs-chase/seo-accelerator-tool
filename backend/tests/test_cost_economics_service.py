@@ -58,7 +58,7 @@ def test_platform_cost_reserves_reconciles_and_is_idempotent(db_session, create_
         now=datetime(2026, 7, 30, 16, 0, tzinfo=UTC),
     )
     assert summary["plan"]["name"] == "Solo"
-    assert summary["allowance"]["monthly"] == 9.95
+    assert summary["allowance"]["monthly"] == 14.95
     assert summary["allowance"]["used"] == 0.02
     assert summary["allowance"]["reserved"] == 0.0
 
@@ -91,11 +91,11 @@ def test_platform_allowance_stops_before_dispatch(db_session, create_test_org) -
     org = create_test_org(name="Hard allowance org")
     db_session.commit()
 
-    _reserve(db_session, org.id, key="rank:test:full", quantity=4975)
+    _reserve(db_session, org.id, key="rank:test:full", quantity=7475)
     with pytest.raises(CostAllowanceExceeded) as exc_info:
         _reserve(db_session, org.id, key="rank:test:blocked", quantity=1)
 
-    assert exc_info.value.budget == Decimal("9.95000000")
+    assert exc_info.value.budget == Decimal("14.95000000")
     assert (
         db_session.query(CostLedgerEntry)
         .filter(CostLedgerEntry.idempotency_key == "rank:test:blocked")
@@ -121,7 +121,7 @@ def test_failed_provider_cost_is_released(db_session, create_test_org) -> None:
 
 @pytest.mark.parametrize(
     ("quantity", "expected_warning"),
-    [(2488, 50), (3732, 75), (4478, 90)],
+    [(3738, 50), (5607, 75), (6728, 90)],
 )
 def test_allowance_warning_thresholds(
     db_session,
@@ -223,9 +223,9 @@ def test_margin_report_uses_latest_versioned_allocation(db_session, create_test_
     assert first.version == 1
     assert second.version == 2
     assert report["allocation_version"] == 2
-    assert report["revenue"] == 699.0
+    assert report["revenue"] == 999.0
     assert report["total_cogs"] == 40.0
-    assert report["gross_profit"] == 659.0
+    assert report["gross_profit"] == 959.0
     assert report["modeled_heavy_use"]["gross_margin_percent"] == 80.0
     assert report["modeled_heavy_use"]["publishable"] is True
     assert db_session.query(OrganizationCostAllocation).filter_by(organization_id=org.id).count() == 2
@@ -255,7 +255,7 @@ def test_historical_margin_uses_the_plan_revenue_snapshot(db_session, create_tes
     )
 
     assert report["organization"]["plan_code"] == "solo"
-    assert report["revenue"] == 199.0
+    assert report["revenue"] == 299.0
     assert report["platform_api_cost"] == 0.02
 
 

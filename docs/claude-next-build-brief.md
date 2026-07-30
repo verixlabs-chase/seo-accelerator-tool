@@ -256,28 +256,29 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 2 | **TR1 - Security, Reliability, and Recovery Gate** | Tenant isolation, durable execution, monitoring, backups, restore drills, and safe release controls are proven before paid automation expands. |
 | 3 | **G1.3 - Usage Economics and Margin Guardrails** | Paid provider and AI work cannot overspend the organization's allowance or silently damage gross margin. |
 | 4 | **I1.1 - Live Website Performance and CWV Experience** | Customers see their actual field and lab website measurements, Google thresholds, history, source, freshness, and plain-language meaning. |
-| 5 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Customers can compare the measured baseline with a conservative outcome range for approved recommendations. |
-| 6 | **I1.3 - Governed AI Runtime API** | A real model can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
+| 5 | **I1.3 - Governed AI Runtime API** | Mistral-first AI becomes standard across plans and can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
+| 6 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Customers can compare the measured baseline with a conservative outcome range for approved recommendations. |
 | 7 | **I1.4 - Evidence-Backed Action Center** | The intelligence output becomes one understandable, prioritized queue with outcomes and follow-up measurement. |
-| 8 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
-| 9 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, risks, and next actions. |
-| 10 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
-| 11 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
-| 12 | **G1.4-G1.7 - Connected Local and Website Signals** | GBP, listings, reviews, analytics, and form events replace remaining recurring manual entry. |
-| 13 | **MKT1 - Local Keyword and Competitor Research** | Owners can find valuable local topics and real competitors without moving between tools. |
-| 14 | **CNT1 - Content, On-Page, and Authority Workspace** | Research and intelligence produce governed page, content, metadata, schema, link, and authority work. |
-| 15 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 16 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 17 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 18 | **PA1 - Product Analytics and Customer Feedback** | The team can measure activation, first value, feature adoption, recommendation outcomes, automation trust, and churn risk. |
-| 19 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 20 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 21 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 22 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
-| 23 | **ML1 - Portfolio Intelligence** | Multi-location operators can find outliers, shared problems, and reusable wins quickly. |
-| 24 | **COM1 - Billing, Entitlements, and Self-Service Accounts** | The commercial plans and allowances become enforceable and self-service. |
-| 25 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 26 | **ENT1 - Agency, API, White Label, and Reporting** | Enterprise and agency workflows justify the upper-tier price. |
+| 8 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
+| 9 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
+| 10 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, risks, and next actions. |
+| 11 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
+| 12 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 13 | **G1.4-G1.7 - Connected Local and Website Signals** | GBP, listings, reviews, analytics, and form events replace remaining recurring manual entry. |
+| 14 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 15 | **CNT1 - Content, On-Page, and Authority Workspace** | Research and intelligence produce governed page, content, metadata, schema, link, and authority work. |
+| 16 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 17 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 18 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 19 | **PA1 - Product Analytics and Customer Feedback** | The team can measure activation, first value, feature adoption, recommendation outcomes, automation trust, and churn risk. |
+| 20 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 21 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 22 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 23 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
+| 24 | **ML1 - Portfolio Intelligence** | Multi-location operators can find outliers, shared problems, and reusable wins quickly. |
+| 25 | **COM1 - Billing, Entitlements, and Self-Service Accounts** | The commercial plans and active-location allowances become enforceable and self-service. |
+| 26 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 27 | **ENT1 - Agency, API, White Label, and Reporting** | Enterprise and agency workflows justify the upper-tier price. |
 
 Release R1 is complete as of 2026-07-30. The I1.0 migration is applied, hosted
 CrUX configuration is active, the API is deployed, the first standards check
@@ -503,17 +504,20 @@ Margin guardrail:
 
 | Plan | Monthly revenue | Total COGS ceiling at 85% margin | Total COGS ceiling at 80% margin | Initial 5% platform-API budget |
 | --- | ---: | ---: | ---: | ---: |
-| Solo | $199 | $29.85 | $39.80 | $9.95 |
-| Multi-location | $699 | $104.85 | $139.80 | $34.95 |
-| Enterprise starting point | $1,499 | $224.85 | $299.80 | $74.95 |
+| Solo | $299 | $44.85 | $59.80 | $14.95 |
+| Multi-location | $999 | $149.85 | $199.80 | $49.95 |
+| Enterprise starting point | $1,999 | $299.85 | $399.80 | $99.95 |
 
 Pricing decision:
 
-- Solo is `$199/month`.
-- Multi-location is `$699/month`.
-- Enterprise starts at `$1,499/month` and uses custom limits or per-location
-  pricing when its approved location, user, provider, or support allowance is
-  exceeded.
+- Solo is `$299/month` and includes one active location.
+- Multi-location is `$999/month` and includes up to ten active locations.
+- Enterprise starts at `$1,999/month`, includes 11-20 active locations by
+  default, and uses custom per-location pricing above 20 or when its approved
+  user, provider, data-volume, or support allowance is exceeded.
+- An active location is one that receives scheduled scans, rankings, local
+  maps, reports, AI actions, or connected-data synchronization. Stored
+  inactive locations do not consume the active-location allowance.
 - Agency workflows are packaged inside Enterprise rather than maintained as a
   separate fourth public tier.
 
@@ -819,6 +823,13 @@ Scope:
 
 - Add a provider-neutral server-side AI gateway with structured inputs and
   outputs, timeouts, retries, model routing, and feature-level model allow-lists.
+- Use Mistral Small 4 as the first production model because the required
+  structured output and tool-contract behavior fit the bounded daily/weekly
+  action workload at a low unit cost. Keep a benchmarked Gemini adapter as an
+  optional fallback; no product workflow depends on one vendor-specific SDK.
+- Include governed AI actions in every paid plan. Plan differences are monthly
+  action/token allowances, concurrency, history, bulk scope, and model-routing
+  policy rather than whether the intelligence explanation works at all.
 - Support bounded uses first: plain-language explanations, daily brief,
   recommendation ordering within the deterministic candidate set, question
   answering from supplied evidence, and draft content or metadata.
@@ -976,7 +987,7 @@ Acceptance criteria:
   unnecessarily.
 - Help copy uses the same governed terms as the active lexicon.
 
-### Market MKT1 - Local Keyword and Competitor Research
+### Market MKT1.1 - Automated Local Keyword Discovery
 
 Goal: replace the Semrush research workflows a local service business actually
 needs.
@@ -984,15 +995,10 @@ needs.
 Scope:
 
 - Add local keyword discovery using services, city/service area, Search Console
-  queries, competitor terms, related searches, and an approved keyword-data
-  provider.
+  queries, related searches, and an approved keyword-data provider.
 - Show search volume, intent, CPC, trend, difficulty/competition proxy, current
   position, map visibility, and business relevance with source/freshness.
 - Cluster phrases by service, problem, location, funnel stage, and target page.
-- Discover real organic and map competitors automatically rather than requiring
-  a manually maintained list.
-- Add keyword gaps, page/content gaps, local-grid overlap, GBP attribute
-  comparisons, and competitor-movement alerts.
 - Convert research findings directly into tracked phrases, content briefs,
   profile actions, or approved opportunities.
 
@@ -1002,7 +1008,28 @@ Acceptance criteria:
   tracked phrase or action without copying data between tools.
 - Provider-derived volume or difficulty is never mixed with platform estimates
   without a source label.
+- The default suggestions are generated from connected data and location facts;
+  the owner is not required to build the starting keyword list manually.
+
+### Market MKT1.2 - Competitor and Content-Gap Research
+
+Goal: add the deeper competitive research needed to replace the local-service
+parts of Semrush without delaying automated keyword discovery.
+
+Scope:
+
+- Discover real organic and map competitors automatically rather than requiring
+  a manually maintained list.
+- Add competitor keyword gaps, page/content gaps, local-grid overlap, GBP
+  attribute comparisons, authority gaps, and competitor-movement alerts.
+- Identify the exact competing URL, phrase, location, source, freshness, and
+  supporting evidence for every suggested gap.
+
+Acceptance criteria:
+
 - Competitor recommendations identify the exact gap and supporting data.
+- A discovered gap can become a tracked phrase, governed content brief, local
+  profile action, or approved opportunity without copying data between tools.
 
 ### Content CNT1 - Content, On-Page, and Authority Workspace
 
@@ -1411,7 +1438,7 @@ Acceptance criteria:
 | Review monitoring, inbox, response, generation, and showcase | G1.6 |
 | Multi-location reputation and local visibility overview | G1.6 and ML1 |
 | AI-prioritized local SEO actions | I1.3 and I1.4 |
-| Local keyword and competitor research | MKT1 |
+| Local keyword and competitor research | MKT1.1 and MKT1.2 |
 | Website audit, current CWV visualization, and improvement scenarios | I1.1 and I1.2 |
 | WordPress content and on-page implementation | WP1.1 and WP1.2 |
 | Historical switching/import workflow | MIG1 |
@@ -1424,9 +1451,9 @@ Acceptance criteria:
 
 | Public plan | Price | Minimum completed sprints before general sale |
 | --- | ---: | --- |
-| Solo | $199/month | R1, TR1, G1.2-G1.7, I1.0-I1.4, RPT1, ALT1, CX1, MKT1, baseline CNT1, WP1.1-WP1.2, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
-| Multi-location | $699/month | All Solo gates plus ML1 portfolio intelligence, pooled allowances, team roles, delegated location access, and bulk workflows |
-| Enterprise | $1,499/month starting | All Multi-location gates plus ENT1 API/export, white label, advanced roles, custom limits, durable reporting, onboarding, and priority-support workflows |
+| Solo | $299/month · 1 active location | R1, TR1, G1.2-G1.7, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1, WP1.1-WP1.2, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
+| Multi-location | $999/month · up to 10 active locations | All Solo gates plus ML1 portfolio intelligence, pooled AI/provider allowances, team roles, delegated location access, and bulk workflows |
+| Enterprise | From $1,999/month · 11-20 active locations | All Multi-location gates plus ENT1 API/export, white label, advanced roles, custom limits and per-location pricing above 20, durable reporting, onboarding, and priority-support workflows |
 
 An invite-only paid beta may start earlier with explicit limits and known-feature
 disclosures. The public plans above must not be marketed as Semrush or

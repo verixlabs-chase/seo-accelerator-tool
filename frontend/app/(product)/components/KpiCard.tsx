@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 
 import { cn } from "./utils";
+import { TrendIndicator, type TrendTone } from "./TrendIndicator";
 
 type KpiCardProps = {
   label: string;
   value: string;
   changeLabel?: string;
+  changeTone?: TrendTone;
   summary: string;
   visual?: ReactNode;
   tone?: "default" | "highlight";
@@ -15,6 +17,7 @@ export function KpiCard({
   label,
   value,
   changeLabel,
+  changeTone = "neutral",
   summary,
   visual,
   tone = "default",
@@ -22,10 +25,10 @@ export function KpiCard({
   return (
     <section
       className={cn(
-        "rounded-md border p-3.5 shadow-[0_0_30px_rgba(0,0,0,0.4)] transition hover:shadow-[0_0_36px_rgba(0,0,0,0.48)]",
+        "border-l-2 px-4 py-3",
         tone === "highlight"
-          ? "border-[#3a2a20] bg-[#171417]"
-          : "border-[#26272c] bg-[#141518]",
+          ? "border-l-accent-500 bg-accent-500/[0.06]"
+          : "border-l-[#34353b] bg-white/[0.015]",
       )}
     >
       <div className="flex items-start justify-between gap-4">
@@ -38,9 +41,7 @@ export function KpiCard({
               {value}
             </p>
             {changeLabel ? (
-              <span className="rounded-md border border-accent-500/24 bg-accent-500/10 px-2 py-0.5 text-[11px] font-medium text-zinc-100">
-                {changeLabel}
-              </span>
+              <TrendIndicator label={changeLabel} tone={changeTone} />
             ) : null}
           </div>
         </div>

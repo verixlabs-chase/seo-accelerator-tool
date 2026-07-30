@@ -9,6 +9,7 @@ import {
   Cell,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -68,6 +69,174 @@ type CrawlMetrics = {
     }
   >;
 };
+
+type VitalMetric = {
+  metric_id?: string;
+  display_name?: string;
+  plain_language?: string;
+  value?: number | null;
+  unit?: string;
+  status?: "good" | "needs_improvement" | "poor" | "insufficient_data";
+  thresholds?: {
+    good_boundary?: number;
+    poor_boundary?: number;
+  } | null;
+};
+
+type VitalAssessment = {
+  assessment?: {
+    status?: "good" | "needs_improvement" | "poor" | "insufficient_data";
+    passes_core_web_vitals?: boolean | null;
+  };
+  metrics?: VitalMetric[];
+  supporting_metrics?: VitalMetric[];
+  recommended_actions?: Array<{
+    action_id?: string;
+    display_name?: string;
+    why_it_matters?: string;
+    steps?: string[];
+    effort?: string;
+  }>;
+  search_caveat?: string;
+};
+
+type PerformanceMeasurement = {
+  id?: string;
+  source?: "crux_field" | "pagespeed_lab";
+  scope?: "url" | "origin";
+  form_factor?: "mobile" | "desktop";
+  status?: "ready" | "insufficient_data" | "failed";
+  measured_url?: string;
+  fallback_to_origin?: boolean;
+  source_version?: string | null;
+  captured_at?: string;
+  collection_period?: { start?: string | null; end?: string | null };
+  metrics?: {
+    lcp_ms?: number | null;
+    inp_ms?: number | null;
+    cls?: number | null;
+    ttfb_ms?: number | null;
+    fcp_ms?: number | null;
+    tbt_ms?: number | null;
+    performance_score?: number | null;
+  };
+  assessment?: VitalAssessment | null;
+  diagnostics?: {
+    opportunities?: Array<{
+      audit_id?: string;
+      title?: string;
+      description?: string;
+      estimated_savings_ms?: number;
+    }>;
+  };
+  error?: { code?: string; message?: string } | null;
+};
+
+type PerformanceSummary = {
+  campaign_id?: string;
+  form_factor?: "mobile" | "desktop";
+  latest?: {
+    crux_field?: PerformanceMeasurement;
+    pagespeed_lab?: PerformanceMeasurement;
+  };
+  history?: PerformanceMeasurement[];
+  sync?: {
+    state?: "not_started" | "current" | "failed";
+    last_success_at?: string | null;
+    next_refresh_at?: string | null;
+  };
+};
+
+function formatVitalValue(metric: VitalMetric) {
+  if (metric.value === null || metric.value === undefined) {
+    return "Not enough data";
+  }
+  if (metric.metric_id === "cwv.cls") {
+    return metric.value.toFixed(2);
+  }
+  return `${Math.round(metric.value).toLocaleString("en-US")} ms`;
+}
+
+function vitalStatusLabel(status?: VitalMetric["status"]) {
+  if (status === "good") return "Good";
+  if (status === "needs_improvement") return "Needs work";
+  if (status === "poor") return "Poor";
+  return "Not enough real-user data";
+}
+
+function vitalOwnerMeaning(metricId?: string) {
+  if (metricId === "cwv.lcp") {
+    return "How quickly the main part of the page appears.";
+  }
+  if (metricId === "cwv.inp") {
+    return "How quickly the page responds after someone clicks or taps.";
+  }
+  return "Whether page content stays in place instead of jumping around.";
+}
+
+function CoreVitalCard({ metric }: { metric: VitalMetric }) {
+  const goodBoundary = metric.thresholds?.good_boundary;
+  const poorBoundary = metric.thresholds?.poor_boundary;
+  const progress =
+    metric.value !== null &&
+    metric.value !== undefined &&
+    poorBoundary &&
+    poorBoundary > 0
+      ? Math.min(100, Math.max(4, (metric.value / poorBoundary) * 100))
+      : 0;
+  const statusTone =
+    metric.status === "good"
+      ? "text-emerald-400"
+      : metric.status === "poor"
+        ? "text-rose-400"
+        : metric.status === "needs_improvement"
+          ? "text-amber-400"
+          : "text-zinc-400";
+
+  return (
+    <article className="border-l-2 border-[#34353b] bg-white/[0.015] px-4 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+            {metric.display_name || metric.metric_id}
+          </p>
+          <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">
+            {formatVitalValue(metric)}
+          </p>
+        </div>
+        <span className={`text-xs font-semibold ${statusTone}`}>
+          {metric.status === "good" ? "✓ " : metric.status === "poor" ? "! " : ""}
+          {vitalStatusLabel(metric.status)}
+        </span>
+      </div>
+      <div className="mt-4">
+        <div className="relative h-2 overflow-hidden rounded-full bg-gradient-to-r from-emerald-500/70 via-amber-500/70 to-rose-500/70">
+          {progress > 0 ? (
+            <span
+              className="absolute top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-white shadow"
+              style={{ left: `calc(${progress}% - 2px)` }}
+            />
+          ) : null}
+        </div>
+        <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500">
+          <span>
+            Good: {goodBoundary !== undefined ? (
+              metric.metric_id === "cwv.cls" ? goodBoundary : `${goodBoundary} ms`
+            ) : "—"}
+          </span>
+          <span>
+            Poor: {poorBoundary !== undefined ? (
+              metric.metric_id === "cwv.cls" ? `over ${poorBoundary}` : `over ${poorBoundary} ms`
+            ) : "—"}
+          </span>
+        </div>
+      </div>
+      <p className="mt-3 text-sm leading-5 text-zinc-300">
+        {vitalOwnerMeaning(metric.metric_id)}
+      </p>
+    </article>
+  );
+}
 
 function toTitleCase(value?: string) {
   if (!value) {
@@ -230,6 +399,10 @@ export default function SiteHealthPage() {
   const [runs, setRuns] = useState<CrawlRun[]>([]);
   const [issues, setIssues] = useState<TechnicalIssue[]>([]);
   const [metrics, setMetrics] = useState<CrawlMetrics | null>(null);
+  const [performance, setPerformance] = useState<PerformanceSummary | null>(null);
+  const [formFactor, setFormFactor] = useState<"mobile" | "desktop">("mobile");
+  const [historyDays, setHistoryDays] = useState(90);
+  const [measuring, setMeasuring] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -245,26 +418,59 @@ export default function SiteHealthPage() {
       return items[0]?.id || "";
     });
     return items;
-  }, []);
+  }, [setSelectedCampaignId]);
 
   const loadTechnicalData = useCallback(async (campaignId: string) => {
     if (!campaignId) {
       setRuns([]);
       setIssues([]);
       setMetrics(null);
+      setPerformance(null);
       return;
     }
 
-    const [runsResponse, issuesResponse, metricsResponse] = await Promise.all([
+    const [runsResponse, issuesResponse, metricsResponse, performanceResponse] = await Promise.all([
       platformApi(`/crawl/runs?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi(`/crawl/issues?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi("/crawl/metrics", { method: "GET" }),
+      platformApi(
+        `/website-performance/summary?campaign_id=${encodeURIComponent(campaignId)}&form_factor=${formFactor}&days=${historyDays}`,
+        { method: "GET" },
+      ),
     ]);
 
     setRuns(Array.isArray(runsResponse?.items) ? (runsResponse.items as CrawlRun[]) : []);
     setIssues(Array.isArray(issuesResponse?.items) ? (issuesResponse.items as TechnicalIssue[]) : []);
     setMetrics((metricsResponse as CrawlMetrics) || null);
-  }, []);
+    setPerformance((performanceResponse as PerformanceSummary) || null);
+  }, [formFactor, historyDays]);
+
+  const runPerformanceCheck = useCallback(async () => {
+    if (!selectedCampaignId) {
+      return;
+    }
+    setMeasuring(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await platformApi(
+        `/website-performance/collect?campaign_id=${encodeURIComponent(selectedCampaignId)}&form_factor=${formFactor}`,
+        { method: "POST" },
+      );
+      if (result?.status === "completed") {
+        setNotice(
+          `${formFactor === "mobile" ? "Phone" : "Computer"} speed test completed. The newest results are shown below.`,
+        );
+      } else {
+        setNotice("The website speed test was queued. Reload shortly to see the result.");
+      }
+      await loadTechnicalData(selectedCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to test website performance.");
+    } finally {
+      setMeasuring(false);
+    }
+  }, [formFactor, loadTechnicalData, selectedCampaignId]);
 
   useEffect(() => {
     async function loadPage() {
@@ -494,22 +700,97 @@ export default function SiteHealthPage() {
     [latestRunIssues],
   );
 
+  const fieldMeasurement = performance?.latest?.crux_field;
+  const labMeasurement = performance?.latest?.pagespeed_lab;
+  const vitalMetrics = fieldMeasurement?.assessment?.metrics || [];
+  const recommendedPerformanceAction =
+    fieldMeasurement?.assessment?.recommended_actions?.[0] || null;
+  const performanceHistoryData = useMemo(
+    () =>
+      (performance?.history || []).map((measurement) => {
+        const measurementMetrics = measurement.assessment?.metrics || [];
+        const targetRatio = (metricId: string) => {
+          const metric = measurementMetrics.find((item) => item.metric_id === metricId);
+          const target = metric?.thresholds?.good_boundary;
+          if (metric?.value === null || metric?.value === undefined || !target) {
+            return null;
+          }
+          return Math.round((metric.value / target) * 100);
+        };
+        return {
+          label: new Date(
+            measurement.collection_period?.end ||
+              measurement.captured_at ||
+              Date.now(),
+          ).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+          lcp: targetRatio("cwv.lcp"),
+          inp: targetRatio("cwv.inp"),
+          cls: targetRatio("cwv.cls"),
+        };
+      }),
+    [performance?.history],
+  );
+
+  const performanceHeadline = useMemo(() => {
+    const status = fieldMeasurement?.assessment?.assessment?.status;
+    if (!fieldMeasurement) {
+      return {
+        title: "Website speed has not been measured yet",
+        summary:
+          "Run the first test to compare real customer experience with Google's current Core Web Vitals targets.",
+        tone: "text-zinc-100",
+      };
+    }
+    if (fieldMeasurement.status === "failed") {
+      return {
+        title: "The latest real-user measurement failed",
+        summary:
+          fieldMeasurement.error?.message ||
+          "Run the test again. Your saved crawl results are still available below.",
+        tone: "text-rose-300",
+      };
+    }
+    if (status === "good") {
+      return {
+        title: "Real customers are getting a good page experience",
+        summary:
+          "All three Core Web Vitals are within Google's good range for this device type.",
+        tone: "text-emerald-300",
+      };
+    }
+    if (status === "insufficient_data") {
+      return {
+        title: "Google does not have enough real-user data yet",
+        summary:
+          "This is not a pass or a failure. Use the one-time lab test as a diagnostic while more customer visits accumulate.",
+        tone: "text-amber-200",
+      };
+    }
+    return {
+      title: "Customer experience needs work",
+      summary:
+        recommendedPerformanceAction?.why_it_matters ||
+        "At least one Core Web Vital is outside Google's good range. Start with the first recommendation below.",
+      tone: status === "poor" ? "text-rose-300" : "text-amber-200",
+    };
+  }, [fieldMeasurement, recommendedPerformanceAction]);
+
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       {
-        label: "Latest scan",
-        value: latestRun ? toTitleCase(latestRun.status) : "Not started",
-        tone: latestRun?.status === "completed" ? "success" : latestRun ? "info" : "warning",
-      },
-      {
-        label: "High severity",
-        value: severityCounts.high ? `${severityCounts.high} flagged` : "None flagged",
-        tone: (severityCounts.high || 0) > 0 ? "warning" : "success",
-      },
-      {
-        label: "Total issues",
-        value: latestRunIssues.length ? `${latestRunIssues.length} found` : "No issues",
-        tone: latestRunIssues.length > 0 ? "warning" : "success",
+        label: "Speed measurement",
+        value:
+          fieldMeasurement?.status === "failed"
+            ? "Test failed"
+            : fieldMeasurement
+              ? "Current"
+              : "Not measured",
+        tone:
+          fieldMeasurement?.status === "failed"
+            ? "danger"
+            : fieldMeasurement
+              ? "success"
+              : "warning",
       },
       {
         label: "Scan processing",
@@ -521,13 +802,13 @@ export default function SiteHealthPage() {
               : "Processing under pressure",
         tone:
           scanLaneHealthy === null
-            ? "warning"
+            ? "info"
             : scanLaneHealthy
               ? "success"
-              : "warning",
+              : "danger",
       },
     ],
-    [latestRun, latestRunIssues.length, scanLaneHealthy, severityCounts.high],
+    [fieldMeasurement, scanLaneHealthy],
   );
 
   return (
@@ -543,20 +824,21 @@ export default function SiteHealthPage() {
       topBarActions={
         <>
           <button
+            onClick={() => void runPerformanceCheck()}
+            disabled={!selectedCampaignId || measuring}
+            className="rounded-md border border-accent-500/35 bg-accent-500/12 px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {measuring ? "Testing website…" : "Test website now"}
+          </button>
+          <button
             onClick={() => {
-              setNotice("Saved site health data reloaded.");
+              setNotice("Saved website health data reloaded.");
               void loadTechnicalData(selectedCampaignId);
             }}
-            disabled={!selectedCampaignId}
+            disabled={!selectedCampaignId || measuring}
             className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Reload saved data
-          </button>
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100"
-          >
-            Open dashboard
           </button>
         </>
       }
@@ -598,6 +880,212 @@ export default function SiteHealthPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
+            <section className="space-y-5 border-y border-[#26272c] bg-[#111214]/70 px-4 py-5 md:px-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-400">
+                    Real customer experience
+                  </p>
+                  <h2 className={`mt-2 text-2xl font-semibold tracking-[-0.03em] ${performanceHeadline.tone}`}>
+                    {performanceHeadline.title}
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                    {performanceHeadline.summary}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex rounded-md bg-[#0d0e10] p-1" aria-label="Device type">
+                    {(["mobile", "desktop"] as const).map((device) => (
+                      <button
+                        key={device}
+                        type="button"
+                        onClick={() => setFormFactor(device)}
+                        className={`rounded px-3 py-1.5 text-sm font-medium ${
+                          formFactor === device
+                            ? "bg-accent-500 text-white"
+                            : "text-zinc-400 hover:text-white"
+                        }`}
+                      >
+                        {device === "mobile" ? "Phone" : "Computer"}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-zinc-400">
+                    History
+                    <select
+                      value={historyDays}
+                      onChange={(event) => setHistoryDays(Number(event.target.value))}
+                      className="rounded-md border border-[#303137] bg-[#0d0e10] px-2.5 py-2 text-sm text-zinc-100"
+                    >
+                      <option value={30}>30 days</option>
+                      <option value={90}>90 days</option>
+                      <option value={180}>6 months</option>
+                      <option value={365}>1 year</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              {!fieldMeasurement && !labMeasurement ? (
+                <EmptyState
+                  title="Measure the website against Google's current targets"
+                  summary="This runs a real-user Core Web Vitals lookup and a separate one-time lab test for the selected location and device."
+                  actionLabel={measuring ? "Test in progress…" : "Run the first speed test"}
+                  onAction={() => void runPerformanceCheck()}
+                />
+              ) : (
+                <>
+                  <div className="grid gap-4 xl:grid-cols-3">
+                    {vitalMetrics.map((metric) => (
+                      <CoreVitalCard key={metric.metric_id} metric={metric} />
+                    ))}
+                  </div>
+
+                  <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+                    <ChartCard
+                      eyebrow={`${historyDays}-day history`}
+                      title="How close each Core Web Vital is to Google's good range"
+                      summary="100% is the edge of Google's good range. Lower is better. Field measurements use a rolling 28-day window, so changes appear gradually."
+                      chart={
+                        performanceHistoryData.length > 0 ? (
+                          <div className="h-72">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={performanceHistoryData}>
+                                <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+                                <XAxis
+                                  dataKey="label"
+                                  axisLine={false}
+                                  tickLine={false}
+                                  tick={{ fill: "#71717a", fontSize: 12 }}
+                                />
+                                <YAxis
+                                  axisLine={false}
+                                  tickLine={false}
+                                  tick={{ fill: "#71717a", fontSize: 12 }}
+                                  width={42}
+                                  unit="%"
+                                />
+                                <Tooltip content={<SiteHealthTooltip />} />
+                                <ReferenceLine
+                                  y={100}
+                                  stroke="#34d399"
+                                  strokeDasharray="6 5"
+                                  label={{ value: "Good limit", fill: "#6ee7b7", fontSize: 11 }}
+                                />
+                                <Line
+                                  type="monotone"
+                                  dataKey="lcp"
+                                  name="Main content load"
+                                  stroke="#FF6A1A"
+                                  strokeWidth={3}
+                                  connectNulls
+                                />
+                                <Line
+                                  type="monotone"
+                                  dataKey="inp"
+                                  name="Click response"
+                                  stroke="#60a5fa"
+                                  strokeWidth={3}
+                                  connectNulls
+                                />
+                                <Line
+                                  type="monotone"
+                                  dataKey="cls"
+                                  name="Layout stability"
+                                  stroke="#c084fc"
+                                  strokeWidth={3}
+                                  connectNulls
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        ) : (
+                          <ChartEmptyState
+                            title="History starts with the first measurement"
+                            summary="Run the first test now. Future scheduled measurements will make the trend visible here."
+                          />
+                        )
+                      }
+                      footer={
+                        <div className="space-y-1 text-xs leading-5 text-zinc-400">
+                          <p>
+                            Source: Google Chrome UX Report ·{" "}
+                            {fieldMeasurement?.fallback_to_origin
+                              ? "origin-level fallback because this page lacks enough visits"
+                              : "page-level real-user data"}
+                          </p>
+                          <p>
+                            Latest window ended{" "}
+                            {fieldMeasurement?.collection_period?.end
+                              ? new Date(fieldMeasurement.collection_period.end).toLocaleDateString()
+                              : "on an unavailable date"}
+                            . Passing these targets helps page experience but does not guarantee higher rankings.
+                          </p>
+                        </div>
+                      }
+                    />
+
+                    <section className="border-l-2 border-[#34353b] bg-white/[0.015] px-5 py-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                        One-time lab test
+                      </p>
+                      <div className="mt-3 flex items-end gap-3">
+                        <p className="text-4xl font-semibold tracking-[-0.04em] text-white">
+                          {labMeasurement?.metrics?.performance_score ?? "—"}
+                        </p>
+                        <p className="pb-1 text-sm text-zinc-400">performance score / 100</p>
+                      </div>
+                      <p className="mt-3 text-sm leading-5 text-zinc-300">
+                        This controlled test helps diagnose fixes. It is separate from what real customers experienced.
+                      </p>
+                      {(labMeasurement?.diagnostics?.opportunities || []).length > 0 ? (
+                        <div className="mt-5 space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                            Biggest technical opportunities
+                          </p>
+                          {(labMeasurement?.diagnostics?.opportunities || []).slice(0, 3).map((item) => (
+                            <div key={item.audit_id || item.title} className="border-t border-[#2a2b30] pt-3">
+                              <p className="text-sm font-medium text-zinc-100">{item.title}</p>
+                              <p className="mt-1 text-xs text-zinc-400">
+                                About {Math.round(item.estimated_savings_ms || 0)} ms of lab-test savings
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-5 text-sm text-zinc-400">
+                          No major lab opportunity was returned in the latest test.
+                        </p>
+                      )}
+                      <p className="mt-5 text-xs leading-5 text-zinc-500">
+                        Lighthouse {labMeasurement?.source_version || "version unavailable"} · tested{" "}
+                        {formatRelativeTime(labMeasurement?.captured_at)}
+                      </p>
+                    </section>
+                  </div>
+
+                  {recommendedPerformanceAction ? (
+                    <section className="border-l-2 border-accent-500 bg-accent-500/[0.06] px-5 py-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-300">
+                        Best speed improvement to start with
+                      </p>
+                      <h3 className="mt-2 text-lg font-semibold text-white">
+                        {recommendedPerformanceAction.display_name}
+                      </h3>
+                      <p className="mt-2 text-sm leading-6 text-zinc-300">
+                        {recommendedPerformanceAction.why_it_matters}
+                      </p>
+                      {recommendedPerformanceAction.steps?.[0] ? (
+                        <p className="mt-3 text-sm font-medium text-zinc-100">
+                          First step: {recommendedPerformanceAction.steps[0]}
+                        </p>
+                      ) : null}
+                    </section>
+                  ) : null}
+                </>
+              )}
+            </section>
+
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                 Recommended action

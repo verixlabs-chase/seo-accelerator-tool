@@ -17,6 +17,7 @@ export * from "./ProductPageIntro";
 export * from "./ReportPreview";
 export * from "./SidebarNav";
 export * from "./TopBar";
+export * from "./TrendIndicator";
 export * from "./TrustStatusBar";
 export * from "./TruthNotice";
 export * from "./design-tokens";

@@ -30,9 +30,11 @@ Set these before starting API, worker, and scheduler:
 - `REFERENCE_LIBRARY_LOADER_ENABLED=true`
 - `REFERENCE_LIBRARY_ENFORCE_VALIDATION=true`
 - `INTELLIGENCE_LEXICON_ENABLED=true`
-- `CRUX_API_KEY=<restricted Google Cloud key with Chrome UX Report API enabled>`
+- `CRUX_API_KEY=<restricted Google Cloud key with Chrome UX Report API and PageSpeed Insights API enabled>`
+- `PAGESPEED_API_KEY=<optional separate restricted key; defaults to CRUX_API_KEY>`
 - `CWV_STANDARDS_PROBE_ORIGIN=https://web.dev`
 - `CWV_STANDARDS_REVIEW_INTERVAL_DAYS=30`
+- `WEBSITE_PERFORMANCE_COLLECTION_INTERVAL_HOURS=168`
 
 If using production-like staging, also set:
 
