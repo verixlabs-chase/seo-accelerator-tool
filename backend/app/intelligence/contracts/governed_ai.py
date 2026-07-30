@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.intelligence.lexicon.plain_language import (
+    SUMMARY_MAX_WORDS,
+    WHY_NOW_MAX_WORDS,
+    find_disallowed_customer_terms,
+    sentence_count,
+    starts_with_action,
+    word_count,
+)
+
 
 UNSUPPORTED_CLAIM_PHRASES = (
     "guarantee",
@@ -31,6 +40,26 @@ class GovernedIntelligenceBrief(BaseModel):
     evidence_used: list[str] = Field(min_length=1, max_length=12)
     uncertainties: list[str] = Field(default_factory=list, max_length=8)
     approval_required: bool
+
+    @field_validator("summary")
+    @classmethod
+    def summary_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="summary",
+            max_words=SUMMARY_MAX_WORDS,
+            max_sentences=2,
+        )
+
+    @field_validator("why_now")
+    @classmethod
+    def why_now_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="why_now",
+            max_words=WHY_NOW_MAX_WORDS,
+            max_sentences=1,
+        )
 
     @field_validator("evidence_used", "uncertainties")
     @classmethod
@@ -74,3 +103,31 @@ class GovernedIntelligenceBrief(BaseModel):
             raise ValueError(
                 f"AI output contained an unsupported claim: {unsupported[0]}"
             )
+
+
+def _validate_plain_language(
+    value: str,
+    *,
+    field_name: str,
+    max_words: int,
+    max_sentences: int,
+) -> str:
+    disallowed = find_disallowed_customer_terms(value)
+    if disallowed:
+        raise ValueError(
+            f"{field_name} used technical language: {disallowed[0]}"
+        )
+    actual_words = word_count(value)
+    if actual_words > max_words:
+        raise ValueError(
+            f"{field_name} must be {max_words} words or fewer; received {actual_words}"
+        )
+    actual_sentences = sentence_count(value)
+    if actual_sentences > max_sentences:
+        raise ValueError(
+            f"{field_name} must be {max_sentences} sentence"
+            f"{'s' if max_sentences != 1 else ''} or fewer"
+        )
+    if field_name == "summary" and not starts_with_action(value):
+        raise ValueError("summary must start with a clear action verb")
+    return value

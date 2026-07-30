@@ -46,7 +46,7 @@ export function TruthNotice({
     [selectedCampaignId, today],
   );
   const cacheKey = useMemo(
-    () => `insightos-daily-guide-v2:${selectedCampaignId}:${today}`,
+    () => `insightos-daily-guide-v3:${selectedCampaignId}:${today}`,
     [selectedCampaignId, today],
   );
   const [isVisible, setIsVisible] = useState(false);
@@ -92,7 +92,7 @@ export function TruthNotice({
           output.summary.trim()
         ) {
           const guide = {
-            summary: shorten(simplifyGuideText(output.summary), 260),
+            summary: shorten(simplifyGuideText(output.summary), 210),
             generatedByAi: true,
           };
           window.localStorage.setItem(cacheKey, JSON.stringify(guide));
@@ -182,7 +182,16 @@ function simplifyGuideText(value: string) {
     .replace(/deterministic intelligence/gi, "InsightOS")
     .replace(/intelligence engine/gi, "recommendation system")
     .replace(/composite score/gi, "overall search visibility score")
-    .replace(/\bGBP\b/g, "Google Business Profile")
+    .replace(/\bGoogle Business Profile\b/gi, "Google business listing")
+    .replace(/\bGBP\b/g, "Google business listing")
+    .replace(/\bCore Web Vitals\b/gi, "website speed and stability")
+    .replace(/\bLargest Contentful Paint\b/gi, "main content load time")
+    .replace(/\bLCP\b/g, "main content load time")
+    .replace(/\bbacklinks?\b/gi, "links from trusted websites")
+    .replace(/\bschema markup\b/gi, "business details that help Google understand the page")
+    .replace(/\bNAP\b/g, "business name, address, and phone number")
+    .replace(/\bCTR\b/g, "the share of searchers who choose your listing")
+    .replace(/\bindexation\b/gi, "showing the page in Google")
     .replace(/review acquisition velocity/gi, "new review activity")
     .replace(/content throughput/gi, "new content")
     .replace(/backlink acquisition velocity/gi, "new trusted links")

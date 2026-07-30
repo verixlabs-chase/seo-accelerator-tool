@@ -854,6 +854,15 @@ policy engine retain decision authority.
 > restricted-role pricing access, deterministic control-field enforcement, and
 > live validated-output/cost audit have passed. Daily briefs, evidence Q&A, and
 > governed drafting remain later I1.3 slices.
+>
+> **Service-business language contract completed 2026-07-30:** the live AI
+> prompt now loads the versioned
+> `backend/app/intelligence/lexicon/service_business_language_guide.md` writing
+> standard. Customer summaries must start with a clear action, stay at or below
+> 32 words and two sentences, and avoid internal SEO, analytics, and software
+> terms. `why now` is limited to 24 words and one sentence. The server rejects
+> noncompliant model output and uses a plain-language fallback, while the client
+> retains a final translation layer for older cached responses.
 
 Runtime sequence:
 

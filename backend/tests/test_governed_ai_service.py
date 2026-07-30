@@ -10,6 +10,10 @@ import pytest
 from fastapi import HTTPException
 
 from app.intelligence.contracts.governed_ai import GovernedIntelligenceBrief
+from app.intelligence.lexicon.plain_language import (
+    SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION,
+    load_service_business_language_guide,
+)
 from app.models.cost_economics import CostLedgerEntry
 from app.models.governed_ai import GovernedAIRun
 from app.models.intelligence import StrategyRecommendation
@@ -36,8 +40,14 @@ class ContextAwareProvider:
     name = "mistral"
     model_name = "mistral-small-2603"
 
-    def __init__(self, *, invalid_action: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        invalid_action: bool = False,
+        technical_language: bool = False,
+    ) -> None:
         self.invalid_action = invalid_action
+        self.technical_language = technical_language
         self.calls = 0
 
     def generate(
@@ -52,8 +62,16 @@ class ContextAwareProvider:
         recommendation = context["facts"]["recommendations"][0]
         return GovernedAIProviderResponse(
             payload={
-                "summary": "The saved evidence points to one practical technical priority.",
-                "why_now": "The deterministic engine selected this from the current evidence.",
+                "summary": (
+                    "Optimize the LCP resource and review the technical SEO evidence."
+                    if self.technical_language
+                    else "Make the main part of this page load faster."
+                ),
+                "why_now": (
+                    "The deterministic engine selected this from the current evidence."
+                    if self.technical_language
+                    else "Customers may leave when the page takes too long to appear."
+                ),
                 "selected_action_id": (
                     "invented.action" if self.invalid_action else selected
                 ),
@@ -223,6 +241,39 @@ def test_invented_action_is_rejected_after_cost_reconciliation(
     assert db_session.query(CostLedgerEntry).count() == 2
 
 
+def test_technical_ai_language_is_rejected_and_plain_fallback_is_used(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_service,
+        "get_settings",
+        lambda: _settings(configured=True),
+    )
+    organization, campaign = _campaign_with_lexicon_action(
+        db_session,
+        create_test_org,
+    )
+
+    payload = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        provider=ContextAwareProvider(technical_language=True),
+        now=datetime(2026, 7, 30, 21, 0, tzinfo=UTC),
+    )
+
+    assert payload["item"]["status"] == "rejected"
+    assert payload["item"]["provider_state"] == "invalid_output"
+    assert payload["item"]["error_code"] == "ai_output_validation_failed"
+    assert payload["item"]["output"]["summary"] == (
+        "Review this issue. The main visible content should load sooner."
+    )
+    assert "technical" not in payload["item"]["output"]["summary"].lower()
+
+
 def test_campaign_scope_cannot_cross_organizations(
     db_session,
     create_test_org,
@@ -255,7 +306,7 @@ def test_campaign_scope_cannot_cross_organizations(
 
 def test_output_contract_rejects_unknown_evidence_and_promises() -> None:
     output = GovernedIntelligenceBrief(
-        summary="This will rank first and is guaranteed.",
+        summary="Fix this page because it will rank first and is guaranteed.",
         why_now="The evidence proves that revenue will increase.",
         selected_action_id=None,
         evidence_used=["unknown:evidence"],
@@ -273,7 +324,7 @@ def test_output_contract_rejects_unknown_evidence_and_promises() -> None:
 
 def test_output_contract_allows_truthful_uncertainty_language() -> None:
     output = GovernedIntelligenceBrief(
-        summary="The current evidence supports reviewing this page first.",
+        summary="Review this page first based on the information available.",
         why_now="Better rankings are not guaranteed, so measure the result.",
         selected_action_id=None,
         evidence_used=["campaign:1"],
@@ -286,6 +337,58 @@ def test_output_contract_allows_truthful_uncertainty_language() -> None:
         deterministic_action_id=None,
         action_requires_approval=False,
     )
+
+
+def test_service_business_language_guide_is_the_runtime_writing_standard() -> None:
+    guide = load_service_business_language_guide()
+
+    assert SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION in guide
+    assert "Start with the action" in guide
+    assert "busy service-business owner" in guide
+    assert "Optimize the LCP resource" in guide
+    assert "Make the main part of this page load faster" in guide
+
+
+def test_output_contract_rejects_jargon_and_long_advice() -> None:
+    with pytest.raises(ValueError, match="technical language"):
+        GovernedIntelligenceBrief(
+            summary="Improve GBP review velocity using the provider API.",
+            why_now="The deterministic engine selected this action.",
+            selected_action_id=None,
+            evidence_used=["campaign:1"],
+            uncertainties=[],
+            approval_required=False,
+        )
+
+    with pytest.raises(ValueError, match="32 words or fewer"):
+        GovernedIntelligenceBrief(
+            summary=" ".join(["Fix"] * 33),
+            why_now="Customers are affected now.",
+            selected_action_id=None,
+            evidence_used=["campaign:1"],
+            uncertainties=[],
+            approval_required=False,
+        )
+
+    with pytest.raises(ValueError, match="clear action verb"):
+        GovernedIntelligenceBrief(
+            summary="This page needs attention.",
+            why_now="Customers are affected now.",
+            selected_action_id=None,
+            evidence_used=["campaign:1"],
+            uncertainties=[],
+            approval_required=False,
+        )
+
+    with pytest.raises(ValueError, match="1 sentence or fewer"):
+        GovernedIntelligenceBrief(
+            summary="Fix the page title.",
+            why_now="Customers may miss it. Google may also misunderstand it.",
+            selected_action_id=None,
+            evidence_used=["campaign:1"],
+            uncertainties=[],
+            approval_required=False,
+        )
 
 
 def test_mistral_adapter_uses_strict_schema_and_records_usage() -> None:
@@ -303,7 +406,7 @@ def test_mistral_adapter_uses_strict_schema_and_records_usage() -> None:
                         "message": {
                             "content": (
                                 '{"summary":"Current evidence supports this review.",'
-                                '"why_now":"It is the engine-selected priority.",'
+                                '"why_now":"Customers may notice this problem now.",'
                                 '"selected_action_id":null,'
                                 '"evidence_used":["campaign:1"],'
                                 '"uncertainties":[],'
@@ -344,6 +447,11 @@ def test_mistral_adapter_uses_strict_schema_and_records_usage() -> None:
     assert captured["temperature"] == 0
     assert captured["response_format"]["type"] == "json_schema"
     assert captured["response_format"]["json_schema"]["strict"] is True
+    system_prompt = captured["messages"][0]["content"]
+    assert "InsightOS Service-Business Plain-Language Guide" in system_prompt
+    assert SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION in system_prompt
+    assert "Start with the action" in system_prompt
+    assert "Make the main part of this page load faster" in system_prompt
     assert response.provider_request_id == "request-123"
     assert response.input_tokens == 321
     assert response.output_tokens == 45

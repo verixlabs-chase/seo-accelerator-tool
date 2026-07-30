@@ -14,7 +14,16 @@ from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
 from app.intelligence.contracts.governed_ai import GovernedIntelligenceBrief
-from app.intelligence.lexicon import build_ai_decision_context, get_active_lexicon
+from app.intelligence.lexicon import (
+    SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION,
+    SUMMARY_MAX_WORDS,
+    WHY_NOW_MAX_WORDS,
+    build_ai_decision_context,
+    get_active_lexicon,
+    load_service_business_language_guide,
+    service_business_language_guide_hash,
+    simplify_internal_language,
+)
 from app.models.campaign import Campaign
 from app.models.governed_ai import GovernedAIRun
 from app.models.intelligence import StrategyRecommendation
@@ -27,7 +36,7 @@ from app.services.governed_ai_provider import (
 
 
 FEATURE = "intelligence_brief"
-PROMPT_TEMPLATE_VERSION = "insightos-intelligence-brief-v3"
+PROMPT_TEMPLATE_VERSION = "insightos-intelligence-brief-v4"
 MISTRAL_CAPABILITY = "governed_ai"
 MISTRAL_OPERATION = "intelligence_brief"
 MONTHLY_ACTION_LIMITS = {
@@ -112,6 +121,8 @@ def generate_governed_brief(
         {
             "template_version": PROMPT_TEMPLATE_VERSION,
             "schema": GovernedIntelligenceBrief.model_json_schema(),
+            "writing_guide_version": SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION,
+            "writing_guide_hash": service_business_language_guide_hash(),
         }
     )
     backend = settings.ai_provider_backend.strip().lower()
@@ -182,7 +193,10 @@ def generate_governed_brief(
         recommendations=recommendations,
         evidence_ids=context_bundle["evidence_ids"],
         deterministic_action=context_bundle["deterministic_action"],
-        uncertainty="AI explanation is unavailable; the deterministic recommendations remain usable.",
+        uncertainty=(
+            "The daily explanation is unavailable. Your saved recommendation "
+            "is still available."
+        ),
     )
     if actions_used >= action_limit:
         row = _new_run(
@@ -261,7 +275,11 @@ def generate_governed_brief(
     db.refresh(row)
 
     context_json = json.dumps(context, sort_keys=True, separators=(",", ":"))
-    estimated_input_tokens = max(1, (len(context_json) + 3) // 4 + 180)
+    language_guide = load_service_business_language_guide()
+    estimated_input_tokens = max(
+        1,
+        (len(context_json) + len(language_guide) + 3) // 4 + 220,
+    )
     if estimated_input_tokens > settings.ai_max_input_tokens:
         _finalize_fallback(
             db,
@@ -597,6 +615,14 @@ def _build_context(
         ),
         "authority": "deterministic_engine",
     }
+    context["customer_language_standard"] = {
+        "name": "InsightOS Service-Business Plain-Language Guide",
+        "version": SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION,
+        "summary_max_words": SUMMARY_MAX_WORDS,
+        "why_now_max_words": WHY_NOW_MAX_WORDS,
+        "required_order": "action_first_then_observable_problem",
+        "audience": "busy_local_service_business_owner",
+    }
     context["allowed_evidence_ids"] = evidence_ids
     return {
         "context": context,
@@ -654,22 +680,27 @@ def _fallback_output(
 ) -> GovernedIntelligenceBrief:
     first = recommendations[0] if recommendations else None
     if first is not None:
-        summary = first.rationale[:800]
+        summary = simplify_internal_language(
+            first.rationale,
+            max_words=SUMMARY_MAX_WORDS,
+        ) or "Review the first saved recommendation for this location."
         evidence_used = [f"recommendation:{first.id}"]
     else:
-        summary = (
-            "The deterministic intelligence engine has not produced a specific "
-            "recommendation for this location yet."
-        )
+        summary = "Check this location again later. There is no specific next step yet."
         evidence_used = [evidence_ids[0]]
     if deterministic_action is not None:
-        why_now = str(deterministic_action.get("why_it_matters") or summary)[:800]
+        why_now = simplify_internal_language(
+            str(deterministic_action.get("why_it_matters") or summary),
+            max_words=WHY_NOW_MAX_WORDS,
+            max_sentences=1,
+            action_first=False,
+        ) or "This is the safest useful action supported by the information available now."
         action_id = str(deterministic_action["action_id"])
         approval_required = int(deterministic_action.get("risk_tier") or 0) >= 2
     else:
         why_now = (
-            "Review the saved evidence before choosing work. No lexicon-approved "
-            "action is attached to the current recommendation."
+            "Review the saved information before choosing work because there is "
+            "not enough information to suggest a safe action yet."
         )
         action_id = None
         approval_required = False

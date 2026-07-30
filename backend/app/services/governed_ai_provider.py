@@ -7,6 +7,11 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.intelligence.lexicon.plain_language import (
+    SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION,
+    load_service_business_language_guide,
+)
+
 
 class GovernedAIProviderError(RuntimeError):
     def __init__(
@@ -77,23 +82,23 @@ class MistralGovernedAIProvider:
                 "Mistral is not configured.",
                 code="ai_provider_not_configured",
             )
+        language_guide = load_service_business_language_guide()
         request_payload = {
             "model": self.model_name,
             "messages": [
                 {
                     "role": "system",
                     "content": (
-                        "Write for a service-business owner with no technical SEO background. "
-                        "Give one priority in no more than two short sentences, followed by one "
-                        "plain reason to act. Do not use the terms deterministic, intelligence "
-                        "engine, lexicon, heuristic, provider, API, evidence identifier, velocity, "
-                        "throughput, composite score, or GBP. Translate every internal term into "
-                        "everyday business language. Use only the supplied JSON evidence. Preserve "
-                        "the selected action, evidence identifiers, uncertainty, risk, and approval "
+                        "Follow the attached InsightOS writing guide exactly. It is the "
+                        "controlling standard for all customer-facing words in summary and "
+                        "why_now. Use only the supplied JSON evidence. Preserve the selected "
+                        "action, evidence identifiers, uncertainty, risk, and approval "
                         "requirements exactly. Copy selected_action_id and approval_required "
-                        "exactly from deterministic_selection; those fields are controlled by the "
-                        "system, not by you. Never promise rankings, leads, or revenue. "
-                        f"Prompt contract: {prompt_template_version}."
+                        "exactly from deterministic_selection; those control fields belong to "
+                        "InsightOS. Never promise rankings, calls, leads, or revenue. "
+                        f"Prompt contract: {prompt_template_version}. "
+                        f"Writing guide: {SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION}.\n\n"
+                        f"{language_guide}"
                     ),
                 },
                 {
