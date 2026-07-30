@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.platform_job import PlatformJob
@@ -210,3 +210,78 @@ def record_job_failure(
         row.finished_at = None
     db.flush()
     return row
+
+
+def durable_job_health(
+    db: Session,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Return database-backed queue truth suitable for alerts and operations."""
+    resolved_now = now or datetime.now(UTC)
+    status_rows = (
+        db.query(PlatformJob.status, func.count(PlatformJob.id))
+        .group_by(PlatformJob.status)
+        .order_by(PlatformJob.status.asc())
+        .all()
+    )
+    status_counts: dict[str, int] = {}
+    for status_value, count_value in status_rows:
+        key = str(status_value or "unknown")
+        status_counts[key] = int(count_value or 0)
+
+    stale_lease_count = (
+        db.query(PlatformJob)
+        .filter(
+            PlatformJob.status == JOB_STATUS_RUNNING,
+            PlatformJob.lease_expires_at.isnot(None),
+            PlatformJob.lease_expires_at <= resolved_now,
+        )
+        .count()
+    )
+    retry_backlog_count = (
+        db.query(PlatformJob)
+        .filter(
+            PlatformJob.status == JOB_STATUS_QUEUED,
+            PlatformJob.retry_count > 0,
+        )
+        .count()
+    )
+    oldest_due = (
+        db.query(PlatformJob)
+        .filter(
+            PlatformJob.status == JOB_STATUS_QUEUED,
+            PlatformJob.available_at <= resolved_now,
+        )
+        .order_by(PlatformJob.available_at.asc(), PlatformJob.created_at.asc())
+        .first()
+    )
+    oldest_due_seconds = 0
+    if oldest_due is not None:
+        available_at = oldest_due.available_at
+        if available_at.tzinfo is None:
+            available_at = available_at.replace(tzinfo=UTC)
+        oldest_due_seconds = max(0, int((resolved_now - available_at).total_seconds()))
+
+    dead_letter_count = status_counts.get(JOB_STATUS_DEAD_LETTER, 0)
+    alerts = {
+        "dead_letter_jobs": dead_letter_count > 0,
+        "stale_leases": stale_lease_count > 0,
+        "retry_backlog": retry_backlog_count > 0,
+        "oldest_due_over_five_minutes": oldest_due_seconds > 300,
+    }
+    return {
+        "truth_scope": {
+            "mode": "database",
+            "durable": True,
+            "multi_instance_safe": True,
+        },
+        "status_counts": status_counts,
+        "dead_letter_count": dead_letter_count,
+        "stale_lease_count": stale_lease_count,
+        "retry_backlog_count": retry_backlog_count,
+        "oldest_due_seconds": oldest_due_seconds,
+        "alert_state": alerts,
+        "healthy": not any(alerts.values()),
+        "checked_at": resolved_now.isoformat(),
+    }

@@ -5,9 +5,10 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import ACCESS_TOKEN_COOKIE_NAME, decode_token
-from app.db.session import get_db
+from app.db.session import get_db, set_session_security_context
 from app.models.organization_membership import OrganizationMembership
 from app.models.user import User
+from app.services import auth_service
 
 
 _PLATFORM_ROLE_ORDER = {"platform_admin": 1, "platform_owner": 2}
@@ -46,6 +47,7 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not active")
+    auth_service.validate_access_session(db, payload=payload, user_id=user_id)
 
     organization_id = payload.get("organization_id")
     if organization_id is None and isinstance(payload.get("tenant_id"), str):
@@ -76,6 +78,13 @@ def get_current_user(
 
     request.state.tenant_id = organization_id
     request.state.organization_id = organization_id
+    set_session_security_context(
+        db,
+        tenant_id=organization_id,
+        organization_id=organization_id,
+        user_id=user.id,
+        platform_access=isinstance(platform_role, str),
+    )
     return {
         "id": user.id,
         "user_id": user.id,

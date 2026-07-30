@@ -18,6 +18,8 @@ def create_token(
     platform_role: str | None,
     token_type: str,
     ttl_seconds: int,
+    session_id: str | None = None,
+    token_id: str | None = None,
 ) -> str:
     now = datetime.now(UTC)
     legacy_roles: list[str] = []
@@ -39,6 +41,10 @@ def create_token(
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),
     }
+    if session_id:
+        payload["sid"] = session_id
+    if token_id:
+        payload["jti"] = token_id
     settings = get_settings()
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 

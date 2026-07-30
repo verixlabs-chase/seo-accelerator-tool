@@ -253,10 +253,9 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 25 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
 | 26 | **ENT1 - Agency, API, White Label, and Reporting** | Enterprise and agency workflows justify the upper-tier price. |
 
-Release R1 is a closeout sprint, not a new architecture phase. I1.0 is already
-implemented in the repository; it still needs the Supabase migration, hosted
-CrUX configuration, Reference Library activation, deployment, and production
-verification described in its remaining-productization list.
+Release R1 is complete as of 2026-07-30. The I1.0 migration is applied, hosted
+CrUX configuration is active, the API is deployed, the first standards check
+is stored as `current`, and CI plus production health verification passed.
 
 TR1 is a continuous release gate as well as an ordered sprint. Its controls
 must remain green while later sprints add provider calls, AI, customer data, or
@@ -266,6 +265,14 @@ website mutations.
 
 Goal: prove that the hosted Supabase and Vercel system can protect customer
 data, recover safely, and run durable work before paid automation expands.
+
+> **Implementation status (2026-07-30):** TR1 is in progress. The first
+> production-hardening slice adds PostgreSQL-enforced RLS and transaction-local
+> tenant context, rotating and revocable authentication sessions, durable
+> database-backed job health, a PostgreSQL isolation CI gate, and a
+> Windows-compatible restore-integrity verifier. Production migration, smoke
+> tests, and the isolated Supabase restore drill remain required before TR1 is
+> marked complete.
 
 Scope:
 
@@ -629,8 +636,6 @@ Implementation status:
 
 Remaining productization:
 
-- Add the CrUX API key to hosted configuration and verify the first stored
-  standards check.
 - Connect production CrUX URL/origin and form-factor collection to Website
   Health with explicit URL/origin fallback labels.
 - Add Lighthouse/PSI lab diagnostics with Lighthouse version and environment

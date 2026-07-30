@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.passwords import hash_password, verify_password
 from app.core.security import create_token, decode_token
+from app.models.auth_session import AuthSession
 from app.models.organization import Organization
 from app.models.organization_membership import OrganizationMembership
 from app.models.role import Role, UserRole
@@ -17,6 +19,8 @@ from app.services import provisioning_service
 
 VALID_PLATFORM_ROLES = {"platform_owner", "platform_admin"}
 VALID_ORG_ROLES = {"org_owner", "org_admin", "org_user"}
+AUTH_SESSION_ACTIVE = "active"
+AUTH_SESSION_REVOKED = "revoked"
 
 
 def seed_local_admin(db: Session) -> None:
@@ -150,11 +154,12 @@ def _auth_payload(
     user: User,
     organization_id: str | None,
     org_role: str | None,
-    refresh_token: str | None = None,
+    auth_session: AuthSession,
     requires_org_selection: bool = False,
     organizations: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     platform_role = _resolve_platform_role(db, user)
+    access_jti = str(uuid.uuid4())
     access_token = create_token(
         user_id=user.id,
         organization_id=organization_id,
@@ -162,14 +167,18 @@ def _auth_payload(
         platform_role=platform_role,
         token_type="access",
         ttl_seconds=settings.jwt_access_ttl_seconds,
+        session_id=auth_session.id,
+        token_id=access_jti,
     )
-    resolved_refresh = refresh_token or create_token(
+    resolved_refresh = create_token(
         user_id=user.id,
         organization_id=organization_id,
         org_role=org_role,
         platform_role=platform_role,
         token_type="refresh",
         ttl_seconds=settings.jwt_refresh_ttl_seconds,
+        session_id=auth_session.id,
+        token_id=auth_session.refresh_jti,
     )
     roles: list[str] = []
     if platform_role:
@@ -197,6 +206,138 @@ def _auth_payload(
     }
 
 
+def _expires_at(settings) -> datetime:  # noqa: ANN001
+    return datetime.now(UTC) + timedelta(seconds=settings.jwt_refresh_ttl_seconds)
+
+
+def _create_auth_session(
+    db: Session,
+    *,
+    user: User,
+    organization_id: str | None,
+    settings,
+) -> AuthSession:
+    now = datetime.now(UTC)
+    row = AuthSession(
+        user_id=user.id,
+        organization_id=organization_id,
+        refresh_jti=str(uuid.uuid4()),
+        status=AUTH_SESSION_ACTIVE,
+        expires_at=now + timedelta(seconds=settings.jwt_refresh_ttl_seconds),
+        created_at=now,
+        last_seen_at=now,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _rotate_auth_session(
+    db: Session,
+    *,
+    auth_session: AuthSession | None,
+    user: User,
+    organization_id: str | None,
+    settings,
+) -> AuthSession:
+    if auth_session is None:
+        return _create_auth_session(
+            db,
+            user=user,
+            organization_id=organization_id,
+            settings=settings,
+        )
+    auth_session.organization_id = organization_id
+    auth_session.refresh_jti = str(uuid.uuid4())
+    auth_session.last_seen_at = datetime.now(UTC)
+    auth_session.expires_at = _expires_at(settings)
+    auth_session.status = AUTH_SESSION_ACTIVE
+    auth_session.revoked_at = None
+    db.flush()
+    return auth_session
+
+
+def _normalized_expiry(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+def _session_from_token_payload(
+    db: Session,
+    *,
+    payload: dict[str, Any],
+    user_id: str,
+    require_refresh_jti: bool,
+    lock: bool = False,
+) -> AuthSession | None:
+    session_id = payload.get("sid")
+    if session_id is None:
+        # Transitional support for tokens issued before revocable sessions shipped.
+        return None
+    if not isinstance(session_id, str):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+
+    query = db.query(AuthSession).filter(AuthSession.id == session_id)
+    if lock:
+        query = query.with_for_update()
+    auth_session = query.first()
+    now = datetime.now(UTC)
+    if (
+        auth_session is None
+        or auth_session.user_id != user_id
+        or auth_session.status != AUTH_SESSION_ACTIVE
+        or _normalized_expiry(auth_session.expires_at) <= now
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired or revoked")
+    if require_refresh_jti:
+        token_jti = payload.get("jti")
+        if not isinstance(token_jti, str) or token_jti != auth_session.refresh_jti:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh session has already been rotated")
+    token_org_id = payload.get("organization_id")
+    if token_org_id != auth_session.organization_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid organization session")
+    return auth_session
+
+
+def validate_access_session(
+    db: Session,
+    *,
+    payload: dict[str, Any],
+    user_id: str,
+) -> AuthSession | None:
+    return _session_from_token_payload(
+        db,
+        payload=payload,
+        user_id=user_id,
+        require_refresh_jti=False,
+    )
+
+
+def _decode_refresh_session(
+    db: Session,
+    refresh_token: str,
+) -> tuple[dict[str, Any], User, AuthSession | None]:
+    payload = decode_token(refresh_token)
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    user_id = payload.get("user_id") or payload.get("sub")
+    if not isinstance(user_id, str):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not active")
+    auth_session = _session_from_token_payload(
+        db,
+        payload=payload,
+        user_id=user_id,
+        require_refresh_jti=True,
+        lock=True,
+    )
+    return payload, user, auth_session
+
+
 def login(db: Session, email: str, password: str, organization_id: str | None = None) -> dict:
     user = db.query(User).filter(User.email == email).first()
     if user is None or not verify_password(password, user.hashed_password) or not user.is_active:
@@ -217,53 +358,53 @@ def login(db: Session, email: str, password: str, organization_id: str | None = 
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization context is required")
 
     settings = get_settings()
-    refresh_token = create_token(
-        user_id=user.id,
+    auth_session = _create_auth_session(
+        db,
+        user=user,
         organization_id=selected_org_id,
-        org_role=selected_org_role,
-        platform_role=platform_role,
-        token_type="refresh",
-        ttl_seconds=settings.jwt_refresh_ttl_seconds,
+        settings=settings,
     )
-    return _auth_payload(
+    payload = _auth_payload(
         db=db,
         settings=settings,
         user=user,
         organization_id=selected_org_id,
         org_role=selected_org_role,
-        refresh_token=refresh_token,
+        auth_session=auth_session,
         requires_org_selection=requires_org_selection,
         organizations=org_items,
     )
+    db.commit()
+    return payload
 
 
 def refresh(db: Session, refresh_token: str) -> dict:
-    payload = decode_token(refresh_token)
-    if payload.get("type") != "refresh":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-
-    user_id = payload.get("user_id") or payload.get("sub")
-    if not isinstance(user_id, str):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-    user = db.get(User, user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not active")
+    payload, user, auth_session = _decode_refresh_session(db, refresh_token)
 
     token_org_id = payload.get("organization_id")
     token_org_role = payload.get("org_role")
     memberships = _list_memberships(db, user.id)
     if token_org_id is None and len(memberships) > 1:
         settings = get_settings()
-        return _auth_payload(
+        rotated_session = _rotate_auth_session(
+            db,
+            auth_session=auth_session,
+            user=user,
+            organization_id=None,
+            settings=settings,
+        )
+        response_payload = _auth_payload(
             db=db,
             settings=settings,
             user=user,
             organization_id=None,
             org_role=None,
-            refresh_token=refresh_token,
+            auth_session=rotated_session,
             requires_org_selection=True,
             organizations=[{"organization_id": row.organization_id, "role": row.role} for row in memberships],
         )
+        db.commit()
+        return response_payload
     if token_org_id is None and len(memberships) == 1:
         token_org_id = memberships[0].organization_id
         token_org_role = memberships[0].role
@@ -282,27 +423,27 @@ def refresh(db: Session, refresh_token: str) -> dict:
         token_org_role = membership.role
 
     settings = get_settings()
-    return _auth_payload(
+    rotated_session = _rotate_auth_session(
+        db,
+        auth_session=auth_session,
+        user=user,
+        organization_id=token_org_id if isinstance(token_org_id, str) else None,
+        settings=settings,
+    )
+    response_payload = _auth_payload(
         db=db,
         settings=settings,
         user=user,
         organization_id=token_org_id if isinstance(token_org_id, str) else None,
         org_role=token_org_role if isinstance(token_org_role, str) else None,
-        refresh_token=refresh_token,
+        auth_session=rotated_session,
     )
+    db.commit()
+    return response_payload
 
 
 def select_organization(db: Session, refresh_token: str, organization_id: str) -> dict:
-    payload = decode_token(refresh_token)
-    if payload.get("type") != "refresh":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-    user_id = payload.get("user_id") or payload.get("sub")
-    if not isinstance(user_id, str):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-
-    user = db.get(User, user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not active")
+    _payload, user, auth_session = _decode_refresh_session(db, refresh_token)
 
     membership = (
         db.query(OrganizationMembership)
@@ -317,10 +458,94 @@ def select_organization(db: Session, refresh_token: str, organization_id: str) -
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization access denied")
 
     settings = get_settings()
-    return _auth_payload(
+    rotated_session = _rotate_auth_session(
+        db,
+        auth_session=auth_session,
+        user=user,
+        organization_id=membership.organization_id,
+        settings=settings,
+    )
+    response_payload = _auth_payload(
         db=db,
         settings=settings,
         user=user,
         organization_id=membership.organization_id,
         org_role=membership.role,
+        auth_session=rotated_session,
     )
+    db.commit()
+    return response_payload
+
+
+def revoke_session_from_token(db: Session, token: str) -> bool:
+    try:
+        payload = decode_token(token)
+    except HTTPException:
+        return False
+    user_id = payload.get("user_id") or payload.get("sub")
+    session_id = payload.get("sid")
+    if not isinstance(user_id, str) or not isinstance(session_id, str):
+        return False
+    row = (
+        db.query(AuthSession)
+        .filter(
+            AuthSession.id == session_id,
+            AuthSession.user_id == user_id,
+            AuthSession.status == AUTH_SESSION_ACTIVE,
+        )
+        .first()
+    )
+    if row is None:
+        return False
+    row.status = AUTH_SESSION_REVOKED
+    row.revoked_at = datetime.now(UTC)
+    db.commit()
+    return True
+
+
+def list_active_sessions(db: Session, *, user_id: str) -> list[dict[str, Any]]:
+    now = datetime.now(UTC)
+    rows = (
+        db.query(AuthSession)
+        .filter(
+            AuthSession.user_id == user_id,
+            AuthSession.status == AUTH_SESSION_ACTIVE,
+            AuthSession.expires_at > now,
+        )
+        .order_by(AuthSession.last_seen_at.desc(), AuthSession.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "organization_id": row.organization_id,
+            "status": row.status,
+            "created_at": row.created_at,
+            "last_seen_at": row.last_seen_at,
+            "expires_at": row.expires_at,
+        }
+        for row in rows
+    ]
+
+
+def revoke_user_session(
+    db: Session,
+    *,
+    user_id: str,
+    session_id: str,
+) -> bool:
+    row = (
+        db.query(AuthSession)
+        .filter(
+            AuthSession.id == session_id,
+            AuthSession.user_id == user_id,
+            AuthSession.status == AUTH_SESSION_ACTIVE,
+        )
+        .first()
+    )
+    if row is None:
+        return False
+    row.status = AUTH_SESSION_REVOKED
+    row.revoked_at = datetime.now(UTC)
+    db.commit()
+    return True

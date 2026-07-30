@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import inspect, text
 
+from app.core.config import get_settings
 from app.db.session import get_engine
 
 logger = logging.getLogger("lsos.invariants")
@@ -35,6 +36,7 @@ def run_startup_invariants(*, runtime: str) -> None:
     _assert_registry_checksum(engine, runtime=runtime)
     _assert_active_threshold_bundle(engine, runtime=runtime)
     _assert_required_not_null_constraints(inspector, runtime=runtime)
+    _assert_rls_coverage(engine, runtime=runtime)
     _assert_cluster_version_fingerprint(engine, runtime=runtime, expected_schema=expected_schema, code_fingerprint=code_fingerprint)
 
 
@@ -114,6 +116,58 @@ def _assert_required_not_null_constraints(inspector, *, runtime: str) -> None:
                 "required_not_null_violation",
                 {"runtime": runtime, "table_name": table_name, "nullable_columns": sorted(nullable_columns)},
             )
+
+
+def _assert_rls_coverage(engine, *, runtime: str) -> None:
+    if not get_settings().database_rls_enabled or engine.dialect.name != "postgresql":
+        return
+    with engine.begin() as conn:
+        missing_tables = (
+            conn.execute(
+                text(
+                    """
+                    WITH scoped_tables AS (
+                        SELECT DISTINCT columns.table_name
+                        FROM information_schema.columns AS columns
+                        JOIN information_schema.tables AS tables
+                          ON tables.table_schema = columns.table_schema
+                         AND tables.table_name = columns.table_name
+                         AND tables.table_type = 'BASE TABLE'
+                        WHERE columns.table_schema = 'public'
+                          AND (
+                              columns.column_name IN ('tenant_id', 'organization_id')
+                              OR columns.table_name IN ('organizations', 'tenants')
+                          )
+                    )
+                    SELECT scoped_tables.table_name
+                    FROM scoped_tables
+                    JOIN pg_class
+                      ON pg_class.relname = scoped_tables.table_name
+                    JOIN pg_namespace
+                      ON pg_namespace.oid = pg_class.relnamespace
+                     AND pg_namespace.nspname = 'public'
+                    WHERE pg_class.relrowsecurity = false
+                    ORDER BY scoped_tables.table_name
+                    """
+                )
+            )
+            .scalars()
+            .all()
+        )
+        role_exists = bool(
+            conn.execute(
+                text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lsos_app')")
+            ).scalar_one()
+        )
+    if missing_tables or not role_exists:
+        _raise(
+            "database_rls_coverage_invalid",
+            {
+                "runtime": runtime,
+                "missing_tables": list(missing_tables),
+                "app_role_exists": role_exists,
+            },
+        )
 
 
 def _assert_cluster_version_fingerprint(

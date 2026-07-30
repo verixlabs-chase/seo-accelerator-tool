@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_platform_role
 from app.api.response import envelope
 from app.db.session import get_db
-from app.services import freshness_monitor_service, infra_service
+from app.services import freshness_monitor_service, infra_service, job_service
 from app.services.operational_telemetry_service import snapshot_operational_health
 
 
@@ -27,6 +27,7 @@ def system_operational_health(
     payload["active_queues"] = list(queue_status["active_queues"])
     payload["worker_count_per_queue"] = dict(queue_status["worker_count_per_queue"])
     payload["data_freshness"] = freshness_monitor_service.get_data_freshness_summary(db)
+    payload["durable_jobs"] = job_service.durable_job_health(db)
     return envelope(request, {"operational_health": payload})
 
 

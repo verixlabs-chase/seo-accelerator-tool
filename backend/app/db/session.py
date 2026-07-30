@@ -1,7 +1,7 @@
 ﻿from collections.abc import Generator
 from time import monotonic
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
@@ -11,6 +11,8 @@ from app.services.operational_telemetry_service import record_query_duration
 
 _engine: Engine | None = None
 _session_local: sessionmaker | None = None
+_RLS_CONTEXT_KEY = "lsos_database_security_context"
+_RLS_APP_ROLE = "lsos_app"
 
 
 def _normalize_postgres_dsn(dsn: str) -> str:
@@ -88,6 +90,63 @@ def get_db() -> Generator[Session]:
         yield db
     finally:
         db.close()
+
+
+def set_session_security_context(
+    db: Session,
+    *,
+    tenant_id: str | None,
+    organization_id: str | None,
+    user_id: str,
+    platform_access: bool,
+) -> None:
+    """Apply transaction-local database identity for PostgreSQL RLS policies."""
+    context = {
+        "tenant_id": str(tenant_id or ""),
+        "organization_id": str(organization_id or ""),
+        "user_id": str(user_id),
+        "platform_access": bool(platform_access),
+    }
+    db.info[_RLS_CONTEXT_KEY] = context
+    if db.in_transaction():
+        _apply_session_security_context(db.connection(), context)
+
+
+def clear_session_security_context(db: Session) -> None:
+    db.info.pop(_RLS_CONTEXT_KEY, None)
+
+
+def _apply_session_security_context(connection, context: dict[str, object]) -> None:  # noqa: ANN001
+    settings = get_settings()
+    if not settings.database_rls_enabled or connection.dialect.name != "postgresql":
+        return
+
+    connection.exec_driver_sql(f"SET LOCAL ROLE {_RLS_APP_ROLE}")
+    connection.execute(
+        text(
+            """
+            SELECT
+                set_config('app.current_tenant_id', :tenant_id, true),
+                set_config('app.current_organization_id', :organization_id, true),
+                set_config('app.current_user_id', :user_id, true),
+                set_config('app.platform_access', :platform_access, true)
+            """
+        ),
+        {
+            "tenant_id": str(context.get("tenant_id") or ""),
+            "organization_id": str(context.get("organization_id") or ""),
+            "user_id": str(context.get("user_id") or ""),
+            "platform_access": "on" if bool(context.get("platform_access")) else "off",
+        },
+    )
+
+
+@event.listens_for(Session, "after_begin")
+def _restore_session_security_context(session, transaction, connection) -> None:  # noqa: ANN001
+    del transaction
+    context = session.info.get(_RLS_CONTEXT_KEY)
+    if isinstance(context, dict):
+        _apply_session_security_context(connection, context)
 
 
 def _attach_query_instrumentation(engine: Engine) -> None:

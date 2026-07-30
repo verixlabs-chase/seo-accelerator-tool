@@ -1,11 +1,13 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+import uuid
 
 from app.api.v1 import internal_jobs
 from app.models.campaign import Campaign
 from app.models.platform_job import PlatformJob
 from app.models.reporting import MonthlyReport, ReportSchedule
 from app.services import durable_job_service
+from app.services import job_service
 from tests.conftest import create_test_campaign
 
 
@@ -187,6 +189,61 @@ def test_internal_job_drain_runs_daily_intelligence_cycle_idempotently(
     assert second_payload["claimed"] == 0
     assert second_payload["processed"] == 0
     assert calls == [campaign.id]
+
+
+def test_durable_job_health_uses_database_truth(db_session) -> None:
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            PlatformJob(
+                id=str(uuid.uuid4()),
+                tenant_id=None,
+                job_type="test.dead",
+                entity_type="test",
+                status=job_service.JOB_STATUS_DEAD_LETTER,
+                payload={},
+                available_at=now - timedelta(minutes=20),
+                max_retries=0,
+                retry_count=1,
+                finished_at=now - timedelta(minutes=10),
+            ),
+            PlatformJob(
+                id=str(uuid.uuid4()),
+                tenant_id=None,
+                job_type="test.stale",
+                entity_type="test",
+                status=job_service.JOB_STATUS_RUNNING,
+                payload={},
+                available_at=now - timedelta(minutes=15),
+                max_retries=2,
+                retry_count=0,
+                lease_expires_at=now - timedelta(minutes=1),
+                locked_by="missing-worker",
+            ),
+            PlatformJob(
+                id=str(uuid.uuid4()),
+                tenant_id=None,
+                job_type="test.retry",
+                entity_type="test",
+                status=job_service.JOB_STATUS_QUEUED,
+                payload={},
+                available_at=now - timedelta(minutes=10),
+                max_retries=2,
+                retry_count=1,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    health = job_service.durable_job_health(db_session, now=now)
+
+    assert health["truth_scope"]["mode"] == "database"
+    assert health["dead_letter_count"] == 1
+    assert health["stale_lease_count"] == 1
+    assert health["retry_backlog_count"] == 1
+    assert health["oldest_due_seconds"] >= 600
+    assert health["healthy"] is False
+    assert all(health["alert_state"].values())
 
 
 def test_tenant_cycle_is_idempotent_and_recovers_expired_lease(

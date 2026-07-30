@@ -1,6 +1,7 @@
 from app.models.audit_log import AuditLog
 from app.events.outbox.event_outbox import EventOutbox
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
+from app.models.auth_session import AuthSession
 from app.models.authority import (
     Backlink,
     BacklinkOpportunity,
@@ -96,6 +97,7 @@ from app.models.user import User
 __all__ = [
     "Tenant",
     "User",
+    "AuthSession",
     "Role",
     "UserRole",
     "SubAccount",
