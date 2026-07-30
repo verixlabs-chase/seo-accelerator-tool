@@ -136,7 +136,7 @@ test("dashboard ranking truth marks unavailable ranking runtime as needs attenti
 
   assert.equal(state.status, "Needs attention");
   assert.match(state.detail, /not available/i);
-  assert.match(state.nextStep, /provider setup/i);
+  assert.match(state.nextStep, /data connection/i);
 });
 
 test("dashboard ranking truth marks synthetic ranking runtime as test-only", () => {

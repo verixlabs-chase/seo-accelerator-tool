@@ -43,19 +43,19 @@ function getRuntimeTruthLabel(truth) {
   const classification = truth?.classification || "unknown";
 
   if (classification === "provider_backed") {
-    return "Live source";
+    return "Up to date";
   }
   if (classification === "heuristic") {
     return "Estimate";
   }
   if (classification === "generated") {
-    return "Generated";
+    return "Ready";
   }
   if (classification === "scheduled") {
-    return "Scheduled";
+    return "Queued";
   }
   if (classification === "synthetic") {
-    return "Test data";
+    return "Example only";
   }
   if (classification === "operator_assisted") {
     return "Manual review";
@@ -78,7 +78,7 @@ function getRuntimeTruthLabel(truth) {
   if (classification === "unavailable") {
     return "Unavailable";
   }
-  return "Checking";
+  return "Not checked yet";
 }
 
 /**

@@ -22,6 +22,8 @@ import {
   KpiCard,
   LoadingCard,
   OnboardingWizard,
+  ProductPageIntro,
+  TruthNotice,
   useLocationContext,
   type RuntimeTruth,
   type TrustSignal,
@@ -1299,7 +1301,7 @@ export default function DashboardPage() {
       buildRuntimeTruthSignal(
         "Search data",
         latestRankTruth,
-        "Ranking rows can be synthetic, stale, or unavailable depending on provider setup.",
+        "Search positions may be older or unavailable until a fresh check finishes.",
       ),
       {
         label: "Freshness",
@@ -1661,18 +1663,15 @@ export default function DashboardPage() {
       }
     >
       <section className="space-y-6">
-        <div className="max-w-4xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            Daily briefing
-          </p>
-          <h1 className="mt-2 text-4xl font-bold tracking-[-0.05em] text-white md:text-[3.25rem]">
-            What changed for your business today
-          </h1>
-          <p className="mt-2.5 text-sm leading-6 text-zinc-300 md:text-base">
-            Start with the Google trends below, then use the three short cards to see
-            what changed, why it matters, and what to do next.
-          </p>
-        </div>
+        <ProductPageIntro
+          eyebrow="Overview"
+          title="What matters for your business today"
+          summary="See the most important change, what it means, and the one action worth taking next."
+        />
+
+        <TruthNotice title="Set up your business to get a daily priority.">
+          Once this location has current information, InsightOS will show one clear focus for today.
+        </TruthNotice>
 
         {loading ? (
           <LoadingCard
@@ -1756,8 +1755,8 @@ export default function DashboardPage() {
 
         <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
           <SectionHeading
-            eyebrow="Workflow status"
-            title="Exactly where things stand"
+            eyebrow="Progress"
+            title="What is ready and what needs attention"
             summary="These cards translate system activity into user meaning: what is complete, what is still running, what needs attention, and what to do next."
           />
           <div className="grid gap-4 xl:grid-cols-4">

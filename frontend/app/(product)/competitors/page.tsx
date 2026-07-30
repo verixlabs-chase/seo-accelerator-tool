@@ -367,7 +367,7 @@ export default function CompetitorsPage() {
                 }
               />
               <KpiCard
-                label="Snapshot status"
+                label="Last comparison"
                 value={
                   snapshotResult
                     ? `${snapshotResult.summary.snapshots_collected} collected`
@@ -568,7 +568,7 @@ export default function CompetitorsPage() {
                       <p className="mt-2 text-sm leading-6 text-zinc-300">
                         {snapshotResult.summary.snapshots_collected > 0
                           ? `${snapshotResult.summary.snapshots_collected} competitor${snapshotResult.summary.snapshots_collected === 1 ? "" : "s"} with snapshot data found in the database.`
-                          : "No snapshot data was found in the database. The background job may still be running, or the connected provider may not have returned data."}
+                          : "No comparison is ready yet. The check may still be running or the data connection may need attention."}
                         {snapshotResult.job_id ? (
                           <span className="ml-2 text-zinc-500">
                             Job queued successfully.

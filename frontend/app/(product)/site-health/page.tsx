@@ -25,6 +25,7 @@ import {
   KpiCard,
   LoadingCard,
   ProductPageIntro,
+  TruthNotice,
   useLocationContext,
   type TrustSignal,
 } from "../components";
@@ -874,6 +875,10 @@ export default function SiteHealthPage() {
           title="Is your website helping or hurting you?"
           summary="See problems that could keep customers or search engines from using your website, which one to fix first, and the next practical step."
         />
+
+        <TruthNotice title="Start with the first problem marked in red or amber.">
+          Fix one priority at a time. Open technical details only when a developer needs them.
+        </TruthNotice>
 
         {loading ? (
           <LoadingCard

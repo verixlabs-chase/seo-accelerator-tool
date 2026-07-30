@@ -129,6 +129,7 @@ def generate_governed_brief(
             "model_name": model_name,
             "provider_configured": provider_configured,
             "period": occurred_at.strftime("%Y-%m"),
+            "day": occurred_at.strftime("%Y-%m-%d"),
         }
     )
     idempotency_key = f"ai:{FEATURE}:{idempotency_base}"

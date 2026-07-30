@@ -10,7 +10,7 @@ const dashboardSource = readFileSync(dashboardPath, "utf8");
 
 test("overview shows real performance before workflow details", () => {
   const performanceIndex = dashboardSource.indexOf("<SearchPerformanceOverview");
-  const workflowIndex = dashboardSource.indexOf('eyebrow="Workflow status"');
+  const workflowIndex = dashboardSource.indexOf('eyebrow="Progress"');
 
   assert.notEqual(performanceIndex, -1);
   assert.notEqual(workflowIndex, -1);
@@ -34,8 +34,8 @@ test("overview orders real graphs before the supporting metric cards", () => {
   assert.ok(graphOrderClassIndex > metricOrderClassIndex);
 });
 
-test("overview does not render large generic good-to-know panels", () => {
-  assert.doesNotMatch(dashboardSource, /<TruthNotice/);
+test("overview uses one compact daily guide without generic good-to-know panels", () => {
+  assert.equal(dashboardSource.match(/<TruthNotice\b/g)?.length || 0, 1);
   assert.doesNotMatch(dashboardSource, /Good to know/i);
   assert.doesNotMatch(dashboardSource, /Some checks take time to finish/i);
   assert.doesNotMatch(dashboardSource, /<ActionDrawer/);

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 from types import SimpleNamespace
 from uuid import uuid4
@@ -165,6 +165,14 @@ def test_valid_provider_output_is_metered_validated_and_idempotent(
         provider=provider,
         now=now,
     )
+    next_day = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        provider=provider,
+        now=now + timedelta(days=1),
+    )
 
     assert first["item"]["status"] == "validated"
     assert first["item"]["provider_state"] == "ready"
@@ -176,8 +184,10 @@ def test_valid_provider_output_is_metered_validated_and_idempotent(
     assert first["item"]["usage"]["reconciled_cost"] == pytest.approx(0.00027)
     assert replay["item"]["id"] == first["item"]["id"]
     assert replay["idempotent_replay"] is True
-    assert provider.calls == 1
-    assert db_session.query(CostLedgerEntry).count() == 2
+    assert next_day["item"]["id"] != first["item"]["id"]
+    assert next_day["item"]["status"] == "validated"
+    assert provider.calls == 2
+    assert db_session.query(CostLedgerEntry).count() == 4
 
 
 def test_invented_action_is_rejected_after_cost_reconciliation(

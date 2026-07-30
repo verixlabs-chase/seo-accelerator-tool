@@ -163,7 +163,7 @@ function getRankingWorkflowState(campaign, trends, topKeyword, truth) {
       status: "Needs attention",
       tone: "danger",
       detail: truth.summary || "Ranking coverage is not reliably available in this runtime.",
-      nextStep: "Fix provider setup and run a fresh ranking check before treating stored positions as current.",
+      nextStep: "Check the search data connection, then run a fresh position check.",
     };
   }
 
@@ -191,8 +191,8 @@ function getRankingWorkflowState(campaign, trends, topKeyword, truth) {
     label: "Search tracking",
     status: "Snapshots available",
     tone: truth?.classification === "provider_backed" ? "success" : "info",
-    detail: `${trends.length} tracked search${trends.length === 1 ? "" : "es"} available. "${topKeyword.keyword || "Top keyword"}" is the latest leading term, but stored rows should only be treated as live when provider truth is current.`,
-    nextStep: "Open the Rankings page to confirm provider quality and snapshot freshness before acting on movement.",
+    detail: `${trends.length} tracked search${trends.length === 1 ? "" : "es"} available. "${topKeyword.keyword || "Top keyword"}" is currently performing best.`,
+    nextStep: "Open Search Rankings and run a fresh check before acting on a change.",
   };
 }
 

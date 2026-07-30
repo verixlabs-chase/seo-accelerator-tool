@@ -650,7 +650,7 @@ export default function ReportsPage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Stored report data"
+      dateRangeLabel="Saved report history"
       topBarActions={
         <>
           <button
@@ -706,7 +706,7 @@ export default function ReportsPage() {
           <>
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Summary
+                What you can share
               </p>
               <div className="mt-3 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
                 <div>
@@ -724,15 +724,20 @@ export default function ReportsPage() {
               </div>
             </section>
 
-            <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Workflow status
-              </p>
-              <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                Exactly where report work stands
-              </h2>
-              <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                These cards translate raw report, delivery, and automation state into user meaning: what is complete, what is still processing, what failed, and what to do next.
+            <details className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
+              <summary className="cursor-pointer list-none">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  Report progress
+                </p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <h2 className="text-base font-semibold text-white">
+                    {reportWorkflow.status}
+                  </h2>
+                  <span className="text-xs text-zinc-400">See delivery details</span>
+                </div>
+              </summary>
+              <p className="mt-4 border-t border-[#26272c] pt-4 text-sm leading-6 text-zinc-300">
+                See what is ready, what is still processing, and what needs your attention.
               </p>
               <div className="mt-4 grid gap-4 xl:grid-cols-3">
                 {[reportWorkflow, deliveryWorkflow, scheduleWorkflow].map((state) => (
@@ -760,24 +765,24 @@ export default function ReportsPage() {
                   </div>
                 ))}
               </div>
-            </section>
+            </details>
 
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
                 label="Reports created"
                 value={String(reports.length)}
-                summary="These are stored report records generated for the active business."
+                summary="Reports saved for this business."
               />
               <KpiCard
                 label="Ready to send"
                 value={String(generatedCount)}
-                summary="These reports are generated records. They may still be minimal local artifacts that need review before sending."
+                summary="Reports that are prepared and waiting for your review."
                 tone="highlight"
               />
               <KpiCard
                 label="Delivered"
                 value={String(deliveredCount)}
-                summary="These reports are marked as delivered in the app. Check delivery history and external confirmation before treating them as verified inbox delivery."
+                summary="Reports marked as sent. Open delivery details when confirmation matters."
               />
               <KpiCard
                 label="Latest report"

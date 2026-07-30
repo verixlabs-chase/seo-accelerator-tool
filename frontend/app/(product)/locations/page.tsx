@@ -465,7 +465,7 @@ export default function LocationsPage() {
               tone={totals.business_locations > 0 ? "highlight" : undefined}
             />
             <KpiCard
-              label="Tracking workspaces"
+              label="Locations being tracked"
               value={String(totals.campaigns)}
               summary="Locations with their own website and search tracking."
             />
@@ -778,7 +778,7 @@ export default function LocationsPage() {
                           <div className="mt-4 rounded-md border border-accent-500/20 bg-[#111214] p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <p className="text-sm font-semibold text-white">Map and provider location</p>
+                                <p className="text-sm font-semibold text-white">Map search area</p>
                                 <p className="mt-1 text-xs leading-5 text-zinc-500">
                                   City, state/region, and country drive automatic DataForSEO matching. Coordinates may be left blank and resolved from Local Visibility.
                                 </p>

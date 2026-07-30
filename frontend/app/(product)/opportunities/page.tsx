@@ -440,18 +440,18 @@ function describeRecommendationReason(reason?: string | null) {
 
 function getEngineSourceLabel(source?: string) {
   if (source === "orchestrator_v1") {
-    return "Advanced recommendation review";
+    return "Deeper review";
   }
   if (source === "mixed_v1") {
-    return "Combined recommendation review";
+    return "Combined review";
   }
   if (source === "heuristic_score_v1") {
-    return "Basic saved-data review";
+    return "Saved information";
   }
   if (source === "heuristic_threshold_v1") {
-    return "Basic starting-point review";
+    return "Starting point";
   }
-  return "Recommendation review not run yet";
+  return "Not reviewed yet";
 }
 
 function formatEvidence(value: string) {
@@ -1461,36 +1461,14 @@ export default function OpportunitiesPage() {
       <section className="space-y-6">
         <ProductPageIntro
           eyebrow="Next steps"
-          title="Your best next steps"
-          summary="See the improvements most likely to help this location, why each one matters, and which action to take first."
+          title="Your one best next step"
+          summary="Start with the highest-priority improvement for this location. Everything else is available when you need more detail."
         />
 
         <TruthNotice title="Nothing changes on your website without review.">
           These are recommendations. A suggested change is not complete until it has been reviewed,
           approved, and successfully carried out.
         </TruthNotice>
-
-        {engineState ? (
-          <details className="rounded-md border border-sky-500/20 bg-sky-500/10 p-4 text-sky-50">
-            <summary className="cursor-pointer text-sm font-semibold text-white">
-              How recommendations are created and kept safe
-            </summary>
-            <div className="mt-3 text-sm leading-6 text-sky-50/85">
-              InsightOS reviews saved information for this location and suggests possible
-              improvements. It cannot automatically change the customer&apos;s website in the
-              current safety mode.
-              <div className="mt-3 border-t border-sky-500/20 pt-3 text-xs text-sky-100/70">
-                System details: {getEngineSourceLabel(engineState.guidance_source)}.
-                {engineState.provider_checks_allowed === false
-                  ? " Paid data checks are off."
-                  : ""}
-                {engineState.learning_state === "observation_only"
-                  ? " Results are observed, but the system does not change its rules automatically."
-                  : ""}
-              </div>
-            </div>
-          </details>
-        ) : null}
 
         {loading ? (
           <LoadingCard
@@ -1524,7 +1502,7 @@ export default function OpportunitiesPage() {
           <>
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Summary
+                Do this first
               </p>
               <div className="mt-3 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
                 <div>
@@ -1542,21 +1520,23 @@ export default function OpportunitiesPage() {
               </div>
             </section>
 
-            <section className="rounded-md border border-violet-500/20 bg-[linear-gradient(135deg,rgba(139,92,246,0.09),rgba(20,21,24,0.96)_52%)] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="max-w-3xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-200/70">
-                    Intelligence explained simply
-                  </p>
-                  <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                    A plain-language explanation of your next move
+            <details className="rounded-md border border-violet-500/20 bg-[linear-gradient(135deg,rgba(139,92,246,0.07),rgba(20,21,24,0.96)_52%)] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
+              <summary className="cursor-pointer list-none">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/70">
+                  Why this is the priority
+                </p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <h2 className="text-base font-semibold text-white">
+                    Open the plain-language explanation
                   </h2>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">
-                    InsightOS uses the intelligence engine to choose the evidence and safest
-                    next action. AI can explain that decision, but it cannot change the action,
-                    invent evidence, or touch your website.
-                  </p>
+                  <span className="text-xs text-violet-200">Show</span>
                 </div>
+              </summary>
+              <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-t border-violet-500/15 pt-4">
+                <p className="max-w-3xl text-sm leading-6 text-zinc-300">
+                  The system chooses the evidence and next action. AI only turns that decision
+                  into easier language and cannot change your website.
+                </p>
                 <button
                   onClick={() => void explainIntelligenceBrief()}
                   disabled={!selectedCampaignId || busyAction !== ""}
@@ -1582,8 +1562,8 @@ export default function OpportunitiesPage() {
                         }`}
                       >
                         {intelligenceBrief.status === "validated"
-                          ? "AI-assisted explanation"
-                          : "Deterministic summary"}
+                          ? "Plain-language summary"
+                          : "Saved guidance"}
                       </span>
                       <span className="text-xs text-zinc-500">
                         {formatRelativeTime(intelligenceBrief.created_at)}
@@ -1611,7 +1591,7 @@ export default function OpportunitiesPage() {
 
                   <div className="rounded-md border border-[#26272c] bg-[#111214]/90 p-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Engine-selected action
+                      Recommended next action
                     </p>
                     {intelligenceBrief.output.selected_action ? (
                       <>
@@ -1641,8 +1621,8 @@ export default function OpportunitiesPage() {
                       </>
                     ) : (
                       <p className="mt-2 text-sm leading-6 text-zinc-300">
-                        No lexicon-approved action is attached to the current evidence yet.
-                        Refresh the saved-data review after more information arrives.
+                        There is not enough verified information for a specific action yet.
+                        Check again after more business data is collected.
                       </p>
                     )}
                   </div>
@@ -1661,8 +1641,7 @@ export default function OpportunitiesPage() {
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-violet-500/15 pt-4 text-xs text-zinc-500">
                 <span>
-                  Decision authority: intelligence engine · AI role: explain only · Automatic
-                  changes: off
+                  Recommendations stay unchanged until you review them. Automatic changes are off.
                 </span>
                 {intelligenceRuntime?.configured &&
                 intelligenceAllowance?.remaining !== undefined ? (
@@ -1671,20 +1650,25 @@ export default function OpportunitiesPage() {
                   </span>
                 ) : (
                   <span>
-                    AI connection pending; deterministic guidance remains available
+                    The plain-language service is unavailable; saved guidance remains available
                   </span>
                 )}
               </div>
-            </section>
+            </details>
 
-            <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Workflow status
-              </p>
-              <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                Exactly where the selected action stands
-              </h2>
-              <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+            <details className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
+              <summary className="cursor-pointer list-none">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  Progress
+                </p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <h2 className="text-base font-semibold text-white">
+                    {recommendationState.status}
+                  </h2>
+                  <span className="text-xs text-zinc-400">See progress details</span>
+                </div>
+              </summary>
+              <p className="mt-4 border-t border-[#26272c] pt-4 text-sm leading-6 text-zinc-300">
                 These cards separate recommendation state from execution state so you can see what is only recommended, what is approved, what is queued, what completed, what failed, and what to do next.
               </p>
               <div className="mt-4 grid gap-4 xl:grid-cols-3">
@@ -1718,11 +1702,11 @@ export default function OpportunitiesPage() {
                     </div>
                   ))}
               </div>
-            </section>
+            </details>
 
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
-                label="Open opportunities"
+                label="Recommendations"
                 value={String(summary?.total_count || 0)}
                 summary="These are the recommended actions currently surfaced for the active business."
               />
@@ -1733,12 +1717,12 @@ export default function OpportunitiesPage() {
                 tone="highlight"
               />
               <KpiCard
-                label="Ready next"
+                label="Reviewed"
                 value={String(readyCount)}
                 summary="These recommendations are already reviewed or chosen as likely next steps."
               />
               <KpiCard
-                label="Queued or dismissed"
+                label="Already handled"
                 value={`${queuedCount + archivedCount}`}
                 summary="This includes recommendations already queued or intentionally cleared from the active list."
               />
@@ -1756,7 +1740,7 @@ export default function OpportunitiesPage() {
                 <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
                   <div className="mb-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Queue
+                      Choose an action
                     </p>
                     <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
                       Recommended actions
@@ -1819,7 +1803,7 @@ export default function OpportunitiesPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                            Recommendation details
+                            Why this matters
                           </p>
                           <h2 className="mt-1.5 text-2xl font-semibold tracking-[-0.03em] text-white">
                             {describeType(selectedRecommendation.recommendation_type)}

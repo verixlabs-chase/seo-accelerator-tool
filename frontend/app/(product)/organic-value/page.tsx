@@ -315,7 +315,7 @@ export default function OrganicValuePage() {
               : "danger",
       },
       {
-        label: "ROI baseline",
+        label: "Value compared with cost",
         value: baseline ? formatRatio(baseline.roi_baseline) : "Unavailable",
         tone: baseline?.roi_baseline.status === "available" ? "info" : "warning",
       },
@@ -411,7 +411,7 @@ export default function OrganicValuePage() {
                 summary="Estimated value under the expected scenario, not an actual outcome promise."
               />
               <KpiCard
-                label="ROI baseline"
+                label="Value compared with cost"
                 value={formatRatio(baseline.roi_baseline)}
                 summary="Paid-equivalent value divided by optional monthly SEO investment."
               />
@@ -421,7 +421,7 @@ export default function OrganicValuePage() {
               <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Baseline summary
+                    What this estimate means
                   </p>
                   <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">
                     Estimated current value: {formatMetric(baseline.current_value)}
@@ -447,8 +447,8 @@ export default function OrganicValuePage() {
                     className="mt-2 w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
                   />
                   <p className="mt-2 text-sm leading-6 text-zinc-400">
-                    Leave this blank if you do not want a paid-equivalent ROI baseline. No revenue
-                    or conversion assumptions are guessed in this V1.
+                    Leave this blank if you do not want to compare visibility value with your
+                    monthly cost. Leads and sales are never guessed.
                   </p>
                   <button
                     onClick={() => void applyInvestmentBaseline()}
@@ -476,7 +476,7 @@ export default function OrganicValuePage() {
                 Conservative, expected, and aggressive upside
               </h2>
               <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                These scenarios are bounded rank-improvement heuristics built from the current
+                These examples use conservative position improvements built from the current
                 keyword economics rows. They are useful for demos and pilots, not for precision
                 forecasting.
               </p>
@@ -494,7 +494,7 @@ export default function OrganicValuePage() {
                       <p>Projected value: <span className="font-medium text-white">${scenario.projected_value}</span></p>
                       <p>Upside: <span className="font-medium text-white">${scenario.upside_value}</span></p>
                       <p>Lift: <span className="font-medium text-white">{scenario.percentage_lift}%</span></p>
-                      <p>ROI baseline: <span className="font-medium text-white">{formatRatio(scenario.roi_baseline)}</span></p>
+                      <p>Value compared with cost: <span className="font-medium text-white">{formatRatio(scenario.roi_baseline)}</span></p>
                     </div>
                   </div>
                 ))}

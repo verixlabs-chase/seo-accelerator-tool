@@ -360,7 +360,7 @@ export default function SettingsPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
-          eyebrow="Settings · Data connections"
+          eyebrow="Data connections"
           title="Keep your search data updated automatically"
           summary="Connect Google once, match each business location to its website, and let InsightOS collect the latest Search Console results on schedule."
         />
@@ -389,11 +389,22 @@ export default function SettingsPage() {
         ) : (
           <>
             {usageAllowance ? (
-              <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <details className="rounded-md border border-[#292a2f] bg-[#141518] p-4">
+                <summary className="cursor-pointer list-none">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Monthly data budget
+                  </p>
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-white">
+                      ${usageAllowance.allowance.remaining.toFixed(2)} available
+                    </h2>
+                    <span className="text-xs text-zinc-400">See usage</span>
+                  </div>
+                </summary>
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
-                      {usageAllowance.plan.name} paid data allowance
+                      {usageAllowance.plan.name} plan
                     </p>
                     <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-white">
                       ${usageAllowance.allowance.remaining.toFixed(2)} remaining this month
@@ -401,7 +412,7 @@ export default function SettingsPage() {
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
                       Used ${usageAllowance.allowance.used.toFixed(2)} and holding $
                       {usageAllowance.allowance.reserved.toFixed(2)} for work that is still running.
-                      Checks made with your own provider account do not reduce this allowance.
+                      Checks made with your own connected account do not reduce this allowance.
                     </p>
                   </div>
                   <div className="min-w-[220px]">
@@ -430,7 +441,7 @@ export default function SettingsPage() {
                     {usageAllowance.recovery_actions[0]}
                   </div>
                 ) : null}
-              </section>
+              </details>
             ) : null}
 
             <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">

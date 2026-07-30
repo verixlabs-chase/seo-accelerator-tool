@@ -450,7 +450,7 @@ export default function LocalVisibilityPage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Data status",
+        "Updates",
         runtimeTruth,
         "Local-search information may be old or unavailable when a live data connection is not ready.",
       ),

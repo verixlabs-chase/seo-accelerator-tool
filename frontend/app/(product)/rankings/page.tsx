@@ -638,9 +638,9 @@ export default function RankingsPage() {
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Data status",
+        "Updates",
         rankingsTruth,
-        "Rankings can be synthetic, stale, or unavailable depending on provider setup and snapshot freshness.",
+        "Search positions may be older or unavailable until a fresh check finishes.",
       ),
       {
         label: "Tracked searches",
@@ -1257,7 +1257,7 @@ export default function RankingsPage() {
                 className="rounded-md border border-[#3a2a20] bg-[#171518] p-5"
               >
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Live ranking provider
+                  Search data connection
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
                   Connect DataForSEO
@@ -1289,7 +1289,7 @@ export default function RankingsPage() {
                   disabled={busyAction !== "" || !providerLogin.trim() || !providerPassword}
                   className="mt-4 w-full rounded-md border border-accent-500/35 bg-accent-500/12 px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {busyAction === "provider" ? "Saving..." : "Save provider credentials"}
+                  {busyAction === "provider" ? "Saving..." : "Save connection"}
                 </button>
               </form>
             </section>
@@ -1345,7 +1345,7 @@ export default function RankingsPage() {
             {trackedTerms === 0 ? (
               <EmptyState
                 title="No tracked searches yet"
-                summary="Add this location's target searches above. Configured terms and fresh provider-backed snapshots are both required before this page should be treated as live ranking intelligence."
+                summary="Add the searches customers use for this location, then run a fresh check to see real positions."
                 actionLabel="Add tracked searches"
                 onAction={() => {
                   const setup = document.getElementById(
