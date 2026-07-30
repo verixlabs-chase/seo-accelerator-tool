@@ -1,6 +1,20 @@
 # Claude Next Build Brief
 
-> **Active roadmap status (2026-07-29):** The Workflow Closure phase described later in this brief is substantially shipped. UX Sprints 5-8 are production-verified, and the active build phase is **UX9: Cross-Page UX and Visual Polish**. The current UX9 closing slice removes repeated guidance, moves useful data above status framing, and simplifies Website Health around one next action. The post-UX9 roadmap now covers a focused Semrush and BrightLocal replacement for local service businesses: provider truth and local operations in G1.2-G1.7, evidence-backed intelligence in I1, research/content/AI visibility in MKT1-CNT1-AIV1, multi-location intelligence in ML1, commerce in COM1, and Enterprise/reporting in ENT1. Where Sections 7-10 conflict with Sections 1A-1C, Sections 1A-1C take precedence.
+> **Active roadmap status (2026-07-30):** Release R1 is production-verified, and
+> the TR1 security/recovery implementation is published. Tenant isolation,
+> Windows-native recovery tooling, bounded key rotation, sanitized evidence
+> capture, and deployment rollback controls are in place. The production
+> frontend/API rollback-and-restore drill passed. TR1 remains the active gate
+> until the platform-owner operational capture, isolated Supabase restore
+> drill, and live secret-rotation drills are completed and reviewed. **G1.3:
+> Usage Economics and Margin Guardrails** is the next product sprint and may
+> begin after those operator-controlled gates close. The remaining roadmap
+> targets a focused Semrush and BrightLocal replacement for local service
+> businesses: provider truth and local operations in G1.2-G1.7,
+> evidence-backed intelligence in I1, research/content/AI visibility in
+> MKT1-CNT1-AIV1, multi-location intelligence in ML1, commerce in COM1, and
+> Enterprise/reporting in ENT1. Where Sections 7-10 conflict with Sections
+> 1A-1C, Sections 1A-1C take precedence.
 
 ## 1. Executive Summary
 

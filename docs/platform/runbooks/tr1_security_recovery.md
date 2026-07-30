@@ -205,8 +205,28 @@ deployments:
 - production Reno/Lexington location-switch smoke test: green on 2026-07-30
 - local Windows regression: 602 passed, 16 environment-specific skips on
   2026-07-30
-- closeout slice PostgreSQL CI and deployment: publication still required
-- operational-health durable-job state: capture still required with a
-  platform-owner session
-- isolated backup/PITR restore drill: captured and reviewed
-- secret-rotation and deployment-rollback drills: captured and reviewed
+- closeout implementation: published as commit `45e4ca4` on 2026-07-30
+- backend CI workflow run `30564491627`: green on 2026-07-30
+- CI workflow run `30564491646`: backend, PostgreSQL security, deterministic
+  replay, and frontend jobs all green on 2026-07-30 (21m 19s)
+- Vercel API deployment `AiwLSjeNnsQ6MFNvsJWbKoSQe66B` and frontend
+  deployment `AAyNtEhCEx46oybyFYt8T2HMLZKu`: ready and assigned to production
+  on 2026-07-30
+- deployment rollback drill: passed on 2026-07-30. The API was rolled back to
+  `4s66LNciaRyaTXDysnxXaRLSso2M`, returned HTTP 200, and was restored to
+  `AiwLSjeNnsQ6MFNvsJWbKoSQe66B`, which returned HTTP 200. The frontend was
+  rolled back to `5PxaopMQ7JRxcnKktsNLgQEWCaCV`, returned HTTP 200 with the
+  login form present, and was restored to
+  `AAyNtEhCEx46oybyFYt8T2HMLZKu`, which returned HTTP 200 with the login form
+  present
+- operational-health durable-job state: **pending** a sanitized capture using
+  a platform-owner session
+- isolated backup/PITR restore drill: **pending** an approved isolated
+  Supabase recovery project or restore branch
+- live JWT and credential-master-key rotation drills: **pending** an approved
+  maintenance window and production secret access
+
+TR1 remains open until the three pending operator-controlled drills above are
+captured and reviewed. The GitHub Actions Node.js 20 deprecation annotations
+are non-blocking but should be cleared by upgrading the affected action
+versions before GitHub removes forced Node.js 24 compatibility.
