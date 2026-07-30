@@ -1,8 +1,8 @@
 {
   "_meta": {
     "purpose": "performance_recommendations_reference",
-    "version": "0.1.0",
-    "generated_at": "2026-02-18T00:00:00Z"
+    "version": "1.0.0",
+    "generated_at": "2026-07-29T00:00:00Z"
   },
   "recommendations": [
     {
@@ -22,6 +22,36 @@
       "impact": "medium",
       "effort": "medium",
       "risk_tier": 1
+    },
+    {
+      "rec_key": "optimize_lcp_resource",
+      "impact": "high",
+      "effort": "medium",
+      "risk_tier": 2
+    },
+    {
+      "rec_key": "reduce_main_thread_work",
+      "impact": "high",
+      "effort": "high",
+      "risk_tier": 3
+    },
+    {
+      "rec_key": "optimize_interaction_handlers",
+      "impact": "high",
+      "effort": "medium",
+      "risk_tier": 3
+    },
+    {
+      "rec_key": "reserve_layout_space",
+      "impact": "medium",
+      "effort": "low",
+      "risk_tier": 2
+    },
+    {
+      "rec_key": "stabilize_dynamic_content",
+      "impact": "medium",
+      "effort": "medium",
+      "risk_tier": 3
     }
   ]
 }

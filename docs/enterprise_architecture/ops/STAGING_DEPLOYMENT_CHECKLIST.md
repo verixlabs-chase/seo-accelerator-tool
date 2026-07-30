@@ -29,6 +29,10 @@ Set these before starting API, worker, and scheduler:
 - `OTEL_EXPORTER_ENDPOINT=<collector endpoint>`
 - `REFERENCE_LIBRARY_LOADER_ENABLED=true`
 - `REFERENCE_LIBRARY_ENFORCE_VALIDATION=true`
+- `INTELLIGENCE_LEXICON_ENABLED=true`
+- `CRUX_API_KEY=<restricted Google Cloud key with Chrome UX Report API enabled>`
+- `CWV_STANDARDS_PROBE_ORIGIN=https://web.dev`
+- `CWV_STANDARDS_REVIEW_INTERVAL_DAYS=30`
 
 If using production-like staging, also set:
 

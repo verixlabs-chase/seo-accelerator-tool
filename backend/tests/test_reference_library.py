@@ -7,15 +7,15 @@ from app.reference_library.paths import reference_library_file
 
 
 def _login(client, email, password):
-    response = client.post('/api/v1/auth/login', json={'email': email, 'password': password})
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
-    return response.json()['data']['access_token']
+    return response.json()["data"]["access_token"]
 
 
 def _grant_platform_admin(db_session, email: str) -> None:
-    role = db_session.query(Role).filter(Role.id == 'platform_admin').first()
+    role = db_session.query(Role).filter(Role.id == "platform_admin").first()
     if role is None:
-        role = Role(id='platform_admin', name='platform_admin', created_at=datetime.now(UTC))
+        role = Role(id="platform_admin", name="platform_admin", created_at=datetime.now(UTC))
         db_session.add(role)
         db_session.flush()
     user = db_session.query(User).filter(User.email == email).first()
@@ -26,95 +26,128 @@ def _grant_platform_admin(db_session, email: str) -> None:
         .first()
     )
     if existing is None:
-        db_session.add(UserRole(id=str(uuid.uuid4()), user_id=user.id, role_id=role.id, created_at=datetime.now(UTC)))
+        db_session.add(
+            UserRole(
+                id=str(uuid.uuid4()), user_id=user.id, role_id=role.id, created_at=datetime.now(UTC)
+            )
+        )
         db_session.commit()
 
 
 def test_reference_library_requires_platform_admin(client):
-    token = _login(client, 'a@example.com', 'pass-a')
-    headers = {'Authorization': f'Bearer {token}'}
+    token = _login(client, "a@example.com", "pass-a")
+    headers = {"Authorization": f"Bearer {token}"}
     response = client.post(
-        '/api/v1/reference-library/validate',
-        json={'version': '0.1.0', 'strict_mode': True},
+        "/api/v1/reference-library/validate",
+        json={"version": "1.0.0", "strict_mode": True},
         headers=headers,
     )
     assert response.status_code == 403
 
 
 def test_reference_library_validate_activate_and_read(client, db_session):
-    _grant_platform_admin(db_session, 'a@example.com')
-    token = _login(client, 'a@example.com', 'pass-a')
-    headers = {'Authorization': f'Bearer {token}'}
+    _grant_platform_admin(db_session, "a@example.com")
+    token = _login(client, "a@example.com", "pass-a")
+    headers = {"Authorization": f"Bearer {token}"}
 
     validated = client.post(
-        '/api/v1/reference-library/validate',
-        json={'version': '0.1.0', 'strict_mode': True},
+        "/api/v1/reference-library/validate",
+        json={"version": "1.0.0", "strict_mode": True},
         headers=headers,
     )
     assert validated.status_code == 200
-    payload = validated.json()['data']
-    assert payload['status'] == 'passed'
-    assert payload['errors'] == []
+    payload = validated.json()["data"]
+    assert payload["status"] == "passed"
+    assert payload["errors"] == []
 
     activated = client.post(
-        '/api/v1/reference-library/activate',
-        json={'version': '0.1.0', 'reason': 'bootstrap'},
+        "/api/v1/reference-library/activate",
+        json={"version": "1.0.0", "reason": "bootstrap"},
         headers=headers,
     )
     assert activated.status_code == 200
-    assert activated.json()['data']['status'] == 'active'
+    assert activated.json()["data"]["status"] == "active"
 
-    versions = client.get('/api/v1/reference-library/versions', headers=headers)
+    versions = client.get("/api/v1/reference-library/versions", headers=headers)
     assert versions.status_code == 200
-    items = versions.json()['data']['items']
-    assert any(item['version'] == '0.1.0' and item['status'] == 'active' for item in items)
+    items = versions.json()["data"]["items"]
+    assert any(item["version"] == "1.0.0" and item["status"] == "active" for item in items)
 
-    active = client.get('/api/v1/reference-library/active', headers=headers)
+    active = client.get("/api/v1/reference-library/active", headers=headers)
     assert active.status_code == 200
-    assert active.json()['data']['version'] == '0.1.0'
+    assert active.json()["data"]["version"] == "1.0.0"
+    assert "intelligence_lexicon" in active.json()["data"]["artifact_types"]
+
+    lexicon = client.get("/api/v1/reference-library/lexicon", headers=headers)
+    assert lexicon.status_code == 200
+    assert lexicon.json()["data"]["meta"]["lexicon_id"] == "verix.seo.intelligence"
+
+    cwv = client.post(
+        "/api/v1/reference-library/core-web-vitals/evaluate",
+        json={
+            "measurements": {"lcp": 2200, "inp": 180, "cls": 0.08, "ttfb": 700},
+            "form_factor": "PHONE",
+            "source": "crux",
+        },
+        headers=headers,
+    )
+    assert cwv.status_code == 200
+    assert cwv.json()["data"]["assessment"]["passes_core_web_vitals"] is True
+
+    ai_context = client.post(
+        "/api/v1/reference-library/ai-decision-context",
+        json={
+            "facts": {"campaign_id": "campaign-1"},
+            "deterministic_assessments": [],
+            "diagnostic_ids": ["core_web_vitals_failure"],
+        },
+        headers=headers,
+    )
+    assert ai_context.status_code == 200
+    assert ai_context.json()["data"]["contract"]["decision_authority"] == "deterministic_engine"
 
 
 def test_reference_library_activation_blocked_if_latest_validation_failed(client, db_session):
-    _grant_platform_admin(db_session, 'a@example.com')
-    token = _login(client, 'a@example.com', 'pass-a')
-    headers = {'Authorization': f'Bearer {token}'}
+    _grant_platform_admin(db_session, "a@example.com")
+    token = _login(client, "a@example.com", "pass-a")
+    headers = {"Authorization": f"Bearer {token}"}
 
     invalid_artifacts = {
-        'metrics': {
-            '_meta': {'purpose': 'bad', 'version': '0.1.1', 'generated_at': '2026-02-18T00:00:00Z'},
-            'metrics': [
+        "metrics": {
+            "_meta": {"purpose": "bad", "version": "0.1.1", "generated_at": "2026-02-18T00:00:00Z"},
+            "metrics": [
                 {
-                    'metric_key': 'cwv_lcp',
-                    'thresholds': {'good': 2500, 'needs_improvement': 4000, 'units': 'ms'},
-                    'recommendations': ['missing_rec_key'],
+                    "metric_key": "cwv_lcp",
+                    "thresholds": {"good": 2500, "needs_improvement": 4000, "units": "ms"},
+                    "recommendations": ["missing_rec_key"],
                 }
             ],
         },
-        'recommendations': {
-            '_meta': {'purpose': 'bad', 'version': '0.1.1', 'generated_at': '2026-02-18T00:00:00Z'},
-            'recommendations': [],
+        "recommendations": {
+            "_meta": {"purpose": "bad", "version": "0.1.1", "generated_at": "2026-02-18T00:00:00Z"},
+            "recommendations": [],
         },
     }
 
     validated = client.post(
-        '/api/v1/reference-library/validate',
-        json={'version': '0.1.1', 'strict_mode': True, 'artifacts': invalid_artifacts},
+        "/api/v1/reference-library/validate",
+        json={"version": "0.1.1", "strict_mode": True, "artifacts": invalid_artifacts},
         headers=headers,
     )
     assert validated.status_code == 200
-    assert validated.json()['data']['status'] == 'failed'
+    assert validated.json()["data"]["status"] == "failed"
 
     activate = client.post(
-        '/api/v1/reference-library/activate',
-        json={'version': '0.1.1', 'reason': 'should_fail'},
+        "/api/v1/reference-library/activate",
+        json={"version": "0.1.1", "reason": "should_fail"},
         headers=headers,
     )
     assert activate.status_code == 409
     payload = activate.json()
-    assert payload['success'] is False
-    assert 'not PASSED' in payload['errors'][0]['message']
+    assert payload["success"] is False
+    assert "not PASSED" in payload["errors"][0]["message"]
 
 
 def test_reference_library_seed_paths_resolve_from_shared_resolver():
-    assert reference_library_file('metrics', 'core_web_vitals.json').exists()
-    assert reference_library_file('recommendations', 'perf_recommendations.json').exists()
+    assert reference_library_file("metrics", "core_web_vitals.json").exists()
+    assert reference_library_file("recommendations", "perf_recommendations.json").exists()

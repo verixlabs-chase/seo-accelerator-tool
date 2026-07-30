@@ -1,8 +1,8 @@
 {
   "_meta": {
     "purpose": "core_web_vitals_reference",
-    "version": "0.1.0",
-    "generated_at": "2026-02-18T00:00:00Z"
+    "version": "1.0.0",
+    "generated_at": "2026-07-29T00:00:00Z"
   },
   "metrics": [
     {
@@ -12,7 +12,16 @@
         "needs_improvement": 4000,
         "units": "ms"
       },
-      "recommendations": ["reduce_render_blocking", "optimize_server_response"]
+      "recommendations": ["reduce_render_blocking", "optimize_server_response", "optimize_lcp_resource"]
+    },
+    {
+      "metric_key": "cwv_inp",
+      "thresholds": {
+        "good": 200,
+        "needs_improvement": 500,
+        "units": "ms"
+      },
+      "recommendations": ["reduce_main_thread_work", "optimize_interaction_handlers"]
     },
     {
       "metric_key": "cwv_cls",
@@ -21,7 +30,16 @@
         "needs_improvement": 0.25,
         "units": "score"
       },
-      "recommendations": ["stabilize_layout_shift"]
+      "recommendations": ["reserve_layout_space", "stabilize_dynamic_content"]
+    },
+    {
+      "metric_key": "web_vital_ttfb",
+      "thresholds": {
+        "good": 800,
+        "needs_improvement": 1800,
+        "units": "ms"
+      },
+      "recommendations": ["optimize_server_response"]
     }
   ]
 }

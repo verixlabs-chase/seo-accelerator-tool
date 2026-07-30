@@ -9,45 +9,69 @@ from app.db.base import Base
 
 class ReferenceLibraryVersion(Base):
     __tablename__ = "reference_library_versions"
-    __table_args__ = (UniqueConstraint("tenant_id", "version", name="uq_reference_library_version_tenant_version"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "version", name="uq_reference_library_version_tenant_version"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     version: Mapped[str] = mapped_column(String(40), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft")
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
 
 
 class ReferenceLibraryArtifact(Base):
     __tablename__ = "reference_library_artifacts"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "reference_library_version_id", "artifact_type", name="uq_reference_library_artifact_type"),
+        UniqueConstraint(
+            "tenant_id",
+            "reference_library_version_id",
+            "artifact_type",
+            name="uq_reference_library_artifact_type",
+        ),
         Index("ix_ref_lib_artifacts_version_id", "reference_library_version_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    reference_library_version_id: Mapped[str] = mapped_column(String(36), ForeignKey("reference_library_versions.id", ondelete="CASCADE"), nullable=False)
+    reference_library_version_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reference_library_versions.id", ondelete="CASCADE"), nullable=False
+    )
     artifact_type: Mapped[str] = mapped_column(String(40), nullable=False)
     artifact_uri: Mapped[str] = mapped_column(Text, nullable=False)
     artifact_sha256: Mapped[str] = mapped_column(String(128), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(20), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
+    payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
 
 
 class ReferenceLibraryValidationRun(Base):
     __tablename__ = "reference_library_validation_runs"
-    __table_args__ = (Index("ix_ref_lib_validation_runs_version_id", "reference_library_version_id"),)
+    __table_args__ = (
+        Index("ix_ref_lib_validation_runs_version_id", "reference_library_version_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    reference_library_version_id: Mapped[str] = mapped_column(String(36), ForeignKey("reference_library_versions.id", ondelete="CASCADE"), nullable=False)
+    reference_library_version_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reference_library_versions.id", ondelete="CASCADE"), nullable=False
+    )
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     errors_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
 
 
 class ReferenceLibraryActivation(Base):
@@ -56,8 +80,33 @@ class ReferenceLibraryActivation(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    reference_library_version_id: Mapped[str] = mapped_column(String(36), ForeignKey("reference_library_versions.id", ondelete="CASCADE"), nullable=False)
+    reference_library_version_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reference_library_versions.id", ondelete="CASCADE"), nullable=False
+    )
     activated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     rollback_from_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
     activation_status: Mapped[str] = mapped_column(String(30), nullable=False, default="queued")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+
+
+class ReferenceLibraryStandardsCheck(Base):
+    __tablename__ = "reference_library_standards_checks"
+    __table_args__ = (
+        Index("ix_reference_library_standards_checks_source_observed", "source_id", "observed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    source_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    source_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    lexicon_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    source_digest: Mapped[str] = mapped_column(String(128), nullable=False)
+    normalized_payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    drift_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        index=True,
+    )

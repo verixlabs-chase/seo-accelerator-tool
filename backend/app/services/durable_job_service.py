@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle
+from app.intelligence.lexicon.loader import get_builtin_lexicon
+from app.intelligence.lexicon.standards import run_and_record_crux_standards_check
 from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
 from app.models.platform_job import PlatformJob
@@ -27,6 +29,7 @@ JobHandler = Callable[[Session, PlatformJob], dict[str, Any]]
 REPORT_SCHEDULE_JOB_TYPE = "reporting.process_schedule"
 INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE = "intelligence.campaign_cycle"
 SEARCH_CONSOLE_SYNC_JOB_TYPE = "data_connections.search_console_sync"
+CWV_STANDARDS_CHECK_JOB_TYPE = "reference_library.cwv_standards_check"
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -118,10 +121,26 @@ def _search_console_sync_handler(
     }
 
 
+def _cwv_standards_check_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    settings = get_settings()
+    origin = str(job.payload.get("origin") or settings.cwv_standards_probe_origin).strip()
+    return run_and_record_crux_standards_check(
+        db,
+        lexicon=get_builtin_lexicon(),
+        api_key=settings.crux_api_key,
+        origin=origin,
+        timeout_seconds=settings.google_oauth_http_timeout_seconds,
+    )
+
+
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
     INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
     SEARCH_CONSOLE_SYNC_JOB_TYPE: _search_console_sync_handler,
+    CWV_STANDARDS_CHECK_JOB_TYPE: _cwv_standards_check_handler,
 }
 
 
@@ -233,11 +252,7 @@ def run_search_console_sync_now(
 
     _start_date, end_date = _search_console_sync_window(connection, now=resolved_now)
     idempotency_key = f"search-console-sync:{connection.id}:{end_date.isoformat()}"
-    existing = (
-        db.query(PlatformJob)
-        .filter(PlatformJob.idempotency_key == idempotency_key)
-        .first()
-    )
+    existing = db.query(PlatformJob).filter(PlatformJob.idempotency_key == idempotency_key).first()
     job = create_search_console_sync_job(db, connection=connection, now=resolved_now)
     created = existing is None
     db.commit()
@@ -375,6 +390,35 @@ def create_intelligence_campaign_job(
     )
 
 
+def enqueue_due_cwv_standards_check(
+    db: Session,
+    *,
+    now: datetime | None = None,
+) -> int:
+    settings = get_settings()
+    if not settings.intelligence_lexicon_enabled or not settings.crux_api_key.strip():
+        return 0
+    resolved_now = now or datetime.now(UTC)
+    interval_days = max(1, int(settings.cwv_standards_review_interval_days))
+    interval_bucket = resolved_now.date().toordinal() // interval_days
+    job_service.create_job(
+        db,
+        tenant_id=None,
+        job_type=CWV_STANDARDS_CHECK_JOB_TYPE,
+        entity_type="reference_standard",
+        entity_id=None,
+        idempotency_key=f"cwv-standards-check:{interval_days}:{interval_bucket}",
+        payload={
+            "origin": settings.cwv_standards_probe_origin,
+            "automatic_activation_allowed": False,
+        },
+        available_at=resolved_now,
+        max_retries=2,
+    )
+    db.flush()
+    return 1
+
+
 def run_intelligence_campaign_job_now(
     db: Session,
     *,
@@ -393,11 +437,7 @@ def run_intelligence_campaign_job_now(
 
     cycle_date = resolved_now.date().isoformat()
     idempotency_key = f"intelligence-cycle:{campaign.id}:{cycle_date}"
-    existing = (
-        db.query(PlatformJob)
-        .filter(PlatformJob.idempotency_key == idempotency_key)
-        .first()
-    )
+    existing = db.query(PlatformJob).filter(PlatformJob.idempotency_key == idempotency_key).first()
     job = create_intelligence_campaign_job(
         db,
         campaign=campaign,
@@ -420,9 +460,8 @@ def run_intelligence_campaign_job_now(
     lease_expires_at = job.lease_expires_at
     if lease_expires_at is not None and lease_expires_at.tzinfo is None:
         lease_expires_at = lease_expires_at.replace(tzinfo=UTC)
-    if (
-        job.status == job_service.JOB_STATUS_RUNNING
-        and (lease_expires_at is None or lease_expires_at > resolved_now)
+    if job.status == job_service.JOB_STATUS_RUNNING and (
+        lease_expires_at is None or lease_expires_at > resolved_now
     ):
         return {
             "job_id": job.id,
@@ -574,6 +613,7 @@ def drain_platform_jobs(
         db,
         limit=resolved_batch_size * 5,
     )
+    due_cwv_standards_checks_seen = enqueue_due_cwv_standards_check(db)
     db.commit()
 
     claimed = job_service.claim_jobs(
@@ -610,6 +650,7 @@ def drain_platform_jobs(
         "due_report_schedules_seen": due_schedules_seen,
         "due_intelligence_campaigns_seen": due_intelligence_campaigns_seen,
         "due_data_connections_seen": due_data_connections_seen,
+        "due_cwv_standards_checks_seen": due_cwv_standards_checks_seen,
         "claimed": len(claimed_ids),
         "processed": len(results),
         "deferred": len(deferred_ids),

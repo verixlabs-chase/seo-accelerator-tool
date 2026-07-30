@@ -219,6 +219,85 @@ names in issues, commits, and status reports so a number is never ambiguous:
 - **Growth G1+:** customer data and outcome product phases that begin after UX9
   meets its acceptance criteria.
 
+### Recommended Execution Order From The Current State
+
+This is the default delivery order as of 2026-07-29. Track identifiers below
+remain stable even if a release needs to split one scope into smaller tickets.
+
+| Order | Sprint | Customer result |
+| ---: | --- | --- |
+| 1 | **Release R1 - UX9 and I1.0 production closeout** | The current UX polish and canonical intelligence lexicon are migrated, configured, activated, and verified in production. |
+| 2 | **TR1 - Security, Reliability, and Recovery Gate** | Tenant isolation, durable execution, monitoring, backups, restore drills, and safe release controls are proven before paid automation expands. |
+| 3 | **G1.3 - Usage Economics and Margin Guardrails** | Paid provider and AI work cannot overspend the organization's allowance or silently damage gross margin. |
+| 4 | **I1.1 - Live Website Performance and CWV Experience** | Customers see their actual field and lab website measurements, Google thresholds, history, source, freshness, and plain-language meaning. |
+| 5 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Customers can compare the measured baseline with a conservative outcome range for approved recommendations. |
+| 6 | **I1.3 - Governed AI Runtime API** | A real model can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
+| 7 | **I1.4 - Evidence-Backed Action Center** | The intelligence output becomes one understandable, prioritized queue with outcomes and follow-up measurement. |
+| 8 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
+| 9 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, risks, and next actions. |
+| 10 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
+| 11 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 12 | **G1.4-G1.7 - Connected Local and Website Signals** | GBP, listings, reviews, analytics, and form events replace remaining recurring manual entry. |
+| 13 | **MKT1 - Local Keyword and Competitor Research** | Owners can find valuable local topics and real competitors without moving between tools. |
+| 14 | **CNT1 - Content, On-Page, and Authority Workspace** | Research and intelligence produce governed page, content, metadata, schema, link, and authority work. |
+| 15 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 16 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 17 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 18 | **PA1 - Product Analytics and Customer Feedback** | The team can measure activation, first value, feature adoption, recommendation outcomes, automation trust, and churn risk. |
+| 19 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 20 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 21 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 22 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
+| 23 | **ML1 - Portfolio Intelligence** | Multi-location operators can find outliers, shared problems, and reusable wins quickly. |
+| 24 | **COM1 - Billing, Entitlements, and Self-Service Accounts** | The commercial plans and allowances become enforceable and self-service. |
+| 25 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 26 | **ENT1 - Agency, API, White Label, and Reporting** | Enterprise and agency workflows justify the upper-tier price. |
+
+Release R1 is a closeout sprint, not a new architecture phase. I1.0 is already
+implemented in the repository; it still needs the Supabase migration, hosted
+CrUX configuration, Reference Library activation, deployment, and production
+verification described in its remaining-productization list.
+
+TR1 is a continuous release gate as well as an ordered sprint. Its controls
+must remain green while later sprints add provider calls, AI, customer data, or
+website mutations.
+
+### Trust TR1 - Security, Reliability, and Recovery Gate
+
+Goal: prove that the hosted Supabase and Vercel system can protect customer
+data, recover safely, and run durable work before paid automation expands.
+
+Scope:
+
+- Complete least-privilege database access, tenant context, explicit RLS
+  policies, and cross-organization read/write tests.
+- Replace weak privileged browser-token handling with the approved safer
+  session model; add invitations, password recovery, session revocation, and
+  organization switching.
+- Require idempotency, retry classification, dead-letter state, visible job
+  status, and duplicate-invocation tests for scheduled and paid work.
+- Add server-side rate limits, secret rotation procedures, audit coverage,
+  input/output safety, dependency and secret scanning, and privileged-action
+  alerts.
+- Configure production metrics, structured logs, traces, provider and delivery
+  health, stale-data detection, and actionable alert routing.
+- Prove Supabase backup/PITR behavior with a documented restore drill and
+  post-recovery tenant-integrity checks.
+- Add PostgreSQL integration CI, critical Playwright journeys, Vercel smoke
+  tests, compatible migration sequencing, load checks, and release rollback.
+
+Acceptance criteria:
+
+- Automated tests prove one tenant cannot read, write, execute, export, or
+  receive another tenant's data.
+- A duplicate job or provider callback cannot duplicate a paid or mutating
+  operation.
+- Backup restoration, deployment rollback, secret rotation, and incident
+  response have current evidence from a production-like environment.
+- A critical provider, queue, delivery, authentication, or data-freshness
+  failure alerts an operator and produces an honest customer-visible state.
+- TR1 failures block the release of later paid, AI, or WordPress automation.
+
 ### Growth G1 - Automated Data Connections
 
 Goal: replace recurring manual data entry with trustworthy, tenant-safe, and
@@ -526,7 +605,191 @@ The following sprints begin after the applicable G1 provider truth is reliable.
 Their purpose is to replace the useful local-business workflows of Semrush and
 BrightLocal without copying their tool sprawl.
 
-### Intelligence I1 - Evidence-Backed Action Center
+### Intelligence I1.0 - Canonical Lexicon and Standards Governance
+
+Goal: make one deterministic, versioned knowledge system the source of truth
+for diagnostics, actions, standards, evidence, and bounded AI explanations.
+
+Implementation status:
+
+- Foundation implemented 2026-07-29.
+- The built-in `verix.seo.intelligence` v1 bundle now governs 40+ signals,
+  current Core Web Vitals and supporting metrics, 15 diagnoses, 35+ actions,
+  source provenance, plain-language terms, and the existing policy mappings.
+- Tenant-active Reference Library artifacts can persist and supply the
+  intelligence lexicon; the built-in validated pack remains the last-known-good
+  fallback.
+- The orchestrator records lexicon identity/version with recommendations and
+  resolves legacy diagnostic language from the lexicon.
+- A Vercel-compatible durable standards job compares the active built-in CWV
+  thresholds with official CrUX histogram boundaries. Drift requires review
+  and a new explicit activation; it never changes production rules silently.
+- A provider-neutral AI decision contract limits models to verified facts,
+  deterministic assessments, known diagnoses, and allowed actions.
+
+Remaining productization:
+
+- Add the CrUX API key to hosted configuration and verify the first stored
+  standards check.
+- Connect production CrUX URL/origin and form-factor collection to Website
+  Health with explicit URL/origin fallback labels.
+- Add Lighthouse/PSI lab diagnostics with Lighthouse version and environment
+  metadata, while keeping CrUX as field truth.
+- Expand the lexicon as G1.2-G1.7 providers land for geo-grid, GBP, listings,
+  reviews, analytics, and form-event evidence.
+- Add a platform evidence/lexicon viewer, proposed-version diff, replay report,
+  approval, activation, and rollback UI.
+- Calibrate internal heuristics only after minimum sample and governance gates;
+  never relabel them as Google standards.
+
+Acceptance criteria:
+
+- Unknown or duplicate signal, metric, diagnostic, policy, action, or source
+  references fail validation.
+- LCP, INP, and CLS are evaluated at p75 with exact boundary semantics; all
+  three must be good to pass and missing data stays unknown.
+- TTFB remains supporting evidence and is never labeled a Core Web Vital.
+- Every generated recommendation records its lexicon version.
+- AI cannot select an action outside the deterministic allow-list or overwrite
+  evidence, risk, approval, and insufficient-data states.
+- Official threshold drift creates `review_required`, never automatic
+  production activation.
+
+Reference:
+
+- [platform/intelligence_lexicon.md](platform/intelligence_lexicon.md)
+
+### Intelligence I1.1 - Live Website Performance and CWV Experience
+
+Goal: turn the canonical Core Web Vitals rules into a clear, continuously
+measured customer experience instead of another technical scorecard.
+
+Scope:
+
+- Collect production Chrome UX Report field data by URL or origin and form
+  factor, using explicit URL-to-origin fallback labels.
+- Collect PageSpeed Insights/Lighthouse lab diagnostics separately with tool
+  version, test environment, run timestamp, source, and freshness.
+- Persist measured LCP, INP, CLS, supporting TTFB, distribution, sample
+  availability, measurement window, threshold version, and pass state.
+- Compare every value with the active lexicon standard and show `good`,
+  `needs work`, `poor`, or `not enough real-user data`; never convert missing
+  field data into a passing result.
+- Replace dense Website Health text with an accessible visual experience:
+  current value, target band, distance from target, historical trend,
+  mobile/desktop control, affected URL group, and plain-language explanation.
+- Separate real-user field data from one-time lab diagnostics visually and in
+  copy.
+- Turn deterministic failures into lexicon-backed recommendations with
+  evidence, likely technical cause, owner-friendly meaning, effort, risk, and
+  validation steps.
+- Schedule collection through the durable job runner with tenant-safe
+  deduplication, retry handling, provider allowance checks, and visible sync
+  health.
+
+Acceptance criteria:
+
+- A business owner can tell in under 30 seconds whether the site passes each
+  Core Web Vital, what the current value is, what Google considers good, and
+  what to do next.
+- The page clearly distinguishes field data, lab data, URL data, origin
+  fallback, mobile, desktop, freshness, and insufficient-data states.
+- Every threshold is supplied by the active versioned lexicon and every stored
+  result records that version.
+- Charts remain usable on mobile, do not rely on color alone, and provide
+  exact accessible values.
+- No UI claims that passing Core Web Vitals guarantees a ranking improvement.
+
+### Intelligence I1.2 - Improvement Forecasting and Scenario Modeling
+
+Goal: show what could reasonably improve if recommended work is completed,
+without presenting a guess as a guaranteed Google or business outcome.
+
+Scope:
+
+- Capture an immutable baseline for the affected URLs, metrics, device class,
+  traffic segment, evidence window, and lexicon version.
+- Add deterministic intervention models for supported actions such as image
+  optimization, render-blocking resource reduction, server-response
+  improvement, layout-shift correction, and JavaScript interaction work.
+- Produce conservative, expected, and optimistic metric ranges rather than one
+  false-precision number.
+- Display `current`, `target`, and `forecast range` on the same chart with the
+  assumptions, confidence, data coverage, and expected observation window.
+- Forecast the directly affected technical measurement first. Ranking, traffic,
+  inquiry, or revenue impact remains `unknown` unless separately supported by
+  sufficient observed evidence.
+- Recalculate scenarios when the baseline, recommendation, active standard, or
+  implementation scope changes.
+- Compare forecast with post-change measurements and record `within range`,
+  `outside range`, or `insufficient data` so future models can be calibrated
+  under governance.
+
+Acceptance criteria:
+
+- Every forecast is reproducible from stored inputs, model version, assumption
+  set, and lexicon version.
+- The UI never labels a scenario as a promise, guaranteed ranking increase, or
+  guaranteed lead result.
+- A customer can visually compare the current measurement, accepted target,
+  forecast range, and eventual observed result.
+- Unsupported recommendation types show no numeric forecast rather than a
+  fabricated estimate.
+- Learned coefficients cannot enter production until minimum-sample,
+  calibration, replay, review, and rollback gates pass.
+
+### Intelligence I1.3 - Governed AI Runtime API
+
+Goal: add a real, metered AI provider layer that makes the deterministic
+intelligence useful in conversation and content workflows while the lexicon and
+policy engine retain decision authority.
+
+Runtime sequence:
+
+1. Gather tenant- and location-scoped facts with source and freshness.
+2. Run the deterministic evaluator and policy engine.
+3. Build the bounded AI decision context from verified facts, diagnoses, and
+   allowed actions.
+4. Call the configured model through one server-side provider-neutral gateway.
+5. Validate the structured response against the contract and action allow-list.
+6. Persist prompt template version, model, token usage, cost, evidence
+   references, validated output, and rejection reason when invalid.
+7. Present the result for the appropriate approval or execution policy.
+
+Scope:
+
+- Add a provider-neutral server-side AI gateway with structured inputs and
+  outputs, timeouts, retries, model routing, and feature-level model allow-lists.
+- Support bounded uses first: plain-language explanations, daily brief,
+  recommendation ordering within the deterministic candidate set, question
+  answering from supplied evidence, and draft content or metadata.
+- Reject invented measurements, sources, diagnoses, actions, causal claims, or
+  execution authority.
+- Add prompt-template versioning, evaluation fixtures, hallucination and
+  unsupported-claim checks, personally identifiable information minimization,
+  tenant isolation, audit history, and model-response retention controls.
+- Connect all calls to the G1.3 cost ledger, plan entitlement, soft warnings,
+  hard allowance, concurrency, token, and per-feature rate limits.
+- Provide a deterministic fallback when the AI provider is unavailable, over
+  budget, times out, or fails validation.
+- Do not give the model credentials or direct access to WordPress, Google, the
+  database, or arbitrary tools. Execution uses typed platform actions after
+  policy and approval checks.
+
+Acceptance criteria:
+
+- An AI response cannot create an action outside the deterministic allow-list.
+- Every customer-visible claim can be traced to supplied evidence or is
+  explicitly labeled as a suggestion.
+- Invalid, unsupported, over-budget, and timed-out calls fail closed and leave
+  the deterministic experience usable.
+- Model and token cost is reserved and reconciled before another call can
+  exceed the organization's hard allowance.
+- A replayable evaluation suite proves schema compliance, tenant isolation,
+  stable fallback behavior, and supported-claim accuracy before a model or
+  prompt version is activated.
+
+### Intelligence I1.4 - Evidence-Backed Action Center
 
 Goal: make the intelligence layer the reason a service business pays for the
 product.
@@ -557,6 +820,102 @@ Acceptance criteria:
   insufficient-evidence state.
 - Every completed action returns to the user with a measured outcome.
 - A service-business owner can explain the top action without SEO terminology.
+
+### Reporting RPT1 - Premium Reporting and Delivery
+
+Goal: give every paid customer a polished, trustworthy progress story instead
+of a metric export; Enterprise later adds deeper white-label and API controls.
+
+Scope:
+
+- Create audience-aware owner, multi-location, and client-safe report
+  templates with executive summary, wins, losses, local visibility, rankings,
+  website health, actions completed, measured outcomes, risks, and next
+  priorities.
+- Use consistent visual definitions and the same source, freshness, location,
+  date range, and lexicon version as the product screens.
+- Add durable artifact storage, scheduled generation, recipient management,
+  delivery verification, retry state, failure recovery, history, and secure
+  expiring share links.
+- Let I1.3 write bounded narrative only from the report's verified facts and
+  deterministic conclusions; retain a deterministic narrative fallback.
+- Provide accessible web and PDF output with a summary-first presentation and
+  technical evidence in an appendix.
+
+Acceptance criteria:
+
+- A report can be regenerated from its stored input snapshot and produces
+  internally consistent numbers across screen, export, and delivery.
+- Generated, delivered, failed, retried, opened when supported, and expired
+  states remain distinct and visible.
+- Reports never merge locations silently or claim outcomes not present in the
+  evidence.
+- Solo receives polished owner reporting; Multi-location receives location
+  comparison; Enterprise adds brand, client, API, and custom-distribution
+  controls rather than owning basic report quality.
+
+### Customer Experience ALT1 - Alerts, Notifications, and Digests
+
+Goal: notify the right person about meaningful SEO changes, completed work,
+connection failures, and required decisions without creating alert noise.
+
+Scope:
+
+- Add an in-product notification center plus configurable email delivery and
+  weekly digest.
+- Cover ranking and geo-grid movement, CWV regression, crawl/indexability
+  problems, new review and reputation risk, provider reconnect, stale data,
+  report delivery, pending approval, WordPress execution, verification
+  failure, rollback, and allowance warnings.
+- Use lexicon severity, confidence, freshness, location scope, deduplication,
+  cooldown, and owner preferences to determine delivery.
+- Group repeated symptoms into one incident or recommendation when they share
+  evidence and observation window.
+- Provide direct recovery or action links and record delivery, read,
+  dismissal, snooze, and resolution state.
+
+Acceptance criteria:
+
+- The same underlying event cannot create repeated customer notifications
+  inside its cooldown window.
+- Every alert identifies the affected organization/location, source,
+  freshness, meaning, and required action.
+- Customers can choose immediate, digest, in-product-only, or disabled delivery
+  for eligible categories; mandatory security notices cannot be disabled.
+- Provider or notification failure is retried durably and visible to
+  operators.
+
+### Customer Experience CX1 - Guided Onboarding, Education, and Support
+
+Goal: let a service-business owner reach the first trustworthy insight and know
+what to do next without SEO expertise or operator database work.
+
+Scope:
+
+- Add one guided setup path for account, location, website, Search Console,
+  provider connections, tracked phrases, first crawl, first measurement, and
+  first recommendation.
+- Show progress, blockers, time expectations, data requirements, freshness,
+  insufficient-data states, and the next available step.
+- Add a customer glossary, contextual explanations, task checklists,
+  short product tours, troubleshooting, reconnect guidance, and searchable
+  help content in plain service-business language.
+- Provide a clear support contact, diagnostic bundle, consented operator-access
+  path, response expectation, and escalation state.
+- Create persona-aware guidance for a solo owner, multi-location manager, and
+  agency operator without creating separate products.
+
+Acceptance criteria:
+
+- A new owner can create a location, connect supported data, run the first
+  checks, understand the first recommendation, and request help without
+  operator intervention.
+- Every blocked onboarding state explains what is missing, who must act, and
+  how to recover.
+- The system measures completion, abandonment, time to first verified insight,
+  and support escalation without recording sensitive page content
+  unnecessarily.
+- Help copy uses the same governed terms as the active lexicon.
 
 ### Market MKT1 - Local Keyword and Competitor Research
 
@@ -612,6 +971,240 @@ Acceptance criteria:
 - Backlink and authority data comes from a named production source with
   freshness and cost controls.
 - A user can turn a research gap into a governed content or authority action.
+
+### WordPress WP1.1 - Connection and Safe Site Control
+
+Goal: harden the existing WordPress execution path into a production-safe
+connection that can read, preview, apply, verify, and reverse supported site
+changes.
+
+Scope:
+
+- Package and version the WordPress plugin with an owner-friendly installation
+  and pairing flow.
+- Use revocable site-scoped credentials, signed requests, replay protection,
+  least-privilege capabilities, rotation, disconnect, and audit history.
+- Synchronize posts, pages, custom post types in scope, titles, meta
+  descriptions, headings, canonical tags, supported schema, internal links,
+  publication state, revision identifier, and compatible SEO-plugin metadata.
+- Detect supported WordPress and SEO-plugin versions and fail safely when a
+  mutation target is unsupported.
+- Require a dry-run change set that shows the exact before/after values,
+  affected URLs, validation checks, conflicts, approval requirement, and
+  rollback plan.
+- Store or reference a recoverable pre-change revision before every mutation,
+  use idempotency keys, and verify the public page after execution.
+- Add connection health, last sync, plugin version, permission state, execution
+  status, verification result, error, and rollback visibility.
+
+Acceptance criteria:
+
+- A site can connect and synchronize without sharing a WordPress administrator
+  password with the platform.
+- Every supported change has an exact preview, immutable audit record,
+  recoverable prior state, and post-change verification.
+- Retrying the same operation cannot duplicate content or apply the same
+  mutation twice.
+- Unsupported versions, permission loss, content conflicts, and public-page
+  verification failures stop safely and provide a recovery action.
+
+### WordPress WP1.2 - Managed Autopilot
+
+Goal: let a customer opt into bounded policies that implement routine,
+low-risk content and on-page improvements without manually editing WordPress.
+
+Scope:
+
+- Add per-site and per-location automation policies for allowed action types,
+  URL scopes, schedules, monthly limits, risk ceilings, blackout windows, and
+  required approvals.
+- Support governed updates for content sections, title tags, meta descriptions,
+  selected headings, internal links, supported schema fields, image alt text,
+  and other explicitly implemented action types.
+- Generate drafts through I1.3 only from the deterministic brief, lexicon,
+  business facts, target phrase, existing page, and evidence packet.
+- Validate factual claims, required business details, duplication, length,
+  prohibited language, link targets, schema shape, and action allow-list before
+  execution.
+- Allow genuinely low-risk actions to run automatically only after the owner
+  explicitly enables that action category. High-risk page replacement,
+  deletion, redirect, canonical, robots, template, theme, code, and sitewide
+  mutations require review unless a later governed policy explicitly proves
+  them safe.
+- Schedule post-change crawl, indexability, CWV, ranking, and content checks;
+  surface the measured result and automatically pause the applicable policy
+  after repeated failure or regression.
+- Provide one-click rollback and an emergency site-level automation stop.
+
+Acceptance criteria:
+
+- An owner can enable a bounded policy once and have eligible routine changes
+  drafted, validated, applied, verified, measured, and reported without opening
+  WordPress.
+- No action executes unless its type, site, URL scope, risk, allowance, and
+  approval state satisfy the saved policy.
+- Every generated claim and changed field is traceable to its inputs, model,
+  prompt, lexicon, recommendation, and execution record.
+- A failed verification, material regression, unexpected content conflict, or
+  exhausted allowance pauses automation before further work.
+- Every mutation remains reversible and visible in the Action Center.
+
+### Migration MIG1 - Semrush and BrightLocal Switching Tools
+
+Goal: let a replacement-product customer preserve useful setup and supported
+history instead of rebuilding the account by hand.
+
+Scope:
+
+- Import supported locations, websites, tracked phrases, keyword groups,
+  competitors, ranking snapshots, citation/listing facts, and report recipient
+  configuration from documented CSV formats and approved provider APIs where
+  contractually available.
+- Provide downloadable templates, field mapping, location matching, dry-run
+  validation, duplicate detection, unsupported-field warnings, and row-level
+  error recovery.
+- Preserve source, original identifier, original timestamp, import batch,
+  confidence, and transformation history; never present imported data as
+  freshly collected platform data.
+- Keep imports tenant-scoped, idempotent, resumable, allowance-aware, and
+  reversible before dependent platform activity begins.
+- Add a guided switching checklist that clearly distinguishes imported
+  history, newly connected data, and measurements that must be recollected.
+
+Acceptance criteria:
+
+- Retrying an import cannot duplicate a location, phrase, competitor, or
+  historical fact.
+- Every imported record can be traced to its source file/API, batch, original
+  value, normalized value, and location mapping.
+- Invalid or ambiguous rows do not block valid rows and can be corrected and
+  retried.
+- No unsupported Semrush or BrightLocal field is silently discarded or
+  relabeled as an equivalent platform metric.
+
+### Product PA1 - Product Analytics and Customer Feedback
+
+Goal: measure whether customers reach value, trust recommendations, complete
+work, and remain engaged so roadmap decisions use evidence.
+
+Scope:
+
+- Define a privacy-minimized product event taxonomy for onboarding,
+  connections, first verified insight, location switching, report use,
+  recommendation views, approval/rejection, execution, rollback, notification,
+  help, and support escalation.
+- Measure activation, time to first value, weekly useful activity, connection
+  health, recommendation acceptance, completion, outcome availability,
+  WordPress automation success, report engagement, retention, and churn-risk
+  indicators by plan and non-identifying cohort.
+- Add short contextual feedback for recommendation usefulness, explanation
+  clarity, forecast trust, automation confidence, and report quality.
+- Build internal funnels and cohort views without exposing one customer's
+  identifiable behavior to another.
+- Connect roadmap experiments to explicit success metrics and stop conditions.
+
+Acceptance criteria:
+
+- Every tracked event has an owner, purpose, schema version, retention period,
+  and prohibited sensitive fields.
+- Product metrics exclude synthetic/demo activity and identify missing or
+  partial instrumentation.
+- Feedback changes recommendation outcome evidence only through a reviewed,
+  auditable path.
+- The team can quantify first value, repeated value, failure points, and
+  adoption for each paid plan.
+
+### Governance GOV1 - Data Privacy, Retention, and Portability
+
+Goal: give customers and operators clear, enforceable control over collected
+data, credentials, generated artifacts, AI records, and deletion.
+
+Scope:
+
+- Inventory data classes and define purpose, owner, sensitivity, residency
+  where applicable, retention, deletion, backup behavior, and audit
+  requirements.
+- Add customer export for account, location, measurement, recommendation,
+  execution, report, and supported imported data in documented formats.
+- Add provider disconnect, credential deletion/rotation, AI retention controls,
+  user deletion, organization closure, legal hold, and verified deletion
+  workflows.
+- Record consent and delivery suppression for review requests, notifications,
+  support access, and other user-data workflows.
+- Document subprocessors and customer-facing privacy behavior without claiming
+  certifications that have not been completed.
+
+Acceptance criteria:
+
+- A verified owner can request an export or deletion and see its durable,
+  auditable status.
+- Tenant data, credentials, generated artifacts, queues, caches, backups, and
+  provider mappings follow the approved retention/deletion contract.
+- Legal hold and security evidence cannot be bypassed by a normal deletion
+  request, and the limitation is explained.
+- A restore cannot silently resurrect data beyond its approved lifecycle.
+
+### Search Intelligence SEO2 - Advanced Search and Site Integrity
+
+Goal: close the most valuable remaining Semrush-class search and technical
+coverage gaps without adding disconnected tool clutter.
+
+Scope:
+
+- Add Search Console indexation and sitemap monitoring with crawl-derived
+  robots, canonical, redirect-chain, status, duplicate, orphan, broken-link,
+  and supported structured-data validation.
+- Add keyword cannibalization, content decay, page-query mismatch, internal-link
+  opportunities, and service/location coverage gaps.
+- Track SERP features such as local pack, featured result, video, image, and
+  other supported result types with provider source and freshness.
+- Add entity and topical coverage comparisons against relevant competitors,
+  with evidence rather than an unexplained authority score.
+- Route every finding through the lexicon, Action Center, and supported
+  WordPress action types rather than creating independent recommendation lists.
+
+Acceptance criteria:
+
+- Every issue identifies the affected URL, observed evidence, source,
+  freshness, severity, confidence, and supported next action.
+- Indexation, crawlability, canonical selection, structured-data validity, and
+  ranking presence remain distinct concepts in UI and reports.
+- Provider-derived SERP features and platform-derived estimates are never
+  blended without labels.
+- The default owner experience prioritizes a few consequential issues while
+  preserving an expert evidence view.
+
+### Intelligence I2 - Outcome Learning and Controlled Experiments
+
+Goal: improve forecasts and recommendations from verified outcomes while
+preventing premature causal claims or uncontrolled self-modification.
+
+Scope:
+
+- Join pre-action baseline, intervention, execution verification, observation
+  window, confounders, post-action measurement, and outcome classification.
+- Calibrate I1.2 forecast ranges and record accuracy by action type, site
+  context, evidence quality, and model version.
+- Add governed content, metadata, internal-link, and other supported A/B or
+  staggered-rollout experiments with consent, eligibility, stop rules, and
+  rollback.
+- Maintain champion/challenger policy versions with minimum samples,
+  confidence calibration, replay, review, activation, monitoring, and
+  rollback.
+- Allow privacy-safe cross-location or cohort learning only after minimum
+  sample, de-identification, tenant-isolation, and governance review.
+- Keep policy mutation and autonomous expansion disabled until explicit
+  production gates are met.
+
+Acceptance criteria:
+
+- The system distinguishes correlation, experiment result, and approved causal
+  evidence in storage, API, UI, and AI context.
+- A policy or forecast model cannot activate itself.
+- Experiments stop on safety, regression, data-quality, allowance, or
+  statistical guardrails and preserve the prior state.
+- Learned changes are reproducible, reviewable, reversible, and never expose
+  another tenant's identifiable data.
 
 ### AI Visibility AIV1 - AI Search and Entity Visibility
 
@@ -691,6 +1284,40 @@ Acceptance criteria:
 - Heavy-use simulations preserve at least the approved 80% margin floor.
 - Platform-paid provider calls stop before dispatch when allowance is exhausted.
 
+### Operations OPS1 - Customer Support and Launch Operations
+
+Goal: make the paid product supportable, demonstrable, and honest on launch
+day—not merely deployable.
+
+Scope:
+
+- Define support channels, ownership, hours, response targets, severity,
+  escalation, customer communication, and handoff between product, provider,
+  billing, security, and WordPress incidents.
+- Add a safe operator diagnostic bundle with customer consent, tenant scope,
+  data freshness, connection health, relevant job IDs, recent errors, and
+  redacted configuration.
+- Maintain a seeded demo environment and repeatable Solo, Multi-location, and
+  Enterprise demo paths whose claims match production capability.
+- Add customer-facing status communication for incidents, degraded providers,
+  delayed data, maintenance, and resolution.
+- Create launch, onboarding, provider setup, WordPress recovery, billing
+  recovery, incident, rollback, and account closure playbooks.
+- Require a go/no-go scorecard covering product truth, critical journeys,
+  security, recovery, provider health, data freshness, support readiness,
+  pricing, and known limitations.
+
+Acceptance criteria:
+
+- Support can reproduce and diagnose a customer problem without requesting
+  passwords or crossing tenant boundaries.
+- Every critical incident has an owner, customer communication path, recovery
+  procedure, evidence timeline, and corrective-action record.
+- Demo and sales claims are generated from a maintained capability matrix and
+  cannot describe synthetic, fixture-only, or disabled functionality as live.
+- A paid launch cannot proceed while critical TR1, billing, provider,
+  WordPress, data-integrity, or support-readiness gates are red.
+
 ### Enterprise ENT1 - Agency, API, White Label, and Reporting
 
 Goal: justify the $1,499+ starting price after the core product is proven.
@@ -724,8 +1351,13 @@ Acceptance criteria:
 | Citation audit, listing consistency, creation/correction workflow | G1.5 |
 | Review monitoring, inbox, response, generation, and showcase | G1.6 |
 | Multi-location reputation and local visibility overview | G1.6 and ML1 |
-| AI-prioritized local SEO actions | I1 |
+| AI-prioritized local SEO actions | I1.3 and I1.4 |
 | Local keyword and competitor research | MKT1 |
+| Website audit, current CWV visualization, and improvement scenarios | I1.1 and I1.2 |
+| WordPress content and on-page implementation | WP1.1 and WP1.2 |
+| Historical switching/import workflow | MIG1 |
+| Alerts, scheduled digests, and action notifications | ALT1 |
+| Owner, portfolio, and client-safe reporting | RPT1 and ENT1 |
 | White-label reports and client access | ENT1 |
 | API and custom-scale access | ENT1 |
 
@@ -733,7 +1365,7 @@ Acceptance criteria:
 
 | Public plan | Price | Minimum completed sprints before general sale |
 | --- | ---: | --- |
-| Solo | $199/month | UX9, G1.2-G1.7, I1, MKT1, baseline CNT1, limited AIV1, and COM1 self-service billing/account recovery |
+| Solo | $199/month | R1, TR1, G1.2-G1.7, I1.0-I1.4, RPT1, ALT1, CX1, MKT1, baseline CNT1, WP1.1-WP1.2, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
 | Multi-location | $699/month | All Solo gates plus ML1 portfolio intelligence, pooled allowances, team roles, delegated location access, and bulk workflows |
 | Enterprise | $1,499/month starting | All Multi-location gates plus ENT1 API/export, white label, advanced roles, custom limits, durable reporting, onboarding, and priority-support workflows |
 

@@ -15,14 +15,16 @@
 > business. Customer-facing screens must explain business meaning first and retain SEO,
 > provider, and system terminology only as optional supporting detail.
 >
-> **Handoff after UX9:** Begin **Growth G1 - Automated Data Connections** as defined in
-> [claude-next-build-brief.md](./claude-next-build-brief.md#growth-g1---automated-data-connections).
-> G1.1-G1.7 now covers Search Console, local rank grids, usage economics, Google Business
-> Profile intelligence, listings/citations, reputation management, and website
-> analytics/form-event synchronization. The follow-on I1, MKT1, CNT1, AIV1, ML1, COM1,
-> and ENT1 sprints define the focused Semrush and BrightLocal replacement product. Call
-> tracking, CRM, job-management, booked-job, payment, revenue, and sales-attribution
-> connections remain explicitly excluded until separately approved.
+> **Handoff after UX9:** Follow the reconciled execution order in
+> [claude-next-build-brief.md](./claude-next-build-brief.md#recommended-execution-order-from-the-current-state).
+> It now coordinates production trust (TR1), automated data (G1), live and AI-assisted
+> intelligence (I1), premium reports (RPT1), alerts (ALT1), guided onboarding (CX1),
+> research/content (MKT1/CNT1), safe WordPress automation (WP1), switching/imports
+> (MIG1), product analytics (PA1), privacy/portability (GOV1), advanced search coverage
+> (SEO2), outcome learning (I2), AI visibility (AIV1), multi-location (ML1), commerce
+> (COM1), launch operations (OPS1), and enterprise delivery (ENT1). Call tracking, CRM,
+> job-management, booked-job, payment, revenue, and sales-attribution connections remain
+> explicitly excluded until separately approved.
 
 ## 1. Executive Summary
 
