@@ -730,6 +730,18 @@ def _finalize_fallback(
     row.error_code = error_code
     row.rejection_reason = rejection_reason[:2000]
     row.completed_at = now
+    logger.warning(
+        "Governed AI request fell back to the deterministic brief",
+        extra={
+            "organization_id": row.organization_id,
+            "campaign_id": row.campaign_id,
+            "provider_name": row.provider_name,
+            "model_name": row.model_name,
+            "provider_state": provider_state,
+            "error_code": error_code,
+            "run_id": row.id,
+        },
+    )
     db.commit()
     db.refresh(row)
 
