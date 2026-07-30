@@ -98,9 +98,23 @@ def evaluate_core_web_vitals(
                 {
                     "metric_id": metric_id,
                     "display_name": metric.display_name,
+                    "plain_language": metric.plain_language,
                     "status": "insufficient_data",
                     "value": None,
                     "unit": metric.unit,
+                    "aggregation": metric.aggregation,
+                    "thresholds": (
+                        {
+                            "direction": metric.thresholds.direction,
+                            "good_boundary": metric.thresholds.good_boundary,
+                            "poor_boundary": metric.thresholds.poor_boundary,
+                            "percentile": metric.thresholds.percentile,
+                        }
+                        if metric.thresholds is not None
+                        else None
+                    ),
+                    "source_ids": list(metric.source_ids),
+                    "caveat": metric.caveat,
                 }
             )
         else:

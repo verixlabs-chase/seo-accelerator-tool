@@ -43,6 +43,7 @@ test("website health separates real-user and lab performance in plain language",
   assert.match(source, /1 year/);
   assert.match(source, /fallback because this page lacks enough visits/);
   assert.match(source, /does not guarantee higher rankings/);
+  assert.match(source, /The lab test did not finish/);
 });
 
 test("healthy data flags stay hidden while actionable states remain visible", () => {

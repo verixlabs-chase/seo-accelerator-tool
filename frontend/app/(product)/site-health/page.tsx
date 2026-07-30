@@ -458,8 +458,18 @@ export default function SiteHealthPage() {
         { method: "POST" },
       );
       if (result?.status === "completed") {
+        const measurements = Array.isArray(result?.result?.measurements)
+          ? (result.result.measurements as PerformanceMeasurement[])
+          : [];
+        const failedSources = measurements
+          .filter((measurement) => measurement.status === "failed")
+          .map((measurement) =>
+            measurement.source === "pagespeed_lab" ? "lab test" : "real-user lookup",
+          );
         setNotice(
-          `${formFactor === "mobile" ? "Phone" : "Computer"} speed test completed. The newest results are shown below.`,
+          failedSources.length > 0
+            ? `The ${failedSources.join(" and ")} needs attention. The successful results are shown below.`
+            : `${formFactor === "mobile" ? "Phone" : "Computer"} speed test completed. The newest results are shown below.`,
         );
       } else {
         setNotice("The website speed test was queued. Reload shortly to see the result.");
@@ -807,8 +817,23 @@ export default function SiteHealthPage() {
               ? "success"
               : "danger",
       },
+      {
+        label: "Lab test",
+        value:
+          labMeasurement?.status === "failed"
+            ? "Needs attention"
+            : labMeasurement
+              ? "Current"
+              : "Not measured",
+        tone:
+          labMeasurement?.status === "failed"
+            ? "warning"
+            : labMeasurement
+              ? "success"
+              : "info",
+      },
     ],
-    [fieldMeasurement, scanLaneHealthy],
+    [fieldMeasurement, labMeasurement, scanLaneHealthy],
   );
 
   return (
@@ -1038,7 +1063,17 @@ export default function SiteHealthPage() {
                       <p className="mt-3 text-sm leading-5 text-zinc-300">
                         This controlled test helps diagnose fixes. It is separate from what real customers experienced.
                       </p>
-                      {(labMeasurement?.diagnostics?.opportunities || []).length > 0 ? (
+                      {labMeasurement?.status === "failed" ? (
+                        <div className="mt-5 border-l-2 border-rose-500 bg-rose-500/[0.07] px-3 py-3">
+                          <p className="text-sm font-semibold text-rose-200">
+                            The lab test did not finish
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-rose-100/80">
+                            {labMeasurement.error?.message ||
+                              "Run the website test again. The real-user result above is still valid."}
+                          </p>
+                        </div>
+                      ) : (labMeasurement?.diagnostics?.opportunities || []).length > 0 ? (
                         <div className="mt-5 space-y-3">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
                             Biggest technical opportunities

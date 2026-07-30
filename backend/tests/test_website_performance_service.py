@@ -134,6 +134,16 @@ def test_collects_field_and_lab_measurements_with_origin_fallback(
     )
     assert [row.id for row in replay] == [row.id for row in rows]
 
+    manual_retry = collect_campaign_performance(
+        db_session,
+        campaign=campaign,
+        form_factor="mobile",
+        captured_at=captured_at,
+        idempotency_scope="manual:retry:1",
+        client=client,
+    )
+    assert [row.id for row in manual_retry] != [row.id for row in rows]
+
     summary = get_campaign_performance_summary(
         db_session,
         tenant_id=organization.id,
@@ -143,7 +153,7 @@ def test_collects_field_and_lab_measurements_with_origin_fallback(
     )
     assert summary["latest"]["crux_field"]["metrics"]["lcp_ms"] == 2200
     assert summary["latest"]["pagespeed_lab"]["metrics"]["performance_score"] == 91
-    assert len(summary["history"]) == 1
+    assert len(summary["history"]) == 2
     assert summary["sync"]["state"] == "current"
 
 
@@ -187,3 +197,5 @@ def test_missing_crux_data_stays_insufficient_instead_of_passing(
     assert field.status == "insufficient_data"
     assert field.diagnostics["assessment"]["assessment"]["status"] == "insufficient_data"
     assert field.diagnostics["assessment"]["assessment"]["passes_core_web_vitals"] is None
+    missing_lcp = field.diagnostics["assessment"]["metrics"][0]
+    assert missing_lcp["thresholds"]["good_boundary"] == 2500

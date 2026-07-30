@@ -159,6 +159,7 @@ def _website_performance_collection_handler(
         db,
         campaign=campaign,
         form_factor=form_factor,
+        idempotency_scope=str(job.payload.get("measurement_scope") or "").strip() or None,
     )
     return {
         "campaign_id": campaign.id,
@@ -501,10 +502,12 @@ def create_website_performance_job(
     campaign: Campaign,
     form_factor: str,
     collection_date: date,
+    idempotency_suffix: str | None = None,
     available_at: datetime | None = None,
 ) -> PlatformJob:
     if form_factor not in {"mobile", "desktop"}:
         raise ValueError("form_factor must be mobile or desktop.")
+    resolved_suffix = str(idempotency_suffix or collection_date.isoformat()).strip()
     return job_service.create_job(
         db,
         tenant_id=campaign.tenant_id,
@@ -513,7 +516,7 @@ def create_website_performance_job(
         entity_id=campaign.id,
         idempotency_key=(
             f"website-performance:{campaign.id}:{form_factor}:"
-            f"{collection_date.isoformat()}"
+            f"{resolved_suffix}"
         ),
         payload={
             "tenant_id": campaign.tenant_id,
@@ -522,6 +525,7 @@ def create_website_performance_job(
             "business_location_id": campaign.business_location_id,
             "form_factor": form_factor,
             "collection_date": collection_date.isoformat(),
+            "measurement_scope": resolved_suffix,
         },
         available_at=available_at or datetime.now(UTC),
         max_retries=2,
@@ -594,9 +598,13 @@ def run_website_performance_job_now(
         or campaign.setup_state.lower() != "active"
     ):
         raise ValueError("Campaign must be active and tenant-scoped.")
+    manual_bucket = (
+        f"manual:{resolved_now.date().isoformat()}:"
+        f"{resolved_now.hour:02d}:{resolved_now.minute // 15}"
+    )
     idempotency_key = (
         f"website-performance:{campaign.id}:{form_factor}:"
-        f"{resolved_now.date().isoformat()}"
+        f"{manual_bucket}"
     )
     existing = (
         db.query(PlatformJob)
@@ -608,6 +616,7 @@ def run_website_performance_job_now(
         campaign=campaign,
         form_factor=form_factor,
         collection_date=resolved_now.date(),
+        idempotency_suffix=manual_bucket,
         available_at=resolved_now,
     )
     created = existing is None

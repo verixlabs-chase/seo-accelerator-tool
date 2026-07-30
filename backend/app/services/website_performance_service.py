@@ -291,6 +291,7 @@ def collect_campaign_performance(
     campaign: Campaign,
     form_factor: str,
     captured_at: datetime | None = None,
+    idempotency_scope: str | None = None,
     client: httpx.Client | None = None,
 ) -> list[WebsitePerformanceMeasurement]:
     if form_factor not in {"mobile", "desktop"}:
@@ -330,9 +331,14 @@ def collect_campaign_performance(
     rows: list[WebsitePerformanceMeasurement] = []
     try:
         for source, collector in collectors:
+            resolved_scope = (
+                str(idempotency_scope).strip()
+                if idempotency_scope
+                else measured_at.date().isoformat()
+            )
             idempotency_key = (
                 f"website-performance:{campaign.id}:{form_factor}:"
-                f"{source}:{measured_at.date().isoformat()}"
+                f"{source}:{resolved_scope}"
             )
             existing = (
                 db.query(WebsitePerformanceMeasurement)
@@ -489,14 +495,15 @@ def get_campaign_performance_summary(
     latest: dict[str, WebsitePerformanceMeasurement] = {}
     for row in rows:
         latest[row.source] = row
-    latest_success_at = max(
-        (
-            row.captured_at
-            for row in rows
-            if row.status in {"ready", "insufficient_data"}
-        ),
-        default=None,
-    )
+    successful_capture_times = []
+    for row in rows:
+        if row.status not in {"ready", "insufficient_data"}:
+            continue
+        captured_at = row.captured_at
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=UTC)
+        successful_capture_times.append(captured_at)
+    latest_success_at = max(successful_capture_times, default=None)
     next_refresh_at = (
         latest_success_at
         + timedelta(hours=max(1, get_settings().website_performance_collection_interval_hours))
