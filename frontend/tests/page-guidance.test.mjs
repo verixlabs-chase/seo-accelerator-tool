@@ -68,7 +68,8 @@ test("the shared guide is daily, AI-written, cached, and dismissible", () => {
   assert.match(source, /intelligence\/brief/);
   assert.match(source, /method: "POST"/);
   assert.match(source, /insightos-daily-guide/);
-  assert.match(source, /insightos-daily-guide-v3/);
+  assert.match(source, /insightos-daily-guide-v4/);
+  assert.doesNotMatch(source, /localStorage\.setItem\(cacheKey, JSON\.stringify\(fallback\)\)/);
   assert.match(source, /simplifyGuideText/);
   assert.match(source, /deterministic SEO intelligence/);
   assert.match(source, /Google business listing/);

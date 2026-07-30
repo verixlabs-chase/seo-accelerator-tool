@@ -274,6 +274,57 @@ def test_technical_ai_language_is_rejected_and_plain_fallback_is_used(
     assert "technical" not in payload["item"]["output"]["summary"].lower()
 
 
+def test_successful_retry_replaces_failed_daily_explanation(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_service,
+        "get_settings",
+        lambda: _settings(configured=True),
+    )
+    organization, campaign = _campaign_with_lexicon_action(
+        db_session,
+        create_test_org,
+    )
+    now = datetime(2026, 7, 30, 21, 15, tzinfo=UTC)
+
+    failed = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        provider=ContextAwareProvider(technical_language=True),
+        now=now,
+    )
+    recovered = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        retry_failed=True,
+        provider=ContextAwareProvider(),
+        now=now,
+    )
+    replay = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        provider=ContextAwareProvider(),
+        now=now,
+    )
+
+    assert failed["item"]["status"] == "rejected"
+    assert recovered["item"]["status"] == "validated"
+    assert replay["item"]["id"] == recovered["item"]["id"]
+    assert replay["item"]["output"]["summary"] == (
+        "Make the main part of this page load faster."
+    )
+    assert replay["idempotent_replay"] is True
+
+
 def test_campaign_scope_cannot_cross_organizations(
     db_session,
     create_test_org,

@@ -46,7 +46,7 @@ export function TruthNotice({
     [selectedCampaignId, today],
   );
   const cacheKey = useMemo(
-    () => `insightos-daily-guide-v3:${selectedCampaignId}:${today}`,
+    () => `insightos-daily-guide-v4:${selectedCampaignId}:${today}`,
     [selectedCampaignId, today],
   );
   const [isVisible, setIsVisible] = useState(false);
@@ -100,9 +100,7 @@ export function TruthNotice({
           return;
         }
 
-        const fallback = { summary: "", generatedByAi: false };
-        window.localStorage.setItem(cacheKey, JSON.stringify(fallback));
-        setDailyGuide(fallback);
+        setDailyGuide({ summary: "", generatedByAi: false });
       })
       .catch(() => {
         if (!cancelled) {

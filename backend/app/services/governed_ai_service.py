@@ -152,9 +152,21 @@ def generate_governed_brief(
     if existing is not None:
         if existing.status == "running":
             raise _already_running_error()
-        if existing.status == "validated" or not retry_failed:
+        if existing.status == "validated":
             return {
                 "item": _run_payload(db, existing),
+                "runtime": _runtime_status(),
+                "allowance": _action_allowance(db, organization_id=organization_id),
+                "idempotent_replay": True,
+            }
+        if not retry_failed:
+            recovered = _validated_retry_for_key(
+                db,
+                organization_id=organization_id,
+                idempotency_key=idempotency_key,
+            )
+            return {
+                "item": _run_payload(db, recovered or existing),
                 "runtime": _runtime_status(),
                 "allowance": _action_allowance(db, organization_id=organization_id),
                 "idempotent_replay": True,
@@ -970,6 +982,24 @@ def _run_by_key(
             GovernedAIRun.organization_id == organization_id,
             GovernedAIRun.idempotency_key == idempotency_key,
         )
+        .first()
+    )
+
+
+def _validated_retry_for_key(
+    db: Session,
+    *,
+    organization_id: str,
+    idempotency_key: str,
+) -> GovernedAIRun | None:
+    return (
+        db.query(GovernedAIRun)
+        .filter(
+            GovernedAIRun.organization_id == organization_id,
+            GovernedAIRun.idempotency_key.like(f"{idempotency_key}:retry:%"),
+            GovernedAIRun.status == "validated",
+        )
+        .order_by(GovernedAIRun.completed_at.desc())
         .first()
     )
 
