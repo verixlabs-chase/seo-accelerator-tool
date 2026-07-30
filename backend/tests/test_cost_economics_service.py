@@ -223,10 +223,10 @@ def test_margin_report_uses_latest_versioned_allocation(db_session, create_test_
     assert first.version == 1
     assert second.version == 2
     assert report["allocation_version"] == 2
-    assert report["revenue"] == 999.0
+    assert report["revenue"] == 699.0
     assert report["total_cogs"] == 40.0
-    assert report["gross_profit"] == 959.0
-    assert report["modeled_heavy_use"]["gross_margin_percent"] == 80.0
+    assert report["gross_profit"] == 659.0
+    assert report["modeled_heavy_use"]["gross_margin_percent"] == 85.0
     assert report["modeled_heavy_use"]["publishable"] is True
     assert db_session.query(OrganizationCostAllocation).filter_by(organization_id=org.id).count() == 2
 
@@ -234,7 +234,7 @@ def test_margin_report_uses_latest_versioned_allocation(db_session, create_test_
 def test_all_public_tiers_pass_the_approved_heavy_use_floor() -> None:
     models = list_tier_margin_models()
     assert [item["code"] for item in models] == ["solo", "multi_location", "enterprise"]
-    assert all(item["heavy_use_margin_percent"] == 80.0 for item in models)
+    assert all(item["heavy_use_margin_percent"] == 85.0 for item in models)
     assert all(item["publishable"] is True for item in models)
 
 

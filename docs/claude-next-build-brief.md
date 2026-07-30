@@ -453,7 +453,7 @@ providers or future AI models from pushing the service below its target margin.
 > without an active price card fail closed. Organization-owned credentials are
 > recorded but excluded from platform COGS. Customer Settings shows only paid
 > data allowance and recovery guidance; the platform organization view shows
-> revenue, API spend, allocated COGS, gross profit, gross margin, and the 80%
+> revenue, API spend, allocated COGS, gross profit, gross margin, and the 85%
 > heavy-use publication test. Local migration validation, focused backend
 > tests, the uncapped suite tail, Ruff, frontend tests/lint, and the production
 > frontend build are green. Supabase migration run `#10` applied the revision;
@@ -491,10 +491,10 @@ Scope:
 - Add an internal margin view showing revenue, platform-paid API cost, hosting,
   storage, email, other allocated COGS, gross profit, and gross margin by
   organization and tier.
-- Launch with a conservative platform-paid API budget of 5% of plan revenue
-  while reserving 10% for hosting, storage, email, and support COGS. The 80%
-  floor may use at most 10% for platform-paid APIs only when the remaining COGS
-  still fits inside the other 10%.
+- Cap the platform-paid API budget at 5% of plan revenue while reserving 10%
+  for hosting, storage, email, and other software COGS. Payroll, human support,
+  marketing, taxes, and general overhead are outside this product-usage margin
+  calculation. The 85% software-usage margin floor is a hard publication gate.
 - Keep these controls internal; customer-facing UI shows allowance and recovery
   actions, not internal margin.
 
@@ -502,16 +502,16 @@ Margin guardrail:
 
 `maximum total COGS = monthly revenue × (1 - target gross margin)`
 
-| Plan | Monthly revenue | Total COGS ceiling at 85% margin | Total COGS ceiling at 80% margin | Initial 5% platform-API budget |
-| --- | ---: | ---: | ---: | ---: |
-| Solo | $299 | $44.85 | $59.80 | $14.95 |
-| Multi-location | $999 | $149.85 | $199.80 | $49.95 |
-| Enterprise starting point | $1,999 | $299.85 | $399.80 | $99.95 |
+| Plan | Monthly revenue | Total software COGS ceiling at 85% margin | 5% platform-API budget |
+| --- | ---: | ---: | ---: |
+| Solo | $299 | $44.85 | $14.95 |
+| Multi-location | $699 | $104.85 | $34.95 |
+| Enterprise starting point | $1,999 | $299.85 | $99.95 |
 
 Pricing decision:
 
 - Solo is `$299/month` and includes one active location.
-- Multi-location is `$999/month` and includes up to ten active locations.
+- Multi-location is `$699/month` and includes up to ten active locations.
 - Enterprise starts at `$1,999/month`, includes 11-20 active locations by
   default, and uses custom per-location pricing above 20 or when its approved
   user, provider, data-volume, or support allowance is exceeded.
@@ -531,8 +531,9 @@ Acceptance criteria:
   allowance is exhausted.
 - Internal reporting calculates realized gross margin from versioned price
   cards and provider-reported cost without retroactively changing prior months.
-- A tier cannot be published unless its modeled usage remains at or above the
-  80% margin floor under the approved heavy-use scenario.
+- A tier cannot be published unless its modeled software and provider usage
+  remains at or above the 85% margin floor under the approved heavy-use
+  scenario.
 
 ### Growth G1.4 - Google Business Profile Intelligence
 
@@ -1363,7 +1364,7 @@ Acceptance criteria:
 
 ### Commerce COM1 - Billing, Entitlements, and Self-Service Accounts
 
-Goal: make the $199, $699, and $1,499+ plans enforceable and supportable.
+Goal: make the $299, $699, and $1,999+ plans enforceable and supportable.
 
 Scope:
 
@@ -1381,7 +1382,8 @@ Acceptance criteria:
 
 - A customer can subscribe, onboard, understand usage, recover access, change
   plans, and resolve payment failure without operator database work.
-- Heavy-use simulations preserve at least the approved 80% margin floor.
+- Heavy-use simulations preserve at least the approved 85% software-usage
+  margin floor.
 - Platform-paid provider calls stop before dispatch when allowance is exhausted.
 
 ### Operations OPS1 - Customer Support and Launch Operations
@@ -1466,7 +1468,7 @@ Acceptance criteria:
 | Public plan | Price | Minimum completed sprints before general sale |
 | --- | ---: | --- |
 | Solo | $299/month · 1 active location | R1, TR1, G1.2-G1.7, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1, WP1.1-WP1.2, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
-| Multi-location | $999/month · up to 10 active locations | All Solo gates plus ML1 portfolio intelligence, pooled AI/provider allowances, team roles, delegated location access, and bulk workflows |
+| Multi-location | $699/month · up to 10 active locations | All Solo gates plus ML1 portfolio intelligence, pooled AI/provider allowances, team roles, delegated location access, and bulk workflows |
 | Enterprise | From $1,999/month · 11-20 active locations | All Multi-location gates plus ENT1 API/export, white label, advanced roles, custom limits and per-location pricing above 20, durable reporting, onboarding, and priority-support workflows |
 
 An invite-only paid beta may start earlier with explicit limits and known-feature
