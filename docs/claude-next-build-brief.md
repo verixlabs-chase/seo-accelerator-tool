@@ -275,8 +275,8 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 3 | **G1.3 - Usage Economics and Margin Guardrails** | Paid provider and AI work cannot overspend the organization's allowance or silently damage gross margin. |
 | 4 | **I1.1 - Live Website Performance and CWV Experience — released** | Customers see their actual field and lab website measurements, Google thresholds, history, source, freshness, and plain-language meaning. |
 | 5 | **I1.3 - Governed AI Runtime API — active** | Mistral-first AI becomes standard across plans and can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
-| 6 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Customers can compare the measured baseline with a conservative outcome range for approved recommendations. |
-| 7 | **I1.4 - Evidence-Backed Action Center** | The intelligence output becomes one understandable, prioritized queue with outcomes and follow-up measurement. |
+| 6 | **I1.4 - Expanded Action Plans and Guided Checklists** | Customers receive a manageable portfolio of prioritized action plans, with plain-language steps, progress, blockers, and measurement readiness. |
+| 7 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Supported action plans add a measured baseline and conservative outcome range after the work and success criteria are defined. |
 | 8 | **I1.5 - Pluggable and Local Model Gateway** | Platform routing can switch approved AI providers, while an Enterprise owner can connect a customer-controlled compatible model endpoint without changing the intelligence engine or exposing credentials. |
 | 9 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
 | 10 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
@@ -802,10 +802,21 @@ Production evidence (2026-07-30):
 Goal: show what could reasonably improve if recommended work is completed,
 without presenting a guess as a guaranteed Google or business outcome.
 
+Scheduling decision:
+
+- Build this after the I1.4 action-plan portfolio, checklist, and baseline slices.
+  A forecast belongs to a defined action plan with known scope, success metrics,
+  and an observation window; it must not be generated beside a vague one-line
+  recommendation.
+- Start with directly measurable outcomes such as Core Web Vitals, crawl issue
+  counts, listing completeness, review-response coverage, and tracked keyword
+  visibility. Do not estimate rankings, visits, leads, or revenue without a
+  separately validated model and sufficient customer evidence.
+
 Scope:
 
 - Capture an immutable baseline for the affected URLs, metrics, device class,
-  traffic segment, evidence window, and lexicon version.
+  traffic segment, evidence window, action-plan version, and lexicon version.
 - Add deterministic intervention models for supported actions such as image
   optimization, render-blocking resource reduction, server-response
   improvement, layout-shift correction, and JavaScript interaction work.
@@ -821,17 +832,24 @@ Scope:
 - Compare forecast with post-change measurements and record `within range`,
   `outside range`, or `insufficient data` so future models can be calibrated
   under governance.
+- Store forecasts as versioned plan artifacts with the metric, baseline, target,
+  conservative/expected/optimistic ranges, assumptions, data quality, model
+  version, generated time, and observation window.
+- Show `forecast not available yet` when a plan lacks a supported model,
+  sufficient baseline, defined scope, or observation window.
 
 Acceptance criteria:
 
 - Every forecast is reproducible from stored inputs, model version, assumption
-  set, and lexicon version.
+  set, action-plan version, and lexicon version.
 - The UI never labels a scenario as a promise, guaranteed ranking increase, or
   guaranteed lead result.
 - A customer can visually compare the current measurement, accepted target,
   forecast range, and eventual observed result.
 - Unsupported recommendation types show no numeric forecast rather than a
   fabricated estimate.
+- Forecast generation cannot begin until the action plan identifies its
+  success metric, baseline, implementation scope, and observation window.
 - Learned coefficients cannot enter production until minimum-sample,
   calibration, replay, review, and rollback gates pass.
 
@@ -919,18 +937,58 @@ Acceptance criteria:
   stable fallback behavior, and supported-claim accuracy before a model or
   prompt version is activated.
 
-### Intelligence I1.4 - Evidence-Backed Action Center
+### Intelligence I1.4 - Expanded Action Plans and Guided Checklists
 
 Goal: make the intelligence layer the reason a service business pays for the
-product.
+product by turning evidence into a practical body of work, not one isolated
+recommendation.
+
+Product decision:
+
+- Keep one `Do this first` item as the fastest entry point, but never present it
+  as the entire recommendation experience.
+- Organize all supported work into `Do first`, `This week`, and `Later / watch`
+  lists. Prefer three to seven active plans per location when the evidence
+  supports them; do not invent filler to reach a quota.
+- Each action opens a persistent checklist. The deterministic lexicon supplies
+  the action, dependencies, success metrics, and canonical steps. AI may make
+  that approved material easier to read, but it cannot create a new action,
+  required step, measurement, or claim.
+- Finish the action-plan and measurement-readiness slices before I1.2 adds
+  customer-visible forecasting.
 
 Scope:
 
-- Replace unsupported overall scores and duplicate recommendations with one
-  deduplicated, prioritized action queue.
+- Replace unsupported overall scores and duplicate recommendations with a
+  deduplicated action-plan portfolio scoped to the selected location.
 - Give every action a location, evidence set, freshness, confidence, expected
   benefit, estimated effort, dependency, success metric, observation window,
   and plain-language `why now`.
+- Group plans into three understandable horizons:
+  - `Do first`: one to three unblocked items with the highest current value.
+  - `This week`: the next useful work that fits the owner's capacity.
+  - `Later / watch`: lower-priority, blocked, or waiting-for-data items.
+- Materialize a versioned customer-facing action plan rather than overloading a
+  one-line `StrategyRecommendation`. Each plan records its canonical action,
+  source recommendations, priority, owner, dependencies, success metric,
+  baseline, observation window, status, lexicon version, and content hash.
+- Add three to eight ordered checklist steps for normal multi-step work. Each
+  item records a stable step key, required/optional state, status
+  (`not started`, `in progress`, `done`, `skipped`, or `blocked`), blocker
+  reason, completion actor/time, and supporting evidence. Legitimate
+  single-step actions remain single-step.
+- Persist checklist progress across navigation, sessions, and devices. Show
+  progress as completed required steps out of total required steps, with the
+  next unblocked step visible without opening every detail panel.
+- Add plan-level statuses for `ready`, `in progress`, `blocked`, `waiting for
+  results`, `completed`, and `dismissed`. A plan cannot become completed while
+  required steps remain unresolved.
+- Capture the pre-action baseline before work begins. When required work is
+  complete, start the defined observation window and later attach
+  `helped / did not help / insufficient data` evidence.
+- Connect safe automated steps to the existing approval/execution/rollback
+  system without treating a checked box as proof that an external mutation
+  succeeded.
 - Add a compact Daily Intelligence Brief after the first useful Overview charts:
   what changed, likely explanation, strongest evidence, and the next action.
 - Add cross-signal diagnoses across Search Console, rankings, geo-grid, GBP,
@@ -942,12 +1000,36 @@ Scope:
 - Use an LLM only as a cost-capped narrative layer over verified facts; the LLM
   does not invent scores, evidence, or actions.
 
+AI usage and margin controls:
+
+- Build the complete plan and checklist deterministically before any AI call.
+- Make at most one `action_plan_explanation` call per plan content hash,
+  location, language-guide version, and prompt version; cache and reuse the
+  validated result.
+- Do not call AI on page load, checklist clicks, progress updates, sorting, or
+  repeated views.
+- Regenerate only when evidence, canonical action, checklist scope, lexicon
+  version, or language-guide version materially changes.
+- Reserve and reconcile the call through the existing plan allowance and cost
+  ledger. If AI is unavailable or over budget, show the deterministic
+  plain-language plan and checklist with no loss of core functionality.
+
 Acceptance criteria:
 
 - No active recommendation is duplicated for the same location, evidence, and
   observation window.
 - No recommendation is shown without supporting evidence or an explicit
   insufficient-evidence state.
+- A user can see the full action portfolio, the top action, each plan's
+  progress, and the next unblocked step without hunting through the page.
+- Every supported multi-step plan has a deterministic, ordered checklist in
+  plain language, and progress survives sign-out and another-device access.
+- AI output cannot add or remove a required action, checklist step, dependency,
+  baseline, success metric, or execution authority.
+- Completing a UI checkbox cannot falsely mark an automated or externally
+  verified action as successfully executed.
+- A plan with missing evidence, baseline, or measurement rules clearly explains
+  what is needed before forecasting or outcome measurement can begin.
 - Every completed action returns to the user with a measured outcome.
 - A service-business owner can explain the top action without SEO terminology.
 
@@ -960,8 +1042,8 @@ exposing model credentials to the browser.
 
 Scheduling note:
 
-- This sprint follows I1.2-I1.4 and does not block the current Mistral-first
-  rollout.
+- This sprint follows the I1.4 action-plan/checklist work and I1.2 forecasting
+  work and does not block the current Mistral-first rollout.
 - Customer-supplied endpoints and local-model relays are Enterprise-only.
   Solo and Multi-location use the platform-managed governed AI route and cannot
   add arbitrary model endpoints.

@@ -469,6 +469,116 @@ Execution priority for this phase:
   - absent execution data shows explicit fallback
 - Recommended order: 24
 
+### T25. Build the expanded location action portfolio
+
+- Goal: replace the appearance of one isolated recommendation with a
+  location-scoped portfolio that keeps one clear first action while exposing
+  all useful supported work.
+- Files likely affected:
+  - `backend/app/models/intelligence.py`
+  - `backend/app/services/intelligence_service.py`
+  - `backend/app/services/strategy_build_service.py`
+  - `backend/app/api/v1/recommendations.py`
+  - `frontend/app/(product)/opportunities/page.tsx`
+- Backend dependency: canonical action definitions and recommendation evidence.
+- Frontend dependency: current opportunities page.
+- Risk level: Medium
+- Feature flag needed or not: Yes, `expanded_action_plans_enabled`
+- Acceptance criteria:
+  - selected location shows `Do first`, `This week`, and `Later / watch`
+    sections
+  - one to three highest-value unblocked plans appear first, while lower
+    priorities remain accessible
+  - the service creates no filler plan merely to reach a fixed count
+  - duplicate recommendations for the same canonical action, location,
+    evidence, and observation window merge into one plan
+  - every plan shows plain-language reason, effort, owner, evidence freshness,
+    dependency state, success metric, and next step
+- Recommended order: 25
+
+### T26. Add deterministic checklists and persistent progress
+
+- Goal: turn each action plan into a resumable set of concrete steps that a
+  non-technical service-business owner can follow.
+- Files likely affected:
+  - `backend/app/models/intelligence.py`
+  - `backend/app/intelligence/lexicon/schema.py`
+  - `backend/app/services/strategy_build_service.py`
+  - `backend/app/api/v1/recommendations.py`
+  - `frontend/app/(product)/opportunities/page.tsx`
+  - new Alembic migration and backend/frontend tests
+- Backend dependency: T25 and the active lexicon's canonical action steps.
+- Frontend dependency: T25.
+- Risk level: Medium
+- Feature flag needed or not: Yes, `action_plan_checklists_enabled`
+- Acceptance criteria:
+  - normal multi-step plans contain three to eight ordered lexicon-backed steps;
+    legitimate single-step actions remain single-step
+  - each item persists required/optional state, order, status, blocker reason,
+    completion actor/time, and evidence
+  - progress survives navigation, sign-out, and another-device access
+  - the page shows completed required steps out of total required steps and the
+    next unblocked step
+  - AI can simplify wording but cannot add, remove, or change a required action,
+    step, dependency, metric, or execution permission
+  - no AI request occurs for page loads, item checks, sorting, or repeated views
+- Recommended order: 26
+
+### T27. Add action baselines, completion proof, and measurement readiness
+
+- Goal: make plan completion meaningful by recording what existed before the
+  work, what was actually done, and when results can be judged.
+- Files likely affected:
+  - `backend/app/models/recommendation_outcome.py`
+  - `backend/app/models/recommendation_execution.py`
+  - `backend/app/services/recommendation_outcome_service.py`
+  - `backend/app/api/v1/recommendations.py`
+  - `backend/app/api/v1/executions.py`
+  - `frontend/app/(product)/opportunities/page.tsx`
+- Backend dependency: T25-T26 and current execution/outcome records.
+- Frontend dependency: T26.
+- Risk level: High
+- Feature flag needed or not: Yes, `action_measurement_readiness_enabled`
+- Acceptance criteria:
+  - starting a plan captures an immutable baseline, evidence window, success
+    metric, implementation scope, and observation window
+  - a plan cannot be completed while required checklist items remain unresolved
+  - checked UI steps do not falsely prove that an external or automated change
+    succeeded
+  - completed work enters `waiting for results` until its observation window can
+    be evaluated
+  - every measurable plan later records `helped`, `did not help`, or
+    `insufficient data` with the supporting before/after evidence
+- Recommended order: 27
+
+### T28. Add action-linked forecast scenarios and outcome comparison
+
+- Goal: show a conservative view of what a supported action plan could improve,
+  then compare that range with the observed result.
+- Files likely affected:
+  - `backend/app/models/recommendation_outcome.py`
+  - `backend/app/api/v1/intelligence_simulations.py`
+  - `backend/app/services/recommendation_outcome_service.py`
+  - `backend/app/services/website_performance_service.py`
+  - `frontend/app/(product)/opportunities/page.tsx`
+  - shared chart components and new migration/tests
+- Backend dependency: T25-T27 and versioned deterministic forecast models.
+- Frontend dependency: T27.
+- Risk level: High
+- Feature flag needed or not: Yes, `action_plan_forecasting_enabled`
+- Acceptance criteria:
+  - forecasts exist only for plans with a supported model, sufficient baseline,
+    defined scope, success metric, and observation window
+  - the UI compares current, target, conservative, expected, optimistic, and
+    observed values without presenting a promise
+  - each forecast stores model, assumptions, inputs, data quality, plan version,
+    lexicon version, and generated time for replay
+  - unsupported ranking, traffic, lead, and revenue effects remain unknown
+    rather than receiving fabricated numbers
+  - post-window outcomes are labeled `within range`, `outside range`, or
+    `insufficient data`
+- Recommended order: 28
+
 ## 5. Tickets Grouped By Area
 
 ### Execution inbox / approvals / rollback / audit
@@ -479,6 +589,13 @@ Execution priority for this phase:
 - T04 Add execution audit timeline to buyer UI
 - T14 Add recommendation-to-execution creation action from opportunities
 - T15 Add recommendation impact verification panel
+
+### Expanded action plans / checklists / forecasting
+
+- T25 Build the expanded location action portfolio
+- T26 Add deterministic checklists and persistent progress
+- T27 Add action baselines, completion proof, and measurement readiness
+- T28 Add action-linked forecast scenarios and outcome comparison
 
 ### Competitors
 
@@ -546,6 +663,10 @@ Execution priority for this phase:
 | T22 | plugin telemetry | platform provider page | Medium | Yes | 22 |
 | T23 | dashboard summary service | dashboard page | Low | No | 23 |
 | T24 | execution telemetry | reports preview | Medium | No | 24 |
+| T25 | canonical actions + recommendation evidence | opportunities page | Medium | Yes | 25 |
+| T26 | T25 + lexicon action steps | T25 | Medium | Yes | 26 |
+| T27 | T25-T26 + execution/outcome records | T26 | High | Yes | 27 |
+| T28 | T25-T27 + forecast models | T27 | High | Yes | 28 |
 
 ## 7. Dependencies and Blockers
 
@@ -558,6 +679,10 @@ Execution priority for this phase:
 - T13 before T21
 - T07 and T08 before T16 is fully worthwhile
 - T09 before confident rollout of T03/T10 for WordPress mutation flows
+- T25 before T26, T27, and T28
+- T26 before T27
+- T27 before T28; forecasts must attach to measurable action plans rather than
+  standalone recommendations
 
 ### Likely blockers
 
