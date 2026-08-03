@@ -33,7 +33,8 @@
 > businesses: provider truth and local operations in G1.2-G1.7 and DT1,
 > evidence-backed intelligence in I1, research/content/AI visibility in
 > MKT1-CNT1-AUTH1-AIV1, multi-location intelligence in ML1, commerce in COM1, and
-> Enterprise/reporting in ENT1. Where Sections 7-10 conflict with Sections
+> verified progress and retention in ENG1, and Enterprise/reporting in ENT1.
+> Where Sections 7-10 conflict with Sections
 > 1A-1C, Sections 1A-1C take precedence.
 
 ## 1. Executive Summary
@@ -480,20 +481,21 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 23 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
 | 24 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
 | 25 | **COM1 paid-beta slice - Checkout and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, recover payment, and cancel without operator database work. |
-| 26 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
-| 27 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 28 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
-| 29 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
-| 30 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 31 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 32 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 33 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 34 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 35 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 36 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
-| 37 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
-| 38 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 39 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
+| 26 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
+| 27 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
+| 28 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 29 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
+| 30 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
+| 31 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 32 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 33 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 34 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 35 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 36 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 37 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
+| 38 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
+| 39 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 40 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 Release R1 is complete as of 2026-07-30. The I1.0 migration is applied, hosted
 CrUX configuration is active, the API is deployed, the first standards check
@@ -1842,6 +1844,91 @@ Acceptance criteria:
   auditable path.
 - The team can quantify first value, repeated value, failure points, and
   adoption for each paid plan.
+
+### Engagement ENG1 - Verified Progress Rewards and Healthy Habits
+
+Goal: reinforce the repeatable work that improves a location's organic
+presence, make progress feel rewarding, and create a durable reason to return
+without turning the product into a points game or rewarding empty clicks.
+
+Scheduling and dependencies:
+
+- Build after I1.4/T29 can distinguish completed work from measured results,
+  PA1 can measure useful activity and retention, and CX1 establishes the guided
+  customer journey.
+- Treat the paid-beta commerce slice as the earliest release boundary so the
+  team can measure whether rewards improve recurring customer value rather than
+  vanity engagement.
+
+Reward model:
+
+- Separate **habit rewards** from **result rewards**. A habit badge recognizes
+  useful, controllable work; a result badge requires a genuinely new verified
+  measurement from the governed action contract.
+- Use a small, understandable achievement set rather than dozens of decorative
+  badges:
+  - foundation milestones such as connecting the required data, completing the
+    first location setup, and capturing the first trustworthy baseline;
+  - consistency milestones such as completing the weekly plan, keeping profile
+    information current, and closing required work over several governed
+    periods;
+  - verified improvement milestones such as the first measured website-speed
+    improvement, first measured profile-engagement improvement, or resolving a
+    confirmed site-health issue;
+  - multi-location milestones such as bringing every active location's data
+    current or improving a verified metric across several locations.
+- Show progress toward the next meaningful milestone beside the related action
+  plan. When earned, celebrate briefly, explain exactly why it was earned, link
+  to the supporting work and metric, and suggest one relevant next goal.
+- Prefer weekly and monthly consistency over fragile daily streaks because SEO
+  work and provider observation windows are not naturally daily. If streaks are
+  later tested, use grace periods and never punish a customer for a provider
+  outage, missing measurement, vacation, or action that should not be repeated.
+
+Truth and safety rules:
+
+- Define every achievement with a versioned, deterministic rule, scope,
+  evidence requirement, unlock time, and revocation/correction policy. AI may
+  write the celebration and next-step explanation, but it cannot grant a badge.
+- A completed checklist can unlock an accurately labeled habit milestone. It
+  cannot unlock an improvement badge until I1.4/T29 records a valid later
+  same-scope measurement.
+- Never award points for provider spending, unnecessary scans, repeated page
+  views, notification clicks, or low-value busywork. Never imply that a badge
+  proves leads, revenue, ranking gains, or causation when those outcomes were
+  not measured.
+- Keep location and organization achievements separate, enforce tenant
+  isolation, and retain the evidence used to grant each achievement.
+- Use calm, optional celebrations with accessible motion and reduced-motion
+  support. Do not use public leaderboards, shame, artificial urgency, streak
+  anxiety, or pay-to-win rewards.
+
+Measurement and rollout:
+
+- Use PA1 to compare eligible cohorts on meaningful follow-through, weekly
+  useful activity, measured-action completion, return rate, and retention.
+  Define stop conditions for confusion, low-value activity, or notification
+  fatigue before launch.
+- Roll out foundation milestones first, then consistency milestones, and add
+  verified-result badges only after production measurement contracts are
+  proven reliable.
+- Give owners a compact achievement history and notification preference. Do
+  not let reward surfaces push the current priority, metric, or next action
+  below the fold.
+
+Acceptance criteria:
+
+- Every badge states what was accomplished, for which location or organization,
+  when it happened, and which evidence qualified it.
+- Habit and verified-result badges are visually and verbally distinct.
+- No improvement badge can be granted from a checkbox, AI response, forecast,
+  demo value, stale metric, or cross-location rollup.
+- Replaying events, retrying jobs, or repeating provider calls cannot grant the
+  same achievement twice.
+- Customers can dismiss celebrations and manage optional reward notifications
+  without losing their achievement history.
+- A controlled rollout demonstrates increased useful follow-through or
+  retention without increasing low-value activity before the system expands.
 
 ### Governance GOV1 - Data Privacy, Retention, and Portability
 

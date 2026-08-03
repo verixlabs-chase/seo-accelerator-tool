@@ -19,8 +19,11 @@
 > questions and answers. The follow-on **I1.4/T29 measured action-value
 > sprint** is scheduled after G1.4 supplies live Google Business Profile
 > performance data; it adds separate Website and Google Profile action lanes
-> with real baselines and measured results. The authoritative execution
-> brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
+> with real baselines and measured results. A later **ENG1 verified-progress
+> sprint** adds evidence-backed milestones and badges after those measurement,
+> analytics, onboarding, and paid-beta foundations are operating. The
+> authoritative execution brief is
+> [claude-next-build-brief.md](./claude-next-build-brief.md).
 >
 > **Sprint 9 language standard:** Design and write for an owner or manager of a service-based
 > business. Customer-facing screens must explain business meaning first and retain SEO,
@@ -564,6 +567,32 @@ Completion record (2026-08-03):
   accessible progress or comparison visuals without inventing history.
 - Duplicate summaries and setup-first layouts were reduced, and source tests
   enforce route coverage, one dismissible guide, and truthful visualization.
+
+### Later product sprint — ENG1 verified progress and healthy habits
+
+67. Create a small achievement system with three clearly different types:
+foundation milestones, useful-work consistency badges, and verified-result
+badges.
+68. Put progress toward the next relevant achievement beside the related plan
+without moving the current priority, metric, or next action below the fold.
+69. When a badge is earned, show a brief accessible celebration that says what
+the owner accomplished, which location it applies to, and which work or metric
+proved it. Include a direct evidence link and one useful next goal.
+70. Allow checklist completion to earn a plainly labeled habit badge, but
+require a genuinely later same-scope provider measurement before granting any
+improvement badge.
+71. Favor weekly and monthly progress over brittle daily streaks. Add grace for
+provider outages and missing observations, and never reward unnecessary scans,
+repeated clicks, provider spend, or busywork.
+72. Keep deterministic achievement rules and evidence authoritative. AI may
+write the friendly celebration and next-goal explanation but cannot grant,
+upgrade, or invent an achievement.
+73. Add a compact achievement history and optional notification controls. Avoid
+public leaderboards, shame, artificial urgency, pay-to-win rewards, intrusive
+animation, and notification fatigue.
+74. Use PA1 cohort measurement and explicit stop conditions to prove that the
+system improves useful follow-through and retention before expanding the badge
+catalog.
 
 ---
 
