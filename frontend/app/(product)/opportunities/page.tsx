@@ -297,6 +297,8 @@ type GovernedIntelligenceBrief = {
     summary: string;
     why_now: string;
     selected_action_id?: string | null;
+    daily_action_ids?: string[];
+    daily_actions?: GovernedIntelligenceAction[];
     evidence_used?: string[];
     uncertainties?: string[];
     approval_required: boolean;
@@ -1729,12 +1731,12 @@ export default function OpportunitiesPage() {
       if (response.item?.status === "validated") {
         setNotice(
           response.idempotent_replay
-            ? "The current plain-language explanation is already up to date."
-            : "Plain-language explanation ready. InsightOS kept the saved facts, action, and approval rules unchanged.",
+            ? "Today’s action plan is already up to date."
+            : "Today’s action plan is ready. InsightOS kept the saved facts, actions, and approval rules unchanged.",
         );
       } else {
         setNotice(
-          "The AI explanation was not available, so InsightOS kept the saved explanation. Your action plan still works.",
+          "AI wording was not available, so InsightOS kept the saved action plan. Your checklist still works.",
         );
       }
     });
@@ -2253,18 +2255,18 @@ export default function OpportunitiesPage() {
             <details className="rounded-md border border-violet-500/20 bg-[linear-gradient(135deg,rgba(139,92,246,0.07),rgba(20,21,24,0.96)_52%)] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
               <summary className="cursor-pointer list-none">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/70">
-                  Why this is the priority
+                  Today&apos;s AI-assisted plan
                 </p>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <h2 className="text-base font-semibold text-white">
-                    Open the plain-language explanation
+                    Open today&apos;s plain-language plan
                   </h2>
                   <span className="text-xs text-violet-200">Show</span>
                 </div>
               </summary>
               <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-t border-violet-500/15 pt-4">
                 <p className="max-w-3xl text-sm leading-6 text-zinc-300">
-                  InsightOS chooses the facts and next action. AI only turns that decision
+                  InsightOS chooses the facts and saved actions. AI only turns that plan
                   into easier language and cannot change your website.
                 </p>
                 <button
@@ -2273,10 +2275,10 @@ export default function OpportunitiesPage() {
                   className="rounded-md border border-violet-400/30 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busyAction === "explain-intelligence-brief"
-                    ? "Preparing explanation..."
+                    ? "Preparing today’s plan..."
                     : intelligenceBrief
-                      ? "Refresh explanation"
-                      : "Explain my next step"}
+                      ? "Refresh today’s plan"
+                      : "Build today’s plan"}
                 </button>
               </div>
 
@@ -2292,7 +2294,7 @@ export default function OpportunitiesPage() {
                         }`}
                       >
                         {intelligenceBrief.status === "validated"
-                          ? "Plain-language summary"
+                          ? "Today’s summary"
                           : "Saved guidance"}
                       </span>
                       <span className="text-xs text-zinc-500">
@@ -2321,46 +2323,48 @@ export default function OpportunitiesPage() {
 
                   <div className="rounded-md border border-[#26272c] bg-[#111214]/90 p-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Recommended next action
+                      Today&apos;s action list
                     </p>
-                    {intelligenceBrief.output.selected_action ? (
-                      <>
-                        <h3 className="mt-2 text-base font-semibold text-white">
-                          {simplifyCustomerCopy(
-                            intelligenceBrief.output.selected_action.display_name,
-                            { fallback: "Review this action" },
-                          )}
-                        </h3>
-                        <p className="mt-2 text-sm leading-6 text-zinc-300">
-                          {simplifyCustomerCopy(
-                            intelligenceBrief.output.selected_action.why_it_matters,
-                            { fallback: "Open the action plan to see why this matters." },
-                          )}
-                        </p>
-                        {intelligenceBrief.output.selected_action.steps?.length ? (
-                          <ol className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
-                            {intelligenceBrief.output.selected_action.steps
-                              .slice(0, 3)
-                              .map((step, index) => (
-                                <li key={step}>
-                                  <span className="mr-2 text-violet-300">{index + 1}.</span>
-                                  {simplifyCustomerCopy(step, { fallback: "Review this step." })}
-                                </li>
-                              ))}
-                          </ol>
-                        ) : null}
-                        {intelligenceBrief.output.approval_required ? (
-                          <p className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm leading-6 text-amber-100">
-                            Review and approve this action before anyone carries it out.
-                          </p>
-                        ) : null}
-                      </>
+                    {intelligenceBrief.output.daily_actions?.length ? (
+                      <ol className="mt-3 space-y-3">
+                        {intelligenceBrief.output.daily_actions.map((action, index) => (
+                          <li
+                            key={action.action_id}
+                            className="rounded-md border border-[#2b2c32] bg-[#15161a] p-3"
+                          >
+                            <div className="flex items-start gap-3">
+                              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-violet-500/15 text-xs font-semibold text-violet-100">
+                                {index + 1}
+                              </span>
+                              <div>
+                                <h3 className="text-sm font-semibold text-white">
+                                  {simplifyCustomerCopy(action.display_name, {
+                                    fallback: "Review this action",
+                                  })}
+                                </h3>
+                                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                                  {simplifyCustomerCopy(action.steps?.[0], {
+                                    fallback: "Open the checklist and complete the next step.",
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
                     ) : (
                       <p className="mt-2 text-sm leading-6 text-zinc-300">
                         There is not enough verified information for a specific action yet.
                         Check again after more business data is collected.
                       </p>
                     )}
+                    {intelligenceBrief.output.daily_actions?.some(
+                      (action) => action.approval_required,
+                    ) ? (
+                      <p className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm leading-6 text-amber-100">
+                        Review and approve these actions before anyone carries them out.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               ) : (
@@ -2369,8 +2373,8 @@ export default function OpportunitiesPage() {
                     No explanation has been prepared for this business yet.
                   </p>
                   <p className="mt-2 text-sm leading-6 text-zinc-300">
-                    Choose “Explain my next step” to turn the current verified recommendation
-                    into a short business-owner summary.
+                    Choose “Build today’s plan” to turn the current approved recommendations
+                    into a short business-owner plan.
                   </p>
                 </div>
               )}

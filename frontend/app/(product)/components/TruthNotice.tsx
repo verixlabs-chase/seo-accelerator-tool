@@ -16,6 +16,7 @@ type TruthNoticeProps = {
 type DailyGuide = {
   summary: string;
   generatedByAi: boolean;
+  actionCount: number;
 };
 
 type BriefResponse = {
@@ -23,6 +24,7 @@ type BriefResponse = {
     status?: string;
     output?: {
       summary?: string;
+      daily_action_ids?: string[];
     };
   } | null;
 };
@@ -47,7 +49,7 @@ export function TruthNotice({
     [selectedCampaignId, today],
   );
   const cacheKey = useMemo(
-    () => `insightos-daily-guide-v4:${selectedCampaignId}:${today}`,
+    () => `insightos-daily-guide-v5:${selectedCampaignId}:${today}`,
     [selectedCampaignId, today],
   );
   const [isVisible, setIsVisible] = useState(false);
@@ -100,17 +102,20 @@ export function TruthNotice({
               210,
             ),
             generatedByAi: true,
+            actionCount: Array.isArray(output.daily_action_ids)
+              ? output.daily_action_ids.length
+              : 1,
           };
           window.localStorage.setItem(cacheKey, JSON.stringify(guide));
           setDailyGuide(guide);
           return;
         }
 
-        setDailyGuide({ summary: "", generatedByAi: false });
+        setDailyGuide({ summary: "", generatedByAi: false, actionCount: 0 });
       })
       .catch(() => {
         if (!cancelled) {
-          setDailyGuide({ summary: "", generatedByAi: false });
+          setDailyGuide({ summary: "", generatedByAi: false, actionCount: 0 });
         }
       });
 
@@ -150,12 +155,17 @@ export function TruthNotice({
           <div className="mt-1.5 text-sm leading-5 text-current/85">
             {dailyGuide?.generatedByAi ? dailyGuide.summary : children}
           </div>
+          {dailyGuide?.generatedByAi && dailyGuide.actionCount > 1 ? (
+            <p className="mt-2 text-xs font-medium text-current/75">
+              {dailyGuide.actionCount} actions are ready in today&apos;s plan.
+            </p>
+          ) : null}
           {dailyGuide?.generatedByAi ? (
             <Link
               href="/opportunities"
               className="mt-2.5 inline-flex text-xs font-semibold text-white underline decoration-current/40 underline-offset-4 hover:decoration-current"
             >
-              See the recommended next step
+              See today&apos;s action plan
             </Link>
           ) : null}
         </div>

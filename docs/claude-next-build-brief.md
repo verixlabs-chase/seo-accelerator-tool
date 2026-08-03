@@ -20,8 +20,10 @@
 > action plans now store reproducible conservative, expected, and optimistic
 > direct-metric forecasts and compare them with a genuinely new result after
 > the observation window. Unsupported ranking, visit, lead, and revenue effects
-> remain unknown. The next implementation sprint is the remaining **I1.3:
-> Governed AI Utility Expansion**, beginning with a bounded daily action brief.
+> remain unknown. The bounded **I1.3 daily action brief is now implemented**:
+> each location can receive up to three engine-approved actions with current
+> checklist context and plain-language AI wording. The next I1.3 slice is
+> evidence-based questions and answers.
 > remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7 and DT1,
@@ -459,7 +461,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 9 | **UX12 - Cross-Page Visualization and Usability Rollout** | Rankings, Local Search, Website Health, Listings, Reviews, Competitors, Locations, Reports, Settings, and setup states receive the same understandable hierarchy. |
 | 10 | **I1.4/T27 - Action Measurement Readiness — completed** | Starting measurements, completed-work proof, success measurements, and honest waiting periods make a checked box different from a proven result. |
 | 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling — completed** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
-| 12 | **I1.3 remaining slices - Governed AI Utility Expansion** | Daily briefs, evidence-based questions and answers, and governed drafting make AI useful beyond one explanation while the deterministic engine keeps authority. |
+| 12 | **I1.3 remaining slices - Governed AI Utility Expansion — daily brief completed** | Evidence-based questions and answers and governed drafting make AI useful beyond the completed three-action daily brief while the deterministic engine keeps authority. |
 | 13 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
 | 14 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
 | 15 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
@@ -1096,8 +1098,8 @@ policy engine retain decision authority.
 > reason under database RLS. Mistral has no database, Google, WordPress, or tool
 > access and cannot execute changes. The production migration, provider key,
 > restricted-role pricing access, deterministic control-field enforcement, and
-> live validated-output/cost audit have passed. Daily briefs, evidence Q&A, and
-> governed drafting remain later I1.3 slices.
+> live validated-output/cost audit have passed. Evidence Q&A and governed
+> drafting remain later I1.3 slices.
 >
 > **Service-business language contract completed 2026-07-30:** the live AI
 > prompt now loads the versioned
@@ -1107,6 +1109,18 @@ policy engine retain decision authority.
 > terms. `why now` is limited to 24 words and one sentence. The server rejects
 > noncompliant model output and uses a plain-language fallback, while the client
 > retains a final translation layer for older cached responses.
+>
+> **Bounded daily action brief implemented 2026-08-03:** the runtime now ranks
+> active, non-archived recommendations with the same deterministic priority
+> rules used by Next Steps, admits no more than three lexicon-approved actions,
+> and includes each action's saved cadence, due state, checklist progress, and
+> next unfinished step in the bounded AI context. The provider cannot add,
+> remove, or reorder those action IDs. The API hydrates the saved IDs from the
+> versioned lexicon, the daily guide reports the ready-action count, and Next
+> Steps presents the result as a numbered owner-friendly plan. Provider failure
+> keeps the exact deterministic plan available. Automated tests cover archived
+> action exclusion, the three-action ceiling, checklist context, invalid action
+> rejection, tenant scope, cost accounting, fallback behavior, and UI wording.
 
 Runtime sequence:
 

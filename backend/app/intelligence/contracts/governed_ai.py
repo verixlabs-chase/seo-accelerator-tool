@@ -37,6 +37,7 @@ class GovernedIntelligenceBrief(BaseModel):
     summary: str = Field(min_length=1, max_length=800)
     why_now: str = Field(min_length=1, max_length=800)
     selected_action_id: str | None = Field(default=None, max_length=160)
+    daily_action_ids: list[str] = Field(default_factory=list, max_length=3)
     evidence_used: list[str] = Field(min_length=1, max_length=12)
     uncertainties: list[str] = Field(default_factory=list, max_length=8)
     approval_required: bool
@@ -61,7 +62,7 @@ class GovernedIntelligenceBrief(BaseModel):
             max_sentences=1,
         )
 
-    @field_validator("evidence_used", "uncertainties")
+    @field_validator("daily_action_ids", "evidence_used", "uncertainties")
     @classmethod
     def unique_nonempty_items(cls, value: list[str]) -> list[str]:
         normalized: list[str] = []
@@ -78,6 +79,7 @@ class GovernedIntelligenceBrief(BaseModel):
         *,
         evidence_ids: set[str],
         deterministic_action_id: str | None,
+        deterministic_daily_action_ids: list[str],
         action_requires_approval: bool,
     ) -> None:
         unknown_evidence = sorted(set(self.evidence_used) - evidence_ids)
@@ -88,6 +90,17 @@ class GovernedIntelligenceBrief(BaseModel):
         if self.selected_action_id != deterministic_action_id:
             raise ValueError(
                 "AI output changed the deterministic selected action."
+            )
+        if self.daily_action_ids != deterministic_daily_action_ids:
+            raise ValueError(
+                "AI output changed the deterministic daily action plan."
+            )
+        if self.selected_action_id is not None and (
+            not self.daily_action_ids
+            or self.daily_action_ids[0] != self.selected_action_id
+        ):
+            raise ValueError(
+                "The selected action must remain first in the daily action plan."
             )
         if self.approval_required is not action_requires_approval:
             raise ValueError(

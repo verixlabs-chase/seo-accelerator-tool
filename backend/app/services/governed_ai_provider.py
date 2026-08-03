@@ -94,7 +94,8 @@ class MistralGovernedAIProvider:
                         "why_now. Use only the supplied JSON evidence. Preserve the selected "
                         "action, evidence identifiers, uncertainty, risk, and approval "
                         "requirements exactly. Copy selected_action_id and approval_required "
-                        "exactly from deterministic_selection; those control fields belong to "
+                        "and daily_action_ids exactly from deterministic_selection; those "
+                        "control fields belong to "
                         "InsightOS. Never promise rankings, calls, leads, or revenue. "
                         f"Prompt contract: {prompt_template_version}. "
                         f"Writing guide: {SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION}.\n\n"
@@ -192,6 +193,9 @@ class MistralGovernedAIProvider:
                     )
                     payload["approval_required"] = bool(
                         deterministic_selection.get("approval_required")
+                    )
+                    payload["daily_action_ids"] = list(
+                        deterministic_selection.get("daily_action_ids") or []
                     )
             except (ValueError, TypeError, json.JSONDecodeError) as exc:
                 raise GovernedAIProviderError(

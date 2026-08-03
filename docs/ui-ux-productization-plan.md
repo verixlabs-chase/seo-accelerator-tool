@@ -14,8 +14,9 @@
 > has dense operations-console patterns, repeated status content, technical
 > copy, weak visual hierarchy, and too little decision-useful visualization.
 > UX10-UX12, I1.4/T27 measurement readiness, and I1.2/T28 evidence-backed
-> forecasting are now complete. The remaining I1.3 governed-AI utility slices
-> are next, beginning with a bounded daily action brief. The authoritative execution
+> forecasting and the bounded I1.3 daily action brief are now complete. The
+> remaining I1.3 utility slices are next, beginning with evidence-based
+> questions and answers. The authoritative execution
 > brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
 >
 > **Sprint 9 language standard:** Design and write for an owner or manager of a service-based

@@ -51,6 +51,6 @@ test("next steps exposes one cadence board and one working checklist", () => {
 test("primary owner journey keeps technical and source detail optional", () => {
   assert.match(dashboardSource, /<DetailsDisclosure[\s\S]*Change dates and comparison/);
   assert.match(dashboardSource, /<DetailsDisclosure label="Source and update details"/);
-  assert.match(opportunitiesSource, /Open the plain-language explanation/);
+  assert.match(opportunitiesSource, /Open today&apos;s plain-language plan/);
   assert.match(opportunitiesSource, /Advanced workflow tools/);
 });

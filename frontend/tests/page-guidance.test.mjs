@@ -68,7 +68,9 @@ test("the shared guide is daily, AI-written, cached, and dismissible", () => {
   assert.match(source, /intelligence\/brief/);
   assert.match(source, /method: "POST"/);
   assert.match(source, /insightos-daily-guide/);
-  assert.match(source, /insightos-daily-guide-v4/);
+  assert.match(source, /insightos-daily-guide-v5/);
+  assert.match(source, /daily_action_ids/);
+  assert.match(source, /actions are ready/);
   assert.doesNotMatch(source, /localStorage\.setItem\(cacheKey, JSON\.stringify\(fallback\)\)/);
   assert.match(source, /simplifyCustomerCopy/);
   assert.match(source, /customerLanguage\.mjs/);
@@ -85,8 +87,10 @@ test("opportunities keeps AI subordinate while using owner-friendly labels", () 
   );
   const source = readFileSync(pagePath, "utf8");
 
-  assert.match(source, /Open the plain-language explanation/);
-  assert.match(source, /InsightOS chooses the facts and next action/);
+  assert.match(source, /Open today&apos;s plain-language plan/);
+  assert.match(source, /InsightOS chooses the facts and saved actions/);
+  assert.match(source, /daily_actions/);
+  assert.match(source, /Today&apos;s action list/);
   assert.match(source, /Automatic changes are off/);
   assert.match(source, /cannot change your website/);
   assert.match(source, /retry_failed/);

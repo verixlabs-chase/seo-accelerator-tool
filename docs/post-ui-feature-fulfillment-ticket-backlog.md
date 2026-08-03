@@ -3,8 +3,9 @@
 > **Status update (2026-08-03):** This remains the workflow-fulfillment backlog,
 > but it is no longer the master next-sprint sequence. The working routes are in
 > place. T26, I1.4/T27, I1.2/T28, UX10/T29, UX11/T30, and UX12/T31 are complete.
-> Customer work now moves to the remaining I1.3 governed-AI utility slices,
-> beginning with a bounded daily action brief. See
+> The bounded I1.3 daily action brief is implemented. Customer work now moves
+> to the remaining governed-AI utility slices, beginning with evidence-based
+> questions and answers. See
 > [claude-next-build-brief.md](./claude-next-build-brief.md#1a-active-customer-ux-sprint-sequence).
 > Remaining feature tickets should be scheduled behind or alongside that
 > customer-comprehension work, not used to add more dense top-level surfaces.

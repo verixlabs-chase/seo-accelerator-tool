@@ -51,6 +51,7 @@ class ContextAwareProvider:
         self.invalid_action = invalid_action
         self.technical_language = technical_language
         self.calls = 0
+        self.last_context = None
 
     def generate(
         self,
@@ -60,6 +61,7 @@ class ContextAwareProvider:
         prompt_template_version,
     ) -> GovernedAIProviderResponse:
         self.calls += 1
+        self.last_context = context
         selected = context["deterministic_selection"]["selected_action_id"]
         recommendation = context["facts"]["recommendations"][0]
         return GovernedAIProviderResponse(
@@ -77,6 +79,9 @@ class ContextAwareProvider:
                 "selected_action_id": (
                     "invented.action" if self.invalid_action else selected
                 ),
+                "daily_action_ids": context["deterministic_selection"][
+                    "daily_action_ids"
+                ],
                 "evidence_used": [recommendation["evidence_id"]],
                 "uncertainties": ["A ranking outcome is not guaranteed."],
                 "approval_required": context["deterministic_selection"][
@@ -148,6 +153,10 @@ def test_missing_provider_uses_persisted_deterministic_fallback(
         "technical.optimize_lcp_resource"
     )
     assert payload["item"]["output"]["approval_required"] is True
+    assert payload["item"]["output"]["daily_action_ids"] == [
+        "technical.optimize_lcp_resource"
+    ]
+    assert payload["item"]["output"]["daily_actions"][0]["steps"]
     assert db_session.query(CostLedgerEntry).count() == 0
     assert db_session.query(GovernedAIRun).count() == 1
 
@@ -208,6 +217,81 @@ def test_valid_provider_output_is_metered_validated_and_idempotent(
     assert next_day["item"]["status"] == "validated"
     assert provider.calls == 2
     assert db_session.query(CostLedgerEntry).count() == 4
+
+
+def test_daily_brief_uses_three_ranked_active_actions_and_current_work(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_service,
+        "get_settings",
+        lambda: _settings(configured=True),
+    )
+    organization, campaign = _campaign_with_lexicon_action(
+        db_session,
+        create_test_org,
+    )
+    for action_id, risk_tier, confidence, status in (
+        ("technical.reduce_render_blocking", 3, 0.91, "GENERATED"),
+        ("technical.reserve_layout_space", 2, 0.72, "VALIDATED"),
+        ("technical.optimize_server_response", 4, 0.99, "ARCHIVED"),
+    ):
+        db_session.add(
+            StrategyRecommendation(
+                tenant_id=campaign.tenant_id,
+                campaign_id=campaign.id,
+                recommendation_type=f"policy::daily::{action_id}",
+                rationale="Review the next safe improvement for this website.",
+                confidence=confidence,
+                confidence_score=confidence,
+                evidence_json=(
+                    '{"recommended_actions":["technical.reduce_render_blocking",'
+                    '"technical.optimize_server_response"]}'
+                    if action_id == "technical.reduce_render_blocking"
+                    else "{}"
+                ),
+                risk_tier=risk_tier,
+                rollback_plan_json='{"steps":["restore_the_prior_setting"]}',
+                status=status,
+                created_at=datetime(2026, 7, 30, 20, risk_tier, tzinfo=UTC),
+            )
+        )
+    db_session.commit()
+    provider = ContextAwareProvider()
+
+    payload = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        provider=provider,
+        now=datetime(2026, 7, 30, 21, 0, tzinfo=UTC),
+    )
+
+    expected = [
+        "technical.reduce_render_blocking",
+        "technical.optimize_lcp_resource",
+        "technical.reserve_layout_space",
+    ]
+    assert payload["item"]["status"] == "validated"
+    assert payload["item"]["output"]["daily_action_ids"] == expected
+    assert [
+        item["action_id"] for item in payload["item"]["output"]["daily_actions"]
+    ] == expected
+    assert provider.last_context is not None
+    assert provider.last_context["deterministic_selection"]["daily_action_ids"] == expected
+    work_contexts = [
+        item["current_work"]
+        for item in provider.last_context["facts"]["recommendations"]
+        if item.get("action_plan") is not None
+    ]
+    assert len(work_contexts) == 3
+    assert all(item and item["next_step"] for item in work_contexts)
+    assert "technical.optimize_server_response" not in payload["item"]["output"][
+        "daily_action_ids"
+    ]
 
 
 def test_invented_action_is_rejected_after_cost_reconciliation(
@@ -371,6 +455,7 @@ def test_output_contract_rejects_unknown_evidence_and_promises() -> None:
         output.validate_against_context(
             evidence_ids={"campaign:1"},
             deterministic_action_id=None,
+            deterministic_daily_action_ids=[],
             action_requires_approval=False,
         )
 
@@ -388,8 +473,29 @@ def test_output_contract_allows_truthful_uncertainty_language() -> None:
     output.validate_against_context(
         evidence_ids={"campaign:1"},
         deterministic_action_id=None,
+        deterministic_daily_action_ids=[],
         action_requires_approval=False,
     )
+
+
+def test_output_contract_rejects_changes_to_the_daily_action_plan() -> None:
+    output = GovernedIntelligenceBrief(
+        summary="Review the first safe action for this business.",
+        why_now="Customers may notice the problem now.",
+        selected_action_id="technical.optimize_lcp_resource",
+        daily_action_ids=["invented.action"],
+        evidence_used=["campaign:1"],
+        uncertainties=[],
+        approval_required=True,
+    )
+
+    with pytest.raises(ValueError, match="daily action plan"):
+        output.validate_against_context(
+            evidence_ids={"campaign:1"},
+            deterministic_action_id="technical.optimize_lcp_resource",
+            deterministic_daily_action_ids=["technical.optimize_lcp_resource"],
+            action_requires_approval=True,
+        )
 
 
 def test_service_business_language_guide_is_the_runtime_writing_standard() -> None:
@@ -523,6 +629,7 @@ def test_mistral_adapter_uses_strict_schema_and_records_usage() -> None:
             "deterministic_selection": {
                 "selected_action_id": None,
                 "approval_required": False,
+                "daily_action_ids": [],
             },
         },
         output_schema=GovernedIntelligenceBrief.model_json_schema(),
@@ -543,6 +650,7 @@ def test_mistral_adapter_uses_strict_schema_and_records_usage() -> None:
     assert response.output_tokens == 45
     assert response.payload["selected_action_id"] is None
     assert response.payload["approval_required"] is False
+    assert response.payload["daily_action_ids"] == []
 
 
 def test_governed_brief_api_returns_safe_fallback_without_provider(client) -> None:

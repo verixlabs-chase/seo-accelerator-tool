@@ -36,9 +36,10 @@ from app.services.governed_ai_provider import (
 
 
 FEATURE = "intelligence_brief"
-PROMPT_TEMPLATE_VERSION = "insightos-intelligence-brief-v4"
+PROMPT_TEMPLATE_VERSION = "insightos-daily-action-brief-v1"
 MISTRAL_CAPABILITY = "governed_ai"
 MISTRAL_OPERATION = "intelligence_brief"
+DAILY_ACTION_LIMIT = 3
 MONTHLY_ACTION_LIMITS = {
     "solo": 31,
     "multi_location": 310,
@@ -108,12 +109,28 @@ def generate_governed_brief(
         db,
         tenant_id=campaign.tenant_id,
         campaign_id=campaign.id,
-    )[:10]
+    )
+    recommendations = _rank_active_recommendations(recommendations)[:10]
+    action_plans = intelligence_service.build_recommendation_action_plans(
+        db,
+        tenant_id=campaign.tenant_id,
+        recommendations=recommendations,
+    )
+    work_items = intelligence_service.ensure_action_plan_occurrences(
+        db,
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        recommendations=recommendations,
+        action_plans=action_plans,
+        now=occurred_at,
+    )
     context_bundle = _build_context(
         campaign=campaign,
         score=score,
         recommendations=recommendations,
         lexicon=lexicon,
+        action_plans=action_plans,
+        work_items=work_items,
     )
     context = context_bundle["context"]
     context_hash = _hash_payload(context)
@@ -205,6 +222,7 @@ def generate_governed_brief(
         recommendations=recommendations,
         evidence_ids=context_bundle["evidence_ids"],
         deterministic_action=context_bundle["deterministic_action"],
+        daily_action_ids=context_bundle["daily_action_ids"],
         uncertainty=(
             "The daily explanation is unavailable. Your saved recommendation "
             "is still available."
@@ -494,6 +512,7 @@ def generate_governed_brief(
                 if deterministic_action is not None
                 else None
             ),
+            deterministic_daily_action_ids=context_bundle["daily_action_ids"],
             action_requires_approval=bool(
                 deterministic_action
                 and int(deterministic_action.get("risk_tier") or 0) >= 2
@@ -539,6 +558,8 @@ def _build_context(
     score: Any,
     recommendations: list[StrategyRecommendation],
     lexicon: Any,
+    action_plans: dict[str, dict[str, Any]],
+    work_items: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     evidence_ids = [
         f"campaign:{campaign.id}",
@@ -561,8 +582,11 @@ def _build_context(
     }
     assessments: list[dict[str, Any]] = []
     action_ids: list[str] = []
+    current_work_action_ids: list[str] = []
     diagnostic_ids: list[str] = []
     for recommendation in recommendations:
+        plan = action_plans.get(recommendation.id)
+        work_item = work_items.get(recommendation.id)
         evidence_id = f"recommendation:{recommendation.id}"
         evidence_ids.append(evidence_id)
         facts["recommendations"].append(
@@ -574,6 +598,18 @@ def _build_context(
                 "risk_tier": recommendation.risk_tier,
                 "status": str(recommendation.status),
                 "created_at": recommendation.created_at.isoformat(),
+                "action_plan": (
+                    {
+                        "action_id": plan.get("action_id"),
+                        "display_name": plan.get("display_name"),
+                        "why_it_matters": plan.get("why_it_matters"),
+                        "effort": plan.get("effort"),
+                        "owner_role": plan.get("owner_role"),
+                    }
+                    if plan is not None
+                    else None
+                ),
+                "current_work": _bounded_work_context(work_item),
             }
         )
         assessments.append(
@@ -595,6 +631,15 @@ def _build_context(
         for diagnostic_id in candidate_diagnostics:
             if diagnostic_id not in diagnostic_ids:
                 diagnostic_ids.append(diagnostic_id)
+        plan_action_id = str(plan.get("action_id")) if plan is not None else ""
+        if (
+            plan_action_id
+            and work_item is not None
+            and work_item.get("status") in {"ready", "in_progress", "blocked"}
+            and work_item.get("next_step") is not None
+            and plan_action_id not in current_work_action_ids
+        ):
+            current_work_action_ids.append(plan_action_id)
 
     context = build_ai_decision_context(
         lexicon,
@@ -610,10 +655,14 @@ def _build_context(
     }
     ordered_actions = [
         allowed_by_id[action_id]
-        for action_id in action_ids
+        for action_id in current_work_action_ids
         if action_id in allowed_by_id
     ]
     deterministic_action = ordered_actions[0] if ordered_actions else None
+    daily_action_ids = [
+        str(item["action_id"])
+        for item in ordered_actions[:DAILY_ACTION_LIMIT]
+    ]
     context["allowed_actions"] = ordered_actions
     context["deterministic_selection"] = {
         "selected_action_id": (
@@ -625,6 +674,8 @@ def _build_context(
             deterministic_action
             and int(deterministic_action.get("risk_tier") or 0) >= 2
         ),
+        "daily_action_ids": daily_action_ids,
+        "daily_action_limit": DAILY_ACTION_LIMIT,
         "authority": "deterministic_engine",
     }
     context["customer_language_standard"] = {
@@ -642,7 +693,44 @@ def _build_context(
         "allowed_action_ids": [
             str(item["action_id"]) for item in ordered_actions
         ],
+        "daily_action_ids": daily_action_ids,
         "deterministic_action": deterministic_action,
+    }
+
+
+def _rank_active_recommendations(
+    recommendations: list[StrategyRecommendation],
+) -> list[StrategyRecommendation]:
+    active = [
+        item
+        for item in recommendations
+        if str(getattr(item.status, "value", item.status)) != "ARCHIVED"
+        and item.recommendation_type != "strategy_bundle_record"
+    ]
+    return sorted(
+        active,
+        key=lambda item: (
+            int(item.risk_tier or 0),
+            float(item.confidence_score or item.confidence or 0),
+            _as_utc(item.created_at),
+        ),
+        reverse=True,
+    )
+
+
+def _bounded_work_context(work_item: dict[str, Any] | None) -> dict[str, Any] | None:
+    if work_item is None:
+        return None
+    progress = work_item.get("progress") or {}
+    next_step = work_item.get("next_step") or {}
+    return {
+        "cadence": work_item.get("cadence"),
+        "due_state": work_item.get("due_state"),
+        "status": work_item.get("status"),
+        "completed_steps": int(progress.get("completed_required") or 0),
+        "total_steps": int(progress.get("required_total") or 0),
+        "next_step": next_step.get("instruction"),
+        "next_step_status": next_step.get("status"),
     }
 
 
@@ -688,6 +776,7 @@ def _fallback_output(
     recommendations: list[StrategyRecommendation],
     evidence_ids: list[str],
     deterministic_action: dict[str, Any] | None,
+    daily_action_ids: list[str],
     uncertainty: str,
 ) -> GovernedIntelligenceBrief:
     first = recommendations[0] if recommendations else None
@@ -720,6 +809,7 @@ def _fallback_output(
         summary=summary,
         why_now=why_now,
         selected_action_id=action_id,
+        daily_action_ids=daily_action_ids,
         evidence_used=evidence_used,
         uncertainties=[uncertainty],
         approval_required=approval_required,
@@ -823,6 +913,27 @@ def _run_payload(db: Session, row: GovernedAIRun) -> dict[str, Any]:
         if action is not None
         else None
     )
+    daily_action_ids = [
+        str(item)
+        for item in (output.get("daily_action_ids") or [])
+        if str(item)
+    ]
+    if not daily_action_ids and row.selected_action_id:
+        daily_action_ids = [row.selected_action_id]
+    output["daily_action_ids"] = daily_action_ids[:DAILY_ACTION_LIMIT]
+    output["daily_actions"] = [
+        {
+            "action_id": daily_action.action_id,
+            "display_name": daily_action.display_name,
+            "why_it_matters": daily_action.why_it_matters,
+            "steps": list(daily_action.steps),
+            "risk_tier": daily_action.risk_tier,
+            "effort": str(daily_action.effort),
+            "approval_required": daily_action.risk_tier >= 2,
+        }
+        for action_id in output["daily_action_ids"]
+        if (daily_action := lexicon.action_index.get(action_id)) is not None
+    ]
     return {
         "id": row.id,
         "campaign_id": row.campaign_id,
@@ -858,9 +969,9 @@ def _run_payload(db: Session, row: GovernedAIRun) -> dict[str, Any]:
             "provider_state": row.provider_state,
             "operator_state": "operator_review_required",
             "summary": (
-                "Mistral explained the deterministic intelligence without changing its evidence, action, risk, or approval requirements."
+                "Mistral explained the deterministic daily plan without changing its evidence, actions, risk, or approval requirements."
                 if row.status == "validated"
-                else "The deterministic intelligence remains available without an AI-generated explanation."
+                else "The deterministic daily plan remains available without an AI-generated explanation."
             ),
             "reasons": [
                 "deterministic_engine_retains_decision_authority",
@@ -893,7 +1004,7 @@ def _runtime_status() -> dict[str, Any]:
         "model": settings.mistral_model,
         "configured": configured,
         "decision_authority": "deterministic_engine",
-        "ai_role": "explain_only",
+        "ai_role": "explain_bounded_daily_plan",
         "automatic_execution": False,
     }
 
