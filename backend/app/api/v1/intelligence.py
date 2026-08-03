@@ -124,6 +124,13 @@ def get_intelligence_recommendations(
         task = None
     recs = intelligence_service.get_recommendations(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     items = [RecommendationOut.model_validate(r).model_dump(mode="json") for r in recs]
+    action_plans = intelligence_service.build_recommendation_action_plans(
+        db,
+        tenant_id=user["tenant_id"],
+        recommendations=recs,
+    )
+    for item in items:
+        item["action_plan"] = action_plans.get(item["id"])
     engine = build_intelligence_engine_state(recs)
     has_orchestrator_guidance = engine["orchestrator_recommendation_count"] > 0
     truth = _intelligence_truth(

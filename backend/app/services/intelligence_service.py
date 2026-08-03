@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.events import emit_event
+from app.intelligence.lexicon import get_active_lexicon
 from app.intelligence.recommendation_execution_engine import schedule_execution
 from app.models.campaign import Campaign
 from app.models.content import ContentAsset
@@ -28,6 +29,82 @@ RECOMMENDATION_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "ROLLED_BACK": set(),
     "ARCHIVED": set(),
 }
+
+
+def _recommendation_action_candidates(recommendation: StrategyRecommendation) -> list[str]:
+    candidates: list[str] = []
+
+    try:
+        evidence = json.loads(recommendation.evidence_json or "{}")
+    except json.JSONDecodeError:
+        evidence = {}
+
+    if isinstance(evidence, dict):
+        for key in ("action_id", "recommended_action_id", "action"):
+            value = evidence.get(key)
+            if value:
+                candidates.append(str(value))
+
+        nested_evidence = evidence.get("evidence")
+        if isinstance(nested_evidence, dict):
+            for key in ("action_id", "recommended_action_id", "action"):
+                value = nested_evidence.get(key)
+                if value:
+                    candidates.append(str(value))
+
+        recommended_actions = evidence.get("recommended_actions")
+        if isinstance(recommended_actions, list):
+            candidates.extend(str(item) for item in recommended_actions if item)
+
+    recommendation_type = str(recommendation.recommendation_type or "")
+    if recommendation_type:
+        candidates.append(recommendation_type)
+        if "::" in recommendation_type:
+            candidates.append(recommendation_type.rsplit("::", 1)[-1])
+
+    return list(dict.fromkeys(candidates))
+
+
+def build_recommendation_action_plans(
+    db: Session,
+    *,
+    tenant_id: str,
+    recommendations: list[StrategyRecommendation],
+) -> dict[str, dict]:
+    """Resolve stored recommendations to versioned, deterministic lexicon actions."""
+
+    lexicon = get_active_lexicon(db, tenant_id=tenant_id)
+    plans: dict[str, dict] = {}
+
+    for recommendation in recommendations:
+        action = next(
+            (
+                lexicon.action_index[candidate]
+                for candidate in _recommendation_action_candidates(recommendation)
+                if candidate in lexicon.action_index
+            ),
+            None,
+        )
+        if action is None:
+            continue
+
+        plans[recommendation.id] = {
+            "action_id": action.action_id,
+            "category": action.category,
+            "display_name": action.display_name,
+            "why_it_matters": action.why_it_matters,
+            "steps": list(action.steps),
+            "risk_tier": action.risk_tier,
+            "effort": str(action.effort),
+            "owner_role": action.owner_role,
+            "dependencies": list(action.dependencies),
+            "success_metric_ids": list(action.success_metric_ids),
+            "observation_window_days": action.observation_window_days,
+            "lexicon_id": lexicon.meta.lexicon_id,
+            "lexicon_version": lexicon.meta.version,
+        }
+
+    return plans
 
 
 def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -385,7 +462,6 @@ def advance_month(db: Session, tenant_id: str, campaign_id: str, override: bool)
     campaign.month_number = min(12, campaign.month_number + 1)
     db.commit()
     return {"campaign_id": campaign.id, "advanced_to_month": campaign.month_number, "override": override}
-
 
 
 

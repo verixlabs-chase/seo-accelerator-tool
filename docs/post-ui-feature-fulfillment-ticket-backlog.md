@@ -471,6 +471,12 @@ Execution priority for this phase:
 
 ### T25. Build the expanded location action portfolio
 
+> **Implemented 2026-08-03:** API action enrichment, canonical-action
+> deduplication, stable first priority, immediate multi-action cards, honest
+> sparse-data behavior, and the complete active action list are in place.
+> Production verification follows deployment; recurring checklist state remains
+> T26.
+
 - Goal: replace the appearance of one isolated recommendation with a
   location-scoped portfolio that keeps one clear first action while exposing
   multiple useful next actions.

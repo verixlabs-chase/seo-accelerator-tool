@@ -943,6 +943,15 @@ Goal: make the intelligence layer the reason a service business pays for the
 product by turning evidence into a practical body of work, not one isolated
 recommendation.
 
+> **T25 implementation completed 2026-08-03:** the location-specific Next Steps
+> experience now keeps one stable `Do this first` action and surfaces up to four
+> additional useful actions immediately below it. Active recommendations are
+> ordered, deduplicated by canonical action, and separated from archived build
+> artifacts. Recognized actions receive their governed lexicon title, reason,
+> effort, owner, steps, success metrics, and observation window from the API.
+> The UI does not generate filler when only one action is supported. Persistent
+> checklist progress and Daily/Weekly/Monthly routines remain T26.
+
 Product decision:
 
 - Keep one `Do this first` item as the fastest entry point, but never present it

@@ -120,6 +120,41 @@ def test_deep_recommendation_contract_exposes_evidence_and_engine_source():
     assert payload["engine_source"] == "orchestrator_v1"
 
 
+def test_recommendation_action_plan_uses_canonical_lexicon_steps(db_session):
+    tenant = db_session.query(Tenant).filter(Tenant.name == "Tenant A").first()
+    assert tenant is not None
+    recommendation = StrategyRecommendation(
+        id="recommendation-plan-id",
+        tenant_id=tenant.id,
+        campaign_id="campaign-id",
+        recommendation_type=(
+            "policy::core_web_vitals_failure::technical.reduce_render_blocking"
+        ),
+        rationale="The main content is loading too slowly.",
+        confidence=0.91,
+        confidence_score=0.91,
+        evidence_json=json.dumps({"evidence": ["LCP is above the poor boundary"]}),
+        risk_tier=3,
+        rollback_plan_json=json.dumps({"steps": ["restore prior asset loading"]}),
+        status="GENERATED",
+    )
+
+    plans = intelligence_service.build_recommendation_action_plans(
+        db_session,
+        tenant_id=tenant.id,
+        recommendations=[recommendation],
+    )
+
+    plan = plans[recommendation.id]
+    assert plan["action_id"] == "technical.reduce_render_blocking"
+    assert plan["display_name"] == "Reduce files that delay the main content"
+    assert len(plan["steps"]) == 3
+    assert plan["effort"] == "medium"
+    assert plan["owner_role"] == "developer"
+    assert plan["observation_window_days"] == 28
+    assert plan["lexicon_version"] == "1.0.0"
+
+
 def test_deep_recommendation_can_enter_human_review(db_session):
     tenant = db_session.query(Tenant).filter(Tenant.name == "Tenant A").first()
     assert tenant is not None

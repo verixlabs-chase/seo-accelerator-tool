@@ -98,6 +98,20 @@ test("opportunities keeps AI subordinate while using owner-friendly labels", () 
   assert.doesNotMatch(source, /reconciled_cost/);
 });
 
+test("opportunities shows a full action plan instead of only one next step", () => {
+  const pagePath = fileURLToPath(
+    new URL("../app/(product)/opportunities/page.tsx", import.meta.url),
+  );
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /Your action plan/);
+  assert.match(source, /more useful next step/);
+  assert.match(source, /Complete action list/);
+  assert.match(source, /It will not create filler work/);
+  assert.match(source, /getRecommendationPortfolio/);
+  assert.doesNotMatch(source, /Your one best next step/);
+});
+
 test("the shared page intro puts a start-here instruction on every primary route", () => {
   const componentPath = fileURLToPath(
     new URL("../app/(product)/components/ProductPageIntro.tsx", import.meta.url),

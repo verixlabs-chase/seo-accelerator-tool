@@ -28,6 +28,7 @@ import {
   buildRuntimeTruthSignal,
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
+import { getRecommendationPortfolio } from "../truth/actionPlan.mjs";
 
 const EXECUTION_CONSOLE_ENABLED =
   process.env.NEXT_PUBLIC_EXECUTION_CONSOLE_ENABLED !== "false";
@@ -52,6 +53,21 @@ type Recommendation = {
   risk_tier?: number;
   status?: string;
   created_at?: string;
+  action_plan?: {
+    action_id: string;
+    category: string;
+    display_name: string;
+    why_it_matters: string;
+    steps: string[];
+    risk_tier: number;
+    effort: string;
+    owner_role: string;
+    dependencies: string[];
+    success_metric_ids: string[];
+    observation_window_days: number;
+    lexicon_id: string;
+    lexicon_version: string;
+  } | null;
 };
 
 type IntelligenceEngineState = {
@@ -410,6 +426,39 @@ function describeType(type?: string) {
   }
 
   return toTitleCase(type);
+}
+
+function getRecommendationTitle(recommendation?: Recommendation | null) {
+  return recommendation?.action_plan?.display_name || describeType(recommendation?.recommendation_type);
+}
+
+function getEffortLabel(effort?: string) {
+  if (effort === "low") {
+    return "Quick task";
+  }
+  if (effort === "medium") {
+    return "Some work";
+  }
+  if (effort === "high") {
+    return "Larger project";
+  }
+  return "Effort not set";
+}
+
+function getOwnerLabel(ownerRole?: string) {
+  if (ownerRole === "business_owner") {
+    return "Business owner";
+  }
+  if (ownerRole === "content_owner") {
+    return "Content help";
+  }
+  if (ownerRole === "seo_operator") {
+    return "SEO help";
+  }
+  if (ownerRole === "developer") {
+    return "Website help";
+  }
+  return ownerRole ? toTitleCase(ownerRole) : "Owner not set";
 }
 
 function describeRecommendationReason(reason?: string | null) {
@@ -970,11 +1019,12 @@ export default function OpportunitiesPage() {
     setIntelligenceBrief(normalizedBrief?.item || null);
     setIntelligenceRuntime(normalizedBrief?.runtime || null);
     setIntelligenceAllowance(normalizedBrief?.allowance || null);
+    const portfolio = getRecommendationPortfolio(items);
     setSelectedRecommendationId((current) => {
-      if (current && items.some((item) => item.id === current)) {
+      if (current && portfolio.ordered.some((item: Recommendation) => item.id === current)) {
         return current;
       }
-      return items[0]?.id || "";
+      return (portfolio.primary as Recommendation | null)?.id || "";
     });
   }, []);
 
@@ -1287,18 +1337,14 @@ export default function OpportunitiesPage() {
     [recommendationsTruth, score?.truth, summary?.truth],
   );
 
-  const sortedRecommendations = useMemo(
-    () =>
-      [...recommendations].sort((left, right) => {
-        const riskDifference = (right.risk_tier ?? 0) - (left.risk_tier ?? 0);
-        if (riskDifference !== 0) {
-          return riskDifference;
-        }
-
-        return (right.confidence_score ?? 0) - (left.confidence_score ?? 0);
-      }),
+  const actionPortfolio = useMemo(
+    () => getRecommendationPortfolio(recommendations),
     [recommendations],
   );
+  const sortedRecommendations = actionPortfolio.ordered as Recommendation[];
+  const topRecommendation = actionPortfolio.primary as Recommendation | null;
+  const nextRecommendations = actionPortfolio.next as Recommendation[];
+  const laterRecommendations = actionPortfolio.later as Recommendation[];
 
   const selectedRecommendation =
     sortedRecommendations.find((item) => item.id === selectedRecommendationId) ??
@@ -1309,9 +1355,11 @@ export default function OpportunitiesPage() {
     executions.find((item) => item.id === selectedExecutionId) ?? executions[0] ?? null;
 
   const highPriorityCount = sortedRecommendations.filter((item) => (item.risk_tier ?? 0) >= 3).length;
-  const readyCount = (summary?.counts_by_state?.VALIDATED || 0) + (summary?.counts_by_state?.APPROVED || 0);
-  const queuedCount = summary?.counts_by_state?.SCHEDULED || 0;
-  const archivedCount = summary?.counts_by_state?.ARCHIVED || 0;
+  const readyCount = sortedRecommendations.filter((item) =>
+    ["VALIDATED", "APPROVED"].includes(item.status || ""),
+  ).length;
+  const queuedCount = sortedRecommendations.filter((item) => item.status === "SCHEDULED").length;
+  const archivedCount = recommendations.filter((item) => item.status === "ARCHIVED").length;
   const pendingExecutionsCount = executions.filter((item) => item.status === "pending").length;
   const failedExecutionsCount = executions.filter((item) => item.status === "failed").length;
   const completedExecutionsCount = executions.filter((item) => item.status === "completed").length;
@@ -1325,7 +1373,7 @@ export default function OpportunitiesPage() {
       };
     }
 
-    if (!selectedRecommendation) {
+    if (!topRecommendation) {
       return {
         title: `${selectedCampaign.name || "This business"} has no active opportunities yet`,
         body: "InsightOS has not surfaced a recommendation queue for this business yet.",
@@ -1334,13 +1382,14 @@ export default function OpportunitiesPage() {
     }
 
     return {
-      title: `${describeType(selectedRecommendation.recommendation_type)} needs attention`,
-      body: describeRecommendationReason(selectedRecommendation.rationale),
+      title: getRecommendationTitle(topRecommendation),
+      body: describeRecommendationReason(topRecommendation.rationale),
       next:
-        nextActionForStatus(selectedRecommendation.status)?.summary ||
+        topRecommendation.action_plan?.steps?.[0] ||
+        nextActionForStatus(topRecommendation.status)?.summary ||
         "Review the evidence first, then decide whether this action should stay active or be dismissed.",
     };
-  }, [selectedCampaign, selectedRecommendation]);
+  }, [selectedCampaign, topRecommendation]);
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
@@ -1351,8 +1400,8 @@ export default function OpportunitiesPage() {
       ),
       {
         label: "Recommended actions",
-        value: summary?.total_count ? `${summary.total_count} active` : "None yet",
-        tone: (summary?.total_count || 0) > 0 ? "info" : "warning",
+        value: sortedRecommendations.length ? `${sortedRecommendations.length} active` : "None yet",
+        tone: sortedRecommendations.length > 0 ? "info" : "warning",
       },
       {
         label: "High priority",
@@ -1387,7 +1436,7 @@ export default function OpportunitiesPage() {
       highPriorityCount,
       runtimeTruth,
       score?.score_value,
-      summary?.total_count,
+      sortedRecommendations.length,
     ],
   );
 
@@ -1461,8 +1510,8 @@ export default function OpportunitiesPage() {
       <section className="space-y-6">
         <ProductPageIntro
           eyebrow="Next steps"
-          title="Your one best next step"
-          summary="Start with the highest-priority improvement for this location. Everything else is available when you need more detail."
+          title="Your action plan"
+          summary="Start with the most important improvement for this location, then work through the other useful actions below it."
         />
 
         <TruthNotice title="Nothing changes on your website without review.">
@@ -1510,6 +1559,13 @@ export default function OpportunitiesPage() {
                     {topSummary.title}
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-zinc-300">{topSummary.body}</p>
+                  {topRecommendation ? (
+                    <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-zinc-400">
+                      <span>{getPriorityLabel(topRecommendation.risk_tier)}</span>
+                      <span>{getEffortLabel(topRecommendation.action_plan?.effort)}</span>
+                      <span>{getOwnerLabel(topRecommendation.action_plan?.owner_role)}</span>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
@@ -1519,6 +1575,68 @@ export default function OpportunitiesPage() {
                 </div>
               </div>
             </section>
+
+            {topRecommendation ? (
+              <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.32)]">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Keep moving
+                    </p>
+                    <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                      {nextRecommendations.length > 0
+                        ? `${nextRecommendations.length} more useful next step${nextRecommendations.length === 1 ? "" : "s"}`
+                        : "No other supported actions yet"}
+                    </h2>
+                    <p className="mt-1.5 max-w-3xl text-sm leading-6 text-zinc-300">
+                      {nextRecommendations.length > 0
+                        ? "These are already ordered for this location. Pick any action to see its evidence and full plan."
+                        : "InsightOS will add another action only when the saved information supports it. It will not create filler work."}
+                    </p>
+                  </div>
+                  <span className="text-xs text-zinc-500">
+                    {sortedRecommendations.length} active action{sortedRecommendations.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                {nextRecommendations.length > 0 ? (
+                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {nextRecommendations.map((recommendation, index) => (
+                      <button
+                        key={recommendation.id}
+                        type="button"
+                        onClick={() => setSelectedRecommendationId(recommendation.id)}
+                        className="group rounded-md border border-[#2a2b31] bg-[#111214] p-4 text-left transition hover:border-accent-500/35 hover:bg-accent-500/5"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-semibold text-accent-300">
+                            Next {index + 1}
+                          </span>
+                          <span className="text-[11px] text-zinc-500">
+                            {getEffortLabel(recommendation.action_plan?.effort)}
+                          </span>
+                        </div>
+                        <h3 className="mt-3 text-sm font-semibold leading-5 text-white">
+                          {getRecommendationTitle(recommendation)}
+                        </h3>
+                        <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">
+                          {describeRecommendationReason(recommendation.rationale)}
+                        </p>
+                        <p className="mt-3 text-xs font-medium text-zinc-300 group-hover:text-white">
+                          Open action →
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                {laterRecommendations.length > 0 ? (
+                  <p className="mt-4 border-t border-[#26272c] pt-4 text-xs text-zinc-500">
+                    {laterRecommendations.length} additional lower-priority action{laterRecommendations.length === 1 ? " is" : "s are"} available in the complete list below.
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
 
             <details className="rounded-md border border-violet-500/20 bg-[linear-gradient(135deg,rgba(139,92,246,0.07),rgba(20,21,24,0.96)_52%)] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
               <summary className="cursor-pointer list-none">
@@ -1706,9 +1824,9 @@ export default function OpportunitiesPage() {
 
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
-                label="Recommendations"
-                value={String(summary?.total_count || 0)}
-                summary="These are the recommended actions currently surfaced for the active business."
+                label="Active actions"
+                value={String(sortedRecommendations.length)}
+                summary="Duplicate and cleared records are removed from this location's working plan."
               />
               <KpiCard
                 label="High priority"
@@ -1743,10 +1861,10 @@ export default function OpportunitiesPage() {
                       Choose an action
                     </p>
                     <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                      Recommended actions
+                      Complete action list
                     </h2>
                     <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                      Start with the high-priority items first, then move through the reviewed queue.
+                      Choose any active action to see its reason, evidence, and practical plan.
                     </p>
                   </div>
 
@@ -1766,7 +1884,7 @@ export default function OpportunitiesPage() {
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <p className="text-base font-semibold text-white">
-                                {describeType(recommendation.recommendation_type)}
+                                {getRecommendationTitle(recommendation)}
                               </p>
                               <p className="mt-1 text-sm leading-6 text-zinc-300">
                                 {describeRecommendationReason(recommendation.rationale)}
@@ -1806,7 +1924,7 @@ export default function OpportunitiesPage() {
                             Why this matters
                           </p>
                           <h2 className="mt-1.5 text-2xl font-semibold tracking-[-0.03em] text-white">
-                            {describeType(selectedRecommendation.recommendation_type)}
+                            {getRecommendationTitle(selectedRecommendation)}
                           </h2>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -1855,7 +1973,8 @@ export default function OpportunitiesPage() {
                             What to do next
                           </p>
                           <p className="mt-2 text-sm leading-6 text-zinc-300">
-                            {primaryAction?.summary ||
+                            {selectedRecommendation.action_plan?.steps?.[0] ||
+                              primaryAction?.summary ||
                               "Review the evidence below, then decide whether to keep this recommendation active or clear it from the queue."}
                           </p>
                           <p className="mt-3 text-xs uppercase tracking-[0.14em] text-zinc-500">
@@ -1865,6 +1984,48 @@ export default function OpportunitiesPage() {
                           </p>
                         </div>
                       </div>
+
+                      {selectedRecommendation.action_plan ? (
+                        <section className="mt-5 rounded-md border border-accent-500/20 bg-accent-500/5 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="max-w-2xl">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-300">
+                                Practical plan
+                              </p>
+                              <p className="mt-2 text-sm leading-6 text-zinc-200">
+                                {selectedRecommendation.action_plan.why_it_matters}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-xs text-zinc-300">
+                              <span className="rounded-md border border-[#34353b] bg-[#111214] px-2.5 py-1.5">
+                                {getEffortLabel(selectedRecommendation.action_plan.effort)}
+                              </span>
+                              <span className="rounded-md border border-[#34353b] bg-[#111214] px-2.5 py-1.5">
+                                {getOwnerLabel(selectedRecommendation.action_plan.owner_role)}
+                              </span>
+                              <span className="rounded-md border border-[#34353b] bg-[#111214] px-2.5 py-1.5">
+                                Check results after {selectedRecommendation.action_plan.observation_window_days} days
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4 grid gap-2 md:grid-cols-3">
+                            {selectedRecommendation.action_plan.steps.map((step, index) => (
+                              <div
+                                key={`${selectedRecommendation.action_plan?.action_id}:${index}`}
+                                className="rounded-md border border-[#2a2b31] bg-[#111214] p-3"
+                              >
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                                  Step {index + 1}
+                                </p>
+                                <p className="mt-2 text-sm leading-6 text-zinc-300">{step}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="mt-3 text-xs text-zinc-500">
+                            These steps come from the governed action library and are not invented by AI.
+                          </p>
+                        </section>
+                      ) : null}
 
                       <div className="mt-5 rounded-md border border-[#26272c] bg-[#111214] p-4">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
