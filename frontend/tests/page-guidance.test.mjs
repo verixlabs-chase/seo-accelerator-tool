@@ -96,19 +96,23 @@ test("opportunities keeps AI subordinate while using owner-friendly labels", () 
   assert.doesNotMatch(source, /reconciled_cost/);
 });
 
-test("opportunities shows persistent routines and a full action plan", () => {
+test("opportunities shows a persistent cadence board and focused checklist", () => {
   const pagePath = fileURLToPath(
     new URL("../app/(product)/opportunities/page.tsx", import.meta.url),
   );
   const source = readFileSync(pagePath, "utf8");
 
   assert.match(source, /Your action plan/);
-  assert.match(source, /What to do today, this week, and this month/);
+  assert.match(source, /Your daily, weekly, and monthly checklist/);
   assert.match(source, /This week/);
   assert.match(source, /This month/);
   assert.match(source, /updateChecklistStep/);
   assert.match(source, /saves your progress automatically/);
-  assert.match(source, /Complete action list/);
+  assert.match(source, /Current checklist/);
+  assert.match(source, /Next unchecked step/);
+  assert.match(source, /All actions and supporting details/);
+  assert.match(source, /aria-pressed=\{isDone\}/);
+  assert.match(source, /OWNER_JOURNEY_V2_ENABLED/);
   assert.match(source, /getRecommendationPortfolio/);
   assert.doesNotMatch(source, /Your one best next step/);
 });

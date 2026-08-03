@@ -18,10 +18,14 @@ import {
 import {
   AppShell,
   ChartCard,
+  DetailsDisclosure,
   EmptyState,
   KpiCard,
   LoadingCard,
+  MetricStrip,
   OnboardingWizard,
+  OWNER_JOURNEY_V2_ENABLED,
+  ProductIcon,
   ProductPageIntro,
   TruthNotice,
   useLocationContext,
@@ -312,22 +316,59 @@ function SectionHeading({
   );
 }
 
-function BriefingCard({
-  eyebrow,
-  title,
-  body,
+function OwnerDecisionBrief({
+  changeTitle,
+  changeBody,
+  impactBody,
+  nextStepTitle,
+  nextStepBody,
+  actionLabel,
+  onAction,
 }: {
-  eyebrow: string;
-  title: string;
-  body: string;
+  changeTitle: string;
+  changeBody: string;
+  impactBody: string;
+  nextStepTitle: string;
+  nextStepBody: string;
+  actionLabel: string;
+  onAction: () => void;
 }) {
   return (
-    <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-        {eyebrow}
-      </p>
-      <h2 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-white">{title}</h2>
-      <p className="mt-2 text-sm leading-6 text-zinc-300">{body}</p>
+    <section aria-labelledby="daily-briefing-title" className="border-y border-[#2a2b31] py-4">
+      <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr_1fr] lg:divide-x lg:divide-[#2a2b31]">
+        <div className="min-w-0 lg:pr-5">
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            <ProductIcon name="chart" size={15} className="text-accent-400" />
+            What changed
+          </p>
+          <h2 id="daily-briefing-title" className="mt-2 text-xl font-semibold tracking-[-0.03em] text-white">
+            {changeTitle}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-zinc-300">{changeBody}</p>
+        </div>
+        <div className="min-w-0 lg:px-5">
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            <ProductIcon name="info" size={15} className="text-accent-400" />
+            Why it matters
+          </p>
+          <p className="mt-2 text-sm leading-6 text-zinc-200">{impactBody}</p>
+        </div>
+        <div className="min-w-0 border-l-2 border-accent-500/60 pl-4 lg:ml-5">
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-300">
+            <ProductIcon name="check" size={15} />
+            Do this next
+          </p>
+          <h3 className="mt-2 text-base font-semibold text-white">{nextStepTitle}</h3>
+          <p className="mt-1.5 text-sm leading-5 text-zinc-300">{nextStepBody}</p>
+          <button
+            type="button"
+            onClick={onAction}
+            className="mt-3 rounded-md bg-accent-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-accent-400"
+          >
+            {actionLabel}
+          </button>
+        </div>
+      </div>
     </section>
   );
 }
@@ -697,135 +738,99 @@ function SearchPerformanceOverview({
 
   return (
     <section id="performance-overview" className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <SectionHeading
-          eyebrow="Performance overview"
-          title={`How customers found ${campaign.name || "this location"} on Google`}
-          summary={
-            isReady
-              ? `Real Google Search data from ${formatMetricDate(
-                  metrics?.date_from,
-                )} through ${formatMetricDate(metrics?.date_to)}.`
-              : "Connect this location's Google website property to see search appearances, visits, and position trends."
-          }
-        />
-        <span
-          className={`mb-4 rounded-md border px-2.5 py-1 text-xs font-semibold ${
-            isReady
-              ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
-              : "border-amber-500/25 bg-amber-500/10 text-amber-100"
-          }`}
-        >
-          {isReady
-            ? `Updated through ${formatMetricDate(metrics?.date_to)}`
-            : metrics?.data_status === "not_connected"
-              ? "Connection needed"
-              : "Waiting for Google data"}
-        </span>
-      </div>
+      <SectionHeading
+        eyebrow="Google results"
+        title={`How customers found ${campaign.name || "this location"}`}
+        summary={
+          isReady
+            ? "See how many people found the business, visited the website, and how its average search position changed."
+            : "Connect this location's Google website property to see search appearances, visits, and position trends."
+        }
+      />
 
       {metrics?.data_status !== "not_connected" ? (
-        <SearchDateComparisonControls
-          value={dateRangeForm}
-          onChange={onDateRangeFormChange}
-          onApply={onApplyDateRange}
-          error={dateRangeError}
-          loading={dateRangeLoading}
-        />
+        <DetailsDisclosure
+          label="Change dates and comparison"
+          summary="The current view stays selected until you choose another period."
+        >
+          <SearchDateComparisonControls
+            value={dateRangeForm}
+            onChange={onDateRangeFormChange}
+            onApply={onApplyDateRange}
+            error={dateRangeError}
+            loading={dateRangeLoading}
+          />
+        </DetailsDisclosure>
       ) : null}
 
       {isReady && metrics?.summary ? (
         <div className="flex flex-col gap-4">
-          <p className="order-3 border-l-2 border-accent-500/50 px-3 py-1 text-sm leading-6 text-zinc-300">
-            {getSearchConsoleOwnerSummary(metrics, campaign.name || "This location")}
-          </p>
-
-          <div className="order-2 grid gap-4 xl:grid-cols-4">
-            <KpiCard
-              label="Visits from Google"
-              value={metrics.summary.clicks.toLocaleString("en-US")}
-              changeLabel={formatChange(
-                metrics.comparison?.clicks_change_percent,
-                "visits",
-              )}
-              changeTone={
-                !metrics.comparison?.clicks_change_percent
+          <MetricStrip
+            label="Google performance results"
+            items={[
+              {
+                id: "visits",
+                icon: "arrow-up",
+                label: "Visits from Google",
+                value: metrics.summary.clicks.toLocaleString("en-US"),
+                changeLabel: formatChange(metrics.comparison?.clicks_change_percent, "visits"),
+                changeTone: !metrics.comparison?.clicks_change_percent
                   ? "neutral"
                   : metrics.comparison.clicks_change_percent > 0
                     ? "positive"
-                    : "negative"
-              }
-              summary="People who clicked from Google Search and reached your website."
-              tone="highlight"
-            />
-            <KpiCard
-              label="Times you appeared"
-              value={metrics.summary.impressions.toLocaleString("en-US")}
-              changeLabel={formatChange(
-                metrics.comparison?.impressions_change_percent,
-                "appearances",
-              )}
-              changeTone={
-                !metrics.comparison?.impressions_change_percent
+                    : "negative",
+              },
+              {
+                id: "appearances",
+                icon: "search-value",
+                label: "Times you appeared",
+                value: metrics.summary.impressions.toLocaleString("en-US"),
+                changeLabel: formatChange(metrics.comparison?.impressions_change_percent, "appearances"),
+                changeTone: !metrics.comparison?.impressions_change_percent
                   ? "neutral"
                   : metrics.comparison.impressions_change_percent > 0
                     ? "positive"
-                    : "negative"
-              }
-              summary="How often your website appeared in Google search results."
-            />
-            <KpiCard
-              label="Appearance-to-visit rate"
-              value={`${metrics.summary.ctr_percent.toFixed(1)}%`}
-              changeLabel={
-                metrics.comparison?.ctr_change_points === null ||
-                metrics.comparison?.ctr_change_points === undefined
-                  ? "New baseline"
-                  : `${
-                      metrics.comparison.ctr_change_points >= 0 ? "Up " : "Down "
-                    }${Math.abs(metrics.comparison.ctr_change_points).toFixed(1)} pts`
-              }
-              changeTone={
-                !metrics.comparison?.ctr_change_points
-                  ? "neutral"
-                  : metrics.comparison.ctr_change_points > 0
-                    ? "positive"
-                    : "negative"
-              }
-              summary="The percentage of Google appearances that became website visits."
-            />
-            <KpiCard
-              label="Average Google position"
-              value={
-                metrics.summary.avg_position === null ||
-                metrics.summary.avg_position === undefined
-                  ? "—"
-                  : `#${metrics.summary.avg_position.toFixed(1)}`
-              }
-              changeLabel={
-                metrics.comparison?.position_improvement === null ||
-                metrics.comparison?.position_improvement === undefined
-                  ? "New baseline"
-                  : metrics.comparison.position_improvement === 0
-                    ? "No change"
-                    : metrics.comparison.position_improvement > 0
-                      ? `Improved ${metrics.comparison.position_improvement.toFixed(1)}`
-                      : `Dropped ${Math.abs(
-                          metrics.comparison.position_improvement,
-                        ).toFixed(1)}`
-              }
-              changeTone={
-                !metrics.comparison?.position_improvement
+                    : "negative",
+              },
+              {
+                id: "visit-rate",
+                icon: "chart",
+                label: "Visits per 100 appearances",
+                value: metrics.summary.ctr_percent.toFixed(1),
+                summary: "How often an appearance became a website visit.",
+              },
+              {
+                id: "position",
+                icon: "rankings",
+                label: "Average Google position",
+                value:
+                  metrics.summary.avg_position === null ||
+                  metrics.summary.avg_position === undefined
+                    ? "Not available"
+                    : `#${metrics.summary.avg_position.toFixed(1)}`,
+                changeLabel:
+                  metrics.comparison?.position_improvement === null ||
+                  metrics.comparison?.position_improvement === undefined
+                    ? "New baseline"
+                    : metrics.comparison.position_improvement === 0
+                      ? "No change"
+                      : metrics.comparison.position_improvement > 0
+                        ? `Improved ${metrics.comparison.position_improvement.toFixed(1)}`
+                        : `Dropped ${Math.abs(metrics.comparison.position_improvement).toFixed(1)}`,
+                changeTone: !metrics.comparison?.position_improvement
                   ? "neutral"
                   : metrics.comparison.position_improvement > 0
                     ? "positive"
-                    : "negative"
-              }
-              summary="Your average placement across Google searches. A smaller number is better."
-            />
-          </div>
+                    : "negative",
+              },
+            ]}
+          />
 
-          <div className="order-1 grid gap-5 xl:grid-cols-2">
+          <p className="border-l-2 border-accent-500/50 px-3 py-1 text-sm leading-6 text-zinc-300">
+            {getSearchConsoleOwnerSummary(metrics, campaign.name || "This location")}
+          </p>
+
+          <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
             <ChartCard
               eyebrow="Customer discovery"
               title="Google appearances and website visits"
@@ -835,6 +840,18 @@ function SearchPerformanceOverview({
                   : "The light area shows how often you appeared. The orange line shows visits."
               }
               chart={<SearchConsoleTrendChart data={trend} />}
+              scope={{
+                locationLabel: campaign.name || "This location",
+                dateRangeLabel: `${formatMetricDate(metrics.date_from)}–${formatMetricDate(metrics.date_to)}`,
+                comparisonLabel: metrics.comparison?.label || "No comparison",
+              }}
+              legend={[
+                { label: "Visits", color: "#FF6A1A" },
+                { label: "Times shown", color: "#FF944F" },
+                ...(metrics.comparison
+                  ? [{ label: "Earlier dates", color: "#38bdf8" }]
+                  : []),
+              ]}
               footer={
                 <p className="text-sm leading-5 text-zinc-300">
                   {metrics.comparison
@@ -856,6 +873,11 @@ function SearchPerformanceOverview({
                   : "Lines moving upward are better because a smaller position number is closer to the top."
               }
               chart={<SearchPositionTrendChart data={trend} />}
+              scope={{
+                locationLabel: campaign.name || "This location",
+                dateRangeLabel: `${formatMetricDate(metrics.date_from)}–${formatMetricDate(metrics.date_to)}`,
+                comparisonLabel: metrics.comparison?.label || "No comparison",
+              }}
               footer={
                 <p className="text-sm leading-5 text-zinc-300">
                   Search Console normally reports data a couple of days behind.
@@ -864,13 +886,16 @@ function SearchPerformanceOverview({
             />
           </div>
 
-          <p className="order-4 text-xs leading-5 text-zinc-500">
-            Source:{" "}
+          <DetailsDisclosure label="Source and update details">
+            <p>
+            Google property:{" "}
             {metrics.connection?.external_resource_name ||
               campaign.domain ||
               "Google Search Console"}
-            . Last synced {formatRelativeTime(metrics.connection?.last_success_at || undefined)}.
-          </p>
+            . Last updated {formatRelativeTime(metrics.connection?.last_success_at || undefined)}.
+            Google normally reports these results a couple of days behind.
+            </p>
+          </DetailsDisclosure>
         </div>
       ) : metrics ? (
         <EmptyState
@@ -1640,7 +1665,7 @@ export default function DashboardPage() {
           ? `${formatMetricDate(searchConsoleMetrics.date_from)}–${formatMetricDate(
               searchConsoleMetrics.date_to,
             )}`
-          : "Live API data"
+          : "Google performance dates"
       }
       topBarActions={
         <>
@@ -1719,6 +1744,26 @@ export default function DashboardPage() {
           />
         ) : null}
 
+        {campaigns.length > 0 ? (
+          OWNER_JOURNEY_V2_ENABLED ? (
+            <OwnerDecisionBrief
+              changeTitle={summaryState.changeTitle}
+              changeBody={summaryState.changeBody}
+              impactBody={summaryState.impactBody}
+              nextStepTitle={summaryState.nextStepTitle}
+              nextStepBody={summaryState.nextStepBody}
+              actionLabel={summaryState.primaryActionLabel}
+              onAction={summaryState.primaryAction}
+            />
+          ) : (
+            <section className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+              <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">What to do next</p>
+              <h2 className="mt-2 text-lg font-semibold text-white">{summaryState.nextStepTitle}</h2>
+              <p className="mt-2 text-sm leading-6 text-zinc-300">{summaryState.nextStepBody}</p>
+            </section>
+          )
+        ) : null}
+
         {selectedCampaign ? (
           <SearchPerformanceOverview
             campaign={selectedCampaign}
@@ -1733,31 +1778,15 @@ export default function DashboardPage() {
           />
         ) : null}
 
-        {campaigns.length > 0 ? (
-          <div className="grid gap-4 xl:grid-cols-3">
-            <BriefingCard
-              eyebrow="What changed"
-              title={summaryState.changeTitle}
-              body={summaryState.changeBody}
-            />
-            <BriefingCard
-              eyebrow="Why it matters"
-              title={summaryState.impactTitle}
-              body={summaryState.impactBody}
-            />
-            <BriefingCard
-              eyebrow="What to do next"
-              title={summaryState.nextStepTitle}
-              body={summaryState.nextStepBody}
-            />
-          </div>
-        ) : null}
-
-        <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+        <details className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+          <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
+            Progress and data details
+          </summary>
+          <div className="mt-4 border-t border-[#26272c] pt-4">
           <SectionHeading
             eyebrow="Progress"
             title="What is ready and what needs attention"
-            summary="These cards translate system activity into user meaning: what is complete, what is still running, what needs attention, and what to do next."
+            summary="Open this only when you need setup, report, website-check, or ranking status."
           />
           <div className="grid gap-4 xl:grid-cols-4">
             {workflowStates.map((state) => (
@@ -1785,7 +1814,8 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
-        </section>
+          </div>
+        </details>
 
         <details className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
           <summary className="cursor-pointer list-none">

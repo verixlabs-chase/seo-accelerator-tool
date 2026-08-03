@@ -10,6 +10,8 @@ import {
   ExecutionTimeline,
   KpiCard,
   LoadingCard,
+  OWNER_JOURNEY_V2_ENABLED,
+  ProductIcon,
   ProductPageIntro,
   TruthNotice,
   useLocationContext,
@@ -1650,6 +1652,7 @@ export default function OpportunitiesPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
+            {!OWNER_JOURNEY_V2_ENABLED ? (
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                 Do this first
@@ -1676,16 +1679,17 @@ export default function OpportunitiesPage() {
                 </div>
               </div>
             </section>
+            ) : null}
 
             {topRecommendation ? (
-              <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.32)]">
+              <section aria-labelledby="work-routine-title" className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.32)]">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                       Your work routine
                     </p>
-                    <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                      What to do today, this week, and this month
+                    <h2 id="work-routine-title" className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Your daily, weekly, and monthly checklist
                     </h2>
                     <p className="mt-1.5 max-w-3xl text-sm leading-6 text-zinc-300">
                       Finish the next unchecked step. InsightOS saves your progress automatically.
@@ -1698,7 +1702,12 @@ export default function OpportunitiesPage() {
 
                 <div className="mt-5 grid gap-3 xl:grid-cols-3">
                   {ROUTINE_SECTIONS.map((section) => {
-                    const routineItems = routineGroups[section.key] || [];
+                    const routineItems = section.key === "monthly"
+                      ? [
+                          ...(routineGroups.monthly || []),
+                          ...(routineGroups.later || []),
+                        ]
+                      : routineGroups[section.key] || [];
                     return (
                       <div
                         key={section.key}
@@ -1736,7 +1745,11 @@ export default function OpportunitiesPage() {
                                     />
                                   </div>
                                   <p className="mt-2 text-xs text-zinc-400">{progress.label}</p>
-                                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-300">
+                                  <p className="mt-3 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.13em] text-zinc-500">
+                                    <ProductIcon name="check" size={13} className="text-accent-400" />
+                                    Next unchecked step
+                                  </p>
+                                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-300">
                                     {simplifyCustomerCopy(nextStep?.instruction, {
                                       fallback:
                                       (progress.total > 0
@@ -1760,8 +1773,93 @@ export default function OpportunitiesPage() {
 
                 {(routineGroups.later || []).length > 0 ? (
                   <p className="mt-4 border-t border-[#26272c] pt-4 text-xs text-zinc-500">
-                    {(routineGroups.later || []).length} action{(routineGroups.later || []).length === 1 ? " is" : "s are"} waiting for more information or an earlier step. You can still review {(routineGroups.later || []).length === 1 ? "it" : "them"} in the full list below.
+                    Actions without a firm date are included under This month so nothing useful is hidden.
                   </p>
+                ) : null}
+
+                {OWNER_JOURNEY_V2_ENABLED && selectedRecommendation ? (
+                  <section aria-labelledby="current-checklist-title" className="mt-5 border-t border-[#303137] pt-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="max-w-3xl">
+                        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-300">
+                          <ProductIcon name="check" size={15} />
+                          Current checklist
+                        </p>
+                        <h3 id="current-checklist-title" className="mt-2 text-lg font-semibold text-white">
+                          {getRecommendationTitle(selectedRecommendation)}
+                        </h3>
+                        <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+                          {simplifyCustomerCopy(
+                            selectedRecommendation.action_plan?.work_item?.next_step?.instruction ||
+                              selectedRecommendation.action_plan?.steps?.[0] ||
+                              "Open this action when you are ready to begin.",
+                            { fallback: "Open this action when you are ready to begin." },
+                          )}
+                        </p>
+                      </div>
+                      <div className="text-right text-xs text-zinc-400">
+                        <p>{getWorkProgress(selectedRecommendation).label}</p>
+                        <p className="mt-1">{getEffortLabel(selectedRecommendation.action_plan?.effort)}</p>
+                      </div>
+                    </div>
+
+                    {selectedRecommendation.action_plan?.work_item?.steps?.length ? (
+                      <div className="mt-4 grid gap-2 lg:grid-cols-3">
+                        {selectedRecommendation.action_plan.work_item.steps.map((step) => {
+                          const isDone = step.status === "done";
+                          const actionKey = `${selectedRecommendation.action_plan?.work_item?.id}:${step.id}`;
+                          return (
+                            <button
+                              key={step.id}
+                              type="button"
+                              aria-pressed={isDone}
+                              onClick={() =>
+                                void updateChecklistStep(
+                                  selectedRecommendation.id,
+                                  selectedRecommendation.action_plan!.work_item!.id,
+                                  step.id,
+                                  step.status,
+                                )
+                              }
+                              disabled={busyAction === actionKey}
+                              className={`flex min-h-24 items-start gap-3 rounded-md border p-3 text-left transition disabled:cursor-wait disabled:opacity-60 ${
+                                isDone
+                                  ? "border-emerald-500/25 bg-emerald-500/10"
+                                  : "border-[#303137] bg-[#111214] hover:border-accent-500/40"
+                              }`}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border ${
+                                  isDone
+                                    ? "border-emerald-400 bg-emerald-500 text-[#07130d]"
+                                    : "border-zinc-600 text-zinc-400"
+                                }`}
+                              >
+                                {isDone ? <ProductIcon name="check" size={14} /> : step.position}
+                              </span>
+                              <span>
+                                <span className={`block text-sm leading-5 ${isDone ? "text-zinc-500 line-through" : "text-zinc-200"}`}>
+                                  {simplifyCustomerCopy(step.instruction, { fallback: "Complete this step." })}
+                                </span>
+                                <span className="mt-2 block text-xs text-zinc-500">
+                                  {busyAction === actionKey
+                                    ? "Saving..."
+                                    : isDone
+                                      ? "Finished — select to reopen"
+                                      : "Select when finished"}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-md border border-dashed border-[#303137] px-4 py-3 text-sm text-zinc-400">
+                        The detailed checklist is still being prepared. The first useful step is shown above.
+                      </p>
+                    )}
+                  </section>
                 ) : null}
               </section>
             ) : null}
@@ -1956,6 +2054,15 @@ export default function OpportunitiesPage() {
               </div>
             </details>
 
+            <details className="rounded-md border border-[#26272c] bg-[#111214] p-4">
+              <summary className="flex cursor-pointer list-none items-center gap-3 text-sm font-semibold text-zinc-200">
+                <ProductIcon name="info" size={16} className="text-zinc-500" />
+                All actions and supporting details
+                <span className="ml-auto text-xs font-normal text-zinc-500">
+                  Open the full list only when needed
+                </span>
+              </summary>
+              <div className="mt-5 space-y-5 border-t border-[#26272c] pt-5">
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
                 label="Active actions"
@@ -2356,6 +2463,8 @@ export default function OpportunitiesPage() {
                 </section>
               </div>
             )}
+              </div>
+            </details>
 
             <details className="rounded-md border border-[#26272c] bg-[#111214] p-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-white">

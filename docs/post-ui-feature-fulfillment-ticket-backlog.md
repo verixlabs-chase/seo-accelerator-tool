@@ -2,9 +2,8 @@
 
 > **Status update (2026-08-03):** This remains the workflow-fulfillment backlog,
 > but it is no longer the master next-sprint sequence. The working routes are in
-> place. T26 and UX10/T29 are complete. Customer review now prioritizes
-> UX11/T30 followed by UX12/T31: the Overview and Next Steps redesign, then the
-> cross-page visualization rollout. See
+> place. T26, UX10/T29, and UX11/T30 are complete. Customer review now
+> prioritizes UX12/T31: the cross-page visualization and usability rollout. See
 > [claude-next-build-brief.md](./claude-next-build-brief.md#1a-active-customer-ux-sprint-sequence).
 > Remaining feature tickets should be scheduled behind or alongside that
 > customer-comprehension work, not used to add more dense top-level surfaces.
@@ -676,6 +675,20 @@ Execution priority for this phase:
     customer reading flow
   - five-second comprehension and desktop/tablet/mobile task tests pass
 - Recommended order: after T29; may close the visible portion of T26
+
+Completion record (2026-08-03):
+- Overview now leads with one daily decision, compact directional Google
+  results, and the first meaningful comparison chart; dates, source freshness,
+  workflow state, and manual controls are optional details.
+- Next Steps now leads with Today, This week, and This month, includes undated
+  work under the monthly planning view, and shows one persistent working
+  checklist with its next unchecked step.
+- The old spotlight, status-card row, complete-list, and master-detail console
+  are no longer competing primary surfaces under the default-on
+  `NEXT_PUBLIC_OWNER_JOURNEY_V2_ENABLED` release flag.
+- Focused source tests cover five-second hierarchy, responsive desktop/tablet/
+  mobile classes, keyboard checklist state, optional detail placement, and the
+  independently releasable flag.
 
 ### T31. Apply decision-useful visualization and simplified UX to every page
 

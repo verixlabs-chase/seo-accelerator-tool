@@ -11,13 +11,13 @@ type ProductPageIntroProps = {
 };
 
 const START_HERE_BY_PATH: Record<string, string> = {
-  "/dashboard": "Review what changed, then choose the one next action shown below.",
+  "/dashboard": "Read what changed, take the one next action, then compare the Google results below.",
   "/rankings": "Check the biggest drop first. Use the location menu above to switch businesses.",
   "/local-visibility":
     "Start with map position and recent reviews, then follow the suggested next step.",
   "/site-health": "Start with the first red or amber item. The technical details can wait.",
   "/opportunities":
-    "Begin with the first recommendation. Open more detail only when you need it.",
+    "Choose Today, This week, or This month, then finish the next unchecked step.",
   "/reports": "Check the headline and next action before creating or sharing a report.",
   "/settings":
     "Connect the source marked as needing attention; leave healthy connections alone.",

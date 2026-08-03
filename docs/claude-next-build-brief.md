@@ -355,6 +355,18 @@ Acceptance criteria:
 - Desktop, tablet, and mobile task tests pass with keyboard and screen-reader
   labels intact.
 
+Completion record (2026-08-03):
+- Overview is now an owner briefing: what changed, why it matters, one action,
+  compact Google results, and decision-useful comparison charts appear before
+  optional progress, source, and manual-control details.
+- Next Steps is now a cadence board plus one working checklist. The previous
+  action spotlight and full console remain hidden or progressively disclosed
+  instead of repeating the same recommendation across the primary screen.
+- `NEXT_PUBLIC_OWNER_JOURNEY_V2_ENABLED` is default-on and preserves a bounded
+  rollout control separate from the shared visual-system flag.
+- The frontend contract covers responsive hierarchy, accessible checklist
+  state, date comparison access, and optional technical details.
+
 ### Sprint 12 - Cross-Page Visualization and Usability Rollout
 
 Goal: apply the approved UX10 system and UX11 hierarchy to every remaining

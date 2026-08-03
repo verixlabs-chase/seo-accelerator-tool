@@ -17,21 +17,23 @@ test("overview shows real performance before workflow details", () => {
   assert.ok(performanceIndex < workflowIndex);
 });
 
-test("overview orders real graphs before the supporting metric cards", () => {
-  const graphOrderClassIndex = dashboardSource.indexOf(
-    'className="order-1 grid gap-5 xl:grid-cols-2"',
-  );
-  const metricOrderClassIndex = dashboardSource.indexOf(
-    'className="order-2 grid gap-4 xl:grid-cols-4"',
-  );
-  const summaryOrderClassIndex = dashboardSource.indexOf(
-    'className="order-3 border-l-2',
-  );
+test("overview leads with one decision, compact results, and a meaningful chart", () => {
+  const decisionIndex = dashboardSource.indexOf("<OwnerDecisionBrief");
+  const performanceIndex = dashboardSource.indexOf("<SearchPerformanceOverview");
+  const metricIndex = dashboardSource.indexOf("<MetricStrip");
+  const chartIndex = dashboardSource.indexOf("<ChartCard");
 
-  assert.notEqual(graphOrderClassIndex, -1);
-  assert.notEqual(metricOrderClassIndex, -1);
-  assert.notEqual(summaryOrderClassIndex, -1);
-  assert.ok(graphOrderClassIndex > metricOrderClassIndex);
+  assert.notEqual(decisionIndex, -1);
+  assert.notEqual(performanceIndex, -1);
+  assert.notEqual(metricIndex, -1);
+  assert.notEqual(chartIndex, -1);
+  assert.ok(decisionIndex < performanceIndex);
+  assert.ok(metricIndex < chartIndex);
+  assert.match(dashboardSource, /Do this next/);
+  assert.match(dashboardSource, /Visits from Google/);
+  assert.match(dashboardSource, /Source and update details/);
+  assert.match(dashboardSource, /Change dates and comparison/);
+  assert.doesNotMatch(dashboardSource, /Updated through/);
 });
 
 test("overview uses one compact daily guide without generic good-to-know panels", () => {
@@ -46,4 +48,6 @@ test("overview removes duplicate legacy summaries and placeholder trend charts",
   assert.doesNotMatch(dashboardSource, /eyebrow="Highlights"/);
   assert.doesNotMatch(dashboardSource, /VisibilityTrendChart/);
   assert.doesNotMatch(dashboardSource, /RankingTrendChart/);
+  assert.doesNotMatch(dashboardSource, /Live API data/);
+  assert.match(dashboardSource, /Progress and data details/);
 });
