@@ -77,9 +77,14 @@ def test_organization_credentials_do_not_consume_platform_cogs(db_session, creat
         db_session,
         reservation=reservation,
         provider_reported_cost=Decimal("0.02"),
+        now=datetime(2026, 7, 30, 15, 1, tzinfo=UTC),
     )
 
-    summary = get_allowance_summary(db_session, organization_id=org.id)
+    summary = get_allowance_summary(
+        db_session,
+        organization_id=org.id,
+        now=datetime(2026, 7, 30, 16, 0, tzinfo=UTC),
+    )
     assert summary["allowance"]["used"] == 0.0
     assert summary["allowance"]["reserved"] == 0.0
     assert summary["organization_owned_operations"] == 1
@@ -243,7 +248,12 @@ def test_historical_margin_uses_the_plan_revenue_snapshot(db_session, create_tes
     org.plan_type = "standard"
     db_session.commit()
     reservation = _reserve(db_session, org.id, key="rank:test:historical")
-    reconcile_provider_cost(db_session, reservation=reservation, provider_reported_cost="0.02")
+    reconcile_provider_cost(
+        db_session,
+        reservation=reservation,
+        provider_reported_cost="0.02",
+        now=datetime(2026, 7, 30, 15, 1, tzinfo=UTC),
+    )
 
     org = db_session.get(type(org), org.id)
     org.plan_type = "enterprise"
