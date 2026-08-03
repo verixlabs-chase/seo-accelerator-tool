@@ -1,0 +1,209 @@
+import type { ReactNode } from "react";
+
+export type ProductIconName =
+  | "overview"
+  | "rankings"
+  | "local-search"
+  | "website-health"
+  | "next-steps"
+  | "reports"
+  | "connections"
+  | "locations"
+  | "search-value"
+  | "competitors"
+  | "listings"
+  | "chart"
+  | "calendar"
+  | "check"
+  | "warning"
+  | "arrow-up"
+  | "arrow-down"
+  | "no-change"
+  | "empty"
+  | "info"
+  | "spark";
+
+type ProductIconProps = {
+  name: ProductIconName;
+  size?: number;
+  className?: string;
+  label?: string;
+};
+
+const commonPathProps = {
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.7,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+};
+
+function iconPaths(name: ProductIconName): ReactNode {
+  switch (name) {
+    case "overview":
+      return (
+        <>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" {...commonPathProps} />
+          <rect x="14" y="3" width="7" height="4" rx="1.5" {...commonPathProps} />
+          <rect x="14" y="11" width="7" height="10" rx="1.5" {...commonPathProps} />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" {...commonPathProps} />
+        </>
+      );
+    case "rankings":
+      return (
+        <>
+          <path d="M4 20V13M10 20V9M16 20V5" {...commonPathProps} />
+          <path d="m14 5 2-2 2 2M16 3v8" {...commonPathProps} />
+          <path d="M3 20h18" {...commonPathProps} />
+        </>
+      );
+    case "local-search":
+      return (
+        <>
+          <path d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z" {...commonPathProps} />
+          <circle cx="12" cy="10" r="2.2" {...commonPathProps} />
+          <path d="M3.5 20.5h4M16.5 20.5h4" {...commonPathProps} />
+        </>
+      );
+    case "website-health":
+      return (
+        <>
+          <path d="M4 6.5h16v12H4z" {...commonPathProps} />
+          <path d="M4 9.5h16M7 6.5V4h10v2.5" {...commonPathProps} />
+          <path d="m7 14 2.2-2 2.1 4 2.2-5 1.8 3H18" {...commonPathProps} />
+        </>
+      );
+    case "next-steps":
+      return (
+        <>
+          <rect x="4" y="3" width="16" height="18" rx="2" {...commonPathProps} />
+          <path d="m7 8 1.3 1.3L10.8 7M13 8h4M7 14l1.3 1.3 2.5-2.3M13 14h4" {...commonPathProps} />
+        </>
+      );
+    case "reports":
+      return (
+        <>
+          <path d="M6 3h9l4 4v14H6z" {...commonPathProps} />
+          <path d="M15 3v5h4M9 17v-3M12.5 17v-6M16 17v-4" {...commonPathProps} />
+        </>
+      );
+    case "connections":
+      return (
+        <>
+          <path d="M8 8 5 5M16 16l3 3M6.5 11.5l5-5a3.5 3.5 0 0 1 5 5l-1 1M17.5 12.5l-5 5a3.5 3.5 0 0 1-5-5l1-1" {...commonPathProps} />
+        </>
+      );
+    case "locations":
+      return (
+        <>
+          <path d="M4 21V8l6-3v16M10 21V3l10 4v14M2 21h20" {...commonPathProps} />
+          <path d="M7 10h1M7 14h1M14 9h2M14 13h2M14 17h2" {...commonPathProps} />
+        </>
+      );
+    case "search-value":
+      return (
+        <>
+          <circle cx="9" cy="10" r="5" {...commonPathProps} />
+          <path d="M9 7v6M7.5 8h2.2a1.3 1.3 0 0 1 0 2.6H8.3a1.3 1.3 0 0 0 0 2.6h2.2M14 17h7M18 13l3 4-3 4" {...commonPathProps} />
+        </>
+      );
+    case "competitors":
+      return (
+        <>
+          <circle cx="8" cy="8" r="3" {...commonPathProps} />
+          <circle cx="17" cy="9" r="2.5" {...commonPathProps} />
+          <path d="M3 20a5 5 0 0 1 10 0M13 19a4 4 0 0 1 8 0" {...commonPathProps} />
+        </>
+      );
+    case "listings":
+      return (
+        <>
+          <rect x="3" y="4" width="18" height="16" rx="2" {...commonPathProps} />
+          <path d="M3 9h18M8 9v11M12 13h5M12 16h3" {...commonPathProps} />
+          <circle cx="5.5" cy="6.5" r=".5" fill="currentColor" />
+        </>
+      );
+    case "chart":
+      return (
+        <>
+          <path d="M4 20V4M4 20h16" {...commonPathProps} />
+          <path d="m7 16 4-5 3 2 5-7" {...commonPathProps} />
+          <circle cx="7" cy="16" r="1" fill="currentColor" />
+          <circle cx="11" cy="11" r="1" fill="currentColor" />
+          <circle cx="14" cy="13" r="1" fill="currentColor" />
+          <circle cx="19" cy="6" r="1" fill="currentColor" />
+        </>
+      );
+    case "calendar":
+      return (
+        <>
+          <rect x="3" y="5" width="18" height="16" rx="2" {...commonPathProps} />
+          <path d="M8 3v4M16 3v4M3 10h18M8 14h3M8 17h6" {...commonPathProps} />
+        </>
+      );
+    case "check":
+      return (
+        <>
+          <circle cx="12" cy="12" r="9" {...commonPathProps} />
+          <path d="m8 12 2.5 2.5L16.5 9" {...commonPathProps} />
+        </>
+      );
+    case "warning":
+      return (
+        <>
+          <path d="m12 3 9 17H3z" {...commonPathProps} />
+          <path d="M12 9v5M12 17h.01" {...commonPathProps} />
+        </>
+      );
+    case "arrow-up":
+      return <path d="M12 20V5M6 11l6-6 6 6" {...commonPathProps} />;
+    case "arrow-down":
+      return <path d="M12 4v15M6 13l6 6 6-6" {...commonPathProps} />;
+    case "no-change":
+      return <path d="M5 12h14M15 8l4 4-4 4" {...commonPathProps} />;
+    case "empty":
+      return (
+        <>
+          <circle cx="11" cy="11" r="7" {...commonPathProps} />
+          <path d="m16 16 5 5M8 11h6" {...commonPathProps} />
+        </>
+      );
+    case "info":
+      return (
+        <>
+          <circle cx="12" cy="12" r="9" {...commonPathProps} />
+          <path d="M12 11v6M12 7h.01" {...commonPathProps} />
+        </>
+      );
+    case "spark":
+      return (
+        <>
+          <path d="m12 3 1.4 5.6L19 10l-5.6 1.4L12 17l-1.4-5.6L5 10l5.6-1.4z" {...commonPathProps} />
+          <path d="m19 16 .6 2.4L22 19l-2.4.6L19 22l-.6-2.4L16 19l2.4-.6z" {...commonPathProps} />
+        </>
+      );
+  }
+}
+
+export function ProductIcon({
+  name,
+  size = 20,
+  className = "",
+  label,
+}: ProductIconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      className={className}
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      focusable="false"
+    >
+      {label ? <title>{label}</title> : null}
+      {iconPaths(name)}
+    </svg>
+  );
+}

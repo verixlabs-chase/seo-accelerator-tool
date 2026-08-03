@@ -287,12 +287,12 @@ test("opportunities truth state distinguishes approved recommendation from execu
   assert.match(state.nextStep, /queue/i);
 });
 
-test("opportunities truth state marks generated recommendation as recommended, not approved", () => {
+test("opportunities truth state marks a new action as ready to check, not approved", () => {
   const state = getRecommendationStateSummary("GENERATED");
 
-  assert.equal(state.status, "Recommended");
-  assert.match(state.detail, /nobody has reviewed it yet/i);
-  assert.match(state.nextStep, /mark it as reviewed/i);
+  assert.equal(state.status, "Ready to check");
+  assert.match(state.detail, /no one has checked it yet/i);
+  assert.match(state.nextStep, /keep it or clear it/i);
 });
 
 test("opportunities truth state marks scheduled execution as queued to run", () => {

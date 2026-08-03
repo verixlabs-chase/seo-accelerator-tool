@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ProductIconName } from "./ProductIcon";
 
 export type NavItem = {
   href: string;
@@ -8,6 +9,7 @@ export type NavItem = {
   disabled?: boolean;
   hidden?: boolean;
   section?: "primary" | "more";
+  icon: ProductIconName;
 };
 
 export type TrustSignal = {

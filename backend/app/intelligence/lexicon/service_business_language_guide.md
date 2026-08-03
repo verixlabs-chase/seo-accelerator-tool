@@ -1,6 +1,6 @@
 # InsightOS Service-Business Plain-Language Guide
 
-Version: `service-business-plain-language-v1`
+Version: `service-business-plain-language-v2`
 
 ## Who you are writing for
 
@@ -42,7 +42,8 @@ Do not use internal or specialist terms such as:
 `GBP`, `SERP`, `CTR`, `LCP`, `INP`, `CLS`, `NAP`, `backlink`, `schema markup`,
 `canonical tag`, `crawl depth`, `crawl`, `indexation`, `Core Web Vitals`,
 `technical`, `SEO`, `confidence`, `risk tier`, `campaign`, `citation`,
-`meta title`, or `meta description`.
+`meta title`, `meta description`, `governed`, `deterministic summary`,
+`deeper review`, or `possible benefit`.
 
 Do not expose internal action IDs, source IDs, model names, confidence math, or
 system states in `summary` or `why_now`.
@@ -66,6 +67,40 @@ Use these patterns:
   searchers choose it.`
 - Instead of `Improve the visibility score`, write `Help the business appear
   more often in Google.`
+- Instead of `Reach more eligible completed customers`, write `Get more reviews from recent customers.`
+- Instead of `Possible benefit — more evidence needed`, write `We need more
+  information before estimating the result.`
+- Instead of `Deeper review`, write `More information needed.`
+
+## Customer interface dictionary
+
+Use the same words in page copy, saved explanations, and AI-written guidance:
+
+| Internal idea | Customer wording |
+| --- | --- |
+| recommendation | next step or action |
+| evidence | what we found |
+| data freshness | last updated |
+| execution | website change |
+| observation window | when to check the result |
+| provider unavailable | this information is temporarily unavailable |
+| insufficient evidence | we need more information |
+| positive change | improving |
+| negative change | slipping |
+| neutral change | no clear change |
+
+## Page-writing order
+
+Put information in this order:
+
+1. Say which business or location the page covers.
+2. Show the result that matters most.
+3. Explain whether that result is improving, slipping, or unchanged.
+4. Give the next useful action.
+5. Put source, method, and troubleshooting details behind an optional control.
+
+Do not use a large card, badge, or label only for decoration. Do not repeat the
+same action in several sections on the same screen.
 
 ## Final check before answering
 

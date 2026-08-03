@@ -1,19 +1,19 @@
 function getRecommendationStateSummary(status) {
   if (status === "GENERATED") {
     return {
-      label: "Recommended",
-      status: "Recommended",
-      detail: "InsightOS is recommending this action, but nobody has reviewed it yet.",
-      nextStep: "Review the rationale and mark it as reviewed if it should stay active.",
+      label: "Ready to check",
+      status: "Ready to check",
+      detail: "This is a suggested action. No one has checked it yet.",
+      nextStep: "Check why it matters, then keep it or clear it.",
       tone: "warning",
     };
   }
   if (status === "VALIDATED") {
     return {
-      label: "Reviewed",
-      status: "Reviewed",
-      detail: "This recommendation has been reviewed and kept in the active queue.",
-      nextStep: "Choose it as the next action if you want execution planning to move forward.",
+      label: "Checked",
+      status: "Checked",
+      detail: "This action has been checked and kept in the plan.",
+      nextStep: "Choose it next when you are ready to plan the work.",
       tone: "info",
     };
   }
@@ -58,7 +58,7 @@ function getRecommendationStateSummary(status) {
     label: status || "Unknown",
     status: status || "Unknown",
     detail: "Review the current state before moving this recommendation forward.",
-    nextStep: "Use the controls below only after you are comfortable with the evidence.",
+    nextStep: "Use the controls below after you review what we found.",
     tone: "warning",
   };
 }

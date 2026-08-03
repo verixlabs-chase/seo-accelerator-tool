@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 
-SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION = "service-business-plain-language-v1"
+SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION = "service-business-plain-language-v2"
 SUMMARY_MAX_WORDS = 32
 WHY_NOW_MAX_WORDS = 24
 ACTION_FIRST_VERBS = frozenset(
@@ -27,6 +27,7 @@ ACTION_FIRST_VERBS = frozenset(
         "keep",
         "make",
         "match",
+        "open",
         "publish",
         "remove",
         "review",
@@ -89,6 +90,13 @@ _DISALLOWED_PATTERNS = (
     ("citation", re.compile(r"\bcitations?\b", re.IGNORECASE)),
     ("meta title", re.compile(r"\bmeta title\b", re.IGNORECASE)),
     ("meta description", re.compile(r"\bmeta description\b", re.IGNORECASE)),
+    ("governed", re.compile(r"\bgoverned\b", re.IGNORECASE)),
+    (
+        "deterministic summary",
+        re.compile(r"\bdeterministic summary\b", re.IGNORECASE),
+    ),
+    ("deeper review", re.compile(r"\bdeeper review\b", re.IGNORECASE)),
+    ("possible benefit", re.compile(r"\bpossible benefit\b", re.IGNORECASE)),
 )
 
 _PLAIN_REPLACEMENTS = (
@@ -110,6 +118,18 @@ _PLAIN_REPLACEMENTS = (
     (re.compile(r"\blexicon-approved\b", re.IGNORECASE), "safe"),
     (re.compile(r"\bheuristic\b", re.IGNORECASE), "estimate"),
     (re.compile(r"\bprovider\b", re.IGNORECASE), "data source"),
+    (re.compile(r"\bgoverned location target\b", re.IGNORECASE), "saved goal for this location"),
+    (re.compile(r"\bgoverned\b", re.IGNORECASE), "reviewed"),
+    (re.compile(r"\bdeterministic summary\b", re.IGNORECASE), "saved explanation"),
+    (re.compile(r"\bdeeper review\b", re.IGNORECASE), "details"),
+    (
+        re.compile(r"\bpossible benefit(?:\s*[—-]\s*more evidence needed)?\b", re.IGNORECASE),
+        "result before deciding",
+    ),
+    (
+        re.compile(r"\beligible completed customers\b", re.IGNORECASE),
+        "recent customers",
+    ),
 )
 
 

@@ -12,7 +12,9 @@ from fastapi import HTTPException
 from app.intelligence.contracts.governed_ai import GovernedIntelligenceBrief
 from app.intelligence.lexicon.plain_language import (
     SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION,
+    find_disallowed_customer_terms,
     load_service_business_language_guide,
+    simplify_internal_language,
 )
 from app.models.cost_economics import CostLedgerEntry
 from app.models.governed_ai import GovernedAIRun
@@ -398,6 +400,22 @@ def test_service_business_language_guide_is_the_runtime_writing_standard() -> No
     assert "busy service-business owner" in guide
     assert "Optimize the LCP resource" in guide
     assert "Make the main part of this page load faster" in guide
+    assert "Customer interface dictionary" in guide
+    assert "Get more reviews from recent customers" in guide
+
+
+def test_customer_language_contract_rewrites_internal_product_labels() -> None:
+    simplified = simplify_internal_language(
+        "Review the possible benefit — more evidence needed.",
+        max_words=32,
+    )
+
+    assert simplified == "Review the result before deciding."
+    assert find_disallowed_customer_terms(simplified) == []
+    assert find_disallowed_customer_terms("Open the deterministic summary") == [
+        "deterministic",
+        "deterministic summary",
+    ]
 
 
 def test_output_contract_rejects_jargon_and_long_advice() -> None:

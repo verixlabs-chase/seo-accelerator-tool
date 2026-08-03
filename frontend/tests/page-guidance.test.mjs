@@ -70,10 +70,8 @@ test("the shared guide is daily, AI-written, cached, and dismissible", () => {
   assert.match(source, /insightos-daily-guide/);
   assert.match(source, /insightos-daily-guide-v4/);
   assert.doesNotMatch(source, /localStorage\.setItem\(cacheKey, JSON\.stringify\(fallback\)\)/);
-  assert.match(source, /simplifyGuideText/);
-  assert.match(source, /deterministic SEO intelligence/);
-  assert.match(source, /Google business listing/);
-  assert.match(source, /website speed and stability/);
+  assert.match(source, /simplifyCustomerCopy/);
+  assert.match(source, /customerLanguage\.mjs/);
   assert.match(source, /localStorage\.setItem\(cacheKey/);
   assert.match(source, /sessionStorage\.setItem\(storageKey, "dismissed"\)/);
   assert.match(source, /aria-label="Close daily guidance"/);
@@ -88,7 +86,7 @@ test("opportunities keeps AI subordinate while using owner-friendly labels", () 
   const source = readFileSync(pagePath, "utf8");
 
   assert.match(source, /Open the plain-language explanation/);
-  assert.match(source, /The system chooses the evidence and next action/);
+  assert.match(source, /InsightOS chooses the facts and next action/);
   assert.match(source, /Automatic changes are off/);
   assert.match(source, /cannot change your website/);
   assert.match(source, /retry_failed/);
@@ -125,4 +123,5 @@ test("the shared page intro puts a start-here instruction on every primary route
     assert.match(source, new RegExp(`"/${route}"`));
   }
   assert.match(source, /Start here/);
+  assert.match(source, /ProductIcon/);
 });

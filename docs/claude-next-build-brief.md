@@ -51,10 +51,9 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 ## 1A. Active Customer UX Sprint Sequence
 
 > **Execution status (2026-08-03):** UX5-UX9 established the working customer
-> baseline, but customer screenshot review found that several pages still read
-> like dense internal operations screens. UX10-UX12 are now queued to establish
-> the plain-language and visual system, simplify the highest-traffic journey,
-> and then apply the system to every customer page. Recommendation-only
+> baseline, and UX10 established the shared plain-language and visual system.
+> UX11 is next to simplify Overview and Next Steps, followed by UX12 across the
+> remaining customer pages. Recommendation-only
 > intelligence remains enabled; autonomous customer-site mutations and
 > automatic policy updates remain disabled.
 
@@ -258,6 +257,17 @@ Acceptance criteria:
 
 Goal: give every customer-facing page one reusable visual and writing system
 designed for a service-business owner, not an SEO technician.
+
+> **Completed 2026-08-03:** the shared customer visual system now provides an
+> original accessible SVG icon family for every product route, compact icon-led
+> page headings and navigation, semantic trend arrows with words and color,
+> compact metric strips, chart scope and legends, optional measurement details,
+> and honest loading/empty/one-point/partial/stale/unsupported/error states. The
+> service-business language guide is now v2 and is mirrored by the browser-side
+> filter used for AI guidance and customer labels. Automated tests cover banned
+> labels, route icon coverage, shared hierarchy, trend meaning, and chart-state
+> support. The rollout flag is
+> `NEXT_PUBLIC_CUSTOMER_VISUAL_SYSTEM_V2_ENABLED` and defaults on.
 
 > **Customer review added 2026-08-03:** the working Next Steps page still uses
 > too many equally weighted boxes, repeated actions, internal status labels,

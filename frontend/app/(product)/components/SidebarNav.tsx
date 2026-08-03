@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ProductIcon } from "./ProductIcon";
 import type { NavItem } from "./types";
 import { cn } from "./utils";
 
@@ -11,26 +12,13 @@ type SidebarNavProps = {
 
 export function SidebarNav({
   items,
-  title = "InsightOS",
+  title = "Local growth workspace",
   subtitle = "InsightOS",
 }: SidebarNavProps) {
   const visibleItems = items.filter((item) => !item.hidden);
   const primaryItems = visibleItems.filter((item) => item.section !== "more");
   const moreItems = visibleItems.filter((item) => item.section === "more");
   const moreIsActive = moreItems.some((item) => item.active);
-
-  function NavGlyph({ active = false }: { active?: boolean }) {
-    return (
-      <span
-        className={cn(
-          "inline-block h-3 w-3 rounded-[2px] border",
-          active
-            ? "border-accent-500/55 bg-accent-500/30 shadow-[0_0_12px_rgba(255,106,26,0.25)]"
-            : "border-[#26272c] bg-[#141518]",
-        )}
-      />
-    );
-  }
 
   function NavLinks({ links }: { links: NavItem[] }) {
     return links.map((item) => (
@@ -41,7 +29,7 @@ export function SidebarNav({
           className="flex cursor-not-allowed items-center justify-between border border-transparent px-3 py-2 text-sm text-zinc-600"
         >
           <span className="flex items-center gap-2.5 font-medium">
-            <NavGlyph />
+            <ProductIcon name={item.icon} size={18} />
             {item.label}
           </span>
           <span className="border border-[#26272c] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
@@ -60,7 +48,14 @@ export function SidebarNav({
           )}
         >
           <span className="flex items-center gap-2.5 font-medium">
-            <NavGlyph active={item.active} />
+            <ProductIcon
+              name={item.icon}
+              size={18}
+              className={cn(
+                "shrink-0 transition",
+                item.active ? "text-accent-400" : "text-zinc-500 group-hover:text-zinc-300",
+              )}
+            />
             {item.label}
           </span>
           {item.badge ? (
@@ -104,14 +99,9 @@ export function SidebarNav({
         ) : null}
       </nav>
 
-      <div className="mt-auto rounded-md border border-[#26272c] bg-[#111214] p-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-          InsightOS
-        </p>
-        <p className="mt-2 text-sm leading-5 text-zinc-400">
-          Local search visibility, explained simply.
-        </p>
-      </div>
+      <p className="mt-auto border-t border-[#26272c] px-3 pt-4 text-xs leading-5 text-zinc-500">
+        Clear next steps for local service businesses.
+      </p>
     </aside>
   );
 }

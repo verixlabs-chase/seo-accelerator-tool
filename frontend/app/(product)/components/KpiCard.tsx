@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { cn } from "./utils";
 import { TrendIndicator, type TrendTone } from "./TrendIndicator";
+import { ProductIcon, type ProductIconName } from "./ProductIcon";
 
 type KpiCardProps = {
   label: string;
@@ -11,6 +12,7 @@ type KpiCardProps = {
   summary: string;
   visual?: ReactNode;
   tone?: "default" | "highlight";
+  icon?: ProductIconName;
 };
 
 export function KpiCard({
@@ -21,6 +23,7 @@ export function KpiCard({
   summary,
   visual,
   tone = "default",
+  icon,
 }: KpiCardProps) {
   return (
     <section
@@ -33,8 +36,9 @@ export function KpiCard({
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            {label}
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+            {icon ? <ProductIcon name={icon} size={15} className="text-accent-400" /> : null}
+            <span>{label}</span>
           </p>
           <div className="mt-2.5 flex items-end gap-2.5">
             <p className="text-[2rem] font-semibold tracking-[-0.04em] text-white">

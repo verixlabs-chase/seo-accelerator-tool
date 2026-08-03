@@ -1,4 +1,5 @@
 import type { Insight } from "./types";
+import { ProductIcon } from "./ProductIcon";
 
 const toneClasses = {
   info: "border-[#26272c] bg-[#141518]",
@@ -18,19 +19,17 @@ export function InsightCard({ insight }: InsightCardProps) {
     <section className={`rounded-md border p-4 ${toneClasses[tone]}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            Insight
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+            <ProductIcon
+              name={tone === "danger" || tone === "warning" ? "warning" : tone === "success" ? "check" : "info"}
+              size={15}
+            />
+            What changed
           </p>
           <h3 className="mt-1.5 text-base font-semibold tracking-[-0.02em] text-white">
             {insight.title}
           </h3>
         </div>
-        <span className={`h-2 w-2 shrink-0 rounded-full ${
-          tone === "success" ? "bg-emerald-400" :
-          tone === "warning" ? "bg-amber-400" :
-          tone === "danger" ? "bg-rose-400" :
-          "bg-zinc-500"
-        }`} aria-hidden="true" />
       </div>
       <p className="mt-2.5 text-sm leading-5 text-zinc-300">{insight.body}</p>
       {insight.action ? (

@@ -2,6 +2,8 @@
 
 import { usePathname } from "next/navigation";
 
+import { ProductIcon, type ProductIconName } from "./ProductIcon";
+
 type ProductPageIntroProps = {
   eyebrow: string;
   title: string;
@@ -29,6 +31,20 @@ const START_HERE_BY_PATH: Record<string, string> = {
     "Fix failed or missing listings first; confirmed live listings need no action.",
 };
 
+const PAGE_ICON_BY_PATH: Record<string, ProductIconName> = {
+  "/dashboard": "overview",
+  "/rankings": "rankings",
+  "/local-visibility": "local-search",
+  "/site-health": "website-health",
+  "/opportunities": "next-steps",
+  "/reports": "reports",
+  "/settings": "connections",
+  "/locations": "locations",
+  "/organic-value": "search-value",
+  "/competitors": "competitors",
+  "/citations": "listings",
+};
+
 export function ProductPageIntro({
   eyebrow,
   title,
@@ -38,24 +54,28 @@ export function ProductPageIntro({
   const startHere =
     START_HERE_BY_PATH[pathname] ??
     "Review the first result below, then take the single recommended next step.";
+  const icon = PAGE_ICON_BY_PATH[pathname] ?? "spark";
 
   return (
-    <header className="grid gap-4 border-b border-[#26272c] pb-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.42fr)] lg:items-end">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-400">
-          {eyebrow}
-        </p>
-        <h1 className="mt-1.5 text-3xl font-bold tracking-[-0.045em] text-white md:text-4xl">
-          {title}
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">{summary}</p>
+    <header className="border-b border-[#26272c] pb-4">
+      <div className="flex items-start gap-3.5">
+        <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent-500/10 text-accent-400 ring-1 ring-inset ring-accent-500/20">
+          <ProductIcon name={icon} size={21} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-400">
+            {eyebrow}
+          </p>
+          <h1 className="mt-1 text-3xl font-bold tracking-[-0.045em] text-white md:text-4xl">
+            {title}
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">{summary}</p>
+        </div>
       </div>
-      <div className="border-l-2 border-accent-500 bg-accent-500/[0.06] px-4 py-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent-300">
-          Start here
-        </p>
-        <p className="mt-1 text-sm leading-5 text-zinc-200">{startHere}</p>
-      </div>
+      <p className="mt-3 flex max-w-4xl items-start gap-2 text-sm leading-5 text-zinc-400 md:ml-[3.375rem]">
+        <ProductIcon name="spark" size={16} className="mt-0.5 shrink-0 text-accent-400" />
+        <span><strong className="font-semibold text-zinc-200">Start here:</strong> {startHere}</span>
+      </p>
     </header>
   );
 }

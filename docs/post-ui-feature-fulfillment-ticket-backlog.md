@@ -2,9 +2,9 @@
 
 > **Status update (2026-08-03):** This remains the workflow-fulfillment backlog,
 > but it is no longer the master next-sprint sequence. The working routes are in
-> place. Customer review now prioritizes T26 followed by UX10-UX12 / T29-T31:
-> plain-language checklists, the shared visual system, the Overview and Next
-> Steps redesign, and the cross-page visualization rollout. See
+> place. T26 and UX10/T29 are complete. Customer review now prioritizes
+> UX11/T30 followed by UX12/T31: the Overview and Next Steps redesign, then the
+> cross-page visualization rollout. See
 > [claude-next-build-brief.md](./claude-next-build-brief.md#1a-active-customer-ux-sprint-sequence).
 > Remaining feature tickets should be scheduled behind or alongside that
 > customer-comprehension work, not used to add more dense top-level surfaces.
@@ -612,6 +612,15 @@ Execution priority for this phase:
 - Recommended order: 28
 
 ### T29. Build the plain-language and visual product system
+
+> **Implemented 2026-08-03:** `service-business-plain-language-v2` now governs
+> both saved AI explanations and browser copy. The authenticated shell has an
+> original accessible icon family, compact icon-led headings and navigation,
+> semantic trend arrows, metric strips, consistent section and detail patterns,
+> chart scope/legend support, and explicit loading, empty, one-point, partial,
+> stale, unsupported, and error states. Shared component documentation and
+> automated copy/visual-contract tests cover all customer routes. The rollout
+> flag `NEXT_PUBLIC_CUSTOMER_VISUAL_SYSTEM_V2_ENABLED` defaults on.
 
 - Goal: replace page-by-page improvisation with one service-owner language,
   icon, hierarchy, metric, and visualization system.

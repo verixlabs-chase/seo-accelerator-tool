@@ -33,6 +33,7 @@ import {
   getRecommendationRoutines,
   getWorkProgress,
 } from "../truth/actionPlan.mjs";
+import { simplifyCustomerCopy } from "../truth/customerLanguage.mjs";
 
 const EXECUTION_CONSOLE_ENABLED =
   process.env.NEXT_PUBLIC_EXECUTION_CONSOLE_ENABLED !== "false";
@@ -382,7 +383,7 @@ function getImpactLabel(confidenceScore = 0) {
     return "Likely benefit: moderate";
   }
 
-  return "Possible benefit — more evidence needed";
+  return "We need more information before estimating the result";
 }
 
 function getWorkflowToneClass(tone: string) {
@@ -419,7 +420,7 @@ function getStatusLabel(status?: string) {
     return "New";
   }
   if (status === "VALIDATED") {
-    return "Reviewed";
+    return "Checked";
   }
   if (status === "APPROVED") {
     return "Chosen";
@@ -471,7 +472,8 @@ function describeType(type?: string) {
 }
 
 function getRecommendationTitle(recommendation?: Recommendation | null) {
-  return recommendation?.action_plan?.display_name || describeType(recommendation?.recommendation_type);
+  const fallback = describeType(recommendation?.recommendation_type);
+  return simplifyCustomerCopy(recommendation?.action_plan?.display_name || fallback, { fallback });
 }
 
 function getEffortLabel(effort?: string) {
@@ -544,7 +546,7 @@ function describeRecommendationReason(reason?: string | null) {
 
 function getEngineSourceLabel(source?: string) {
   if (source === "orchestrator_v1") {
-    return "Deeper review";
+    return "More information";
   }
   if (source === "mixed_v1") {
     return "Combined review";
@@ -1344,11 +1346,11 @@ export default function OpportunitiesPage() {
         setNotice(
           response.idempotent_replay
             ? "The current plain-language explanation is already up to date."
-            : "Plain-language explanation ready. InsightOS kept the engine's evidence, action, and approval rules unchanged.",
+            : "Plain-language explanation ready. InsightOS kept the saved facts, action, and approval rules unchanged.",
         );
       } else {
         setNotice(
-          "The AI explanation was not available, so InsightOS kept a deterministic summary instead. Your saved recommendations still work.",
+          "The AI explanation was not available, so InsightOS kept the saved explanation. Your action plan still works.",
         );
       }
     });
@@ -1765,7 +1767,7 @@ export default function OpportunitiesPage() {
               </summary>
               <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-t border-violet-500/15 pt-4">
                 <p className="max-w-3xl text-sm leading-6 text-zinc-300">
-                  The system chooses the evidence and next action. AI only turns that decision
+                  InsightOS chooses the facts and next action. AI only turns that decision
                   into easier language and cannot change your website.
                 </p>
                 <button
@@ -1827,10 +1829,16 @@ export default function OpportunitiesPage() {
                     {intelligenceBrief.output.selected_action ? (
                       <>
                         <h3 className="mt-2 text-base font-semibold text-white">
-                          {intelligenceBrief.output.selected_action.display_name}
+                          {simplifyCustomerCopy(
+                            intelligenceBrief.output.selected_action.display_name,
+                            { fallback: "Review this action" },
+                          )}
                         </h3>
                         <p className="mt-2 text-sm leading-6 text-zinc-300">
-                          {intelligenceBrief.output.selected_action.why_it_matters}
+                          {simplifyCustomerCopy(
+                            intelligenceBrief.output.selected_action.why_it_matters,
+                            { fallback: "Open the action plan to see why this matters." },
+                          )}
                         </p>
                         {intelligenceBrief.output.selected_action.steps?.length ? (
                           <ol className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
@@ -1839,7 +1847,7 @@ export default function OpportunitiesPage() {
                               .map((step, index) => (
                                 <li key={step}>
                                   <span className="mr-2 text-violet-300">{index + 1}.</span>
-                                  {step}
+                                  {simplifyCustomerCopy(step, { fallback: "Review this step." })}
                                 </li>
                               ))}
                           </ol>
@@ -1948,12 +1956,12 @@ export default function OpportunitiesPage() {
                 tone="highlight"
               />
               <KpiCard
-                label="Reviewed"
+                label="Checked"
                 value={String(readyCount)}
-                summary="These recommendations are already reviewed or chosen as likely next steps."
+                summary="These actions were checked or chosen as likely next steps."
               />
               <KpiCard
-                label="Already handled"
+                label="Finished or cleared"
                 value={`${queuedCount + archivedCount}`}
                 summary="This includes recommendations already queued or intentionally cleared from the active list."
               />
@@ -1977,7 +1985,7 @@ export default function OpportunitiesPage() {
                       Complete action list
                     </h2>
                     <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                      Choose any active action to see its reason, evidence, and practical plan.
+                      Choose any active action to see its reason, what we found, and the plan.
                     </p>
                   </div>
 
@@ -2200,7 +2208,7 @@ export default function OpportunitiesPage() {
 
                       <div className="mt-5 rounded-md border border-[#26272c] bg-[#111214] p-4">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                          Evidence
+                          What we found
                         </p>
                         {selectedRecommendation.evidence?.length ? (
                           <ul className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
@@ -2210,7 +2218,7 @@ export default function OpportunitiesPage() {
                           </ul>
                         ) : (
                           <p className="mt-3 text-sm leading-6 text-zinc-300">
-                            No supporting evidence was attached to this recommendation yet.
+                            We do not have supporting information for this action yet.
                           </p>
                         )}
                       </div>

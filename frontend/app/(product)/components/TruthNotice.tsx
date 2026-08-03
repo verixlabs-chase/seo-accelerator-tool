@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { platformApi } from "../../platform/api";
+import { simplifyCustomerCopy } from "../truth/customerLanguage.mjs";
 import { useLocationContext } from "./LocationContext";
 
 type TruthNoticeProps = {
@@ -92,7 +93,12 @@ export function TruthNotice({
           output.summary.trim()
         ) {
           const guide = {
-            summary: shorten(simplifyGuideText(output.summary), 210),
+            summary: shorten(
+              simplifyCustomerCopy(output.summary, {
+                fallback: "Open Next Steps to see the first action for this location.",
+              }),
+              210,
+            ),
             generatedByAi: true,
           };
           window.localStorage.setItem(cacheKey, JSON.stringify(guide));
@@ -172,27 +178,4 @@ function shorten(value: string, maxLength: number) {
     return normalized;
   }
   return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
-}
-
-function simplifyGuideText(value: string) {
-  return value
-    .replace(/deterministic SEO intelligence/gi, "InsightOS")
-    .replace(/deterministic intelligence/gi, "InsightOS")
-    .replace(/intelligence engine/gi, "recommendation system")
-    .replace(/composite score/gi, "overall search visibility score")
-    .replace(/\bGoogle Business Profile\b/gi, "Google business listing")
-    .replace(/\bGBP\b/g, "Google business listing")
-    .replace(/\bCore Web Vitals\b/gi, "website speed and stability")
-    .replace(/\bLargest Contentful Paint\b/gi, "main content load time")
-    .replace(/\bLCP\b/g, "main content load time")
-    .replace(/\bbacklinks?\b/gi, "links from trusted websites")
-    .replace(/\bschema markup\b/gi, "business details that help Google understand the page")
-    .replace(/\bNAP\b/g, "business name, address, and phone number")
-    .replace(/\bCTR\b/g, "the share of searchers who choose your listing")
-    .replace(/\bindexation\b/gi, "showing the page in Google")
-    .replace(/review acquisition velocity/gi, "new review activity")
-    .replace(/content throughput/gi, "new content")
-    .replace(/backlink acquisition velocity/gi, "new trusted links")
-    .replace(/\bheuristic\b/gi, "estimate")
-    .replace(/\bprovider\b/gi, "data source");
 }
