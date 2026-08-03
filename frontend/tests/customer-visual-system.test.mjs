@@ -40,6 +40,14 @@ test("the browser and AI language contracts share the v2 owner standard", () => 
     simplifyCustomerCopy("Find missed service-completion touchpoints."),
     "Find missed follow-ups after a job is finished.",
   );
+  assert.equal(
+    simplifyCustomerCopy("Choose compliant post-service request moments."),
+    "Choose times after a job when Google allows you to ask for a review.",
+  );
+  assert.equal(
+    simplifyCustomerCopy("Add approved requests without incentives or review gating."),
+    "Ask recent customers for reviews without rewards or filtering who gets asked.",
+  );
 });
 
 test("change language combines words, direction, and consistent meaning", () => {

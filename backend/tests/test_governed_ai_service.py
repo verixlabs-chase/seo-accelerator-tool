@@ -425,6 +425,15 @@ def test_customer_language_contract_rewrites_internal_product_labels() -> None:
     assert checklist_step == "Count how many recent customers were asked for a review."
     assert find_disallowed_customer_terms(checklist_step) == []
 
+    request_step = simplify_internal_language(
+        "Add approved requests without incentives or review gating.",
+        max_words=32,
+    )
+    assert request_step == (
+        "Ask recent customers for reviews without rewards or filtering who gets asked."
+    )
+    assert find_disallowed_customer_terms(request_step) == []
+
 
 def test_output_contract_rejects_jargon_and_long_advice() -> None:
     with pytest.raises(ValueError, match="technical language"):

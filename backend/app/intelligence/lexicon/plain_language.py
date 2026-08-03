@@ -135,6 +135,7 @@ _PLAIN_REPLACEMENTS = (
         re.compile(r"\beligible completed customers\b", re.IGNORECASE),
         "recent customers",
     ),
+    (re.compile(r"\bcompleted customers\b", re.IGNORECASE), "recent customers"),
     (
         re.compile(r"\bmeasure the share of eligible customers receiving a request\b", re.IGNORECASE),
         "Count how many recent customers were asked for a review",
@@ -145,6 +146,10 @@ _PLAIN_REPLACEMENTS = (
     ),
     (re.compile(r"\beligible customers?\b", re.IGNORECASE), "recent customers"),
     (
+        re.compile(r"\bchoose compliant post-service request moments\b", re.IGNORECASE),
+        "Choose times after a job when Google allows you to ask for a review",
+    ),
+    (
         re.compile(r"\bpost-service request moments\b", re.IGNORECASE),
         "times after a job when you can ask for a review",
     ),
@@ -152,7 +157,11 @@ _PLAIN_REPLACEMENTS = (
         re.compile(r"\bservice-completion touchpoints\b", re.IGNORECASE),
         "follow-ups after a job is finished",
     ),
-    (re.compile(r"\breview gating\b", re.IGNORECASE), "only asking happy customers"),
+    (
+        re.compile(r"\badd approved requests without incentives or review gating\b", re.IGNORECASE),
+        "Ask recent customers for reviews without rewards or filtering who gets asked",
+    ),
+    (re.compile(r"\breview gating\b", re.IGNORECASE), "filtering who gets asked"),
     (re.compile(r"\bsocial proof\b", re.IGNORECASE), "recent customer reviews"),
     (re.compile(r"\btouchpoints?\b", re.IGNORECASE), "follow-ups"),
 )

@@ -524,6 +524,9 @@ function describeRecommendationReason(reason?: string | null) {
   }
 
   const normalized = reason.toLowerCase();
+  if (normalized.includes("recent review pace")) {
+    return "This location is getting fewer new Google reviews than the saved goal.";
+  }
   if (
     normalized.includes("google business profile") &&
     normalized.includes("review acquisition velocity")
@@ -2100,8 +2103,8 @@ export default function OpportunitiesPage() {
                                 0,
                             )}
                             . {selectedRecommendation.risk_tier && selectedRecommendation.risk_tier >= 3
-                              ? "The system sees this as urgent enough to review first."
-                              : "The system sees this as worth addressing, but not the most urgent item in the queue."}
+                              ? "Handle this one first because it needs attention now."
+                              : "This is worth doing, but it is not the most urgent item."}
                           </p>
                         </div>
                         <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">

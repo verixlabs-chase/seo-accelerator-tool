@@ -76,6 +76,10 @@ Use these patterns:
   write `Count how many recent customers were asked for a review.`
 - Instead of `Find missed service-completion touchpoints`, write `Find missed
   follow-ups after a job is finished.`
+- Instead of `Choose compliant post-service request moments`, write `Choose
+  times after a job when Google allows you to ask for a review.`
+- Instead of `Add approved requests without incentives or review gating`, write
+  `Ask recent customers for reviews without rewards or filtering who gets asked.`
 - Instead of `Build social proof`, write `Get more recent customer reviews.`
 
 ## Customer interface dictionary
