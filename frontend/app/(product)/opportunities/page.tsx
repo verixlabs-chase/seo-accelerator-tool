@@ -1615,6 +1615,7 @@ export default function OpportunitiesPage() {
           eyebrow="Next steps"
           title="Your action plan"
           summary="Start with the most important improvement for this location, then work through the other useful actions below it."
+          compact
         />
 
         <TruthNotice title="Nothing changes on your website without review.">

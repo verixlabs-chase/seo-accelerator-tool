@@ -34,6 +34,8 @@ test("overview leads with one decision, compact results, and a meaningful chart"
   assert.match(dashboardSource, /Source and update details/);
   assert.match(dashboardSource, /Change dates and comparison/);
   assert.doesNotMatch(dashboardSource, /Updated through/);
+  assert.match(dashboardSource, /Math\.abs\(value\) < 0\.05/);
+  assert.match(dashboardSource, /No clear change/);
 });
 
 test("overview uses one compact daily guide without generic good-to-know panels", () => {

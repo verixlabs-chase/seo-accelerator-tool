@@ -278,6 +278,25 @@ function formatChange(value?: number | null, noun = "visits") {
   return `${value > 0 ? "Up" : "Down"} ${Math.abs(value).toFixed(1)}%`;
 }
 
+function formatPositionChange(value?: number | null) {
+  if (value === null || value === undefined) {
+    return "New baseline";
+  }
+  if (Math.abs(value) < 0.05) {
+    return "No clear change";
+  }
+  return value > 0
+    ? `Improved ${value.toFixed(1)}`
+    : `Dropped ${Math.abs(value).toFixed(1)}`;
+}
+
+function getPositionChangeTone(value?: number | null) {
+  if (value === null || value === undefined || Math.abs(value) < 0.05) {
+    return "neutral" as const;
+  }
+  return value > 0 ? "positive" as const : "negative" as const;
+}
+
 function getWorkflowToneClass(tone: string) {
   if (tone === "success") {
     return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
@@ -738,30 +757,21 @@ function SearchPerformanceOverview({
 
   return (
     <section id="performance-overview" className="space-y-4">
-      <SectionHeading
-        eyebrow="Google results"
-        title={`How customers found ${campaign.name || "this location"}`}
-        summary={
-          isReady
-            ? "See how many people found the business, visited the website, and how its average search position changed."
-            : "Connect this location's Google website property to see search appearances, visits, and position trends."
-        }
-      />
-
-      {metrics?.data_status !== "not_connected" ? (
-        <DetailsDisclosure
-          label="Change dates and comparison"
-          summary="The current view stays selected until you choose another period."
-        >
-          <SearchDateComparisonControls
-            value={dateRangeForm}
-            onChange={onDateRangeFormChange}
-            onApply={onApplyDateRange}
-            error={dateRangeError}
-            loading={dateRangeLoading}
-          />
-        </DetailsDisclosure>
-      ) : null}
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            Google results
+          </p>
+          <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">
+            How customers found {campaign.name || "this location"}
+          </h2>
+        </div>
+        {!isReady ? (
+          <p className="max-w-2xl text-sm text-zinc-400">
+            Connect this location&apos;s Google website property to see visits and search position.
+          </p>
+        ) : null}
+      </div>
 
       {isReady && metrics?.summary ? (
         <div className="flex flex-col gap-4">
@@ -808,27 +818,11 @@ function SearchPerformanceOverview({
                   metrics.summary.avg_position === undefined
                     ? "Not available"
                     : `#${metrics.summary.avg_position.toFixed(1)}`,
-                changeLabel:
-                  metrics.comparison?.position_improvement === null ||
-                  metrics.comparison?.position_improvement === undefined
-                    ? "New baseline"
-                    : metrics.comparison.position_improvement === 0
-                      ? "No change"
-                      : metrics.comparison.position_improvement > 0
-                        ? `Improved ${metrics.comparison.position_improvement.toFixed(1)}`
-                        : `Dropped ${Math.abs(metrics.comparison.position_improvement).toFixed(1)}`,
-                changeTone: !metrics.comparison?.position_improvement
-                  ? "neutral"
-                  : metrics.comparison.position_improvement > 0
-                    ? "positive"
-                    : "negative",
+                changeLabel: formatPositionChange(metrics.comparison?.position_improvement),
+                changeTone: getPositionChangeTone(metrics.comparison?.position_improvement),
               },
             ]}
           />
-
-          <p className="border-l-2 border-accent-500/50 px-3 py-1 text-sm leading-6 text-zinc-300">
-            {getSearchConsoleOwnerSummary(metrics, campaign.name || "This location")}
-          </p>
 
           <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
             <ChartCard
@@ -885,6 +879,23 @@ function SearchPerformanceOverview({
               }
             />
           </div>
+
+          <p className="border-l-2 border-accent-500/50 px-3 py-1 text-sm leading-6 text-zinc-300">
+            {getSearchConsoleOwnerSummary(metrics, campaign.name || "This location")}
+          </p>
+
+          <DetailsDisclosure
+            label="Change dates and comparison"
+            summary="The current view stays selected until you choose another period."
+          >
+            <SearchDateComparisonControls
+              value={dateRangeForm}
+              onChange={onDateRangeFormChange}
+              onApply={onApplyDateRange}
+              error={dateRangeError}
+              loading={dateRangeLoading}
+            />
+          </DetailsDisclosure>
 
           <DetailsDisclosure label="Source and update details">
             <p>
@@ -1692,6 +1703,7 @@ export default function DashboardPage() {
           eyebrow="Overview"
           title="What matters for your business today"
           summary="See the most important change, what it means, and the one action worth taking next."
+          compact
         />
 
         <TruthNotice title="Set up your business to get a daily priority.">

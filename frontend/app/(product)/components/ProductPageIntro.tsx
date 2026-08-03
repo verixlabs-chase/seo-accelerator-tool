@@ -8,6 +8,7 @@ type ProductPageIntroProps = {
   eyebrow: string;
   title: string;
   summary: string;
+  compact?: boolean;
 };
 
 const START_HERE_BY_PATH: Record<string, string> = {
@@ -49,6 +50,7 @@ export function ProductPageIntro({
   eyebrow,
   title,
   summary,
+  compact = false,
 }: ProductPageIntroProps) {
   const pathname = usePathname();
   const startHere =
@@ -57,7 +59,7 @@ export function ProductPageIntro({
   const icon = PAGE_ICON_BY_PATH[pathname] ?? "spark";
 
   return (
-    <header className="border-b border-[#26272c] pb-4">
+    <header className={`border-b border-[#26272c] ${compact ? "pb-3" : "pb-4"}`}>
       <div className="flex items-start gap-3.5">
         <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent-500/10 text-accent-400 ring-1 ring-inset ring-accent-500/20">
           <ProductIcon name={icon} size={21} />
@@ -66,16 +68,19 @@ export function ProductPageIntro({
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-400">
             {eyebrow}
           </p>
-          <h1 className="mt-1 text-3xl font-bold tracking-[-0.045em] text-white md:text-4xl">
+          <h1 className={`mt-1 font-bold tracking-[-0.045em] text-white ${compact ? "text-3xl" : "text-3xl md:text-4xl"}`}>
             {title}
           </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">{summary}</p>
+          {compact ? null : (
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">{summary}</p>
+          )}
         </div>
       </div>
-      <p className="mt-3 flex max-w-4xl items-start gap-2 text-sm leading-5 text-zinc-400 md:ml-[3.375rem]">
+      <p className={`${compact ? "mt-2" : "mt-3"} flex max-w-4xl items-start gap-2 text-sm leading-5 text-zinc-400 md:ml-[3.375rem]`}>
         <ProductIcon name="spark" size={16} className="mt-0.5 shrink-0 text-accent-400" />
         <span><strong className="font-semibold text-zinc-200">Start here:</strong> {startHere}</span>
       </p>
+      {compact ? <p className="sr-only">{summary}</p> : null}
     </header>
   );
 }

@@ -34,6 +34,7 @@ test("overview keeps the five-second decision path ahead of optional details", (
   assert.match(dashboardSource, /lg:grid-cols-\[1\.15fr_0\.85fr_1fr\]/);
   assert.match(dashboardSource, /xl:grid-cols-\[1\.25fr_0\.75fr\]/);
   assert.match(dashboardSource, /Google performance results/);
+  assert.match(dashboardSource, /compact/);
 });
 
 test("next steps exposes one cadence board and one working checklist", () => {
