@@ -161,6 +161,53 @@ def test_missing_provider_uses_persisted_deterministic_fallback(
     assert db_session.query(GovernedAIRun).count() == 1
 
 
+def test_nested_evidence_action_populates_fallback_daily_list(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_service,
+        "get_settings",
+        lambda: _settings(configured=False),
+    )
+    organization, campaign = _campaign_with_lexicon_action(
+        db_session,
+        create_test_org,
+    )
+    recommendation = (
+        db_session.query(StrategyRecommendation)
+        .filter(StrategyRecommendation.campaign_id == campaign.id)
+        .one()
+    )
+    recommendation.recommendation_type = "policy::local_review_pace"
+    recommendation.evidence_json = json.dumps(
+        {
+            "evidence": {
+                "action_id": "reputation.expand_review_request_coverage",
+            }
+        }
+    )
+    db_session.commit()
+
+    payload = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        now=datetime(2026, 8, 3, 16, 0, tzinfo=UTC),
+    )
+
+    assert payload["item"]["status"] == "fallback"
+    assert payload["item"]["output"]["daily_action_ids"] == [
+        "reputation.expand_review_request_coverage"
+    ]
+    assert payload["item"]["output"]["daily_actions"][0]["display_name"] == (
+        "Reach more eligible completed customers"
+    )
+    assert len(payload["item"]["output"]["daily_actions"][0]["steps"]) == 3
+
+
 def test_valid_provider_output_is_metered_validated_and_idempotent(
     db_session,
     create_test_org,

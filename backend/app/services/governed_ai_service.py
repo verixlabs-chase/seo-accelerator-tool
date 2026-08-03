@@ -632,6 +632,17 @@ def _build_context(
             if diagnostic_id not in diagnostic_ids:
                 diagnostic_ids.append(diagnostic_id)
         plan_action_id = str(plan.get("action_id")) if plan is not None else ""
+        # The materialized checklist is the canonical action resolution. Some
+        # recommendations keep their action ID inside nested evidence, so the
+        # briefing layer must not drop an action that the checklist already
+        # resolved from the same governed lexicon.
+        plan_action = lexicon.action_index.get(plan_action_id)
+        if (
+            plan_action is not None
+            and plan_action.ai_allowed
+            and plan_action_id not in action_ids
+        ):
+            action_ids.append(plan_action_id)
         if (
             plan_action_id
             and work_item is not None
