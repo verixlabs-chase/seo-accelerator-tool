@@ -473,7 +473,7 @@ Execution priority for this phase:
 
 - Goal: replace the appearance of one isolated recommendation with a
   location-scoped portfolio that keeps one clear first action while exposing
-  all useful supported work.
+  multiple useful next actions.
 - Files likely affected:
   - `backend/app/models/intelligence.py`
   - `backend/app/services/intelligence_service.py`
@@ -485,8 +485,10 @@ Execution priority for this phase:
 - Risk level: Medium
 - Feature flag needed or not: Yes, `expanded_action_plans_enabled`
 - Acceptance criteria:
-  - selected location shows `Do first`, `This week`, and `Later / watch`
-    sections
+  - selected location shows one `Do this first` spotlight plus the next two or
+    more useful actions when evidence supports them
+  - the full action area provides `Daily`, `Weekly`, `Monthly`, and
+    `Later / watch` sections
   - one to three highest-value unblocked plans appear first, while lower
     priorities remain accessible
   - the service creates no filler plan merely to reach a fixed count
@@ -496,10 +498,11 @@ Execution priority for this phase:
     dependency state, success metric, and next step
 - Recommended order: 25
 
-### T26. Add deterministic checklists and persistent progress
+### T26. Add deterministic checklists, work routines, and persistent progress
 
-- Goal: turn each action plan into a resumable set of concrete steps that a
-  non-technical service-business owner can follow.
+- Goal: turn each action plan into a resumable set of concrete steps and give a
+  non-technical service-business owner a clear Daily, Weekly, and Monthly work
+  routine.
 - Files likely affected:
   - `backend/app/models/intelligence.py`
   - `backend/app/intelligence/lexicon/schema.py`
@@ -519,8 +522,16 @@ Execution priority for this phase:
   - progress survives navigation, sign-out, and another-device access
   - the page shows completed required steps out of total required steps and the
     next unblocked step
+  - every plan has a deterministic cadence, due window, and location timezone;
+    priority and cadence remain separate fields
+  - Daily shows one to three short or time-sensitive actions, Weekly holds the
+    larger active improvements, and Monthly holds recurring reviews and upkeep
+  - recurring work creates a new dated occurrence instead of resetting or
+    overwriting the previously completed checklist
+  - the same required work is not duplicated across Daily, Weekly, and Monthly
+    views, and users can see due, upcoming, completed, overdue, and snoozed work
   - AI can simplify wording but cannot add, remove, or change a required action,
-    step, dependency, metric, or execution permission
+    step, cadence, due window, dependency, metric, or execution permission
   - no AI request occurs for page loads, item checks, sorting, or repeated views
 - Recommended order: 26
 
@@ -593,7 +604,7 @@ Execution priority for this phase:
 ### Expanded action plans / checklists / forecasting
 
 - T25 Build the expanded location action portfolio
-- T26 Add deterministic checklists and persistent progress
+- T26 Add deterministic checklists, work routines, and persistent progress
 - T27 Add action baselines, completion proof, and measurement readiness
 - T28 Add action-linked forecast scenarios and outcome comparison
 

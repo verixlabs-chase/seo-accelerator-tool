@@ -275,7 +275,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 3 | **G1.3 - Usage Economics and Margin Guardrails** | Paid provider and AI work cannot overspend the organization's allowance or silently damage gross margin. |
 | 4 | **I1.1 - Live Website Performance and CWV Experience — released** | Customers see their actual field and lab website measurements, Google thresholds, history, source, freshness, and plain-language meaning. |
 | 5 | **I1.3 - Governed AI Runtime API — active** | Mistral-first AI becomes standard across plans and can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
-| 6 | **I1.4 - Expanded Action Plans and Guided Checklists** | Customers receive a manageable portfolio of prioritized action plans, with plain-language steps, progress, blockers, and measurement readiness. |
+| 6 | **I1.4 - Expanded Action Plans, Guided Checklists, and Work Routines** | Customers receive multiple prioritized action plans, plain-language checklists, and clear Daily, Weekly, and Monthly work routines. |
 | 7 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Supported action plans add a measured baseline and conservative outcome range after the work and success criteria are defined. |
 | 8 | **I1.5 - Pluggable and Local Model Gateway** | Platform routing can switch approved AI providers, while an Enterprise owner can connect a customer-controlled compatible model endpoint without changing the intelligence engine or exposing credentials. |
 | 9 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
@@ -946,10 +946,13 @@ recommendation.
 Product decision:
 
 - Keep one `Do this first` item as the fastest entry point, but never present it
-  as the entire recommendation experience.
-- Organize all supported work into `Do first`, `This week`, and `Later / watch`
-  lists. Prefer three to seven active plans per location when the evidence
-  supports them; do not invent filler to reach a quota.
+  as the entire recommendation experience. Show the next two or more useful
+  actions immediately below it whenever the evidence supports them.
+- Add a customer-facing `Your action plan` area with `Daily`, `Weekly`, and
+  `Monthly` views. Order every view by current value and keep a separate
+  `Later / watch` backlog for blocked, lower-priority, or waiting-for-data work.
+  Prefer three to seven active plans per location when the evidence supports
+  them; do not invent filler to reach a quota.
 - Each action opens a persistent checklist. The deterministic lexicon supplies
   the action, dependencies, success metrics, and canonical steps. AI may make
   that approved material easier to read, but it cannot create a new action,
@@ -964,10 +967,21 @@ Scope:
 - Give every action a location, evidence set, freshness, confidence, expected
   benefit, estimated effort, dependency, success metric, observation window,
   and plain-language `why now`.
-- Group plans into three understandable horizons:
-  - `Do first`: one to three unblocked items with the highest current value.
-  - `This week`: the next useful work that fits the owner's capacity.
-  - `Later / watch`: lower-priority, blocked, or waiting-for-data items.
+- Give every plan both a priority and a work cadence so `what matters first`
+  and `when should I do this` remain separate:
+  - `Daily`: one to three short, time-sensitive actions such as responding to a
+    new issue, checking a material change, or completing the next step in an
+    active plan.
+  - `Weekly`: the larger improvements and reviews that move active SEO work
+    forward, ordered to fit the owner's configured weekly capacity.
+  - `Monthly`: recurring health, visibility, listings, review, content, and
+    outcome reviews that should not consume attention every day.
+  - `Later / watch`: lower-priority, blocked, or waiting-for-data items that do
+    not belong in the current routine.
+- Generate cadence, due windows, and recurrence deterministically from the
+  canonical action definition, signal urgency, data freshness, dependencies,
+  location timezone, and plan capacity. AI can explain the schedule but cannot
+  choose a different cadence or silently move work.
 - Materialize a versioned customer-facing action plan rather than overloading a
   one-line `StrategyRecommendation`. Each plan records its canonical action,
   source recommendations, priority, owner, dependencies, success metric,
@@ -980,6 +994,12 @@ Scope:
 - Persist checklist progress across navigation, sessions, and devices. Show
   progress as completed required steps out of total required steps, with the
   next unblocked step visible without opening every detail panel.
+- Persist each recurring action occurrence separately so completing today's or
+  this month's checklist does not erase history. Show `due now`, `upcoming`,
+  `completed`, `overdue`, and `snoozed` states in the location's timezone.
+- Prevent the same required work from appearing as separate duplicate actions
+  across Daily, Weekly, and Monthly views. A single plan may be surfaced in the
+  appropriate view while retaining one checklist and one progress record.
 - Add plan-level statuses for `ready`, `in progress`, `blocked`, `waiting for
   results`, `completed`, and `dismissed`. A plan cannot become completed while
   required steps remain unresolved.
@@ -1022,8 +1042,13 @@ Acceptance criteria:
   insufficient-evidence state.
 - A user can see the full action portfolio, the top action, each plan's
   progress, and the next unblocked step without hunting through the page.
+- The Next Steps experience shows multiple actions when supported and gives the
+  user clear Daily, Weekly, and Monthly lists without requiring a scroll past
+  explanatory content.
 - Every supported multi-step plan has a deterministic, ordered checklist in
   plain language, and progress survives sign-out and another-device access.
+- Recurring actions reset only by creating a new dated occurrence; the prior
+  checklist, completion actor, result, and evidence remain auditable.
 - AI output cannot add or remove a required action, checklist step, dependency,
   baseline, success metric, or execution authority.
 - Completing a UI checkbox cannot falsely mark an automated or externally
