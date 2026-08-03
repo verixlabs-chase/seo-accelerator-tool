@@ -43,7 +43,8 @@ Do not use internal or specialist terms such as:
 `canonical tag`, `crawl depth`, `crawl`, `indexation`, `Core Web Vitals`,
 `technical`, `SEO`, `confidence`, `risk tier`, `campaign`, `citation`,
 `meta title`, `meta description`, `governed`, `deterministic summary`,
-`deeper review`, or `possible benefit`.
+`deeper review`, `possible benefit`, `eligible customer`, `touchpoint`,
+`review gating`, or `social proof`.
 
 Do not expose internal action IDs, source IDs, model names, confidence math, or
 system states in `summary` or `why_now`.
@@ -71,6 +72,11 @@ Use these patterns:
 - Instead of `Possible benefit — more evidence needed`, write `We need more
   information before estimating the result.`
 - Instead of `Deeper review`, write `More information needed.`
+- Instead of `Measure the share of eligible customers receiving a request`,
+  write `Count how many recent customers were asked for a review.`
+- Instead of `Find missed service-completion touchpoints`, write `Find missed
+  follow-ups after a job is finished.`
+- Instead of `Build social proof`, write `Get more recent customer reviews.`
 
 ## Customer interface dictionary
 

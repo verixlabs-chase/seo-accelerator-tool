@@ -19,6 +19,7 @@ ACTION_FIRST_VERBS = frozenset(
         "compare",
         "connect",
         "correct",
+        "count",
         "create",
         "earn",
         "fix",
@@ -97,6 +98,10 @@ _DISALLOWED_PATTERNS = (
     ),
     ("deeper review", re.compile(r"\bdeeper review\b", re.IGNORECASE)),
     ("possible benefit", re.compile(r"\bpossible benefit\b", re.IGNORECASE)),
+    ("eligible customer", re.compile(r"\beligible customers?\b", re.IGNORECASE)),
+    ("touchpoint", re.compile(r"\btouchpoints?\b", re.IGNORECASE)),
+    ("review gating", re.compile(r"\breview gating\b", re.IGNORECASE)),
+    ("social proof", re.compile(r"\bsocial proof\b", re.IGNORECASE)),
 )
 
 _PLAIN_REPLACEMENTS = (
@@ -130,6 +135,26 @@ _PLAIN_REPLACEMENTS = (
         re.compile(r"\beligible completed customers\b", re.IGNORECASE),
         "recent customers",
     ),
+    (
+        re.compile(r"\bmeasure the share of eligible customers receiving a request\b", re.IGNORECASE),
+        "Count how many recent customers were asked for a review",
+    ),
+    (
+        re.compile(r"\beligible customers receiving a request\b", re.IGNORECASE),
+        "recent customers who were asked for a review",
+    ),
+    (re.compile(r"\beligible customers?\b", re.IGNORECASE), "recent customers"),
+    (
+        re.compile(r"\bpost-service request moments\b", re.IGNORECASE),
+        "times after a job when you can ask for a review",
+    ),
+    (
+        re.compile(r"\bservice-completion touchpoints\b", re.IGNORECASE),
+        "follow-ups after a job is finished",
+    ),
+    (re.compile(r"\breview gating\b", re.IGNORECASE), "only asking happy customers"),
+    (re.compile(r"\bsocial proof\b", re.IGNORECASE), "recent customer reviews"),
+    (re.compile(r"\btouchpoints?\b", re.IGNORECASE), "follow-ups"),
 )
 
 

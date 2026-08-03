@@ -537,11 +537,15 @@ function describeRecommendationReason(reason?: string | null) {
     return "Search visibility is steady, but growth may require more useful service content and more trusted websites linking to it.";
   }
 
-  return reason
+  const rewritten = reason
     .replace(/Google Business Profile/gi, "Google business listing")
     .replace(/review acquisition velocity/gi, "new review activity")
     .replace(/acquisition velocity/gi, "new activity")
     .replace(/content throughput/gi, "new content");
+
+  return simplifyCustomerCopy(rewritten, {
+    fallback: "InsightOS found a useful improvement for this location.",
+  });
 }
 
 function getEngineSourceLabel(source?: string) {
@@ -562,9 +566,11 @@ function getEngineSourceLabel(source?: string) {
 
 function formatEvidence(value: string) {
   if (/^[a-z0-9_:.-]+$/i.test(value) && value.includes("_")) {
-    return toTitleCase(value);
+    return simplifyCustomerCopy(toTitleCase(value), {
+      fallback: "Saved business information",
+    });
   }
-  return value;
+  return simplifyCustomerCopy(value, { fallback: "Saved business information" });
 }
 
 function canMeasureOutcome(status?: string) {
@@ -630,7 +636,7 @@ function describeExecutionType(type?: string) {
 function nextActionForStatus(status?: string) {
   if (status === "GENERATED") {
     return {
-      label: "Mark reviewed",
+      label: "Mark as checked",
       targetState: "VALIDATED",
       summary: "Choose this after you have read the recommendation and want to keep it.",
     };
@@ -1473,23 +1479,25 @@ export default function OpportunitiesPage() {
     return {
       title: getRecommendationTitle(topRecommendation),
       body: describeRecommendationReason(topRecommendation.rationale),
-      next:
+      next: simplifyCustomerCopy(
         topRecommendation.action_plan?.work_item?.next_step?.instruction ||
-        topRecommendation.action_plan?.steps?.[0] ||
-        nextActionForStatus(topRecommendation.status)?.summary ||
-        "Review the evidence first, then decide whether this action should stay active or be dismissed.",
+          topRecommendation.action_plan?.steps?.[0] ||
+          nextActionForStatus(topRecommendation.status)?.summary ||
+          "Check what we found, then decide whether this action should stay on your list.",
+        { fallback: "Open this action and follow the first step." },
+      ),
     };
   }, [selectedCampaign, topRecommendation]);
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
-        "Recommendation status",
+        "Action plan status",
         runtimeTruth,
         "Recommendations and scores are heuristic until execution setup is ready and a run succeeds.",
       ),
       {
-        label: "Recommended actions",
+        label: "Next steps",
         value: sortedRecommendations.length ? `${sortedRecommendations.length} active` : "None yet",
         tone: sortedRecommendations.length > 0 ? "info" : "warning",
       },
@@ -1499,7 +1507,7 @@ export default function OpportunitiesPage() {
         tone: highPriorityCount > 0 ? "warning" : "success",
       },
       {
-        label: "Recommendation method",
+        label: "How guidance was prepared",
         value: getEngineSourceLabel(engineState?.guidance_source),
         tone:
           engineState?.guidance_source === "orchestrator_v1" ||
@@ -1567,7 +1575,7 @@ export default function OpportunitiesPage() {
           ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
           : "No campaign selected"
       }
-      dateRangeLabel="Saved recommendations"
+      dateRangeLabel="Saved action plan"
       topBarActions={
         <>
           <button
@@ -1726,10 +1734,12 @@ export default function OpportunitiesPage() {
                                   </div>
                                   <p className="mt-2 text-xs text-zinc-400">{progress.label}</p>
                                   <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-300">
-                                    {nextStep?.instruction ||
+                                    {simplifyCustomerCopy(nextStep?.instruction, {
+                                      fallback:
                                       (progress.total > 0
                                         ? "Checklist complete. Wait for the result window."
-                                        : "Open this action to review the plan.")}
+                                        : "Open this action to review the plan."),
+                                    })}
                                   </p>
                                 </button>
                               );
@@ -1908,7 +1918,7 @@ export default function OpportunitiesPage() {
                 </div>
               </summary>
               <p className="mt-4 border-t border-[#26272c] pt-4 text-sm leading-6 text-zinc-300">
-                These cards separate recommendation state from execution state so you can see what is only recommended, what is approved, what is queued, what completed, what failed, and what to do next.
+                See what still needs checking, what is ready to do, and what has already been handled.
               </p>
               <div className="mt-4 grid gap-4 xl:grid-cols-3">
                 {[recommendationState, executionState, setupBlockerState]
@@ -1963,13 +1973,13 @@ export default function OpportunitiesPage() {
               <KpiCard
                 label="Finished or cleared"
                 value={`${queuedCount + archivedCount}`}
-                summary="This includes recommendations already queued or intentionally cleared from the active list."
+                summary="This includes actions already planned or intentionally removed from the active list."
               />
             </div>
 
             {sortedRecommendations.length === 0 ? (
               <EmptyState
-                title="No opportunities are queued yet"
+                title="No next steps are ready yet"
                 summary="Refresh after more crawl, ranking, or local data is available for this business."
                 actionLabel="Refresh opportunities"
                 onAction={() => void refreshCampaignData(selectedCampaignId)}
@@ -2099,9 +2109,12 @@ export default function OpportunitiesPage() {
                             What to do next
                           </p>
                           <p className="mt-2 text-sm leading-6 text-zinc-300">
-                            {selectedRecommendation.action_plan?.steps?.[0] ||
-                              primaryAction?.summary ||
-                              "Review the evidence below, then decide whether to keep this recommendation active or clear it from the queue."}
+                              {simplifyCustomerCopy(
+                                selectedRecommendation.action_plan?.steps?.[0] ||
+                                  primaryAction?.summary ||
+                                  "Check what we found, then decide whether to keep this action on your list.",
+                                { fallback: "Open the plan and follow the first step." },
+                              )}
                           </p>
                           <p className="mt-3 text-xs uppercase tracking-[0.14em] text-zinc-500">
                             {recommendationState
@@ -2119,7 +2132,10 @@ export default function OpportunitiesPage() {
                                 Practical plan
                               </p>
                               <p className="mt-2 text-sm leading-6 text-zinc-200">
-                                {selectedRecommendation.action_plan.why_it_matters}
+                                {simplifyCustomerCopy(
+                                  selectedRecommendation.action_plan.why_it_matters,
+                                  { fallback: "This action can help more customers trust the business." },
+                                )}
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-2 text-xs text-zinc-300">
@@ -2171,7 +2187,9 @@ export default function OpportunitiesPage() {
                                     </span>
                                     <span>
                                       <span className={`block text-sm leading-6 ${isDone ? "text-zinc-500 line-through" : "text-zinc-200"}`}>
-                                        {step.instruction}
+                                        {simplifyCustomerCopy(step.instruction, {
+                                          fallback: "Complete this step.",
+                                        })}
                                       </span>
                                       <span className="mt-1 block text-xs text-zinc-500">
                                         {busyAction === actionKey
@@ -2195,7 +2213,9 @@ export default function OpportunitiesPage() {
                                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                                     Step {index + 1}
                                   </p>
-                                  <p className="mt-2 text-sm leading-6 text-zinc-300">{step}</p>
+                                  <p className="mt-2 text-sm leading-6 text-zinc-300">
+                                    {simplifyCustomerCopy(step, { fallback: "Complete this step." })}
+                                  </p>
                                 </div>
                               ))}
                             </div>
@@ -2308,7 +2328,7 @@ export default function OpportunitiesPage() {
                                 void transitionRecommendation(
                                   selectedRecommendation.id,
                                   "ARCHIVED",
-                                  `${describeType(selectedRecommendation.recommendation_type)} was cleared from the active queue.`,
+                                  `${describeType(selectedRecommendation.recommendation_type)} was removed from the active list.`,
                                 )
                               }
                               disabled={busyAction !== ""}
@@ -2316,7 +2336,7 @@ export default function OpportunitiesPage() {
                             >
                               {busyAction === `${selectedRecommendation.id}:ARCHIVED`
                                 ? "Updating..."
-                                : "Clear from queue"}
+                                : "Remove from list"}
                             </button>
                           ) : null}
                         </div>
@@ -2325,7 +2345,7 @@ export default function OpportunitiesPage() {
                   ) : (
                     <EmptyState
                       title="No recommendation selected"
-                      summary="Choose an opportunity from the queue to see why it matters and what should happen next."
+                      summary="Choose an action from the list to see why it matters and what to do next."
                       actionLabel="Return to dashboard"
                       onAction={() => router.push("/dashboard")}
                     />

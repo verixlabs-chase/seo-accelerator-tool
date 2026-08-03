@@ -32,6 +32,14 @@ test("the browser and AI language contracts share the v2 owner standard", () => 
     simplifyCustomerCopy("Open the deterministic summary", { fallback: "Open the saved plan" }),
     "Open the saved explanation",
   );
+  assert.equal(
+    simplifyCustomerCopy("Measure the share of eligible customers receiving a request."),
+    "Count how many recent customers were asked for a review.",
+  );
+  assert.equal(
+    simplifyCustomerCopy("Find missed service-completion touchpoints."),
+    "Find missed follow-ups after a job is finished.",
+  );
 });
 
 test("change language combines words, direction, and consistent meaning", () => {
@@ -107,6 +115,7 @@ test("shared primary UI copy does not contain prohibited customer labels", () =>
     "../app/(product)/components/InsightCard.tsx",
     "../app/(product)/components/KpiCard.tsx",
     "../app/(product)/components/ChartCard.tsx",
+    "../app/(product)/opportunities/page.tsx",
   ];
 
   for (const path of sharedFiles) {

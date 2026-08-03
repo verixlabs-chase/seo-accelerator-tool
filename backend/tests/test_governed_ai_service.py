@@ -402,6 +402,7 @@ def test_service_business_language_guide_is_the_runtime_writing_standard() -> No
     assert "Make the main part of this page load faster" in guide
     assert "Customer interface dictionary" in guide
     assert "Get more reviews from recent customers" in guide
+    assert "Count how many recent customers were asked for a review" in guide
 
 
 def test_customer_language_contract_rewrites_internal_product_labels() -> None:
@@ -416,6 +417,13 @@ def test_customer_language_contract_rewrites_internal_product_labels() -> None:
         "deterministic",
         "deterministic summary",
     ]
+
+    checklist_step = simplify_internal_language(
+        "Measure the share of eligible customers receiving a request.",
+        max_words=32,
+    )
+    assert checklist_step == "Count how many recent customers were asked for a review."
+    assert find_disallowed_customer_terms(checklist_step) == []
 
 
 def test_output_contract_rejects_jargon_and_long_advice() -> None:
