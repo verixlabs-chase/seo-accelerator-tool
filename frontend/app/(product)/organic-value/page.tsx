@@ -8,6 +8,7 @@ import {
   EmptyState,
   KpiCard,
   LoadingCard,
+  OwnerDecisionPanel,
   ProductPageIntro,
   TruthNotice,
   useLocationContext,
@@ -287,6 +288,16 @@ export default function OrganicValuePage() {
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
   const expectedScenario = baseline?.scenarios.find((item) => item.key === "expected") ?? null;
+  const scenarioMaxValue = useMemo(
+    () =>
+      baseline
+        ? Math.max(
+            1,
+            ...baseline.scenarios.map((scenario) => Number(scenario.projected_value) || 0),
+          )
+        : 1,
+    [baseline],
+  );
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       buildRuntimeTruthSignal(
@@ -353,6 +364,7 @@ export default function OrganicValuePage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
+          compact
           eyebrow="Search value"
           title="What your search visibility may be worth"
           summary="Estimate what your current unpaid search traffic might cost to replace with ads, and see where better search positions could add value."
@@ -393,6 +405,15 @@ export default function OrganicValuePage() {
 
         {!loading && campaigns.length > 0 && baseline ? (
           <>
+            <OwnerDecisionPanel
+              title={`Your current search visibility is estimated at ${formatMetric(baseline.current_value)}`}
+              summary={`The tracked search phrases show ${formatMetric(baseline.upside_opportunity)} in possible near-term upside. This is the cost of replacing visibility with ads, not promised revenue.`}
+              nextStep="Open Search Rankings and start with a valuable phrase that is already close to page one."
+              actionLabel="Choose a search phrase"
+              onAction={() => router.push("/rankings")}
+              tone={Number(baseline.current_value.amount || 0) > 0 ? "positive" : "warning"}
+            />
+
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
                 label="Current value"
@@ -455,7 +476,7 @@ export default function OrganicValuePage() {
                     disabled={refreshing || !selectedCampaignId}
                     className="mt-4 rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Recalculate baseline
+                    Update estimate
                   </button>
                   <button
                     onClick={() => void clearSavedInvestment()}
@@ -480,6 +501,35 @@ export default function OrganicValuePage() {
                 keyword economics rows. They are useful for demos and pilots, not for precision
                 forecasting.
               </p>
+              <div
+                className="mt-5 space-y-3 border-y border-[#2b2c31] py-4"
+                aria-label="Estimated search value by scenario"
+              >
+                {baseline.scenarios.map((scenario) => {
+                  const projectedValue = Number(scenario.projected_value) || 0;
+                  const width = Math.max(4, (projectedValue / scenarioMaxValue) * 100);
+                  return (
+                    <div key={`visual-${scenario.key}`}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="font-medium text-zinc-200">{scenario.label}</span>
+                        <span className="text-zinc-300">${scenario.projected_value}</span>
+                      </div>
+                      <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-[#27282d]">
+                        <div
+                          className="h-full rounded-full bg-accent-500"
+                          style={{ width: `${Math.min(100, width)}%` }}
+                          role="img"
+                          aria-label={`${scenario.label}: $${scenario.projected_value} estimated monthly search value`}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-xs leading-5 text-zinc-500">
+                  Longer bars show a larger estimated paid-ad replacement value. They do not show
+                  guaranteed revenue or profit.
+                </p>
+              </div>
               <div className="mt-4 grid gap-4 xl:grid-cols-3">
                 {baseline.scenarios.map((scenario) => (
                   <div key={scenario.key} className="rounded-md border border-[#26272c] bg-[#111214] p-4">

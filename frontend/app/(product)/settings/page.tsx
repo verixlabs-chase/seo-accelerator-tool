@@ -7,6 +7,7 @@ import {
   AppShell,
   EmptyState,
   LoadingCard,
+  OwnerDecisionPanel,
   ProductPageIntro,
   TruthNotice,
   type TrustSignal,
@@ -360,6 +361,7 @@ export default function SettingsPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
+          compact
           eyebrow="Data connections"
           title="Keep your search data updated automatically"
           summary="Connect Google once, match each business location to its website, and let InsightOS collect the latest Search Console results on schedule."
@@ -388,6 +390,75 @@ export default function SettingsPage() {
           />
         ) : (
           <>
+            <OwnerDecisionPanel
+              eyebrow="Connection status"
+              title={
+                !payload?.google_oauth.connected
+                  ? "Connect Google to start automatic updates"
+                  : manageableCampaigns.length === 0
+                    ? "Add a business location before matching a website"
+                    : portfolioSummary.label
+              }
+              summary={
+                !payload?.google_oauth.connected
+                  ? "InsightOS cannot collect Search Console visits, appearances, and search positions until read-only Google access is approved."
+                  : manageableCampaigns.length === 0
+                    ? "Automatic data must belong to a real location so results never get mixed between businesses."
+                    : portfolioSummary.summary
+              }
+              nextStep={
+                !payload?.google_oauth.connected
+                  ? "Connect Google, then choose the Search Console website that belongs to each location."
+                  : manageableCampaigns.length === 0
+                    ? "Add the first physical business location and its website."
+                    : portfolioSummary.needsAttention > 0
+                      ? "Open the location marked as needing attention and try its update again."
+                      : portfolioSummary.unmapped > 0
+                        ? "Match the next unmapped location to its Search Console website."
+                        : "Connections are healthy. Leave them alone unless a location stops updating."
+              }
+              actionLabel={
+                !payload?.google_oauth.connected
+                  ? "Connect Google"
+                  : manageableCampaigns.length === 0
+                    ? "Add a location"
+                    : portfolioSummary.needsAttention > 0 || portfolioSummary.unmapped > 0
+                      ? "Review location connections"
+                      : undefined
+              }
+              onAction={
+                !payload?.google_oauth.connected
+                  ? () => void connectGoogle()
+                  : manageableCampaigns.length === 0
+                    ? () => window.location.assign("/locations")
+                    : portfolioSummary.needsAttention > 0 || portfolioSummary.unmapped > 0
+                      ? () =>
+                          document
+                            .getElementById("website-mappings")
+                            ?.scrollIntoView({ behavior: "smooth" })
+                      : undefined
+              }
+              tone={
+                portfolioSummary.needsAttention > 0
+                  ? "urgent"
+                  : portfolioSummary.unmapped > 0 || !payload?.google_oauth.connected
+                    ? "warning"
+                    : portfolioSummary.tone === "success"
+                      ? "positive"
+                      : "neutral"
+              }
+              progress={
+                manageableCampaigns.length > 0
+                  ? {
+                      label: "Locations matched to a website",
+                      value: connections.length,
+                      total: manageableCampaigns.length,
+                      summary: "Each location keeps its own mapping and update history.",
+                    }
+                  : undefined
+              }
+            />
+
             {usageAllowance ? (
               <details className="rounded-md border border-[#292a2f] bg-[#141518] p-4">
                 <summary className="cursor-pointer list-none">
@@ -501,7 +572,7 @@ export default function SettingsPage() {
                 onAction={() => window.location.assign("/locations")}
               />
             ) : (
-              <section className="space-y-3">
+              <section id="website-mappings" className="space-y-3">
                 <div>
                   <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">
                     Match websites to locations

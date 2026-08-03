@@ -2,8 +2,9 @@
 
 > **Status update (2026-08-03):** This remains the workflow-fulfillment backlog,
 > but it is no longer the master next-sprint sequence. The working routes are in
-> place. T26, UX10/T29, and UX11/T30 are complete. Customer review now
-> prioritizes UX12/T31: the cross-page visualization and usability rollout. See
+> place. T26, UX10/T29, UX11/T30, and UX12/T31 are complete. Customer review now
+> moves to I1.2/T28: evidence-backed improvement forecasting and scenario
+> modeling. See
 > [claude-next-build-brief.md](./claude-next-build-brief.md#1a-active-customer-ux-sprint-sequence).
 > Remaining feature tickets should be scheduled behind or alongside that
 > customer-comprehension work, not used to add more dense top-level surfaces.
@@ -723,6 +724,17 @@ Completion record (2026-08-03):
   - route audit removes repeated guidance, duplicated data, oversized empty
     space, dead controls, unnecessary badges, and priority content below fold
 - Recommended order: after T30 and before final forecasting/report polish
+
+Completion record (2026-08-03):
+- Added the shared `OwnerDecisionPanel` for result, meaning, next action, and
+  optional accessible progress without surrounding every value in a card.
+- Compact first screens now cover Rankings, Local Search, Website Health,
+  Listings, Competitors, Search Value, Locations, Reports, and Settings.
+- Listings, Search Value, Locations, Reports, and Connections gained truthful
+  progress or comparison visuals; Rankings, Local Search, Website Health, and
+  Competitors retain their real-data charts, map, and gap bars.
+- Duplicate summaries were removed, location setup became progressive
+  disclosure, and cross-page regression tests enforce the rollout contract.
 
 ## 5. Tickets Grouped By Area
 

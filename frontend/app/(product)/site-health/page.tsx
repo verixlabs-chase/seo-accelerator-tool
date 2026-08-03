@@ -24,6 +24,7 @@ import {
   EmptyState,
   KpiCard,
   LoadingCard,
+  OwnerDecisionPanel,
   ProductPageIntro,
   TruthNotice,
   useLocationContext,
@@ -871,6 +872,7 @@ export default function SiteHealthPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
+          compact
           eyebrow="Website health"
           title="Is your website helping or hurting you?"
           summary="See problems that could keep customers or search engines from using your website, which one to fix first, and the next practical step."
@@ -910,6 +912,30 @@ export default function SiteHealthPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
+            <OwnerDecisionPanel
+              eyebrow="Fix this first"
+              title={topSummary.title}
+              summary={topSummary.body}
+              nextStep={topSummary.next}
+              actionLabel={topIssue ? "Review affected pages" : latestRun ? "Run another scan" : "Run the first scan"}
+              onAction={() => {
+                if (topIssue) {
+                  document.getElementById("issue-details")?.scrollIntoView({ behavior: "smooth" });
+                  return;
+                }
+                router.push("/dashboard");
+              }}
+              tone={
+                (severityCounts.high || 0) > 0
+                  ? "urgent"
+                  : topIssue
+                    ? "warning"
+                    : latestRun
+                      ? "positive"
+                      : "neutral"
+              }
+            />
+
             <section className="space-y-5 border-y border-[#26272c] bg-[#111214]/70 px-4 py-5 md:px-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
@@ -1124,48 +1150,6 @@ export default function SiteHealthPage() {
                   ) : null}
                 </>
               )}
-            </section>
-
-            <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Recommended action
-              </p>
-              <div className="mt-3 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-                <div>
-                  <h2 className="text-2xl font-semibold tracking-[-0.03em] text-white">
-                    {topSummary.title}
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">{topSummary.body}</p>
-                </div>
-                <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    What to do next
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">{topSummary.next}</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {topIssue ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          document
-                            .getElementById("issue-details")
-                            ?.scrollIntoView({ behavior: "smooth" })
-                        }
-                        className="rounded-md border border-accent-500/35 bg-accent-500/12 px-3 py-2 text-sm font-semibold text-white"
-                      >
-                        Review affected pages
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => router.push("/dashboard")}
-                      className="rounded-md border border-[#303137] bg-[#17181b] px-3 py-2 text-sm font-medium text-zinc-200"
-                    >
-                      Run another scan
-                    </button>
-                  </div>
-                </div>
-              </div>
             </section>
 
             <div className="grid gap-4 xl:grid-cols-4">

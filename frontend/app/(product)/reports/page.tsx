@@ -8,6 +8,7 @@ import {
   EmptyState,
   KpiCard,
   LoadingCard,
+  OwnerDecisionPanel,
   ProductPageIntro,
   ReportPreview,
   TruthNotice,
@@ -664,6 +665,7 @@ export default function ReportsPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
+          compact
           eyebrow="Reports"
           title="Create a clear update you can share"
           summary="Bring the latest website and search results into one report, review it, and confirm whether it was actually sent."
@@ -704,25 +706,35 @@ export default function ReportsPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
-            <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                What you can share
-              </p>
-              <div className="mt-3 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-                <div>
-                  <h2 className="text-2xl font-semibold tracking-[-0.03em] text-white">
-                    {summary.title}
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">{summary.body}</p>
-                </div>
-                <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    What to do next
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">{summary.next}</p>
-                </div>
-              </div>
-            </section>
+            <OwnerDecisionPanel
+              eyebrow="Report status"
+              title={summary.title}
+              summary={summary.body}
+              nextStep={summary.next}
+              actionLabel={generatedCount > 0 ? "Review the report" : "Create a report"}
+              onAction={() =>
+                document.getElementById("report-actions")?.scrollIntoView({ behavior: "smooth" })
+              }
+              tone={
+                latestReport && isFailedStatus(latestReport.report_status)
+                  ? "urgent"
+                  : generatedCount > 0
+                    ? "warning"
+                    : deliveredCount > 0
+                      ? "positive"
+                      : "neutral"
+              }
+              progress={
+                reports.length > 0
+                  ? {
+                      label: "Reports confirmed as delivered",
+                      value: deliveredCount,
+                      total: reports.length,
+                      summary: "A created report is not counted as delivered until its delivery status confirms it.",
+                    }
+                  : undefined
+              }
+            />
 
             <details className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
               <summary className="cursor-pointer list-none">
@@ -803,7 +815,10 @@ export default function ReportsPage() {
             </div>
 
             <div className="grid gap-5 xl:grid-cols-[0.72fr_1.28fr]">
-              <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <section
+                id="report-actions"
+                className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]"
+              >
                 <div className="mb-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                     Actions

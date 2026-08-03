@@ -50,6 +50,7 @@ empty states. Icons beside text are decorative; standalone icons require a
 | --- | --- | --- |
 | Shell and location scope | `AppShell`, `TopBar`, `LocationContext` | Keep business and location visible. Hide healthy diagnostic noise. |
 | Page purpose | `ProductPageIntro` | Show an original page icon, short purpose, and one compact start instruction. |
+| Owner decision | `OwnerDecisionPanel` | State the current result, business meaning, next action, and optional accessible progress. |
 | Section hierarchy | `PageSection` | Group one decision without adding a decorative card. |
 | Compact results | `MetricStrip`, `KpiCard` | Show the value, meaning, and semantic trend. |
 | Direction | `TrendIndicator` | Use words, an arrow, and green/red/neutral styling together. |
@@ -66,8 +67,8 @@ empty states. Icons beside text are decorative; standalone icons require a
 The contract applies to Overview, Search Rankings, Local Search, Website
 Health, Next Steps, Reports, Data Connections, Locations, Search Value,
 Competitors, and Directory Listings. UX11/T30 applies the system first to
-Overview and Next Steps. UX12/T31 then completes the remaining page-specific
-charts, maps, and task flows.
+Overview and Next Steps. UX12/T31 completes the remaining page-specific
+charts, maps, decision summaries, progress visuals, and task flows.
 
 ## Visual rules
 

@@ -51,9 +51,10 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 ## 1A. Active Customer UX Sprint Sequence
 
 > **Execution status (2026-08-03):** UX5-UX9 established the working customer
-> baseline, and UX10 established the shared plain-language and visual system.
-> UX11 is next to simplify Overview and Next Steps, followed by UX12 across the
-> remaining customer pages. Recommendation-only
+> baseline, UX10 established the shared plain-language and visual system, and
+> UX11-UX12 completed the owner-journey and cross-page rollout. The next
+> customer product phase is I1.2 improvement forecasting and scenario modeling.
+> Recommendation-only
 > intelligence remains enabled; autonomous customer-site mutations and
 > automatic policy updates remain disabled.
 
@@ -402,6 +403,22 @@ Acceptance criteria:
 - No core page requires technical SEO knowledge to understand its first screen.
 - Visual regression and task-based tests cover desktop, tablet, and mobile for
   every primary route.
+
+Completion record (2026-08-03):
+- Every remaining customer page now uses the compact purpose-and-start pattern
+  so the current result appears higher on desktop and mobile.
+- Website Health, Directory Listings, Competitors, Search Value, Locations,
+  Reports, and Data Connections lead with a shared owner decision panel that
+  states the result, business meaning, and real next action.
+- Listings, Locations, Reports, and Connections use accessible progress visuals;
+  Search Value adds a readable scenario comparison; existing Rankings, Local
+  Search, and Website Health charts and maps remain tied to real data.
+- Duplicate Website Health and Reports summary panels were removed, Locations
+  setup is progressively disclosed, and provider/runtime detail remains
+  optional instead of competing with the primary decision.
+- Cross-page source contracts cover compact hierarchy, one dismissible guide,
+  decision visuals, accessible progress state, and removal of duplicated
+  console-style summaries.
 
 ## 1B. Roadmap Tracks and Next Product Phase
 

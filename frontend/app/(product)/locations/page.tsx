@@ -8,6 +8,7 @@ import {
   EmptyState,
   KpiCard,
   LoadingCard,
+  OwnerDecisionPanel,
   ProductPageIntro,
   TruthNotice,
   useLocationContext,
@@ -416,6 +417,7 @@ export default function LocationsPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
+          compact
           eyebrow="Business locations"
           title="Manage every location in one place"
           summary="Keep the main business and each physical location connected, while giving every location its own website, search results, and recommended actions."
@@ -452,41 +454,101 @@ export default function LocationsPage() {
         ) : null}
 
         {!loading ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <KpiCard
-              label="Account groups"
-              value={String(totals.subaccounts)}
-              summary="Brands, clients, or divisions connected to the main account."
-            />
-            <KpiCard
-              label="Business locations"
-              value={String(totals.business_locations)}
-              summary={`${totals.active_business_locations} currently active and available for campaign work.`}
-              tone={totals.business_locations > 0 ? "highlight" : undefined}
-            />
-            <KpiCard
-              label="Locations being tracked"
-              value={String(totals.campaigns)}
-              summary="Locations with their own website and search tracking."
-            />
-            <KpiCard
-              label="Needs assignment"
-              value={String(totals.unassigned_business_locations)}
+          <>
+            <OwnerDecisionPanel
+              eyebrow="Portfolio readiness"
+              title={
+                totals.business_locations === 0
+                  ? "Add the first business location"
+                  : totals.unassigned_business_locations > 0
+                    ? `${totals.unassigned_business_locations} ${totals.unassigned_business_locations === 1 ? "location needs" : "locations need"} an account group`
+                    : totals.campaigns < totals.business_locations
+                      ? `${totals.business_locations - totals.campaigns} ${totals.business_locations - totals.campaigns === 1 ? "location needs" : "locations need"} search tracking`
+                      : "Every location is organized and being tracked"
+              }
               summary={
+                totals.business_locations === 0
+                  ? "Each physical branch needs its own location record before results and recommendations can stay separate."
+                  : hierarchyTruth.summary
+              }
+              nextStep={
+                totals.business_locations === 0
+                  ? "Open the guided setup and add the first account group, location, and website."
+                  : totals.unassigned_business_locations > 0
+                    ? "Assign the unorganized location to the correct business group."
+                    : totals.campaigns < totals.business_locations
+                      ? "Connect the next location's website so it can receive its own results and actions."
+                      : "Choose a location below whenever you want to review its individual performance."
+              }
+              actionLabel={
+                totals.campaigns < totals.business_locations || totals.unassigned_business_locations > 0
+                  ? "Finish location setup"
+                  : undefined
+              }
+              onAction={
+                totals.campaigns < totals.business_locations || totals.unassigned_business_locations > 0
+                  ? () =>
+                      document
+                        .getElementById("location-setup")
+                        ?.scrollIntoView({ behavior: "smooth" })
+                  : undefined
+              }
+              tone={
                 totals.unassigned_business_locations > 0
-                  ? "Legacy locations still need an account group."
-                  : "Every business location belongs to an account group."
+                  ? "urgent"
+                  : totals.business_locations === 0 || totals.campaigns < totals.business_locations
+                    ? "warning"
+                    : "positive"
+              }
+              progress={
+                totals.business_locations > 0
+                  ? {
+                      label: "Locations with individual search tracking",
+                      value: totals.campaigns,
+                      total: totals.business_locations,
+                      summary: "Tracked locations keep their results and recommendations separate.",
+                    }
+                  : undefined
               }
             />
-          </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <KpiCard
+                label="Account groups"
+                value={String(totals.subaccounts)}
+                summary="Brands, clients, or divisions connected to the main account."
+              />
+              <KpiCard
+                label="Business locations"
+                value={String(totals.business_locations)}
+                summary={`${totals.active_business_locations} currently active and available for campaign work.`}
+                tone={totals.business_locations > 0 ? "highlight" : undefined}
+              />
+              <KpiCard
+                label="Locations being tracked"
+                value={String(totals.campaigns)}
+                summary="Locations with their own website and search tracking."
+              />
+              <KpiCard
+                label="Needs assignment"
+                value={String(totals.unassigned_business_locations)}
+                summary={
+                  totals.unassigned_business_locations > 0
+                    ? "Legacy locations still need an account group."
+                    : "Every business location belongs to an account group."
+                }
+              />
+            </div>
+          </>
         ) : null}
 
         {!loading ? (
-          <section
+          <details
             id="location-setup"
+            open={totals.business_locations === 0 ? true : undefined}
             className="rounded-md border border-[#2c2d32] bg-[#121316] p-4 shadow-[0_0_30px_rgba(0,0,0,0.35)]"
           >
-            <div className="flex flex-col gap-2 border-b border-[#26272c] pb-4 md:flex-row md:items-end md:justify-between">
+            <summary className="flex cursor-pointer list-none flex-col gap-2 border-b border-[#26272c] pb-4 md:flex-row md:items-end md:justify-between">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                   Guided setup
@@ -499,7 +561,7 @@ export default function LocationsPage() {
                 Choose the business group, add the physical location, then connect its website.
                 InsightOS handles the technical setup behind the scenes.
               </p>
-            </div>
+            </summary>
 
             <div className="mt-4 grid gap-4 xl:grid-cols-3">
               <form
@@ -670,7 +732,7 @@ export default function LocationsPage() {
                 </button>
               </form>
             </div>
-          </section>
+          </details>
         ) : null}
 
         {!loading && (hierarchy?.subaccounts.length || 0) === 0 ? (

@@ -16,6 +16,7 @@ export * from "./MobileNav";
 export * from "./LoadingCard";
 export * from "./LocationContext";
 export * from "./OnboardingWizard";
+export * from "./OwnerDecisionPanel";
 export * from "./ProductPageIntro";
 export * from "./ProductIcon";
 export * from "./PageSection";

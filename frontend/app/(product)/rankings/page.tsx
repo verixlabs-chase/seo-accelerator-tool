@@ -713,6 +713,7 @@ export default function RankingsPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
+          compact
           eyebrow="Search rankings"
           title="Where your business shows up in search"
           summary="See which customer searches bring up each location, whether you are moving up or down, and which search phrase to work on next."

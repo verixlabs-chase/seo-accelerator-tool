@@ -521,6 +521,7 @@ export default function LocalVisibilityPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
+          compact
           eyebrow="Local search"
           title="Can nearby customers find your business?"
           summary="See how visible this location is in nearby searches, whether reviews are helping, and what to improve next."

@@ -8,6 +8,7 @@ import {
   EmptyState,
   KpiCard,
   LoadingCard,
+  OwnerDecisionPanel,
   ProductPageIntro,
   TruthNotice,
   useLocationContext,
@@ -267,6 +268,7 @@ export default function CitationsPage() {
           eyebrow="Directory listings"
           title="Keep your business listings accurate"
           summary="Track where your business appears on sites such as Google and other directories. Start a listing request, check its progress, and open confirmed listings."
+          compact
         />
 
         <TruthNotice title="A submitted listing may not be live yet.">
@@ -304,6 +306,63 @@ export default function CitationsPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
+            <OwnerDecisionPanel
+              title={
+                !statusResult
+                  ? "Load the current listing status"
+                  : failedCount > 0
+                    ? `${failedCount} ${failedCount === 1 ? "listing needs" : "listings need"} attention`
+                    : citations.length === 0
+                      ? "No listings are being tracked yet"
+                      : liveCount === citations.length
+                        ? "Every tracked listing is confirmed"
+                        : `${liveCount} of ${citations.length} listings are confirmed`
+              }
+              summary={
+                !statusResult
+                  ? "InsightOS has not loaded the saved directory results for this location yet."
+                  : failedCount > 0
+                    ? "A failed request can leave customers seeing missing or inconsistent business information."
+                    : citations.length === 0
+                      ? "Add the most important directory first, then track it until the listing is confirmed."
+                      : liveCount === citations.length
+                        ? "Confirmed listings need no action unless the business name, address, or phone number changes."
+                        : `${pendingCount} ${pendingCount === 1 ? "request is" : "requests are"} still being processed by directories.`
+              }
+              nextStep={
+                failedCount > 0
+                  ? "Check the failed listing below, correct the business information, and submit it again."
+                  : !statusResult
+                    ? "Load the listing status so you can see what is live, pending, or failed."
+                    : citations.length === 0
+                      ? "Enter a directory name below and start the first listing request."
+                      : liveCount === citations.length
+                        ? "Leave confirmed listings alone and check again after business information changes."
+                        : "Check for updates before starting duplicate listing requests."
+              }
+              actionLabel={statusResult ? "Check for updates" : "Load listing status"}
+              onAction={() => void refreshStatus()}
+              tone={
+                failedCount > 0
+                  ? "urgent"
+                  : statusResult && citations.length > 0 && liveCount === citations.length
+                    ? "positive"
+                    : statusResult
+                      ? "warning"
+                      : "neutral"
+              }
+              progress={
+                statusResult && citations.length > 0
+                  ? {
+                      label: "Confirmed listing progress",
+                      value: liveCount,
+                      total: citations.length,
+                      summary: "Only live or verified listings count as confirmed.",
+                    }
+                  : undefined
+              }
+            />
+
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
                 label="Listings tracked"
@@ -400,7 +459,7 @@ export default function CitationsPage() {
                       Status
                     </p>
                     <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                      Citation status
+                      Listing progress
                     </h2>
                     <p className="mt-1.5 text-sm leading-6 text-zinc-300">
                       {statusResult
@@ -416,15 +475,15 @@ export default function CitationsPage() {
                     {busyAction === "refresh"
                       ? "Refreshing..."
                       : statusResult
-                        ? "Refresh status"
-                        : "Load citation status"}
+                        ? "Check for updates"
+                        : "Load listing status"}
                   </button>
                 </div>
 
                 {!statusResult ? (
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                     <p className="text-sm leading-6 text-zinc-400">
-                      Citation status has not been loaded yet. Use the button above to pull the
+                      Listing status has not been loaded yet. Use the button above to pull the
                       current status of all directory submissions for this business.
                     </p>
                   </div>

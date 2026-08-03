@@ -13,7 +13,7 @@
 > working baseline. Customer screenshot review found that the interface still
 > has dense operations-console patterns, repeated status content, technical
 > copy, weak visual hierarchy, and too little decision-useful visualization.
-> UX10-UX12 are the active follow-on sequence. The authoritative execution
+> UX10-UX12 are now complete. The authoritative execution
 > brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
 >
 > **Sprint 9 language standard:** Design and write for an owner or manager of a service-based
@@ -529,6 +529,15 @@ would be incomplete or misleading.
 space, dead controls, unnecessary badges, and priority content below the fold.
 60. Complete route-by-route visual regression, keyboard, screen-reader, and
 five-second comprehension QA.
+
+Completion record (2026-08-03):
+- The compact page-purpose pattern and shared owner decision panel now place
+  the current result and next action above setup and supporting details.
+- Real-data charts and maps remain on Rankings, Local Search, and Website
+  Health; Listings, Search Value, Locations, Reports, and Connections add
+  accessible progress or comparison visuals without inventing history.
+- Duplicate summaries and setup-first layouts were reduced, and source tests
+  enforce route coverage, one dismissible guide, and truthful visualization.
 
 ---
 

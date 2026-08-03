@@ -8,6 +8,7 @@ import {
   EmptyState,
   KpiCard,
   LoadingCard,
+  OwnerDecisionPanel,
   ProductPageIntro,
   TruthNotice,
   useLocationContext,
@@ -304,6 +305,7 @@ export default function CompetitorsPage() {
     >
       <section className="space-y-6">
         <ProductPageIntro
+          compact
           eyebrow="Competitors"
           title="See where nearby competitors are ahead"
           summary="Add a competitor’s website, run a comparison, and see where they are easier to find so you know where to catch up."
@@ -344,6 +346,54 @@ export default function CompetitorsPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
+            <OwnerDecisionPanel
+              title={
+                competitors.length === 0
+                  ? "Add the first business you compete with"
+                  : !topGap
+                    ? "A fresh comparison is needed"
+                    : `${topGap.domain} has the largest lead`
+              }
+              summary={
+                competitors.length === 0
+                  ? "One or two close local competitors are enough to show where customers may be choosing another business."
+                  : !topGap
+                    ? "Competitors are saved, but InsightOS does not have enough comparison data to show where they are ahead."
+                    : `${topGap.domain} has a gap score of ${topGap.gap_score} and currently appears around position ${topGap.position}. A larger score means a larger visibility lead.`
+              }
+              nextStep={
+                competitors.length === 0
+                  ? "Add the closest local competitor below, then run the first comparison."
+                  : "Run a fresh comparison before choosing which gap to work on."
+              }
+              actionLabel={competitors.length === 0 ? "Add a competitor" : "Run fresh comparison"}
+              onAction={() => {
+                if (competitors.length === 0) {
+                  document.getElementById("competitor-setup")?.scrollIntoView({ behavior: "smooth" });
+                  return;
+                }
+                void collectSnapshot();
+              }}
+              tone={
+                topGap?.gap_score && topGap.gap_score >= 70
+                  ? "urgent"
+                  : topGap
+                    ? "warning"
+                    : "neutral"
+              }
+              progress={
+                topGap
+                  ? {
+                      label: "Size of the largest visibility gap",
+                      value: topGap.gap_score,
+                      total: 100,
+                      valueLabel: `${topGap.gap_score} / 100`,
+                      summary: "A longer bar means the competitor has a larger lead to close.",
+                    }
+                  : undefined
+              }
+            />
+
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
                 label="Competitors tracked"
@@ -382,7 +432,10 @@ export default function CompetitorsPage() {
             </div>
 
             <div className="grid gap-5 xl:grid-cols-[0.72fr_1.28fr]">
-              <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <section
+                id="competitor-setup"
+                className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]"
+              >
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                   Setup
                 </p>
@@ -476,7 +529,7 @@ export default function CompetitorsPage() {
                   Analysis
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  Gap analysis
+                  Where competitors are ahead
                 </h2>
                 <p className="mt-1.5 text-sm leading-6 text-zinc-300">
                   Gap scores show where tracked competitors outrank you. A higher score means a
@@ -534,10 +587,10 @@ export default function CompetitorsPage() {
                   Data collection
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  Collect competitor snapshot
+                  Run a fresh competitor comparison
                 </h2>
                 <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                  Collecting a snapshot queues a background job that pulls ranking positions, page
+                  InsightOS checks ranking positions, page
                   visibility scores, and competitive signals for all tracked competitors. Gap data
                   refreshes once the job completes. Results shown below reflect the current database
                   state.
@@ -557,13 +610,13 @@ export default function CompetitorsPage() {
                     disabled={busyAction !== ""}
                     className="rounded-md border border-[#26272c] bg-[#141518] px-4 py-2 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {busyAction === "snapshot" ? "Queuing..." : "Collect latest data"}
+                    {busyAction === "snapshot" ? "Starting..." : "Run fresh comparison"}
                   </button>
 
                   {snapshotResult ? (
                     <div className="mt-5">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                        Last collection result
+                        Latest comparison
                       </p>
                       <p className="mt-2 text-sm leading-6 text-zinc-300">
                         {snapshotResult.summary.snapshots_collected > 0
