@@ -23,8 +23,12 @@
 > remain unknown. The bounded **I1.3 daily action brief is now implemented**:
 > each location can receive up to three engine-approved actions with current
 > checklist context and plain-language AI wording. The next I1.3 slice is
-> evidence-based questions and answers.
-> remaining roadmap
+> evidence-based questions and answers. **I1.4/T29: Measured Website and Google
+> Business Profile Action Tracks** is now scheduled after G1.4 connects live
+> profile performance data. It will show the real metric each action is meant
+> to move, the starting value, the waiting period, and the measured result
+> without treating checklist completion as proof of improvement.
+> The remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7 and DT1,
 > evidence-backed intelligence in I1, research/content/AI visibility in
@@ -61,8 +65,9 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 > **Execution status (2026-08-03):** UX5-UX9 established the working customer
 > baseline, UX10 established the shared plain-language and visual system, and
 > UX11-UX12 completed the owner-journey and cross-page rollout. The next
-> customer product phase is I1.2 improvement forecasting and scenario modeling.
-> Recommendation-only
+> customer product phase is the remaining I1.3 governed-AI utility work,
+> beginning with evidence-based questions and answers. I1.4/T29 follows G1.4's
+> live Google Business Profile metric connection. Recommendation-only
 > intelligence remains enabled; autonomous customer-site mutations and
 > automatic policy updates remain disabled.
 
@@ -465,29 +470,30 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 13 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
 | 14 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
 | 15 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
-| 16 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
-| 17 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, and multi-location comparisons replace the core BrightLocal reputation workflow. |
-| 18 | **DT1 - Data Trust and Connection Health Center** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
-| 19 | **ML1 - Portfolio Intelligence** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
-| 20 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
-| 21 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
-| 22 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
-| 23 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
-| 24 | **COM1 paid-beta slice - Checkout and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, recover payment, and cancel without operator database work. |
-| 25 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
-| 26 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 27 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
-| 28 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
-| 29 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 30 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 31 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 32 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 33 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 34 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 35 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
-| 36 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
-| 37 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 38 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
+| 16 | **I1.4/T29 - Measured Website and Google Business Profile Action Tracks** | Every website and profile action identifies the real metric it is meant to improve, shows the location's starting value, and returns with an honest measured result after the waiting period. |
+| 17 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
+| 18 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, and multi-location comparisons replace the core BrightLocal reputation workflow. |
+| 19 | **DT1 - Data Trust and Connection Health Center** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
+| 20 | **ML1 - Portfolio Intelligence** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
+| 21 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
+| 22 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
+| 23 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
+| 24 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 25 | **COM1 paid-beta slice - Checkout and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, recover payment, and cancel without operator database work. |
+| 26 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
+| 27 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 28 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
+| 29 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
+| 30 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 31 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 32 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 33 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 34 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 35 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 36 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
+| 37 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
+| 38 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 39 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 Release R1 is complete as of 2026-07-30. The I1.0 migration is applied, hosted
 CrUX configuration is active, the API is deployed, the first standards check
@@ -756,11 +762,18 @@ Scope:
 - Synchronize the profile identity, primary and secondary categories, services,
   hours, special hours, address/service area, phone, website, attributes,
   description, photos, posts, and supported performance metrics.
+- Collect location-scoped Business Profile Performance time series for supported
+  Search and Maps impressions, website clicks, call clicks, direction requests,
+  bookings when applicable, and monthly search-keyword impressions. Store the
+  provider metric name, date range, freshness, and missing-data reason.
 - Audit profile completeness, category fit, NAP consistency, service-area
   coverage, hour accuracy, photo freshness, and posting cadence.
 - Compare supported profile attributes with the businesses that repeatedly
   outrank the location in local rank-grid results.
 - Turn audit findings into evidence-backed recommended actions.
+- Map every profile action to one primary metric it can reasonably influence
+  and any secondary context metrics. Profile completeness and field accuracy
+  remain audit facts; they are not relabeled as customer or visibility results.
 - Allow profile edits, posts, and other supported mutations only through an
   explicit review and approval workflow. No automatic profile mutation is
   enabled by default.
@@ -774,10 +787,124 @@ Acceptance criteria:
 - Missing or unsupported fields are labeled honestly rather than scored as
   failures.
 - Every audit recommendation identifies the profile field, evidence, expected
-  benefit, and owner action.
+  benefit, owner action, primary metric, current value, source date, and honest
+  measurement state.
+- A completed profile action enters its stated observation window and later
+  shows the same metric and location before and after. A checkbox alone cannot
+  produce an `improved` result.
 - A profile mutation cannot run without an authorized connection, explicit
   approval, audit history, and rollback/recovery guidance where the provider
   supports it.
+
+### Intelligence I1.4/T29 - Measured Website and Google Business Profile Action Tracks
+
+Goal: make every action answer a service owner's practical question: **What am
+I doing, which real number should it affect, and did that number improve after
+the work?**
+
+Scheduling and dependencies:
+
+- The Website track builds on released I1.1 website measurements, connected
+  Search Console data, completed I1.4/T27 baseline capture, and completed
+  I1.2/T28 forecasting.
+- The Google Business Profile track follows G1.4's authorized location mapping
+  and live Performance API ingestion. Demo, manually entered, or synthetic
+  profile numbers cannot satisfy this sprint.
+- G1.7 website visits and form outcomes may be added later as clearly labeled
+  secondary business outcomes. CRM and call-tracking integrations remain out
+  of scope.
+
+Customer experience:
+
+- Split action plans into two obvious lanes: `Improve your website` and
+  `Improve your Google Business Profile`. Keep each action location-scoped.
+- Every action card leads with one plain-language instruction and one direct
+  primary measurement. Show:
+  - `What to do`;
+  - `Why this matters`;
+  - `What we are measuring`;
+  - `Starting value` and measurement date range;
+  - `Target` or honest expected range when a governed model supports one;
+  - `When to check again`;
+  - `Result` as `improved`, `about the same`, `worse`, `waiting for results`, or
+    `not enough information`;
+  - metric source, freshness, scope, and a link to supporting detail.
+- Put the primary metric and its before/after visual beside the checklist, not
+  in a separate technical panel below the fold.
+- Explain the result in business language, for example: `The main page became
+  0.6 seconds faster after this work` or `Google Profile website clicks were 18
+  before and 24 during the comparison period.` Do not claim that the action
+  caused leads, revenue, or rankings when those outcomes were not measured.
+
+Website measurement contract:
+
+- Map performance work to same-scope Core Web Vitals such as LCP, INP, and CLS.
+  Lab measurements remain labeled as lab checks and are never substituted for
+  field results.
+- Map Search Console work to the verified page/query/location measurements it
+  directly targets, such as clicks, impressions, CTR, or average position.
+- Map crawl and on-page work to direct counts or ratios such as affected pages,
+  indexable pages, broken links, missing titles, or internal-link coverage.
+- Compare the same URL or origin, device/form factor, provider, metric
+  definition, and governed time window. If those scopes change, begin a new
+  baseline instead of displaying a false comparison.
+
+Google Business Profile measurement contract:
+
+- Use provider-returned location metrics only: supported Search/Maps
+  impressions, website clicks, call clicks, direction requests, bookings when
+  applicable, and monthly search-keyword impressions.
+- Keep review count, review pace, average rating, response coverage, profile
+  field accuracy, photo freshness, and posting cadence distinct. Each action
+  uses the metric that matches the work rather than one catch-all profile
+  score.
+- Use profile configuration changes as intervention evidence, not proof of
+  performance. Only a later same-location measurement can establish the
+  observed result.
+
+Data and governance requirements:
+
+- Persist a versioned measurement contract per action containing the primary
+  metric ID, provider/source, entity scope, baseline range and value,
+  intervention timestamp, observation window, comparison range and value,
+  target/forecast when supported, and result classification.
+- Permit secondary metrics for context, but never let a favorable secondary
+  trend overwrite an unfavorable or missing primary result.
+- When a required connection, metric, baseline, or observation window is
+  missing, show exactly what is needed. Do not display a numeric forecast,
+  generic `success`, or invented proxy score.
+- AI may explain the stored facts in simpler language. It cannot choose a new
+  metric, alter a baseline, shorten a waiting period, or make a causal claim.
+
+Implementation slices:
+
+1. **T29A - Measurement contracts:** map governed website and profile actions
+   to direct primary metrics and add same-scope baseline/result validation.
+2. **T29B - Action value UI:** add the two action lanes, metric strip,
+   before/after visual, waiting state, and plain-language result explanation.
+3. **T29C - Production proof:** verify one website action and one connected GBP
+   action for each test location through baseline, completion, waiting period,
+   and post-action measurement without cross-location blending.
+
+Acceptance criteria:
+
+- Every displayed website or profile action has a real, location-scoped primary
+  metric and fresh baseline, or an explicit reason measurement is unavailable.
+- A user can see the starting number, what work was completed, when the result
+  will be checked, the new number, and the difference without opening advanced
+  evidence.
+- Completing checklist steps records work but cannot mark the metric as
+  improved. A genuinely later provider measurement is required.
+- Before/after comparisons use the same provider, metric definition, entity,
+  location, device where applicable, and governed comparison window.
+- Website and GBP actions never share or blend measurements across locations.
+- Unsupported lead, revenue, ranking, or causation claims remain unknown rather
+  than being estimated from a convenient proxy.
+- Automated tests cover missing connections, stale data, scope mismatch,
+  provider metric changes, insufficient waiting periods, and cross-tenant and
+  cross-location isolation.
+- In a five-second test, a non-technical service-business owner can answer:
+  `What should I do?`, `Which number should move?`, and `Did it help?`
 
 ### Growth G1.5 - Listings and Citation Intelligence
 

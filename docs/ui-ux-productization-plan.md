@@ -16,7 +16,10 @@
 > UX10-UX12, I1.4/T27 measurement readiness, and I1.2/T28 evidence-backed
 > forecasting and the bounded I1.3 daily action brief are now complete. The
 > remaining I1.3 utility slices are next, beginning with evidence-based
-> questions and answers. The authoritative execution
+> questions and answers. The follow-on **I1.4/T29 measured action-value
+> sprint** is scheduled after G1.4 supplies live Google Business Profile
+> performance data; it adds separate Website and Google Profile action lanes
+> with real baselines and measured results. The authoritative execution
 > brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
 >
 > **Sprint 9 language standard:** Design and write for an owner or manager of a service-based
@@ -532,6 +535,26 @@ would be incomplete or misleading.
 space, dead controls, unnecessary badges, and priority content below the fold.
 60. Complete route-by-route visual regression, keyboard, screen-reader, and
 five-second comprehension QA.
+
+### Follow-on product sprint — I1.4/T29 measured website and Google Profile actions
+
+61. Separate the action workspace into `Improve your website` and `Improve your
+Google Business Profile` so a service owner immediately understands where the
+work will happen.
+62. Put a compact real-metric strip beside every action: metric name, current
+value, source date, target or supported range, and `check again` date.
+63. After the waiting period, replace the forecast emphasis with a simple
+before/after visual and `improved`, `about the same`, `worse`, or `not enough
+information` result.
+64. Keep source, scope, provider, device, and technical evidence available in
+details while the default view answers `What do I do?`, `Which number should
+move?`, and `Did it help?`.
+65. Never display a success state from checklist completion alone. Require a
+new same-scope provider measurement, and explain the missing connection or
+baseline when a result cannot be measured.
+66. Use live website measurements from CWV, Search Console, and governed crawl
+facts. Use location-scoped Google Business Profile performance and reputation
+metrics only after G1.4's authorized production connection is active.
 
 Completion record (2026-08-03):
 - The compact page-purpose pattern and shared owner decision panel now place
