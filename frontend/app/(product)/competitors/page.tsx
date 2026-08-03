@@ -413,7 +413,7 @@ export default function CompetitorsPage() {
                 summary={
                   topGap
                     ? `Highest gap score belongs to ${topGap.domain} at position ${topGap.position}.`
-                    : "Collect a snapshot to see gap scores."
+                    : "Run a comparison to see where competitors are ahead."
                 }
               />
               <KpiCard
@@ -426,7 +426,7 @@ export default function CompetitorsPage() {
                 summary={
                   snapshotResult
                     ? "A snapshot job was queued this session. Gap data reflects the latest database state."
-                    : "Use the collect button below to pull fresh competitor data."
+                    : "Run a fresh comparison below when you need current competitor data."
                 }
               />
             </div>
@@ -534,7 +534,7 @@ export default function CompetitorsPage() {
                 <p className="mt-1.5 text-sm leading-6 text-zinc-300">
                   Gap scores show where tracked competitors outrank you. A higher score means a
                   larger gap to close. Scores are sorted from largest to smallest. Collect a
-                  snapshot first if this section is empty.
+                  comparison first if this section is empty.
                 </p>
               </div>
 
@@ -542,8 +542,8 @@ export default function CompetitorsPage() {
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                   <p className="text-sm leading-6 text-zinc-400">
                     {competitors.length === 0
-                      ? "Add competitors first, then collect a snapshot to see gap data here."
-                      : "No gap data is available yet. Use the collect button below to pull the latest competitor ranking data."}
+                      ? "Add competitors first, then run a comparison to see where they are ahead."
+                      : "No comparison is available yet. Run a fresh comparison below to collect the latest positions."}
                   </p>
                 </div>
               ) : (
@@ -600,7 +600,7 @@ export default function CompetitorsPage() {
               {competitors.length === 0 ? (
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                   <p className="text-sm leading-6 text-zinc-400">
-                    Add at least one competitor before collecting a snapshot.
+                    Add at least one competitor before running a comparison.
                   </p>
                 </div>
               ) : (

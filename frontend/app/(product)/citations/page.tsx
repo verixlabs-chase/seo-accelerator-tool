@@ -370,7 +370,7 @@ export default function CitationsPage() {
                 summary={
                   statusResult
                     ? "Total directory submissions tracked for this business."
-                    : "Load citation status to see how many directories are tracked."
+                    : "Load listing status to see how many directories are tracked."
                 }
               />
               <KpiCard
@@ -379,7 +379,7 @@ export default function CitationsPage() {
                 summary={
                   statusResult
                     ? "Directories where the listing is confirmed live."
-                    : "Load citation status to see how many listings are live."
+                    : "Load listing status to see how many listings are live."
                 }
                 tone={liveCount > 0 ? "highlight" : undefined}
               />
@@ -389,7 +389,7 @@ export default function CitationsPage() {
                 summary={
                   statusResult
                     ? "Submissions that have been sent but are not yet confirmed live."
-                    : "Load citation status to see how many are still processing."
+                    : "Load listing status to see how many are still processing."
                 }
               />
               <KpiCard
@@ -400,7 +400,7 @@ export default function CitationsPage() {
                     ? failedCount > 0
                       ? "These submissions were not accepted. You can resubmit or check the directory manually."
                       : "No failures recorded."
-                    : "Load citation status to check for any failed submissions."
+                    : "Load listing status to check for any failed submissions."
                 }
               />
             </div>

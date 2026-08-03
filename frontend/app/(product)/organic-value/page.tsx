@@ -406,9 +406,21 @@ export default function OrganicValuePage() {
         {!loading && campaigns.length > 0 && baseline ? (
           <>
             <OwnerDecisionPanel
-              title={`Your current search visibility is estimated at ${formatMetric(baseline.current_value)}`}
-              summary={`The tracked search phrases show ${formatMetric(baseline.upside_opportunity)} in possible near-term upside. This is the cost of replacing visibility with ads, not promised revenue.`}
-              nextStep="Open Search Rankings and start with a valuable phrase that is already close to page one."
+              title={
+                baseline.current_value.status === "available"
+                  ? `Your current search visibility is estimated at ${formatMetric(baseline.current_value)}`
+                  : "There is not enough market data for a value estimate"
+              }
+              summary={
+                baseline.current_value.status === "available"
+                  ? `The tracked search phrases show ${formatMetric(baseline.upside_opportunity)} in possible near-term upside. This is the cost of replacing visibility with ads, not promised revenue.`
+                  : "InsightOS will not guess a dollar value without saved search demand and typical ad-cost information."
+              }
+              nextStep={
+                baseline.current_value.status === "available"
+                  ? "Open Search Rankings and start with a valuable phrase that is already close to page one."
+                  : "Run a ranking check, then collect market data for the phrases this location tracks."
+              }
               actionLabel="Choose a search phrase"
               onAction={() => router.push("/rankings")}
               tone={Number(baseline.current_value.amount || 0) > 0 ? "positive" : "warning"}
@@ -501,35 +513,47 @@ export default function OrganicValuePage() {
                 keyword economics rows. They are useful for demos and pilots, not for precision
                 forecasting.
               </p>
-              <div
-                className="mt-5 space-y-3 border-y border-[#2b2c31] py-4"
-                aria-label="Estimated search value by scenario"
-              >
-                {baseline.scenarios.map((scenario) => {
-                  const projectedValue = Number(scenario.projected_value) || 0;
-                  const width = Math.max(4, (projectedValue / scenarioMaxValue) * 100);
-                  return (
-                    <div key={`visual-${scenario.key}`}>
-                      <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="font-medium text-zinc-200">{scenario.label}</span>
-                        <span className="text-zinc-300">${scenario.projected_value}</span>
+              {baseline.scenarios.some((scenario) => Number(scenario.projected_value) > 0) ? (
+                <div
+                  className="mt-5 space-y-3 border-y border-[#2b2c31] py-4"
+                  aria-label="Estimated search value by scenario"
+                >
+                  {baseline.scenarios.map((scenario) => {
+                    const projectedValue = Number(scenario.projected_value) || 0;
+                    const width = (projectedValue / scenarioMaxValue) * 100;
+                    return (
+                      <div key={`visual-${scenario.key}`}>
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="font-medium text-zinc-200">{scenario.label}</span>
+                          <span className="text-zinc-300">${scenario.projected_value}</span>
+                        </div>
+                        <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-[#27282d]">
+                          <div
+                            className="h-full rounded-full bg-accent-500"
+                            style={{ width: `${Math.min(100, width)}%` }}
+                            role="img"
+                            aria-label={`${scenario.label}: $${scenario.projected_value} estimated monthly search value`}
+                          />
+                        </div>
                       </div>
-                      <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-[#27282d]">
-                        <div
-                          className="h-full rounded-full bg-accent-500"
-                          style={{ width: `${Math.min(100, width)}%` }}
-                          role="img"
-                          aria-label={`${scenario.label}: $${scenario.projected_value} estimated monthly search value`}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-                <p className="text-xs leading-5 text-zinc-500">
-                  Longer bars show a larger estimated paid-ad replacement value. They do not show
-                  guaranteed revenue or profit.
-                </p>
-              </div>
+                    );
+                  })}
+                  <p className="text-xs leading-5 text-zinc-500">
+                    Longer bars show a larger estimated paid-ad replacement value. They do not show
+                    guaranteed revenue or profit.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-5 border-y border-[#2b2c31] py-4">
+                  <p className="text-sm font-semibold text-white">
+                    A scenario comparison needs market data
+                  </p>
+                  <p className="mt-1.5 text-sm leading-6 text-zinc-400">
+                    No bars are shown because every current estimate is $0.00. Run ranking and
+                    market-data collection before comparing possible values.
+                  </p>
+                </div>
+              )}
               <div className="mt-4 grid gap-4 xl:grid-cols-3">
                 {baseline.scenarios.map((scenario) => (
                   <div key={scenario.key} className="rounded-md border border-[#26272c] bg-[#111214] p-4">
