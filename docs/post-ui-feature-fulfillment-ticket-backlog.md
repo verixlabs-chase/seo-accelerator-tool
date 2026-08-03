@@ -1,6 +1,13 @@
 # Post-UI Feature Fulfillment Ticket Backlog
 
-> **Status update (2026-07-28):** This remains the workflow-fulfillment backlog, but it is no longer the master next-sprint sequence. Execution, reports, competitors, citations, locations, local visibility, and site-health routes are now present. The active next sprints focus on location context, navigation clarity, Rankings/Site Health comprehension, and the Local Visibility map; see [claude-next-build-brief.md](./claude-next-build-brief.md#1a-active-next-sprint-sequence). Remaining tickets in this file should be scheduled behind or alongside that customer-comprehension work, not used to add more top-level destinations.
+> **Status update (2026-08-03):** This remains the workflow-fulfillment backlog,
+> but it is no longer the master next-sprint sequence. The working routes are in
+> place. Customer review now prioritizes T26 followed by UX10-UX12 / T29-T31:
+> plain-language checklists, the shared visual system, the Overview and Next
+> Steps redesign, and the cross-page visualization rollout. See
+> [claude-next-build-brief.md](./claude-next-build-brief.md#1a-active-customer-ux-sprint-sequence).
+> Remaining feature tickets should be scheduled behind or alongside that
+> customer-comprehension work, not used to add more dense top-level surfaces.
 
 ## 1. Executive Summary
 
@@ -596,6 +603,97 @@ Execution priority for this phase:
     `insufficient data`
 - Recommended order: 28
 
+### T29. Build the plain-language and visual product system
+
+- Goal: replace page-by-page improvisation with one service-owner language,
+  icon, hierarchy, metric, and visualization system.
+- Files likely affected:
+  - `backend/app/intelligence/lexicon/service_business_language_guide.md`
+  - `frontend/app/(product)/components/`
+  - `frontend/app/(product)/nav.config.ts`
+  - shared customer-copy and visual-regression tests
+- Backend dependency: current AI language guide and deterministic fallbacks.
+- Frontend dependency: current authenticated shell and design tokens.
+- Risk level: Medium
+- Feature flag needed or not: Yes, `customer_visual_system_v2_enabled`
+- Acceptance criteria:
+  - customer copy uses short service-owner language and explains business meaning
+    before SEO, provider, model, policy, or evidence terminology
+  - static and AI-generated customer copy share a dictionary, prohibited-jargon
+    rules, readability target, and deterministic fallback
+  - an original accessible icon family covers navigation, page types, metrics,
+    actions, status, and empty states without copying Ahrefs artwork or layout
+  - shared metric, trend, comparison, chart, filter, tooltip, details, loading,
+    error, and sparse-data components are documented and tested
+  - positive, negative, and neutral changes use consistent words, arrows, and
+    accessible color semantics; color is never the only signal
+  - cards, badges, borders, and labels exist only when they communicate useful
+    grouping, state, warning, or action
+- Recommended order: immediately after T26 and before customer-visible T27/T28
+
+### T30. Redesign Overview and Next Steps around owner decisions
+
+- Goal: make the two highest-traffic customer pages glanceable, visual, and
+  action-oriented while removing the duplicated console-like experience found
+  in the 2026-08-03 customer screenshots.
+- Files likely affected:
+  - `frontend/app/(product)/dashboard/page.tsx`
+  - `frontend/app/(product)/opportunities/page.tsx`
+  - shared metric, chart, action-list, checklist, and details components
+  - focused frontend tests and visual baselines
+- Backend dependency: dashboard summaries, T25-T26 action plans, and current
+  Search Console/ranking history.
+- Frontend dependency: T29.
+- Risk level: Medium
+- Feature flag needed or not: Yes, `owner_journey_v2_enabled`
+- Acceptance criteria:
+  - Overview shows its key result, first meaningful chart, directional change,
+    and one next action above the fold at 1440×900
+  - Next Steps leads with Today, This week, and This month plus persistent
+    checklist progress and the next unblocked step
+  - the same recommendation is not repeated in a spotlight, horizontal cards,
+    full list, and detail panel at the same time
+  - technical proof opens in one focused details drawer or expandable region
+  - recommendation-engine labels such as `governed target`, `deeper review`,
+    and `possible benefit — more evidence needed` do not appear in the primary
+    customer reading flow
+  - five-second comprehension and desktop/tablet/mobile task tests pass
+- Recommended order: after T29; may close the visible portion of T26
+
+### T31. Apply decision-useful visualization and simplified UX to every page
+
+- Goal: bring Search Rankings, Local Search, Website Health, Directory Listings,
+  Reviews, Competitors, Search Value, Locations, Reports, Settings, and setup
+  states up to the same owner-friendly standard as Overview and Next Steps.
+- Files likely affected:
+  - all routes under `frontend/app/(product)/`
+  - shared charts, maps, tables, filters, trust details, and page-shell components
+  - route-by-route visual and accessibility tests
+- Backend dependency: existing route data; provider-specific visuals remain
+  gated until their real data is available.
+- Frontend dependency: T29 and the approved UX from T30.
+- Risk level: Medium
+- Feature flag needed or not: Yes, route-scoped rollout under
+  `customer_visual_system_v2_enabled`
+- Acceptance criteria:
+  - every route's first screen makes page purpose, location scope, current
+    result, trend/state, and next action clear without technical SEO knowledge
+  - Rankings shows distribution, movers, phrase history, and location comparison
+  - Local Search shows the real location map or allowance-controlled rank grid
+    with keyword-specific results and never substitutes a decorative heat map
+  - Website Health shows current Core Web Vitals, issue concentration, history,
+    and `Fix this first` before technical issue tables
+  - Listings, Reviews, Competitors, Search Value, Locations, and Reports use
+    small readable progress, comparison, outlier, and history visuals where the
+    underlying data supports them
+  - Settings and setup use step-by-step connection and usage status without
+    decorative graphs
+  - every chart exposes location/date scope, honest comparison coverage,
+    accessible legend/tooltip, and truthful no-data or partial-data behavior
+  - route audit removes repeated guidance, duplicated data, oversized empty
+    space, dead controls, unnecessary badges, and priority content below fold
+- Recommended order: after T30 and before final forecasting/report polish
+
 ## 5. Tickets Grouped By Area
 
 ### Execution inbox / approvals / rollback / audit
@@ -613,6 +711,12 @@ Execution priority for this phase:
 - T26 Add deterministic checklists, work routines, and persistent progress
 - T27 Add action baselines, completion proof, and measurement readiness
 - T28 Add action-linked forecast scenarios and outcome comparison
+
+### Plain-language and visual experience
+
+- T29 Build the plain-language and visual product system
+- T30 Redesign Overview and Next Steps around owner decisions
+- T31 Apply decision-useful visualization and simplified UX to every page
 
 ### Competitors
 
@@ -684,6 +788,9 @@ Execution priority for this phase:
 | T26 | T25 + lexicon action steps | T25 | Medium | Yes | 26 |
 | T27 | T25-T26 + execution/outcome records | T26 | High | Yes | 27 |
 | T28 | T25-T27 + forecast models | T27 | High | Yes | 28 |
+| T29 | language guide + current shell | shared product components | Medium | Yes | after T26 |
+| T30 | dashboard summaries + T25-T26 | T29 | Medium | Yes | after T29 |
+| T31 | current route data | T29-T30 | Medium | Yes | after T30 |
 
 ## 7. Dependencies and Blockers
 
@@ -700,6 +807,14 @@ Execution priority for this phase:
 - T26 before T27
 - T27 before T28; forecasts must attach to measurable action plans rather than
   standalone recommendations
+- T26 before T30 so the redesigned Next Steps page is built on persistent work,
+  not another temporary action-card layout
+- T29 before T30 and T31 so language, icons, hierarchy, and chart behavior do
+  not diverge by route
+- T30 before T31 so the highest-traffic journey validates the system before a
+  full cross-page rollout
+- T31 before final T28 customer visualization and RPT1 polish so forecasts and
+  reports reuse the same approved chart and explanation patterns
 
 ### Likely blockers
 

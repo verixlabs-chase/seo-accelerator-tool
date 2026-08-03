@@ -9,7 +9,12 @@
 
 ---
 
-> **Current status (2026-07-29):** Customer UX Sprints UX1-UX8 are now a substantially completed, production-verified baseline. UX9, cross-page UX and visual polish, is active. The authoritative execution brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
+> **Current status (2026-08-03):** Customer UX Sprints UX1-UX9 created the
+> working baseline. Customer screenshot review found that the interface still
+> has dense operations-console patterns, repeated status content, technical
+> copy, weak visual hierarchy, and too little decision-useful visualization.
+> UX10-UX12 are the active follow-on sequence. The authoritative execution
+> brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
 >
 > **Sprint 9 language standard:** Design and write for an owner or manager of a service-based
 > business. Customer-facing screens must explain business meaning first and retain SEO,
@@ -487,6 +492,43 @@ The following sequence minimizes regression risk and allows each change to be te
 46. Consolidate location-sensitive controls into shared components.
 47. Verify desktop, tablet, and mobile journeys for switching locations, reading rankings, finding the first technical fix, and opening the map.
 48. Complete the broader visual redesign only after the new hierarchy passes task-based usability checks.
+
+### Sprint 10 — Plain-language and visual product system
+
+49. Expand the service-business language guide into a shared customer-copy
+dictionary, banned-jargon list, readability checks, and AI-output validation.
+50. Define one page hierarchy, an original accessible icon family, and shared
+metric, trend, chart, filter, comparison, tooltip, details, and sparse-data
+components.
+51. Remove decorative cards, repeated badges, provider labels, and internal
+status metadata unless they support a customer decision or action.
+52. Standardize beneficial/harmful/neutral trend semantics with icons, words,
+and accessible color treatment.
+
+### Sprint 11 — Overview and Next Steps journey redesign
+
+53. Rebuild Overview as an above-the-fold daily business briefing with key
+results, useful date comparisons, meaningful charts, and one next action.
+54. Rebuild Next Steps around Today, This week, and This month with persistent
+checklists and one focused details view instead of repeating the same action
+across multiple panels.
+55. Replace recommendation-engine labels and evidence classifications with
+direct service-owner language while keeping technical proof optional.
+56. Pass five-second comprehension and task-based tests at desktop, tablet, and
+mobile sizes.
+
+### Sprint 12 — Cross-page visualization and usability rollout
+
+57. Apply the approved hierarchy and component system to Search Rankings,
+Local Search, Website Health, Directory Listings, Reviews, Competitors, Search
+Value, Locations, Reports, Settings, and setup states.
+58. Add decision-useful graphs, maps, comparisons, distributions, progress,
+and history only where supported by real data; state clearly when a visual
+would be incomplete or misleading.
+59. Audit every page for duplicated data, repeated guidance, oversized empty
+space, dead controls, unnecessary badges, and priority content below the fold.
+60. Complete route-by-route visual regression, keyboard, screen-reader, and
+five-second comprehension QA.
 
 ---
 

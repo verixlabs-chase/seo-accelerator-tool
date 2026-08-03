@@ -50,7 +50,13 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 
 ## 1A. Active Customer UX Sprint Sequence
 
-> **Execution status (2026-07-29):** UX5, UX6, UX7, and UX8 are shipped and production-QA complete for Reno and Lexington. UX9, Cross-Page UX and Visual Polish, is active. Recommendation-only intelligence remains enabled; autonomous customer-site mutations and automatic policy updates remain disabled.
+> **Execution status (2026-08-03):** UX5-UX9 established the working customer
+> baseline, but customer screenshot review found that several pages still read
+> like dense internal operations screens. UX10-UX12 are now queued to establish
+> the plain-language and visual system, simplify the highest-traffic journey,
+> and then apply the system to every customer page. Recommendation-only
+> intelligence remains enabled; autonomous customer-site mutations and
+> automatic policy updates remain disabled.
 
 ### Sprint 5 - Location Context and Navigation Clarity
 
@@ -248,6 +254,133 @@ Acceptance criteria:
   comparison periods, and discloses incomplete historical coverage.
 - Visual polish follows the finalized hierarchy rather than masking an unclear workflow.
 
+### Sprint 10 - Plain-Language and Visual Product System
+
+Goal: give every customer-facing page one reusable visual and writing system
+designed for a service-business owner, not an SEO technician.
+
+> **Customer review added 2026-08-03:** the working Next Steps page still uses
+> too many equally weighted boxes, repeated actions, internal status labels,
+> and phrases such as `governed location target`, `possible benefit`, and
+> `deeper review`. The reference Ahrefs screenshot is useful for information
+> hierarchy, compact icon navigation, and data visualization only. InsightOS
+> must use its own icons, components, copy, and visual identity rather than
+> reproducing Ahrefs.
+
+Scope:
+- Create a customer-language dictionary and prohibited-jargon list used by
+  static UI copy, deterministic summaries, and AI-generated explanations.
+- Target short sentences and a sixth-to-eighth-grade reading level. Explain the
+  business result before naming an SEO method, provider, system state, or data
+  limitation.
+- Replace internal phrases with direct owner language. For example, prefer
+  `Get more reviews from recent customers` over `Reach more eligible completed
+  customers`, and `We need more information before estimating the result` over
+  `Possible benefit — more evidence needed`.
+- Add automated copy tests that reject banned internal labels in the primary
+  customer reading flow and validate AI output against the service-business
+  language guide.
+- Define one shared page hierarchy: purpose and location, key result, primary
+  visual, recommended action, supporting details, then optional technical data.
+- Define an original, accessible icon family for navigation, page headings,
+  metric types, actions, status, and empty states. Icons always have a text
+  label or accessible name and are never the only carrier of meaning.
+- Define shared metric, trend, chart, filter, comparison, details-drawer,
+  tooltip, empty-state, and error-state components.
+- Reduce decorative containers and badges. A box, divider, label, or status
+  chip must communicate grouping, hierarchy, state, or an available action.
+- Use green plus an up arrow for a beneficial increase, red plus a down arrow
+  for a harmful decrease, and neutral treatment when direction is not good or
+  bad. Never rely on color alone.
+- Provide truthful chart states for no data, one point, partial history, stale
+  data, and unsupported comparisons. Do not fabricate scores or trends.
+
+Acceptance criteria:
+- A shared language and component inventory covers every authenticated customer
+  route before page-specific redesign begins.
+- Primary customer copy contains no unexplained internal terms, provider names,
+  model labels, policy labels, or evidence classifications.
+- Every customer-visible AI message passes the same language checks as static
+  UI copy and has a deterministic fallback.
+- Navigation and page headings use original, consistent icons without copying
+  Ahrefs artwork or layout.
+- Shared chart components support location, date range, comparison period,
+  source freshness, accessible legend, tooltip, loading, and sparse-data states.
+- Removing a card, badge, or paragraph does not remove a customer decision,
+  result, warning, or action.
+
+### Sprint 11 - Overview and Next Steps Journey Redesign
+
+Goal: make the two most important pages understandable above the fold and
+remove the duplicated, console-like action experience shown in customer QA.
+
+Scope:
+- Redesign Overview as a daily business briefing: what changed, whether the
+  change is good or bad, why it matters, and the one best next action.
+- Put useful charts before secondary explanation. Show Google visits,
+  visibility, ranking movement, and other supported business signals across a
+  selectable date range with an honest comparison period.
+- Use compact KPI rows with icons and directional arrows rather than placing
+  every value inside a large card.
+- Remove data-source, live-status, and freshness labels from the primary flow;
+  keep them in one shared trust/details control.
+- Redesign Next Steps around `Today`, `This week`, and `This month`, with a
+  visible checklist and progress. Do not repeat the same recommendation in a
+  spotlight, card row, full list, and detail panel at the same time.
+- Replace `Recommended`, `Reviewed`, `Already handled`, `Deeper review`, and
+  evidence-quality labels with owner-facing progress and decision language.
+- Show action details in a focused drawer or progressive disclosure region:
+  why it matters, what to do, effort, owner, proof, and expected review date.
+- Show no unsupported overall score or oversized empty status card.
+
+Acceptance criteria:
+- At 1440×900, Overview shows the main results, first meaningful chart, and one
+  next action without scrolling.
+- At 1440×900, Next Steps shows cadence, checklist progress, and the next
+  required step without the same action appearing in multiple competing areas.
+- A service-business owner can describe what changed and what to do next after
+  a five-second glance at either page.
+- Every displayed metric answers a business question or supports a decision;
+  internal status and diagnostic metadata remain optional.
+- Desktop, tablet, and mobile task tests pass with keyboard and screen-reader
+  labels intact.
+
+### Sprint 12 - Cross-Page Visualization and Usability Rollout
+
+Goal: apply the approved UX10 system and UX11 hierarchy to every remaining
+customer page, using visualization only where it helps the owner decide.
+
+Scope by page:
+- **Search Rankings:** position distribution, biggest movers, phrase history,
+  location comparison, and clear `improving / slipping / unchanged` language.
+- **Local Search:** location map or paid rank grid, keyword-specific results,
+  coverage trend, and a clear run cost/allowance before a paid check.
+- **Website Health:** current Core Web Vitals, issue concentration, history,
+  `Fix this first`, and expandable affected-page and technical details.
+- **Directory Listings and Reviews:** accuracy/completion progress, mismatches,
+  review pace, location outliers, and the next correction or response.
+- **Competitors and Search Value:** small, readable comparison charts and
+  opportunity gaps; no dense SEO tables before the plain-language takeaway.
+- **Locations:** portfolio comparison, outlier locations, shared problems, and
+  one-click movement into the selected location.
+- **Reports:** visual performance story, completed work, next actions, delivery
+  status, and optional source/methodology details.
+- **Settings and setup:** step-by-step connection health, allowance and usage
+  visuals where useful, with no charts added merely for decoration.
+- Audit every route for repeated guidance, oversized empty space, dead controls,
+  unnecessary badges, duplicated data, and important content below the fold.
+
+Acceptance criteria:
+- Every authenticated customer route passes the same five-second comprehension
+  test: page purpose, current result, trend or state, and next action are clear.
+- Every data-heavy core page has at least one decision-useful visualization or
+  a documented reason why a chart would mislead.
+- Every visualization supports date and location scope when the underlying data
+  supports them and explains partial or missing history honestly.
+- No core page requires technical SEO knowledge to understand its first screen.
+- Visual regression and task-based tests cover desktop, tablet, and mobile for
+  every primary route.
+
 ## 1B. Roadmap Tracks and Next Product Phase
 
 Sprint numbers in older documents refer to different bodies of work. Use these
@@ -255,7 +388,7 @@ names in issues, commits, and status reports so a number is never ambiguous:
 
 - **Platform P1-P10:** the historical platform-foundation sequence in
   [product_overview/sprint_roadmap.md](./product_overview/sprint_roadmap.md).
-- **Customer UX UX1-UX9:** the active usability and productization sequence in
+- **Customer UX UX1-UX12:** the active usability and productization sequence in
   Section 1A and [ui-ux-productization-plan.md](./ui-ux-productization-plan.md).
 - **Production Readiness PR0-PR6:** cross-cutting deployment, security, provider,
   and release gates in
@@ -265,7 +398,7 @@ names in issues, commits, and status reports so a number is never ambiguous:
 
 ### Recommended Execution Order From The Current State
 
-This is the default delivery order as of 2026-07-30. Track identifiers below
+This is the default delivery order as of 2026-08-03. Track identifiers below
 remain stable even if a release needs to split one scope into smaller tickets.
 
 | Order | Sprint | Customer result |
@@ -276,28 +409,31 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 4 | **I1.1 - Live Website Performance and CWV Experience — released** | Customers see their actual field and lab website measurements, Google thresholds, history, source, freshness, and plain-language meaning. |
 | 5 | **I1.3 - Governed AI Runtime API — active** | Mistral-first AI becomes standard across plans and can explain, prioritize, draft, and answer questions from the deterministic evidence packet without inventing facts or actions. |
 | 6 | **I1.4 - Expanded Action Plans, Guided Checklists, and Work Routines** | Customers receive multiple prioritized action plans, plain-language checklists, and clear Daily, Weekly, and Monthly work routines. |
-| 7 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Supported action plans add a measured baseline and conservative outcome range after the work and success criteria are defined. |
-| 8 | **I1.5 - Pluggable and Local Model Gateway** | Platform routing can switch approved AI providers, while an Enterprise owner can connect a customer-controlled compatible model endpoint without changing the intelligence engine or exposing credentials. |
-| 9 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
-| 10 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
-| 11 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, risks, and next actions. |
-| 12 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
-| 13 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
-| 14 | **G1.4-G1.7 - Connected Local and Website Signals** | GBP, listings, reviews, analytics, and form events replace remaining recurring manual entry. |
-| 15 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 16 | **CNT1 - Content, On-Page, and Authority Workspace** | Research and intelligence produce governed page, content, metadata, schema, link, and authority work. |
-| 17 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 18 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 19 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 20 | **PA1 - Product Analytics and Customer Feedback** | The team can measure activation, first value, feature adoption, recommendation outcomes, automation trust, and churn risk. |
-| 21 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 22 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 23 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 24 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
-| 25 | **ML1 - Portfolio Intelligence** | Multi-location operators can find outliers, shared problems, and reusable wins quickly. |
-| 26 | **COM1 - Billing, Entitlements, and Self-Service Accounts** | The commercial plans and active-location allowances become enforceable and self-service. |
-| 27 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 28 | **ENT1 - Agency, API, White Label, and Reporting** | Enterprise and agency workflows justify the upper-tier price. |
+| 7 | **UX10 - Plain-Language and Visual Product System** | Every page and AI explanation uses service-owner language, original icons, consistent hierarchy, and shared accessible visualization components. |
+| 8 | **UX11 - Overview and Next Steps Journey Redesign** | The two highest-traffic pages become glanceable, action-oriented, visual, and free of duplicated console-style panels. |
+| 9 | **UX12 - Cross-Page Visualization and Usability Rollout** | Rankings, Local Search, Website Health, Listings, Reviews, Competitors, Locations, Reports, Settings, and setup states receive the same understandable hierarchy. |
+| 10 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Supported action plans add a measured baseline and conservative outcome range after the work and success criteria are defined. |
+| 11 | **I1.5 - Pluggable and Local Model Gateway** | Platform routing can switch approved AI providers, while an Enterprise owner can connect a customer-controlled compatible model endpoint without changing the intelligence engine or exposing credentials. |
+| 12 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
+| 13 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
+| 14 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, risks, and next actions. |
+| 15 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
+| 16 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 17 | **G1.4-G1.7 - Connected Local and Website Signals** | GBP, listings, reviews, analytics, and form events replace remaining recurring manual entry. |
+| 18 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 19 | **CNT1 - Content, On-Page, and Authority Workspace** | Research and intelligence produce governed page, content, metadata, schema, link, and authority work. |
+| 20 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 21 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 22 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 23 | **PA1 - Product Analytics and Customer Feedback** | The team can measure activation, first value, feature adoption, recommendation outcomes, automation trust, and churn risk. |
+| 24 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 25 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 26 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 27 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
+| 28 | **ML1 - Portfolio Intelligence** | Multi-location operators can find outliers, shared problems, and reusable wins quickly. |
+| 29 | **COM1 - Billing, Entitlements, and Self-Service Accounts** | The commercial plans and active-location allowances become enforceable and self-service. |
+| 30 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 31 | **ENT1 - Agency, API, White Label, and Reporting** | Enterprise and agency workflows justify the upper-tier price. |
 
 Release R1 is complete as of 2026-07-30. The I1.0 migration is applied, hosted
 CrUX configuration is active, the API is deployed, the first standards check
