@@ -9,6 +9,7 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.models.campaign import Campaign
 from app.schemas.intelligence import (
+    ActionPlanStepUpdateIn,
     AdvanceMonthIn,
     GenerateIntelligenceBriefIn,
     IntelligenceScoreOut,
@@ -129,8 +130,17 @@ def get_intelligence_recommendations(
         tenant_id=user["tenant_id"],
         recommendations=recs,
     )
+    work_items = intelligence_service.ensure_action_plan_occurrences(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+        recommendations=recs,
+        action_plans=action_plans,
+    )
     for item in items:
         item["action_plan"] = action_plans.get(item["id"])
+        if item["action_plan"] is not None:
+            item["action_plan"]["work_item"] = work_items.get(item["id"])
     engine = build_intelligence_engine_state(recs)
     has_orchestrator_guidance = engine["orchestrator_recommendation_count"] > 0
     truth = _intelligence_truth(
@@ -153,6 +163,33 @@ def get_intelligence_recommendations(
             "truth": truth,
         },
     )
+
+
+@intelligence_router.patch(
+    "/action-plans/{occurrence_id}/steps/{step_id}"
+)
+def update_action_plan_checklist_step(
+    request: Request,
+    occurrence_id: str,
+    step_id: str,
+    body: ActionPlanStepUpdateIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    work_item = intelligence_service.update_action_plan_step(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        occurrence_id=occurrence_id,
+        step_id=step_id,
+        step_status=body.status,
+        blocker_reason=body.blocker_reason,
+        evidence=body.evidence,
+        actor_user_id=user["user_id"],
+    )
+    return envelope(request, {"work_item": work_item})
 
 
 @intelligence_router.get("/brief")

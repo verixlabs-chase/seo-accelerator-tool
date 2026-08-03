@@ -5,8 +5,10 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.campaign import Campaign
+from app.models.action_plan import ActionPlanOccurrence, ActionPlanStep
 from app.models.intelligence import StrategyRecommendation
 from app.models.tenant import Tenant
+from app.models.user import User
 from app.schemas.intelligence import IntelligenceScoreOut, RecommendationOut
 from app.services import intelligence_service
 
@@ -153,6 +155,95 @@ def test_recommendation_action_plan_uses_canonical_lexicon_steps(db_session):
     assert plan["owner_role"] == "developer"
     assert plan["observation_window_days"] == 28
     assert plan["lexicon_version"] == "1.0.0"
+
+
+def test_action_plan_checklist_persists_progress_and_completes_required_work(
+    db_session,
+):
+    tenant = db_session.query(Tenant).filter(Tenant.name == "Tenant A").first()
+    user = db_session.query(User).filter(User.email == "a@example.com").first()
+    assert tenant is not None
+    assert user is not None
+    campaign = Campaign(
+        tenant_id=tenant.id,
+        organization_id=tenant.id,
+        name="Checklist Campaign",
+        domain="checklist.example",
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    recommendation = StrategyRecommendation(
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_type=(
+            "policy::core_web_vitals_failure::technical.reduce_render_blocking"
+        ),
+        rationale="The main content is loading too slowly.",
+        confidence=0.91,
+        confidence_score=0.91,
+        evidence_json=json.dumps({"evidence": ["LCP is above the poor boundary"]}),
+        risk_tier=3,
+        rollback_plan_json=json.dumps({"steps": ["restore prior asset loading"]}),
+        status="GENERATED",
+    )
+    db_session.add(recommendation)
+    db_session.commit()
+
+    plans = intelligence_service.build_recommendation_action_plans(
+        db_session,
+        tenant_id=tenant.id,
+        recommendations=[recommendation],
+    )
+    now = datetime(2026, 8, 3, 16, 30, tzinfo=UTC)
+    first = intelligence_service.ensure_action_plan_occurrences(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendations=[recommendation],
+        action_plans=plans,
+        now=now,
+    )[recommendation.id]
+    repeated = intelligence_service.ensure_action_plan_occurrences(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendations=[recommendation],
+        action_plans=plans,
+        now=now,
+    )[recommendation.id]
+
+    assert first["id"] == repeated["id"]
+    assert first["cadence"] == "daily"
+    assert first["period_key"] == "2026-08-03"
+    assert first["progress"] == {
+        "completed_required": 0,
+        "required_total": 3,
+        "completed_total": 0,
+        "total": 3,
+    }
+    assert db_session.query(ActionPlanOccurrence).count() == 1
+    assert db_session.query(ActionPlanStep).count() == 3
+
+    work_item = first
+    for step in first["steps"]:
+        work_item = intelligence_service.update_action_plan_step(
+            db_session,
+            tenant_id=tenant.id,
+            organization_id=tenant.id,
+            campaign_id=campaign.id,
+            occurrence_id=first["id"],
+            step_id=step["id"],
+            step_status="done",
+            blocker_reason=None,
+            evidence=None,
+            actor_user_id=user.id,
+        )
+
+    assert work_item["status"] == "waiting_for_results"
+    assert work_item["due_state"] == "completed"
+    assert work_item["progress"]["completed_required"] == 3
+    assert work_item["next_step"] is None
+    assert all(step["completed_by_user_id"] == user.id for step in work_item["steps"])
 
 
 def test_deep_recommendation_can_enter_human_review(db_session):

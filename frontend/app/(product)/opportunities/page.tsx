@@ -28,18 +28,59 @@ import {
   buildRuntimeTruthSignal,
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
-import { getRecommendationPortfolio } from "../truth/actionPlan.mjs";
+import {
+  getRecommendationPortfolio,
+  getRecommendationRoutines,
+  getWorkProgress,
+} from "../truth/actionPlan.mjs";
 
 const EXECUTION_CONSOLE_ENABLED =
   process.env.NEXT_PUBLIC_EXECUTION_CONSOLE_ENABLED !== "false";
 const WORDPRESS_EXECUTION_SETUP_UI_ENABLED =
   process.env.NEXT_PUBLIC_WORDPRESS_EXECUTION_SETUP_UI !== "false";
+const ROUTINE_SECTIONS = [
+  { key: "daily", title: "Today", summary: "Short or time-sensitive work" },
+  { key: "weekly", title: "This week", summary: "The improvements to keep moving" },
+  { key: "monthly", title: "This month", summary: "Larger projects and regular upkeep" },
+] as const;
 
 type Campaign = {
   id: string;
   name?: string;
   domain?: string;
   setup_state?: string;
+};
+
+type ActionWorkStep = {
+  id: string;
+  step_key: string;
+  position: number;
+  instruction: string;
+  required: boolean;
+  status: "not_started" | "in_progress" | "done" | "skipped" | "blocked";
+  blocker_reason?: string | null;
+  evidence?: string[];
+  completed_at?: string | null;
+};
+
+type ActionWorkItem = {
+  id: string;
+  recommendation_id: string;
+  action_id: string;
+  cadence: "daily" | "weekly" | "monthly" | "later";
+  period_key: string;
+  timezone: string;
+  due_at?: string | null;
+  due_state: "due_now" | "upcoming" | "overdue" | "completed" | "snoozed" | "later";
+  status: string;
+  progress: {
+    completed_required: number;
+    required_total: number;
+    completed_total: number;
+    total: number;
+  };
+  next_step?: ActionWorkStep | null;
+  steps: ActionWorkStep[];
 };
 
 type Recommendation = {
@@ -67,6 +108,7 @@ type Recommendation = {
     observation_window_days: number;
     lexicon_id: string;
     lexicon_version: string;
+    work_item?: ActionWorkItem | null;
   } | null;
 };
 
@@ -459,6 +501,19 @@ function getOwnerLabel(ownerRole?: string) {
     return "Website help";
   }
   return ownerRole ? toTitleCase(ownerRole) : "Owner not set";
+}
+
+function getCadenceLabel(cadence?: string) {
+  if (cadence === "daily") {
+    return "Today";
+  }
+  if (cadence === "weekly") {
+    return "This week";
+  }
+  if (cadence === "monthly") {
+    return "This month";
+  }
+  return "Later";
 }
 
 function describeRecommendationReason(reason?: string | null) {
@@ -1116,6 +1171,36 @@ export default function OpportunitiesPage() {
     }
   }
 
+  async function updateChecklistStep(
+    recommendationId: string,
+    workItemId: string,
+    stepId: string,
+    currentStatus: ActionWorkStep["status"],
+  ) {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+
+    const targetStatus = currentStatus === "done" ? "not_started" : "done";
+    await runAction(`${workItemId}:${stepId}`, async () => {
+      await platformApi(
+        `/intelligence/action-plans/${encodeURIComponent(workItemId)}/steps/${encodeURIComponent(stepId)}?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status: targetStatus }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setSelectedRecommendationId(recommendationId);
+      setNotice(
+        targetStatus === "done"
+          ? "Step saved. Your checklist will be here when you come back."
+          : "Step reopened and saved.",
+      );
+    });
+  }
+
   async function transitionRecommendation(
     recommendationId: string,
     targetState: string,
@@ -1343,8 +1428,10 @@ export default function OpportunitiesPage() {
   );
   const sortedRecommendations = actionPortfolio.ordered as Recommendation[];
   const topRecommendation = actionPortfolio.primary as Recommendation | null;
-  const nextRecommendations = actionPortfolio.next as Recommendation[];
-  const laterRecommendations = actionPortfolio.later as Recommendation[];
+  const routineGroups = useMemo(
+    () => getRecommendationRoutines(recommendations) as Record<string, Recommendation[]>,
+    [recommendations],
+  );
 
   const selectedRecommendation =
     sortedRecommendations.find((item) => item.id === selectedRecommendationId) ??
@@ -1385,6 +1472,7 @@ export default function OpportunitiesPage() {
       title: getRecommendationTitle(topRecommendation),
       body: describeRecommendationReason(topRecommendation.rationale),
       next:
+        topRecommendation.action_plan?.work_item?.next_step?.instruction ||
         topRecommendation.action_plan?.steps?.[0] ||
         nextActionForStatus(topRecommendation.status)?.summary ||
         "Review the evidence first, then decide whether this action should stay active or be dismissed.",
@@ -1581,17 +1669,13 @@ export default function OpportunitiesPage() {
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Keep moving
+                      Your work routine
                     </p>
                     <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                      {nextRecommendations.length > 0
-                        ? `${nextRecommendations.length} more useful next step${nextRecommendations.length === 1 ? "" : "s"}`
-                        : "No other supported actions yet"}
+                      What to do today, this week, and this month
                     </h2>
                     <p className="mt-1.5 max-w-3xl text-sm leading-6 text-zinc-300">
-                      {nextRecommendations.length > 0
-                        ? "These are already ordered for this location. Pick any action to see its evidence and full plan."
-                        : "InsightOS will add another action only when the saved information supports it. It will not create filler work."}
+                      Finish the next unchecked step. InsightOS saves your progress automatically.
                     </p>
                   </div>
                   <span className="text-xs text-zinc-500">
@@ -1599,40 +1683,69 @@ export default function OpportunitiesPage() {
                   </span>
                 </div>
 
-                {nextRecommendations.length > 0 ? (
-                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    {nextRecommendations.map((recommendation, index) => (
-                      <button
-                        key={recommendation.id}
-                        type="button"
-                        onClick={() => setSelectedRecommendationId(recommendation.id)}
-                        className="group rounded-md border border-[#2a2b31] bg-[#111214] p-4 text-left transition hover:border-accent-500/35 hover:bg-accent-500/5"
+                <div className="mt-5 grid gap-3 xl:grid-cols-3">
+                  {ROUTINE_SECTIONS.map((section) => {
+                    const routineItems = routineGroups[section.key] || [];
+                    return (
+                      <div
+                        key={section.key}
+                        className="rounded-md border border-[#2a2b31] bg-[#111214] p-4"
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-semibold text-accent-300">
-                            Next {index + 1}
-                          </span>
-                          <span className="text-[11px] text-zinc-500">
-                            {getEffortLabel(recommendation.action_plan?.effort)}
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-base font-semibold text-white">{section.title}</h3>
+                            <p className="mt-1 text-xs leading-5 text-zinc-500">{section.summary}</p>
+                          </div>
+                          <span className="rounded-full bg-[#202126] px-2 py-0.5 text-xs text-zinc-300">
+                            {routineItems.length}
                           </span>
                         </div>
-                        <h3 className="mt-3 text-sm font-semibold leading-5 text-white">
-                          {getRecommendationTitle(recommendation)}
-                        </h3>
-                        <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">
-                          {describeRecommendationReason(recommendation.rationale)}
-                        </p>
-                        <p className="mt-3 text-xs font-medium text-zinc-300 group-hover:text-white">
-                          Open action →
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
 
-                {laterRecommendations.length > 0 ? (
+                        {routineItems.length > 0 ? (
+                          <div className="mt-4 space-y-2">
+                            {routineItems.map((recommendation) => {
+                              const progress = getWorkProgress(recommendation);
+                              const nextStep = recommendation.action_plan?.work_item?.next_step;
+                              return (
+                                <button
+                                  key={recommendation.id}
+                                  type="button"
+                                  onClick={() => setSelectedRecommendationId(recommendation.id)}
+                                  className="w-full rounded-md border border-[#2a2b31] bg-[#16171a] p-3 text-left transition hover:border-accent-500/35"
+                                >
+                                  <p className="text-sm font-semibold leading-5 text-white">
+                                    {getRecommendationTitle(recommendation)}
+                                  </p>
+                                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#292a30]">
+                                    <div
+                                      className="h-full rounded-full bg-accent-500"
+                                      style={{ width: `${progress.percent}%` }}
+                                    />
+                                  </div>
+                                  <p className="mt-2 text-xs text-zinc-400">{progress.label}</p>
+                                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-300">
+                                    {nextStep?.instruction ||
+                                      (progress.total > 0
+                                        ? "Checklist complete. Wait for the result window."
+                                        : "Open this action to review the plan.")}
+                                  </p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-4 rounded-md border border-dashed border-[#2a2b31] px-3 py-4 text-xs leading-5 text-zinc-500">
+                            Nothing is due here right now.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {(routineGroups.later || []).length > 0 ? (
                   <p className="mt-4 border-t border-[#26272c] pt-4 text-xs text-zinc-500">
-                    {laterRecommendations.length} additional lower-priority action{laterRecommendations.length === 1 ? " is" : "s are"} available in the complete list below.
+                    {(routineGroups.later || []).length} action{(routineGroups.later || []).length === 1 ? " is" : "s are"} waiting for more information or an earlier step. You can still review {(routineGroups.later || []).length === 1 ? "it" : "them"} in the full list below.
                   </p>
                 ) : null}
               </section>
@@ -1897,17 +2010,20 @@ export default function OpportunitiesPage() {
                             </span>
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <span
-                              className={`rounded-md border px-2 py-1 text-xs font-medium ${getStatusTone(recommendation.status)}`}
-                            >
-                              {getStatusLabel(recommendation.status)}
-                            </span>
-                            <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-1 text-xs font-medium text-zinc-200">
-                              {getImpactLabel(recommendation.confidence_score || recommendation.confidence || 0)}
-                            </span>
-                            <span className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-100">
-                              {getEngineSourceLabel(recommendation.engine_source)}
-                            </span>
+                            {recommendation.action_plan?.work_item ? (
+                              <>
+                                <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-1 text-xs font-medium text-zinc-200">
+                                  {getCadenceLabel(recommendation.action_plan.work_item.cadence)}
+                                </span>
+                                <span className="rounded-md border border-accent-500/20 bg-accent-500/10 px-2 py-1 text-xs font-medium text-zinc-100">
+                                  {getWorkProgress(recommendation).label}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-1 text-xs font-medium text-zinc-300">
+                                Plan details coming soon
+                              </span>
+                            )}
                           </div>
                         </button>
                       );
@@ -1933,14 +2049,16 @@ export default function OpportunitiesPage() {
                           >
                             {getPriorityLabel(selectedRecommendation.risk_tier)}
                           </span>
-                          <span
-                            className={`rounded-md border px-2 py-1 text-xs font-medium ${getStatusTone(selectedRecommendation.status)}`}
-                          >
-                            {getStatusLabel(selectedRecommendation.status)}
-                          </span>
-                          <span className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-100">
-                            {getEngineSourceLabel(selectedRecommendation.engine_source)}
-                          </span>
+                          {selectedRecommendation.action_plan?.work_item ? (
+                            <>
+                              <span className="rounded-md border border-[#26272c] bg-[#111214] px-2 py-1 text-xs font-medium text-zinc-200">
+                                {getCadenceLabel(selectedRecommendation.action_plan.work_item.cadence)}
+                              </span>
+                              <span className="rounded-md border border-accent-500/20 bg-accent-500/10 px-2 py-1 text-xs font-medium text-zinc-100">
+                                {getWorkProgress(selectedRecommendation).label}
+                              </span>
+                            </>
+                          ) : null}
                         </div>
                       </div>
 
@@ -1998,31 +2116,84 @@ export default function OpportunitiesPage() {
                             </div>
                             <div className="flex flex-wrap gap-2 text-xs text-zinc-300">
                               <span className="rounded-md border border-[#34353b] bg-[#111214] px-2.5 py-1.5">
-                                {getEffortLabel(selectedRecommendation.action_plan.effort)}
+                                {getCadenceLabel(selectedRecommendation.action_plan.work_item?.cadence)}
                               </span>
                               <span className="rounded-md border border-[#34353b] bg-[#111214] px-2.5 py-1.5">
-                                {getOwnerLabel(selectedRecommendation.action_plan.owner_role)}
+                                {getWorkProgress(selectedRecommendation).label}
                               </span>
                               <span className="rounded-md border border-[#34353b] bg-[#111214] px-2.5 py-1.5">
                                 Check results after {selectedRecommendation.action_plan.observation_window_days} days
                               </span>
                             </div>
                           </div>
-                          <div className="mt-4 grid gap-2 md:grid-cols-3">
-                            {selectedRecommendation.action_plan.steps.map((step, index) => (
-                              <div
-                                key={`${selectedRecommendation.action_plan?.action_id}:${index}`}
-                                className="rounded-md border border-[#2a2b31] bg-[#111214] p-3"
-                              >
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                                  Step {index + 1}
-                                </p>
-                                <p className="mt-2 text-sm leading-6 text-zinc-300">{step}</p>
-                              </div>
-                            ))}
-                          </div>
+                          {selectedRecommendation.action_plan.work_item ? (
+                            <div className="mt-4 space-y-2">
+                              {selectedRecommendation.action_plan.work_item.steps.map((step) => {
+                                const isDone = step.status === "done";
+                                const actionKey = `${selectedRecommendation.action_plan?.work_item?.id}:${step.id}`;
+                                return (
+                                  <button
+                                    key={step.id}
+                                    type="button"
+                                    aria-pressed={isDone}
+                                    onClick={() =>
+                                      void updateChecklistStep(
+                                        selectedRecommendation.id,
+                                        selectedRecommendation.action_plan!.work_item!.id,
+                                        step.id,
+                                        step.status,
+                                      )
+                                    }
+                                    disabled={busyAction === actionKey}
+                                    className={`flex w-full items-start gap-3 rounded-md border p-3 text-left transition disabled:cursor-wait disabled:opacity-60 ${
+                                      isDone
+                                        ? "border-emerald-500/25 bg-emerald-500/10"
+                                        : "border-[#2a2b31] bg-[#111214] hover:border-accent-500/35"
+                                    }`}
+                                  >
+                                    <span
+                                      aria-hidden="true"
+                                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs font-bold ${
+                                        isDone
+                                          ? "border-emerald-400 bg-emerald-500 text-[#07130d]"
+                                          : "border-zinc-600 bg-[#18191c] text-zinc-500"
+                                      }`}
+                                    >
+                                      {isDone ? "✓" : step.position}
+                                    </span>
+                                    <span>
+                                      <span className={`block text-sm leading-6 ${isDone ? "text-zinc-500 line-through" : "text-zinc-200"}`}>
+                                        {step.instruction}
+                                      </span>
+                                      <span className="mt-1 block text-xs text-zinc-500">
+                                        {busyAction === actionKey
+                                          ? "Saving..."
+                                          : isDone
+                                            ? "Done — select to reopen"
+                                            : "Select when finished"}
+                                      </span>
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="mt-4 grid gap-2 md:grid-cols-3">
+                              {selectedRecommendation.action_plan.steps.map((step, index) => (
+                                <div
+                                  key={`${selectedRecommendation.action_plan?.action_id}:${index}`}
+                                  className="rounded-md border border-[#2a2b31] bg-[#111214] p-3"
+                                >
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                                    Step {index + 1}
+                                  </p>
+                                  <p className="mt-2 text-sm leading-6 text-zinc-300">{step}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           <p className="mt-3 text-xs text-zinc-500">
-                            These steps come from the governed action library and are not invented by AI.
+                            These steps come from the action library. Your saved progress follows you across devices.
                           </p>
                         </section>
                       ) : null}

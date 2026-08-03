@@ -60,3 +60,34 @@ export function getRecommendationPortfolio(items, nextLimit = 4) {
     later: ordered.slice(1 + Math.max(0, nextLimit)),
   };
 }
+
+export function getRecommendationRoutines(items) {
+  const groups = {
+    daily: [],
+    weekly: [],
+    monthly: [],
+    later: [],
+  };
+
+  for (const item of getRecommendationPortfolio(items, Number.MAX_SAFE_INTEGER).ordered) {
+    const cadence = String(item?.action_plan?.work_item?.cadence || "later");
+    const group = Object.prototype.hasOwnProperty.call(groups, cadence)
+      ? cadence
+      : "later";
+    groups[group].push(item);
+  }
+
+  return groups;
+}
+
+export function getWorkProgress(item) {
+  const progress = item?.action_plan?.work_item?.progress;
+  const completed = Number(progress?.completed_required || 0);
+  const total = Number(progress?.required_total || 0);
+  return {
+    completed,
+    total,
+    label: total > 0 ? `${completed} of ${total} steps done` : "Plan details coming soon",
+    percent: total > 0 ? Math.round((completed / total) * 100) : 0,
+  };
+}

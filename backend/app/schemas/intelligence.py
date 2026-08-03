@@ -1,7 +1,9 @@
 from datetime import datetime
 import json
 
-from pydantic import BaseModel, computed_field
+from typing import Literal
+
+from pydantic import BaseModel, Field, computed_field
 
 
 class IntelligenceScoreOut(BaseModel):
@@ -75,3 +77,9 @@ class RecommendationTransitionIn(BaseModel):
 
 class GenerateIntelligenceBriefIn(BaseModel):
     retry_failed: bool = False
+
+
+class ActionPlanStepUpdateIn(BaseModel):
+    status: Literal["not_started", "in_progress", "done", "skipped", "blocked"]
+    blocker_reason: str | None = Field(default=None, max_length=1000)
+    evidence: list[str] | None = Field(default=None, max_length=20)

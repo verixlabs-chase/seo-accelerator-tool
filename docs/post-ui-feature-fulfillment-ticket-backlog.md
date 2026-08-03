@@ -513,6 +513,14 @@ Execution priority for this phase:
 
 ### T26. Add deterministic checklists, work routines, and persistent progress
 
+> **Implemented 2026-08-03:** canonical lexicon steps now materialize as
+> tenant-scoped, dated action occurrences with persistent per-step state,
+> completion actor/time, evidence storage, due state, deterministic cadence,
+> and saved progress. Next Steps groups supported work into Today, This week,
+> and This month; dependency-blocked or unsupported work remains in Later.
+> Checklist updates persist through the API and a completed required checklist
+> enters `waiting_for_results` instead of claiming that the SEO result is proven.
+
 - Goal: turn each action plan into a resumable set of concrete steps and give a
   non-technical service-business owner a clear Daily, Weekly, and Monthly work
   routine.

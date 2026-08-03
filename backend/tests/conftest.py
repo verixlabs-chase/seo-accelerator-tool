@@ -147,6 +147,8 @@ def _verify_required_tables(database_url: str) -> None:
     try:
         inspector = inspect(verification_engine)
         required_tables = [
+            "action_plan_occurrences",
+            "action_plan_steps",
             "auth_sessions",
             "crawl_runs",
             "strategy_cohort_patterns",

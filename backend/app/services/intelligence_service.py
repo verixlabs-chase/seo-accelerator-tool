@@ -1,5 +1,6 @@
+import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import func
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.events import emit_event
 from app.intelligence.lexicon import get_active_lexicon
 from app.intelligence.recommendation_execution_engine import schedule_execution
+from app.models.action_plan import ActionPlanOccurrence, ActionPlanStep
 from app.models.campaign import Campaign
 from app.models.content import ContentAsset
 from app.models.crawl import TechnicalIssue
@@ -105,6 +107,371 @@ def build_recommendation_action_plans(
         }
 
     return plans
+
+
+_ACTIVE_ACTION_PLAN_STATUSES = {
+    "ready",
+    "in_progress",
+    "blocked",
+    "waiting_for_results",
+    "snoozed",
+}
+_RESOLVED_STEP_STATUSES = {"done", "skipped"}
+
+
+def _action_plan_cadence(
+    plan: dict,
+    *,
+    completed_action_ids: set[str],
+) -> str:
+    dependencies = {str(item) for item in plan.get("dependencies", []) if item}
+    if dependencies - completed_action_ids:
+        return "later"
+    if int(plan.get("risk_tier", 0) or 0) >= 3:
+        return "daily"
+    if str(plan.get("effort", "")) == "high" or int(
+        plan.get("observation_window_days", 0) or 0
+    ) >= 60:
+        return "monthly"
+    return "weekly"
+
+
+def _action_plan_period_key(cadence: str, now: datetime) -> str:
+    if cadence == "daily":
+        return now.date().isoformat()
+    if cadence == "weekly":
+        iso_year, iso_week, _ = now.isocalendar()
+        return f"{iso_year}-W{iso_week:02d}"
+    if cadence == "monthly":
+        return now.strftime("%Y-%m")
+    return "once"
+
+
+def _action_plan_due_at(cadence: str, now: datetime) -> datetime | None:
+    if cadence == "daily":
+        return now + timedelta(days=1)
+    if cadence == "weekly":
+        return now + timedelta(days=7)
+    if cadence == "monthly":
+        return now + timedelta(days=30)
+    return None
+
+
+def _action_plan_content_hash(plan: dict, cadence: str) -> str:
+    payload = {
+        "action_id": plan["action_id"],
+        "cadence": cadence,
+        "steps": list(plan.get("steps", [])),
+        "dependencies": list(plan.get("dependencies", [])),
+        "success_metric_ids": list(plan.get("success_metric_ids", [])),
+        "observation_window_days": plan.get("observation_window_days"),
+        "lexicon_id": plan.get("lexicon_id"),
+        "lexicon_version": plan.get("lexicon_version"),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _serialize_action_plan_occurrence(
+    db: Session,
+    occurrence: ActionPlanOccurrence,
+    *,
+    now: datetime | None = None,
+) -> dict:
+    resolved_now = now or datetime.now(UTC)
+    steps = (
+        db.query(ActionPlanStep)
+        .filter(
+            ActionPlanStep.tenant_id == occurrence.tenant_id,
+            ActionPlanStep.occurrence_id == occurrence.id,
+        )
+        .order_by(ActionPlanStep.position.asc(), ActionPlanStep.id.asc())
+        .all()
+    )
+    required_steps = [step for step in steps if step.required]
+    completed_required = sum(step.status == "done" for step in required_steps)
+    completed_total = sum(step.status in _RESOLVED_STEP_STATUSES for step in steps)
+    next_step = next(
+        (
+            step
+            for step in steps
+            if step.status not in _RESOLVED_STEP_STATUSES and step.status != "blocked"
+        ),
+        None,
+    )
+    if next_step is None:
+        next_step = next((step for step in steps if step.status == "blocked"), None)
+
+    due_at = occurrence.due_at
+    if due_at is not None and due_at.tzinfo is None:
+        due_at = due_at.replace(tzinfo=UTC)
+    if occurrence.status in {"waiting_for_results", "completed"}:
+        due_state = "completed"
+    elif occurrence.status == "snoozed":
+        due_state = "snoozed"
+    elif due_at is None:
+        due_state = "later"
+    elif due_at < resolved_now:
+        due_state = "overdue"
+    elif due_at <= resolved_now + timedelta(days=1):
+        due_state = "due_now"
+    else:
+        due_state = "upcoming"
+
+    serialized_steps = [
+        {
+            "id": step.id,
+            "step_key": step.step_key,
+            "position": step.position,
+            "instruction": step.instruction,
+            "required": step.required,
+            "status": step.status,
+            "blocker_reason": step.blocker_reason,
+            "evidence": list(step.evidence or []),
+            "completed_by_user_id": step.completed_by_user_id,
+            "completed_at": step.completed_at.isoformat() if step.completed_at else None,
+            "updated_at": step.updated_at.isoformat(),
+        }
+        for step in steps
+    ]
+    serialized_next = next(
+        (item for item in serialized_steps if next_step and item["id"] == next_step.id),
+        None,
+    )
+    return {
+        "id": occurrence.id,
+        "recommendation_id": occurrence.recommendation_id,
+        "action_id": occurrence.action_id,
+        "cadence": occurrence.cadence,
+        "period_key": occurrence.period_key,
+        "timezone": occurrence.timezone,
+        "due_at": due_at.isoformat() if due_at else None,
+        "due_state": due_state,
+        "status": occurrence.status,
+        "content_hash": occurrence.content_hash,
+        "lexicon_id": occurrence.lexicon_id,
+        "lexicon_version": occurrence.lexicon_version,
+        "progress": {
+            "completed_required": completed_required,
+            "required_total": len(required_steps),
+            "completed_total": completed_total,
+            "total": len(steps),
+        },
+        "next_step": serialized_next,
+        "steps": serialized_steps,
+        "completed_at": occurrence.completed_at.isoformat()
+        if occurrence.completed_at
+        else None,
+        "created_at": occurrence.created_at.isoformat(),
+        "updated_at": occurrence.updated_at.isoformat(),
+    }
+
+
+def ensure_action_plan_occurrences(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    recommendations: list[StrategyRecommendation],
+    action_plans: dict[str, dict],
+    now: datetime | None = None,
+) -> dict[str, dict]:
+    """Materialize one resumable, deterministic work occurrence per action."""
+
+    campaign = _campaign_or_404(db, tenant_id, campaign_id)
+    organization_id = campaign.organization_id or tenant_id
+    resolved_now = now or datetime.now(UTC)
+    recommendation_by_id = {item.id: item for item in recommendations}
+    completed_action_ids = {
+        row[0]
+        for row in (
+            db.query(ActionPlanOccurrence.action_id)
+            .filter(
+                ActionPlanOccurrence.tenant_id == tenant_id,
+                ActionPlanOccurrence.campaign_id == campaign_id,
+                ActionPlanOccurrence.status.in_({"waiting_for_results", "completed"}),
+            )
+            .distinct()
+            .all()
+        )
+    }
+    work_items: dict[str, dict] = {}
+
+    for recommendation_id, plan in action_plans.items():
+        recommendation = recommendation_by_id.get(recommendation_id)
+        if recommendation is None:
+            continue
+        action_id = str(plan["action_id"])
+        cadence = _action_plan_cadence(
+            plan,
+            completed_action_ids=completed_action_ids,
+        )
+        period_key = _action_plan_period_key(cadence, resolved_now)
+        content_hash = _action_plan_content_hash(plan, cadence)
+
+        occurrence = (
+            db.query(ActionPlanOccurrence)
+            .filter(
+                ActionPlanOccurrence.tenant_id == tenant_id,
+                ActionPlanOccurrence.campaign_id == campaign_id,
+                ActionPlanOccurrence.recommendation_id == recommendation_id,
+                ActionPlanOccurrence.action_id == action_id,
+                ActionPlanOccurrence.status.in_(_ACTIVE_ACTION_PLAN_STATUSES),
+            )
+            .order_by(ActionPlanOccurrence.created_at.desc())
+            .first()
+        )
+        if occurrence is None:
+            occurrence = (
+                db.query(ActionPlanOccurrence)
+                .filter(
+                    ActionPlanOccurrence.tenant_id == tenant_id,
+                    ActionPlanOccurrence.campaign_id == campaign_id,
+                    ActionPlanOccurrence.recommendation_id == recommendation_id,
+                    ActionPlanOccurrence.action_id == action_id,
+                    ActionPlanOccurrence.period_key == period_key,
+                    ActionPlanOccurrence.content_hash == content_hash,
+                )
+                .order_by(ActionPlanOccurrence.created_at.desc())
+                .first()
+            )
+        if occurrence is None:
+            idempotency_key = hashlib.sha256(
+                f"{tenant_id}:{recommendation_id}:{action_id}:{period_key}:{content_hash}".encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            occurrence = ActionPlanOccurrence(
+                tenant_id=tenant_id,
+                organization_id=organization_id,
+                campaign_id=campaign_id,
+                business_location_id=campaign.business_location_id,
+                recommendation_id=recommendation_id,
+                action_id=action_id,
+                cadence=cadence,
+                period_key=period_key,
+                timezone="UTC",
+                due_at=_action_plan_due_at(cadence, resolved_now),
+                status="ready",
+                lexicon_id=str(plan["lexicon_id"]),
+                lexicon_version=str(plan["lexicon_version"]),
+                content_hash=content_hash,
+                idempotency_key=idempotency_key,
+                created_at=resolved_now,
+                updated_at=resolved_now,
+            )
+            db.add(occurrence)
+            db.flush()
+            for position, instruction in enumerate(plan.get("steps", []), start=1):
+                step_key = hashlib.sha256(
+                    f"{action_id}:{position}:{instruction}".encode("utf-8")
+                ).hexdigest()[:40]
+                db.add(
+                    ActionPlanStep(
+                        tenant_id=tenant_id,
+                        organization_id=organization_id,
+                        occurrence_id=occurrence.id,
+                        step_key=step_key,
+                        position=position,
+                        instruction=str(instruction),
+                        required=True,
+                        status="not_started",
+                        created_at=resolved_now,
+                        updated_at=resolved_now,
+                    )
+                )
+            db.flush()
+
+        work_items[recommendation_id] = _serialize_action_plan_occurrence(
+            db,
+            occurrence,
+            now=resolved_now,
+        )
+
+    db.commit()
+    return work_items
+
+
+def update_action_plan_step(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    campaign_id: str,
+    occurrence_id: str,
+    step_id: str,
+    step_status: str,
+    blocker_reason: str | None,
+    evidence: list[str] | None,
+    actor_user_id: str,
+) -> dict:
+    _campaign_or_404(db, tenant_id, campaign_id)
+    occurrence = (
+        db.query(ActionPlanOccurrence)
+        .filter(
+            ActionPlanOccurrence.id == occurrence_id,
+            ActionPlanOccurrence.tenant_id == tenant_id,
+            ActionPlanOccurrence.organization_id == organization_id,
+            ActionPlanOccurrence.campaign_id == campaign_id,
+        )
+        .first()
+    )
+    if occurrence is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action plan not found")
+    step = (
+        db.query(ActionPlanStep)
+        .filter(
+            ActionPlanStep.id == step_id,
+            ActionPlanStep.tenant_id == tenant_id,
+            ActionPlanStep.organization_id == organization_id,
+            ActionPlanStep.occurrence_id == occurrence_id,
+        )
+        .first()
+    )
+    if step is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checklist step not found")
+
+    resolved_now = datetime.now(UTC)
+    step.status = step_status
+    step.blocker_reason = blocker_reason if step_status == "blocked" else None
+    if evidence is not None:
+        step.evidence = [str(item) for item in evidence]
+    if step_status in _RESOLVED_STEP_STATUSES:
+        step.completed_by_user_id = actor_user_id
+        step.completed_at = resolved_now
+    else:
+        step.completed_by_user_id = None
+        step.completed_at = None
+    step.updated_at = resolved_now
+    db.flush()
+
+    steps = (
+        db.query(ActionPlanStep)
+        .filter(
+            ActionPlanStep.tenant_id == tenant_id,
+            ActionPlanStep.occurrence_id == occurrence_id,
+        )
+        .order_by(ActionPlanStep.position.asc())
+        .all()
+    )
+    required_steps = [item for item in steps if item.required]
+    if required_steps and all(item.status == "done" for item in required_steps):
+        occurrence.status = "waiting_for_results"
+        occurrence.completed_at = resolved_now
+    elif any(item.status == "blocked" for item in steps):
+        occurrence.status = "blocked"
+        occurrence.completed_at = None
+    elif any(item.status in {"in_progress", "done"} for item in steps):
+        occurrence.status = "in_progress"
+        occurrence.completed_at = None
+    else:
+        occurrence.status = "ready"
+        occurrence.completed_at = None
+    occurrence.updated_at = resolved_now
+    db.commit()
+    db.refresh(occurrence)
+    return _serialize_action_plan_occurrence(db, occurrence, now=resolved_now)
 
 
 def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -462,7 +829,6 @@ def advance_month(db: Session, tenant_id: str, campaign_id: str, override: bool)
     campaign.month_number = min(12, campaign.month_number + 1)
     db.commit()
     return {"campaign_id": campaign.id, "advanced_to_month": campaign.month_number, "override": override}
-
 
 
 

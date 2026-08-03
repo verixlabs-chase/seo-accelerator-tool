@@ -1,4 +1,5 @@
 from app.models.audit_log import AuditLog
+from app.models.action_plan import ActionPlanOccurrence, ActionPlanStep
 from app.events.outbox.event_outbox import EventOutbox
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.auth_session import AuthSession
@@ -117,6 +118,8 @@ __all__ = [
     "CampaignDailyMetric",
     "AnalyticsDailyMetric",
     "AuditLog",
+    "ActionPlanOccurrence",
+    "ActionPlanStep",
     "EventOutbox",
     "TaskExecution",
     "Page",

@@ -1087,6 +1087,15 @@ recommendation.
 > effort, owner, steps, success metrics, and observation window from the API.
 > The UI does not generate filler when only one action is supported. Persistent
 > checklist progress and Daily/Weekly/Monthly routines remain T26.
+>
+> **T26 implementation completed 2026-08-03:** lexicon-backed plans now create
+> versioned, dated work occurrences and persistent checklist rows. Each step
+> stores order, required state, progress, blocker/evidence fields, completion
+> actor, and completion time. Deterministic cadence and due state drive Today,
+> This week, This month, and Later groups in Next Steps. Progress survives
+> sessions and devices, required-step completion moves work to
+> `waiting_for_results`, and no AI call is made for rendering or checklist
+> updates. Forecasting and verified outcome proof remain T27-T28.
 
 Product decision:
 

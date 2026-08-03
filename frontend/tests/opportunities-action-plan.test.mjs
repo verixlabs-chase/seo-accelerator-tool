@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   getCanonicalActionKey,
   getRecommendationPortfolio,
+  getRecommendationRoutines,
+  getWorkProgress,
 } from "../app/(product)/truth/actionPlan.mjs";
 
 function recommendation(overrides = {}) {
@@ -61,4 +63,44 @@ test("action portfolio does not create filler when evidence supports only one ac
   assert.equal(result.primary.id, "only-action");
   assert.deepEqual(result.next, []);
   assert.deepEqual(result.later, []);
+});
+
+test("action routines group persisted work without creating fake assignments", () => {
+  const result = getRecommendationRoutines([
+    recommendation({
+      id: "today",
+      action_plan: { action_id: "technical.speed", work_item: { cadence: "daily" } },
+    }),
+    recommendation({
+      id: "week",
+      action_plan: { action_id: "local.reviews", work_item: { cadence: "weekly" } },
+    }),
+    recommendation({
+      id: "month",
+      action_plan: { action_id: "content.plan", work_item: { cadence: "monthly" } },
+    }),
+    recommendation({ id: "unsupported", recommendation_type: "heuristic.only" }),
+  ]);
+
+  assert.deepEqual(result.daily.map((item) => item.id), ["today"]);
+  assert.deepEqual(result.weekly.map((item) => item.id), ["week"]);
+  assert.deepEqual(result.monthly.map((item) => item.id), ["month"]);
+  assert.deepEqual(result.later.map((item) => item.id), ["unsupported"]);
+});
+
+test("work progress uses required checklist steps", () => {
+  const progress = getWorkProgress({
+    action_plan: {
+      work_item: {
+        progress: { completed_required: 2, required_total: 3 },
+      },
+    },
+  });
+
+  assert.deepEqual(progress, {
+    completed: 2,
+    total: 3,
+    label: "2 of 3 steps done",
+    percent: 67,
+  });
 });
