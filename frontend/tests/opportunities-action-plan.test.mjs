@@ -124,4 +124,10 @@ test("next steps separates finished work from a measured result", () => {
   assert.match(pageSource, /Optimistic/);
   assert.match(pageSource, /It does not predict rankings, visits, leads, or revenue/);
   assert.match(pageSource, /data-forecast-visual/);
+  assert.match(pageSource, /Ask about this location/);
+  assert.match(pageSource, /Get an answer from the saved facts/);
+  assert.match(pageSource, /Answers cannot change your website or add new actions/);
+  assert.match(pageSource, /\/intelligence\/questions/);
+  assert.match(pageSource, /See the saved information behind this answer/);
+  assert.match(pageSource, /What this answer cannot confirm/);
 });

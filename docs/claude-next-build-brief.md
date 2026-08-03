@@ -20,10 +20,12 @@
 > action plans now store reproducible conservative, expected, and optimistic
 > direct-metric forecasts and compare them with a genuinely new result after
 > the observation window. Unsupported ranking, visit, lead, and revenue effects
-> remain unknown. The bounded **I1.3 daily action brief is now implemented**:
-> each location can receive up to three engine-approved actions with current
-> checklist context and plain-language AI wording. The next I1.3 slice is
-> evidence-based questions and answers. **I1.4/T29: Measured Website and Google
+> remain unknown. The bounded **I1.3 daily action brief and evidence-based
+> questions are now implemented**: each location can receive up to three
+> engine-approved actions with current checklist context and plain-language AI
+> wording, and owners can ask bounded questions whose answers cite only saved
+> location evidence and allowed actions. The next I1.3 slice is governed
+> drafting. **I1.4/T29: Measured Website and Google
 > Business Profile Action Tracks** is now scheduled after G1.4 connects live
 > profile performance data. It will show the real metric each action is meant
 > to move, the starting value, the waiting period, and the measured result
@@ -67,7 +69,7 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 > baseline, UX10 established the shared plain-language and visual system, and
 > UX11-UX12 completed the owner-journey and cross-page rollout. The next
 > customer product phase is the remaining I1.3 governed-AI utility work,
-> beginning with evidence-based questions and answers. I1.4/T29 follows G1.4's
+> beginning with governed drafting. I1.4/T29 follows G1.4's
 > live Google Business Profile metric connection. Recommendation-only
 > intelligence remains enabled; autonomous customer-site mutations and
 > automatic policy updates remain disabled.
@@ -467,7 +469,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 9 | **UX12 - Cross-Page Visualization and Usability Rollout** | Rankings, Local Search, Website Health, Listings, Reviews, Competitors, Locations, Reports, Settings, and setup states receive the same understandable hierarchy. |
 | 10 | **I1.4/T27 - Action Measurement Readiness — completed** | Starting measurements, completed-work proof, success measurements, and honest waiting periods make a checked box different from a proven result. |
 | 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling — completed** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
-| 12 | **I1.3 remaining slices - Governed AI Utility Expansion — daily brief completed** | Evidence-based questions and answers and governed drafting make AI useful beyond the completed three-action daily brief while the deterministic engine keeps authority. |
+| 12 | **I1.3 remaining slices - Governed AI Utility Expansion — daily brief and evidence Q&A completed** | Governed drafting is the remaining utility slice; the live question flow now answers only from cited location evidence while the deterministic engine keeps authority. |
 | 13 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
 | 14 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
 | 15 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
@@ -1227,8 +1229,8 @@ policy engine retain decision authority.
 > reason under database RLS. Mistral has no database, Google, WordPress, or tool
 > access and cannot execute changes. The production migration, provider key,
 > restricted-role pricing access, deterministic control-field enforcement, and
-> live validated-output/cost audit have passed. Evidence Q&A and governed
-> drafting remain later I1.3 slices.
+> live validated-output/cost audit have passed. Evidence Q&A is now complete;
+> governed drafting remains the later I1.3 slice.
 >
 > **Service-business language contract completed 2026-07-30:** the live AI
 > prompt now loads the versioned
@@ -1250,6 +1252,22 @@ policy engine retain decision authority.
 > keeps the exact deterministic plan available. Automated tests cover archived
 > action exclusion, the three-action ceiling, checklist context, invalid action
 > rejection, tenant scope, cost accounting, fallback behavior, and UI wording.
+>
+> **Evidence-based questions implemented 2026-08-03:** Next Steps now includes
+> one bounded `Ask about this location` area inside the existing AI plan. The
+> API supplies only the selected location's saved campaign facts, latest score,
+> recommendations, checklist state, direct measurements, and governed forecast
+> context. Each accepted answer preserves the original question, cites known
+> evidence IDs, may reference only already-allowed action IDs, shows source
+> details and uncertainty, and remains recommendation-only. Prompt-injection
+> text cannot override the system contract; likely credentials are rejected
+> before persistence. Calls share the existing plan allowance, concurrency,
+> token ceiling, price card, reserve/reconcile cost path, idempotency, audit
+> history, deterministic fallback, and tenant/location scope. The model cannot
+> create actions or execute changes. Automated tests cover valid cited answers,
+> invented evidence and action rejection, credential blocking, idempotency,
+> provider prompt boundaries, metering, safe fallback, and the authenticated
+> API flow.
 
 Runtime sequence:
 

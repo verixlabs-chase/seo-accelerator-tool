@@ -12,6 +12,7 @@ from app.models.campaign import Campaign
 from app.schemas.intelligence import (
     ActionPlanStepUpdateIn,
     AdvanceMonthIn,
+    AskIntelligenceQuestionIn,
     GenerateIntelligenceBriefIn,
     IntelligenceScoreOut,
     RecommendationOut,
@@ -22,6 +23,7 @@ from app.services import (
     action_plan_measurement_service,
     durable_job_service,
     governed_ai_service,
+    governed_ai_qa_service,
     intelligence_service,
 )
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
@@ -276,6 +278,42 @@ def generate_intelligence_brief(
         organization_id=user["organization_id"],
         campaign_id=campaign_id,
         requested_by_user_id=user["user_id"],
+        retry_failed=body.retry_failed,
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.get("/questions")
+def get_intelligence_questions(
+    request: Request,
+    campaign_id: str = Query(...),
+    limit: int = Query(default=5, ge=1, le=25),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_ai_qa_service.list_governed_answers(
+        db,
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        limit=limit,
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/questions")
+def ask_intelligence_question(
+    request: Request,
+    body: AskIntelligenceQuestionIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_ai_qa_service.ask_governed_question(
+        db,
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        requested_by_user_id=user["user_id"],
+        question=body.question,
         retry_failed=body.retry_failed,
     )
     return envelope(request, payload)

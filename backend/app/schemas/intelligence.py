@@ -79,6 +79,11 @@ class GenerateIntelligenceBriefIn(BaseModel):
     retry_failed: bool = False
 
 
+class AskIntelligenceQuestionIn(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+    retry_failed: bool = False
+
+
 class ActionPlanStepUpdateIn(BaseModel):
     status: Literal["not_started", "in_progress", "done", "skipped", "blocked"]
     blocker_reason: str | None = Field(default=None, max_length=1000)

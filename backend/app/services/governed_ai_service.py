@@ -605,6 +605,12 @@ def _build_context(
                         "why_it_matters": plan.get("why_it_matters"),
                         "effort": plan.get("effort"),
                         "owner_role": plan.get("owner_role"),
+                        "success_metric_ids": list(
+                            plan.get("success_metric_ids") or []
+                        )[:6],
+                        "observation_window_days": plan.get(
+                            "observation_window_days"
+                        ),
                     }
                     if plan is not None
                     else None
@@ -734,6 +740,8 @@ def _bounded_work_context(work_item: dict[str, Any] | None) -> dict[str, Any] | 
         return None
     progress = work_item.get("progress") or {}
     next_step = work_item.get("next_step") or {}
+    measurement = work_item.get("measurement") or {}
+    forecast = work_item.get("forecast") or {}
     return {
         "cadence": work_item.get("cadence"),
         "due_state": work_item.get("due_state"),
@@ -742,6 +750,67 @@ def _bounded_work_context(work_item: dict[str, Any] | None) -> dict[str, Any] | 
         "total_steps": int(progress.get("required_total") or 0),
         "next_step": next_step.get("instruction"),
         "next_step_status": next_step.get("status"),
+        "measurement": (
+            {
+                "status": measurement.get("measurement_status"),
+                "readiness": measurement.get("readiness"),
+                "outcome_status": measurement.get("outcome_status"),
+                "baseline_captured_at": measurement.get("baseline_captured_at"),
+                "outcome_measured_at": measurement.get("outcome_measured_at"),
+                "observation_due_at": measurement.get("observation_due_at"),
+                "baseline_metrics": [
+                    {
+                        "metric_id": metric.get("metric_id"),
+                        "display_name": metric.get("display_name"),
+                        "value": metric.get("value"),
+                        "unit": metric.get("unit"),
+                        "source": metric.get("source"),
+                        "status": metric.get("status"),
+                    }
+                    for metric in list(measurement.get("baseline_metrics") or [])[:6]
+                    if isinstance(metric, dict)
+                ],
+                "outcome_metrics": [
+                    {
+                        "metric_id": metric.get("metric_id"),
+                        "display_name": metric.get("display_name"),
+                        "value": metric.get("value"),
+                        "change": metric.get("change"),
+                        "comparison": metric.get("comparison"),
+                        "unit": metric.get("unit"),
+                        "source": metric.get("source"),
+                    }
+                    for metric in list(measurement.get("outcome_metrics") or [])[:6]
+                    if isinstance(metric, dict)
+                ],
+            }
+            if measurement
+            else None
+        ),
+        "forecast": (
+            {
+                "status": forecast.get("forecast_status"),
+                "data_quality": forecast.get("data_quality"),
+                "generated_at": forecast.get("generated_at"),
+                "promise": False,
+                "metrics": [
+                    {
+                        "metric_id": metric.get("metric_id"),
+                        "display_name": metric.get("display_name"),
+                        "current_value": metric.get("current_value"),
+                        "expected_value": metric.get("expected_value"),
+                        "range_low": metric.get("range_low"),
+                        "range_high": metric.get("range_high"),
+                        "unit": metric.get("unit"),
+                    }
+                    for metric in list(forecast.get("metric_forecasts") or [])[:6]
+                    if isinstance(metric, dict)
+                ],
+                "unknown_effects": list(forecast.get("unknown_effects") or [])[:6],
+            }
+            if forecast
+            else None
+        ),
     }
 
 

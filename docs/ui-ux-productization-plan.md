@@ -14,9 +14,9 @@
 > has dense operations-console patterns, repeated status content, technical
 > copy, weak visual hierarchy, and too little decision-useful visualization.
 > UX10-UX12, I1.4/T27 measurement readiness, and I1.2/T28 evidence-backed
-> forecasting and the bounded I1.3 daily action brief are now complete. The
-> remaining I1.3 utility slices are next, beginning with evidence-based
-> questions and answers. The follow-on **I1.4/T29 measured action-value
+> forecasting, the bounded I1.3 daily action brief, and evidence-based location
+> questions are now complete. The remaining I1.3 utility work begins with
+> governed drafting. The follow-on **I1.4/T29 measured action-value
 > sprint** is scheduled after G1.4 supplies live Google Business Profile
 > performance data; it adds separate Website and Google Profile action lanes
 > with real baselines and measured results. A later **ENG1 verified-progress

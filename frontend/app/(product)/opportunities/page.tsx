@@ -325,6 +325,47 @@ type GovernedIntelligenceBriefResponse = {
   idempotent_replay?: boolean;
 };
 
+type GovernedEvidenceDetail = {
+  evidence_id: string;
+  label: string;
+  detail?: string | null;
+  captured_at?: string | null;
+};
+
+type GovernedRelatedAction = {
+  action_id: string;
+  display_name?: string | null;
+  why_it_matters?: string | null;
+};
+
+type GovernedEvidenceAnswer = {
+  id: string;
+  status: "validated" | "fallback" | "rejected" | "failed";
+  provider_state?: string;
+  output: {
+    question: string;
+    answer: string;
+    answer_state:
+      | "answered"
+      | "not_enough_information"
+      | "temporarily_unavailable";
+    evidence_used?: string[];
+    evidence_details?: GovernedEvidenceDetail[];
+    related_action_ids?: string[];
+    related_actions?: GovernedRelatedAction[];
+    uncertainties?: string[];
+  };
+  created_at?: string;
+};
+
+type GovernedEvidenceAnswerResponse = {
+  item?: GovernedEvidenceAnswer | null;
+  items?: GovernedEvidenceAnswer[];
+  runtime?: GovernedIntelligenceBriefResponse["runtime"];
+  allowance?: GovernedIntelligenceBriefResponse["allowance"];
+  idempotent_replay?: boolean;
+};
+
 type ExecutionResult = {
   status?: string;
   notes?: string;
@@ -1363,6 +1404,8 @@ export default function OpportunitiesPage() {
     useState<GovernedIntelligenceBriefResponse["runtime"] | null>(null);
   const [intelligenceAllowance, setIntelligenceAllowance] =
     useState<GovernedIntelligenceBriefResponse["allowance"] | null>(null);
+  const [questionInput, setQuestionInput] = useState("");
+  const [evidenceAnswers, setEvidenceAnswers] = useState<GovernedEvidenceAnswer[]>([]);
   const [wordpressSetup, setWordpressSetup] = useState<WordPressExecutionSetup | null>(null);
   const [wordpressSetupError, setWordpressSetupError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1394,6 +1437,8 @@ export default function OpportunitiesPage() {
       setIntelligenceBrief(null);
       setIntelligenceRuntime(null);
       setIntelligenceAllowance(null);
+      setQuestionInput("");
+      setEvidenceAnswers([]);
       setSelectedRecommendationId("");
       return;
     }
@@ -1404,6 +1449,7 @@ export default function OpportunitiesPage() {
       scoreResponse,
       outcomeResponse,
       briefResponse,
+      questionResponse,
     ] = await Promise.all([
       platformApi(`/intelligence/recommendations?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
@@ -1420,6 +1466,10 @@ export default function OpportunitiesPage() {
       platformApi(`/intelligence/brief?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
+      platformApi(
+        `/intelligence/questions?campaign_id=${encodeURIComponent(campaignId)}&limit=5`,
+        { method: "GET" },
+      ),
     ]);
 
     const normalizedRecommendations = (recommendationsResponse as RecommendationListResponse) || null;
@@ -1442,6 +1492,17 @@ export default function OpportunitiesPage() {
     setIntelligenceBrief(normalizedBrief?.item || null);
     setIntelligenceRuntime(normalizedBrief?.runtime || null);
     setIntelligenceAllowance(normalizedBrief?.allowance || null);
+    const normalizedQuestions =
+      (questionResponse as GovernedEvidenceAnswerResponse) || null;
+    setEvidenceAnswers(
+      Array.isArray(normalizedQuestions?.items) ? normalizedQuestions.items : [],
+    );
+    if (normalizedQuestions?.runtime) {
+      setIntelligenceRuntime(normalizedQuestions.runtime);
+    }
+    if (normalizedQuestions?.allowance) {
+      setIntelligenceAllowance(normalizedQuestions.allowance);
+    }
     const portfolio = getRecommendationPortfolio(items);
     setSelectedRecommendationId((current) => {
       if (current && portfolio.ordered.some((item: Recommendation) => item.id === current)) {
@@ -1737,6 +1798,61 @@ export default function OpportunitiesPage() {
       } else {
         setNotice(
           "AI wording was not available, so InsightOS kept the saved action plan. Your checklist still works.",
+        );
+      }
+    });
+  }
+
+  async function askEvidenceQuestion() {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+    const question = questionInput.trim();
+    if (question.length < 3) {
+      setError("Ask a short question about this business.");
+      return;
+    }
+
+    const priorAttempt = evidenceAnswers.find(
+      (item) => item.output.question.toLowerCase() === question.toLowerCase(),
+    );
+    await runAction("ask-evidence-question", async () => {
+      const response = (await platformApi(
+        `/intelligence/questions?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            question,
+            retry_failed: Boolean(
+              priorAttempt && priorAttempt.status !== "validated",
+            ),
+          }),
+        },
+      )) as GovernedEvidenceAnswerResponse;
+      if (response.item) {
+        setEvidenceAnswers((current) => [
+          response.item!,
+          ...current.filter((item) => item.id !== response.item!.id),
+        ].slice(0, 5));
+      }
+      if (response.runtime) {
+        setIntelligenceRuntime(response.runtime);
+      }
+      if (response.allowance) {
+        setIntelligenceAllowance(response.allowance);
+      }
+
+      if (response.item?.status === "validated") {
+        setQuestionInput("");
+        setNotice(
+          response.idempotent_replay
+            ? "That answer is already up to date for the saved information."
+            : "Answer ready. It only uses the saved information shown for this location.",
+        );
+      } else {
+        setNotice(
+          "A verified answer was not available, so InsightOS kept your saved facts and actions unchanged.",
         );
       }
     });
@@ -2378,6 +2494,183 @@ export default function OpportunitiesPage() {
                   </p>
                 </div>
               )}
+
+              <section className="mt-5 border-t border-violet-500/15 pt-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="max-w-2xl">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/70">
+                      Ask about this location
+                    </p>
+                    <h3 className="mt-1 text-lg font-semibold text-white">
+                      Get an answer from the saved facts
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-zinc-300">
+                      Ask why an action matters, what number supports it, or what is still
+                      unknown. Answers cannot change your website or add new actions.
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Do not include passwords, API keys, customer details, or other private information.
+                    </p>
+                  </div>
+                  <span className="text-xs text-zinc-500">
+                    One question uses one explanation
+                  </span>
+                </div>
+
+                <form
+                  className="mt-4 flex flex-col gap-3 sm:flex-row"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void askEvidenceQuestion();
+                  }}
+                >
+                  <label className="sr-only" htmlFor="evidence-question">
+                    Ask a question about this location
+                  </label>
+                  <input
+                    id="evidence-question"
+                    value={questionInput}
+                    onChange={(event) => setQuestionInput(event.target.value)}
+                    maxLength={500}
+                    placeholder="Why is this the first thing I should work on?"
+                    className="min-h-11 flex-1 rounded-md border border-[#303137] bg-[#111214] px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={
+                      !selectedCampaignId ||
+                      questionInput.trim().length < 3 ||
+                      busyAction !== ""
+                    }
+                    className="min-h-11 rounded-md border border-violet-400/30 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "ask-evidence-question"
+                      ? "Checking saved facts..."
+                      : "Answer from my data"}
+                  </button>
+                </form>
+
+                <div className="mt-3 flex flex-wrap gap-2" aria-label="Example questions">
+                  {[
+                    "Why is this the first step?",
+                    "What number supports this?",
+                    "What is still unknown?",
+                  ].map((question) => (
+                    <button
+                      key={question}
+                      type="button"
+                      onClick={() => setQuestionInput(question)}
+                      className="rounded-full border border-[#303137] px-3 py-1.5 text-xs text-zinc-300 hover:border-violet-400/40 hover:text-white"
+                    >
+                      {question}
+                    </button>
+                  ))}
+                </div>
+
+                {evidenceAnswers[0] ? (
+                  <article className="mt-5 rounded-md bg-[#111214]/90 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span
+                        className={`text-xs font-semibold ${
+                          evidenceAnswers[0].output.answer_state === "answered"
+                            ? "text-emerald-300"
+                            : "text-amber-200"
+                        }`}
+                      >
+                        {evidenceAnswers[0].output.answer_state === "answered"
+                          ? "Answered from saved information"
+                          : evidenceAnswers[0].output.answer_state ===
+                              "not_enough_information"
+                            ? "More information is needed"
+                            : "Answer is temporarily unavailable"}
+                      </span>
+                      <span className="text-xs text-zinc-500">
+                        {formatRelativeTime(evidenceAnswers[0].created_at)}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm font-medium text-zinc-400">
+                      {evidenceAnswers[0].output.question}
+                    </p>
+                    <p className="mt-2 text-base leading-7 text-white">
+                      {evidenceAnswers[0].output.answer}
+                    </p>
+
+                    {evidenceAnswers[0].output.related_actions?.length ? (
+                      <div className="mt-4 border-l-2 border-violet-400/40 pl-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                          Related saved action
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-zinc-100">
+                          {simplifyCustomerCopy(
+                            evidenceAnswers[0].output.related_actions[0].display_name ||
+                              undefined,
+                            { fallback: "Open the current action plan" },
+                          )}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {evidenceAnswers[0].output.evidence_details?.length ? (
+                      <details className="mt-4 border-t border-[#26272c] pt-3">
+                        <summary className="cursor-pointer text-sm font-medium text-zinc-300">
+                          See the saved information behind this answer
+                        </summary>
+                        <ul className="mt-3 space-y-3">
+                          {evidenceAnswers[0].output.evidence_details.map((evidence) => (
+                            <li key={evidence.evidence_id} className="text-sm text-zinc-300">
+                              <span className="font-medium text-white">{evidence.label}</span>
+                              {evidence.detail ? (
+                                <span className="mt-1 block leading-6 text-zinc-400">
+                                  {evidence.detail}
+                                </span>
+                              ) : null}
+                              {evidence.captured_at ? (
+                                <span className="mt-1 block text-xs text-zinc-500">
+                                  Saved {formatRelativeTime(evidence.captured_at)}
+                                </span>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+
+                    {evidenceAnswers[0].output.uncertainties?.length ? (
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-sm font-medium text-zinc-300">
+                          What this answer cannot confirm
+                        </summary>
+                        <ul className="mt-2 space-y-1 text-sm leading-6 text-zinc-400">
+                          {evidenceAnswers[0].output.uncertainties.map((item) => (
+                            <li key={item}>- {item}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                  </article>
+                ) : (
+                  <p className="mt-4 text-sm text-zinc-500">
+                    No questions have been asked for this location yet.
+                  </p>
+                )}
+
+                {evidenceAnswers.length > 1 ? (
+                  <details className="mt-4 text-sm text-zinc-400">
+                    <summary className="cursor-pointer font-medium text-zinc-300">
+                      See {evidenceAnswers.length - 1} earlier answer
+                      {evidenceAnswers.length === 2 ? "" : "s"}
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      {evidenceAnswers.slice(1).map((item) => (
+                        <div key={item.id} className="border-l border-[#303137] pl-3">
+                          <p className="font-medium text-zinc-300">{item.output.question}</p>
+                          <p className="mt-1 leading-6 text-zinc-500">{item.output.answer}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
+              </section>
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-violet-500/15 pt-4 text-xs text-zinc-500">
                 <span>
