@@ -2,9 +2,9 @@
 
 > **Status update (2026-08-03):** This remains the workflow-fulfillment backlog,
 > but it is no longer the master next-sprint sequence. The working routes are in
-> place. T26, UX10/T29, UX11/T30, and UX12/T31 are complete. Customer review now
-> moves to I1.2/T28: evidence-backed improvement forecasting and scenario
-> modeling. See
+> place. T26, I1.4/T27, UX10/T29, UX11/T30, and UX12/T31 are complete. Customer
+> work now moves to I1.2/T28: evidence-backed improvement forecasting and
+> scenario comparison. See
 > [claude-next-build-brief.md](./claude-next-build-brief.md#1a-active-customer-ux-sprint-sequence).
 > Remaining feature tickets should be scheduled behind or alongside that
 > customer-comprehension work, not used to add more dense top-level surfaces.
@@ -557,6 +557,17 @@ Execution priority for this phase:
 - Recommended order: 26
 
 ### T27. Add action baselines, completion proof, and measurement readiness
+
+> **Implementation completed 2026-08-03:** Beginning a saved checklist now
+> captures one immutable, tenant-scoped baseline tied to the action-plan hash,
+> implementation scope, success measurements, evidence window, and lexicon
+> version. Completing every required step stores actor/time/evidence proof and
+> begins the governed observation window without claiming success. A follow-up
+> endpoint accepts only new post-completion evidence and records `helped`,
+> `did_not_help`, or `insufficient_data`. The Next Steps UI explains the saved
+> starting point, waiting state, check date, source, and measured result in plain
+> language. Unsupported or stale measurements remain unavailable rather than
+> guessed. Migration 0084 applies RLS and a PostgreSQL immutability trigger.
 
 - Goal: make plan completion meaningful by recording what existed before the
   work, what was actually done, and when results can be judged.

@@ -18,6 +18,7 @@ from app.utils.enum_guard import ensure_enum
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.local import LocalHealthSnapshot
 from app.models.rank import Ranking
+from app.services import action_plan_measurement_service
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
 
 RECOMMENDATION_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -206,8 +207,26 @@ def _serialize_action_plan_occurrence(
     due_at = occurrence.due_at
     if due_at is not None and due_at.tzinfo is None:
         due_at = due_at.replace(tzinfo=UTC)
-    if occurrence.status in {"waiting_for_results", "completed"}:
+    measurement = action_plan_measurement_service.get_action_plan_measurement(
+        db,
+        occurrence_id=occurrence.id,
+    )
+    if occurrence.status == "completed":
         due_state = "completed"
+    elif occurrence.status == "waiting_for_results":
+        observation_due_at = (
+            measurement.observation_due_at if measurement is not None else None
+        )
+        observation_due_at = (
+            observation_due_at.replace(tzinfo=UTC)
+            if observation_due_at is not None and observation_due_at.tzinfo is None
+            else observation_due_at
+        )
+        due_state = (
+            "ready_to_measure"
+            if observation_due_at is not None and observation_due_at <= resolved_now
+            else "waiting_for_results"
+        )
     elif occurrence.status == "snoozed":
         due_state = "snoozed"
     elif due_at is None:
@@ -265,6 +284,14 @@ def _serialize_action_plan_occurrence(
         else None,
         "created_at": occurrence.created_at.isoformat(),
         "updated_at": occurrence.updated_at.isoformat(),
+        "measurement": (
+            action_plan_measurement_service.serialize_action_plan_measurement(
+                measurement,
+                now=resolved_now,
+            )
+            if measurement is not None
+            else None
+        ),
     }
 
 
@@ -415,6 +442,7 @@ def update_action_plan_step(
             ActionPlanOccurrence.organization_id == organization_id,
             ActionPlanOccurrence.campaign_id == campaign_id,
         )
+        .with_for_update()
         .first()
     )
     if occurrence is None:
@@ -433,6 +461,22 @@ def update_action_plan_step(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checklist step not found")
 
     resolved_now = datetime.now(UTC)
+    existing_measurement = action_plan_measurement_service.get_action_plan_measurement(
+        db,
+        occurrence_id=occurrence.id,
+    )
+    if existing_measurement is not None and existing_measurement.measurement_status == "measured":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This action has a measured result and can no longer be changed.",
+        )
+    previous_occurrence_status = occurrence.status
+    if step_status in {"in_progress", "done"}:
+        action_plan_measurement_service.capture_action_plan_baseline(
+            db,
+            occurrence=occurrence,
+            captured_at=resolved_now,
+        )
     step.status = step_status
     step.blocker_reason = blocker_reason if step_status == "blocked" else None
     if evidence is not None:
@@ -459,6 +503,12 @@ def update_action_plan_step(
     if required_steps and all(item.status == "done" for item in required_steps):
         occurrence.status = "waiting_for_results"
         occurrence.completed_at = resolved_now
+        action_plan_measurement_service.mark_action_plan_work_completed(
+            db,
+            occurrence=occurrence,
+            steps=steps,
+            completed_at=resolved_now,
+        )
     elif any(item.status == "blocked" for item in steps):
         occurrence.status = "blocked"
         occurrence.completed_at = None
@@ -468,6 +518,15 @@ def update_action_plan_step(
     else:
         occurrence.status = "ready"
         occurrence.completed_at = None
+    if (
+        previous_occurrence_status == "waiting_for_results"
+        and occurrence.status != "waiting_for_results"
+    ):
+        action_plan_measurement_service.mark_action_plan_work_reopened(
+            db,
+            occurrence=occurrence,
+            reopened_at=resolved_now,
+        )
     occurrence.updated_at = resolved_now
     db.commit()
     db.refresh(occurrence)
@@ -829,7 +888,5 @@ def advance_month(db: Session, tenant_id: str, campaign_id: str, override: bool)
     campaign.month_number = min(12, campaign.month_number + 1)
     db.commit()
     return {"campaign_id": campaign.id, "advanced_to_month": campaign.month_number, "override": override}
-
-
 
 

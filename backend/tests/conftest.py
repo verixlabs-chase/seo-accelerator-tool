@@ -149,6 +149,7 @@ def _verify_required_tables(database_url: str) -> None:
         required_tables = [
             "action_plan_occurrences",
             "action_plan_steps",
+            "action_plan_measurements",
             "auth_sessions",
             "crawl_runs",
             "strategy_cohort_patterns",

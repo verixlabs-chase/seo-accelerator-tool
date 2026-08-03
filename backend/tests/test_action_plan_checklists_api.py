@@ -75,6 +75,18 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
     )
     assert updated.status_code == 200
     assert updated.json()["data"]["work_item"]["progress"]["completed_required"] == 1
+    measurement = updated.json()["data"]["work_item"]["measurement"]
+    assert measurement["measurement_status"] == "insufficient_baseline"
+    assert measurement["readiness"] == "baseline_unavailable"
+
+    too_early = client.post(
+        (
+            f"/api/v1/intelligence/action-plans/{work_item['id']}"
+            f"/measure?campaign_id={campaign['id']}"
+        ),
+        headers=headers_a,
+    )
+    assert too_early.status_code == 409
 
     refreshed = client.get(
         f"/api/v1/intelligence/recommendations?campaign_id={campaign['id']}",
@@ -99,3 +111,12 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
         headers=headers_b,
     )
     assert blocked.status_code == 404
+
+    blocked_measurement = client.post(
+        (
+            f"/api/v1/intelligence/action-plans/{work_item['id']}"
+            f"/measure?campaign_id={campaign['id']}"
+        ),
+        headers=headers_b,
+    )
+    assert blocked_measurement.status_code == 404

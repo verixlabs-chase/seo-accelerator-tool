@@ -1,16 +1,17 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 import json
 
 import pytest
 from fastapi import HTTPException
 
 from app.models.campaign import Campaign
-from app.models.action_plan import ActionPlanOccurrence, ActionPlanStep
+from app.models.action_plan import ActionPlanMeasurement, ActionPlanOccurrence, ActionPlanStep
 from app.models.intelligence import StrategyRecommendation
 from app.models.tenant import Tenant
 from app.models.user import User
+from app.models.website_performance import WebsitePerformanceMeasurement
 from app.schemas.intelligence import IntelligenceScoreOut, RecommendationOut
-from app.services import intelligence_service
+from app.services import action_plan_measurement_service, intelligence_service
 
 
 def test_intelligence_score_recommendations_and_advance_month(db_session):
@@ -187,6 +188,26 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
         status="GENERATED",
     )
     db_session.add(recommendation)
+    db_session.add(
+        WebsitePerformanceMeasurement(
+            tenant_id=tenant.id,
+            organization_id=tenant.id,
+            campaign_id=campaign.id,
+            requested_url="https://checklist.example",
+            measured_url="https://checklist.example",
+            source="crux_field",
+            scope="url",
+            form_factor="PHONE",
+            status="ready",
+            lcp_ms=4200.0,
+            collection_start=date(2026, 7, 1),
+            collection_end=date(2026, 7, 28),
+            lexicon_id="seo-intelligence-core",
+            lexicon_version="1.0.0",
+            idempotency_key="checklist-baseline-lcp",
+            captured_at=datetime(2026, 8, 2, 16, 30, tzinfo=UTC),
+        )
+    )
     db_session.commit()
 
     plans = intelligence_service.build_recommendation_action_plans(
@@ -225,7 +246,7 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
     assert db_session.query(ActionPlanStep).count() == 3
 
     work_item = first
-    for step in first["steps"]:
+    for index, step in enumerate(first["steps"]):
         work_item = intelligence_service.update_action_plan_step(
             db_session,
             tenant_id=tenant.id,
@@ -238,12 +259,80 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
             evidence=None,
             actor_user_id=user.id,
         )
+        if index == 0:
+            baseline = db_session.query(ActionPlanMeasurement).one()
+            assert baseline.baseline_metrics[0]["value"] == 4200.0
+            db_session.add(
+                WebsitePerformanceMeasurement(
+                    tenant_id=tenant.id,
+                    organization_id=tenant.id,
+                    campaign_id=campaign.id,
+                    requested_url="https://checklist.example",
+                    measured_url="https://checklist.example",
+                    source="crux_field",
+                    scope="url",
+                    form_factor="PHONE",
+                    status="ready",
+                    lcp_ms=2400.0,
+                    collection_start=date(2026, 8, 1),
+                    collection_end=date(2026, 8, 28),
+                    lexicon_id="seo-intelligence-core",
+                    lexicon_version="1.0.0",
+                    idempotency_key="checklist-follow-up-lcp",
+                    captured_at=datetime.now(UTC) + timedelta(days=29),
+                )
+            )
+            db_session.commit()
 
     assert work_item["status"] == "waiting_for_results"
-    assert work_item["due_state"] == "completed"
+    assert work_item["due_state"] == "waiting_for_results"
     assert work_item["progress"]["completed_required"] == 3
     assert work_item["next_step"] is None
     assert all(step["completed_by_user_id"] == user.id for step in work_item["steps"])
+    measurement = work_item["measurement"]
+    assert measurement["measurement_status"] == "waiting_for_results"
+    assert measurement["baseline_metrics"][0]["value"] == 4200.0
+    assert measurement["baseline_available_count"] == 1
+    assert len(measurement["completion_proof"]) == 3
+
+    measured = action_plan_measurement_service.evaluate_action_plan_outcome(
+        db_session,
+        tenant_id=tenant.id,
+        organization_id=tenant.id,
+        campaign_id=campaign.id,
+        occurrence_id=first["id"],
+        measured_at=datetime.now(UTC) + timedelta(days=29),
+    )
+    assert measured["measurement_status"] == "measured"
+    assert measured["outcome_status"] == "helped"
+    assert measured["outcome_metrics"][0]["baseline_value"] == 4200.0
+    assert measured["outcome_metrics"][0]["value"] == 2400.0
+
+
+def test_action_plan_outcome_requires_new_post_completion_evidence():
+    completed_at = datetime(2026, 8, 3, 18, 0, tzinfo=UTC)
+    baseline = {
+        "metric_id": "cwv.lcp",
+        "value": 4200.0,
+        "direction": "lower_is_better",
+        "source_record_id": "same-field-record",
+    }
+    observed = {
+        "metric_id": "cwv.lcp",
+        "value": 4200.0,
+        "direction": "lower_is_better",
+        "source_record_id": "same-field-record",
+        "measured_at": completed_at.isoformat(),
+    }
+
+    comparison = action_plan_measurement_service._comparison(
+        baseline,
+        observed,
+        work_completed_at=completed_at,
+    )
+
+    assert comparison["comparison"] == "insufficient_data"
+    assert comparison["change"] is None
 
 
 def test_deep_recommendation_can_enter_human_review(db_session):

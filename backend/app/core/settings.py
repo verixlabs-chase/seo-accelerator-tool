@@ -131,6 +131,7 @@ class Settings(BaseSettings):
     reference_library_enforce_validation: bool = True
     reference_library_seed_path: str = ""
     intelligence_lexicon_enabled: bool = True
+    action_measurement_readiness_enabled: bool = True
     crux_api_key: str = ""
     cwv_standards_probe_origin: str = "https://web.dev"
     cwv_standards_review_interval_days: int = 30

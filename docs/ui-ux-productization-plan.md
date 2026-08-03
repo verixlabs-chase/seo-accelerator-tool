@@ -13,7 +13,8 @@
 > working baseline. Customer screenshot review found that the interface still
 > has dense operations-console patterns, repeated status content, technical
 > copy, weak visual hierarchy, and too little decision-useful visualization.
-> UX10-UX12 are now complete. The authoritative execution
+> UX10-UX12 and I1.4/T27 measurement readiness are now complete. I1.2/T28
+> forecasting is next. The authoritative execution
 > brief is [claude-next-build-brief.md](./claude-next-build-brief.md).
 >
 > **Sprint 9 language standard:** Design and write for an owner or manager of a service-based
@@ -23,8 +24,8 @@
 > **Handoff after UX9:** Follow the reconciled execution order in
 > [claude-next-build-brief.md](./claude-next-build-brief.md#recommended-execution-order-from-the-current-state).
 > It now coordinates production trust (TR1), automated data (G1), live and AI-assisted
-> intelligence (I1), premium reports (RPT1), alerts (ALT1), guided onboarding (CX1),
-> research/content (MKT1/CNT1), safe WordPress automation (WP1), switching/imports
+> intelligence (I1), data trust (DT1), premium reports (RPT1), alerts (ALT1), guided onboarding (CX1),
+> research/content/authority (MKT1/CNT1/AUTH1), safe WordPress automation (WP1), switching/imports
 > (MIG1), product analytics (PA1), privacy/portability (GOV1), advanced search coverage
 > (SEO2), outcome learning (I2), AI visibility (AIV1), multi-location (ML1), commerce
 > (COM1), launch operations (OPS1), and enterprise delivery (ENT1). Call tracking, CRM,

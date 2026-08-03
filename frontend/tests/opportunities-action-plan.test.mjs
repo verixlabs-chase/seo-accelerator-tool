@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   getCanonicalActionKey,
@@ -103,4 +105,17 @@ test("work progress uses required checklist steps", () => {
     label: "2 of 3 steps done",
     percent: 67,
   });
+});
+
+test("next steps separates finished work from a measured result", () => {
+  const pageSource = readFileSync(
+    fileURLToPath(new URL("../app/(product)/opportunities/page.tsx", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(pageSource, /Measured result/);
+  assert.match(pageSource, /Finishing a step records the work, but it does not claim the result improved/);
+  assert.match(pageSource, /Work recorded — waiting for results/);
+  assert.match(pageSource, /Check results now/);
+  assert.match(pageSource, /There is not enough follow-up data/);
 });

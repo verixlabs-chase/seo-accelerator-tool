@@ -1,6 +1,6 @@
 # Claude Next Build Brief
 
-> **Active roadmap status (2026-07-30):** Release R1 is production-verified, and
+> **Active roadmap status (2026-08-03):** Release R1 is production-verified, and
 > the TR1 security/recovery implementation is published. Tenant isolation,
 > Windows-native recovery tooling, bounded key rotation, sanitized evidence
 > capture, and deployment rollback controls are in place. The production
@@ -16,11 +16,15 @@
 > controls. **I1.5: Pluggable and Local Model Gateway** now preserves a future
 > path for approved hosted, customer-owned, and local-model APIs without making
 > the product depend on one vendor or weakening the intelligence contract. The
+> **UX10-UX12 and I1.4/T27 are complete.** The next implementation sprint is
+> **I1.2/T28: Improvement Forecasting**. A forecast cannot be published until
+> the action has an immutable starting point, recorded completion proof, a
+> success measurement, and an observation window.
 > remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
-> businesses: provider truth and local operations in G1.2-G1.7,
+> businesses: provider truth and local operations in G1.2-G1.7 and DT1,
 > evidence-backed intelligence in I1, research/content/AI visibility in
-> MKT1-CNT1-AIV1, multi-location intelligence in ML1, commerce in COM1, and
+> MKT1-CNT1-AUTH1-AIV1, multi-location intelligence in ML1, commerce in COM1, and
 > Enterprise/reporting in ENT1. Where Sections 7-10 conflict with Sections
 > 1A-1C, Sections 1A-1C take precedence.
 
@@ -451,28 +455,35 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 7 | **UX10 - Plain-Language and Visual Product System** | Every page and AI explanation uses service-owner language, original icons, consistent hierarchy, and shared accessible visualization components. |
 | 8 | **UX11 - Overview and Next Steps Journey Redesign** | The two highest-traffic pages become glanceable, action-oriented, visual, and free of duplicated console-style panels. |
 | 9 | **UX12 - Cross-Page Visualization and Usability Rollout** | Rankings, Local Search, Website Health, Listings, Reviews, Competitors, Locations, Reports, Settings, and setup states receive the same understandable hierarchy. |
-| 10 | **I1.2 - Improvement Forecasting and Scenario Modeling** | Supported action plans add a measured baseline and conservative outcome range after the work and success criteria are defined. |
-| 11 | **I1.5 - Pluggable and Local Model Gateway** | Platform routing can switch approved AI providers, while an Enterprise owner can connect a customer-controlled compatible model endpoint without changing the intelligence engine or exposing credentials. |
-| 12 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
-| 13 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
-| 14 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, risks, and next actions. |
-| 15 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
-| 16 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
-| 17 | **G1.4-G1.7 - Connected Local and Website Signals** | GBP, listings, reviews, analytics, and form events replace remaining recurring manual entry. |
-| 18 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 19 | **CNT1 - Content, On-Page, and Authority Workspace** | Research and intelligence produce governed page, content, metadata, schema, link, and authority work. |
-| 20 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 21 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 22 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 23 | **PA1 - Product Analytics and Customer Feedback** | The team can measure activation, first value, feature adoption, recommendation outcomes, automation trust, and churn risk. |
-| 24 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 25 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 26 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 27 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
-| 28 | **ML1 - Portfolio Intelligence** | Multi-location operators can find outliers, shared problems, and reusable wins quickly. |
-| 29 | **COM1 - Billing, Entitlements, and Self-Service Accounts** | The commercial plans and active-location allowances become enforceable and self-service. |
-| 30 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 31 | **ENT1 - Agency, API, White Label, and Reporting** | Enterprise and agency workflows justify the upper-tier price. |
+| 10 | **I1.4/T27 - Action Measurement Readiness — completed** | Starting measurements, completed-work proof, success measurements, and honest waiting periods make a checked box different from a proven result. |
+| 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
+| 12 | **I1.3 remaining slices - Governed AI Utility Expansion** | Daily briefs, evidence-based questions and answers, and governed drafting make AI useful beyond one explanation while the deterministic engine keeps authority. |
+| 13 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
+| 14 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
+| 15 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
+| 16 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
+| 17 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, and multi-location comparisons replace the core BrightLocal reputation workflow. |
+| 18 | **DT1 - Data Trust and Connection Health Center** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
+| 19 | **ML1 - Portfolio Intelligence** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
+| 20 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
+| 21 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
+| 22 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
+| 23 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 24 | **COM1 paid-beta slice - Checkout and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, recover payment, and cancel without operator database work. |
+| 25 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
+| 26 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 27 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
+| 28 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
+| 29 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 30 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 31 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 32 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 33 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 34 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 35 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
+| 36 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
+| 37 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 38 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 Release R1 is complete as of 2026-07-30. The I1.0 migration is applied, hosted
 CrUX configuration is active, the API is deployed, the first standards check
@@ -858,6 +869,32 @@ Acceptance criteria:
 - Customer-visible language says `website forms` or `inquiries`, not revenue or
   booked jobs.
 - No call-tracking, CRM, field-service, payment, or revenue connector is added.
+
+### Trust DT1 - Data Trust and Connection Health Center
+
+Goal: make source freshness and connection recovery obvious without filling
+every customer page with provider and runtime badges.
+
+Scope:
+
+- Add one tenant- and location-scoped connection inventory for Search Console,
+  Analytics, GBP, rankings, local grid, listings, reviews, website performance,
+  forms, WordPress, and approved AI providers.
+- Show the last successful update, newest usable data date, current failure,
+  affected locations/features, allowance state, and one plain recovery action.
+- Keep healthy details compact; elevate only stale, broken, unmapped, or
+  allowance-blocked sources into the owner's primary workflow.
+- Feed connection failures into ALT1 and exclude stale or failed sources from
+  forecasts, AI evidence, reports, and outcome claims according to policy.
+
+Acceptance criteria:
+
+- An owner can identify and begin fixing every broken customer data connection
+  from one page without reading logs or provider terminology.
+- Every customer metric can link back to the relevant source status and newest
+  usable evidence date.
+- A disconnected or stale provider cannot silently produce a current-looking
+  recommendation, forecast, report, or measured result.
 
 ## 1C. Competitive Replacement Product Sprint Sequence
 
@@ -1460,9 +1497,9 @@ Acceptance criteria:
 - A discovered gap can become a tracked phrase, governed content brief, local
   profile action, or approved opportunity without copying data between tools.
 
-### Content CNT1 - Content, On-Page, and Authority Workspace
+### Content CNT1 - Content and On-Page Workspace
 
-Goal: replace the most useful Semrush content and authority workflows for local
+Goal: replace the most useful Semrush content and on-page workflows for local
 service businesses.
 
 Scope:
@@ -1472,10 +1509,6 @@ Scope:
 - Add page inventory, service/location page coverage, content briefs, intent
   match, title/meta suggestions, schema recommendations, and internal-link plans.
 - Compare target pages with ranking competitors and local customer questions.
-- Connect a production backlink/authority provider for referring domains,
-  anchor distribution, new/lost links, competitor link gaps, and risk signals.
-- Keep listing citations separate from editorial backlinks while combining them
-  in owner-level authority recommendations.
 - Require approval for publishing or website mutations and preserve before/after
   evidence.
 
@@ -1483,9 +1516,35 @@ Acceptance criteria:
 
 - Every content recommendation identifies the target phrase, target page,
   missing coverage, competitor evidence, and completion state.
-- Backlink and authority data comes from a named production source with
-  freshness and cost controls.
-- A user can turn a research gap into a governed content or authority action.
+- A user can turn a research gap into a governed content or on-page action.
+
+### Authority AUTH1 - Backlink and Local Authority Intelligence
+
+Goal: close the major Semrush authority gap with evidence-backed local link
+work rather than an unexplained domain score.
+
+Scope:
+
+- Connect an approved production backlink source for referring domains,
+  referring pages, anchors, destinations, link attributes, first/last seen,
+  new/lost state, and provider freshness.
+- Add competitor link-gap analysis, lost-link recovery, unlinked local mentions,
+  chamber/sponsorship/association opportunities, supplier/partner links, and
+  locally relevant outreach candidates.
+- Keep directory/listing citations distinct from editorial backlinks while
+  combining both in plain owner-level authority recommendations.
+- Route selected opportunities into governed outreach and action checklists;
+  do not label a link as toxic or safe without explicit evidence and policy.
+- Apply G1.3 provider-cost allowances and DT1 connection/freshness controls.
+
+Acceptance criteria:
+
+- Every link fact identifies its production source, observed URL, destination,
+  first/last seen dates, freshness, and location/campaign scope.
+- A user can move from competitor gap or lost link to a deduplicated, assigned,
+  measurable authority action.
+- No unexplained authority score is presented as proof of ranking ability or a
+  guaranteed benefit.
 
 ### WordPress WP1.1 - Connection and Safe Site Control
 
@@ -1871,6 +1930,7 @@ Acceptance criteria:
 | Local keyword and competitor research | MKT1.1 and MKT1.2 |
 | Website audit, current CWV visualization, and improvement scenarios | I1.1 and I1.2 |
 | WordPress content and on-page implementation | WP1.1 and WP1.2 |
+| Backlink monitoring, competitor link gaps, and local authority work | AUTH1 |
 | Historical switching/import workflow | MIG1 |
 | Alerts, scheduled digests, and action notifications | ALT1 |
 | Owner, portfolio, and client-safe reporting | RPT1 and ENT1 |
@@ -1881,7 +1941,7 @@ Acceptance criteria:
 
 | Public plan | Price | Minimum completed sprints before general sale |
 | --- | ---: | --- |
-| Solo | $299/month · 1 active location | R1, TR1, G1.2-G1.7, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1, WP1.1-WP1.2, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
+| Solo | $299/month · 1 active location | R1, TR1, G1.2-G1.7, DT1, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1 and AUTH1, WP1.1-WP1.2, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
 | Multi-location | $699/month · up to 10 active locations | All Solo gates plus ML1 portfolio intelligence, pooled AI/provider allowances, team roles, delegated location access, and bulk workflows |
 | Enterprise | From $1,999/month · 11-20 active locations | All Multi-location gates plus ENT1 API/export, white label, advanced roles, custom limits and per-location pricing above 20, durable reporting, onboarding, priority-support workflows, and I1.5 customer-owned or local-model API access |
 

@@ -180,3 +180,131 @@ class ActionPlanStep(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+
+class ActionPlanMeasurement(Base):
+    """Immutable action baseline plus the eventual measured result."""
+
+    __tablename__ = "action_plan_measurements"
+    __table_args__ = (
+        CheckConstraint(
+            "measurement_status in ('baseline_ready','insufficient_baseline','waiting_for_results','measured')",
+            name="ck_action_plan_measurements_status",
+        ),
+        CheckConstraint(
+            "outcome_status in ('pending','helped','did_not_help','insufficient_data')",
+            name="ck_action_plan_measurements_outcome_status",
+        ),
+        UniqueConstraint(
+            "occurrence_id",
+            name="uq_action_plan_measurements_occurrence_id",
+        ),
+        Index(
+            "ix_action_plan_measurements_campaign_status_due",
+            "campaign_id",
+            "measurement_status",
+            "observation_due_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    business_location_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("business_locations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    occurrence_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("action_plan_occurrences.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    recommendation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("strategy_recommendations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    action_id: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    measurement_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="insufficient_baseline",
+        index=True,
+    )
+    outcome_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="pending",
+        index=True,
+    )
+    success_metric_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    baseline_metrics: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    baseline_evidence: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    implementation_scope: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    completion_proof: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    outcome_metrics: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    outcome_evidence: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    observation_window_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    evidence_window_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    evidence_window_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    observation_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+    baseline_captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    work_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    outcome_measured_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    action_plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    lexicon_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    lexicon_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )

@@ -66,6 +66,32 @@ type ActionWorkStep = {
   completed_at?: string | null;
 };
 
+type ActionMeasurementMetric = {
+  metric_id: string;
+  display_name: string;
+  unit: string;
+  status: "available" | "insufficient_data";
+  value?: number | null;
+  baseline_value?: number | null;
+  change?: number | null;
+  comparison?: "improved" | "unchanged" | "worse" | "insufficient_data";
+  source?: string | null;
+};
+
+type ActionMeasurement = {
+  measurement_status: "baseline_ready" | "insufficient_baseline" | "waiting_for_results" | "measured";
+  readiness: "work_in_progress" | "baseline_unavailable" | "waiting" | "ready_to_check" | "measured";
+  outcome_status: "pending" | "helped" | "did_not_help" | "insufficient_data";
+  baseline_metrics: ActionMeasurementMetric[];
+  baseline_available_count: number;
+  outcome_metrics: ActionMeasurementMetric[];
+  observation_window_days: number;
+  observation_due_at?: string | null;
+  baseline_captured_at: string;
+  work_completed_at?: string | null;
+  outcome_measured_at?: string | null;
+};
+
 type ActionWorkItem = {
   id: string;
   recommendation_id: string;
@@ -74,7 +100,7 @@ type ActionWorkItem = {
   period_key: string;
   timezone: string;
   due_at?: string | null;
-  due_state: "due_now" | "upcoming" | "overdue" | "completed" | "snoozed" | "later";
+  due_state: "due_now" | "upcoming" | "overdue" | "completed" | "snoozed" | "later" | "waiting_for_results" | "ready_to_measure";
   status: string;
   progress: {
     completed_required: number;
@@ -84,6 +110,7 @@ type ActionWorkItem = {
   };
   next_step?: ActionWorkStep | null;
   steps: ActionWorkStep[];
+  measurement?: ActionMeasurement | null;
 };
 
 type Recommendation = {
@@ -350,6 +377,41 @@ function formatRelativeTime(value?: string | null) {
 
   const days = Math.round(diffMs / 86400000);
   return formatter.format(days, "day");
+}
+
+function formatMeasurementValue(metric: ActionMeasurementMetric, value?: number | null) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "Not available";
+  }
+  const number = Number(value);
+  if (metric.unit === "ratio") {
+    return `${(number * 100).toFixed(1)}%`;
+  }
+  if (metric.unit === "milliseconds") {
+    return `${Math.round(number).toLocaleString()} ms`;
+  }
+  if (metric.unit === "stars") {
+    return `${number.toFixed(1)} stars`;
+  }
+  if (metric.unit === "position") {
+    return number.toFixed(1);
+  }
+  return Number.isInteger(number) ? number.toLocaleString() : number.toFixed(2);
+}
+
+function formatMeasurementDate(value?: string | null) {
+  if (!value) {
+    return "when enough new data is available";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "when enough new data is available";
+  }
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function getPriorityLabel(riskTier = 0) {
@@ -986,6 +1048,92 @@ function buildExecutionTimeline(execution: Execution): TimelineEntry[] {
   return entries;
 }
 
+function ActionResultStatus({
+  workItem,
+  busy,
+  onMeasure,
+}: {
+  workItem: ActionWorkItem;
+  busy: boolean;
+  onMeasure: () => void;
+}) {
+  const measurement = workItem.measurement;
+  if (!measurement) {
+    return (
+      <div className="mt-4 rounded-md border border-[#303137] bg-[#111214] p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">How results will be checked</p>
+        <p className="mt-2 text-sm leading-6 text-zinc-300">
+          Your starting measurement will be saved when you begin the checklist. Finishing a step records the work, but it does not claim the result improved.
+        </p>
+      </div>
+    );
+  }
+
+  const baselineMetrics = measurement.baseline_metrics.filter((metric) => metric.status === "available");
+  const outcomeMetrics = new Map(
+    measurement.outcome_metrics.map((metric) => [metric.metric_id, metric]),
+  );
+  const statusCopy =
+    measurement.readiness === "measured"
+      ? measurement.outcome_status === "helped"
+        ? { title: "The measurement improved", body: "The follow-up measurement moved in the right direction after the work was completed.", tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100" }
+        : measurement.outcome_status === "did_not_help"
+          ? { title: "The measurement did not improve yet", body: "The follow-up measurement did not move in the expected direction. Review the evidence before deciding what to try next.", tone: "border-amber-500/30 bg-amber-500/10 text-amber-100" }
+          : { title: "There is not enough follow-up data", body: "The work is recorded, but the connected sources do not have enough new information to judge the result.", tone: "border-sky-500/30 bg-sky-500/10 text-sky-100" }
+      : measurement.readiness === "ready_to_check"
+        ? { title: "Results are ready to check", body: "The waiting period is complete. Compare the latest connected measurement with the saved starting point.", tone: "border-accent-500/35 bg-accent-500/10 text-white" }
+        : measurement.readiness === "waiting"
+          ? { title: "Work recorded — waiting for results", body: `The checklist is finished. Results should be checked on or after ${formatMeasurementDate(measurement.observation_due_at)}.`, tone: "border-sky-500/25 bg-sky-500/10 text-sky-100" }
+          : measurement.readiness === "baseline_unavailable"
+            ? { title: "Starting point saved without a usable measurement", body: "The connected sources did not have enough data when this work began. The system will not invent a before-and-after result.", tone: "border-amber-500/25 bg-amber-500/10 text-amber-100" }
+            : { title: "Starting point saved", body: "Complete the checklist. The result will only be judged after the waiting period and a new measurement.", tone: "border-[#303137] bg-[#111214] text-zinc-200" };
+
+  return (
+    <div className={`mt-4 rounded-md border p-4 ${statusCopy.tone}`}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] opacity-75">
+            <ProductIcon name="chart" size={15} />
+            Measured result
+          </p>
+          <h4 className="mt-2 text-base font-semibold">{statusCopy.title}</h4>
+          <p className="mt-1 text-sm leading-6 opacity-85">{statusCopy.body}</p>
+        </div>
+        {measurement.readiness === "ready_to_check" ? (
+          <button
+            type="button"
+            onClick={onMeasure}
+            disabled={busy}
+            className="rounded-md border border-accent-400/50 bg-accent-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-400 disabled:cursor-wait disabled:opacity-60"
+          >
+            {busy ? "Checking..." : "Check results now"}
+          </button>
+        ) : null}
+      </div>
+
+      {baselineMetrics.length > 0 ? (
+        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {baselineMetrics.map((metric) => {
+            const outcome = outcomeMetrics.get(metric.metric_id);
+            return (
+              <div key={metric.metric_id} className="rounded-md border border-white/10 bg-black/20 p-3">
+                <p className="text-xs opacity-65">{simplifyCustomerCopy(metric.display_name, { fallback: "Saved measurement" })}</p>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-lg font-semibold">{formatMeasurementValue(metric, metric.value)}</span>
+                  {outcome ? (
+                    <span className="text-xs opacity-75">to {formatMeasurementValue(outcome, outcome.value)}</span>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-xs opacity-60">Starting point · {metric.source || "stored evidence"}</p>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function OpportunitiesPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -1211,6 +1359,26 @@ export default function OpportunitiesPage() {
           ? "Step saved. Your checklist will be here when you come back."
           : "Step reopened and saved.",
       );
+    });
+  }
+
+  async function measureActionPlanResult(
+    recommendationId: string,
+    workItemId: string,
+  ) {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+
+    await runAction(`${workItemId}:measure`, async () => {
+      await platformApi(
+        `/intelligence/action-plans/${encodeURIComponent(workItemId)}/measure?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setSelectedRecommendationId(recommendationId);
+      setNotice("The latest measurement was compared with the saved starting point.");
     });
   }
 
@@ -1860,6 +2028,18 @@ export default function OpportunitiesPage() {
                         The detailed checklist is still being prepared. The first useful step is shown above.
                       </p>
                     )}
+                    {selectedRecommendation.action_plan?.work_item ? (
+                      <ActionResultStatus
+                        workItem={selectedRecommendation.action_plan.work_item}
+                        busy={busyAction === `${selectedRecommendation.action_plan.work_item.id}:measure`}
+                        onMeasure={() =>
+                          void measureActionPlanResult(
+                            selectedRecommendation.id,
+                            selectedRecommendation.action_plan!.work_item!.id,
+                          )
+                        }
+                      />
+                    ) : null}
                   </section>
                 ) : null}
               </section>

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.api.response import envelope
+from app.core.settings import get_settings
 from app.db.session import get_db
 from app.models.campaign import Campaign
 from app.schemas.intelligence import (
@@ -16,7 +17,12 @@ from app.schemas.intelligence import (
     RecommendationOut,
     RecommendationTransitionIn,
 )
-from app.services import durable_job_service, governed_ai_service, intelligence_service
+from app.services import (
+    action_plan_measurement_service,
+    durable_job_service,
+    governed_ai_service,
+    intelligence_service,
+)
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
 from app.services.recommendation_outcome_service import (
     get_campaign_outcome_history,
@@ -190,6 +196,29 @@ def update_action_plan_checklist_step(
         actor_user_id=user["user_id"],
     )
     return envelope(request, {"work_item": work_item})
+
+
+@intelligence_router.post("/action-plans/{occurrence_id}/measure")
+def measure_action_plan_result(
+    request: Request,
+    occurrence_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not get_settings().action_measurement_readiness_enabled:
+        raise HTTPException(
+            status_code=404,
+            detail="Action measurement is not enabled.",
+        )
+    measurement = action_plan_measurement_service.evaluate_action_plan_outcome(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        occurrence_id=occurrence_id,
+    )
+    return envelope(request, {"measurement": measurement})
 
 
 @intelligence_router.get("/brief")
