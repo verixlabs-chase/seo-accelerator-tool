@@ -17,6 +17,7 @@ from app.models.intelligence import StrategyRecommendation
 from app.models.local import ReviewVelocitySnapshot
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.website_performance import WebsitePerformanceMeasurement
+from app.services import action_plan_forecast_service
 
 
 _DEFAULT_DIRECTIONS = {
@@ -702,6 +703,17 @@ def evaluate_action_plan_outcome(
     ]
     measurement.outcome_measured_at = resolved_at
     measurement.updated_at = resolved_at
+    forecast = action_plan_forecast_service.get_action_plan_forecast(
+        db,
+        occurrence_id=occurrence_id,
+    )
+    if forecast is not None:
+        action_plan_forecast_service.compare_forecast_to_outcome(
+            db,
+            forecast=forecast,
+            measurement=measurement,
+            compared_at=resolved_at,
+        )
     occurrence.status = "completed"
     occurrence.updated_at = resolved_at
     db.commit()

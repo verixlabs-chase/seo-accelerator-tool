@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.settings import get_settings
 from app.events import emit_event
 from app.intelligence.lexicon import get_active_lexicon
 from app.intelligence.recommendation_execution_engine import schedule_execution
@@ -18,7 +19,7 @@ from app.utils.enum_guard import ensure_enum
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation
 from app.models.local import LocalHealthSnapshot
 from app.models.rank import Ranking
-from app.services import action_plan_measurement_service
+from app.services import action_plan_forecast_service, action_plan_measurement_service
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
 
 RECOMMENDATION_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -211,6 +212,10 @@ def _serialize_action_plan_occurrence(
         db,
         occurrence_id=occurrence.id,
     )
+    forecast = action_plan_forecast_service.get_action_plan_forecast(
+        db,
+        occurrence_id=occurrence.id,
+    )
     if occurrence.status == "completed":
         due_state = "completed"
     elif occurrence.status == "waiting_for_results":
@@ -290,6 +295,11 @@ def _serialize_action_plan_occurrence(
                 now=resolved_now,
             )
             if measurement is not None
+            else None
+        ),
+        "forecast": (
+            action_plan_forecast_service.serialize_action_plan_forecast(forecast)
+            if forecast is not None
             else None
         ),
     }
@@ -472,11 +482,18 @@ def update_action_plan_step(
         )
     previous_occurrence_status = occurrence.status
     if step_status in {"in_progress", "done"}:
-        action_plan_measurement_service.capture_action_plan_baseline(
+        measurement = action_plan_measurement_service.capture_action_plan_baseline(
             db,
             occurrence=occurrence,
             captured_at=resolved_now,
         )
+        if get_settings().action_plan_forecasting_enabled:
+            action_plan_forecast_service.ensure_action_plan_forecast(
+                db,
+                occurrence=occurrence,
+                measurement=measurement,
+                generated_at=resolved_now,
+            )
     step.status = step_status
     step.blocker_reason = blocker_reason if step_status == "blocked" else None
     if evidence is not None:
@@ -888,5 +905,4 @@ def advance_month(db: Session, tenant_id: str, campaign_id: str, override: bool)
     campaign.month_number = min(12, campaign.month_number + 1)
     db.commit()
     return {"campaign_id": campaign.id, "advanced_to_month": campaign.month_number, "override": override}
-
 

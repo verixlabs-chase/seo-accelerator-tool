@@ -150,6 +150,7 @@ def _verify_required_tables(database_url: str) -> None:
             "action_plan_occurrences",
             "action_plan_steps",
             "action_plan_measurements",
+            "action_plan_forecasts",
             "auth_sessions",
             "crawl_runs",
             "strategy_cohort_patterns",

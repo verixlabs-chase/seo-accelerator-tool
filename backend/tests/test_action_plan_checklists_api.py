@@ -78,6 +78,22 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
     measurement = updated.json()["data"]["work_item"]["measurement"]
     assert measurement["measurement_status"] == "insufficient_baseline"
     assert measurement["readiness"] == "baseline_unavailable"
+    forecast = updated.json()["data"]["work_item"]["forecast"]
+    assert forecast["forecast_status"] == "not_available"
+    assert forecast["data_quality"] == "insufficient"
+    assert "scope_not_defined" in {
+        reason["code"] for reason in forecast["unavailable_reasons"]
+    }
+
+    generated_forecast = client.post(
+        (
+            f"/api/v1/intelligence/action-plans/{work_item['id']}"
+            f"/forecast?campaign_id={campaign['id']}"
+        ),
+        headers=headers_a,
+    )
+    assert generated_forecast.status_code == 200
+    assert generated_forecast.json()["data"]["forecast"]["id"] == forecast["id"]
 
     too_early = client.post(
         (
@@ -120,3 +136,12 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
         headers=headers_b,
     )
     assert blocked_measurement.status_code == 404
+
+    blocked_forecast = client.post(
+        (
+            f"/api/v1/intelligence/action-plans/{work_item['id']}"
+            f"/forecast?campaign_id={campaign['id']}"
+        ),
+        headers=headers_b,
+    )
+    assert blocked_forecast.status_code == 404

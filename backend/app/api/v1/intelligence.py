@@ -18,6 +18,7 @@ from app.schemas.intelligence import (
     RecommendationTransitionIn,
 )
 from app.services import (
+    action_plan_forecast_service,
     action_plan_measurement_service,
     durable_job_service,
     governed_ai_service,
@@ -219,6 +220,32 @@ def measure_action_plan_result(
         occurrence_id=occurrence_id,
     )
     return envelope(request, {"measurement": measurement})
+
+
+@intelligence_router.post("/action-plans/{occurrence_id}/forecast")
+def create_action_plan_forecast(
+    request: Request,
+    occurrence_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not get_settings().action_plan_forecasting_enabled:
+        raise HTTPException(
+            status_code=404,
+            detail="Action forecasting is not enabled.",
+        )
+    forecast = action_plan_forecast_service.generate_action_plan_forecast(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        occurrence_id=occurrence_id,
+    )
+    return envelope(
+        request,
+        {"forecast": action_plan_forecast_service.serialize_action_plan_forecast(forecast)},
+    )
 
 
 @intelligence_router.get("/brief")

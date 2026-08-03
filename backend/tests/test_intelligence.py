@@ -5,7 +5,12 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.campaign import Campaign
-from app.models.action_plan import ActionPlanMeasurement, ActionPlanOccurrence, ActionPlanStep
+from app.models.action_plan import (
+    ActionPlanForecast,
+    ActionPlanMeasurement,
+    ActionPlanOccurrence,
+    ActionPlanStep,
+)
 from app.models.intelligence import StrategyRecommendation
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -262,6 +267,22 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
         if index == 0:
             baseline = db_session.query(ActionPlanMeasurement).one()
             assert baseline.baseline_metrics[0]["value"] == 4200.0
+            forecast = db_session.query(ActionPlanForecast).one()
+            assert forecast.forecast_status == "available"
+            assert forecast.data_quality == "strong"
+            metric_forecast = forecast.metric_forecasts[0]
+            assert metric_forecast["metric_id"] == "cwv.lcp"
+            assert metric_forecast["current_value"] == 4200.0
+            assert metric_forecast["target_value"] == 2500.0
+            assert metric_forecast["conservative_value"] == 3945.0
+            assert metric_forecast["expected_value"] == 3690.0
+            assert metric_forecast["optimistic_value"] == 3350.0
+            assert metric_forecast["range_low"] == 3350.0
+            assert metric_forecast["range_high"] == 3945.0
+            assert metric_forecast["source"] == "Chrome UX Report field data"
+            assert metric_forecast["scope"] == "url:PHONE"
+            assert metric_forecast["confidence"] == "moderate"
+            initial_forecast_hash = forecast.artifact_hash
             db_session.add(
                 WebsitePerformanceMeasurement(
                     tenant_id=tenant.id,
@@ -294,6 +315,15 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
     assert measurement["baseline_metrics"][0]["value"] == 4200.0
     assert measurement["baseline_available_count"] == 1
     assert len(measurement["completion_proof"]) == 3
+    assert work_item["forecast"]["forecast_status"] == "available"
+    assert work_item["forecast"]["promise"] is False
+    assert work_item["forecast"]["unknown_effects"] == [
+        "rankings",
+        "visits",
+        "leads",
+        "revenue",
+    ]
+    assert work_item["forecast"]["artifact_hash"] == initial_forecast_hash
 
     measured = action_plan_measurement_service.evaluate_action_plan_outcome(
         db_session,
@@ -307,6 +337,19 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
     assert measured["outcome_status"] == "helped"
     assert measured["outcome_metrics"][0]["baseline_value"] == 4200.0
     assert measured["outcome_metrics"][0]["value"] == 2400.0
+    compared_forecast = db_session.query(ActionPlanForecast).one()
+    assert compared_forecast.artifact_hash == initial_forecast_hash
+    assert compared_forecast.outcome_comparisons == [
+        {
+            "metric_id": "cwv.lcp",
+            "status": "outside_range",
+            "position": "better_than_range",
+            "observed_value": 2400.0,
+            "range_low": 3350.0,
+            "range_high": 3945.0,
+            "expected_value": 3690.0,
+        }
+    ]
 
 
 def test_action_plan_outcome_requires_new_post_completion_evidence():

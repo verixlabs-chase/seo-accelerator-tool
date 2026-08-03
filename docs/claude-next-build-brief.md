@@ -16,10 +16,12 @@
 > controls. **I1.5: Pluggable and Local Model Gateway** now preserves a future
 > path for approved hosted, customer-owned, and local-model APIs without making
 > the product depend on one vendor or weakening the intelligence contract. The
-> **UX10-UX12 and I1.4/T27 are complete.** The next implementation sprint is
-> **I1.2/T28: Improvement Forecasting**. A forecast cannot be published until
-> the action has an immutable starting point, recorded completion proof, a
-> success measurement, and an observation window.
+> **UX10-UX12, I1.4/T27, and I1.2/T28 are complete.** Supported website-speed
+> action plans now store reproducible conservative, expected, and optimistic
+> direct-metric forecasts and compare them with a genuinely new result after
+> the observation window. Unsupported ranking, visit, lead, and revenue effects
+> remain unknown. The next implementation sprint is the remaining **I1.3:
+> Governed AI Utility Expansion**, beginning with a bounded daily action brief.
 > remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7 and DT1,
@@ -456,7 +458,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 8 | **UX11 - Overview and Next Steps Journey Redesign** | The two highest-traffic pages become glanceable, action-oriented, visual, and free of duplicated console-style panels. |
 | 9 | **UX12 - Cross-Page Visualization and Usability Rollout** | Rankings, Local Search, Website Health, Listings, Reviews, Competitors, Locations, Reports, Settings, and setup states receive the same understandable hierarchy. |
 | 10 | **I1.4/T27 - Action Measurement Readiness — completed** | Starting measurements, completed-work proof, success measurements, and honest waiting periods make a checked box different from a proven result. |
-| 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
+| 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling — completed** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
 | 12 | **I1.3 remaining slices - Governed AI Utility Expansion** | Daily briefs, evidence-based questions and answers, and governed drafting make AI useful beyond one explanation while the deterministic engine keeps authority. |
 | 13 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
 | 14 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
@@ -1010,6 +1012,18 @@ Production evidence (2026-07-30):
   provider configuration changes.
 
 ### Intelligence I1.2 - Improvement Forecasting and Scenario Modeling
+
+> **Completed 2026-08-03:** T28 adds the tenant-scoped
+> `action_plan_forecasts` artifact with database-enforced immutable model inputs,
+> RLS, model and lexicon versions, hashes, assumptions, data quality, and outcome
+> comparisons. Approved deterministic models cover render-blocking work, LCP
+> resource priority, server response, browser main-thread and interaction work,
+> layout-space reservation, and dynamic-content stability when a real CrUX
+> field baseline and defined scope exist. The Next Steps visual compares the
+> saved starting point, active target, conservative, expected, optimistic, and
+> eventual observed values while explicitly withholding ranking, visits, leads,
+> and revenue claims. Unsupported or insufficient plans persist an honest
+> `not available` artifact instead of a number.
 
 Goal: show what could reasonably improve if recommended work is completed,
 without presenting a guess as a guaranteed Google or business outcome.

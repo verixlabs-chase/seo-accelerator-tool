@@ -118,4 +118,10 @@ test("next steps separates finished work from a measured result", () => {
   assert.match(pageSource, /Work recorded — waiting for results/);
   assert.match(pageSource, /Check results now/);
   assert.match(pageSource, /There is not enough follow-up data/);
+  assert.match(pageSource, /Possible improvement — not a promise/);
+  assert.match(pageSource, /Conservative/);
+  assert.match(pageSource, /Expected/);
+  assert.match(pageSource, /Optimistic/);
+  assert.match(pageSource, /It does not predict rankings, visits, leads, or revenue/);
+  assert.match(pageSource, /data-forecast-visual/);
 });

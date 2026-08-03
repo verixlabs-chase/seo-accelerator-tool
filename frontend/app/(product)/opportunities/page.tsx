@@ -92,6 +92,43 @@ type ActionMeasurement = {
   outcome_measured_at?: string | null;
 };
 
+type ActionForecastMetric = {
+  metric_id: string;
+  display_name: string;
+  plain_language?: string;
+  unit: string;
+  direction: "higher_is_better" | "lower_is_better";
+  current_value: number;
+  target_value: number;
+  conservative_value: number;
+  expected_value: number;
+  optimistic_value: number;
+  range_low: number;
+  range_high: number;
+  confidence: "moderate";
+};
+
+type ActionForecastComparison = {
+  metric_id: string;
+  status: "within_range" | "outside_range" | "insufficient_data";
+  position: "within_range" | "better_than_range" | "worse_than_range" | "unknown";
+  observed_value?: number | null;
+};
+
+type ActionForecast = {
+  forecast_status: "available" | "not_available";
+  metric_forecasts: ActionForecastMetric[];
+  assumptions: string[];
+  unavailable_reasons: Array<{ code: string; metric_id?: string | null; message: string }>;
+  data_quality: "strong" | "moderate" | "insufficient";
+  model_version: string;
+  observation_window_days: number;
+  outcome_comparisons: ActionForecastComparison[];
+  generated_at: string;
+  promise: false;
+  unknown_effects: string[];
+};
+
 type ActionWorkItem = {
   id: string;
   recommendation_id: string;
@@ -111,6 +148,7 @@ type ActionWorkItem = {
   next_step?: ActionWorkStep | null;
   steps: ActionWorkStep[];
   measurement?: ActionMeasurement | null;
+  forecast?: ActionForecast | null;
 };
 
 type Recommendation = {
@@ -379,7 +417,7 @@ function formatRelativeTime(value?: string | null) {
   return formatter.format(days, "day");
 }
 
-function formatMeasurementValue(metric: ActionMeasurementMetric, value?: number | null) {
+function formatMeasurementValue(metric: { unit: string }, value?: number | null) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return "Not available";
   }
@@ -1048,6 +1086,128 @@ function buildExecutionTimeline(execution: Execution): TimelineEntry[] {
   return entries;
 }
 
+function ForecastMetricVisual({
+  metric,
+  comparison,
+}: {
+  metric: ActionForecastMetric;
+  comparison?: ActionForecastComparison;
+}) {
+  const observed = comparison?.observed_value;
+  const values = [
+    metric.current_value,
+    metric.target_value,
+    metric.conservative_value,
+    metric.expected_value,
+    metric.optimistic_value,
+    ...(typeof observed === "number" ? [observed] : []),
+  ];
+  const rawMinimum = Math.min(...values);
+  const rawMaximum = Math.max(...values);
+  const span = Math.max(rawMaximum - rawMinimum, Math.abs(rawMaximum) * 0.05, 0.01);
+  const minimum = rawMinimum - span * 0.08;
+  const maximum = rawMaximum + span * 0.08;
+  const position = (value: number) =>
+    Math.min(100, Math.max(0, ((value - minimum) / (maximum - minimum)) * 100));
+  const rangeStart = position(metric.range_low);
+  const rangeEnd = position(metric.range_high);
+  const comparisonCopy =
+    comparison?.status === "within_range"
+      ? "The follow-up result landed inside this range."
+      : comparison?.position === "better_than_range"
+        ? "The follow-up result was better than this range."
+        : comparison?.position === "worse_than_range"
+          ? "The follow-up result was outside this range in the wrong direction."
+          : comparison?.status === "insufficient_data"
+            ? "There is not enough new data to compare the result with this range."
+            : null;
+
+  return (
+    <section
+      data-forecast-visual={metric.metric_id}
+      className="border-t border-white/10 py-4 first:border-t-0 first:pt-0 last:pb-0"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h5 className="text-sm font-semibold text-white">
+            {simplifyCustomerCopy(metric.display_name, { fallback: "Website measurement" })}
+          </h5>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            {simplifyCustomerCopy(metric.plain_language || "", {
+              fallback: "The website measurement this work is meant to improve.",
+            })}
+          </p>
+        </div>
+        <span className="text-xs text-zinc-400">Field measurement</span>
+      </div>
+
+      <div
+        role="img"
+        aria-label={`${metric.display_name}: starting at ${formatMeasurementValue(metric, metric.current_value)}, possible range ${formatMeasurementValue(metric, metric.optimistic_value)} to ${formatMeasurementValue(metric, metric.conservative_value)}, expected ${formatMeasurementValue(metric, metric.expected_value)}, target ${formatMeasurementValue(metric, metric.target_value)}.`}
+        className="relative mt-6 h-9"
+      >
+        <div className="absolute left-0 right-0 top-4 h-1 rounded-full bg-zinc-700" />
+        <div
+          className="absolute top-[13px] h-2 rounded-full bg-sky-400/55"
+          style={{ left: `${rangeStart}%`, width: `${Math.max(2, rangeEnd - rangeStart)}%` }}
+        />
+        <span
+          className="absolute top-1 h-7 w-0.5 bg-emerald-400"
+          style={{ left: `${position(metric.target_value)}%` }}
+          title="Current target"
+        />
+        <span
+          className="absolute top-[9px] h-4 w-4 -translate-x-1/2 rounded-full border-2 border-[#151619] bg-white"
+          style={{ left: `${position(metric.current_value)}%` }}
+          title="Starting point"
+        />
+        <span
+          className="absolute top-[10px] h-3.5 w-3.5 -translate-x-1/2 rounded-full border-2 border-[#151619] bg-orange-400"
+          style={{ left: `${position(metric.expected_value)}%` }}
+          title="Expected scenario"
+        />
+        {typeof observed === "number" ? (
+          <span
+            className="absolute top-[8px] h-5 w-5 -translate-x-1/2 rounded-full border-2 border-violet-100 bg-violet-500"
+            style={{ left: `${position(observed)}%` }}
+            title="Follow-up result"
+          />
+        ) : null}
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-5 gap-y-3 text-xs sm:grid-cols-3 xl:grid-cols-6">
+        <div>
+          <dt className="text-zinc-500">Starting point</dt>
+          <dd className="mt-1 font-semibold text-white">{formatMeasurementValue(metric, metric.current_value)}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">Conservative</dt>
+          <dd className="mt-1 font-semibold text-sky-100">{formatMeasurementValue(metric, metric.conservative_value)}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">Expected</dt>
+          <dd className="mt-1 font-semibold text-orange-200">{formatMeasurementValue(metric, metric.expected_value)}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">Optimistic</dt>
+          <dd className="mt-1 font-semibold text-sky-100">{formatMeasurementValue(metric, metric.optimistic_value)}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">Current target</dt>
+          <dd className="mt-1 font-semibold text-emerald-200">{formatMeasurementValue(metric, metric.target_value)}</dd>
+        </div>
+        {typeof observed === "number" ? (
+          <div>
+            <dt className="text-zinc-500">Follow-up result</dt>
+            <dd className="mt-1 font-semibold text-violet-200">{formatMeasurementValue(metric, observed)}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {comparisonCopy ? <p className="mt-3 text-xs font-medium text-zinc-300">{comparisonCopy}</p> : null}
+    </section>
+  );
+}
+
 function ActionResultStatus({
   workItem,
   busy,
@@ -1069,9 +1229,13 @@ function ActionResultStatus({
     );
   }
 
+  const forecast = workItem.forecast;
   const baselineMetrics = measurement.baseline_metrics.filter((metric) => metric.status === "available");
   const outcomeMetrics = new Map(
     measurement.outcome_metrics.map((metric) => [metric.metric_id, metric]),
+  );
+  const forecastComparisons = new Map(
+    (forecast?.outcome_comparisons || []).map((item) => [item.metric_id, item]),
   );
   const statusCopy =
     measurement.readiness === "measured"
@@ -1111,7 +1275,48 @@ function ActionResultStatus({
         ) : null}
       </div>
 
-      {baselineMetrics.length > 0 ? (
+      {forecast?.forecast_status === "available" ? (
+        <div className="mt-5 rounded-md bg-black/20 p-4 text-zinc-200">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="max-w-2xl">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-200/80">
+                <ProductIcon name="chart" size={15} />
+                Possible improvement — not a promise
+              </p>
+              <p className="mt-2 text-sm leading-6 text-zinc-300">
+                This range estimates the measurement this work directly affects. It does not predict rankings, visits, leads, or revenue.
+              </p>
+            </div>
+            <span className="text-xs text-zinc-400">
+              {forecast.data_quality === "strong" ? "Strong starting data" : "Partial starting data"}
+            </span>
+          </div>
+          <div className="mt-5">
+            {forecast.metric_forecasts.map((metric) => (
+              <ForecastMetricVisual
+                key={metric.metric_id}
+                metric={metric}
+                comparison={forecastComparisons.get(metric.metric_id)}
+              />
+            ))}
+          </div>
+          <details className="mt-4 text-xs text-zinc-400">
+            <summary className="cursor-pointer font-medium text-zinc-300">What this estimate assumes</summary>
+            <ul className="mt-2 space-y-1 pl-4">
+              {forecast.assumptions.map((assumption) => (
+                <li key={assumption} className="list-disc leading-5">{assumption}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      ) : forecast?.forecast_status === "not_available" ? (
+        <p className="mt-4 text-xs leading-5 text-zinc-400">
+          <span className="font-semibold text-zinc-300">Forecast not available yet.</span>{" "}
+          {forecast.unavailable_reasons[0]?.message || "A trustworthy numeric estimate is not available for this action."}
+        </p>
+      ) : null}
+
+      {baselineMetrics.length > 0 && forecast?.forecast_status !== "available" ? (
         <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {baselineMetrics.map((metric) => {
             const outcome = outcomeMetrics.get(metric.metric_id);
