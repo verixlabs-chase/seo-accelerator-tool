@@ -212,6 +212,7 @@ def discover(
                     location_name=location_name,
                     language_code="en",
                     limit=max_suggestions,
+                    location_code=location.provider_location_code if location else None,
                 ),
             )
             ranked_items = list(result.get("items", []))
@@ -243,6 +244,7 @@ def discover(
                     location_name=location_name,
                     language_code="en",
                     limit=max_suggestions,
+                    location_code=location.provider_location_code if location else None,
                 ),
             )
             idea_items = list(result.get("items", []))
@@ -275,6 +277,7 @@ def discover(
                     keywords=[item["keyword"] for item in preliminary],
                     location_name=location_name,
                     language_code="en",
+                    location_code=location.provider_location_code if location else None,
                 ),
             )
             volume_items = list(result.get("items", []))

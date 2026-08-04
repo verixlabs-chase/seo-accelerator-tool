@@ -39,13 +39,14 @@ class DataForSeoKeywordResearchProvider:
         location_name: str,
         language_code: str,
         limit: int,
+        location_code: str | int | None = None,
     ) -> dict[str, Any]:
         body = self._post(
             "/dataforseo_labs/google/ranked_keywords/live",
             [
                 {
                     "target": target,
-                    "location_name": _normalize_location_name(location_name),
+                    **_location_target(location_name, location_code),
                     "language_code": language_code,
                     "limit": max(1, min(limit, 1000)),
                     "order_by": ["keyword_data.keyword_info.search_volume,desc"],
@@ -64,6 +65,7 @@ class DataForSeoKeywordResearchProvider:
         location_name: str,
         language_code: str,
         limit: int,
+        location_code: str | int | None = None,
     ) -> dict[str, Any]:
         clean_keywords = [clean for clean, _original in _provider_keywords(keywords, limit=200)]
         if not clean_keywords:
@@ -73,7 +75,7 @@ class DataForSeoKeywordResearchProvider:
             [
                 {
                     "keywords": clean_keywords,
-                    "location_name": _normalize_location_name(location_name),
+                    **_location_target(location_name, location_code),
                     "language_code": language_code,
                     "limit": max(1, min(limit, 1000)),
                     "order_by": ["keyword_info.search_volume,desc"],
@@ -91,6 +93,7 @@ class DataForSeoKeywordResearchProvider:
         keywords: list[str],
         location_name: str,
         language_code: str,
+        location_code: str | int | None = None,
     ) -> dict[str, Any]:
         keyword_pairs = _provider_keywords(keywords, limit=1000)
         clean_keywords = [clean for clean, _original in keyword_pairs]
@@ -101,7 +104,7 @@ class DataForSeoKeywordResearchProvider:
             [
                 {
                     "keywords": clean_keywords,
-                    "location_name": _normalize_location_name(location_name),
+                    **_location_target(location_name, location_code),
                     "language_code": language_code,
                 }
             ],
@@ -175,6 +178,19 @@ def _normalize_location_name(value: str) -> str:
     """Match the provider's canonical City, Region, Country location format."""
     parts = [part.strip() for part in str(value or "").split(",") if part.strip()]
     return ", ".join(parts) if parts else str(value or "").strip()
+
+
+def _location_target(
+    location_name: str,
+    location_code: str | int | None,
+) -> dict[str, str | int]:
+    try:
+        resolved_code = int(str(location_code or "").strip())
+    except ValueError:
+        resolved_code = 0
+    if resolved_code > 0:
+        return {"location_code": resolved_code}
+    return {"location_name": _normalize_location_name(location_name)}
 
 
 def _provider_keywords(values: list[str], *, limit: int) -> list[tuple[str, str]]:

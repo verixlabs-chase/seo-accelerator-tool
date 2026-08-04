@@ -63,7 +63,7 @@ class FakeKeywordResearchProvider:
         }
 
 
-def test_provider_uses_current_endpoints_and_canonical_location_format() -> None:
+def test_provider_uses_current_endpoints_and_resolved_location_code() -> None:
     requests: list[tuple[str, list[dict]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -101,17 +101,20 @@ def test_provider_uses_current_endpoints_and_canonical_location_format() -> None
             location_name="Reno, Nevada, United States",
             language_code="en",
             limit=25,
+            location_code="1022653",
         )
         provider.keyword_ideas(
             keywords=["junk removal, reno"],
             location_name="Reno, Nevada, United States",
             language_code="en",
             limit=25,
+            location_code="1022653",
         )
         volume_result = provider.search_volume(
             keywords=["free tv recycling reno, nv"],
             location_name="Reno, Nevada, United States",
             language_code="en",
+            location_code="1022653",
         )
     finally:
         client.close()
@@ -121,10 +124,8 @@ def test_provider_uses_current_endpoints_and_canonical_location_format() -> None
         "/v3/dataforseo_labs/google/keyword_ideas/live",
         "/v3/keywords_data/google/search_volume/live",
     ]
-    assert all(
-        payload[0]["location_name"] == "Reno, Nevada, United States"
-        for _path, payload in requests
-    )
+    assert all(payload[0]["location_code"] == 1022653 for _path, payload in requests)
+    assert all("location_name" not in payload[0] for _path, payload in requests)
     ideas_payload = requests[1][1][0]
     assert ideas_payload["keywords"] == ["junk removal reno"]
     assert "include_seed_keyword" not in ideas_payload
