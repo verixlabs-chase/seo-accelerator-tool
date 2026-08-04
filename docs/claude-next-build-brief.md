@@ -39,14 +39,14 @@
 > bounded title, heading, description, body, and URL crawl evidence, website-derived
 > service suggestions, owner confirmation and rejection, manual service entry,
 > and immediate deterministic reclassification of saved search ideas into Best
-> matches, Needs your review, and Hidden as unrelated. The remaining MKT1.1
-> work continues through three bounded
-> slices: smart service discovery and owner confirmation, deterministic
-> service-area mapping, and business-aware keyword relevance. These slices use
-> crawl and business-profile evidence to remove irrelevant phrases before AI
-> reviews only genuinely ambiguous candidates. Competitor expansion,
-> target-page mapping, and downstream content/profile actions remain in this
-> sprint. **UX13: Natural Product Voice and Comprehension** is scheduled as a
+> matches, Needs your review, and Hidden as unrelated. The local **MKT1.1D
+> planning slice is now implemented:** useful searches are grouped by service,
+> customer need, and place, then matched to the page already ranking or the
+> strongest saved crawl page; groups without a defensible page are labeled as
+> page opportunities. The remaining MKT1.1 work covers nearby-community
+> resolution, richer synonym and correction rules, competitor expansion,
+> historical comparisons, and conversion into governed content and profile
+> actions. **UX13: Natural Product Voice and Comprehension** is scheduled as a
 > later site-wide refinement because customer review still finds technically
 > simple phrases that sound artificial, self-conscious, or unlike the way a
 > helpful business advisor would speak.
@@ -566,7 +566,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 17 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
 | 18 | **I1.4/T29 - Measured Website and Google Business Profile Action Tracks** | Every website and profile action identifies the real metric it is meant to improve, shows the location's starting value, and returns with an honest measured result after the waiting period. |
 | 19 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
-| 20 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, and multi-location comparisons replace the core BrightLocal reputation workflow. |
+| 20 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, policy-controlled AI replies, and multi-location comparisons replace the core BrightLocal reputation workflow. |
 | 21 | **DT1 - Data Trust and Connection Health Center** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
 | 22 | **ML1 - Portfolio Intelligence** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
 | 23 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
@@ -1171,6 +1171,29 @@ Scope:
   provide a direct source link and track completion.
 - Generate response drafts and reusable templates, but require human review by
   default and clearly label AI-generated text.
+- Add a later **G1.6B governed AI review-response automation** slice. It can use
+  the exact review, rating, location, confirmed services, approved business
+  facts, product voice guidance, and the organization's saved response policy
+  to prepare a context-specific reply and, where the provider permits it, post
+  that reply automatically. The detailed eligibility, escalation, and plan
+  allowances will be finalized during sprint design.
+- Keep automation off by default. Support explicit per-organization and
+  per-location modes such as `Draft only`, `Approve before posting`, and
+  `Automatic for approved cases`. Automatic posting requires an authorized
+  owned profile, an unanswered provider review ID, a versioned response
+  policy, an allowed risk class, sufficient credits, and a current provider
+  connection. Any missing condition falls back to a saved draft or human
+  review rather than posting.
+- Route complaints involving legal threats, safety, discrimination, refunds or
+  billing disputes, employee allegations, personal or health information,
+  abusive content, uncertain business identity, or other configured sensitive
+  topics to a person. Negative or ambiguous reviews remain approval-required
+  until a separately reviewed policy explicitly allows a narrower safe case.
+- Store the review evidence, context fields, policy version, deterministic
+  eligibility decision, model/provider version, generated reply, approval or
+  automation actor, provider receipt, timestamps, and later edits. Posting must
+  be idempotent, rate-limited, credit-controlled, pausable, and recoverable
+  without creating duplicate replies.
 - Detect recurring customer themes, urgent negative-review patterns, unanswered
   reviews, rating changes, and review-velocity gaps against local competitors.
 - Add compliant email, SMS, link, QR, and kiosk review-request campaigns with
@@ -1190,6 +1213,14 @@ Acceptance criteria:
 - New reviews are synchronized durably and cannot duplicate on retry.
 - A user can find and respond to an unanswered review without leaving the
   active location context when direct response is supported.
+- AI can automatically post a reply only after explicit opt-in and a passing
+  governed eligibility decision. The customer can see why it qualified,
+  preview the response policy, pause automation immediately, and review the
+  complete posting history.
+- Replayed jobs, provider retries, edited reviews, stale connections, and
+  allowance exhaustion cannot create duplicate or unauthorized replies.
+- Unsupported, sensitive, or uncertain reviews become drafts or escalation
+  tasks and are never silently posted.
 - Review-request campaigns show audience, channel cost, consent state,
   delivery, feedback, and resulting public-review activity.
 - Intelligence recommendations cite the review evidence and never infer a
@@ -1910,11 +1941,14 @@ Implementation status (2026-08-03):
   descriptions, and body excerpts with each new crawl. Service discovery uses
   those fields to recognize and corroborate real service pages without making
   the resulting suggestions owner-confirmed.
-- Remaining MKT1.1 work: service/problem/location clusters, competitor-domain
-  expansion, service-area
+- The local MKT1.1D planning slice groups each relevant search by confirmed
+  service, plain-language customer need, and matched place. It prefers the page
+  already appearing in search, otherwise scores the latest indexable crawl
+  evidence, and labels the group as a page opportunity when no defensible page
+  exists. The customer can filter the full search list from each group.
+- Remaining MKT1.1 work: competitor-domain expansion, service-area
   map selection and nearby-community resolution, semantic synonym expansion,
-  historical trend comparisons,
-  target-page mapping, map visibility, and conversion into content briefs,
+  historical trend comparisons, map visibility, and conversion into content briefs,
   profile actions, or governed opportunities.
 
 Remaining delivery slices:
@@ -1948,6 +1982,13 @@ Remaining delivery slices:
   batch contract, confidence gate, audit trail, allowance control, and bounded
   customer action are implemented locally. Richer semantic synonym rules,
   owner correction feedback, and measured classifier quality remain.
+- **MKT1.1D - Customer-Need Clusters and Page Decisions â€” local core complete:**
+  group useful phrases by service, customer problem, place, and intent. Use the
+  provider's observed ranking URL first, then bounded title, heading,
+  description, and URL crawl evidence to identify the strongest existing page.
+  Show the grouped demand, example searches, and a direct filtered review path.
+  If no defensible page exists, say that a focused page may be needed instead
+  of inventing a target or pretending the homepage is always sufficient.
 
 Scope:
 

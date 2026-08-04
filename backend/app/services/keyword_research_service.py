@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
-from app.models.crawl import CrawlPageResult
+from app.models.crawl import CrawlPageResult, Page
 from app.models.data_connection import DataConnection
 from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion
 from app.models.rank import CampaignKeyword
@@ -85,7 +85,15 @@ def get_latest(
         )
         .all()
     )
-    serialized = [_serialize_suggestion(item) for item in items]
+    target_pages = _load_target_pages(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
+    serialized = [
+        _add_planning_context(_serialize_suggestion(item), target_pages=target_pages)
+        for item in items
+    ]
     return {"run": _serialize_run(run), "items": serialized, "summary": _summary(serialized)}
 
 
@@ -498,6 +506,7 @@ def reclassify_latest(
             "gsc_clicks": row.gsc_clicks,
             "gsc_impressions": row.gsc_impressions,
             "gsc_position": row.gsc_position,
+            "ranked_url": (row.evidence or {}).get("ranked_url"),
         }
         scored = _score_candidate(
             item,
@@ -666,6 +675,7 @@ def _parse_labs_item(item: dict[str, Any]) -> dict[str, Any]:
         "current_position": _number(
             serp_item.get("rank_absolute") or serp_item.get("rank_group")
         ),
+        "ranked_url": _text(serp_item.get("url")),
     }
 
 
@@ -857,6 +867,7 @@ def _score_candidate(
             "service_match": round(service_match, 2),
             "matched_service_area": matched_area.name if matched_area else None,
             "area_match_type": area_match_type,
+            "ranked_url": _text(item.get("ranked_url")),
         },
         "intent": intent,
         "opportunity_group": opportunity_group,
@@ -888,6 +899,205 @@ def _summary(items: list[dict[str, Any]]) -> dict[str, int]:
         "best_matches": sum(item.get("relevance_status") == "relevant" for item in items),
         "needs_review": sum(item.get("relevance_status") == "needs_review" for item in items),
         "hidden_unrelated": sum(item.get("relevance_status") == "unrelated" for item in items),
+    }
+
+
+def _load_target_pages(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+) -> list[dict[str, Any]]:
+    rows = (
+        db.query(Page, CrawlPageResult)
+        .join(CrawlPageResult, CrawlPageResult.page_id == Page.id)
+        .filter(
+            Page.tenant_id == tenant_id,
+            Page.campaign_id == campaign_id,
+            CrawlPageResult.tenant_id == tenant_id,
+            CrawlPageResult.campaign_id == campaign_id,
+        )
+        .order_by(CrawlPageResult.crawled_at.desc())
+        .limit(300)
+        .all()
+    )
+    pages: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for page, result in rows:
+        url = str(page.url or "").strip()
+        normalized_url = url.casefold().rstrip("/")
+        if not url or normalized_url in seen_urls:
+            continue
+        if int(result.is_indexable or 0) != 1:
+            continue
+        if result.status_code is not None and not 200 <= int(result.status_code) < 300:
+            continue
+        seen_urls.add(normalized_url)
+        pages.append(
+            {
+                "url": url,
+                "title": _text(result.title),
+                "meta_description": _text(result.meta_description),
+                "heading_text": _text(result.heading_text),
+            }
+        )
+        if len(pages) >= 100:
+            break
+    return pages
+
+
+def _add_planning_context(
+    item: dict[str, Any],
+    *,
+    target_pages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    service_name = _text(item.get("matched_service_name"))
+    area_name = _text(item.get("matched_service_area_name"))
+    evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
+    location_name = area_name or _text(evidence.get("location"))
+    problem = _problem_cluster(str(item.get("keyword") or ""), str(item.get("intent") or ""))
+    service_label = service_name or "Service needs review"
+    location_label = location_name or "Service area not confirmed"
+    enriched = dict(item)
+    enriched["cluster"] = {
+        "key": _cluster_key(service_label, problem["key"], location_label),
+        "label": (
+            f"{service_label}: {problem['label']} in {location_name}"
+            if location_name
+            else f"{service_label}: {problem['label']}"
+        ),
+        "service_name": service_name,
+        "problem": problem["label"],
+        "location_name": location_name,
+        "intent": item.get("intent"),
+    }
+    enriched["target_page"] = _target_page_for_item(enriched, target_pages=target_pages)
+    return enriched
+
+
+def _problem_cluster(keyword: str, intent: str) -> dict[str, str]:
+    normalized = re.sub(r"[^a-z0-9]+", " ", keyword.casefold()).strip()
+    tokens = set(normalized.split())
+    if tokens & {"emergency", "urgent", "immediate"} or "same day" in normalized:
+        return {"key": "urgent", "label": "Urgent jobs"}
+    if tokens & {"cost", "costs", "price", "prices", "pricing", "quote", "estimate"}:
+        return {"key": "price", "label": "Price questions"}
+    if tokens & {"best", "reviews", "review", "top", "versus", "vs"}:
+        return {"key": "compare", "label": "Comparing providers"}
+    if "near me" in normalized or tokens & {"nearby", "local"}:
+        return {"key": "nearby", "label": "Nearby service searches"}
+    if tokens & {"how", "why", "what", "when", "diy", "guide"}:
+        return {"key": "questions", "label": "Customer questions"}
+    if intent == "Ready to hire":
+        return {"key": "hire", "label": "Ready-to-book work"}
+    return {"key": "general", "label": "General service searches"}
+
+
+def _cluster_key(service_name: str, problem_key: str, location_name: str) -> str:
+    value = f"{service_name}-{problem_key}-{location_name}".casefold()
+    return re.sub(r"[^a-z0-9]+", "-", value).strip("-")[:180]
+
+
+def _target_page_for_item(
+    item: dict[str, Any],
+    *,
+    target_pages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    relevance_status = str(item.get("relevance_status") or "needs_review")
+    if relevance_status == "unrelated":
+        return {
+            "status": "not_applicable",
+            "url": None,
+            "title": None,
+            "reason": "This search is hidden, so no website page is recommended.",
+        }
+    if relevance_status != "relevant":
+        return {
+            "status": "review",
+            "url": None,
+            "title": None,
+            "reason": "Confirm this search before choosing a website page for it.",
+        }
+
+    evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
+    ranked_url = _text(evidence.get("ranked_url"))
+    if ranked_url:
+        return {
+            "status": "existing",
+            "url": ranked_url,
+            "title": None,
+            "reason": "This is the page currently appearing for the search.",
+        }
+
+    keyword = str(item.get("keyword") or "")
+    service_name = _text(item.get("matched_service_name")) or ""
+    area_name = _text(item.get("matched_service_area_name")) or ""
+    keyword_tokens = _meaningful_tokens(keyword)
+    service_tokens = _meaningful_tokens(service_name)
+    area_tokens = _meaningful_tokens(area_name)
+    best_page: dict[str, Any] | None = None
+    best_score = 0
+    for page in target_pages:
+        page_text = " ".join(
+            str(page.get(field) or "")
+            for field in ("url", "title", "meta_description", "heading_text")
+        ).casefold()
+        page_tokens = _meaningful_tokens(page_text)
+        score = 0
+        if service_name and service_name.casefold() in page_text:
+            score += 8
+        else:
+            score += min(6, len(service_tokens & page_tokens) * 2)
+        if area_name and area_name.casefold() in page_text:
+            score += 3
+        else:
+            score += min(2, len(area_tokens & page_tokens))
+        score += min(6, len(keyword_tokens & page_tokens) * 2)
+        if score > best_score:
+            best_page = page
+            best_score = score
+
+    if best_page is not None and best_score >= 6:
+        return {
+            "status": "existing",
+            "url": best_page["url"],
+            "title": best_page.get("title"),
+            "reason": (
+                f"This saved page appears to cover {service_name}."
+                if service_name
+                else "This saved page appears to cover the same customer need."
+            ),
+        }
+    return {
+        "status": "needs_page",
+        "url": None,
+        "title": None,
+        "reason": "No saved website page clearly covers this search group yet.",
+    }
+
+
+def _meaningful_tokens(value: str) -> set[str]:
+    ignored = {
+        "a",
+        "an",
+        "and",
+        "at",
+        "best",
+        "company",
+        "for",
+        "in",
+        "me",
+        "near",
+        "of",
+        "service",
+        "services",
+        "the",
+        "to",
+    }
+    return {
+        token
+        for token in re.sub(r"[^a-z0-9]+", " ", value.casefold()).split()
+        if len(token) >= 2 and token not in ignored
     }
 
 

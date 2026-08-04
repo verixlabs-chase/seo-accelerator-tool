@@ -63,7 +63,34 @@ type SearchSuggestion = {
   opportunity_score: number;
   recommended_action: string;
   recommendation_reason: string;
+  cluster?: {
+    key: string;
+    label: string;
+    service_name?: string | null;
+    problem: string;
+    location_name?: string | null;
+    intent: string;
+  };
+  target_page?: {
+    status: "existing" | "needs_page" | "review" | "not_applicable";
+    url?: string | null;
+    title?: string | null;
+    reason: string;
+  };
   tracked_at?: string | null;
+};
+
+type SearchClusterSummary = {
+  key: string;
+  label: string;
+  problem: string;
+  locationName?: string | null;
+  keywords: string[];
+  keywordCount: number;
+  trackedCount: number;
+  totalDemand: number;
+  bestPosition?: number | null;
+  targetPage?: SearchSuggestion["target_page"];
 };
 
 type ResearchResponse = {
@@ -233,6 +260,7 @@ export default function KeywordResearchPage() {
   const [notice, setNotice] = useState("");
   const [aiNotice, setAiNotice] = useState<{ message: string; success: boolean } | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("best");
+  const [selectedClusterKey, setSelectedClusterKey] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(null);
 
@@ -277,6 +305,7 @@ export default function KeywordResearchPage() {
     setNotice("");
     setAiNotice(null);
     setFilter("best");
+    setSelectedClusterKey(null);
     if (!selectedCampaignId) {
       setLoading(false);
       setData({
@@ -537,12 +566,18 @@ export default function KeywordResearchPage() {
 
   const filteredItems = useMemo(
     () => data.items.filter((item) => {
-      if (filter === "best") return item.relevance_status === "relevant";
-      if (filter === "needs_review") return item.relevance_status === "needs_review";
-      if (filter === "unrelated") return item.relevance_status === "unrelated";
-      return Boolean(item.tracked_at);
+      const matchesView =
+        filter === "best"
+          ? item.relevance_status === "relevant"
+          : filter === "needs_review"
+            ? item.relevance_status === "needs_review"
+            : filter === "unrelated"
+              ? item.relevance_status === "unrelated"
+              : Boolean(item.tracked_at);
+      const matchesCluster = !selectedClusterKey || item.cluster?.key === selectedClusterKey;
+      return matchesView && matchesCluster;
     }),
-    [data.items, filter],
+    [data.items, filter, selectedClusterKey],
   );
   const chartData = useMemo(
     () =>
@@ -556,6 +591,45 @@ export default function KeywordResearchPage() {
         .reverse(),
     [data.items],
   );
+  const searchClusters = useMemo(() => {
+    const groups = new Map<string, SearchClusterSummary>();
+    data.items
+      .filter((item) => item.relevance_status === "relevant" && item.cluster?.key)
+      .forEach((item) => {
+        const cluster = item.cluster!;
+        const position = item.current_position ?? item.gsc_position ?? null;
+        const existing = groups.get(cluster.key);
+        if (!existing) {
+          groups.set(cluster.key, {
+            key: cluster.key,
+            label: cluster.label,
+            problem: cluster.problem,
+            locationName: cluster.location_name,
+            keywords: [item.keyword],
+            keywordCount: 1,
+            trackedCount: item.tracked_at ? 1 : 0,
+            totalDemand: item.search_volume ?? 0,
+            bestPosition: position,
+            targetPage: item.target_page,
+          });
+          return;
+        }
+        existing.keywordCount += 1;
+        existing.trackedCount += item.tracked_at ? 1 : 0;
+        existing.totalDemand += item.search_volume ?? 0;
+        if (existing.keywords.length < 3) existing.keywords.push(item.keyword);
+        if (position !== null && (existing.bestPosition === null || existing.bestPosition === undefined || position < existing.bestPosition)) {
+          existing.bestPosition = position;
+        }
+        if (item.target_page?.status === "existing" && existing.targetPage?.status !== "existing") {
+          existing.targetPage = item.target_page;
+        }
+      });
+    return [...groups.values()]
+      .sort((a, b) => b.totalDemand - a.totalDemand || b.keywordCount - a.keywordCount || a.label.localeCompare(b.label))
+      .slice(0, 8);
+  }, [data.items]);
+  const selectedCluster = searchClusters.find((item) => item.key === selectedClusterKey) ?? null;
   const selectableVisible = filteredItems.filter(
     (item) => !item.tracked_at && item.relevance_status !== "unrelated",
   );
@@ -1076,6 +1150,82 @@ export default function KeywordResearchPage() {
               </section>
             ) : null}
 
+            {searchClusters.length ? (
+              <section className="border-b border-[#26272c] pb-6">
+                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                      Customer needs
+                    </p>
+                    <h2 className="mt-1 text-xl font-semibold text-white">
+                      Plan related searches together
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+                      Searches are grouped by the service, customer need, and place they mention.
+                      Each group also shows whether your website already has a useful page for it.
+                    </p>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    {searchClusters.length} useful {searchClusters.length === 1 ? "group" : "groups"}
+                  </p>
+                </div>
+                <div className="mt-5 grid gap-x-8 gap-y-5 md:grid-cols-2">
+                  {searchClusters.map((cluster) => (
+                    <article
+                      key={cluster.key}
+                      className={`border-l-2 pl-4 ${
+                        selectedClusterKey === cluster.key ? "border-accent-500" : "border-[#303137]"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="font-semibold text-white">{cluster.label}</h3>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {cluster.keywordCount} {cluster.keywordCount === 1 ? "search" : "searches"}
+                            {cluster.totalDemand > 0
+                              ? ` · about ${cluster.totalDemand.toLocaleString()} searches/month`
+                              : " · demand not measured"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilter("best");
+                            setSelectedClusterKey(cluster.key);
+                          }}
+                          className="shrink-0 text-xs font-semibold text-accent-300 hover:text-white"
+                        >
+                          Review group
+                        </button>
+                      </div>
+                      <p className="mt-3 text-sm leading-5 text-zinc-300">
+                        {cluster.keywords.join(" · ")}
+                      </p>
+                      <div className="mt-3 text-xs leading-5">
+                        {cluster.targetPage?.status === "existing" && cluster.targetPage.url ? (
+                          <p className="text-emerald-200">
+                            Page to improve:{" "}
+                            <a
+                              href={cluster.targetPage.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline decoration-emerald-400/40 underline-offset-2 hover:text-white"
+                            >
+                              {cluster.targetPage.title || cluster.targetPage.url}
+                            </a>
+                          </p>
+                        ) : (
+                          <p className="text-amber-200">
+                            Page opportunity: your saved website pages do not clearly cover this group yet.
+                          </p>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
             {chartData.length ? (
               <section className="grid gap-5 border-b border-[#26272c] pb-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(260px,0.7fr)]">
                 <div>
@@ -1128,13 +1278,28 @@ export default function KeywordResearchPage() {
                     Search list
                   </p>
                   <h2 className="mt-1 text-xl font-semibold text-white">Choose what to track</h2>
+                  {selectedCluster ? (
+                    <p className="mt-2 text-sm text-zinc-400">
+                      Showing {selectedCluster.keywordCount} searches in {selectedCluster.label}.{" "}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClusterKey(null)}
+                        className="font-semibold text-accent-300 hover:text-white"
+                      >
+                        Show every group
+                      </button>
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2" role="group" aria-label="Filter customer searches">
                   {FILTERS.map((option) => (
                     <button
                       key={option.id}
                       type="button"
-                      onClick={() => setFilter(option.id)}
+                      onClick={() => {
+                        setFilter(option.id);
+                        setSelectedClusterKey(null);
+                      }}
                       aria-pressed={filter === option.id}
                       className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                         filter === option.id
