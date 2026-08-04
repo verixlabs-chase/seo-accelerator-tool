@@ -50,6 +50,7 @@ class BusinessServiceArea(Base):
     region: Mapped[str | None] = mapped_column(String(120), nullable=True)
     country_code: Mapped[str] = mapped_column(String(2), nullable=False, default="US")
     radius_miles: Mapped[float | None] = mapped_column(Float, nullable=True)
+    travel_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)
     center_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     center_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     boundary_points: Mapped[list | None] = mapped_column(JSON, nullable=True)

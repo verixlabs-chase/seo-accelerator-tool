@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     location_resolver_timeout_seconds: float = 20.0
     service_area_places_endpoint: str = "https://overpass-api.de/api/interpreter"
     service_area_places_timeout_seconds: float = 20.0
+    service_area_drive_time_api_key: str = ""
+    service_area_drive_time_endpoint: str = (
+        "https://api.openrouteservice.org/v2/isochrones/driving-car"
+    )
+    service_area_drive_time_timeout_seconds: float = 30.0
     rank_provider_serpapi_api_key: str = ""
     rank_provider_serpapi_endpoint: str = "https://serpapi.com/search.json"
     rank_provider_serpapi_timeout_seconds: float = 15.0

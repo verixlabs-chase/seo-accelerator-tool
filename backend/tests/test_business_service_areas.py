@@ -196,6 +196,9 @@ def test_nearby_communities_are_distance_checked_and_require_confirmation(
         "boundary_saved": False,
         "boundary_id": None,
         "boundary_points": [],
+        "boundary_kind": None,
+        "travel_minutes": None,
+        "drive_time_available": False,
     }
     sparks = next(item for item in profile["items"] if item["name"] == "Sparks")
     assert sparks["status"] == "suggested"
@@ -279,3 +282,121 @@ def test_custom_boundary_saves_owner_shape_and_keeps_only_inside_communities(
     assert sparks["evidence"][0]["note"] == "Inside your custom work area"
     assert all(item["name"] != "Carson City" for item in profile["items"])
     assert profile["discovery"]["reviewed"] == 1
+
+
+def test_drive_time_boundary_uses_roads_and_keeps_towns_reviewable(
+    client, db_session, monkeypatch
+) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    headers = {"Authorization": f"Bearer {token}"}
+    campaign_data = _create_location_campaign(client, token, org_id, name="Reno Driving Area")
+    campaign = db_session.get(Campaign, campaign_data["id"])
+    assert campaign is not None
+    location = db_session.get(BusinessLocation, campaign.business_location_id)
+    assert location is not None
+    location.latitude = 39.5296
+    location.longitude = -119.8138
+    db_session.commit()
+
+    road_boundary = [
+        {"latitude": 39.45, "longitude": -119.9},
+        {"latitude": 39.45, "longitude": -119.7},
+        {"latitude": 39.6, "longitude": -119.7},
+        {"latitude": 39.6, "longitude": -119.9},
+    ]
+    monkeypatch.setattr(
+        business_service_area_service,
+        "_load_drive_time_boundary",
+        lambda _latitude, _longitude, minutes: road_boundary if minutes == 45 else [],
+    )
+    monkeypatch.setattr(
+        business_service_area_service,
+        "_load_boundary_communities",
+        lambda _points: [
+            {
+                "name": "Sparks",
+                "region": "Nevada",
+                "country_code": "US",
+                "latitude": 39.5349,
+                "longitude": -119.7527,
+                "place_type": "city",
+                "source_id": "node:1",
+            },
+            {
+                "name": "Carson City",
+                "region": "Nevada",
+                "country_code": "US",
+                "latitude": 39.1638,
+                "longitude": -119.7674,
+                "place_type": "city",
+                "source_id": "node:2",
+            },
+        ],
+    )
+
+    response = client.post(
+        "/api/v1/business-service-areas/drive-time",
+        json={"campaign_id": campaign.id, "travel_minutes": 45},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    profile = response.json()["data"]
+
+    assert profile["map"]["boundary_kind"] == "drive_time"
+    assert profile["map"]["travel_minutes"] == 45
+    assert profile["map"]["boundary_points"] == road_boundary
+    boundary = next(item for item in profile["items"] if item["area_type"] == "drive_time")
+    assert boundary["name"] == "Within 45 minutes' drive"
+    assert boundary["travel_minutes"] == 45.0
+    assert boundary["evidence"][0]["uses_live_traffic"] is False
+    sparks = next(item for item in profile["items"] if item["name"] == "Sparks")
+    assert sparks["status"] == "suggested"
+    assert sparks["evidence"][0]["note"] == "Inside the 45-minute road area"
+    assert all(item["name"] != "Carson City" for item in profile["items"])
+    assert profile["discovery"]["reviewed"] == 1
+
+    monkeypatch.setattr(
+        business_service_area_service,
+        "_load_drive_time_boundary",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("saved boundary was not reused")),
+    )
+    repeated = client.post(
+        "/api/v1/business-service-areas/drive-time",
+        json={"campaign_id": campaign.id, "travel_minutes": 45},
+        headers=headers,
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["discovery"]["drive_time_saved"] is True
+
+
+def test_drive_time_geojson_uses_largest_polygon_and_removes_closing_point() -> None:
+    points = business_service_area_service._drive_time_boundary_from_geojson(
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "MultiPolygon",
+                        "coordinates": [
+                            [[[-119.82, 39.52], [-119.81, 39.52], [-119.82, 39.52]]],
+                            [[
+                                [-119.9, 39.45],
+                                [-119.7, 39.45],
+                                [-119.7, 39.6],
+                                [-119.9, 39.6],
+                                [-119.9, 39.45],
+                            ]],
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+
+    assert points == [
+        {"latitude": 39.45, "longitude": -119.9},
+        {"latitude": 39.45, "longitude": -119.7},
+        {"latitude": 39.6, "longitude": -119.7},
+        {"latitude": 39.6, "longitude": -119.9},
+    ]

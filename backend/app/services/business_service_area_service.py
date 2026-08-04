@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import math
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
 from urllib.parse import unquote, urlparse
 
@@ -21,8 +21,10 @@ from app.models.crawl import CrawlPageResult, Page
 AREA_TYPES = {"city", "postal_code", "county", "radius"}
 AREA_RELATIONSHIPS = {"included", "excluded"}
 MAX_NEARBY_COMMUNITIES = 30
+MAX_DRIVE_TIME_BOUNDARY_POINTS = 96
 NearbyCommunityResolver = Callable[[float, float, float], list[dict[str, Any]]]
 BoundaryCommunityResolver = Callable[[list[dict[str, float]]], list[dict[str, Any]]]
+DriveTimeBoundaryResolver = Callable[[float, float, int], list[dict[str, float]]]
 _AREA_PATH_MARKERS = {
     "areas-we-serve",
     "locations",
@@ -40,6 +42,10 @@ _NON_AREA_WORDS = {
     "service area",
     "service areas",
 }
+
+
+class DriveTimeProviderNotConfigured(RuntimeError):
+    pass
 
 
 def _campaign_or_404(db: Session, *, tenant_id: str, campaign_id: str) -> Campaign:
@@ -97,7 +103,7 @@ def get_profile(db: Session, *, tenant_id: str, campaign_id: str) -> dict[str, A
                 key=lambda item: item.reviewed_at or item.updated_at or item.created_at,
                 reverse=True,
             )
-            if row.area_type == "boundary"
+            if row.area_type in {"boundary", "drive_time"}
             and row.relationship == "included"
             and row.status == "confirmed"
             and row.boundary_points
@@ -142,6 +148,15 @@ def get_profile(db: Session, *, tenant_id: str, campaign_id: str) -> dict[str, A
             "boundary_saved": active_boundary is not None,
             "boundary_id": active_boundary.id if active_boundary else None,
             "boundary_points": list(active_boundary.boundary_points or []) if active_boundary else [],
+            "boundary_kind": active_boundary.area_type if active_boundary else None,
+            "travel_minutes": (
+                int(active_boundary.travel_minutes)
+                if active_boundary and active_boundary.travel_minutes is not None
+                else None
+            ),
+            "drive_time_available": bool(
+                get_settings().service_area_drive_time_api_key.strip()
+            ),
         },
     }
 
@@ -582,6 +597,12 @@ def suggest_communities_in_boundary(
         normalized_name="custom-boundary",
         relationship="included",
     )
+    _retire_other_boundaries(
+        db,
+        business_location_id=str(campaign.business_location_id),
+        keep_id=row.id if row is not None else None,
+        now=resolved_now,
+    )
     owner_evidence = [{"source": "owner", "note": "Drawn and saved by the business"}]
     if row is None:
         row = BusinessServiceArea(
@@ -749,6 +770,280 @@ def suggest_communities_in_boundary(
     return payload
 
 
+def suggest_communities_by_drive_time(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    travel_minutes: int,
+    boundary_resolver: DriveTimeBoundaryResolver | None = None,
+    community_resolver: BoundaryCommunityResolver | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    if travel_minutes < 10 or travel_minutes > 90:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Choose a driving time from 10 to 90 minutes.",
+        )
+    campaign = _campaign_or_404(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    location = db.get(BusinessLocation, campaign.business_location_id)
+    if location is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Location not found")
+    if location.latitude is None or location.longitude is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Add this location's map position before using driving time.",
+        )
+
+    center_latitude = float(location.latitude)
+    center_longitude = float(location.longitude)
+    resolved_now = now or datetime.now(UTC)
+    normalized_name = f"drive-time:{travel_minutes}"
+    row = _find_area(
+        db,
+        business_location_id=str(campaign.business_location_id),
+        area_type="drive_time",
+        normalized_name=normalized_name,
+        relationship="included",
+    )
+    saved_at = row.updated_at if row is not None else None
+    if saved_at is not None and saved_at.tzinfo is None:
+        saved_at = saved_at.replace(tzinfo=UTC)
+    can_reuse_saved_boundary = bool(
+        row is not None
+        and row.boundary_points
+        and saved_at is not None
+        and saved_at >= resolved_now - timedelta(hours=24)
+    )
+    boundary_lookup = boundary_resolver or _load_drive_time_boundary
+    try:
+        raw_boundary = (
+            list(row.boundary_points or [])
+            if can_reuse_saved_boundary and row is not None
+            else boundary_lookup(
+                center_latitude,
+                center_longitude,
+                travel_minutes,
+            )
+        )
+        boundary_points = _validated_drive_time_boundary(
+            raw_boundary,
+            center_latitude=center_latitude,
+            center_longitude=center_longitude,
+        )
+    except DriveTimeProviderNotConfigured:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Driving-time maps are not ready yet. The account owner needs to finish "
+                "the routing connection."
+            ),
+        ) from None
+    except (httpx.HTTPError, ValueError, TypeError):
+        payload = get_profile(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        payload["discovery"] = {
+            "created": 0,
+            "updated": 0,
+            "reviewed": 0,
+            "drive_time_saved": False,
+            "travel_minutes": travel_minutes,
+            "message": (
+                "The driving-time map could not be checked right now. Nothing was changed. "
+                "Try again later or use miles instead."
+            ),
+        }
+        return payload
+
+    _retire_other_boundaries(
+        db,
+        business_location_id=str(campaign.business_location_id),
+        keep_id=row.id if row is not None else None,
+        now=resolved_now,
+    )
+    evidence = [
+        {
+            "source": "road_network",
+            "note": f"Roads reachable within about {travel_minutes} minutes",
+            "travel_minutes": travel_minutes,
+            "uses_live_traffic": False,
+        }
+    ]
+    if row is None:
+        row = BusinessServiceArea(
+            tenant_id=tenant_id,
+            organization_id=str(campaign.organization_id),
+            business_location_id=str(campaign.business_location_id),
+            area_type="drive_time",
+            name=f"Within {travel_minutes} minutes' drive",
+            normalized_name=normalized_name,
+            region=location.region,
+            country_code=location.country_code,
+            travel_minutes=float(travel_minutes),
+            center_latitude=center_latitude,
+            center_longitude=center_longitude,
+            boundary_points=boundary_points,
+            relationship="included",
+            status="confirmed",
+            source="map",
+            confidence=1.0,
+            evidence=evidence,
+            reviewed_at=resolved_now,
+            created_at=resolved_now,
+            updated_at=resolved_now,
+        )
+        db.add(row)
+    else:
+        row.name = f"Within {travel_minutes} minutes' drive"
+        row.travel_minutes = float(travel_minutes)
+        row.center_latitude = center_latitude
+        row.center_longitude = center_longitude
+        row.boundary_points = boundary_points
+        row.status = "confirmed"
+        row.source = "map"
+        row.confidence = 1.0
+        row.evidence = evidence
+        row.reviewed_at = resolved_now
+        row.updated_at = resolved_now
+    db.commit()
+
+    place_lookup = community_resolver or _load_boundary_communities
+    try:
+        raw_candidates = place_lookup(boundary_points)
+    except (httpx.HTTPError, ValueError, TypeError):
+        payload = get_profile(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        payload["discovery"] = {
+            "created": 0,
+            "updated": 0,
+            "reviewed": 0,
+            "drive_time_saved": True,
+            "travel_minutes": travel_minutes,
+            "message": (
+                f"Your {travel_minutes}-minute work area was saved, but nearby towns could "
+                "not be checked right now. Try again later or add a city by hand."
+            ),
+        }
+        return payload
+
+    prepared: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for candidate in raw_candidates:
+        if not isinstance(candidate, dict):
+            continue
+        name = _display_name(candidate.get("name") or "")
+        normalized_candidate_name = _normalize(name)
+        try:
+            latitude = float(candidate["latitude"])
+            longitude = float(candidate["longitude"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (
+            not normalized_candidate_name
+            or not (-90 <= latitude <= 90 and -180 <= longitude <= 180)
+            or not _point_in_polygon(latitude, longitude, boundary_points)
+        ):
+            continue
+        region = _optional(candidate.get("region"))
+        key = (normalized_candidate_name, _normalize(region or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        prepared.append(
+            {
+                "name": name,
+                "normalized_name": normalized_candidate_name,
+                "region": region,
+                "country_code": str(
+                    candidate.get("country_code") or location.country_code or "US"
+                ).upper()[:2],
+                "latitude": latitude,
+                "longitude": longitude,
+                "distance_miles": round(
+                    _distance_miles(
+                        center_latitude,
+                        center_longitude,
+                        latitude,
+                        longitude,
+                    ),
+                    1,
+                ),
+                "place_type": str(candidate.get("place_type") or "community"),
+                "source_id": candidate.get("source_id"),
+            }
+        )
+    prepared.sort(key=lambda item: (item["distance_miles"], item["name"].casefold()))
+    prepared = prepared[:MAX_NEARBY_COMMUNITIES]
+
+    created_count = 0
+    updated_count = 0
+    for candidate in prepared:
+        candidate_evidence = {
+            "source": "map",
+            "note": f"Inside the {travel_minutes}-minute road area",
+            "distance_miles": candidate["distance_miles"],
+            "travel_minutes": travel_minutes,
+            "boundary": normalized_name,
+            "place_type": candidate["place_type"],
+            "source_id": candidate["source_id"],
+        }
+        area = _find_area(
+            db,
+            business_location_id=str(campaign.business_location_id),
+            area_type="city",
+            normalized_name=candidate["normalized_name"],
+            relationship="included",
+        )
+        if area is None:
+            db.add(
+                BusinessServiceArea(
+                    tenant_id=tenant_id,
+                    organization_id=str(campaign.organization_id),
+                    business_location_id=str(campaign.business_location_id),
+                    area_type="city",
+                    name=candidate["name"],
+                    normalized_name=candidate["normalized_name"],
+                    region=candidate["region"],
+                    country_code=candidate["country_code"],
+                    center_latitude=candidate["latitude"],
+                    center_longitude=candidate["longitude"],
+                    relationship="included",
+                    status="suggested",
+                    source="map",
+                    confidence=0.9,
+                    evidence=[candidate_evidence],
+                    created_at=resolved_now,
+                    updated_at=resolved_now,
+                )
+            )
+            created_count += 1
+        elif area.status != "rejected":
+            area.center_latitude = candidate["latitude"]
+            area.center_longitude = candidate["longitude"]
+            area.evidence = _merge_evidence(area.evidence, [candidate_evidence])
+            area.confidence = max(float(area.confidence or 0), 0.9)
+            area.updated_at = resolved_now
+            updated_count += 1
+    db.commit()
+
+    payload = get_profile(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    payload["discovery"] = {
+        "created": created_count,
+        "updated": updated_count,
+        "reviewed": len(prepared),
+        "drive_time_saved": True,
+        "travel_minutes": travel_minutes,
+        "message": (
+            f"Your {travel_minutes}-minute work area is saved. Review the towns inside it "
+            "before they affect search ideas."
+            if prepared
+            else (
+                f"Your {travel_minutes}-minute work area is saved. No named towns were found "
+                "inside it, so add any missing city by hand."
+            )
+        ),
+    }
+    return payload
+
+
 def review_area(
     db: Session,
     *,
@@ -816,7 +1111,7 @@ def confirmed_areas_for_campaign(
 def search_terms(areas: list[BusinessServiceArea]) -> list[str]:
     terms: list[str] = []
     for area in areas:
-        if area.area_type in {"radius", "boundary"}:
+        if area.area_type in {"radius", "boundary", "drive_time"}:
             continue
         terms.append(area.name)
         if area.region and area.area_type != "postal_code":
@@ -842,7 +1137,7 @@ def match_keyword_to_area(
 
 
 def _area_in_keyword(area: BusinessServiceArea, normalized_keyword: str) -> bool:
-    if area.area_type in {"radius", "boundary"}:
+    if area.area_type in {"radius", "boundary", "drive_time"}:
         return False
     area_name = _normalize(area.name)
     return bool(area_name) and re.search(rf"\b{re.escape(area_name)}\b", normalized_keyword) is not None
@@ -923,6 +1218,7 @@ def _serialize(row: BusinessServiceArea) -> dict[str, Any]:
         "region": row.region,
         "country_code": row.country_code,
         "radius_miles": row.radius_miles,
+        "travel_minutes": row.travel_minutes,
         "center_latitude": row.center_latitude,
         "center_longitude": row.center_longitude,
         "boundary_points": list(row.boundary_points or []),
@@ -933,6 +1229,171 @@ def _serialize(row: BusinessServiceArea) -> dict[str, Any]:
         "evidence": list(row.evidence or []),
         "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
     }
+
+
+def _retire_other_boundaries(
+    db: Session,
+    *,
+    business_location_id: str,
+    keep_id: str | None,
+    now: datetime,
+) -> None:
+    rows = (
+        db.query(BusinessServiceArea)
+        .filter(
+            BusinessServiceArea.business_location_id == business_location_id,
+            BusinessServiceArea.area_type.in_({"boundary", "drive_time"}),
+            BusinessServiceArea.relationship == "included",
+            BusinessServiceArea.status == "confirmed",
+        )
+        .all()
+    )
+    for row in rows:
+        if keep_id is not None and row.id == keep_id:
+            continue
+        row.status = "rejected"
+        row.reviewed_at = now
+        row.updated_at = now
+
+
+def _load_drive_time_boundary(
+    latitude: float,
+    longitude: float,
+    travel_minutes: int,
+) -> list[dict[str, float]]:
+    settings = get_settings()
+    api_key = settings.service_area_drive_time_api_key.strip()
+    if not api_key:
+        raise DriveTimeProviderNotConfigured
+    headers = {
+        "Authorization": api_key,
+        "Accept": "application/geo+json",
+        "Content-Type": "application/json",
+    }
+    request_body = {
+        "locations": [[longitude, latitude]],
+        "range": [travel_minutes * 60],
+        "range_type": "time",
+        "location_type": "start",
+    }
+    with httpx.Client(timeout=settings.service_area_drive_time_timeout_seconds) as client:
+        response = client.post(
+            settings.service_area_drive_time_endpoint,
+            json=request_body,
+            headers=headers,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    return _drive_time_boundary_from_geojson(payload)
+
+
+def _drive_time_boundary_from_geojson(payload: Any) -> list[dict[str, float]]:
+    features = payload.get("features") if isinstance(payload, dict) else None
+    if not isinstance(features, list):
+        raise ValueError("Driving-time response did not contain a boundary")
+    rings: list[list[Any]] = []
+    for feature in features:
+        geometry = feature.get("geometry") if isinstance(feature, dict) else None
+        if not isinstance(geometry, dict):
+            continue
+        coordinates = geometry.get("coordinates")
+        geometry_type = geometry.get("type")
+        if geometry_type == "Polygon" and isinstance(coordinates, list) and coordinates:
+            if isinstance(coordinates[0], list):
+                rings.append(coordinates[0])
+        elif geometry_type == "MultiPolygon" and isinstance(coordinates, list):
+            for polygon in coordinates:
+                if isinstance(polygon, list) and polygon and isinstance(polygon[0], list):
+                    rings.append(polygon[0])
+    if not rings:
+        raise ValueError("Driving-time response did not contain a polygon")
+    ring = max(rings, key=_coordinate_ring_area)
+    points: list[dict[str, float]] = []
+    for coordinate in ring:
+        if not isinstance(coordinate, list) or len(coordinate) < 2:
+            continue
+        try:
+            point = {
+                "latitude": float(coordinate[1]),
+                "longitude": float(coordinate[0]),
+            }
+        except (TypeError, ValueError):
+            continue
+        if not points or point != points[-1]:
+            points.append(point)
+    if len(points) > 3 and points[0] == points[-1]:
+        points.pop()
+    if len(points) < 3:
+        raise ValueError("Driving-time polygon did not contain enough points")
+    return points
+
+
+def _coordinate_ring_area(ring: list[Any]) -> float:
+    coordinates: list[tuple[float, float]] = []
+    for item in ring:
+        if not isinstance(item, list) or len(item) < 2:
+            continue
+        try:
+            coordinates.append((float(item[0]), float(item[1])))
+        except (TypeError, ValueError):
+            continue
+    if len(coordinates) < 3:
+        return 0.0
+    return abs(
+        sum(
+            start[0] * coordinates[(index + 1) % len(coordinates)][1]
+            - coordinates[(index + 1) % len(coordinates)][0] * start[1]
+            for index, start in enumerate(coordinates)
+        )
+    )
+
+
+def _validated_drive_time_boundary(
+    points: list[dict[str, float]],
+    *,
+    center_latitude: float,
+    center_longitude: float,
+) -> list[dict[str, float]]:
+    if len(points) < 3:
+        raise ValueError("Driving-time boundary did not cover an area")
+    cleaned: list[dict[str, float]] = []
+    for point in points[:3000]:
+        try:
+            latitude = float(point["latitude"])
+            longitude = float(point["longitude"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            continue
+        if _distance_miles(
+            center_latitude,
+            center_longitude,
+            latitude,
+            longitude,
+        ) > 125:
+            raise ValueError("Driving-time boundary exceeded the governed map range")
+        normalized = {"latitude": round(latitude, 6), "longitude": round(longitude, 6)}
+        if not cleaned or normalized != cleaned[-1]:
+            cleaned.append(normalized)
+    if len(cleaned) > 3 and cleaned[0] == cleaned[-1]:
+        cleaned.pop()
+    if len(cleaned) > MAX_DRIVE_TIME_BOUNDARY_POINTS:
+        last_index = len(cleaned) - 1
+        selected_indexes = {
+            round(index * last_index / (MAX_DRIVE_TIME_BOUNDARY_POINTS - 1))
+            for index in range(MAX_DRIVE_TIME_BOUNDARY_POINTS)
+        }
+        cleaned = [point for index, point in enumerate(cleaned) if index in selected_indexes]
+    if len(cleaned) < 3:
+        raise ValueError("Driving-time boundary did not contain enough valid points")
+    signed_area = sum(
+        point["longitude"] * cleaned[(index + 1) % len(cleaned)]["latitude"]
+        - cleaned[(index + 1) % len(cleaned)]["longitude"] * point["latitude"]
+        for index, point in enumerate(cleaned)
+    )
+    if abs(signed_area) < 0.0000001:
+        raise ValueError("Driving-time boundary did not cover an area")
+    return cleaned
 
 
 def _load_nearby_communities(
