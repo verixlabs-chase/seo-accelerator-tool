@@ -68,7 +68,10 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
       - name: Validate PostgreSQL tenant isolation
-        run: python -m pytest -q tests/integration/test_rls_isolation.py
+        run: >-
+          python -m pytest -q
+          tests/integration/test_rls_isolation.py
+          tests/integration/test_usage_credit_migration.py
 
   deterministic-replay-gate:
     runs-on: windows-latest

@@ -22,6 +22,36 @@ CREDIT_POLICY_VERSION = "insight-credits-2026-08-v1"
 CREDIT_COST_QUANTUM = Decimal("0.01")
 
 
+def _drop_append_only_trigger() -> None:
+    if op.get_bind().dialect.name != "postgresql":
+        return
+    op.execute(
+        sa.text(
+            """
+            DROP TRIGGER IF EXISTS trg_cost_ledger_append_only
+                ON public.cost_ledger_entries;
+            """
+        )
+    )
+
+
+def _restore_append_only_trigger() -> None:
+    if op.get_bind().dialect.name != "postgresql":
+        return
+    op.execute(
+        sa.text(
+            """
+            DROP TRIGGER IF EXISTS trg_cost_ledger_append_only
+                ON public.cost_ledger_entries;
+            CREATE TRIGGER trg_cost_ledger_append_only
+                BEFORE UPDATE OR DELETE ON public.cost_ledger_entries
+                FOR EACH ROW
+                EXECUTE FUNCTION public.lsos_prevent_cost_ledger_mutation();
+            """
+        )
+    )
+
+
 def _credits_for_cost(value: object) -> int:
     cost = Decimal(str(value or 0))
     if cost == 0:
@@ -76,6 +106,13 @@ def upgrade() -> None:
         for row in rows
         if row.credential_owner == "platform" and row.event_type == "reservation"
     }
+
+    # Existing ledger rows need a one-time deterministic backfill. PostgreSQL
+    # protects this table with an append-only trigger, so suspend that trigger
+    # only inside this transactional migration and restore it immediately after.
+    # If any statement fails, PostgreSQL rolls the entire transaction back,
+    # including the trigger change.
+    _drop_append_only_trigger()
     for row in rows:
         units = 0
         if row.credential_owner == "platform":
@@ -99,6 +136,7 @@ def upgrade() -> None:
                 credit_policy_version=CREDIT_POLICY_VERSION,
             )
         )
+    _restore_append_only_trigger()
 
     with op.batch_alter_table("cost_ledger_entries") as batch_op:
         batch_op.alter_column("customer_credit_units", server_default=None)
