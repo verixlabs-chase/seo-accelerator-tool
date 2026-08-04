@@ -17,6 +17,44 @@ from app.models.crawl import CrawlPageResult, Page
 
 
 SERVICE_STATUSES = {"suggested", "confirmed", "rejected"}
+SERVICE_MATCH_RULES_VERSION = "service-synonyms-2026-08-v1"
+_SERVICE_SYNONYM_GROUPS = (
+    frozenset(
+        {
+            "junk removal",
+            "junk hauling",
+            "trash removal",
+            "trash hauling",
+            "rubbish removal",
+            "debris removal",
+            "waste removal",
+            "junk pickup",
+        }
+    ),
+    frozenset(
+        {
+            "appliance removal",
+            "appliance hauling",
+            "appliance pickup",
+            "appliance disposal",
+        }
+    ),
+    frozenset(
+        {
+            "furniture removal",
+            "furniture hauling",
+            "furniture pickup",
+            "furniture disposal",
+        }
+    ),
+    frozenset({"estate cleanout", "estate clean out", "house cleanout", "house clean out"}),
+    frozenset({"plumbing", "plumber", "plumbing repair"}),
+    frozenset({"roofing", "roofer", "roof repair"}),
+    frozenset({"electrical", "electrician", "electrical repair"}),
+    frozenset({"pest control", "exterminator", "pest removal"}),
+    frozenset({"towing", "tow truck", "vehicle towing"}),
+    frozenset({"locksmith", "lock repair", "lockout service"}),
+)
 _GENERIC_PAGE_NAMES = {
     "about",
     "about us",
@@ -372,14 +410,23 @@ def match_keyword_to_service(
     best: BusinessService | None = None
     best_score = 0.0
     for service in services:
-        names = [service.normalized_name, *[str(alias) for alias in (service.aliases or [])]]
-        for raw_name in names:
+        owner_names = [
+            service.normalized_name,
+            *[str(alias) for alias in (service.aliases or [])],
+        ]
+        names = [
+            *[(raw_name, False) for raw_name in owner_names],
+            *[(raw_name, True) for raw_name in _synonym_names(owner_names)],
+        ]
+        for raw_name, from_synonym_library in names:
             normalized_name = _normalize(raw_name)
             service_tokens = _match_tokens(normalized_name)
             if not service_tokens:
                 continue
-            if normalized_name in keyword_normalized:
-                score = 1.0
+            if re.search(rf"\b{re.escape(normalized_name)}\b", keyword_normalized):
+                score = 0.84 if from_synonym_library else 1.0
+            elif from_synonym_library:
+                score = 0.0
             else:
                 overlap = len(service_tokens & keyword_tokens)
                 ratio = overlap / len(service_tokens)
@@ -395,6 +442,19 @@ def match_keyword_to_service(
                 best = service
                 best_score = score
     return best, best_score
+
+
+def _synonym_names(service_names: list[str]) -> list[str]:
+    normalized_names = [_normalize(name) for name in service_names]
+    matches: list[str] = []
+    for group in _SERVICE_SYNONYM_GROUPS:
+        if any(
+            re.search(rf"\b{re.escape(phrase)}\b", service_name)
+            for service_name in normalized_names
+            for phrase in group
+        ):
+            matches.extend(sorted(group))
+    return list(dict.fromkeys(matches))
 
 
 def _effective_rows(db: Session, *, campaign: Campaign) -> list[BusinessService]:

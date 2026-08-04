@@ -5,6 +5,7 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.schemas.keyword_research import (
+    KeywordRelevanceFeedbackIn,
     KeywordResearchAIReviewIn,
     KeywordResearchDiscoverIn,
     KeywordResearchTrackIn,
@@ -58,6 +59,25 @@ def track_keyword_suggestions(
         tenant_id=user["tenant_id"],
         campaign_id=body.campaign_id,
         suggestion_ids=body.suggestion_ids,
+    )
+    return envelope(request, payload)
+
+
+@router.post("/feedback")
+def save_keyword_relevance_feedback(
+    request: Request,
+    body: KeywordRelevanceFeedbackIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = keyword_research_service.save_relevance_feedback(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        suggestion_id=body.suggestion_id,
+        decision=body.decision,
+        service_id=body.service_id,
+        created_by_user_id=user["user_id"],
     )
     return envelope(request, payload)
 

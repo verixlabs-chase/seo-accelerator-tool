@@ -44,9 +44,11 @@
 > customer need, and place, then matched to the page already ranking or the
 > strongest saved crawl page; groups without a defensible page are labeled as
 > page opportunities. Nearby-community mapping now includes mileage, custom
-> shapes, and real road-network travel-time boundaries. The remaining MKT1.1
-> work covers richer synonym and correction rules, competitor expansion,
-> historical comparisons, and conversion into governed content and profile
+> shapes, and real road-network travel-time boundaries. A versioned synonym
+> library and append-only owner correction history now improve relevance
+> without allowing AI to create permanent business rules. The remaining
+> MKT1.1 work covers competitor expansion, historical comparisons, measured
+> classifier quality, and conversion into governed content and profile
 > actions. **UX13: Natural Product Voice and Comprehension** is scheduled as a
 > later site-wide refinement because customer review still finds technically
 > simple phrases that sound artificial, self-conscious, or unlike the way a
@@ -1905,7 +1907,7 @@ Acceptance criteria:
 Goal: replace the Semrush research workflows a local service business actually
 needs.
 
-Implementation status (2026-08-03):
+Implementation status (2026-08-04):
 
 - The first slice is implemented with immutable location-scoped research runs
   and suggestions, tenant/organization row-level security, and versioned
@@ -1963,10 +1965,15 @@ Implementation status (2026-08-03):
   already appearing in search, otherwise scores the latest indexable crawl
   evidence, and labels the group as a page opportunity when no defensible page
   exists. The customer can filter the full search list from each group.
-- Remaining MKT1.1 work: competitor-domain expansion, semantic synonym
-  expansion, historical trend
-  comparisons, and conversion into content briefs, profile actions, or
-  governed opportunities.
+- The local MKT1.1C relevance-learning slice adds a bounded, versioned synonym
+  library that expands only from owner-confirmed services. It also stores every
+  exact owner relevance choice as an append-only tenant/location record,
+  reapplies the latest choice on future refreshes, allows the owner to undo it,
+  and keeps explicit excluded service areas authoritative. AI cannot write or
+  broaden these durable rules.
+- Remaining MKT1.1 work: competitor-domain expansion, historical trend
+  comparisons, measured classifier quality, and conversion into content
+  briefs, profile actions, or governed opportunities.
 
 Remaining delivery slices:
 
@@ -2003,8 +2010,10 @@ Remaining delivery slices:
   unrelated` group with `Track`, `Hide`, and `We don't offer this` feedback.
   The three review states, service and service-area evidence, strict governed-AI
   batch contract, confidence gate, audit trail, allowance control, and bounded
-  customer action are implemented locally. Richer semantic synonym rules,
-  owner correction feedback, and measured classifier quality remain.
+  customer action are implemented locally. The versioned deterministic synonym
+  library, durable reversible owner corrections, future-refresh reuse, and
+  excluded-area precedence are also implemented locally. Measured classifier
+  quality and carefully governed vocabulary expansion remain.
 - **MKT1.1D - Customer-Need Clusters and Page Decisions â€” local core complete:**
   group useful phrases by service, customer problem, place, and intent. Use the
   provider's observed ranking URL first, then bounded title, heading,

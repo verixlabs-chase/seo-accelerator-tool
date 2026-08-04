@@ -14,7 +14,11 @@ from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.crawl import CrawlPageResult, Page
 from app.models.data_connection import DataConnection
-from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion
+from app.models.keyword_research import (
+    KeywordRelevanceFeedback,
+    KeywordResearchRun,
+    KeywordResearchSuggestion,
+)
 from app.models.rank import CampaignKeyword
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_search_console import SearchConsoleProviderAdapter
@@ -39,6 +43,7 @@ CAPABILITY = "keyword_research"
 RANKED_OPERATION = "ranked_keywords_live"
 IDEAS_OPERATION = "keyword_ideas_live"
 VOLUME_OPERATION = "google_ads_search_volume_live"
+RELEVANCE_RULES_VERSION = "keyword-relevance-2026-08-v2"
 
 
 def _campaign_or_404(db: Session, *, tenant_id: str, campaign_id: str) -> Campaign:
@@ -150,6 +155,11 @@ def discover(
             tenant_id=tenant_id,
             campaign_id=campaign_id,
         )
+    )
+    owner_feedback = _latest_feedback_by_keyword(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
     )
 
     tracked = (
@@ -338,6 +348,7 @@ def discover(
             confirmed_services=confirmed_services,
             confirmed_service_areas=confirmed_areas,
             excluded_service_areas=excluded_areas,
+            owner_feedback=owner_feedback.get(_normalize_keyword(value["keyword"])),
         )
         for value in candidates.values()
     ]
@@ -447,6 +458,111 @@ def track_suggestions(
     }
 
 
+def save_relevance_feedback(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    suggestion_id: str,
+    decision: str,
+    service_id: str | None,
+    created_by_user_id: str | None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    campaign = _campaign_or_404(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    suggestion = (
+        db.query(KeywordResearchSuggestion)
+        .filter(
+            KeywordResearchSuggestion.id == suggestion_id,
+            KeywordResearchSuggestion.tenant_id == tenant_id,
+            KeywordResearchSuggestion.campaign_id == campaign_id,
+        )
+        .first()
+    )
+    if suggestion is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="That search could not be found for this location.",
+        )
+    if suggestion.tracked_at is not None and decision == "unrelated":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Remove this search from Search Rankings before marking it unrelated.",
+        )
+
+    services = business_service_service.confirmed_services_for_campaign(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
+    selected_service = next(
+        (service for service in services if service.id == service_id),
+        None,
+    )
+    if decision == "relevant" and selected_service is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Choose a confirmed service that this search matches.",
+        )
+    if decision != "relevant" and service_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A service is only needed when you mark a search as a match.",
+        )
+
+    _confirmed_areas, excluded_areas = (
+        business_service_area_service.confirmed_areas_for_campaign(
+            db,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+        )
+    )
+    excluded_area, area_match_type = business_service_area_service.match_keyword_to_area(
+        suggestion.normalized_keyword,
+        [],
+        excluded_areas,
+    )
+    if decision == "relevant" and area_match_type == "excluded":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{excluded_area.name} is outside this location's saved work area. "
+                "Update the service area before keeping this search."
+            ),
+        )
+
+    db.add(
+        KeywordRelevanceFeedback(
+            tenant_id=tenant_id,
+            organization_id=str(campaign.organization_id),
+            campaign_id=campaign.id,
+            business_location_id=campaign.business_location_id,
+            suggestion_id=suggestion.id,
+            service_id=selected_service.id if selected_service else None,
+            created_by_user_id=created_by_user_id,
+            keyword=suggestion.keyword,
+            normalized_keyword=_normalize_keyword(suggestion.keyword),
+            decision=decision,
+            source="owner",
+            rules_version=RELEVANCE_RULES_VERSION,
+            created_at=now or datetime.now(UTC),
+        )
+    )
+    db.flush()
+    reclassify_latest(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    payload = get_latest(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    payload["feedback"] = {
+        "decision": decision,
+        "keyword": suggestion.keyword,
+        "message": _feedback_message(
+            decision,
+            keyword=suggestion.keyword,
+            service_name=selected_service.name if selected_service else None,
+        ),
+    }
+    return payload
+
+
 def reclassify_latest(
     db: Session,
     *,
@@ -476,6 +592,11 @@ def reclassify_latest(
             tenant_id=tenant_id,
             campaign_id=campaign_id,
         )
+    )
+    owner_feedback = _latest_feedback_by_keyword(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
     )
     location = (
         db.get(BusinessLocation, campaign.business_location_id)
@@ -514,6 +635,7 @@ def reclassify_latest(
             confirmed_services=services,
             confirmed_service_areas=confirmed_areas,
             excluded_service_areas=excluded_areas,
+            owner_feedback=owner_feedback.get(_normalize_keyword(row.keyword)),
         )
         row.intent = scored["intent"]
         row.opportunity_group = scored["opportunity_group"]
@@ -625,7 +747,7 @@ def _merge_candidate(
     clean = re.sub(r"\s+", " ", str(keyword or values.pop("keyword", "")).strip())
     if not clean or len(clean) > 255:
         return
-    normalized = clean.casefold()
+    normalized = _normalize_keyword(clean)
     current = candidates.setdefault(
         normalized,
         {
@@ -750,6 +872,7 @@ def _score_candidate(
     confirmed_services: list[Any] | None = None,
     confirmed_service_areas: list[Any] | None = None,
     excluded_service_areas: list[Any] | None = None,
+    owner_feedback: KeywordRelevanceFeedback | None = None,
 ) -> dict[str, Any]:
     sources = sorted(item["source_types"])
     tracked = bool(item.get("tracked"))
@@ -772,10 +895,41 @@ def _score_candidate(
         included_areas,
         excluded_areas,
     )
+    feedback_service = (
+        next(
+            (
+                service
+                for service in services
+                if owner_feedback is not None and service.id == owner_feedback.service_id
+            ),
+            None,
+        )
+        if owner_feedback is not None
+        else None
+    )
     if tracked:
         relevance_status = "relevant"
         relevance = 100
         relevance_reason = "You already chose to track this search."
+    elif owner_feedback is not None and owner_feedback.decision == "unrelated":
+        relevance_status = "unrelated"
+        relevance = 2
+        relevance_reason = "You marked this search as unrelated to the work you offer."
+        matched_service = None
+        service_match = 0.0
+    elif feedback_service is not None and owner_feedback is not None:
+        matched_service = feedback_service
+        service_match = 1.0
+        if area_match_type == "excluded":
+            relevance_status = "unrelated"
+            relevance = 3
+            relevance_reason = (
+                f"Matches {feedback_service.name}, but {matched_area.name} is marked outside your service area."
+            )
+        else:
+            relevance_status = "relevant"
+            relevance = 98
+            relevance_reason = f"You matched this search to {feedback_service.name}."
     elif matched_service is not None and service_match >= 0.75:
         if area_match_type == "excluded":
             relevance_status = "unrelated"
@@ -867,6 +1021,11 @@ def _score_candidate(
             "service_match": round(service_match, 2),
             "matched_service_area": matched_area.name if matched_area else None,
             "area_match_type": area_match_type,
+            "owner_feedback": owner_feedback.decision if owner_feedback else None,
+            "relevance_rules_version": RELEVANCE_RULES_VERSION,
+            "service_match_rules_version": (
+                business_service_service.SERVICE_MATCH_RULES_VERSION
+            ),
             "ranked_url": _text(item.get("ranked_url")),
         },
         "intent": intent,
@@ -1117,6 +1276,7 @@ def _serialize_run(run: KeywordResearchRun) -> dict[str, Any]:
 
 
 def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
+    evidence = item.evidence if isinstance(item.evidence, dict) else {}
     return {
         "id": item.id,
         "keyword": item.keyword,
@@ -1149,16 +1309,65 @@ def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
         "opportunity_score": item.opportunity_score,
         "recommended_action": item.recommended_action,
         "recommendation_reason": item.recommendation_reason,
-        "evidence": item.evidence,
+        "evidence": evidence,
+        "owner_feedback": evidence.get("owner_feedback"),
         "tracked_at": item.tracked_at.isoformat() if item.tracked_at else None,
         "source_updated_at": item.source_updated_at.isoformat() if item.source_updated_at else None,
     }
+
+
+def _latest_feedback_by_keyword(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+) -> dict[str, KeywordRelevanceFeedback]:
+    rows = (
+        db.query(KeywordRelevanceFeedback)
+        .filter(
+            KeywordRelevanceFeedback.tenant_id == tenant_id,
+            KeywordRelevanceFeedback.campaign_id == campaign_id,
+        )
+        .order_by(
+            KeywordRelevanceFeedback.created_at.desc(),
+            KeywordRelevanceFeedback.id.desc(),
+        )
+        .all()
+    )
+    latest: dict[str, KeywordRelevanceFeedback] = {}
+    for row in rows:
+        if row.normalized_keyword in latest:
+            continue
+        latest[row.normalized_keyword] = row
+    return {
+        keyword: row
+        for keyword, row in latest.items()
+        if row.decision != "cleared"
+    }
+
+
+def _feedback_message(
+    decision: str,
+    *,
+    keyword: str,
+    service_name: str | None,
+) -> str:
+    if decision == "relevant":
+        return f'"{keyword}" will be treated as a match for {service_name}.'
+    if decision == "unrelated":
+        return f'"{keyword}" will stay out of Best matches on future refreshes.'
+    return f'Your saved choice for "{keyword}" was cleared and the search was checked again.'
 
 
 def _plain_provider_warning(exc: Exception, label: str) -> str:
     if isinstance(exc, CostEconomicsError):
         return f"{label.capitalize()} were skipped because this account's data allowance or price setup needs attention."
     return f"Fresh {label} are temporarily unavailable. Saved search data is still shown."
+
+
+def _normalize_keyword(value: str) -> str:
+    clean = re.sub(r"[^a-z0-9]+", " ", str(value).casefold())
+    return re.sub(r"\s+", " ", clean).strip()
 
 
 def _domain(value: str) -> str:
