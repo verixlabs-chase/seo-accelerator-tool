@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import base64
+import logging
 from decimal import Decimal
 from typing import Any
 
 import httpx
+
+
+logger = logging.getLogger("lsos.keyword_research")
 
 
 class DataForSeoKeywordResearchProvider:
@@ -164,10 +168,20 @@ def _normalize_location_name(value: str) -> str:
 def _raise_task_error(body: dict[str, Any]) -> None:
     tasks = _tasks(body)
     if not tasks:
+        logger.warning(
+            "keyword_provider_missing_tasks status_code=%s status_message=%s",
+            body.get("status_code"),
+            body.get("status_message"),
+        )
         raise ValueError("The search data service returned no task result.")
     failures = [task for task in tasks if int(task.get("status_code", 0) or 0) >= 40000]
     if failures:
         message = str(failures[0].get("status_message", "Provider task failed."))
+        logger.warning(
+            "keyword_provider_task_failed status_code=%s status_message=%s",
+            failures[0].get("status_code"),
+            message,
+        )
         raise ValueError(f"The search data service could not complete keyword discovery: {message}")
 
 
