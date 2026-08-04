@@ -70,7 +70,9 @@ def test_provider_uses_current_endpoints_and_canonical_location_format() -> None
         payload = json.loads(request.content.decode("utf-8"))
         requests.append((request.url.path, payload))
         if request.url.path.endswith("/search_volume/live"):
-            result: list[dict] = []
+            result: list[dict] = [
+                {"keyword": "free tv recycling reno nv", "search_volume": 10}
+            ]
         else:
             result = [{"items": []}]
         return httpx.Response(
@@ -101,13 +103,13 @@ def test_provider_uses_current_endpoints_and_canonical_location_format() -> None
             limit=25,
         )
         provider.keyword_ideas(
-            keywords=["junk removal"],
+            keywords=["junk removal, reno"],
             location_name="Reno, Nevada, United States",
             language_code="en",
             limit=25,
         )
-        provider.search_volume(
-            keywords=["junk removal reno"],
+        volume_result = provider.search_volume(
+            keywords=["free tv recycling reno, nv"],
             location_name="Reno, Nevada, United States",
             language_code="en",
         )
@@ -120,12 +122,16 @@ def test_provider_uses_current_endpoints_and_canonical_location_format() -> None
         "/v3/keywords_data/google/search_volume/live",
     ]
     assert all(
-        payload[0]["location_name"] == "Reno,Nevada,United States"
+        payload[0]["location_name"] == "Reno, Nevada, United States"
         for _path, payload in requests
     )
     ideas_payload = requests[1][1][0]
+    assert ideas_payload["keywords"] == ["junk removal reno"]
     assert "include_seed_keyword" not in ideas_payload
     assert ideas_payload["order_by"] == ["keyword_info.search_volume,desc"]
+    volume_payload = requests[2][1][0]
+    assert volume_payload["keywords"] == ["free tv recycling reno nv"]
+    assert volume_result["items"][0]["keyword"] == "free tv recycling reno, nv"
 
 
 def test_provider_warning_is_customer_safe() -> None:

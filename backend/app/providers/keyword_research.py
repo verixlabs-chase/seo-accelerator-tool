@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from decimal import Decimal
 from typing import Any
 
@@ -64,7 +65,7 @@ class DataForSeoKeywordResearchProvider:
         language_code: str,
         limit: int,
     ) -> dict[str, Any]:
-        clean_keywords = [value.strip() for value in keywords if value.strip()][:200]
+        clean_keywords = [clean for clean, _original in _provider_keywords(keywords, limit=200)]
         if not clean_keywords:
             return {"items": [], "cost": Decimal("0")}
         body = self._post(
@@ -91,7 +92,8 @@ class DataForSeoKeywordResearchProvider:
         location_name: str,
         language_code: str,
     ) -> dict[str, Any]:
-        clean_keywords = [value.strip() for value in keywords if value.strip()][:1000]
+        keyword_pairs = _provider_keywords(keywords, limit=1000)
+        clean_keywords = [clean for clean, _original in keyword_pairs]
         if not clean_keywords:
             return {"items": [], "cost": Decimal("0")}
         body = self._post(
@@ -104,8 +106,18 @@ class DataForSeoKeywordResearchProvider:
                 }
             ],
         )
+        original_by_clean = {clean.casefold(): original for clean, original in keyword_pairs}
+        items = []
+        for item in _extract_search_volume_items(body):
+            mapped = dict(item)
+            returned_keyword = str(mapped.get("keyword") or "").strip()
+            mapped["keyword"] = original_by_clean.get(
+                returned_keyword.casefold(),
+                returned_keyword,
+            )
+            items.append(mapped)
         return {
-            "items": _extract_search_volume_items(body),
+            "items": items,
             "cost": _task_cost(body),
         }
 
@@ -160,9 +172,27 @@ def _tasks(body: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _normalize_location_name(value: str) -> str:
-    """Match the provider's canonical City,Region,Country location format."""
+    """Match the provider's canonical City, Region, Country location format."""
     parts = [part.strip() for part in str(value or "").split(",") if part.strip()]
-    return ",".join(parts) if parts else str(value or "").strip()
+    return ", ".join(parts) if parts else str(value or "").strip()
+
+
+def _provider_keywords(values: list[str], *, limit: int) -> list[tuple[str, str]]:
+    """Remove punctuation rejected by the live keyword endpoints and retain display text."""
+    pairs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for value in values:
+        original = re.sub(r"\s+", " ", str(value or "").strip())
+        clean = re.sub(r"[^\w\s]", " ", original, flags=re.UNICODE)
+        clean = re.sub(r"\s+", " ", clean).strip()
+        key = clean.casefold()
+        if not clean or key in seen:
+            continue
+        seen.add(key)
+        pairs.append((clean, original))
+        if len(pairs) >= limit:
+            break
+    return pairs
 
 
 def _raise_task_error(body: dict[str, Any]) -> None:
