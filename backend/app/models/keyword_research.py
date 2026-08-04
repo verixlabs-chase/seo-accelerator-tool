@@ -4,7 +4,18 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, JSON, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -127,6 +138,60 @@ class KeywordResearchSuggestion(Base):
     tracked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+
+
+class KeywordRelevanceFeedback(Base):
+    __tablename__ = "keyword_relevance_feedback"
+    __table_args__ = (
+        CheckConstraint(
+            "decision in ('relevant','unrelated','cleared')",
+            name="ck_keyword_relevance_feedback_decision",
+        ),
+        Index(
+            "ix_keyword_relevance_feedback_campaign_keyword_created",
+            "campaign_id",
+            "normalized_keyword",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    business_location_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("business_locations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    suggestion_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("keyword_research_suggestions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    service_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("business_services.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    keyword: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_keyword: Mapped[str] = mapped_column(String(255), nullable=False)
+    decision: Mapped[str] = mapped_column(String(24), nullable=False)
+    source: Mapped[str] = mapped_column(String(24), nullable=False, default="owner")
+    rules_version: Mapped[str] = mapped_column(String(80), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
     )

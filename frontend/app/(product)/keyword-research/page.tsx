@@ -67,6 +67,7 @@ type SearchSuggestion = {
   ai_confidence?: number | null;
   ai_reason?: string | null;
   relevance_reason?: string | null;
+  owner_feedback?: "relevant" | "unrelated" | null;
   opportunity_score: number;
   recommended_action: string;
   recommendation_reason: string;
@@ -119,6 +120,11 @@ type ResearchResponse = {
     best_matches: number;
     hidden_unrelated: number;
     still_unclear: number;
+    message: string;
+  };
+  feedback?: {
+    decision: "relevant" | "unrelated" | "cleared";
+    keyword: string;
     message: string;
   };
 };
@@ -560,6 +566,10 @@ export default function KeywordResearchPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("best");
   const [selectedClusterKey, setSelectedClusterKey] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [serviceChoiceBySuggestion, setServiceChoiceBySuggestion] = useState<
+    Record<string, string>
+  >({});
+  const [feedbackBusy, setFeedbackBusy] = useState("");
   const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(null);
 
   const loadResearch = useCallback(async (campaignId: string) => {
@@ -933,6 +943,47 @@ export default function KeywordResearchPage() {
       setError(err instanceof Error ? err.message : "The unclear searches could not be reviewed.");
     } finally {
       setBusy("");
+    }
+  };
+
+  const saveSearchFeedback = async (
+    item: SearchSuggestion,
+    decision: "relevant" | "unrelated" | "cleared",
+  ) => {
+    if (!selectedCampaignId) return;
+    const confirmedServices = serviceProfile.items.filter(
+      (service) => service.status === "confirmed",
+    );
+    const selectedServiceId =
+      serviceChoiceBySuggestion[item.id]
+      || item.matched_service_id
+      || confirmedServices[0]?.id
+      || null;
+    if (decision === "relevant" && !selectedServiceId) {
+      setError("Confirm at least one service before matching this search.");
+      return;
+    }
+    setFeedbackBusy(item.id);
+    setError("");
+    try {
+      const response = (await platformApi("/keyword-research/feedback", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          suggestion_id: item.id,
+          decision,
+          service_id: decision === "relevant" ? selectedServiceId : null,
+        }),
+      })) as ResearchResponse;
+      setData(response);
+      setSelectedIds(new Set());
+      setNotice(response.feedback?.message ?? "Your choice was saved.");
+      if (decision === "unrelated") setFilter("unrelated");
+      if (decision === "relevant") setFilter("best");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Your choice could not be saved.");
+    } finally {
+      setFeedbackBusy("");
     }
   };
 
@@ -1871,6 +1922,73 @@ export default function KeywordResearchPage() {
                           <span>Sources: {item.source_types.map(sourceLabel).join(", ")}</span>
                         </div>
                       </details>
+                      {!item.tracked_at ? (
+                        <div className="mt-3 border-t border-[#26272c] pt-3">
+                          {item.owner_feedback ? (
+                            <p className="mb-2 text-xs font-semibold text-emerald-200">
+                              Saved from your choice
+                            </p>
+                          ) : null}
+                          {item.relevance_status !== "relevant" ? (
+                            <select
+                              aria-label={`Service matched by ${item.keyword}`}
+                              value={
+                                serviceChoiceBySuggestion[item.id]
+                                || item.matched_service_id
+                                || serviceProfile.items.find(
+                                  (service) => service.status === "confirmed",
+                                )?.id
+                                || ""
+                              }
+                              onChange={(event) => setServiceChoiceBySuggestion((current) => ({
+                                ...current,
+                                [item.id]: event.target.value,
+                              }))}
+                              className="mb-2 w-full rounded-md border border-[#303137] bg-[#15161a] px-2.5 py-2 text-xs text-zinc-200"
+                            >
+                              {serviceProfile.items
+                                .filter((service) => service.status === "confirmed")
+                                .map((service) => (
+                                  <option key={service.id} value={service.id}>
+                                    {service.name}
+                                  </option>
+                                ))}
+                            </select>
+                          ) : null}
+                          <div className="flex flex-wrap gap-2">
+                            {item.relevance_status !== "relevant" ? (
+                              <button
+                                type="button"
+                                onClick={() => void saveSearchFeedback(item, "relevant")}
+                                disabled={feedbackBusy === item.id}
+                                className="rounded-md border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-100 disabled:opacity-40"
+                              >
+                                Matches this service
+                              </button>
+                            ) : null}
+                            {item.relevance_status !== "unrelated" ? (
+                              <button
+                                type="button"
+                                onClick={() => void saveSearchFeedback(item, "unrelated")}
+                                disabled={feedbackBusy === item.id}
+                                className="rounded-md border border-[#34353b] px-2.5 py-1.5 text-xs font-semibold text-zinc-300 disabled:opacity-40"
+                              >
+                                Not relevant
+                              </button>
+                            ) : null}
+                            {item.owner_feedback ? (
+                              <button
+                                type="button"
+                                onClick={() => void saveSearchFeedback(item, "cleared")}
+                                disabled={feedbackBusy === item.id}
+                                className="px-1 py-1.5 text-xs font-semibold text-zinc-500 hover:text-white disabled:opacity-40"
+                              >
+                                Undo my choice
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </article>
                 ))}

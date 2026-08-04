@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -26,3 +28,12 @@ class KeywordResearchAIReviewIn(BaseModel):
     campaign_id: str = Field(min_length=1, max_length=36)
     max_items: int = Field(default=8, ge=1, le=12)
     retry_failed: bool = False
+
+
+class KeywordRelevanceFeedbackIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    campaign_id: str = Field(min_length=1, max_length=36)
+    suggestion_id: str = Field(min_length=1, max_length=36)
+    decision: Literal["relevant", "unrelated", "cleared"]
+    service_id: str | None = Field(default=None, min_length=1, max_length=36)

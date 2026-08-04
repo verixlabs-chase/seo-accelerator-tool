@@ -4,10 +4,14 @@ from decimal import Decimal
 import httpx
 
 from app.models.campaign import Campaign
-from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion
+from app.models.keyword_research import (
+    KeywordRelevanceFeedback,
+    KeywordResearchRun,
+    KeywordResearchSuggestion,
+)
 from app.models.rank import CampaignKeyword
 from app.providers.keyword_research import DataForSeoKeywordResearchProvider
-from app.services import keyword_research_service
+from app.services import business_service_service, keyword_research_service
 
 
 class FakeKeywordResearchProvider:
@@ -140,12 +144,40 @@ def test_provider_warning_is_customer_safe() -> None:
         ValueError("DataForSEO internal provider detail"),
         "ranked searches",
     )
-
     assert "DataForSEO" not in warning
     assert warning == (
         "Fresh ranked searches are temporarily unavailable. Saved search data is still shown."
     )
 
+
+def test_confirmed_service_uses_bounded_versioned_synonyms() -> None:
+    service = type(
+        "ConfirmedService",
+        (),
+        {
+            "id": "service-1",
+            "name": "Junk Removal",
+            "normalized_name": "junk removal",
+            "aliases": [],
+        },
+    )()
+
+    matched, score = business_service_service.match_keyword_to_service(
+        "trash hauling reno",
+        [service],
+    )
+    unrelated, unrelated_score = business_service_service.match_keyword_to_service(
+        "biggest little city",
+        [service],
+    )
+
+    assert business_service_service.SERVICE_MATCH_RULES_VERSION == (
+        "service-synonyms-2026-08-v1"
+    )
+    assert matched is service
+    assert score == 0.84
+    assert unrelated is None
+    assert unrelated_score == 0
 
 def test_ranked_search_keeps_the_page_that_is_already_showing() -> None:
     parsed = keyword_research_service._parse_labs_item(
@@ -263,6 +295,77 @@ def test_keyword_research_api_returns_empty_state_before_first_run(client) -> No
         },
     }
 
+
+def test_keyword_feedback_api_saves_a_scoped_owner_choice(client, db_session) -> None:
+    token = _login(client, "a@example.com", "pass-a")
+    headers = {"Authorization": f"Bearer {token}"}
+    campaign_payload = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Feedback API Campaign", "domain": "feedback-api.example"},
+        headers=headers,
+    ).json()["data"]
+    campaign = db_session.get(Campaign, campaign_payload["id"])
+    assert campaign is not None
+    service_response = client.post(
+        "/api/v1/business-services",
+        json={"campaign_id": campaign.id, "name": "Junk Removal"},
+        headers=headers,
+    )
+    assert service_response.status_code == 200
+    service = service_response.json()["data"]["items"][0]
+
+    run = KeywordResearchRun(
+        tenant_id=campaign.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        business_location_id=campaign.business_location_id,
+        status="complete",
+        location_name="United States",
+    )
+    db_session.add(run)
+    db_session.flush()
+    suggestion = KeywordResearchSuggestion(
+        run_id=run.id,
+        tenant_id=campaign.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        business_location_id=campaign.business_location_id,
+        keyword="trash hauling",
+        normalized_keyword="trash hauling",
+        source_types=["website_content"],
+        evidence={"sources": ["website_content"]},
+        intent="Ready to hire",
+        opportunity_group="new_opportunity",
+        relevance_score=55,
+        relevance_status="needs_review",
+        opportunity_score=48,
+        recommended_action="Review this search",
+        recommendation_reason="Confirm that it matches work you offer.",
+    )
+    db_session.add(suggestion)
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/keyword-research/feedback",
+        json={
+            "campaign_id": campaign.id,
+            "suggestion_id": suggestion.id,
+            "decision": "relevant",
+            "service_id": service["id"],
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["feedback"]["decision"] == "relevant"
+    assert payload["items"][0]["owner_feedback"] == "relevant"
+    assert payload["items"][0]["matched_service_name"] == "Junk Removal"
+    feedback = db_session.query(KeywordRelevanceFeedback).one()
+    assert feedback.tenant_id == campaign.tenant_id
+    assert feedback.campaign_id == campaign.id
+    assert feedback.created_by_user_id is not None
+
 def test_discovery_scores_real_sources_and_promotes_selected_searches(
     db_session,
     create_test_org,
@@ -320,6 +423,124 @@ def test_discovery_scores_real_sources_and_promotes_selected_searches(
     ).count() == 1
 
 
+def test_owner_relevance_choice_is_audited_and_survives_future_refreshes(
+    db_session,
+    create_test_org,
+) -> None:
+    organization = create_test_org(name="Keyword Feedback Org")
+    campaign = Campaign(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        name="Plumbing Shop",
+        domain="plumber.example",
+        setup_state="Active",
+    )
+    db_session.add(campaign)
+    db_session.commit()
+    db_session.refresh(campaign)
+    business_service_service.add_manual_service(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        name="Plumbing",
+    )
+    service = business_service_service.confirmed_services_for_campaign(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+    )[0]
+
+    first = keyword_research_service.discover(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        max_suggestions=25,
+        provider=FakeKeywordResearchProvider(),
+    )
+    suggestion = next(
+        item for item in first["items"] if item["keyword"] == "emergency plumber"
+    )
+    assert suggestion["relevance_status"] == "needs_review"
+
+    saved = keyword_research_service.save_relevance_feedback(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        suggestion_id=suggestion["id"],
+        decision="relevant",
+        service_id=service.id,
+        created_by_user_id=None,
+    )
+    saved_item = next(
+        item for item in saved["items"] if item["keyword"] == "emergency plumber"
+    )
+    assert saved_item["relevance_status"] == "relevant"
+    assert saved_item["owner_feedback"] == "relevant"
+    assert saved_item["matched_service_name"] == "Plumbing"
+
+    refreshed = keyword_research_service.discover(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        max_suggestions=25,
+        provider=FakeKeywordResearchProvider(),
+    )
+    refreshed_item = next(
+        item for item in refreshed["items"] if item["keyword"] == "emergency plumber"
+    )
+    assert refreshed_item["relevance_status"] == "relevant"
+    assert refreshed_item["owner_feedback"] == "relevant"
+
+    cleared = keyword_research_service.save_relevance_feedback(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        suggestion_id=refreshed_item["id"],
+        decision="cleared",
+        service_id=None,
+        created_by_user_id=None,
+    )
+    cleared_item = next(
+        item for item in cleared["items"] if item["keyword"] == "emergency plumber"
+    )
+    assert cleared_item["relevance_status"] == "needs_review"
+    assert cleared_item["owner_feedback"] is None
+
+    hidden = keyword_research_service.save_relevance_feedback(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        suggestion_id=cleared_item["id"],
+        decision="unrelated",
+        service_id=None,
+        created_by_user_id=None,
+    )
+    hidden_item = next(
+        item for item in hidden["items"] if item["keyword"] == "emergency plumber"
+    )
+    assert hidden_item["relevance_status"] == "unrelated"
+    assert hidden_item["owner_feedback"] == "unrelated"
+
+    hidden_refresh = keyword_research_service.discover(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        max_suggestions=25,
+        provider=FakeKeywordResearchProvider(),
+    )
+    hidden_refresh_item = next(
+        item
+        for item in hidden_refresh["items"]
+        if item["keyword"] == "emergency plumber"
+    )
+    assert hidden_refresh_item["relevance_status"] == "unrelated"
+    assert hidden_refresh_item["owner_feedback"] == "unrelated"
+    assert (
+        db_session.query(KeywordRelevanceFeedback)
+        .filter(KeywordRelevanceFeedback.campaign_id == campaign.id)
+        .count()
+        == 3
+    )
 def test_latest_keyword_research_is_tenant_scoped(
     db_session,
     create_test_org,

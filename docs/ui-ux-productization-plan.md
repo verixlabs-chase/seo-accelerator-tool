@@ -20,7 +20,9 @@
 > Find Searches page, real demand visualization, owner-friendly opportunity
 > groups, confirmed service and service-area setup, explicit excluded markets,
 > a bounded AI action for sorting only unclear phrases, and direct promotion
-> into Search Rankings. The follow-on
+> into Search Rankings. Owners can now correct a phrase in place, attach it to
+> a confirmed service, hide it as irrelevant, undo that choice, and have the
+> scoped decision reused on later refreshes. The follow-on
 > **I1.4/T29 measured action-value
 > sprint** is scheduled after G1.4 supplies live Google Business Profile
 > performance data; it adds separate Website and Google Profile action lanes

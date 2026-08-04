@@ -154,6 +154,7 @@ def _verify_required_tables(database_url: str) -> None:
             "action_plan_forecasts",
             "keyword_research_runs",
             "keyword_research_suggestions",
+            "keyword_relevance_feedback",
             "auth_sessions",
             "crawl_runs",
             "strategy_cohort_patterns",

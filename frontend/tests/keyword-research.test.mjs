@@ -97,6 +97,16 @@ test("unclear-search AI review is a bounded action instead of a chatbot", () => 
   assert.doesNotMatch(page, /chatbot/i);
 });
 
+test("business owners can correct search relevance without opening a chatbot", () => {
+  const page = source("../app/(product)/keyword-research/page.tsx");
+
+  assert.match(page, /\/keyword-research\/feedback/);
+  assert.match(page, /Matches this service/);
+  assert.match(page, /Not relevant/);
+  assert.match(page, /Undo my choice/);
+  assert.match(page, /Saved from your choice/);
+});
+
 test("customer pages keep the market-data supplier private", () => {
   const keywordResearch = source("../app/(product)/keyword-research/page.tsx");
   const locations = source("../app/(product)/locations/page.tsx");
