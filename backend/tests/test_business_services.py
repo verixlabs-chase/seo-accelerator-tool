@@ -118,6 +118,13 @@ def test_website_discovery_suggests_service_pages_but_not_city_slogans(
             last_crawled_at=now,
             created_at=now,
         ),
+        Page(
+            tenant_id=campaign.tenant_id,
+            campaign_id=campaign.id,
+            url="https://example.com/residential",
+            last_crawled_at=now,
+            created_at=now,
+        ),
     ]
     db_session.add_all(pages)
     db_session.flush()
@@ -143,6 +150,19 @@ def test_website_discovery_suggests_service_pages_but_not_city_slogans(
                 title="The Biggest Little City | Junk Magicians",
                 crawled_at=now,
             ),
+            CrawlPageResult(
+                tenant_id=campaign.tenant_id,
+                campaign_id=campaign.id,
+                crawl_run_id=run.id,
+                page_id=pages[2].id,
+                status_code=200,
+                is_indexable=1,
+                title="Junk Magicians",
+                heading_text="Hot Tub Removal",
+                meta_description="Hot tub removal for Reno homeowners.",
+                body_text_excerpt="Our crew provides hot tub removal throughout Reno.",
+                crawled_at=now,
+            ),
         ]
     )
     db_session.commit()
@@ -156,9 +176,10 @@ def test_website_discovery_suggests_service_pages_but_not_city_slogans(
     payload = response.json()["data"]
     names = {item["name"] for item in payload["items"]}
     assert "Appliance Removal" in names
+    assert "Hot Tub Removal" in names
     assert "The Biggest Little City" not in names
-    assert payload["summary"]["suggested"] == 1
-    assert payload["discovery"]["pages_reviewed"] == 2
+    assert payload["summary"]["suggested"] == 2
+    assert payload["discovery"]["pages_reviewed"] == 3
 
 
 def test_service_profiles_are_tenant_scoped(client) -> None:

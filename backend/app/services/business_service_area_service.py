@@ -222,12 +222,21 @@ def suggest_areas(
         if page.url in seen_pages:
             continue
         seen_pages.add(page.url)
-        for candidate_name in _page_area_candidates(result.title, page.url):
+        for candidate_name in _page_area_candidates(
+            result.title,
+            page.url,
+            heading_text=result.heading_text,
+        ):
             normalized = _normalize(candidate_name)
             if not normalized or normalized in _NON_AREA_WORDS:
                 continue
             key = ("city", normalized)
-            evidence = {"source": "website", "url": page.url, "title": result.title}
+            evidence = {
+                "source": "website",
+                "url": page.url,
+                "title": result.title,
+                "heading": (result.heading_text or "")[:320] or None,
+            }
             current = candidates.get(key)
             if current is None:
                 candidates[key] = {
@@ -393,10 +402,17 @@ def _area_in_keyword(area: BusinessServiceArea, normalized_keyword: str) -> bool
     return bool(area_name) and re.search(rf"\b{re.escape(area_name)}\b", normalized_keyword) is not None
 
 
-def _page_area_candidates(title: str | None, url: str) -> list[str]:
+def _page_area_candidates(
+    title: str | None,
+    url: str,
+    *,
+    heading_text: str | None = None,
+) -> list[str]:
     candidates: list[str] = []
-    if title:
-        title_text = html.unescape(title)
+    for source_text in [title, *re.split(r"\s+\|\s+", heading_text or "")]:
+        if not source_text:
+            continue
+        title_text = html.unescape(source_text)
         match = re.search(
             r"\b(?:in|near|serving)\s+([A-Za-z][A-Za-z .'\-]{1,60}?)(?=\s*[|–—]|$)",
             title_text,

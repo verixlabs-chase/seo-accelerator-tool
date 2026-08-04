@@ -18,6 +18,51 @@ function summarizeTaskCounts(tasks) {
   };
 }
 
+function parseOwnerServices(value) {
+  const seen = new Set();
+  return String(value || "")
+    .split(/[\n;]+/)
+    .map((item) => item.trim().replace(/\s+/g, " "))
+    .filter((item) => {
+      const key = item.toLocaleLowerCase();
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+}
+
+function parseOwnerServiceAreas(value) {
+  const seen = new Set();
+  const entries = [];
+
+  for (const rawItem of String(value || "").split(/[\n;]+/)) {
+    const item = rawItem.trim().replace(/\s+/g, " ");
+    if (!item) {
+      continue;
+    }
+
+    const postalCode = /^\d{5}(?:-\d{4})?$/.test(item);
+    const parts = item.split(",").map((part) => part.trim()).filter(Boolean);
+    const name = postalCode ? item : parts[0];
+    const region = postalCode ? null : parts.slice(1).join(", ") || null;
+    const areaType = postalCode
+      ? "postal_code"
+      : /\bcounty$/i.test(name)
+        ? "county"
+        : "city";
+    const key = `${areaType}:${name.toLocaleLowerCase()}:${(region || "").toLocaleLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    entries.push({ areaType, name, region });
+  }
+
+  return entries;
+}
+
 function getTaskStatusMeaning(status) {
   if (status === "done") {
     return "Complete. This part of setup finished.";
@@ -62,4 +107,10 @@ function getStepThreeSummary(tasks, scanDone) {
   };
 }
 
-export { getStepThreeSummary, getTaskStatusMeaning, summarizeTaskCounts };
+export {
+  getStepThreeSummary,
+  getTaskStatusMeaning,
+  parseOwnerServiceAreas,
+  parseOwnerServices,
+  summarizeTaskCounts,
+};

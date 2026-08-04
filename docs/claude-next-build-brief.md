@@ -30,12 +30,17 @@
 > now in progress.** Its first slice adds durable, location-scoped discovery
 > from DataForSEO, Search Console, and tracked searches, plain-language
 > opportunity grouping, demand visualization, and one-click promotion into
-> Search Rankings. **The first MKT1.1A implementation slice is now complete in
-> the local worktree:** it adds tenant-safe service profiles, website-derived
+> Search Rankings. **The MKT1.1 onboarding bridge is now implemented in the
+> current release candidate:** guided setup creates a real business-location
+> scope, captures multiple owner-confirmed services and cities/counties/ZIP
+> codes, and saves that profile before the first search and ranking checks.
+> Website-derived additions still require owner review. **The first MKT1.1A
+> implementation slice is complete:** it adds tenant-safe service profiles,
+> bounded title, heading, description, body, and URL crawl evidence, website-derived
 > service suggestions, owner confirmation and rejection, manual service entry,
 > and immediate deterministic reclassification of saved search ideas into Best
 > matches, Needs your review, and Hidden as unrelated. The remaining MKT1.1
-> work is divided into three bounded
+> work continues through three bounded
 > slices: smart service discovery and owner confirmation, deterministic
 > service-area mapping, and business-aware keyword relevance. These slices use
 > crawl and business-profile evidence to remove irrelevant phrases before AI
@@ -1897,8 +1902,16 @@ Implementation status (2026-08-03):
   idempotent Mistral batch reviews only server-selected uncertain phrases through
   a strict schema. The server validates every suggestion, service, service area,
   and evidence identifier and applies results only above a fixed confidence gate.
+- The 2026-08-04 onboarding bridge now collects multiple owner-confirmed
+  services and service areas, creates the required business-location scope,
+  and persists that profile before the first crawl, search, and ranking checks.
+  It never silently confirms later website suggestions.
+- The richer crawl-evidence slice stores bounded public-page headings,
+  descriptions, and body excerpts with each new crawl. Service discovery uses
+  those fields to recognize and corroborate real service pages without making
+  the resulting suggestions owner-confirmed.
 - Remaining MKT1.1 work: service/problem/location clusters, competitor-domain
-  expansion, richer crawl evidence, onboarding integration, service-area
+  expansion, service-area
   map selection and nearby-community resolution, semantic synonym expansion,
   historical trend comparisons,
   target-page mapping, map visibility, and conversion into content briefs,
@@ -1913,8 +1926,8 @@ Remaining delivery slices:
   company defaults; and per-location overrides. The owner can add services the
   website omitted and reject services the system misunderstood. The durable
   profile, title/URL evidence extraction, review API, deterministic keyword
-  reclassification, and Find Searches workflow are implemented locally;
-  onboarding integration and richer heading/description/body evidence remain.
+  reclassification, Find Searches workflow, guided setup capture, and bounded
+  heading/description/body evidence are implemented locally.
 - **MKT1.1B - Service-Area Mapping — core local slice complete:** collect physical locations separately
   from the places each location serves. Support cities, ZIP codes, counties,
   distance or drive-time boundaries, map selection, and explicit exclusions.
@@ -1922,8 +1935,9 @@ Remaining delivery slices:
   organize and explain the candidates but may not invent service boundaries.
   The durable city/ZIP/county/radius/exclusion profile, location and website
   suggestions, owner review workflow, tenant-safe API, research seeds, and
-  saved-result reclassification are implemented locally. Drive-time boundaries,
-  map selection, and deterministic nearby-community expansion remain.
+  saved-result reclassification and guided setup capture are implemented
+  locally. Drive-time boundaries, map selection, and deterministic
+  nearby-community expansion remain.
 - **MKT1.1C - Business-Aware Keyword Relevance — local core complete:** require a confirmed service,
   plausible customer intent, and valid service-area relationship before a
   phrase enters `Best matches`. Use deterministic rules and semantic matching

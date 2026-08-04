@@ -45,6 +45,9 @@ class CrawlPageResult(Base):
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_indexable: Mapped[int] = mapped_column(Integer, default=1)
     title: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    meta_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    heading_text: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    body_text_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     crawled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
 
 

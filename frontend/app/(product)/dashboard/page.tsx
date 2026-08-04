@@ -1817,6 +1817,7 @@ export default function DashboardPage() {
 
         {showWizard ? (
           <OnboardingWizard
+            organizationId={me?.organization_id || ""}
             onComplete={({ campaignId, campaignDomain, notice: completionNotice }) => {
               setShowWizard(false);
               setSelectedCampaignId(campaignId);
