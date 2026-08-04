@@ -29,6 +29,8 @@ import {
 import {
   getStepThreeSummary,
   getTaskStatusMeaning,
+  parseOwnerServiceAreas,
+  parseOwnerServices,
   summarizeTaskCounts,
 } from "../app/(product)/truth/onboardingTruth.mjs";
 import {
@@ -458,4 +460,19 @@ test("onboarding truth state summarizes successful setup without false completio
 test("onboarding task meaning keeps queued and failed states distinct", () => {
   assert.match(getTaskStatusMeaning("pending"), /queued/i);
   assert.match(getTaskStatusMeaning("error"), /needs attention/i);
+});
+
+test("onboarding services keep distinct owner-entered lines and remove duplicates", () => {
+  assert.deepEqual(
+    parseOwnerServices("Junk removal\nAppliance removal; junk removal"),
+    ["Junk removal", "Appliance removal"],
+  );
+});
+
+test("onboarding service areas preserve city regions and recognize ZIP codes", () => {
+  assert.deepEqual(parseOwnerServiceAreas("Reno, NV\n89501\nWashoe County, NV"), [
+    { areaType: "city", name: "Reno", region: "NV" },
+    { areaType: "postal_code", name: "89501", region: null },
+    { areaType: "county", name: "Washoe County", region: "NV" },
+  ]);
 });

@@ -5,6 +5,8 @@ import { platformApi } from "../../platform/api";
 import {
   getStepThreeSummary,
   getTaskStatusMeaning,
+  parseOwnerServiceAreas,
+  parseOwnerServices,
   summarizeTaskCounts,
 } from "../truth/onboardingTruth.mjs";
 
@@ -15,7 +17,14 @@ type OnboardingCompletion = {
 };
 
 type OnboardingWizardProps = {
+  organizationId: string;
   onComplete: (payload: OnboardingCompletion) => void;
+};
+
+type ServiceAreaEntry = {
+  areaType: "city" | "postal_code" | "county";
+  name: string;
+  region: string | null;
 };
 
 type StepIndicatorProps = {
@@ -112,7 +121,7 @@ function SetupTaskList({ tasks }: { tasks: SetupTask[] }) {
   );
 }
 
-export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
+export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -122,21 +131,36 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [websiteUrl, setWebsiteUrl] = useState("");
 
   // Step 1 result
+  const [businessLocationId, setBusinessLocationId] = useState("");
   const [campaignId, setCampaignId] = useState("");
   const [campaignDomain, setCampaignDomain] = useState("");
 
   // Step 2 state
-  const [workType, setWorkType] = useState("General Services");
-  const [serviceArea, setServiceArea] = useState("");
+  const [servicesInput, setServicesInput] = useState("");
+  const [serviceAreasInput, setServiceAreasInput] = useState("");
+  const [primaryService, setPrimaryService] = useState("");
+  const [rankingArea, setRankingArea] = useState("");
 
   // Step 3 state
   const [scanStarted, setScanStarted] = useState(false);
   const [scanDone, setScanDone] = useState(false);
   const [setupTasks, setSetupTasks] = useState<SetupTask[]>([
     {
+      id: "location",
+      title: "Create your business location",
+      description: "Keep this location's services, markets, and results separate.",
+      status: "pending",
+    },
+    {
       id: "campaign",
       title: "Save your business profile",
       description: "Create the workspace for your business inside InsightOS.",
+      status: "pending",
+    },
+    {
+      id: "business-profile",
+      title: "Save what you do and where you work",
+      description: "Use your confirmed services and service areas to keep search ideas relevant.",
       status: "pending",
     },
     {
@@ -175,46 +199,123 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   } = summarizeTaskCounts(setupTasks);
   const stepThreeSummary = getStepThreeSummary(setupTasks, scanDone);
 
-  async function handleStep1(event: FormEvent<HTMLFormElement>) {
+  function handleStep1(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!businessName.trim() || !websiteUrl.trim()) {
       setError("Please enter your business name and website.");
       return;
     }
+    setError("");
+    setStep(2);
+  }
+
+  async function handleStep2(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const services = parseOwnerServices(servicesInput) as string[];
+    const serviceAreas = parseOwnerServiceAreas(serviceAreasInput) as ServiceAreaEntry[];
+    if (services.length === 0) {
+      setError("Add at least one service customers can hire you for.");
+      return;
+    }
+    if (serviceAreas.length === 0) {
+      setError("Add at least one city, county, or ZIP code you serve.");
+      return;
+    }
+    if (!organizationId) {
+      setError("Your organization could not be identified. Reload the page and try again.");
+      return;
+    }
 
     setBusy(true);
     setError("");
+    const domain = websiteUrl.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+    const firstArea = serviceAreas[0];
 
     try {
-      updateTask("campaign", "running");
-      const domain = websiteUrl.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
-      const created = await platformApi("/campaigns", {
-        method: "POST",
-        body: JSON.stringify({
-          name: businessName.trim(),
-          domain,
-        }),
-      });
+      let activeLocationId = businessLocationId;
+      if (!activeLocationId) {
+        updateTask("location", "running");
+        const createdLocation = await platformApi(
+          `/organizations/${encodeURIComponent(organizationId)}/business-locations`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              name: businessName.trim(),
+              domain,
+              primary_city: firstArea.areaType === "postal_code" ? null : firstArea.name,
+              city: firstArea.areaType === "city" ? firstArea.name : null,
+              region: firstArea.region,
+              postal_code: firstArea.areaType === "postal_code" ? firstArea.name : null,
+              country_code: "US",
+            }),
+          },
+        );
+        activeLocationId = createdLocation?.business_location?.id || "";
+        if (!activeLocationId) {
+          throw new Error("We couldn't create this business location.");
+        }
+        setBusinessLocationId(activeLocationId);
+        updateTask("location", "done");
+      }
 
-      setCampaignId(created.id);
-      setCampaignDomain(domain);
-      updateTask("campaign", "done");
-      setStep(2);
+      let activeCampaignId = campaignId;
+      if (!activeCampaignId) {
+        updateTask("campaign", "running");
+        const createdCampaign = await platformApi("/campaigns", {
+          method: "POST",
+          body: JSON.stringify({
+            name: businessName.trim(),
+            domain,
+            business_location_id: activeLocationId,
+          }),
+        });
+        activeCampaignId = createdCampaign?.id || "";
+        if (!activeCampaignId) {
+          throw new Error("We couldn't create this business workspace.");
+        }
+        setCampaignId(activeCampaignId);
+        setCampaignDomain(domain);
+        updateTask("campaign", "done");
+      }
+
+      updateTask("business-profile", "running");
+      for (const service of services) {
+        await platformApi("/business-services", {
+          method: "POST",
+          body: JSON.stringify({ campaign_id: activeCampaignId, name: service }),
+        });
+      }
+      for (const area of serviceAreas) {
+        await platformApi("/business-service-areas", {
+          method: "POST",
+          body: JSON.stringify({
+            campaign_id: activeCampaignId,
+            area_type: area.areaType,
+            name: area.name,
+            region: area.region,
+            country_code: "US",
+            relationship: "included",
+          }),
+        });
+      }
+      updateTask("business-profile", "done");
+      setPrimaryService(services[0]);
+      setRankingArea([firstArea.name, firstArea.region].filter(Boolean).join(", "));
+      setStep(3);
     } catch (err) {
-      updateTask("campaign", "error");
+      setSetupTasks((current) =>
+        current.map((task) =>
+          task.status === "running" ? { ...task, status: "error" } : task,
+        ),
+      );
       setError(
         err instanceof Error
           ? err.message
-          : "We couldn't save your info. Please try again."
+          : "We couldn't save your services and service areas. Please try again.",
       );
     } finally {
       setBusy(false);
     }
-  }
-
-  function handleStep2(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStep(3);
   }
 
   // Step 3: fire scans on mount
@@ -231,11 +332,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           ? campaignDomain
           : `https://${campaignDomain}`;
 
-        const keyword = workType.toLowerCase().includes("general")
-          ? `${businessName.toLowerCase()} near me`
-          : `${workType.toLowerCase()} near me`;
-
-        const locationCode = serviceArea.trim() || "US";
+        const keyword = `${primaryService.toLowerCase()} near me`;
+        const locationCode = rankingArea || "US";
 
         updateTask("crawl", "running");
         await platformApi("/crawl/schedule", {
@@ -253,7 +351,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           method: "POST",
           body: JSON.stringify({
             campaign_id: campaignId,
-            cluster_name: workType.trim() || "Core Terms",
+            cluster_name: primaryService || "Core Services",
             keyword: keyword,
             location_code: locationCode,
           }),
@@ -289,10 +387,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     }
 
     void runScans();
-  }, [step, scanStarted, campaignId, campaignDomain, workType, serviceArea, businessName]);
+  }, [step, scanStarted, campaignId, campaignDomain, primaryService, rankingArea]);
 
   return (
-    <div className="mx-auto max-w-lg py-8">
+    <div className="mx-auto max-w-2xl py-8">
       <div className="rounded-md border border-[#26272c] bg-[#141518] p-7 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
         <div className="mb-7">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
@@ -309,7 +407,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         <div className="mb-7">
           <StepIndicator
             currentStep={step}
-            steps={["Your business", "What you do", "First scan"]}
+            steps={["Your business", "Services and areas", "First checks"]}
           />
         </div>
 
@@ -325,6 +423,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               <p className="text-sm font-medium text-white">What this setup will do</p>
               <ul className="mt-2 space-y-2 text-sm leading-6 text-zinc-300">
                 <li>Create your business workspace.</li>
+                <li>Save the services you offer and the places you serve.</li>
                 <li>Queue your first website scan.</li>
                 <li>Add one starter search term and queue your first ranking check.</li>
               </ul>
@@ -367,42 +466,40 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         {step === 2 && (
           <form onSubmit={handleStep2} className="space-y-5">
             <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
-              We&apos;ll use this to choose the first tracked search and location context for your initial ranking checks.
+              Tell us what customers hire you for and where you take jobs. We&apos;ll use these answers to remove unrelated search ideas before you have to review them.
             </div>
             <div>
               <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-zinc-500">
-                What type of work do you do?
+                Services customers can hire you for
               </label>
-              <select
-                value={workType}
-                onChange={(e) => setWorkType(e.target.value)}
-                className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
-              >
-                <option value="General Services">General services</option>
-                <option value="Plumbing">Plumbing</option>
-                <option value="HVAC">Heating &amp; cooling (HVAC)</option>
-                <option value="Electrical">Electrical</option>
-                <option value="Roofing">Roofing</option>
-                <option value="Landscaping">Landscaping</option>
-                <option value="Cleaning">Cleaning</option>
-                <option value="Pest Control">Pest control</option>
-                <option value="Painting">Painting</option>
-                <option value="Remodeling">Remodeling</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-zinc-500">
-                City or area you serve
-              </label>
-              <input
-                value={serviceArea}
-                onChange={(e) => setServiceArea(e.target.value)}
-                placeholder="e.g. Austin, TX"
+              <textarea
+                value={servicesInput}
+                onChange={(e) => setServicesInput(e.target.value)}
+                rows={4}
+                placeholder={"Junk removal\nAppliance removal\nGarage cleanouts"}
                 className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
               />
-              <p className="mt-1 text-xs text-zinc-500">
-                Optional — defaults to US-wide results if left blank.
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                Add one service per line. Include important services even if they are missing from your website.
               </p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-zinc-500">
+                Cities, counties, or ZIP codes you serve
+              </label>
+              <textarea
+                value={serviceAreasInput}
+                onChange={(e) => setServiceAreasInput(e.target.value)}
+                rows={4}
+                placeholder={"Reno, NV\nSparks, NV\n89501"}
+                className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+              />
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                Add one place per line. The first place becomes this location&apos;s home market.
+              </p>
+            </div>
+            <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-100">
+              Your answers will be treated as confirmed. If the website scan finds more services or places later, you&apos;ll review them before they affect your search ideas.
             </div>
             <div className="flex gap-3">
               <button
@@ -414,9 +511,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               </button>
               <button
                 type="submit"
-                className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100"
+                disabled={busy}
+                className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Continue
+                {busy ? "Saving your answers..." : "Save and start checks"}
               </button>
             </div>
           </form>
@@ -518,14 +616,14 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 <p className="text-center text-sm leading-6 text-zinc-400">
                   {hasSetupIssues
                     ? "Your business was created, but one or more first checks did not finish cleanly. The dashboard will show exactly what needs attention and what to retry."
-                    : "Your business was created and your first checks were queued successfully. The dashboard will show progress as scan and ranking data arrive."}
+                    : "Your business, services, and service areas were saved, and your first checks were queued. The dashboard will show progress as scan and ranking data arrive."}
                 </p>
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
                   <p className="font-medium text-white">What happens next</p>
                   <p className="mt-2">
                     {hasSetupIssues
                       ? "Go to the dashboard now. Start with the workflow status cards, then retry any step marked as needing attention."
-                      : "Go to the dashboard now. Start with the workflow status cards to confirm what is complete and what is still filling in."}
+                      : "Go to the dashboard now. Your confirmed services and areas will keep Find Searches focused, and any ideas found on your website will wait for your approval."}
                   </p>
                 </div>
                 <button

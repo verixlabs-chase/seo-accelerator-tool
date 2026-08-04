@@ -52,6 +52,7 @@ class BusinessServiceArea(Base):
     radius_miles: Mapped[float | None] = mapped_column(Float, nullable=True)
     center_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     center_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    boundary_points: Mapped[list | None] = mapped_column(JSON, nullable=True)
     relationship: Mapped[str] = mapped_column(String(20), nullable=False, default="included")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="suggested", index=True)
     source: Mapped[str] = mapped_column(String(30), nullable=False)

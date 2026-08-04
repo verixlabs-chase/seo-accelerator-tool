@@ -41,3 +41,29 @@ def test_extract_internal_links_filters_external_and_special_schemes():
     assert "https://example.com/about" in links
     assert "https://example.com/contact#team" in links
     assert all("other.com" not in link for link in links)
+
+
+def test_parse_signals_keeps_bounded_page_copy_for_business_discovery():
+    html = """
+    <html>
+      <head>
+        <title>Junk Magicians &amp; Removal</title>
+        <meta name="description" content="Hot tub removal for Reno homeowners">
+        <style>.hidden { display: none; }</style>
+      </head>
+      <body>
+        <h1><span>Hot Tub</span> Removal</h1>
+        <h2>Appliance Removal</h2>
+        <script>secretTrackingValue()</script>
+        <p>We haul bulky household items.</p>
+      </body>
+    </html>
+    """
+
+    signals = crawl_parser.parse_signals("https://example.com/removal", html)
+
+    assert signals["title"] == "Junk Magicians & Removal"
+    assert signals["meta_description"] == "Hot tub removal for Reno homeowners"
+    assert signals["heading_text"] == "Hot Tub Removal | Appliance Removal"
+    assert "We haul bulky household items." in signals["body_text_excerpt"]
+    assert "secretTrackingValue" not in signals["body_text_excerpt"]

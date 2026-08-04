@@ -265,6 +265,9 @@ def record_page_result(
         status_code=status_code,
         is_indexable=1 if signals["is_indexable"] else 0,
         title=signals["title"],
+        meta_description=signals["meta_description"],
+        heading_text=signals["heading_text"],
+        body_text_excerpt=signals["body_text_excerpt"],
     )
     db.add(result)
     db.flush()
@@ -277,8 +280,10 @@ def extract_issues_for_result(db: Session, run: CrawlRun, result: CrawlPageResul
         signals = {
             "title": result.title,
             "canonical": None,
-            "meta_description": None,
-            "h1_count": 0,
+            "meta_description": result.meta_description,
+            "heading_text": result.heading_text,
+            "body_text_excerpt": result.body_text_excerpt,
+            "h1_count": 1 if result.heading_text else 0,
             "internal_links": 0,
             "is_indexable": bool(result.is_indexable),
         }
@@ -541,7 +546,6 @@ def mark_run_failed(db: Session, crawl_run_id: str, error_message: str) -> None:
             )
         )
     db.commit()
-
 
 
 

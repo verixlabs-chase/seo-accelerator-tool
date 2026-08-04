@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bar,
@@ -63,7 +70,34 @@ type SearchSuggestion = {
   opportunity_score: number;
   recommended_action: string;
   recommendation_reason: string;
+  cluster?: {
+    key: string;
+    label: string;
+    service_name?: string | null;
+    problem: string;
+    location_name?: string | null;
+    intent: string;
+  };
+  target_page?: {
+    status: "existing" | "needs_page" | "review" | "not_applicable";
+    url?: string | null;
+    title?: string | null;
+    reason: string;
+  };
   tracked_at?: string | null;
+};
+
+type SearchClusterSummary = {
+  key: string;
+  label: string;
+  problem: string;
+  locationName?: string | null;
+  keywords: string[];
+  keywordCount: number;
+  trackedCount: number;
+  totalDemand: number;
+  bestPosition?: number | null;
+  targetPage?: SearchSuggestion["target_page"];
 };
 
 type ResearchResponse = {
@@ -109,16 +143,30 @@ type ServiceProfile = {
 
 type BusinessServiceAreaItem = {
   id: string;
-  area_type: "city" | "postal_code" | "county" | "radius";
+  area_type: "city" | "postal_code" | "county" | "radius" | "boundary";
   name: string;
   region?: string | null;
   country_code: string;
   radius_miles?: number | null;
+  center_latitude?: number | null;
+  center_longitude?: number | null;
+  boundary_points?: ServiceBoundaryPoint[];
   relationship: "included" | "excluded";
   status: "suggested" | "confirmed" | "rejected";
-  source: "manual" | "website" | "location" | "business_profile";
+  source: "manual" | "website" | "location" | "business_profile" | "map";
   confidence: number;
-  evidence: Array<{ url?: string; title?: string; note?: string }>;
+  evidence: Array<{
+    url?: string;
+    title?: string;
+    note?: string;
+    distance_miles?: number;
+    radius_miles?: number;
+  }>;
+};
+
+type ServiceBoundaryPoint = {
+  latitude: number;
+  longitude: number;
 };
 
 type ServiceAreaProfile = {
@@ -130,7 +178,25 @@ type ServiceAreaProfile = {
     confirmed_excluded: number;
     suggested: number;
   };
-  discovery?: { pages_reviewed: number; created: number; updated: number; message: string };
+  map?: {
+    status: "ready" | "setup_required";
+    center_latitude?: number | null;
+    center_longitude?: number | null;
+    radius_miles: number;
+    radius_saved: boolean;
+    boundary_saved?: boolean;
+    boundary_id?: string | null;
+    boundary_points?: ServiceBoundaryPoint[];
+  };
+  discovery?: {
+    pages_reviewed?: number;
+    created: number;
+    updated: number;
+    reviewed?: number;
+    radius_miles?: number;
+    boundary_saved?: boolean;
+    message: string;
+  };
 };
 
 type CreditSummary = {
@@ -189,6 +255,229 @@ function sourceLabel(source: string) {
   }[source] ?? source;
 }
 
+function ServiceAreaMap({
+  profile,
+  busy,
+  onSaveBoundary,
+}: {
+  profile: ServiceAreaProfile;
+  busy: boolean;
+  onSaveBoundary: (points: ServiceBoundaryPoint[]) => Promise<boolean>;
+}) {
+  const [drawingBoundary, setDrawingBoundary] = useState(false);
+  const [draftBoundary, setDraftBoundary] = useState<ServiceBoundaryPoint[]>([]);
+  const centerLatitude = profile.map?.center_latitude;
+  const centerLongitude = profile.map?.center_longitude;
+  if (
+    profile.map?.status !== "ready" ||
+    centerLatitude === null ||
+    centerLatitude === undefined ||
+    centerLongitude === null ||
+    centerLongitude === undefined
+  ) {
+    return (
+      <div className="mt-5 rounded-md border border-amber-500/25 bg-amber-500/10 p-4">
+        <p className="text-sm font-semibold text-amber-100">Add the location&apos;s map position first</p>
+        <p className="mt-1 text-sm leading-6 text-zinc-400">
+          Open Locations and finish the address check before using a mileage range or finding nearby towns.
+        </p>
+      </div>
+    );
+  }
+
+  const radiusMiles = Math.max(1, profile.map.radius_miles || 25);
+  const latitudeSpan = (radiusMiles / 69) * 1.25;
+  const longitudeSpan = latitudeSpan / Math.max(0.25, Math.cos((centerLatitude * Math.PI) / 180));
+  const minimumLatitude = centerLatitude - latitudeSpan;
+  const maximumLatitude = centerLatitude + latitudeSpan;
+  const minimumLongitude = centerLongitude - longitudeSpan;
+  const maximumLongitude = centerLongitude + longitudeSpan;
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${minimumLongitude}%2C${minimumLatitude}%2C${maximumLongitude}%2C${maximumLatitude}&layer=mapnik&marker=${centerLatitude}%2C${centerLongitude}`;
+  const mapItems = profile.items.filter(
+    (item) =>
+      item.area_type !== "radius" &&
+      item.area_type !== "boundary" &&
+      item.status !== "rejected" &&
+      item.center_latitude !== null &&
+      item.center_latitude !== undefined &&
+      item.center_longitude !== null &&
+      item.center_longitude !== undefined,
+  );
+  const savedBoundary = profile.map.boundary_points ?? [];
+  const visibleBoundary = drawingBoundary ? draftBoundary : savedBoundary;
+  const boundarySvgPoints = visibleBoundary
+    .map((point) => {
+      const x = ((point.longitude - minimumLongitude) / (maximumLongitude - minimumLongitude)) * 100;
+      const y = ((maximumLatitude - point.latitude) / (maximumLatitude - minimumLatitude)) * 100;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  const beginBoundary = () => {
+    setDraftBoundary([]);
+    setDrawingBoundary(true);
+  };
+
+  const addBoundaryPoint = (event: MouseEvent<SVGSVGElement>) => {
+    if (!drawingBoundary || draftBoundary.length >= 24) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+    const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height));
+    setDraftBoundary((current) => [
+      ...current,
+      {
+        latitude: maximumLatitude - y * (maximumLatitude - minimumLatitude),
+        longitude: minimumLongitude + x * (maximumLongitude - minimumLongitude),
+      },
+    ]);
+  };
+
+  const saveBoundary = async () => {
+    if (draftBoundary.length < 3) return;
+    if (await onSaveBoundary(draftBoundary)) {
+      setDrawingBoundary(false);
+      setDraftBoundary([]);
+    }
+  };
+
+  return (
+    <div className="mt-5 overflow-hidden rounded-md border border-[#303137] bg-[#111214]">
+      <div className="relative h-72 overflow-hidden bg-[#18191c]">
+        <iframe
+          title="Service area map"
+          src={mapUrl}
+          className="h-full w-full border-0 opacity-80 grayscale-[0.15]"
+          loading="lazy"
+        />
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute left-[10%] top-[10%] h-[80%] w-[80%] rounded-full border-2 border-dashed border-accent-500/80 bg-accent-500/5" />
+          {mapItems.map((item) => {
+            const left = Math.min(
+              98,
+              Math.max(2, ((Number(item.center_longitude) - minimumLongitude) / (maximumLongitude - minimumLongitude)) * 100),
+            );
+            const top = Math.min(
+              98,
+              Math.max(2, ((maximumLatitude - Number(item.center_latitude)) / (maximumLatitude - minimumLatitude)) * 100),
+            );
+            return (
+              <span
+                key={item.id}
+                title={`${item.name}: ${item.status === "confirmed" ? "served" : "needs your answer"}`}
+                style={{ left: `${left}%`, top: `${top}%` }}
+                className={`absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-lg ${
+                  item.status === "confirmed" ? "bg-emerald-500" : "bg-amber-400"
+                }`}
+              />
+            );
+          })}
+        </div>
+        <svg
+          aria-label={drawingBoundary ? "Click the map to add work-area corners" : "Saved custom work area"}
+          role="img"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          onClick={addBoundaryPoint}
+          className={`absolute inset-0 z-10 h-full w-full ${
+            drawingBoundary ? "pointer-events-auto cursor-crosshair" : "pointer-events-none"
+          }`}
+        >
+          {visibleBoundary.length >= 3 ? (
+            <polygon
+              points={boundarySvgPoints}
+              fill="rgba(16, 185, 129, 0.16)"
+              stroke="#34d399"
+              strokeWidth="0.8"
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : visibleBoundary.length === 2 ? (
+            <polyline
+              points={boundarySvgPoints}
+              fill="none"
+              stroke="#34d399"
+              strokeWidth="0.8"
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : null}
+          {visibleBoundary.map((point, index) => {
+            const x = ((point.longitude - minimumLongitude) / (maximumLongitude - minimumLongitude)) * 100;
+            const y = ((maximumLatitude - point.latitude) / (maximumLatitude - minimumLatitude)) * 100;
+            return (
+              <circle
+                key={`${point.latitude}-${point.longitude}-${index}`}
+                cx={x}
+                cy={y}
+                r="1.15"
+                fill="#10b981"
+                stroke="white"
+                strokeWidth="0.45"
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+        </svg>
+      </div>
+      <div className="border-t border-[#303137] px-4 py-3">
+        {drawingBoundary ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-5 text-zinc-300">
+              Click at least 3 corners around the places your crew serves. Keep the shape inside the map.
+              {draftBoundary.length ? ` ${draftBoundary.length} corners added.` : ""}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setDraftBoundary((current) => current.slice(0, -1))}
+                disabled={!draftBoundary.length || busy}
+                className="rounded-md border border-[#303137] px-3 py-1.5 text-xs font-semibold text-zinc-200 disabled:opacity-40"
+              >
+                Undo corner
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDrawingBoundary(false);
+                  setDraftBoundary([]);
+                }}
+                disabled={busy}
+                className="rounded-md border border-[#303137] px-3 py-1.5 text-xs font-semibold text-zinc-200 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveBoundary()}
+                disabled={draftBoundary.length < 3 || busy}
+                className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+              >
+                {busy ? "Saving work area..." : "Save this work area"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs leading-5 text-zinc-400">
+              <p>
+                Dashed circle: about {radiusMiles.toLocaleString(undefined, { maximumFractionDigits: 1 })} miles.
+                Orange: needs your answer. Green: confirmed.
+              </p>
+              <p>Map suggestions never count as service areas until you approve them.</p>
+            </div>
+            <button
+              type="button"
+              onClick={beginBoundary}
+              disabled={busy}
+              className="shrink-0 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-40"
+            >
+              {savedBoundary.length ? "Redraw custom work area" : "Draw a custom work area"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function KeywordResearchPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -226,6 +515,7 @@ export default function KeywordResearchPage() {
   const [newAreaType, setNewAreaType] = useState<BusinessServiceAreaItem["area_type"]>("city");
   const [newAreaRelationship, setNewAreaRelationship] =
     useState<BusinessServiceAreaItem["relationship"]>("included");
+  const [nearbyRadius, setNearbyRadius] = useState("25");
   const [areaBusy, setAreaBusy] = useState<"" | "suggest" | "add" | string>("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"" | "discover" | "track" | "review">("");
@@ -233,6 +523,7 @@ export default function KeywordResearchPage() {
   const [notice, setNotice] = useState("");
   const [aiNotice, setAiNotice] = useState<{ message: string; success: boolean } | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("best");
+  const [selectedClusterKey, setSelectedClusterKey] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(null);
 
@@ -263,6 +554,7 @@ export default function KeywordResearchPage() {
       `/business-service-areas?campaign_id=${encodeURIComponent(campaignId)}`,
     )) as ServiceAreaProfile;
     setServiceAreaProfile(response);
+    if (response.map?.radius_saved) setNearbyRadius(String(response.map.radius_miles));
   }, []);
 
   const loadCredits = useCallback(async () => {
@@ -277,6 +569,7 @@ export default function KeywordResearchPage() {
     setNotice("");
     setAiNotice(null);
     setFilter("best");
+    setSelectedClusterKey(null);
     if (!selectedCampaignId) {
       setLoading(false);
       setData({
@@ -303,6 +596,7 @@ export default function KeywordResearchPage() {
         items: [],
         summary: { confirmed_included: 0, confirmed_excluded: 0, suggested: 0 },
       });
+      setNearbyRadius("25");
       return;
     }
     void Promise.all([
@@ -433,6 +727,51 @@ export default function KeywordResearchPage() {
     }
   };
 
+  const suggestNearbyCommunities = async () => {
+    if (!selectedCampaignId) return;
+    const radius = Number(nearbyRadius);
+    if (!Number.isFinite(radius) || radius < 1 || radius > 75) {
+      setError("Choose a mileage range from 1 to 75 miles.");
+      return;
+    }
+    setAreaBusy("nearby");
+    setError("");
+    try {
+      const response = (await platformApi("/business-service-areas/nearby", {
+        method: "POST",
+        body: JSON.stringify({ campaign_id: selectedCampaignId, radius_miles: radius }),
+      })) as ServiceAreaProfile;
+      setServiceAreaProfile(response);
+      setNotice(response.discovery?.message ?? "Review the nearby communities on the map.");
+      await loadResearch(selectedCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nearby communities could not be checked.");
+    } finally {
+      setAreaBusy("");
+    }
+  };
+
+  const saveCustomBoundary = async (points: ServiceBoundaryPoint[]) => {
+    if (!selectedCampaignId) return false;
+    setAreaBusy("boundary");
+    setError("");
+    try {
+      const response = (await platformApi("/business-service-areas/boundary", {
+        method: "POST",
+        body: JSON.stringify({ campaign_id: selectedCampaignId, points }),
+      })) as ServiceAreaProfile;
+      setServiceAreaProfile(response);
+      setNotice(response.discovery?.message ?? "Your custom work area was saved.");
+      await loadResearch(selectedCampaignId);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The custom work area could not be saved.");
+      return false;
+    } finally {
+      setAreaBusy("");
+    }
+  };
+
   const reviewServiceArea = async (
     areaId: string,
     status: "confirmed" | "rejected",
@@ -537,12 +876,18 @@ export default function KeywordResearchPage() {
 
   const filteredItems = useMemo(
     () => data.items.filter((item) => {
-      if (filter === "best") return item.relevance_status === "relevant";
-      if (filter === "needs_review") return item.relevance_status === "needs_review";
-      if (filter === "unrelated") return item.relevance_status === "unrelated";
-      return Boolean(item.tracked_at);
+      const matchesView =
+        filter === "best"
+          ? item.relevance_status === "relevant"
+          : filter === "needs_review"
+            ? item.relevance_status === "needs_review"
+            : filter === "unrelated"
+              ? item.relevance_status === "unrelated"
+              : Boolean(item.tracked_at);
+      const matchesCluster = !selectedClusterKey || item.cluster?.key === selectedClusterKey;
+      return matchesView && matchesCluster;
     }),
-    [data.items, filter],
+    [data.items, filter, selectedClusterKey],
   );
   const chartData = useMemo(
     () =>
@@ -556,13 +901,55 @@ export default function KeywordResearchPage() {
         .reverse(),
     [data.items],
   );
+  const searchClusters = useMemo(() => {
+    const groups = new Map<string, SearchClusterSummary>();
+    data.items
+      .filter((item) => item.relevance_status === "relevant" && item.cluster?.key)
+      .forEach((item) => {
+        const cluster = item.cluster!;
+        const position = item.current_position ?? item.gsc_position ?? null;
+        const existing = groups.get(cluster.key);
+        if (!existing) {
+          groups.set(cluster.key, {
+            key: cluster.key,
+            label: cluster.label,
+            problem: cluster.problem,
+            locationName: cluster.location_name,
+            keywords: [item.keyword],
+            keywordCount: 1,
+            trackedCount: item.tracked_at ? 1 : 0,
+            totalDemand: item.search_volume ?? 0,
+            bestPosition: position,
+            targetPage: item.target_page,
+          });
+          return;
+        }
+        existing.keywordCount += 1;
+        existing.trackedCount += item.tracked_at ? 1 : 0;
+        existing.totalDemand += item.search_volume ?? 0;
+        if (existing.keywords.length < 3) existing.keywords.push(item.keyword);
+        if (position !== null && (existing.bestPosition === null || existing.bestPosition === undefined || position < existing.bestPosition)) {
+          existing.bestPosition = position;
+        }
+        if (item.target_page?.status === "existing" && existing.targetPage?.status !== "existing") {
+          existing.targetPage = item.target_page;
+        }
+      });
+    return [...groups.values()]
+      .sort((a, b) => b.totalDemand - a.totalDemand || b.keywordCount - a.keywordCount || a.label.localeCompare(b.label))
+      .slice(0, 8);
+  }, [data.items]);
+  const selectedCluster = searchClusters.find((item) => item.key === selectedClusterKey) ?? null;
   const selectableVisible = filteredItems.filter(
     (item) => !item.tracked_at && item.relevance_status !== "unrelated",
   );
   const confirmedServices = serviceProfile.items.filter((item) => item.status === "confirmed");
   const suggestedServices = serviceProfile.items.filter((item) => item.status === "suggested");
   const confirmedIncludedAreas = serviceAreaProfile.items.filter(
-    (item) => item.status === "confirmed" && item.relationship === "included",
+    (item) =>
+      item.status === "confirmed" &&
+      item.relationship === "included" &&
+      item.area_type !== "boundary",
   );
   const confirmedExcludedAreas = serviceAreaProfile.items.filter(
     (item) => item.status === "confirmed" && item.relationship === "excluded",
@@ -765,9 +1152,48 @@ export default function KeywordResearchPage() {
                   disabled={areaBusy !== ""}
                   className="rounded-md border border-[#303137] bg-[#17181b] px-4 py-2 text-sm font-semibold text-zinc-100 hover:border-accent-500/50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {areaBusy === "suggest" ? "Checking saved details…" : "Find possible service areas"}
+                  {areaBusy === "suggest" ? "Checking saved details…" : "Check website for places"}
                 </button>
               </div>
+
+              <div className="mt-5 flex flex-col gap-3 rounded-md border border-[#2a2b30] bg-[#141518] p-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">Find towns inside your work range</p>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
+                    Choose how far this crew normally travels. We&apos;ll show real nearby communities,
+                    then you decide which ones belong in your plan.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-end gap-2">
+                  <label className="text-xs font-semibold text-zinc-300" htmlFor="nearby-service-radius">
+                    Miles
+                    <input
+                      id="nearby-service-radius"
+                      value={nearbyRadius}
+                      onChange={(event) => setNearbyRadius(event.target.value)}
+                      type="number"
+                      min="1"
+                      max="75"
+                      step="1"
+                      className="mt-1 block w-24 rounded-md border border-[#303137] bg-[#0b0b0c] px-3 py-2 text-sm text-white outline-none focus:border-accent-500"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void suggestNearbyCommunities()}
+                    disabled={areaBusy !== "" || serviceAreaProfile.map?.status !== "ready"}
+                    className="rounded-md bg-accent-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {areaBusy === "nearby" ? "Checking nearby towns..." : "Show nearby towns"}
+                  </button>
+                </div>
+              </div>
+
+              <ServiceAreaMap
+                profile={serviceAreaProfile}
+                busy={areaBusy !== ""}
+                onSaveBoundary={saveCustomBoundary}
+              />
 
               {confirmedIncludedAreas.length ? (
                 <div className="mt-5">
@@ -831,7 +1257,7 @@ export default function KeywordResearchPage() {
               {suggestedAreas.length ? (
                 <div className="mt-5">
                   <p className="text-xs font-semibold text-zinc-300">
-                    We found these in your saved business and website details. Do you take jobs here?
+                    Do you take jobs in these places?
                   </p>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {suggestedAreas.map((area) => (
@@ -844,7 +1270,8 @@ export default function KeywordResearchPage() {
                             {area.name}{area.region ? `, ${area.region}` : ""}
                           </p>
                           <p className="mt-1 text-xs text-zinc-500">
-                            Possible {area.area_type === "postal_code" ? "ZIP or postal code" : area.area_type}
+                            {area.evidence.find((item) => item.distance_miles !== undefined)?.note ??
+                              `Found in your saved ${area.area_type === "postal_code" ? "ZIP or postal code" : area.area_type} details`}
                           </p>
                         </div>
                         <div className="flex shrink-0 gap-2">
@@ -1076,6 +1503,82 @@ export default function KeywordResearchPage() {
               </section>
             ) : null}
 
+            {searchClusters.length ? (
+              <section className="border-b border-[#26272c] pb-6">
+                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                      Customer needs
+                    </p>
+                    <h2 className="mt-1 text-xl font-semibold text-white">
+                      Plan related searches together
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+                      Searches are grouped by the service, customer need, and place they mention.
+                      Each group also shows whether your website already has a useful page for it.
+                    </p>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    {searchClusters.length} useful {searchClusters.length === 1 ? "group" : "groups"}
+                  </p>
+                </div>
+                <div className="mt-5 grid gap-x-8 gap-y-5 md:grid-cols-2">
+                  {searchClusters.map((cluster) => (
+                    <article
+                      key={cluster.key}
+                      className={`border-l-2 pl-4 ${
+                        selectedClusterKey === cluster.key ? "border-accent-500" : "border-[#303137]"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="font-semibold text-white">{cluster.label}</h3>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {cluster.keywordCount} {cluster.keywordCount === 1 ? "search" : "searches"}
+                            {cluster.totalDemand > 0
+                              ? ` · about ${cluster.totalDemand.toLocaleString()} searches/month`
+                              : " · demand not measured"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilter("best");
+                            setSelectedClusterKey(cluster.key);
+                          }}
+                          className="shrink-0 text-xs font-semibold text-accent-300 hover:text-white"
+                        >
+                          Review group
+                        </button>
+                      </div>
+                      <p className="mt-3 text-sm leading-5 text-zinc-300">
+                        {cluster.keywords.join(" · ")}
+                      </p>
+                      <div className="mt-3 text-xs leading-5">
+                        {cluster.targetPage?.status === "existing" && cluster.targetPage.url ? (
+                          <p className="text-emerald-200">
+                            Page to improve:{" "}
+                            <a
+                              href={cluster.targetPage.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline decoration-emerald-400/40 underline-offset-2 hover:text-white"
+                            >
+                              {cluster.targetPage.title || cluster.targetPage.url}
+                            </a>
+                          </p>
+                        ) : (
+                          <p className="text-amber-200">
+                            Page opportunity: your saved website pages do not clearly cover this group yet.
+                          </p>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
             {chartData.length ? (
               <section className="grid gap-5 border-b border-[#26272c] pb-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(260px,0.7fr)]">
                 <div>
@@ -1128,13 +1631,28 @@ export default function KeywordResearchPage() {
                     Search list
                   </p>
                   <h2 className="mt-1 text-xl font-semibold text-white">Choose what to track</h2>
+                  {selectedCluster ? (
+                    <p className="mt-2 text-sm text-zinc-400">
+                      Showing {selectedCluster.keywordCount} searches in {selectedCluster.label}.{" "}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClusterKey(null)}
+                        className="font-semibold text-accent-300 hover:text-white"
+                      >
+                        Show every group
+                      </button>
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2" role="group" aria-label="Filter customer searches">
                   {FILTERS.map((option) => (
                     <button
                       key={option.id}
                       type="button"
-                      onClick={() => setFilter(option.id)}
+                      onClick={() => {
+                        setFilter(option.id);
+                        setSelectedClusterKey(null);
+                      }}
                       aria-pressed={filter === option.id}
                       className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                         filter === option.id

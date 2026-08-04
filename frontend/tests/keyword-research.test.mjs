@@ -60,6 +60,25 @@ test("keyword research confirms real service areas and keeps exclusions visible"
   assert.match(page, /We serve this area/);
   assert.match(page, /We do not serve here/);
   assert.match(page, /Outside area:/);
+  assert.match(page, /\/business-service-areas\/nearby/);
+  assert.match(page, /Find towns inside your work range/);
+  assert.match(page, /Service area map/);
+  assert.match(page, /Map suggestions never count as service areas until you approve them/);
+  assert.match(page, /\/business-service-areas\/boundary/);
+  assert.match(page, /Draw a custom work area/);
+  assert.match(page, /Click at least 3 corners around the places your crew serves/);
+  assert.match(page, /Save this work area/);
+});
+
+test("keyword research groups related customer needs and shows the likely website page", () => {
+  const page = source("../app/(product)/keyword-research/page.tsx");
+
+  assert.match(page, /Plan related searches together/);
+  assert.match(page, /service, customer need, and place/);
+  assert.match(page, /Page to improve:/);
+  assert.match(page, /Page opportunity:/);
+  assert.match(page, /Review group/);
+  assert.match(page, /Show every group/);
 });
 
 test("unclear-search AI review is a bounded action instead of a chatbot", () => {

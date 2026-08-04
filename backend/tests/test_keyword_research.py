@@ -147,6 +147,87 @@ def test_provider_warning_is_customer_safe() -> None:
     )
 
 
+def test_ranked_search_keeps_the_page_that_is_already_showing() -> None:
+    parsed = keyword_research_service._parse_labs_item(
+        {
+            "keyword_data": {"keyword": "emergency plumber"},
+            "ranked_serp_element": {
+                "serp_item": {
+                    "rank_absolute": 8,
+                    "url": "https://plumber.example/emergency-plumbing",
+                }
+            },
+        }
+    )
+
+    assert parsed["current_position"] == 8
+    assert parsed["ranked_url"] == "https://plumber.example/emergency-plumbing"
+
+
+def test_planning_context_groups_customer_needs_and_maps_a_real_page() -> None:
+    planned = keyword_research_service._add_planning_context(
+        {
+            "keyword": "emergency plumber reno",
+            "intent": "Ready to hire",
+            "relevance_status": "relevant",
+            "matched_service_name": "Emergency Plumbing",
+            "matched_service_area_name": "Reno",
+            "evidence": {"location": "Reno"},
+        },
+        target_pages=[
+            {
+                "url": "https://plumber.example/emergency-plumbing-reno",
+                "title": "Emergency Plumbing in Reno",
+                "meta_description": "Same-day help for plumbing emergencies.",
+                "heading_text": "Emergency plumbing service",
+            }
+        ],
+    )
+
+    assert planned["cluster"] == {
+        "key": "emergency-plumbing-urgent-reno",
+        "label": "Emergency Plumbing: Urgent jobs in Reno",
+        "service_name": "Emergency Plumbing",
+        "problem": "Urgent jobs",
+        "location_name": "Reno",
+        "intent": "Ready to hire",
+    }
+    assert planned["target_page"]["status"] == "existing"
+    assert planned["target_page"]["url"] == (
+        "https://plumber.example/emergency-plumbing-reno"
+    )
+
+
+def test_planning_context_keeps_missing_pages_and_uncertain_searches_honest() -> None:
+    missing_page = keyword_research_service._add_planning_context(
+        {
+            "keyword": "junk removal cost reno",
+            "intent": "Comparing options",
+            "relevance_status": "relevant",
+            "matched_service_name": "Junk Removal",
+            "matched_service_area_name": "Reno",
+            "evidence": {},
+        },
+        target_pages=[],
+    )
+    uncertain = keyword_research_service._add_planning_context(
+        {
+            "keyword": "biggest little city",
+            "intent": "Researching",
+            "relevance_status": "needs_review",
+            "matched_service_name": None,
+            "matched_service_area_name": "Reno",
+            "evidence": {},
+        },
+        target_pages=[],
+    )
+
+    assert missing_page["cluster"]["problem"] == "Price questions"
+    assert missing_page["target_page"]["status"] == "needs_page"
+    assert uncertain["target_page"]["status"] == "review"
+    assert "Confirm this search" in uncertain["target_page"]["reason"]
+
+
 def _login(client, email: str, password: str) -> str:
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200

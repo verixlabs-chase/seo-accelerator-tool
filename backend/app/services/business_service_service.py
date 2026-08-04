@@ -200,6 +200,9 @@ def discover_from_website(
         seen_pages.add(page.url)
         for candidate in _page_candidates(
             title=result.title,
+            heading_text=result.heading_text,
+            meta_description=result.meta_description,
+            body_text_excerpt=result.body_text_excerpt,
             url=page.url,
             campaign=campaign,
             location=location,
@@ -210,6 +213,8 @@ def discover_from_website(
                 "source": "website",
                 "url": page.url,
                 "title": result.title,
+                "heading": (result.heading_text or "")[:320] or None,
+                "description": (result.meta_description or "")[:320] or None,
             }
             if current is None:
                 candidates[normalized] = {
@@ -426,6 +431,9 @@ def _scope(campaign: Campaign) -> tuple[str, str]:
 def _page_candidates(
     *,
     title: str | None,
+    heading_text: str | None,
+    meta_description: str | None,
+    body_text_excerpt: str | None,
     url: str,
     campaign: Campaign,
     location: BusinessLocation | None,
@@ -437,6 +445,11 @@ def _page_candidates(
         if cleaned and _looks_like_service(cleaned, from_service_path=False):
             candidates.append({"name": cleaned, "confidence": 0.76})
 
+    for heading in re.split(r"\s+\|\s+", heading_text or ""):
+        cleaned = _clean_candidate(heading, campaign=campaign, location=location)
+        if cleaned and _looks_like_service(cleaned, from_service_path=False):
+            candidates.append({"name": cleaned, "confidence": 0.84})
+
     parsed = urlparse(url)
     segments = [unquote(part).replace("-", " ").replace("_", " ") for part in parsed.path.split("/") if part]
     service_markers = {"service", "services", "what we do", "what-we-do"}
@@ -446,8 +459,16 @@ def _page_candidates(
         if cleaned and _looks_like_service(cleaned, from_service_path=from_service_path):
             candidates.append({"name": cleaned, "confidence": 0.9 if from_service_path else 0.7})
     unique: dict[str, dict[str, Any]] = {}
+    supporting_text = _normalize(
+        " ".join(item for item in (meta_description, body_text_excerpt) if item)
+    )
     for candidate in candidates:
-        unique[_normalize(candidate["name"])] = candidate
+        normalized_name = _normalize(candidate["name"])
+        if normalized_name and normalized_name in supporting_text:
+            candidate["confidence"] = min(0.97, candidate["confidence"] + 0.08)
+        current = unique.get(normalized_name)
+        if current is None or candidate["confidence"] > current["confidence"]:
+            unique[normalized_name] = candidate
     return list(unique.values())
 
 

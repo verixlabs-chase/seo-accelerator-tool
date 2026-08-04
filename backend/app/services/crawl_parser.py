@@ -1,3 +1,4 @@
+import html as html_lib
 import re
 from urllib.parse import urljoin, urlparse
 
@@ -5,7 +6,7 @@ from urllib.parse import urljoin, urlparse
 def parse_signals(url: str, html: str) -> dict:
     lower = html.lower()
     title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-    title = re.sub(r"\s+", " ", title_match.group(1)).strip() if title_match else None
+    title = _clean_visible_text(title_match.group(1), limit=320) if title_match else None
     canonical_match = re.search(
         r'<link[^>]+rel=["\']canonical["\'][^>]*href=["\']([^"\']+)["\']',
         html,
@@ -17,8 +18,28 @@ def parse_signals(url: str, html: str) -> dict:
         html,
         re.IGNORECASE,
     )
-    meta_description = meta_desc_match.group(1).strip() if meta_desc_match else None
+    meta_description = (
+        _clean_visible_text(meta_desc_match.group(1), limit=500)
+        if meta_desc_match
+        else None
+    )
     h1_count = len(re.findall(r"<h1\b", lower))
+    heading_values = []
+    for match in re.finditer(r"<h[12]\b[^>]*>(.*?)</h[12]>", html, re.IGNORECASE | re.DOTALL):
+        heading = _clean_visible_text(match.group(1), limit=320)
+        if heading and heading not in heading_values:
+            heading_values.append(heading)
+        if len(heading_values) >= 12:
+            break
+    heading_text = " | ".join(heading_values)[:1000] or None
+    body_html = re.sub(
+        r"<(?:script|style|noscript|svg)\b[^>]*>.*?</(?:script|style|noscript|svg)>",
+        " ",
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    body_html = re.sub(r"<head\b[^>]*>.*?</head>", " ", body_html, flags=re.IGNORECASE | re.DOTALL)
+    body_text_excerpt = _clean_visible_text(body_html, limit=2000)
     origin = urlparse(url)
     internal_links = len(
         re.findall(
@@ -32,10 +53,18 @@ def parse_signals(url: str, html: str) -> dict:
         "title": title,
         "canonical": canonical,
         "meta_description": meta_description,
+        "heading_text": heading_text,
+        "body_text_excerpt": body_text_excerpt,
         "h1_count": h1_count,
         "internal_links": internal_links,
         "is_indexable": is_indexable,
     }
+
+
+def _clean_visible_text(value: str, *, limit: int) -> str | None:
+    without_tags = re.sub(r"<[^>]+>", " ", str(value))
+    cleaned = re.sub(r"\s+", " ", html_lib.unescape(without_tags)).strip()
+    return cleaned[:limit] or None
 
 
 def extract_internal_links(current_url: str, html: str, max_links: int = 50) -> list[str]:
