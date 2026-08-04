@@ -5,6 +5,7 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.schemas.business_service_area import (
+    BusinessServiceAreaBoundaryIn,
     BusinessServiceAreaCreateIn,
     BusinessServiceAreaNearbyIn,
     BusinessServiceAreaPatchIn,
@@ -88,6 +89,25 @@ def suggest_nearby_business_service_areas(
         tenant_id=user["tenant_id"],
         campaign_id=body.campaign_id,
         radius_miles=body.radius_miles,
+    )
+    keyword_research_service.reclassify_latest(
+        db, tenant_id=user["tenant_id"], campaign_id=body.campaign_id
+    )
+    return envelope(request, payload)
+
+
+@router.post("/boundary")
+def save_business_service_area_boundary(
+    request: Request,
+    body: BusinessServiceAreaBoundaryIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = business_service_area_service.suggest_communities_in_boundary(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        points=[point.model_dump() for point in body.points],
     )
     keyword_research_service.reclassify_latest(
         db, tenant_id=user["tenant_id"], campaign_id=body.campaign_id

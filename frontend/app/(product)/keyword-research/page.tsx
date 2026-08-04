@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bar,
@@ -136,13 +143,14 @@ type ServiceProfile = {
 
 type BusinessServiceAreaItem = {
   id: string;
-  area_type: "city" | "postal_code" | "county" | "radius";
+  area_type: "city" | "postal_code" | "county" | "radius" | "boundary";
   name: string;
   region?: string | null;
   country_code: string;
   radius_miles?: number | null;
   center_latitude?: number | null;
   center_longitude?: number | null;
+  boundary_points?: ServiceBoundaryPoint[];
   relationship: "included" | "excluded";
   status: "suggested" | "confirmed" | "rejected";
   source: "manual" | "website" | "location" | "business_profile" | "map";
@@ -154,6 +162,11 @@ type BusinessServiceAreaItem = {
     distance_miles?: number;
     radius_miles?: number;
   }>;
+};
+
+type ServiceBoundaryPoint = {
+  latitude: number;
+  longitude: number;
 };
 
 type ServiceAreaProfile = {
@@ -171,6 +184,9 @@ type ServiceAreaProfile = {
     center_longitude?: number | null;
     radius_miles: number;
     radius_saved: boolean;
+    boundary_saved?: boolean;
+    boundary_id?: string | null;
+    boundary_points?: ServiceBoundaryPoint[];
   };
   discovery?: {
     pages_reviewed?: number;
@@ -178,6 +194,7 @@ type ServiceAreaProfile = {
     updated: number;
     reviewed?: number;
     radius_miles?: number;
+    boundary_saved?: boolean;
     message: string;
   };
 };
@@ -238,7 +255,17 @@ function sourceLabel(source: string) {
   }[source] ?? source;
 }
 
-function ServiceAreaMap({ profile }: { profile: ServiceAreaProfile }) {
+function ServiceAreaMap({
+  profile,
+  busy,
+  onSaveBoundary,
+}: {
+  profile: ServiceAreaProfile;
+  busy: boolean;
+  onSaveBoundary: (points: ServiceBoundaryPoint[]) => Promise<boolean>;
+}) {
+  const [drawingBoundary, setDrawingBoundary] = useState(false);
+  const [draftBoundary, setDraftBoundary] = useState<ServiceBoundaryPoint[]>([]);
   const centerLatitude = profile.map?.center_latitude;
   const centerLongitude = profile.map?.center_longitude;
   if (
@@ -269,12 +296,49 @@ function ServiceAreaMap({ profile }: { profile: ServiceAreaProfile }) {
   const mapItems = profile.items.filter(
     (item) =>
       item.area_type !== "radius" &&
+      item.area_type !== "boundary" &&
       item.status !== "rejected" &&
       item.center_latitude !== null &&
       item.center_latitude !== undefined &&
       item.center_longitude !== null &&
       item.center_longitude !== undefined,
   );
+  const savedBoundary = profile.map.boundary_points ?? [];
+  const visibleBoundary = drawingBoundary ? draftBoundary : savedBoundary;
+  const boundarySvgPoints = visibleBoundary
+    .map((point) => {
+      const x = ((point.longitude - minimumLongitude) / (maximumLongitude - minimumLongitude)) * 100;
+      const y = ((maximumLatitude - point.latitude) / (maximumLatitude - minimumLatitude)) * 100;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  const beginBoundary = () => {
+    setDraftBoundary([]);
+    setDrawingBoundary(true);
+  };
+
+  const addBoundaryPoint = (event: MouseEvent<SVGSVGElement>) => {
+    if (!drawingBoundary || draftBoundary.length >= 24) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+    const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height));
+    setDraftBoundary((current) => [
+      ...current,
+      {
+        latitude: maximumLatitude - y * (maximumLatitude - minimumLatitude),
+        longitude: minimumLongitude + x * (maximumLongitude - minimumLongitude),
+      },
+    ]);
+  };
+
+  const saveBoundary = async () => {
+    if (draftBoundary.length < 3) return;
+    if (await onSaveBoundary(draftBoundary)) {
+      setDrawingBoundary(false);
+      setDraftBoundary([]);
+    }
+  };
 
   return (
     <div className="mt-5 overflow-hidden rounded-md border border-[#303137] bg-[#111214]">
@@ -308,13 +372,107 @@ function ServiceAreaMap({ profile }: { profile: ServiceAreaProfile }) {
             );
           })}
         </div>
+        <svg
+          aria-label={drawingBoundary ? "Click the map to add work-area corners" : "Saved custom work area"}
+          role="img"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          onClick={addBoundaryPoint}
+          className={`absolute inset-0 z-10 h-full w-full ${
+            drawingBoundary ? "pointer-events-auto cursor-crosshair" : "pointer-events-none"
+          }`}
+        >
+          {visibleBoundary.length >= 3 ? (
+            <polygon
+              points={boundarySvgPoints}
+              fill="rgba(16, 185, 129, 0.16)"
+              stroke="#34d399"
+              strokeWidth="0.8"
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : visibleBoundary.length === 2 ? (
+            <polyline
+              points={boundarySvgPoints}
+              fill="none"
+              stroke="#34d399"
+              strokeWidth="0.8"
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : null}
+          {visibleBoundary.map((point, index) => {
+            const x = ((point.longitude - minimumLongitude) / (maximumLongitude - minimumLongitude)) * 100;
+            const y = ((maximumLatitude - point.latitude) / (maximumLatitude - minimumLatitude)) * 100;
+            return (
+              <circle
+                key={`${point.latitude}-${point.longitude}-${index}`}
+                cx={x}
+                cy={y}
+                r="1.15"
+                fill="#10b981"
+                stroke="white"
+                strokeWidth="0.45"
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+        </svg>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#303137] px-4 py-3 text-xs text-zinc-400">
-        <p>
-          Dashed circle: about {radiusMiles.toLocaleString(undefined, { maximumFractionDigits: 1 })} miles.
-          Orange: needs your answer. Green: confirmed.
-        </p>
-        <p>Map suggestions never count as service areas until you approve them.</p>
+      <div className="border-t border-[#303137] px-4 py-3">
+        {drawingBoundary ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-5 text-zinc-300">
+              Click at least 3 corners around the places your crew serves. Keep the shape inside the map.
+              {draftBoundary.length ? ` ${draftBoundary.length} corners added.` : ""}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setDraftBoundary((current) => current.slice(0, -1))}
+                disabled={!draftBoundary.length || busy}
+                className="rounded-md border border-[#303137] px-3 py-1.5 text-xs font-semibold text-zinc-200 disabled:opacity-40"
+              >
+                Undo corner
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDrawingBoundary(false);
+                  setDraftBoundary([]);
+                }}
+                disabled={busy}
+                className="rounded-md border border-[#303137] px-3 py-1.5 text-xs font-semibold text-zinc-200 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveBoundary()}
+                disabled={draftBoundary.length < 3 || busy}
+                className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+              >
+                {busy ? "Saving work area..." : "Save this work area"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs leading-5 text-zinc-400">
+              <p>
+                Dashed circle: about {radiusMiles.toLocaleString(undefined, { maximumFractionDigits: 1 })} miles.
+                Orange: needs your answer. Green: confirmed.
+              </p>
+              <p>Map suggestions never count as service areas until you approve them.</p>
+            </div>
+            <button
+              type="button"
+              onClick={beginBoundary}
+              disabled={busy}
+              className="shrink-0 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-40"
+            >
+              {savedBoundary.length ? "Redraw custom work area" : "Draw a custom work area"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -593,6 +751,27 @@ export default function KeywordResearchPage() {
     }
   };
 
+  const saveCustomBoundary = async (points: ServiceBoundaryPoint[]) => {
+    if (!selectedCampaignId) return false;
+    setAreaBusy("boundary");
+    setError("");
+    try {
+      const response = (await platformApi("/business-service-areas/boundary", {
+        method: "POST",
+        body: JSON.stringify({ campaign_id: selectedCampaignId, points }),
+      })) as ServiceAreaProfile;
+      setServiceAreaProfile(response);
+      setNotice(response.discovery?.message ?? "Your custom work area was saved.");
+      await loadResearch(selectedCampaignId);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The custom work area could not be saved.");
+      return false;
+    } finally {
+      setAreaBusy("");
+    }
+  };
+
   const reviewServiceArea = async (
     areaId: string,
     status: "confirmed" | "rejected",
@@ -767,7 +946,10 @@ export default function KeywordResearchPage() {
   const confirmedServices = serviceProfile.items.filter((item) => item.status === "confirmed");
   const suggestedServices = serviceProfile.items.filter((item) => item.status === "suggested");
   const confirmedIncludedAreas = serviceAreaProfile.items.filter(
-    (item) => item.status === "confirmed" && item.relationship === "included",
+    (item) =>
+      item.status === "confirmed" &&
+      item.relationship === "included" &&
+      item.area_type !== "boundary",
   );
   const confirmedExcludedAreas = serviceAreaProfile.items.filter(
     (item) => item.status === "confirmed" && item.relationship === "excluded",
@@ -1007,7 +1189,11 @@ export default function KeywordResearchPage() {
                 </div>
               </div>
 
-              <ServiceAreaMap profile={serviceAreaProfile} />
+              <ServiceAreaMap
+                profile={serviceAreaProfile}
+                busy={areaBusy !== ""}
+                onSaveBoundary={saveCustomBoundary}
+              />
 
               {confirmedIncludedAreas.length ? (
                 <div className="mt-5">

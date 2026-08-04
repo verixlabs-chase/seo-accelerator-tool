@@ -64,6 +64,10 @@ test("keyword research confirms real service areas and keeps exclusions visible"
   assert.match(page, /Find towns inside your work range/);
   assert.match(page, /Service area map/);
   assert.match(page, /Map suggestions never count as service areas until you approve them/);
+  assert.match(page, /\/business-service-areas\/boundary/);
+  assert.match(page, /Draw a custom work area/);
+  assert.match(page, /Click at least 3 corners around the places your crew serves/);
+  assert.match(page, /Save this work area/);
 });
 
 test("keyword research groups related customer needs and shows the likely website page", () => {

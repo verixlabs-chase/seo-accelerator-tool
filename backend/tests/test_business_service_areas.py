@@ -193,6 +193,9 @@ def test_nearby_communities_are_distance_checked_and_require_confirmation(
         "center_longitude": -119.8138,
         "radius_miles": 25.0,
         "radius_saved": True,
+        "boundary_saved": False,
+        "boundary_id": None,
+        "boundary_points": [],
     }
     sparks = next(item for item in profile["items"] if item["name"] == "Sparks")
     assert sparks["status"] == "suggested"
@@ -211,3 +214,68 @@ def test_nearby_communities_are_distance_checked_and_require_confirmation(
     )
     confirmed_sparks = next(item for item in confirmed["items"] if item["id"] == sparks["id"])
     assert confirmed_sparks["status"] == "confirmed"
+
+
+def test_custom_boundary_saves_owner_shape_and_keeps_only_inside_communities(
+    client, db_session, monkeypatch
+) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    headers = {"Authorization": f"Bearer {token}"}
+    campaign_data = _create_location_campaign(client, token, org_id, name="Reno Custom Area")
+    campaign = db_session.get(Campaign, campaign_data["id"])
+    assert campaign is not None
+    location = db_session.get(BusinessLocation, campaign.business_location_id)
+    assert location is not None
+    location.latitude = 39.5296
+    location.longitude = -119.8138
+    db_session.commit()
+
+    points = [
+        {"latitude": 39.45, "longitude": -119.9},
+        {"latitude": 39.45, "longitude": -119.7},
+        {"latitude": 39.6, "longitude": -119.7},
+        {"latitude": 39.6, "longitude": -119.9},
+    ]
+    monkeypatch.setattr(
+        business_service_area_service,
+        "_load_boundary_communities",
+        lambda _points: [
+            {
+                "name": "Sparks",
+                "region": "Nevada",
+                "country_code": "US",
+                "latitude": 39.5349,
+                "longitude": -119.7527,
+                "place_type": "city",
+                "source_id": "node:1",
+            },
+            {
+                "name": "Carson City",
+                "region": "Nevada",
+                "country_code": "US",
+                "latitude": 39.1638,
+                "longitude": -119.7674,
+                "place_type": "city",
+                "source_id": "node:2",
+            },
+        ],
+    )
+    response = client.post(
+        "/api/v1/business-service-areas/boundary",
+        json={"campaign_id": campaign.id, "points": points},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    profile = response.json()["data"]
+
+    assert profile["map"]["boundary_saved"] is True
+    assert profile["map"]["boundary_points"] == points
+    assert profile["summary"]["confirmed_included"] == 1
+    boundary = next(item for item in profile["items"] if item["area_type"] == "boundary")
+    assert boundary["name"] == "Custom work area"
+    assert boundary["status"] == "confirmed"
+    sparks = next(item for item in profile["items"] if item["name"] == "Sparks")
+    assert sparks["status"] == "suggested"
+    assert sparks["evidence"][0]["note"] == "Inside your custom work area"
+    assert all(item["name"] != "Carson City" for item in profile["items"])
+    assert profile["discovery"]["reviewed"] == 1

@@ -42,6 +42,16 @@ class BusinessServiceAreaNearbyIn(BaseModel):
     radius_miles: float = Field(default=25, ge=1, le=75)
 
 
+class ServiceBoundaryPoint(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+
+
+class BusinessServiceAreaBoundaryIn(BaseModel):
+    campaign_id: str = Field(min_length=1, max_length=36)
+    points: list[ServiceBoundaryPoint] = Field(min_length=3, max_length=24)
+
+
 class BusinessServiceAreaPatchIn(BaseModel):
     campaign_id: str = Field(min_length=1, max_length=36)
     status: Literal["confirmed", "rejected"]
