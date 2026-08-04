@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -32,6 +33,31 @@ SAFE_NEGATIONS = (
     "doesn't guarantee",
 )
 ANSWER_MAX_WORDS = 90
+DRAFT_TYPES = Literal[
+    "search_result",
+    "review_request",
+    "review_response",
+    "page_outline",
+]
+DRAFT_LIMITS = {
+    "search_result": {"title": 70, "body": 180},
+    "review_request": {"title": 120, "body": 500},
+    "review_response": {"title": 120, "body": 600},
+    "page_outline": {"title": 100, "body": 1800},
+}
+UNSUPPORTED_DRAFT_CLAIM_PHRASES = (
+    "award-winning",
+    "best in",
+    "cheapest",
+    "family-owned",
+    "free estimate",
+    "guaranteed",
+    "licensed and insured",
+    "licensed & insured",
+    "same-day",
+    "top-rated",
+    "years of experience",
+)
 
 
 class GovernedIntelligenceBrief(BaseModel):
@@ -200,6 +226,108 @@ class GovernedEvidenceAnswer(BaseModel):
         if unsupported:
             raise ValueError(
                 f"AI output contained an unsupported claim: {unsupported[0]}"
+            )
+
+
+class GovernedActionDraft(BaseModel):
+    """Customer-facing copy drafted for one deterministic saved action."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    action_id: str = Field(min_length=1, max_length=160)
+    draft_type: DRAFT_TYPES
+    draft_state: Literal[
+        "ready",
+        "not_enough_information",
+        "temporarily_unavailable",
+    ]
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=1800)
+    evidence_used: list[str] = Field(default_factory=list, max_length=12)
+    uncertainties: list[str] = Field(default_factory=list, max_length=8)
+    approval_required: bool
+
+    @field_validator("evidence_used", "uncertainties")
+    @classmethod
+    def unique_nonempty_items(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            stripped = item.strip()
+            if not stripped:
+                raise ValueError("List items must not be empty.")
+            if stripped not in normalized:
+                normalized.append(stripped)
+        return normalized
+
+    @model_validator(mode="after")
+    def draft_state_and_copy_are_safe(self) -> "GovernedActionDraft":
+        if not self.approval_required:
+            raise ValueError("Every generated draft must require customer review.")
+        if self.draft_state == "ready" and not self.evidence_used:
+            raise ValueError("A ready draft must cite supplied evidence.")
+        limits = DRAFT_LIMITS[self.draft_type]
+        if len(self.title) > limits["title"]:
+            raise ValueError(
+                f"{self.draft_type} title must be {limits['title']} characters or fewer."
+            )
+        if len(self.body) > limits["body"]:
+            raise ValueError(
+                f"{self.draft_type} body must be {limits['body']} characters or fewer."
+            )
+        if self.draft_state == "ready":
+            combined = f"{self.title} {self.body}"
+            disallowed = find_disallowed_customer_terms(combined)
+            if disallowed:
+                raise ValueError(
+                    f"Draft used technical language: {disallowed[0]}"
+                )
+            if re.search(r"\d", combined):
+                raise ValueError(
+                    "Drafts cannot introduce numeric claims in this bounded workflow."
+                )
+            lowered = combined.lower()
+            unsupported = [
+                phrase
+                for phrase in UNSUPPORTED_DRAFT_CLAIM_PHRASES
+                if phrase in lowered
+            ]
+            if unsupported:
+                raise ValueError(
+                    f"Draft contained an unsupported business claim: {unsupported[0]}"
+                )
+            for safe_phrase in SAFE_NEGATIONS:
+                lowered = lowered.replace(safe_phrase, "")
+            unsupported_outcomes = [
+                phrase for phrase in UNSUPPORTED_CLAIM_PHRASES if phrase in lowered
+            ]
+            if unsupported_outcomes:
+                raise ValueError(
+                    "Draft contained an unsupported outcome claim: "
+                    f"{unsupported_outcomes[0]}"
+                )
+        return self
+
+    def validate_against_context(
+        self,
+        *,
+        requested_action_id: str,
+        requested_draft_type: str,
+        evidence_ids: set[str],
+        allowed_action_ids: set[str],
+        allowed_draft_types: set[str],
+    ) -> None:
+        if self.action_id != requested_action_id:
+            raise ValueError("AI output changed the selected saved action.")
+        if self.action_id not in allowed_action_ids:
+            raise ValueError("AI output referenced an action outside the supplied context.")
+        if self.draft_type != requested_draft_type:
+            raise ValueError("AI output changed the requested draft type.")
+        if self.draft_type not in allowed_draft_types:
+            raise ValueError("The requested draft type is not allowed for this action.")
+        unknown_evidence = sorted(set(self.evidence_used) - evidence_ids)
+        if unknown_evidence:
+            raise ValueError(
+                f"AI output cited evidence outside the supplied context: {unknown_evidence}"
             )
 
 

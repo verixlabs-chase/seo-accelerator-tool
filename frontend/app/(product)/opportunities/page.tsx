@@ -366,6 +366,60 @@ type GovernedEvidenceAnswerResponse = {
   idempotent_replay?: boolean;
 };
 
+type GovernedDraftType =
+  | "search_result"
+  | "review_request"
+  | "review_response"
+  | "page_outline";
+
+type GovernedDraftTypeOption = {
+  draft_type: GovernedDraftType;
+  label: string;
+  description?: string;
+  title_label?: string;
+  body_label?: string;
+};
+
+type GovernedDraftAction = {
+  action_id: string;
+  display_name?: string | null;
+  why_it_matters?: string | null;
+  draft_types: GovernedDraftTypeOption[];
+};
+
+type GovernedActionDraft = {
+  id: string;
+  status: "validated" | "fallback" | "rejected" | "failed";
+  provider_state?: string;
+  output: {
+    action_id: string;
+    draft_type: GovernedDraftType;
+    draft_type_label?: string;
+    draft_state:
+      | "ready"
+      | "not_enough_information"
+      | "temporarily_unavailable";
+    title: string;
+    body: string;
+    title_label?: string;
+    body_label?: string;
+    evidence_used?: string[];
+    evidence_details?: GovernedEvidenceDetail[];
+    uncertainties?: string[];
+    approval_required: true;
+  };
+  created_at?: string;
+};
+
+type GovernedActionDraftResponse = {
+  item?: GovernedActionDraft | null;
+  items?: GovernedActionDraft[];
+  available_actions?: GovernedDraftAction[];
+  runtime?: GovernedIntelligenceBriefResponse["runtime"];
+  allowance?: GovernedIntelligenceBriefResponse["allowance"];
+  idempotent_replay?: boolean;
+};
+
 type ExecutionResult = {
   status?: string;
   notes?: string;
@@ -1406,6 +1460,9 @@ export default function OpportunitiesPage() {
     useState<GovernedIntelligenceBriefResponse["allowance"] | null>(null);
   const [questionInput, setQuestionInput] = useState("");
   const [evidenceAnswers, setEvidenceAnswers] = useState<GovernedEvidenceAnswer[]>([]);
+  const [actionDrafts, setActionDrafts] = useState<GovernedActionDraft[]>([]);
+  const [draftActions, setDraftActions] = useState<GovernedDraftAction[]>([]);
+  const [selectedDraftType, setSelectedDraftType] = useState<GovernedDraftType | "">("");
   const [wordpressSetup, setWordpressSetup] = useState<WordPressExecutionSetup | null>(null);
   const [wordpressSetupError, setWordpressSetupError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1439,6 +1496,9 @@ export default function OpportunitiesPage() {
       setIntelligenceAllowance(null);
       setQuestionInput("");
       setEvidenceAnswers([]);
+      setActionDrafts([]);
+      setDraftActions([]);
+      setSelectedDraftType("");
       setSelectedRecommendationId("");
       return;
     }
@@ -1450,6 +1510,7 @@ export default function OpportunitiesPage() {
       outcomeResponse,
       briefResponse,
       questionResponse,
+      draftResponse,
     ] = await Promise.all([
       platformApi(`/intelligence/recommendations?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
@@ -1468,6 +1529,10 @@ export default function OpportunitiesPage() {
       }),
       platformApi(
         `/intelligence/questions?campaign_id=${encodeURIComponent(campaignId)}&limit=5`,
+        { method: "GET" },
+      ),
+      platformApi(
+        `/intelligence/drafts?campaign_id=${encodeURIComponent(campaignId)}&limit=5`,
         { method: "GET" },
       ),
     ]);
@@ -1502,6 +1567,21 @@ export default function OpportunitiesPage() {
     }
     if (normalizedQuestions?.allowance) {
       setIntelligenceAllowance(normalizedQuestions.allowance);
+    }
+    const normalizedDrafts = (draftResponse as GovernedActionDraftResponse) || null;
+    setActionDrafts(
+      Array.isArray(normalizedDrafts?.items) ? normalizedDrafts.items : [],
+    );
+    setDraftActions(
+      Array.isArray(normalizedDrafts?.available_actions)
+        ? normalizedDrafts.available_actions
+        : [],
+    );
+    if (normalizedDrafts?.runtime) {
+      setIntelligenceRuntime(normalizedDrafts.runtime);
+    }
+    if (normalizedDrafts?.allowance) {
+      setIntelligenceAllowance(normalizedDrafts.allowance);
     }
     const portfolio = getRecommendationPortfolio(items);
     setSelectedRecommendationId((current) => {
@@ -1858,6 +1938,66 @@ export default function OpportunitiesPage() {
     });
   }
 
+  async function generateActionDraft(refresh = false) {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+    if (!selectedDraftAction || !activeDraftType) {
+      setError("Choose an action that has writing help available.");
+      return;
+    }
+
+    const priorAttempt = actionDrafts.find(
+      (item) =>
+        item.output.action_id === selectedDraftAction.action_id &&
+        item.output.draft_type === activeDraftType,
+    );
+    await runAction("generate-action-draft", async () => {
+      const response = (await platformApi(
+        `/intelligence/drafts?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action_id: selectedDraftAction.action_id,
+            draft_type: activeDraftType,
+            refresh,
+            retry_failed: Boolean(
+              priorAttempt && priorAttempt.status !== "validated",
+            ),
+          }),
+        },
+      )) as GovernedActionDraftResponse;
+      if (response.item) {
+        setActionDrafts((current) => [
+          response.item!,
+          ...current.filter((item) => item.id !== response.item!.id),
+        ].slice(0, 5));
+      }
+      if (Array.isArray(response.available_actions)) {
+        setDraftActions(response.available_actions);
+      }
+      if (response.runtime) {
+        setIntelligenceRuntime(response.runtime);
+      }
+      if (response.allowance) {
+        setIntelligenceAllowance(response.allowance);
+      }
+
+      if (response.item?.status === "validated") {
+        setNotice(
+          response.idempotent_replay
+            ? "This draft is already up to date for the saved information."
+            : "Draft ready for your review. Nothing was changed or published.",
+        );
+      } else {
+        setNotice(
+          "Writing help is unavailable right now. The saved action and checklist were not changed.",
+        );
+      }
+    });
+  }
+
   async function transitionExecution(
     executionId: string,
     action: "approve" | "reject" | "run" | "retry" | "cancel" | "rollback",
@@ -1941,6 +2081,23 @@ export default function OpportunitiesPage() {
     sortedRecommendations.find((item) => item.id === selectedRecommendationId) ??
     sortedRecommendations[0] ??
     null;
+  const selectedDraftAction = draftActions.find(
+    (item) => item.action_id === selectedRecommendation?.action_plan?.action_id,
+  ) ?? null;
+  const activeDraftType: GovernedDraftType | "" =
+    selectedDraftAction?.draft_types.some(
+      (item) => item.draft_type === selectedDraftType,
+    )
+      ? selectedDraftType
+      : selectedDraftAction?.draft_types[0]?.draft_type || "";
+  const activeDraftTypeOption = selectedDraftAction?.draft_types.find(
+    (item) => item.draft_type === activeDraftType,
+  ) ?? null;
+  const currentActionDraft = actionDrafts.find(
+    (item) =>
+      item.output.action_id === selectedDraftAction?.action_id &&
+      item.output.draft_type === activeDraftType,
+  ) ?? null;
 
   const selectedExecution =
     executions.find((item) => item.id === selectedExecutionId) ?? executions[0] ?? null;
@@ -2499,6 +2656,174 @@ export default function OpportunitiesPage() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="max-w-2xl">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/70">
+                      Draft help for this action
+                    </p>
+                    <h3 className="mt-1 text-lg font-semibold text-white">
+                      Get useful wording without starting from scratch
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-zinc-300">
+                      Choose what you want written. InsightOS uses only this saved action
+                      and the business information already on file. Review every draft
+                      before using it.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-100">
+                    Draft only - nothing is published
+                  </span>
+                </div>
+
+                {selectedDraftAction ? (
+                  <>
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <label className="flex-1 text-sm text-zinc-300">
+                        <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                          What should be written?
+                        </span>
+                        <select
+                          value={activeDraftType}
+                          onChange={(event) =>
+                            setSelectedDraftType(event.target.value as GovernedDraftType)
+                          }
+                          className="min-h-11 w-full rounded-md border border-[#303137] bg-[#111214] px-3 py-2 text-sm text-white outline-none focus:border-violet-400/50"
+                        >
+                          {selectedDraftAction.draft_types.map((item) => (
+                            <option key={item.draft_type} value={item.draft_type}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                        {activeDraftTypeOption?.description ? (
+                          <span className="mt-2 block text-xs leading-5 text-zinc-500">
+                            {activeDraftTypeOption.description}
+                          </span>
+                        ) : null}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void generateActionDraft(Boolean(currentActionDraft))}
+                        disabled={!activeDraftType || busyAction !== ""}
+                        className="min-h-11 rounded-md border border-violet-400/30 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyAction === "generate-action-draft"
+                          ? "Writing..."
+                          : currentActionDraft
+                            ? "Create another version"
+                            : "Create draft"}
+                      </button>
+                    </div>
+
+                    {currentActionDraft ? (
+                      <article className="mt-5 rounded-md bg-[#111214]/90 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <span
+                            className={`text-xs font-semibold ${
+                              currentActionDraft.output.draft_state === "ready"
+                                ? "text-emerald-300"
+                                : "text-amber-200"
+                            }`}
+                          >
+                            {currentActionDraft.output.draft_state === "ready"
+                              ? "Ready for your review"
+                              : currentActionDraft.output.draft_state ===
+                                  "not_enough_information"
+                                ? "More business information is needed"
+                                : "Writing help is temporarily unavailable"}
+                          </span>
+                          <span className="text-xs text-zinc-500">
+                            {formatRelativeTime(currentActionDraft.created_at)}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+                          <div>
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                {currentActionDraft.output.title_label ||
+                                  activeDraftTypeOption?.title_label ||
+                                  "Suggested heading"}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void navigator.clipboard.writeText(
+                                    currentActionDraft.output.title,
+                                  )
+                                }
+                                className="text-xs text-violet-200 hover:text-white"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                            <p className="mt-2 text-base font-medium leading-7 text-white">
+                              {currentActionDraft.output.title}
+                            </p>
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                {currentActionDraft.output.body_label ||
+                                  activeDraftTypeOption?.body_label ||
+                                  "Suggested wording"}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void navigator.clipboard.writeText(
+                                    currentActionDraft.output.body,
+                                  )
+                                }
+                                className="text-xs text-violet-200 hover:text-white"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-200">
+                              {currentActionDraft.output.body}
+                            </p>
+                          </div>
+                        </div>
+
+                        {currentActionDraft.output.evidence_details?.length ? (
+                          <details className="mt-4 border-t border-[#26272c] pt-3">
+                            <summary className="cursor-pointer text-sm font-medium text-zinc-300">
+                              See what this draft used
+                            </summary>
+                            <ul className="mt-3 space-y-2 text-sm leading-6 text-zinc-400">
+                              {currentActionDraft.output.evidence_details.map((evidence) => (
+                                <li key={evidence.evidence_id}>
+                                  <span className="font-medium text-white">
+                                    {evidence.label}
+                                  </span>
+                                  {evidence.detail ? ` - ${evidence.detail}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        ) : null}
+
+                        <p className="mt-4 border-l-2 border-amber-400/40 pl-3 text-sm leading-6 text-amber-100">
+                          Review names, services, timing, and business details before you copy
+                          this anywhere. Nothing was changed or published.
+                        </p>
+                      </article>
+                    ) : (
+                      <p className="mt-4 text-sm text-zinc-500">
+                        No draft has been created for this action yet.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="mt-4 rounded-md border border-dashed border-[#303137] px-4 py-3 text-sm leading-6 text-zinc-400">
+                    Draft help is not available for this action yet. You can still use the
+                    saved checklist above.
+                  </p>
+                )}
+              </section>
+
+              <section className="mt-5 border-t border-violet-500/15 pt-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="max-w-2xl">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/70">
                       Ask about this location
                     </p>
                     <h3 className="mt-1 text-lg font-semibold text-white">
@@ -2679,7 +3004,7 @@ export default function OpportunitiesPage() {
                 {intelligenceRuntime?.configured &&
                 intelligenceAllowance?.remaining !== undefined ? (
                   <span>
-                    {intelligenceAllowance.remaining} explanations remaining this month
+                    {intelligenceAllowance.remaining} AI-assisted actions remaining this month
                   </span>
                 ) : (
                   <span>

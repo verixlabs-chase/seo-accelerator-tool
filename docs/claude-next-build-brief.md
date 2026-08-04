@@ -20,12 +20,14 @@
 > action plans now store reproducible conservative, expected, and optimistic
 > direct-metric forecasts and compare them with a genuinely new result after
 > the observation window. Unsupported ranking, visit, lead, and revenue effects
-> remain unknown. The bounded **I1.3 daily action brief and evidence-based
-> questions are now implemented**: each location can receive up to three
+> remain unknown. The bounded **I1.3 daily action brief, evidence-based
+> questions, and governed action drafting are now implemented**: each location can receive up to three
 > engine-approved actions with current checklist context and plain-language AI
 > wording, and owners can ask bounded questions whose answers cite only saved
-> location evidence and allowed actions. The next I1.3 slice is governed
-> drafting. **I1.4/T29: Measured Website and Google
+> location evidence and allowed actions. Owners can also create review-only
+> search-result wording, review requests, review responses, and page outlines
+> for supported saved actions. The next customer sprint is **MKT1.1: Automated
+> Local Keyword Discovery**. **I1.4/T29: Measured Website and Google
 > Business Profile Action Tracks** is now scheduled after G1.4 connects live
 > profile performance data. It will show the real metric each action is meant
 > to move, the starting value, the waiting period, and the measured result
@@ -68,8 +70,8 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 > **Execution status (2026-08-03):** UX5-UX9 established the working customer
 > baseline, UX10 established the shared plain-language and visual system, and
 > UX11-UX12 completed the owner-journey and cross-page rollout. The next
-> customer product phase is the remaining I1.3 governed-AI utility work,
-> beginning with governed drafting. I1.4/T29 follows G1.4's
+> customer product phase begins with MKT1.1 automated local keyword discovery.
+> I1.4/T29 follows G1.4's
 > live Google Business Profile metric connection. Recommendation-only
 > intelligence remains enabled; autonomous customer-site mutations and
 > automatic policy updates remain disabled.
@@ -469,7 +471,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 9 | **UX12 - Cross-Page Visualization and Usability Rollout** | Rankings, Local Search, Website Health, Listings, Reviews, Competitors, Locations, Reports, Settings, and setup states receive the same understandable hierarchy. |
 | 10 | **I1.4/T27 - Action Measurement Readiness — completed** | Starting measurements, completed-work proof, success measurements, and honest waiting periods make a checked box different from a proven result. |
 | 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling — completed** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
-| 12 | **I1.3 remaining slices - Governed AI Utility Expansion — daily brief and evidence Q&A completed** | Governed drafting is the remaining utility slice; the live question flow now answers only from cited location evidence while the deterministic engine keeps authority. |
+| 12 | **I1.3 - Governed AI Utility Expansion — completed** | The daily brief, cited evidence Q&A, and review-only drafting use one metered gateway while the deterministic engine keeps action authority. |
 | 13 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
 | 14 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
 | 15 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
@@ -498,6 +500,36 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 38 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
 | 39 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
 | 40 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
+
+### External API enablement map
+
+The following provider decisions are part of the numbered sprints above, not a
+separate integration backlog. Access requests may begin early when vendor
+approval could delay the owning sprint, but production collection and customer
+claims do not begin until that sprint's cost, tenant-isolation, freshness, and
+truthfulness gates pass.
+
+| Owning sprint | Production API or connection | Approved purpose and release gate |
+| --- | --- | --- |
+| **MKT1.1** | DataForSEO Labs API plus Keywords Data API | Generate location-specific keyword ideas, demand, trend, competition, and competitor evidence. Keep provider metrics labeled and allowance-controlled. |
+| **G1.2** | DataForSEO Google Maps SERP and Google Local Finder SERP | Collect coordinate-specific local positions for the geo-grid. Default scheduled work to the less expensive queued method; reserve Live calls for an explicitly priced manual run. |
+| **G1.4, I1.4/T29, and G1.6** | Google Business Profile Account Management, Business Information, Performance, and supported review APIs | Connect and measure profiles the customer is authorized to manage. Submit the Google project access request before G1.4 implementation because enabling an API alone does not grant Business Profile API access. |
+| **G1.4 and G1.6** | DataForSEO Business Data API | Observe public competitor profiles and reviews. Never use public third-party data as permission to edit a profile or reply to a review. |
+| **G1.5** | DataForSEO Business Data API for discovery; separately approved listings-network provider for syndication | Audit public listings first. Creation, correction, suppression, or network distribution requires a commercial and technical approval for a Yext-, Uberall-, or equivalent production contract and explicit per-location cost confirmation. |
+| **G1.7** | Google Analytics Data API plus the first-party website-form event contract | Connect visits, landing pages, engaged sessions, and approved inquiry events without adding CRM, call tracking, payment, or revenue attribution. |
+| **AUTH1** | DataForSEO Backlinks API | Add new/lost referring domains, link-level evidence, history, and competitor intersections under row and request allowances. |
+| **SEO2** | Search Console URL Inspection and Sitemaps APIs; Bing Webmaster API as a later optional source | Add owned-site indexation and sitemap evidence. Bing remains additive and cannot delay the Google-first owner workflow. |
+| **AIV1** | DataForSEO AI Optimization / LLM Mentions API or a later approved equivalent | Measure AI-answer mentions and citations as evidence. This is a visibility dataset, not another general-purpose model for the governed AI runtime. |
+| **RPT1 and ALT1** | Resend, Postmark, or an equivalently approved transactional-email API | Deliver reports, alerts, connection failures, and digests with bounce, complaint, suppression, retry, and delivery evidence. |
+| **PA1, TR1, and OPS1** | Sentry plus PostHog, or approved privacy-equivalent observability and product-analytics services | Detect production failures and measure product value with tenant-safe redaction, approved retention, and no sensitive page-content capture. |
+| **COM1** | Stripe Checkout, Billing, Customer Portal, and signed webhooks | Operate subscriptions and entitlements. Provider webhooks must be signature-verified, idempotent, auditable, and unable to bypass the internal entitlement ledger. |
+
+Do not add another general-purpose LLM, Google Ads API, a paid map renderer,
+CRM, call tracking, job-management, payment attribution, or a broad Google
+Places workflow merely because an adapter exists. OpenStreetMap remains the
+default map renderer; DataForSEO and authorized Google connections provide the
+product evidence. Any new provider must have a named owning sprint, customer
+result, data-rights review, price card, allowance, failure state, and exit path.
 
 Release R1 is complete as of 2026-07-30. The I1.0 migration is applied, hosted
 CrUX configuration is active, the API is deployed, the first standards check
@@ -539,6 +571,10 @@ Scope:
   alerts.
 - Configure production metrics, structured logs, traces, provider and delivery
   health, stale-data detection, and actionable alert routing.
+- Connect Sentry or an approved equivalent for production exception and release
+  health only after tenant-safe redaction, source-map handling, retention, and
+  environment separation are verified. Observability must not capture provider
+  secrets, OAuth tokens, page content, or cross-tenant customer data.
 - Prove Supabase backup/PITR behavior with a documented restore drill and
   post-recovery tenant-integrity checks.
 - Add PostgreSQL integration CI, critical Playwright journeys, Vercel smoke
@@ -621,7 +657,9 @@ unbounded paid checks.
 Scope:
 
 - Use the selected business location's stored coordinates and DataForSEO
-  location metadata; never blend grid points between locations.
+  location metadata with Google Maps SERP or Local Finder SERP; never blend
+  grid points between locations or substitute an organic-web position for a
+  local-map position.
 - Let the owner choose tracked phrases, grid size, and search radius, with a
   safe default of a small grid and the standard queued provider method.
 - Create one durable, idempotent job per grid run and persist the run, phrase,
@@ -761,6 +799,11 @@ workspace that explains what is incomplete, what changed, and what to improve.
 
 Scope:
 
+- Complete and verify Google Business Profile API project approval before
+  treating an enabled Cloud API or OAuth scope as a production connection.
+- Use Account Management and Business Information APIs for authorized profile
+  identity and fields, the Performance API for supported time series and search
+  terms, and the supported review API for owned-profile review work.
 - Map one Google Business Profile to the correct organization, subaccount,
   business location, website, and campaign.
 - Synchronize the profile identity, primary and secondary categories, services,
@@ -774,6 +817,9 @@ Scope:
   coverage, hour accuracy, photo freshness, and posting cadence.
 - Compare supported profile attributes with the businesses that repeatedly
   outrank the location in local rank-grid results.
+- Use DataForSEO Business Data only for public competitor-profile and review
+  evidence; keep it distinct from the authorized Google connection that can
+  read or mutate the customer's owned profile.
 - Turn audit findings into evidence-backed recommended actions.
 - Map every profile action to one primary metric it can reasonably influence
   and any secondary context metrics. Profile completeness and field accuracy
@@ -917,8 +963,13 @@ truthful inventory, consistency audit, and approval-driven correction workflow.
 
 Scope:
 
-- Connect an approved production listings/citation provider; synthetic authority
-  data remains test-only.
+- Use DataForSEO Business Data as the first approved production source for
+  public listing discovery and consistency evidence; synthetic authority data
+  remains test-only.
+- Treat listing syndication as a separate provider decision. Do not advertise
+  creation, correction, suppression, or network distribution until a
+  production listings contract, directory coverage, data rights, cancellation
+  behavior, and per-location economics are approved.
 - Discover listings for each physical location and normalize business name,
   address, phone, website, categories, hours, and status.
 - Classify listings as correct, inconsistent, missing, duplicate, submitted,
@@ -950,8 +1001,10 @@ multi-location reputation reporting while adding an intelligence layer.
 
 Scope:
 
-- Ingest reviews from Google and other approved sources with source, rating,
-  text, author metadata allowed by the provider, response status, and freshness.
+- Ingest owned-profile reviews from the authorized Google Business Profile
+  connection and public competitor reviews from DataForSEO Business Data, with
+  source, rating, text, provider-allowed author metadata, response status, and
+  freshness kept distinct.
 - Provide one review inbox with location, source, rating, theme, sentiment,
   response status, and date filters.
 - Allow approved direct replies where provider APIs permit them; otherwise
@@ -962,6 +1015,9 @@ Scope:
   reviews, rating changes, and review-velocity gaps against local competitors.
 - Add compliant email, SMS, link, QR, and kiosk review-request campaigns with
   consent, suppression, delivery, and cost controls.
+- Route email through the transactional delivery provider selected in ALT1.
+  SMS requires a separate vendor, consent model, price card, allowance, and
+  launch decision; it is not implied by the email connection.
 - Do not implement review gating, selective suppression of negative customers,
   fabricated reviews, or other platform-policy violations.
 - Add optional brand-controlled website widgets for selected reviews.
@@ -986,7 +1042,8 @@ deferred CRM, call-tracking, job-management, payment, or revenue scope.
 
 Scope:
 
-- Complete Google Analytics connection and per-location property/stream mapping.
+- Complete the existing Google Analytics Data API adapter, OAuth scope,
+  customer connection, and per-location property/stream mapping.
 - Ingest sessions, engaged sessions, landing pages, source/medium, and approved
   conversion events.
 - Add a first-party website form event contract with tenant, location, website,
@@ -1229,8 +1286,8 @@ policy engine retain decision authority.
 > reason under database RLS. Mistral has no database, Google, WordPress, or tool
 > access and cannot execute changes. The production migration, provider key,
 > restricted-role pricing access, deterministic control-field enforcement, and
-> live validated-output/cost audit have passed. Evidence Q&A is now complete;
-> governed drafting remains the later I1.3 slice.
+> live validated-output/cost audit have passed. Evidence Q&A and governed
+> drafting are now complete.
 >
 > **Service-business language contract completed 2026-07-30:** the live AI
 > prompt now loads the versioned
@@ -1268,6 +1325,25 @@ policy engine retain decision authority.
 > invented evidence and action rejection, credential blocking, idempotency,
 > provider prompt boundaries, metering, safe fallback, and the authenticated
 > API flow.
+>
+> **Governed action drafting implemented 2026-08-03:** Next Steps now offers
+> bounded writing help for supported, currently saved actions. The first draft
+> types are search-result wording, customer review requests, review responses,
+> and helpful page outlines. The server chooses the allowed action and draft
+> type from the active lexicon, narrows the context to related saved evidence,
+> locks the action/type/review fields, enforces per-type length limits, rejects
+> technical wording, numeric or unsupported business claims, and unknown
+> evidence, and requires customer approval on every result. Drafts share the
+> existing monthly AI allowance, concurrency, token ceiling, price card,
+> reserve/reconcile accounting, idempotency, tenant scope, and durable audit
+> history. Provider failure leaves the checklist unchanged and incurs no charge
+> when no provider call occurs. The customer sees copy buttons, source details,
+> uncertainty, and a clear `nothing was changed or published` message. Mistral
+> still has no site, Google, database, credential, or tool access. Automated
+> tests cover valid metered and cited output, idempotency, unsupported
+> action/type blocking, invented-evidence rejection, provider control-field
+> preservation, safe fallback, authenticated API behavior, and the owner-facing
+> workflow.
 
 Runtime sequence:
 
@@ -1574,6 +1650,10 @@ Scope:
 
 - Add an in-product notification center plus configurable email delivery and
   weekly digest.
+- Replace the synthetic email adapter with Resend, Postmark, or an equivalently
+  approved transactional-email API. Record provider message ID, delivery,
+  bounce, complaint, suppression, retry, and terminal failure without storing
+  unnecessary message content.
 - Cover ranking and geo-grid movement, CWV regression, crawl/indexability
   problems, new review and reputation risk, provider reconnect, stale data,
   report delivery, pending approval, WordPress execution, verification
@@ -1636,7 +1716,11 @@ needs.
 Scope:
 
 - Add local keyword discovery using services, city/service area, Search Console
-  queries, related searches, and an approved keyword-data provider.
+  queries, related searches, DataForSEO Labs, and DataForSEO Keywords Data.
+- Prefer Labs keyword ideas, related keywords, ranked keywords, competitor
+  domains, and historical demand for discovery; use Keywords Data only where
+  its location-specific volume, trend, or Google Ads-derived fields materially
+  improve the owner decision. Do not add the Google Ads API in this sprint.
 - Show search volume, intent, CPC, trend, difficulty/competition proxy, current
   position, map visibility, and business relevance with source/freshness.
 - Cluster phrases by service, problem, location, funnel stage, and target page.
@@ -1700,9 +1784,13 @@ work rather than an unexplained domain score.
 
 Scope:
 
-- Connect an approved production backlink source for referring domains,
-  referring pages, anchors, destinations, link attributes, first/last seen,
-  new/lost state, and provider freshness.
+- Connect DataForSEO Backlinks as the first production backlink source for
+  referring domains, referring pages, anchors, destinations, link attributes,
+  first/last seen, new/lost state, history, competitor intersections, and
+  provider freshness.
+- Default to summary, bounded row retrieval, bulk, and intersection endpoints
+  that answer a named customer question. Do not mirror an unbounded backlink
+  index into platform storage.
 - Add competitor link-gap analysis, lost-link recovery, unlinked local mentions,
   chamber/sponsorship/association opportunities, supplier/partner links, and
   locally relevant outreach candidates.
@@ -1850,6 +1938,10 @@ Scope:
   clarity, forecast trust, automation confidence, and report quality.
 - Build internal funnels and cohort views without exposing one customer's
   identifiable behavior to another.
+- Use PostHog or an approved privacy-equivalent product-analytics service only
+  behind the governed event contract. Disable broad autocapture and session
+  replay by default; never send OAuth tokens, provider payloads, business-page
+  content, form contents, or customer search evidence to the analytics vendor.
 - Connect roadmap experiments to explicit success metrics and stop conditions.
 
 Acceptance criteria:
@@ -1985,9 +2077,13 @@ coverage gaps without adding disconnected tool clutter.
 
 Scope:
 
-- Add Search Console indexation and sitemap monitoring with crawl-derived
-  robots, canonical, redirect-chain, status, duplicate, orphan, broken-link,
-  and supported structured-data validation.
+- Add Search Console URL Inspection and Sitemaps API collection for owned URLs
+  and properties, then join it with crawl-derived robots, canonical,
+  redirect-chain, status, duplicate, orphan, broken-link, and supported
+  structured-data validation.
+- Add Bing Webmaster API only as a later, feature-flagged secondary source after
+  the Google-first workflow is complete. Bing facts retain their own source,
+  dates, quotas, and meaning and never overwrite Google evidence.
 - Add keyword cannibalization, content decay, page-query mismatch, internal-link
   opportunities, and service/location coverage gaps.
 - Track SERP features such as local pack, featured result, video, image, and
@@ -2047,9 +2143,14 @@ upper-tier product rather than a documentation-only promise.
 
 Scope:
 
-- Connect an approved provider or governed collection path for prompts,
-  responses, mentions, citations, competitors, and platform metadata across
-  supported AI-search surfaces.
+- Evaluate DataForSEO AI Optimization and LLM Mentions as the first production
+  provider for prompts, responses, mentions, citations, competitors, and
+  platform metadata across supported AI-search surfaces. Ship only the
+  platforms, locations, languages, and historical windows verified during the
+  provider evaluation.
+- Keep this visibility provider separate from Mistral. It supplies observed
+  evidence to the deterministic intelligence engine and does not receive tool
+  access or become a customer chatbot.
 - Track prompt clusters by service, location, customer question, and buying
   intent.
 - Surface inclusion frequency, citation presence, position/prominence,
@@ -2101,8 +2202,13 @@ Goal: make the $299, $699, and $1,999+ plans enforceable and supportable.
 
 Scope:
 
-- Add checkout, subscription lifecycle, trials, invoices, payment-failure
-  recovery, upgrade/downgrade, cancellation, and plan-change audit history.
+- Use Stripe Checkout, Billing, Customer Portal, and signed webhooks for
+  checkout, subscription lifecycle, trials, invoices, payment-failure recovery,
+  upgrade/downgrade, cancellation, and plan-change audit history.
+- Treat Stripe as the payment record and the internal entitlement ledger as the
+  authorization record. Verify every webhook signature and process every event
+  idempotently; a delayed or duplicated webhook cannot grant duplicate usage or
+  bypass plan limits.
 - Enforce location, user, keyword, grid, prompt, crawl, provider, storage, and
   export allowances through the existing entitlement system.
 - Add invitations, password recovery, session revocation, organization

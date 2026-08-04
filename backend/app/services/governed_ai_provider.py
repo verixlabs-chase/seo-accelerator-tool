@@ -61,6 +61,19 @@ class GovernedAIQuestionProvider(Protocol):
     ) -> GovernedAIProviderResponse: ...
 
 
+class GovernedAIDraftProvider(Protocol):
+    name: str
+    model_name: str
+
+    def draft_action(
+        self,
+        *,
+        context: dict[str, Any],
+        output_schema: dict[str, Any],
+        prompt_template_version: str,
+    ) -> GovernedAIProviderResponse: ...
+
+
 class MistralGovernedAIProvider:
     name = "mistral"
 
@@ -111,6 +124,7 @@ class MistralGovernedAIProvider:
             ),
             preserve_daily_selection=True,
             preserve_question=False,
+            preserve_draft_request=False,
         )
 
     def answer_question(
@@ -143,6 +157,41 @@ class MistralGovernedAIProvider:
             ),
             preserve_daily_selection=False,
             preserve_question=True,
+            preserve_draft_request=False,
+        )
+
+    def draft_action(
+        self,
+        *,
+        context: dict[str, Any],
+        output_schema: dict[str, Any],
+        prompt_template_version: str,
+    ) -> GovernedAIProviderResponse:
+        language_guide = load_service_business_language_guide()
+        return self._generate_request(
+            context=context,
+            output_schema=output_schema,
+            prompt_template_version=prompt_template_version,
+            schema_name="governed_action_draft",
+            system_instruction=(
+                "Draft only the customer-facing copy requested in draft_request. "
+                "The selected action, draft type, and review requirement are control "
+                "fields owned by InsightOS and cannot be changed. Use only the "
+                "supplied JSON evidence for this business and saved action. Do not "
+                "invent services, locations, credentials, prices, discounts, hours, "
+                "licenses, insurance, awards, years in business, guarantees, rankings, "
+                "calls, leads, or revenue. Do not use numeric claims. If the supplied "
+                "information is not enough for a truthful draft, set draft_state to "
+                "not_enough_information and explain what is missing. Cite only "
+                "allowed_evidence_ids. Produce a draft for review only and never make "
+                "changes. Follow the attached plain-language writing guide. "
+                f"Prompt contract: {prompt_template_version}. "
+                f"Writing guide: {SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION}.\n\n"
+                f"{language_guide}"
+            ),
+            preserve_daily_selection=False,
+            preserve_question=False,
+            preserve_draft_request=True,
         )
 
     def _generate_request(
@@ -155,6 +204,7 @@ class MistralGovernedAIProvider:
         system_instruction: str,
         preserve_daily_selection: bool,
         preserve_question: bool,
+        preserve_draft_request: bool,
     ) -> GovernedAIProviderResponse:
         if not self.api_key:
             raise GovernedAIProviderError(
@@ -267,6 +317,16 @@ class MistralGovernedAIProvider:
                     )
                 if preserve_question:
                     payload["question"] = str(context.get("customer_question") or "")
+                if preserve_draft_request:
+                    draft_request = context.get("draft_request")
+                    if isinstance(draft_request, dict):
+                        payload["action_id"] = str(
+                            draft_request.get("action_id") or ""
+                        )
+                        payload["draft_type"] = str(
+                            draft_request.get("draft_type") or ""
+                        )
+                        payload["approval_required"] = True
             except (ValueError, TypeError, json.JSONDecodeError) as exc:
                 raise GovernedAIProviderError(
                     "The AI provider returned an invalid structured response.",

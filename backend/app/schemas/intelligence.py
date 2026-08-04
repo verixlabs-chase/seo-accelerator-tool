@@ -84,6 +84,18 @@ class AskIntelligenceQuestionIn(BaseModel):
     retry_failed: bool = False
 
 
+class GenerateIntelligenceDraftIn(BaseModel):
+    action_id: str = Field(min_length=1, max_length=160)
+    draft_type: Literal[
+        "search_result",
+        "review_request",
+        "review_response",
+        "page_outline",
+    ]
+    refresh: bool = False
+    retry_failed: bool = False
+
+
 class ActionPlanStepUpdateIn(BaseModel):
     status: Literal["not_started", "in_progress", "done", "skipped", "blocked"]
     blocker_reason: str | None = Field(default=None, max_length=1000)

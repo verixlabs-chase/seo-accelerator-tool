@@ -130,4 +130,9 @@ test("next steps separates finished work from a measured result", () => {
   assert.match(pageSource, /\/intelligence\/questions/);
   assert.match(pageSource, /See the saved information behind this answer/);
   assert.match(pageSource, /What this answer cannot confirm/);
+  assert.match(pageSource, /Draft help for this action/);
+  assert.match(pageSource, /Review every draft\s+before using it/);
+  assert.match(pageSource, /Draft only - nothing is published/);
+  assert.match(pageSource, /\/intelligence\/drafts/);
+  assert.match(pageSource, /Nothing was changed or published/);
 });

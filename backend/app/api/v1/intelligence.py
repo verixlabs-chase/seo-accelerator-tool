@@ -13,6 +13,7 @@ from app.schemas.intelligence import (
     ActionPlanStepUpdateIn,
     AdvanceMonthIn,
     AskIntelligenceQuestionIn,
+    GenerateIntelligenceDraftIn,
     GenerateIntelligenceBriefIn,
     IntelligenceScoreOut,
     RecommendationOut,
@@ -22,6 +23,7 @@ from app.services import (
     action_plan_forecast_service,
     action_plan_measurement_service,
     durable_job_service,
+    governed_ai_draft_service,
     governed_ai_service,
     governed_ai_qa_service,
     intelligence_service,
@@ -314,6 +316,44 @@ def ask_intelligence_question(
         campaign_id=campaign_id,
         requested_by_user_id=user["user_id"],
         question=body.question,
+        retry_failed=body.retry_failed,
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.get("/drafts")
+def get_intelligence_drafts(
+    request: Request,
+    campaign_id: str = Query(...),
+    limit: int = Query(default=10, ge=1, le=25),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_ai_draft_service.list_governed_drafts(
+        db,
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        limit=limit,
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/drafts")
+def generate_intelligence_draft(
+    request: Request,
+    body: GenerateIntelligenceDraftIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_ai_draft_service.generate_governed_draft(
+        db,
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        requested_by_user_id=user["user_id"],
+        action_id=body.action_id,
+        draft_type=body.draft_type,
+        refresh=body.refresh,
         retry_failed=body.retry_failed,
     )
     return envelope(request, payload)
