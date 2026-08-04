@@ -473,33 +473,35 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling — completed** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
 | 12 | **I1.3 - Governed AI Utility Expansion — completed** | The daily brief, cited evidence Q&A, and review-only drafting use one metered gateway while the deterministic engine keeps action authority. |
 | 13 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
-| 14 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
-| 15 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
-| 16 | **I1.4/T29 - Measured Website and Google Business Profile Action Tracks** | Every website and profile action identifies the real metric it is meant to improve, shows the location's starting value, and returns with an honest measured result after the waiting period. |
-| 17 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
-| 18 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, and multi-location comparisons replace the core BrightLocal reputation workflow. |
-| 19 | **DT1 - Data Trust and Connection Health Center** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
-| 20 | **ML1 - Portfolio Intelligence** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
-| 21 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
-| 22 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
-| 23 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
-| 24 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
-| 25 | **COM1 paid-beta slice - Checkout and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, recover payment, and cancel without operator database work. |
-| 26 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
-| 27 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
-| 28 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 29 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
-| 30 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
-| 31 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 32 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 33 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 34 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 35 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 36 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 37 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
-| 38 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
-| 39 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 40 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
+| 14 | **G1.3A - Customer Usage Credits** | Customers see simple Insight Credits instead of the platform's internal monthly dollar budget, while cost accounting still protects the 85% software-usage margin. |
+| 15 | **VAL1 - Research-Backed Search Value** | Search Value uses current location-specific market research and measured Search Console behavior to show a traceable paid-search replacement-cost range rather than a subjective dollar guess. |
+| 16 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
+| 17 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
+| 18 | **I1.4/T29 - Measured Website and Google Business Profile Action Tracks** | Every website and profile action identifies the real metric it is meant to improve, shows the location's starting value, and returns with an honest measured result after the waiting period. |
+| 19 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
+| 20 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, and multi-location comparisons replace the core BrightLocal reputation workflow. |
+| 21 | **DT1 - Data Trust and Connection Health Center** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
+| 22 | **ML1 - Portfolio Intelligence** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
+| 23 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
+| 24 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
+| 25 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
+| 26 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 27 | **COM1 paid-beta slice - Checkout and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, recover payment, and cancel without operator database work. |
+| 28 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
+| 29 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
+| 30 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 31 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
+| 32 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
+| 33 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 34 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 35 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 36 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 37 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 38 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 39 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
+| 40 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
+| 41 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 42 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 ### External API enablement map
 
@@ -512,6 +514,7 @@ truthfulness gates pass.
 | Owning sprint | Production API or connection | Approved purpose and release gate |
 | --- | --- | --- |
 | **MKT1.1** | DataForSEO Labs API plus Keywords Data API | Generate location-specific keyword ideas, demand, trend, competition, and competitor evidence. Keep provider metrics labeled and allowance-controlled. |
+| **VAL1** | Existing Search Console connection plus DataForSEO Keywords Data API | Calculate traceable paid-search replacement value from measured organic behavior and location-specific CPC/search-demand research. Store source, geography, observation date, and model version; do not present this as revenue or add the Google Ads API in this sprint. |
 | **G1.2** | DataForSEO Google Maps SERP and Google Local Finder SERP | Collect coordinate-specific local positions for the geo-grid. Default scheduled work to the less expensive queued method; reserve Live calls for an explicitly priced manual run. |
 | **G1.4, I1.4/T29, and G1.6** | Google Business Profile Account Management, Business Information, Performance, and supported review APIs | Connect and measure profiles the customer is authorized to manage. Submit the Google project access request before G1.4 implementation because enabling an API alone does not grant Business Profile API access. |
 | **G1.4 and G1.6** | DataForSEO Business Data API | Observe public competitor profiles and reviews. Never use public third-party data as permission to edit a profile or reply to a review. |
@@ -791,6 +794,58 @@ Acceptance criteria:
 - A tier cannot be published unless its modeled software and provider usage
   remains at or above the 85% margin floor under the approved heavy-use
   scenario.
+
+### Growth G1.3A - Customer Usage Credits
+
+Goal: replace customer-visible provider dollars with one understandable usage
+allowance while preserving exact internal cost and margin controls.
+
+Dependency and placement:
+
+- Build after MKT1.1 establishes measured keyword-research usage and before the
+  customer can purchase or repeatedly run additional paid checks.
+- Keep the existing G1.3 currency ledger, reservations, price cards, and 85%
+  software-usage margin gate authoritative. Credits are a customer-facing
+  entitlement unit, not an accounting currency.
+
+Scope:
+
+- Name the customer unit `Insight Credits`; do not call it an API token, model
+  token, dollar balance, or cash value.
+- Remove monthly dollar amounts from customer Settings, confirmations, and
+  recovery messages. Internal operators continue to see real currency cost.
+- Add a versioned credit catalog that assigns a clear credit price to each
+  eligible operation, including keyword-research batches, ranking checks,
+  local-grid points, paid audits, and bounded AI actions.
+- Base each credit price on measured provider/model cost, reservation risk, and
+  the approved heavy-use margin model. A provider price change cannot alter a
+  previously completed month's credit history.
+- Show `credits available`, `credits used`, `credits reserved`, reset date, and
+  the exact credit price before a customer starts optional paid work.
+- Reserve credits before dispatch, reconcile them after completion, and return
+  unused credits after a terminal failure or a lower-cost completed run.
+- Keep per-feature safety limits, concurrency limits, and abuse controls even
+  when the organization still has credits. Credits do not authorize unlimited
+  crawling, AI, or provider calls.
+- Treat organization-owned provider/model credentials separately: display
+  plan and safety usage, but do not deduct platform-paid credits unless the
+  commercial plan explicitly includes a platform service used by that action.
+- Decide rollover, top-ups, refunds, and plan-change proration as explicit
+  COM1 commercial policies; do not imply that credits are redeemable for cash.
+
+Acceptance criteria:
+
+- No customer-facing page exposes the platform's monthly API budget or vendor
+  dollar spend.
+- Every credit-consuming action previews an integer credit amount and the
+  expected result before confirmation.
+- The customer credit ledger and internal currency ledger reconcile to the same
+  provider/AI execution without changing historical records.
+- Failed or canceled work cannot permanently consume credits unless the
+  provider actually charged a documented non-refundable amount and the policy
+  clearly discloses it.
+- Heavy-use simulations prove that every published plan remains at or above
+  the 85% software-usage margin target.
 
 ### Growth G1.4 - Google Business Profile Intelligence
 
@@ -1735,6 +1790,65 @@ Acceptance criteria:
   without a source label.
 - The default suggestions are generated from connected data and location facts;
   the owner is not required to build the starting keyword list manually.
+
+### Value VAL1 - Research-Backed Search Value
+
+Goal: turn Search Value into a reproducible, evidence-backed estimate of what
+the location's organic search exposure would cost to replace with paid search.
+
+Dependency and placement:
+
+- Build after MKT1.1 supplies automated, location-specific demand and CPC
+  snapshots. Reuse those snapshots rather than buying the same provider data
+  twice.
+- Use the existing Search Console connection wherever it has sufficient query
+  impressions and clicks. Fall back to the governed CTR model only for gaps or
+  future scenarios, and label that portion as modeled.
+
+Scope:
+
+- Collect location-, language-, device-, and keyword-specific search volume,
+  CPC, competition, and trend from DataForSEO Keywords Data or another later
+  approved source with equivalent provenance. Do not use unsourced manual CPC
+  as verified market research.
+- Calculate current measured replacement value from eligible Search Console
+  organic clicks multiplied by the matched researched CPC when query coverage
+  is sufficient.
+- Calculate missing-query and improvement scenarios from researched search
+  volume multiplied by the versioned, position/device-specific CTR model and
+  researched CPC.
+- Present a conservative range with a central estimate, confidence level,
+  coverage percentage, source dates, geography, and the share based on measured
+  behavior versus modeled assumptions.
+- Add a keyword contribution table showing phrase, current position, measured
+  or estimated clicks, researched CPC, monthly contribution, source, and
+  freshness so the total can be audited.
+- Version the formula, CTR curve, currency, provider snapshot, deduplication,
+  and aggregation rules. Prevent overlapping keyword/location records from
+  being counted twice.
+- Compare periods and retain history so the owner can see whether the change
+  came from rankings, demand, CPC, query coverage, or a model/source update.
+- Keep the customer explanation explicit: this is paid-search-equivalent media
+  value, not revenue, profit, leads, booked work, or a promise of results.
+- Do not add the Google Ads API in this sprint. Consider it only after a later
+  provider-validation study shows that it materially improves accuracy or
+  reduces cost.
+
+Acceptance criteria:
+
+- A customer can open every displayed Search Value total and trace it to
+  location-specific inputs, dates, sources, and formula version.
+- Verified current value clearly separates measured Search Console clicks from
+  CTR-modeled clicks and reports the percentage covered by each method.
+- Missing, stale, conflicting, or low-volume market data lowers confidence or
+  withholds the estimate; the system never silently substitutes a subjective
+  number.
+- Recomputing the same frozen snapshots with the same model version produces
+  the same result.
+- DataForSEO research is allowance-controlled through G1.3A credits and does
+  not duplicate a fresh MKT1.1 snapshot.
+- No Search Value screen or AI explanation describes the estimate as customer
+  revenue or guaranteed financial return.
 
 ### Market MKT1.2 - Competitor and Content-Gap Research
 

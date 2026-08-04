@@ -15,8 +15,9 @@
 > copy, weak visual hierarchy, and too little decision-useful visualization.
 > UX10-UX12, I1.4/T27 measurement readiness, and I1.2/T28 evidence-backed
 > forecasting, the bounded I1.3 daily action brief, and evidence-based location
-> questions are now complete. The remaining I1.3 utility work begins with
-> governed drafting. The follow-on **I1.4/T29 measured action-value
+> questions and governed drafting are now complete. The next customer product
+> sprint is **MKT1.1 automated local keyword discovery**. The follow-on
+> **I1.4/T29 measured action-value
 > sprint** is scheduled after G1.4 supplies live Google Business Profile
 > performance data; it adds separate Website and Google Profile action lanes
 > with real baselines and measured results. A later **ENG1 verified-progress
@@ -39,6 +40,14 @@
 > (COM1), launch operations (OPS1), and enterprise delivery (ENT1). Call tracking, CRM,
 > job-management, booked-job, payment, revenue, and sales-attribution connections remain
 > explicitly excluded until separately approved.
+>
+> **Planned allowance and value UX:** G1.3A replaces customer-visible monthly
+> provider dollars with plain `Insight Credits`, while the internal cost ledger
+> continues to protect the 85% software-usage margin. VAL1 then rebuilds Search
+> Value around current location-specific market research and measured Search
+> Console behavior, with an auditable range, confidence, source dates, and no
+> revenue claim. Their governing scope and acceptance criteria live in the
+> authoritative execution brief.
 
 ## 1. Executive Summary
 
@@ -538,6 +547,29 @@ would be incomplete or misleading.
 space, dead controls, unnecessary badges, and priority content below the fold.
 60. Complete route-by-route visual regression, keyboard, screen-reader, and
 five-second comprehension QA.
+
+### Planned product UX — G1.3A customer usage credits
+
+- Replace `Monthly data budget` and customer-visible dollar balances with
+  `Insight Credits available this month`.
+- Show the exact integer credit price before a paid action, then show used,
+  reserved, remaining, and reset date in plain language.
+- Keep vendor prices, dollar reservations, and margin reporting internal. Do
+  not describe credits as cash, API tokens, or general AI tokens.
+- Explain failed-work refunds and organization-owned credentials without
+  exposing provider accounting details.
+
+### Planned product UX — VAL1 research-backed Search Value
+
+- Put the paid-search replacement-value range, confidence, data coverage, and
+  change from the selected comparison period at the top of Search Value.
+- Let the owner open the total to see each phrase's position, measured or
+  estimated clicks, researched CPC, contribution, location, source, and date.
+- Visually separate Search Console-measured behavior from modeled scenarios,
+  and explain changes caused by rankings, demand, CPC, data coverage, or a
+  model update.
+- Use `What similar visibility could cost in paid search`; never use revenue,
+  profit, lead, or guaranteed-return language for this estimate.
 
 ### Follow-on product sprint — I1.4/T29 measured website and Google Profile actions
 
