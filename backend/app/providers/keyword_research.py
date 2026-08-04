@@ -12,6 +12,9 @@ import httpx
 logger = logging.getLogger("lsos.keyword_research")
 
 
+MAX_COMPETITOR_DOMAINS_PER_REFRESH = 3
+
+
 class DataForSeoKeywordResearchProvider:
     """Small, typed boundary around the DataForSEO endpoints used by discovery."""
 

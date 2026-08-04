@@ -22,7 +22,10 @@
 > a bounded AI action for sorting only unclear phrases, and direct promotion
 > into Search Rankings. Owners can now correct a phrase in place, attach it to
 > a confirmed service, hide it as irrelevant, undo that choice, and have the
-> scoped decision reused on later refreshes. The follow-on
+> scoped decision reused on later refreshes. Saved competitor domains now add
+> clearly labeled competitor opportunities with the competing page and
+> observed position, without presenting that position as the customer's own
+> result or bypassing the same service and service-area checks. The follow-on
 > **I1.4/T29 measured action-value
 > sprint** is scheduled after G1.4 supplies live Google Business Profile
 > performance data; it adds separate Website and Google Profile action lanes

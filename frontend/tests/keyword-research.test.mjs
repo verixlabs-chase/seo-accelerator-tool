@@ -107,6 +107,16 @@ test("business owners can correct search relevance without opening a chatbot", (
   assert.match(page, /Saved from your choice/);
 });
 
+test("saved competitors can reveal gaps without being confused with the owner's rank", () => {
+  const page = source("../app/(product)/keyword-research/page.tsx");
+
+  assert.match(page, /Competitor opportunity/);
+  assert.match(page, /Competitor search results/);
+  assert.match(page, /Seen from/);
+  assert.match(page, /competitor\.position/);
+  assert.match(page, /href=\{competitor\.url\}/);
+});
+
 test("customer pages keep the market-data supplier private", () => {
   const keywordResearch = source("../app/(product)/keyword-research/page.tsx");
   const locations = source("../app/(product)/locations/page.tsx");

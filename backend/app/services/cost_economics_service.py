@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard
 from app.models.organization import Organization
+from app.providers.keyword_research import MAX_COMPETITOR_DOMAINS_PER_REFRESH
 
 
 MONEY = Decimal("0.00000001")
@@ -1038,10 +1039,10 @@ def _customer_action_prices(db: Session, *, now: datetime) -> list[dict[str, Any
 
     research_cost = Decimal("0")
     research_available = True
-    for operation in (
-        "ranked_keywords_live",
-        "keyword_ideas_live",
-        "google_ads_search_volume_live",
+    for operation, quantity in (
+        ("ranked_keywords_live", 1 + MAX_COMPETITOR_DOMAINS_PER_REFRESH),
+        ("keyword_ideas_live", 1),
+        ("google_ads_search_volume_live", 1),
     ):
         try:
             card = _find_price_card(
@@ -1057,7 +1058,7 @@ def _customer_action_prices(db: Session, *, now: datetime) -> list[dict[str, Any
             break
         research_cost += _estimate_cost(
             card,
-            quantity=Decimal("1"),
+            quantity=Decimal(quantity),
             input_tokens=None,
             cached_input_tokens=None,
             output_tokens=None,
@@ -1067,7 +1068,10 @@ def _customer_action_prices(db: Session, *, now: datetime) -> list[dict[str, Any
             {
                 "code": "keyword_research_refresh",
                 "label": "Refresh customer search ideas",
-                "result": "Updates rankings, related searches, and local demand for one location.",
+                "result": (
+                    "Updates rankings, related searches, local demand, and up to three "
+                    "saved competitor domains for one location."
+                ),
                 "credits": _credits_for_cost(research_cost),
                 "price_type": "up_to",
             }

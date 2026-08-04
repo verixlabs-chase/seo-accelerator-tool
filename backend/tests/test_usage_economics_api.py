@@ -37,6 +37,10 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
         "ranking_check",
         "keyword_relevance_review",
     }
+    research_price = next(
+        item for item in data["action_prices"] if item["code"] == "keyword_research_refresh"
+    )
+    assert "up to three saved competitor domains" in research_price["result"]
     serialized = str(data).lower()
     assert "currency" not in serialized
     assert "monthly_revenue" not in serialized

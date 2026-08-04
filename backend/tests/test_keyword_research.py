@@ -4,6 +4,7 @@ from decimal import Decimal
 import httpx
 
 from app.models.campaign import Campaign
+from app.models.competitor import Competitor
 from app.models.keyword_research import (
     KeywordRelevanceFeedback,
     KeywordResearchRun,
@@ -65,6 +66,51 @@ class FakeKeywordResearchProvider:
             ],
             "cost": Decimal("0.06"),
         }
+
+
+class FakeCompetitorKeywordProvider:
+    def __init__(self) -> None:
+        self.ranked_targets: list[str] = []
+
+    def ranked_keywords(self, **kwargs):  # noqa: ANN003
+        target = kwargs["target"]
+        self.ranked_targets.append(target)
+        if target == "junk.example":
+            return {"items": [], "cost": Decimal("0.02")}
+        assert target == "trusted-competitor.example"
+        return {
+            "items": [
+                {
+                    "keyword_data": {
+                        "keyword": "trash hauling reno",
+                        "keyword_info": {"search_volume": 140, "cpc": 8.25},
+                        "keyword_properties": {"keyword_difficulty": 27},
+                    },
+                    "ranked_serp_element": {
+                        "serp_item": {
+                            "rank_absolute": 4,
+                            "url": "https://trusted-competitor.example/trash-hauling-reno",
+                        }
+                    },
+                },
+                {
+                    "keyword_data": {
+                        "keyword": "the biggest little city",
+                        "keyword_info": {"search_volume": 900},
+                    },
+                    "ranked_serp_element": {
+                        "serp_item": {"rank_absolute": 2}
+                    },
+                },
+            ],
+            "cost": Decimal("0.02"),
+        }
+
+    def keyword_ideas(self, **_kwargs):  # noqa: ANN003
+        return {"items": [], "cost": Decimal("0.01")}
+
+    def search_volume(self, **_kwargs):  # noqa: ANN003
+        return {"items": [], "cost": Decimal("0.01")}
 
 
 def test_provider_uses_current_endpoints_and_resolved_location_code() -> None:
@@ -421,6 +467,68 @@ def test_discovery_scores_real_sources_and_promotes_selected_searches(
     assert db_session.query(KeywordResearchRun).filter(
         KeywordResearchRun.campaign_id == campaign.id
     ).count() == 1
+
+
+def test_discovery_adds_saved_competitor_gaps_without_overwriting_customer_position(
+    db_session,
+    create_test_org,
+) -> None:
+    organization = create_test_org(name="Competitor Keyword Org")
+    campaign = Campaign(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        name="Junk Removal Shop",
+        domain="junk.example",
+        setup_state="Active",
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    business_service_service.add_manual_service(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        name="Junk Removal",
+    )
+    competitor = Competitor(
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        domain="https://trusted-competitor.example/",
+        label="Trusted Haulers",
+    )
+    db_session.add(competitor)
+    db_session.commit()
+
+    provider = FakeCompetitorKeywordProvider()
+    payload = keyword_research_service.discover(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        max_suggestions=25,
+        provider=provider,
+    )
+
+    assert provider.ranked_targets == ["junk.example", "trusted-competitor.example"]
+    assert "competitor_rankings" in payload["run"]["sources"]
+    gap = next(item for item in payload["items"] if item["keyword"] == "trash hauling reno")
+    assert gap["current_position"] is None
+    assert gap["relevance_status"] == "needs_review"
+    assert gap["recommended_action"] == "Review this competitor gap"
+    assert gap["competitor_evidence"] == [
+        {
+            "competitor_id": competitor.id,
+            "domain": "trusted-competitor.example",
+            "label": "Trusted Haulers",
+            "position": 4.0,
+            "url": "https://trusted-competitor.example/trash-hauling-reno",
+            "observed_at": gap["competitor_evidence"][0]["observed_at"],
+        }
+    ]
+    unrelated = next(
+        item for item in payload["items"] if item["keyword"] == "the biggest little city"
+    )
+    assert unrelated["relevance_status"] == "unrelated"
+    assert unrelated["search_volume"] == 900
+    assert unrelated["recommended_action"] == "Keep this hidden"
 
 
 def test_owner_relevance_choice_is_audited_and_survives_future_refreshes(

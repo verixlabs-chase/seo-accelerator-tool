@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.competitor import Competitor
 from app.models.crawl import CrawlPageResult, Page
 from app.models.data_connection import DataConnection
 from app.models.keyword_research import (
@@ -22,7 +23,10 @@ from app.models.keyword_research import (
 from app.models.rank import CampaignKeyword
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_search_console import SearchConsoleProviderAdapter
-from app.providers.keyword_research import DataForSeoKeywordResearchProvider
+from app.providers.keyword_research import (
+    MAX_COMPETITOR_DOMAINS_PER_REFRESH,
+    DataForSeoKeywordResearchProvider,
+)
 from app.services import rank_service
 from app.services import business_service_service
 from app.services import business_service_area_service
@@ -239,6 +243,7 @@ def discover(
                 run_id=run.id,
                 credential_owner=credential_owner,
                 operation=RANKED_OPERATION,
+                idempotency_scope="customer-site",
                 call=lambda: live_provider.ranked_keywords(
                     target=target,
                     location_name=location_name,
@@ -340,6 +345,61 @@ def discover(
                 sources.add("dataforseo_volume")
         except (CostEconomicsError, ValueError) as exc:
             warnings.append(_plain_provider_warning(exc, "local search demand"))
+
+    competitors = (
+        db.query(Competitor)
+        .filter(
+            Competitor.tenant_id == tenant_id,
+            Competitor.campaign_id == campaign_id,
+        )
+        .order_by(Competitor.created_at.asc(), Competitor.id.asc())
+        .limit(MAX_COMPETITOR_DOMAINS_PER_REFRESH)
+        .all()
+    )
+    competitor_failures = 0
+    if live_provider is not None and confirmed_services and competitors:
+        per_competitor_limit = max(10, min(40, max_suggestions // len(competitors)))
+        for competitor in competitors:
+            competitor_target = _domain(competitor.domain)
+            if not competitor_target or competitor_target == target:
+                continue
+            try:
+                result = _run_provider_call(
+                    db,
+                    campaign=campaign,
+                    run_id=run.id,
+                    credential_owner=credential_owner,
+                    operation=RANKED_OPERATION,
+                    idempotency_scope=f"competitor-{competitor.id}",
+                    call=lambda competitor_target=competitor_target: live_provider.ranked_keywords(
+                        target=competitor_target,
+                        location_name=location_name,
+                        language_code="en",
+                        limit=per_competitor_limit,
+                    ),
+                )
+                competitor_items = list(result.get("items", []))
+                provider_cost += Decimal(str(result.get("cost", 0) or 0))
+                for provider_item in competitor_items:
+                    parsed = _parse_competitor_labs_item(
+                        provider_item,
+                        competitor=competitor,
+                        observed_at=resolved_now,
+                    )
+                    _merge_candidate(
+                        candidates,
+                        source="competitor_rankings",
+                        **parsed,
+                    )
+                if competitor_items:
+                    sources.add("competitor_rankings")
+            except (CostEconomicsError, ValueError):
+                competitor_failures += 1
+    if competitor_failures:
+        warnings.append(
+            "Some saved competitor search opportunities could not be refreshed. "
+            "The available business and market data is still shown."
+        )
 
     scored = [
         _score_candidate(
@@ -667,6 +727,7 @@ def _run_provider_call(
     run_id: str,
     credential_owner: str | None,
     operation: str,
+    idempotency_scope: str | None = None,
     call: Callable[[], dict[str, Any]],
 ) -> dict[str, Any]:
     if credential_owner is None:
@@ -682,7 +743,11 @@ def _run_provider_call(
         operation=operation,
         credential_owner=credential_owner,
         quantity=1,
-        idempotency_key=f"keyword-research:{run_id}:{operation}",
+        idempotency_key=(
+            f"keyword-research:{run_id}:{operation}:{idempotency_scope}"
+            if idempotency_scope
+            else f"keyword-research:{run_id}:{operation}"
+        ),
     )
     try:
         result = call()
@@ -766,6 +831,28 @@ def _merge_candidate(
             current[key] = bool(current.get(key)) or bool(value)
         elif key == "monthly_searches":
             current[key] = value
+        elif key == "competitor_evidence":
+            existing = current.setdefault(key, [])
+            seen = {
+                (
+                    str(row.get("competitor_id") or ""),
+                    str(row.get("url") or ""),
+                    row.get("position"),
+                )
+                for row in existing
+                if isinstance(row, dict)
+            }
+            for row in value:
+                if not isinstance(row, dict):
+                    continue
+                marker = (
+                    str(row.get("competitor_id") or ""),
+                    str(row.get("url") or ""),
+                    row.get("position"),
+                )
+                if marker not in seen:
+                    existing.append(row)
+                    seen.add(marker)
         elif current.get(key) in (None, "", 0):
             current[key] = value
         elif key in {"search_volume", "gsc_clicks", "gsc_impressions"}:
@@ -810,6 +897,28 @@ def _parse_volume_item(item: dict[str, Any]) -> dict[str, Any]:
         "competition_level": _text(item.get("competition_level")),
         "monthly_searches": item.get("monthly_searches", []),
     }
+
+
+def _parse_competitor_labs_item(
+    item: dict[str, Any],
+    *,
+    competitor: Competitor,
+    observed_at: datetime,
+) -> dict[str, Any]:
+    parsed = _parse_labs_item(item)
+    competitor_position = parsed.pop("current_position", None)
+    competitor_url = parsed.pop("ranked_url", None)
+    parsed["competitor_evidence"] = [
+        {
+            "competitor_id": competitor.id,
+            "domain": _domain(competitor.domain),
+            "label": _text(competitor.label),
+            "position": competitor_position,
+            "url": competitor_url,
+            "observed_at": observed_at.isoformat(),
+        }
+    ]
+    return parsed
 
 
 def _choose_seeds(
@@ -881,6 +990,11 @@ def _score_candidate(
     effective_position = position or gsc_position
     volume = int(item.get("search_volume") or 0)
     impressions = float(item.get("gsc_impressions") or 0)
+    competitor_evidence = [
+        row
+        for row in item.get("competitor_evidence", [])
+        if isinstance(row, dict) and row.get("domain")
+    ][:MAX_COMPETITOR_DOMAINS_PER_REFRESH]
 
     city = ((location.city or location.primary_city) if location else None) or ""
     services = confirmed_services or []
@@ -979,6 +1093,11 @@ def _score_candidate(
         position_points = 5
         action = "Keep tracking this search"
         reason = "This search is already in your ranking watch list."
+    elif relevance_status == "unrelated":
+        opportunity_group = "new_opportunity"
+        position_points = 0
+        action = "Keep this hidden"
+        reason = relevance_reason
     elif effective_position and effective_position <= 3:
         opportunity_group = "already_found"
         position_points = 10
@@ -994,6 +1113,18 @@ def _score_candidate(
         position_points = 20
         action = "Track this search"
         reason = "Google already shows your website for this search, but it is not near the top yet."
+    elif competitor_evidence:
+        opportunity_group = "new_opportunity"
+        position_points = 26
+        action = (
+            "Track this competitor opportunity"
+            if relevance_status == "relevant"
+            else "Review this competitor gap"
+        )
+        competitor_name = competitor_evidence[0].get("label") or competitor_evidence[0]["domain"]
+        reason = (
+            f"{competitor_name} appears for this search, while your business is not showing yet."
+        )
     else:
         opportunity_group = "new_opportunity"
         position_points = 24
@@ -1027,6 +1158,7 @@ def _score_candidate(
                 business_service_service.SERVICE_MATCH_RULES_VERSION
             ),
             "ranked_url": _text(item.get("ranked_url")),
+            "competitors": competitor_evidence,
         },
         "intent": intent,
         "opportunity_group": opportunity_group,
@@ -1311,6 +1443,11 @@ def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
         "recommendation_reason": item.recommendation_reason,
         "evidence": evidence,
         "owner_feedback": evidence.get("owner_feedback"),
+        "competitor_evidence": (
+            evidence.get("competitors")
+            if isinstance(evidence.get("competitors"), list)
+            else []
+        ),
         "tracked_at": item.tracked_at.isoformat() if item.tracked_at else None,
         "source_updated_at": item.source_updated_at.isoformat() if item.source_updated_at else None,
     }
