@@ -194,7 +194,7 @@ def discover(
             live_provider = DataForSeoKeywordResearchProvider(login=login, password=password)
         except ProviderCredentialConfigurationError:
             warnings.append(
-                "Connect DataForSEO to add local demand, competition, and discovery data."
+                "Connect the market research source to add local demand and competition data."
             )
 
     target = _domain(campaign.domain)
@@ -724,7 +724,7 @@ def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
 def _plain_provider_warning(exc: Exception, label: str) -> str:
     if isinstance(exc, CostEconomicsError):
         return f"{label.capitalize()} were skipped because this account's data allowance or price setup needs attention."
-    return f"DataForSEO could not refresh {label}. Other connected sources were still used."
+    return f"Fresh {label} are temporarily unavailable. Saved search data is still shown."
 
 
 def _domain(value: str) -> str:

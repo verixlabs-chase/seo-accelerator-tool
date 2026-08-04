@@ -411,7 +411,7 @@ export default function RankingsPage() {
   async function connectDataForSeo(event: FormEvent) {
     event.preventDefault();
     if (!me?.organization_id || !providerLogin.trim() || !providerPassword) {
-      setError("DataForSEO login and password are required.");
+      setError("The search data login and password are required.");
       return;
     }
     setBusyAction("provider");
@@ -437,9 +437,9 @@ export default function RankingsPage() {
         selectedCampaignId ? loadTrends(selectedCampaignId) : Promise.resolve(),
         loadPortfolio(),
       ]);
-      setNotice("DataForSEO credentials saved securely. You can run the first live check now.");
+      setNotice("Search data connection saved securely. You can run the first live check now.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save DataForSEO credentials.");
+      setError(err instanceof Error ? err.message : "Unable to save the search data connection.");
     } finally {
       setBusyAction("");
     }
@@ -1261,7 +1261,7 @@ export default function RankingsPage() {
                   Search data connection
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  Connect DataForSEO
+                  Connect search data
                 </h2>
                 <p className="mt-1.5 text-sm leading-6 text-zinc-300">
                   Credentials are encrypted for this organization and never returned to the browser.

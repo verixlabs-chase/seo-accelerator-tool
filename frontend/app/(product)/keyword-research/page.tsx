@@ -264,9 +264,9 @@ export default function KeywordResearchPage() {
         />
 
         <TruthNotice title="Demand is an estimate, not a promise of new jobs.">
-          Search demand comes from DataForSEO. Existing visibility comes from Search Console and
-          live ranking data. Confirm that a search matches a service you actually sell before you
-          track it.
+          Demand comes from connected market research. Existing visibility comes from your Google
+          search history and live ranking checks. Confirm that a search matches a service you
+          actually sell before you track it.
         </TruthNotice>
 
         {loading || loadingLocations ? (
@@ -306,8 +306,8 @@ export default function KeywordResearchPage() {
                 Find real searches without building a list by hand
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
-                InsightOS will combine your website, location, Search Console history, current
-                rankings, and DataForSEO demand data. You only decide which services are relevant.
+                InsightOS will combine your website, location, Google search history, current
+                rankings, and trusted market demand data. You only decide which services are relevant.
               </p>
             </div>
             <button
@@ -366,12 +366,13 @@ export default function KeywordResearchPage() {
 
             {data.run.warnings.length ? (
               <section className="rounded-md border border-amber-500/20 bg-amber-500/8 p-4">
-                <p className="text-sm font-semibold text-amber-100">Some data could not be refreshed</p>
-                <ul className="mt-2 space-y-1 text-sm text-amber-50/80">
-                  {data.run.warnings.map((warning) => (
-                    <li key={warning}>• {warning}</li>
-                  ))}
-                </ul>
+                <p className="text-sm font-semibold text-amber-100">
+                  Fresh market data needs another try
+                </p>
+                <p className="mt-2 text-sm text-amber-50/80">
+                  Your saved rankings are still shown. Try Refresh search ideas again in a few
+                  minutes.
+                </p>
               </section>
             ) : null}
 

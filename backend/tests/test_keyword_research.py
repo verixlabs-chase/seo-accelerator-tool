@@ -1,8 +1,12 @@
+import json
 from decimal import Decimal
+
+import httpx
 
 from app.models.campaign import Campaign
 from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion
 from app.models.rank import CampaignKeyword
+from app.providers.keyword_research import DataForSeoKeywordResearchProvider
 from app.services import keyword_research_service
 
 
@@ -57,6 +61,83 @@ class FakeKeywordResearchProvider:
             ],
             "cost": Decimal("0.06"),
         }
+
+
+def test_provider_uses_current_endpoints_and_canonical_location_format() -> None:
+    requests: list[tuple[str, list[dict]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        requests.append((request.url.path, payload))
+        if request.url.path.endswith("/search_volume/live"):
+            result: list[dict] = []
+        else:
+            result = [{"items": []}]
+        return httpx.Response(
+            200,
+            json={
+                "tasks": [
+                    {
+                        "status_code": 20000,
+                        "status_message": "Ok.",
+                        "cost": 0.01,
+                        "result": result,
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider = DataForSeoKeywordResearchProvider(
+        login="test-login",
+        password="test-password",
+        client=client,
+    )
+    try:
+        provider.ranked_keywords(
+            target="example.com",
+            location_name="Reno, Nevada, United States",
+            language_code="en",
+            limit=25,
+        )
+        provider.keyword_ideas(
+            keywords=["junk removal"],
+            location_name="Reno, Nevada, United States",
+            language_code="en",
+            limit=25,
+        )
+        provider.search_volume(
+            keywords=["junk removal reno"],
+            location_name="Reno, Nevada, United States",
+            language_code="en",
+        )
+    finally:
+        client.close()
+
+    assert [path for path, _payload in requests] == [
+        "/v3/dataforseo_labs/google/ranked_keywords/live",
+        "/v3/dataforseo_labs/google/keyword_ideas/live",
+        "/v3/keywords_data/google/search_volume/live",
+    ]
+    assert all(
+        payload[0]["location_name"] == "Reno,Nevada,United States"
+        for _path, payload in requests
+    )
+    ideas_payload = requests[1][1][0]
+    assert "include_seed_keyword" not in ideas_payload
+    assert ideas_payload["order_by"] == ["keyword_info.search_volume,desc"]
+
+
+def test_provider_warning_is_customer_safe() -> None:
+    warning = keyword_research_service._plain_provider_warning(
+        ValueError("DataForSEO internal provider detail"),
+        "ranked searches",
+    )
+
+    assert "DataForSEO" not in warning
+    assert warning == (
+        "Fresh ranked searches are temporarily unavailable. Saved search data is still shown."
+    )
 
 
 def _login(client, email: str, password: str) -> str:

@@ -272,7 +272,7 @@ class DataForSeoRankProvider:
     def collect_keyword_snapshot(self, keyword: str, location_code: str, target_domain: str | None = None) -> dict:
         target_host = self._normalize_domain(target_domain)
         if not target_host:
-            raise ValueError("DataForSEO rank provider requires target_domain.")
+            raise ValueError("The ranking data connection requires a website domain.")
         credential = base64.b64encode(f"{self.login}:{self.password}".encode("utf-8")).decode("ascii")
         headers = {
             "Authorization": f"Basic {credential}",
@@ -302,19 +302,19 @@ class DataForSeoRankProvider:
                 if attempt < 2:
                     time.sleep(0.25 * (2**attempt))
         if response is None:
-            raise ValueError("DataForSEO request failed after retries.")
+            raise ValueError("The ranking data request failed after several tries.")
         response.raise_for_status()
         body = response.json()
         tasks = body.get("tasks", []) if isinstance(body, dict) else []
         if not tasks or not isinstance(tasks[0], dict):
-            raise ValueError("DataForSEO response is missing task results.")
+            raise ValueError("The ranking data response is missing results.")
         task = tasks[0]
         task_cost = task.get("cost")
         if task_cost is None and isinstance(body, dict):
             task_cost = body.get("cost")
         task_status = int(task.get("status_code", 0) or 0)
         if task_status and task_status >= 30000:
-            raise ValueError(str(task.get("status_message") or "DataForSEO task failed."))
+            raise ValueError("The ranking data request could not be completed.")
         results = task.get("result", [])
         result = results[0] if isinstance(results, list) and results and isinstance(results[0], dict) else {}
         items = result.get("items", []) if isinstance(result, dict) else []
@@ -374,7 +374,7 @@ def get_rank_provider_for_organization(db: Session, organization_id: str) -> Ran
         login = str(resolved.get("login", "")).strip()
         password = str(resolved.get("password", "")).strip()
         if not login or not password:
-            raise ValueError("DataForSEO requires configured login and password.")
+            raise ValueError("The ranking data connection requires a login and password.")
         return DataForSeoRankProvider(
             login=login,
             password=password,

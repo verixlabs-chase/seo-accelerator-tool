@@ -25,7 +25,7 @@ class DataForSeoKeywordResearchProvider:
         self.timeout_seconds = timeout_seconds
         self._client = client
         if not self.login or not self.password:
-            raise ValueError("DataForSEO login and API password are required.")
+            raise ValueError("Search data login and API password are required.")
 
     def ranked_keywords(
         self,
@@ -40,7 +40,7 @@ class DataForSeoKeywordResearchProvider:
             [
                 {
                     "target": target,
-                    "location_name": location_name,
+                    "location_name": _normalize_location_name(location_name),
                     "language_code": language_code,
                     "limit": max(1, min(limit, 1000)),
                     "order_by": ["keyword_data.keyword_info.search_volume,desc"],
@@ -68,11 +68,10 @@ class DataForSeoKeywordResearchProvider:
             [
                 {
                     "keywords": clean_keywords,
-                    "location_name": location_name,
+                    "location_name": _normalize_location_name(location_name),
                     "language_code": language_code,
                     "limit": max(1, min(limit, 1000)),
-                    "include_seed_keyword": True,
-                    "order_by": ["keyword_data.keyword_info.search_volume,desc"],
+                    "order_by": ["keyword_info.search_volume,desc"],
                 }
             ],
         )
@@ -92,11 +91,11 @@ class DataForSeoKeywordResearchProvider:
         if not clean_keywords:
             return {"items": [], "cost": Decimal("0")}
         body = self._post(
-            "/keywords_data/google_ads/search_volume/live",
+            "/keywords_data/google/search_volume/live",
             [
                 {
                     "keywords": clean_keywords,
-                    "location_name": location_name,
+                    "location_name": _normalize_location_name(location_name),
                     "language_code": language_code,
                 }
             ],
@@ -136,17 +135,17 @@ class DataForSeoKeywordResearchProvider:
             raise ValueError("Keyword data provider could not be reached.") from exc
 
         if response.status_code in {401, 403}:
-            raise ValueError("DataForSEO credentials were not accepted.")
+            raise ValueError("Search data credentials were not accepted.")
         if response.status_code == 429:
-            raise ValueError("DataForSEO is temporarily rate limited. Try again shortly.")
+            raise ValueError("The search data service is busy. Try again shortly.")
         if response.status_code >= 400:
-            raise ValueError(f"DataForSEO request failed with status {response.status_code}.")
+            raise ValueError(f"Search data request failed with status {response.status_code}.")
         try:
             body = response.json()
         except ValueError as exc:
-            raise ValueError("DataForSEO returned an unreadable response.") from exc
+            raise ValueError("The search data service returned an unreadable response.") from exc
         if not isinstance(body, dict):
-            raise ValueError("DataForSEO returned an unexpected response.")
+            raise ValueError("The search data service returned an unexpected response.")
         _raise_task_error(body)
         return body
 
@@ -156,14 +155,20 @@ def _tasks(body: dict[str, Any]) -> list[dict[str, Any]]:
     return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
+def _normalize_location_name(value: str) -> str:
+    """Match the provider's canonical City,Region,Country location format."""
+    parts = [part.strip() for part in str(value or "").split(",") if part.strip()]
+    return ",".join(parts) if parts else str(value or "").strip()
+
+
 def _raise_task_error(body: dict[str, Any]) -> None:
     tasks = _tasks(body)
     if not tasks:
-        raise ValueError("DataForSEO returned no task result.")
+        raise ValueError("The search data service returned no task result.")
     failures = [task for task in tasks if int(task.get("status_code", 0) or 0) >= 40000]
     if failures:
         message = str(failures[0].get("status_message", "Provider task failed."))
-        raise ValueError(f"DataForSEO could not complete keyword discovery: {message}")
+        raise ValueError(f"The search data service could not complete keyword discovery: {message}")
 
 
 def _task_cost(body: dict[str, Any]) -> Decimal:

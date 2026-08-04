@@ -391,7 +391,7 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
         raise HTTPException(
             status_code=exc.status_code,
             detail={
-                "message": str(exc),
+                "message": "Connect the search data source before running a live check.",
                 "reason_code": exc.reason_code,
             },
         ) from exc
@@ -421,7 +421,10 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
         except ProviderCredentialConfigurationError as exc:
             raise HTTPException(
                 status_code=exc.status_code,
-                detail={"message": str(exc), "reason_code": exc.reason_code},
+                detail={
+                    "message": "Connect the search data source before running a live check.",
+                    "reason_code": exc.reason_code,
+                },
             ) from exc
         depth = int(getattr(settings, "rank_provider_dataforseo_depth", 100))
         provider_cost_identity = (
@@ -443,7 +446,10 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
         except ProviderCredentialConfigurationError as exc:
             raise HTTPException(
                 status_code=exc.status_code,
-                detail={"message": str(exc), "reason_code": exc.reason_code},
+                detail={
+                    "message": "Connect the search data source before running a live check.",
+                    "reason_code": exc.reason_code,
+                },
             ) from exc
         provider_cost_identity = (
             provider_backend,

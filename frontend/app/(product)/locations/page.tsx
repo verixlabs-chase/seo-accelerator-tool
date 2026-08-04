@@ -842,7 +842,7 @@ export default function LocationsPage() {
                               <div>
                                 <p className="text-sm font-semibold text-white">Map search area</p>
                                 <p className="mt-1 text-xs leading-5 text-zinc-500">
-                                  City, state/region, and country drive automatic DataForSEO matching. Coordinates may be left blank and resolved from Local Visibility.
+                                  City, state/region, and country match this business to the right local search area. Coordinates may be left blank and resolved from Local Visibility.
                                 </p>
                               </div>
                               <button
@@ -947,8 +947,8 @@ export default function LocationsPage() {
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                               <p className="text-xs text-zinc-500">
                                 {location.provider_location_name
-                                  ? `DataForSEO: ${location.provider_location_name} (${location.provider_location_code})`
-                                  : "DataForSEO location has not been resolved yet."}
+                                  ? `Search area: ${location.provider_location_name} (${location.provider_location_code})`
+                                  : "The local search area has not been matched yet."}
                               </p>
                               <button
                                 className={primaryButtonClass}

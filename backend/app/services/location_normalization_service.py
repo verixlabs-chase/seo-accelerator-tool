@@ -158,7 +158,7 @@ def normalize_campaign_location(
             {
                 "target": "provider_location",
                 "status": "already_resolved",
-                "message": "Stored DataForSEO location was kept.",
+                "message": "The saved local search area was kept.",
             }
         )
 
@@ -275,7 +275,7 @@ def _resolve_dataforseo_location(
     if not city or not region:
         return {
             "status": "missing_input",
-            "message": "Add both city and state/region before resolving DataForSEO.",
+            "message": "Add both city and state/region before matching the local search area.",
         }
     try:
         credentials = resolve_provider_credentials(
@@ -284,17 +284,17 @@ def _resolve_dataforseo_location(
             "dataforseo",
             required_credential_mode="byo_optional",
         )
-    except ProviderCredentialConfigurationError as exc:
+    except ProviderCredentialConfigurationError:
         return {
             "status": "credentials_missing",
-            "message": str(exc),
+            "message": "Connect the search data source before matching the local search area.",
         }
     login = str(credentials.get("login", "")).strip()
     password = str(credentials.get("password", "")).strip()
     if not login or not password:
         return {
             "status": "credentials_missing",
-            "message": "Connect DataForSEO before resolving its location identifier.",
+            "message": "Connect the search data source before matching the local search area.",
         }
 
     credential = base64.b64encode(f"{login}:{password}".encode("utf-8")).decode("ascii")
@@ -314,7 +314,7 @@ def _resolve_dataforseo_location(
     except (httpx.HTTPError, ValueError, TypeError):
         return {
             "status": "unavailable",
-            "message": "DataForSEO location metadata is temporarily unavailable.",
+            "message": "Local search area data is temporarily unavailable.",
         }
     rows = _dataforseo_result_rows(body)
     match = _select_dataforseo_location(
@@ -326,11 +326,11 @@ def _resolve_dataforseo_location(
     if match is None:
         return {
             "status": "not_found",
-            "message": "DataForSEO did not return an exact city and state/region match.",
+            "message": "No exact city and state/region match was found.",
         }
     return {
         "status": "resolved",
-        "message": "DataForSEO location name and code were resolved and cached.",
+        "message": "The local search area was matched and saved.",
         **match,
     }
 
