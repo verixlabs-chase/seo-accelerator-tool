@@ -22,7 +22,7 @@ class DataForSeoKeywordResearchProvider:
         *,
         login: str,
         password: str,
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 45.0,
         client: httpx.Client | None = None,
     ) -> None:
         self.login = login.strip()
@@ -39,14 +39,13 @@ class DataForSeoKeywordResearchProvider:
         location_name: str,
         language_code: str,
         limit: int,
-        location_code: str | int | None = None,
     ) -> dict[str, Any]:
         body = self._post(
             "/dataforseo_labs/google/ranked_keywords/live",
             [
                 {
                     "target": target,
-                    **_location_target(location_name, location_code),
+                    "location_name": _country_location_name(location_name),
                     "language_code": language_code,
                     "limit": max(1, min(limit, 1000)),
                     "order_by": ["keyword_data.keyword_info.search_volume,desc"],
@@ -65,7 +64,6 @@ class DataForSeoKeywordResearchProvider:
         location_name: str,
         language_code: str,
         limit: int,
-        location_code: str | int | None = None,
     ) -> dict[str, Any]:
         clean_keywords = [clean for clean, _original in _provider_keywords(keywords, limit=200)]
         if not clean_keywords:
@@ -75,7 +73,7 @@ class DataForSeoKeywordResearchProvider:
             [
                 {
                     "keywords": clean_keywords,
-                    **_location_target(location_name, location_code),
+                    "location_name": _country_location_name(location_name),
                     "language_code": language_code,
                     "limit": max(1, min(limit, 1000)),
                     "order_by": ["keyword_info.search_volume,desc"],
@@ -178,6 +176,12 @@ def _normalize_location_name(value: str) -> str:
     """Match the provider's canonical City, Region, Country location format."""
     parts = [part.strip() for part in str(value or "").split(",") if part.strip()]
     return ", ".join(parts) if parts else str(value or "").strip()
+
+
+def _country_location_name(value: str) -> str:
+    normalized = _normalize_location_name(value)
+    parts = [part.strip() for part in normalized.split(",") if part.strip()]
+    return parts[-1] if parts else normalized
 
 
 def _location_target(
