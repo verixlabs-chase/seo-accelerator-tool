@@ -1,0 +1,58 @@
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy.orm import Session
+
+from app.api.deps import require_roles
+from app.api.response import envelope
+from app.db.session import get_db
+from app.schemas.keyword_research import KeywordResearchDiscoverIn, KeywordResearchTrackIn
+from app.services import keyword_research_service
+
+
+router = APIRouter(prefix="/keyword-research", tags=["keyword-research"])
+
+
+@router.get("")
+def get_keyword_research(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = keyword_research_service.get_latest(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@router.post("/discover")
+def discover_keywords(
+    request: Request,
+    body: KeywordResearchDiscoverIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = keyword_research_service.discover(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        max_suggestions=body.max_suggestions,
+    )
+    return envelope(request, payload)
+
+
+@router.post("/track")
+def track_keyword_suggestions(
+    request: Request,
+    body: KeywordResearchTrackIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = keyword_research_service.track_suggestions(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        suggestion_ids=body.suggestion_ids,
+    )
+    return envelope(request, payload)

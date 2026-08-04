@@ -40,6 +40,7 @@ from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVe
 from app.models.learning_metric_snapshot import LearningMetricSnapshot  # noqa: F401
 from app.models.learning_report import LearningReport  # noqa: F401
 from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode  # noqa: F401
+from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion  # noqa: F401
 from app.models.organization import Organization  # noqa: F401
 from app.models.industry_intelligence import IndustryIntelligenceModel  # noqa: F401
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState  # noqa: F401
@@ -151,6 +152,8 @@ def _verify_required_tables(database_url: str) -> None:
             "action_plan_steps",
             "action_plan_measurements",
             "action_plan_forecasts",
+            "keyword_research_runs",
+            "keyword_research_suggestions",
             "auth_sessions",
             "crawl_runs",
             "strategy_cohort_patterns",

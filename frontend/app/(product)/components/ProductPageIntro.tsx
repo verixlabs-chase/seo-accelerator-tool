@@ -14,6 +14,8 @@ type ProductPageIntroProps = {
 const START_HERE_BY_PATH: Record<string, string> = {
   "/dashboard": "Read what changed, take the one next action, then compare the Google results below.",
   "/rankings": "Check the biggest drop first. Use the location menu above to switch businesses.",
+  "/keyword-research":
+    "Review the best opportunities first. Track only the searches that match work you want.",
   "/local-visibility":
     "Start with map position and recent reviews, then follow the suggested next step.",
   "/site-health": "Start with the first red or amber item. The technical details can wait.",
@@ -35,6 +37,7 @@ const START_HERE_BY_PATH: Record<string, string> = {
 const PAGE_ICON_BY_PATH: Record<string, ProductIconName> = {
   "/dashboard": "overview",
   "/rankings": "rankings",
+  "/keyword-research": "keyword-research",
   "/local-visibility": "local-search",
   "/site-health": "website-health",
   "/opportunities": "next-steps",

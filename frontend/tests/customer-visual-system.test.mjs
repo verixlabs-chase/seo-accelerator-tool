@@ -74,6 +74,7 @@ test("every customer route has an original navigation and page-heading icon", ()
   const routeIcons = [
     "overview",
     "rankings",
+    "keyword-research",
     "local-search",
     "website-health",
     "next-steps",

@@ -22,6 +22,7 @@ from app.api.v1 import (
     intelligence_metrics,
     intelligence_simulations,
     internal_jobs,
+    keyword_research,
     local,
     locations,
     onboarding,
@@ -55,6 +56,7 @@ if settings.app_env.lower() != 'production':
 tenant_api_router.include_router(entity.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
 tenant_api_router.include_router(rank.router)
+tenant_api_router.include_router(keyword_research.router)
 tenant_api_router.include_router(competitors.router)
 tenant_api_router.include_router(content.content_router)
 tenant_api_router.include_router(content.internal_links_router)

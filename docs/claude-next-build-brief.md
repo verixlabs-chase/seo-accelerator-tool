@@ -26,8 +26,13 @@
 > wording, and owners can ask bounded questions whose answers cite only saved
 > location evidence and allowed actions. Owners can also create review-only
 > search-result wording, review requests, review responses, and page outlines
-> for supported saved actions. The next customer sprint is **MKT1.1: Automated
-> Local Keyword Discovery**. **I1.4/T29: Measured Website and Google
+> for supported saved actions. **MKT1.1: Automated Local Keyword Discovery is
+> now in progress.** Its first slice adds durable, location-scoped discovery
+> from DataForSEO, Search Console, and tracked searches, plain-language
+> opportunity grouping, demand visualization, and one-click promotion into
+> Search Rankings. Service clustering, competitor expansion, target-page
+> mapping, and downstream content/profile actions remain in this sprint.
+> **I1.4/T29: Measured Website and Google
 > Business Profile Action Tracks** is now scheduled after G1.4 connects live
 > profile performance data. It will show the real metric each action is meant
 > to move, the starting value, the waiting period, and the measured result
@@ -69,8 +74,9 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 
 > **Execution status (2026-08-03):** UX5-UX9 established the working customer
 > baseline, UX10 established the shared plain-language and visual system, and
-> UX11-UX12 completed the owner-journey and cross-page rollout. The next
-> customer product phase begins with MKT1.1 automated local keyword discovery.
+> UX11-UX12 completed the owner-journey and cross-page rollout. MKT1.1 automated
+> local keyword discovery is now in progress; the durable discovery, evidence,
+> visualization, and tracking-promotion slice is implemented.
 > I1.4/T29 follows G1.4's
 > live Google Business Profile metric connection. Recommendation-only
 > intelligence remains enabled; autonomous customer-site mutations and
@@ -472,7 +478,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 10 | **I1.4/T27 - Action Measurement Readiness — completed** | Starting measurements, completed-work proof, success measurements, and honest waiting periods make a checked box different from a proven result. |
 | 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling — completed** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
 | 12 | **I1.3 - Governed AI Utility Expansion — completed** | The daily brief, cited evidence Q&A, and review-only drafting use one metered gateway while the deterministic engine keeps action authority. |
-| 13 | **MKT1.1 - Automated Local Keyword Discovery** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
+| 13 | **MKT1.1 - Automated Local Keyword Discovery — in progress** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
 | 14 | **G1.3A - Customer Usage Credits** | Customers see simple Insight Credits instead of the platform's internal monthly dollar budget, while cost accounting still protects the 85% software-usage margin. |
 | 15 | **VAL1 - Research-Backed Search Value** | Search Value uses current location-specific market research and measured Search Console behavior to show a traceable paid-search replacement-cost range rather than a subjective dollar guess. |
 | 16 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
@@ -1767,6 +1773,22 @@ Acceptance criteria:
 
 Goal: replace the Semrush research workflows a local service business actually
 needs.
+
+Implementation status (2026-08-03):
+
+- The first slice is implemented with immutable location-scoped research runs
+  and suggestions, tenant/organization row-level security, and versioned
+  DataForSEO cost cards.
+- Connected Search Console queries, existing tracked searches, DataForSEO Labs
+  ranked terms and ideas, and Keywords Data demand are merged without requiring
+  a hand-built starting list.
+- The customer page shows demand, current visibility, intent, source detail,
+  deterministic opportunity groups, a demand chart, and one-click promotion
+  into Search Rankings.
+- Remaining MKT1.1 work: service/problem/location clusters, competitor-domain
+  expansion, historical trend comparisons, target-page mapping, map visibility,
+  and conversion into content briefs, profile actions, or governed
+  opportunities.
 
 Scope:
 

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 export type ProductIconName =
   | "overview"
   | "rankings"
+  | "keyword-research"
   | "local-search"
   | "website-health"
   | "next-steps"
@@ -55,6 +56,14 @@ function iconPaths(name: ProductIconName): ReactNode {
           <path d="M4 20V13M10 20V9M16 20V5" {...commonPathProps} />
           <path d="m14 5 2-2 2 2M16 3v8" {...commonPathProps} />
           <path d="M3 20h18" {...commonPathProps} />
+        </>
+      );
+    case "keyword-research":
+      return (
+        <>
+          <circle cx="10.5" cy="10.5" r="6.5" {...commonPathProps} />
+          <path d="m15.5 15.5 5 5" {...commonPathProps} />
+          <path d="m10.5 6 .8 2.7 2.7.8-2.7.8-.8 2.7-.8-2.7L8 9.5l2.7-.8z" {...commonPathProps} />
         </>
       );
     case "local-search":

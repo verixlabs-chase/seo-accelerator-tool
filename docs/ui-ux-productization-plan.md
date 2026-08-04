@@ -15,8 +15,10 @@
 > copy, weak visual hierarchy, and too little decision-useful visualization.
 > UX10-UX12, I1.4/T27 measurement readiness, and I1.2/T28 evidence-backed
 > forecasting, the bounded I1.3 daily action brief, and evidence-based location
-> questions and governed drafting are now complete. The next customer product
-> sprint is **MKT1.1 automated local keyword discovery**. The follow-on
+> questions and governed drafting are now complete. **MKT1.1 automated local
+> keyword discovery is now in progress**: its first slice adds a location-aware
+> Find Searches page, real demand visualization, owner-friendly opportunity
+> groups, source detail, and direct promotion into Search Rankings. The follow-on
 > **I1.4/T29 measured action-value
 > sprint** is scheduled after G1.4 supplies live Google Business Profile
 > performance data; it adds separate Website and Google Profile action lanes

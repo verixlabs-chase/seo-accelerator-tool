@@ -3,6 +3,7 @@ import type { NavItem } from "./components";
 const PRODUCT_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: "overview", section: "primary" },
   { href: "/rankings", label: "Search Rankings", icon: "rankings", section: "primary" },
+  { href: "/keyword-research", label: "Find Searches", icon: "keyword-research", section: "primary" },
   { href: "/local-visibility", label: "Local Search", icon: "local-search", section: "primary" },
   { href: "/site-health", label: "Website Health", icon: "website-health", section: "primary" },
   { href: "/opportunities", label: "Next Steps", icon: "next-steps", section: "primary" },

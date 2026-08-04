@@ -1,0 +1,185 @@
+from decimal import Decimal
+
+from app.models.campaign import Campaign
+from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion
+from app.models.rank import CampaignKeyword
+from app.services import keyword_research_service
+
+
+class FakeKeywordResearchProvider:
+    def ranked_keywords(self, **kwargs):  # noqa: ANN003
+        assert kwargs["target"] == "plumber.example"
+        return {
+            "items": [
+                {
+                    "keyword_data": {
+                        "keyword": "emergency plumber",
+                        "keyword_info": {"search_volume": 260, "cpc": 18.25},
+                        "keyword_properties": {"keyword_difficulty": 31},
+                    },
+                    "ranked_serp_element": {"serp_item": {"rank_absolute": 8}},
+                },
+                {
+                    "keyword_data": {
+                        "keyword": "water heater repair",
+                        "keyword_info": {"search_volume": 170, "cpc": 12.0},
+                    }
+                },
+            ],
+            "cost": Decimal("0.12"),
+        }
+
+    def keyword_ideas(self, **kwargs):  # noqa: ANN003
+        assert "emergency plumber" in kwargs["keywords"]
+        return {
+            "items": [
+                {
+                    "keyword_data": {
+                        "keyword": "same day plumber",
+                        "keyword_info": {"search_volume": 90, "cpc": 9.5},
+                    }
+                }
+            ],
+            "cost": Decimal("0.12"),
+        }
+
+    def search_volume(self, **kwargs):  # noqa: ANN003
+        assert "water heater repair" in kwargs["keywords"]
+        return {
+            "items": [
+                {
+                    "keyword": "emergency plumber",
+                    "search_volume": 320,
+                    "cpc": 19.0,
+                    "competition_level": "HIGH",
+                    "monthly_searches": [{"year": 2026, "month": 7, "search_volume": 320}],
+                }
+            ],
+            "cost": Decimal("0.06"),
+        }
+
+
+def _login(client, email: str, password: str) -> str:
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200
+    return response.json()["data"]["access_token"]
+
+
+def test_keyword_research_api_returns_empty_state_before_first_run(client) -> None:
+    token = _login(client, "a@example.com", "pass-a")
+    headers = {"Authorization": f"Bearer {token}"}
+    campaign = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Research API Campaign", "domain": "research-api.example"},
+        headers=headers,
+    ).json()["data"]
+
+    response = client.get(
+        f"/api/v1/keyword-research?campaign_id={campaign['id']}",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "run": None,
+        "items": [],
+        "summary": {
+            "total": 0,
+            "quick_wins": 0,
+            "new_opportunities": 0,
+            "already_found": 0,
+            "tracked": 0,
+        },
+    }
+
+def test_discovery_scores_real_sources_and_promotes_selected_searches(
+    db_session,
+    create_test_org,
+) -> None:
+    organization = create_test_org(name="Keyword Research Org")
+    campaign = Campaign(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        name="Plumbing Shop",
+        domain="plumber.example",
+        setup_state="Active",
+    )
+    db_session.add(campaign)
+    db_session.commit()
+    db_session.refresh(campaign)
+
+    payload = keyword_research_service.discover(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        max_suggestions=25,
+        provider=FakeKeywordResearchProvider(),
+    )
+
+    assert payload["run"]["status"] == "complete"
+    assert payload["run"]["sources"] == [
+        "dataforseo_ideas",
+        "dataforseo_ranked",
+        "dataforseo_volume",
+    ]
+    assert payload["summary"]["total"] == 3
+    emergency = next(item for item in payload["items"] if item["keyword"] == "emergency plumber")
+    assert emergency["search_volume"] == 320
+    assert emergency["current_position"] == 8
+    assert emergency["opportunity_group"] == "quick_win"
+    assert emergency["recommended_action"] == "Improve the page already showing"
+    assert emergency["intent"] == "Ready to hire"
+
+    tracked = keyword_research_service.track_suggestions(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        suggestion_ids=[emergency["id"]],
+    )
+    assert tracked["created_count"] == 1
+    assert db_session.query(CampaignKeyword).filter(
+        CampaignKeyword.campaign_id == campaign.id,
+        CampaignKeyword.keyword == "emergency plumber",
+    ).count() == 1
+    persisted = db_session.get(KeywordResearchSuggestion, emergency["id"])
+    assert persisted is not None and persisted.tracked_at is not None
+    assert db_session.query(KeywordResearchRun).filter(
+        KeywordResearchRun.campaign_id == campaign.id
+    ).count() == 1
+
+
+def test_latest_keyword_research_is_tenant_scoped(
+    db_session,
+    create_test_org,
+    create_test_tenant,
+) -> None:
+    first_tenant = create_test_tenant(name="First Research Tenant")
+    second_tenant = create_test_tenant(name="Second Research Tenant")
+    first = create_test_org(
+        organization_id=first_tenant.id,
+        tenant_id=first_tenant.id,
+        name="First Research Org",
+    )
+    second = create_test_org(
+        organization_id=second_tenant.id,
+        tenant_id=second_tenant.id,
+        name="Second Research Org",
+    )
+    campaign = Campaign(
+        tenant_id=first.id,
+        organization_id=first.id,
+        name="Scoped Campaign",
+        domain="scoped.example",
+    )
+    db_session.add(campaign)
+    db_session.commit()
+
+    try:
+        keyword_research_service.get_latest(
+            db_session,
+            tenant_id=second.id,
+            campaign_id=campaign.id,
+        )
+    except Exception as exc:  # FastAPI's HTTPException is the expected public boundary.
+        assert getattr(exc, "status_code", None) == 404
+    else:
+        raise AssertionError("Cross-tenant keyword research access should fail.")

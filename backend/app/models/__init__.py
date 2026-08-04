@@ -46,6 +46,7 @@ from app.models.seo_mutation_outcome import SEOMutationOutcome
 from app.models.seo_experiment_result import SEOExperimentResult
 from app.models.keyword_daily_economics import KeywordDailyEconomics
 from app.models.keyword_market_snapshot import KeywordMarketSnapshot
+from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion
 from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode
 from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.learning_report import LearningReport
@@ -142,6 +143,8 @@ __all__ = [
     "CampaignKeyword",
     "KeywordDailyEconomics",
     "KeywordMarketSnapshot",
+    "KeywordResearchRun",
+    "KeywordResearchSuggestion",
     "KnowledgeNode",
     "KnowledgeEdge",
     "LearningMetricSnapshot",
