@@ -42,6 +42,11 @@ class BusinessServiceAreaNearbyIn(BaseModel):
     radius_miles: float = Field(default=25, ge=1, le=75)
 
 
+class BusinessServiceAreaDriveTimeIn(BaseModel):
+    campaign_id: str = Field(min_length=1, max_length=36)
+    travel_minutes: int = Field(default=30, ge=10, le=90)
+
+
 class ServiceBoundaryPoint(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)

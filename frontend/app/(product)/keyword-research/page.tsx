@@ -143,11 +143,12 @@ type ServiceProfile = {
 
 type BusinessServiceAreaItem = {
   id: string;
-  area_type: "city" | "postal_code" | "county" | "radius" | "boundary";
+  area_type: "city" | "postal_code" | "county" | "radius" | "boundary" | "drive_time";
   name: string;
   region?: string | null;
   country_code: string;
   radius_miles?: number | null;
+  travel_minutes?: number | null;
   center_latitude?: number | null;
   center_longitude?: number | null;
   boundary_points?: ServiceBoundaryPoint[];
@@ -187,6 +188,9 @@ type ServiceAreaProfile = {
     boundary_saved?: boolean;
     boundary_id?: string | null;
     boundary_points?: ServiceBoundaryPoint[];
+    boundary_kind?: "boundary" | "drive_time" | null;
+    travel_minutes?: number | null;
+    drive_time_available?: boolean;
   };
   discovery?: {
     pages_reviewed?: number;
@@ -195,6 +199,8 @@ type ServiceAreaProfile = {
     reviewed?: number;
     radius_miles?: number;
     boundary_saved?: boolean;
+    drive_time_saved?: boolean;
+    travel_minutes?: number;
     message: string;
   };
 };
@@ -286,8 +292,20 @@ function ServiceAreaMap({
   }
 
   const radiusMiles = Math.max(1, profile.map.radius_miles || 25);
-  const latitudeSpan = (radiusMiles / 69) * 1.25;
-  const longitudeSpan = latitudeSpan / Math.max(0.25, Math.cos((centerLatitude * Math.PI) / 180));
+  const savedBoundary = profile.map.boundary_points ?? [];
+  const boundaryLatitudeSpan = savedBoundary.reduce(
+    (maximum, point) => Math.max(maximum, Math.abs(point.latitude - centerLatitude)),
+    0,
+  );
+  const boundaryLongitudeSpan = savedBoundary.reduce(
+    (maximum, point) => Math.max(maximum, Math.abs(point.longitude - centerLongitude)),
+    0,
+  );
+  const radiusLatitudeSpan = radiusMiles / 69;
+  const radiusLongitudeSpan = radiusLatitudeSpan /
+    Math.max(0.25, Math.cos((centerLatitude * Math.PI) / 180));
+  const latitudeSpan = Math.max(radiusLatitudeSpan, boundaryLatitudeSpan) * 1.25;
+  const longitudeSpan = Math.max(radiusLongitudeSpan, boundaryLongitudeSpan) * 1.25;
   const minimumLatitude = centerLatitude - latitudeSpan;
   const maximumLatitude = centerLatitude + latitudeSpan;
   const minimumLongitude = centerLongitude - longitudeSpan;
@@ -297,13 +315,13 @@ function ServiceAreaMap({
     (item) =>
       item.area_type !== "radius" &&
       item.area_type !== "boundary" &&
+      item.area_type !== "drive_time" &&
       item.status !== "rejected" &&
       item.center_latitude !== null &&
       item.center_latitude !== undefined &&
       item.center_longitude !== null &&
       item.center_longitude !== undefined,
   );
-  const savedBoundary = profile.map.boundary_points ?? [];
   const visibleBoundary = drawingBoundary ? draftBoundary : savedBoundary;
   const boundarySvgPoints = visibleBoundary
     .map((point) => {
@@ -350,7 +368,9 @@ function ServiceAreaMap({
           loading="lazy"
         />
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute left-[10%] top-[10%] h-[80%] w-[80%] rounded-full border-2 border-dashed border-accent-500/80 bg-accent-500/5" />
+          {!savedBoundary.length ? (
+            <div className="absolute left-[10%] top-[10%] h-[80%] w-[80%] rounded-full border-2 border-dashed border-accent-500/80 bg-accent-500/5" />
+          ) : null}
           {mapItems.map((item) => {
             const left = Math.min(
               98,
@@ -373,7 +393,13 @@ function ServiceAreaMap({
           })}
         </div>
         <svg
-          aria-label={drawingBoundary ? "Click the map to add work-area corners" : "Saved custom work area"}
+          aria-label={
+            drawingBoundary
+              ? "Click the map to add work-area corners"
+              : profile.map.boundary_kind === "drive_time"
+                ? "Saved driving-time work area"
+                : "Saved custom work area"
+          }
           role="img"
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
@@ -457,10 +483,18 @@ function ServiceAreaMap({
         ) : (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs leading-5 text-zinc-400">
-              <p>
-                Dashed circle: about {radiusMiles.toLocaleString(undefined, { maximumFractionDigits: 1 })} miles.
-                Orange: needs your answer. Green: confirmed.
-              </p>
+              {profile.map.boundary_kind === "drive_time" && profile.map.travel_minutes ? (
+                <p>
+                  Green outline: about {profile.map.travel_minutes} minutes by road. This does not use live traffic.
+                </p>
+              ) : profile.map.boundary_kind === "boundary" ? (
+                <p>Green outline: the custom work area you drew.</p>
+              ) : (
+                <p>
+                  Dashed circle: about {radiusMiles.toLocaleString(undefined, { maximumFractionDigits: 1 })} miles.
+                </p>
+              )}
+              <p>Orange towns need your answer. Green towns are confirmed.</p>
               <p>Map suggestions never count as service areas until you approve them.</p>
             </div>
             <button
@@ -516,6 +550,7 @@ export default function KeywordResearchPage() {
   const [newAreaRelationship, setNewAreaRelationship] =
     useState<BusinessServiceAreaItem["relationship"]>("included");
   const [nearbyRadius, setNearbyRadius] = useState("25");
+  const [driveTimeMinutes, setDriveTimeMinutes] = useState("30");
   const [areaBusy, setAreaBusy] = useState<"" | "suggest" | "add" | string>("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"" | "discover" | "track" | "review">("");
@@ -772,6 +807,33 @@ export default function KeywordResearchPage() {
     }
   };
 
+  const suggestDriveTimeCommunities = async () => {
+    if (!selectedCampaignId) return;
+    const travelMinutes = Number(driveTimeMinutes);
+    if (!Number.isInteger(travelMinutes) || travelMinutes < 10 || travelMinutes > 90) {
+      setError("Choose a driving time from 10 to 90 minutes.");
+      return;
+    }
+    setAreaBusy("drive-time");
+    setError("");
+    try {
+      const response = (await platformApi("/business-service-areas/drive-time", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          travel_minutes: travelMinutes,
+        }),
+      })) as ServiceAreaProfile;
+      setServiceAreaProfile(response);
+      setNotice(response.discovery?.message ?? "Review the towns inside your driving range.");
+      await loadResearch(selectedCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The driving-time map could not be checked.");
+    } finally {
+      setAreaBusy("");
+    }
+  };
+
   const reviewServiceArea = async (
     areaId: string,
     status: "confirmed" | "rejected",
@@ -949,7 +1011,8 @@ export default function KeywordResearchPage() {
     (item) =>
       item.status === "confirmed" &&
       item.relationship === "included" &&
-      item.area_type !== "boundary",
+      item.area_type !== "boundary" &&
+      item.area_type !== "drive_time",
   );
   const confirmedExcludedAreas = serviceAreaProfile.items.filter(
     (item) => item.status === "confirmed" && item.relationship === "excluded",
@@ -1156,36 +1219,82 @@ export default function KeywordResearchPage() {
                 </button>
               </div>
 
-              <div className="mt-5 flex flex-col gap-3 rounded-md border border-[#2a2b30] bg-[#141518] p-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white">Find towns inside your work range</p>
-                  <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
-                    Choose how far this crew normally travels. We&apos;ll show real nearby communities,
-                    then you decide which ones belong in your plan.
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-end gap-2">
-                  <label className="text-xs font-semibold text-zinc-300" htmlFor="nearby-service-radius">
-                    Miles
-                    <input
-                      id="nearby-service-radius"
-                      value={nearbyRadius}
-                      onChange={(event) => setNearbyRadius(event.target.value)}
-                      type="number"
-                      min="1"
-                      max="75"
-                      step="1"
-                      className="mt-1 block w-24 rounded-md border border-[#303137] bg-[#0b0b0c] px-3 py-2 text-sm text-white outline-none focus:border-accent-500"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => void suggestNearbyCommunities()}
-                    disabled={areaBusy !== "" || serviceAreaProfile.map?.status !== "ready"}
-                    className="rounded-md bg-accent-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {areaBusy === "nearby" ? "Checking nearby towns..." : "Show nearby towns"}
-                  </button>
+              <div className="mt-5 rounded-md border border-[#2a2b30] bg-[#141518] p-4">
+                <p className="text-sm font-semibold text-white">Find towns inside your work range</p>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
+                  Choose miles or driving time. We&apos;ll find nearby towns, then you decide which ones
+                  this location actually serves.
+                </p>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-md border border-[#2a2b30] bg-[#101113] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                      By distance
+                    </p>
+                    <div className="mt-2 flex items-end gap-2">
+                      <label className="text-xs font-semibold text-zinc-300" htmlFor="nearby-service-radius">
+                        Miles
+                        <input
+                          id="nearby-service-radius"
+                          value={nearbyRadius}
+                          onChange={(event) => setNearbyRadius(event.target.value)}
+                          type="number"
+                          min="1"
+                          max="75"
+                          step="1"
+                          className="mt-1 block w-24 rounded-md border border-[#303137] bg-[#0b0b0c] px-3 py-2 text-sm text-white outline-none focus:border-accent-500"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void suggestNearbyCommunities()}
+                        disabled={areaBusy !== "" || serviceAreaProfile.map?.status !== "ready"}
+                        className="rounded-md bg-accent-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {areaBusy === "nearby" ? "Checking towns..." : "Use miles"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-[#2a2b30] bg-[#101113] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                      By driving time
+                    </p>
+                    <div className="mt-2 flex items-end gap-2">
+                      <label className="text-xs font-semibold text-zinc-300" htmlFor="service-drive-time">
+                        Minutes
+                        <select
+                          id="service-drive-time"
+                          value={driveTimeMinutes}
+                          onChange={(event) => setDriveTimeMinutes(event.target.value)}
+                          className="mt-1 block w-28 rounded-md border border-[#303137] bg-[#0b0b0c] px-3 py-2 text-sm text-white outline-none focus:border-accent-500"
+                        >
+                          {[15, 20, 30, 45, 60, 75, 90].map((minutes) => (
+                            <option key={minutes} value={minutes}>{minutes}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void suggestDriveTimeCommunities()}
+                        disabled={
+                          areaBusy !== "" ||
+                          serviceAreaProfile.map?.status !== "ready" ||
+                          !serviceAreaProfile.map?.drive_time_available
+                        }
+                        className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {areaBusy === "drive-time" ? "Checking roads..." : "Use driving time"}
+                      </button>
+                    </div>
+                    {!serviceAreaProfile.map?.drive_time_available ? (
+                      <p className="mt-2 text-xs leading-5 text-zinc-500">
+                        Driving-time maps will be available after the account connection is finished.
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs leading-5 text-zinc-500">
+                        Uses the road network, not live traffic.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 

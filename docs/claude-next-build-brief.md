@@ -43,8 +43,9 @@
 > planning slice is now implemented:** useful searches are grouped by service,
 > customer need, and place, then matched to the page already ranking or the
 > strongest saved crawl page; groups without a defensible page are labeled as
-> page opportunities. The remaining MKT1.1 work covers nearby-community
-> resolution, richer synonym and correction rules, competitor expansion,
+> page opportunities. Nearby-community mapping now includes mileage, custom
+> shapes, and real road-network travel-time boundaries. The remaining MKT1.1
+> work covers richer synonym and correction rules, competitor expansion,
 > historical comparisons, and conversion into governed content and profile
 > actions. **UX13: Natural Product Voice and Comprehension** is scheduled as a
 > later site-wide refinement because customer review still finds technically
@@ -1935,6 +1936,12 @@ Implementation status (2026-08-03):
   keeps it within the governed 75-mile range, independently checks that every
   returned community is inside the polygon, and leaves those communities as
   suggestions until the owner confirms them.
+- The local 2026-08-04 MKT1.1B drive-time slice creates a real road-network
+  reachability boundary for 10-90 minutes, validates and bounds the returned
+  geometry, and finds only communities inside that shape. It reuses a recent
+  same-location boundary for 24 hours, labels the result as an estimate without
+  live traffic, never substitutes a mileage circle when routing is unavailable,
+  and still requires the owner to confirm each suggested town.
 - The MKT1.1C deterministic gate is present: confirmed service
   and confirmed-market matches enter `Best matches`, named excluded places are
   kept out, uncertain measured phrases enter `Needs your review`, and unmatched
@@ -1956,8 +1963,8 @@ Implementation status (2026-08-03):
   already appearing in search, otherwise scores the latest indexable crawl
   evidence, and labels the group as a page opportunity when no defensible page
   exists. The customer can filter the full search list from each group.
-- Remaining MKT1.1 work: competitor-domain expansion, drive-time
-  service-boundary selection, semantic synonym expansion, historical trend
+- Remaining MKT1.1 work: competitor-domain expansion, semantic synonym
+  expansion, historical trend
   comparisons, and conversion into content briefs, profile actions, or
   governed opportunities.
 
@@ -1972,7 +1979,7 @@ Remaining delivery slices:
   profile, title/URL evidence extraction, review API, deterministic keyword
   reclassification, Find Searches workflow, guided setup capture, and bounded
   heading/description/body evidence are implemented locally.
-- **MKT1.1B - Service-Area Mapping — radius and custom-boundary slices complete:** collect physical locations separately
+- **MKT1.1B - Service-Area Mapping — radius, custom-boundary, and drive-time slices complete:** collect physical locations separately
   from the places each location serves. Support cities, ZIP codes, counties,
   distance or drive-time boundaries, map selection, and explicit exclusions.
   Resolve nearby communities through deterministic geographic data; AI may
@@ -1984,7 +1991,10 @@ Remaining delivery slices:
   expansion, auditable distance evidence, and owner review map are also
   implemented locally. Owner-drawn custom boundaries, strict server-side
   polygon validation, deterministic within-boundary community checks, and the
-  review workflow are also implemented locally. Drive-time boundaries remain.
+  review workflow are also implemented locally. Provider-backed road
+  reachability now adds bounded 10-90 minute work areas, honest no-live-traffic
+  labeling, 24-hour same-boundary reuse, no fabricated fallback geometry, and
+  the same owner-confirmation gate for every town it finds.
 - **MKT1.1C - Business-Aware Keyword Relevance — local core complete:** require a confirmed service,
   plausible customer intent, and valid service-area relationship before a
   phrase enters `Best matches`. Use deterministic rules and semantic matching

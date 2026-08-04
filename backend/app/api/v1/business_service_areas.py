@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.schemas.business_service_area import (
     BusinessServiceAreaBoundaryIn,
     BusinessServiceAreaCreateIn,
+    BusinessServiceAreaDriveTimeIn,
     BusinessServiceAreaNearbyIn,
     BusinessServiceAreaPatchIn,
     BusinessServiceAreaSuggestIn,
@@ -108,6 +109,25 @@ def save_business_service_area_boundary(
         tenant_id=user["tenant_id"],
         campaign_id=body.campaign_id,
         points=[point.model_dump() for point in body.points],
+    )
+    keyword_research_service.reclassify_latest(
+        db, tenant_id=user["tenant_id"], campaign_id=body.campaign_id
+    )
+    return envelope(request, payload)
+
+
+@router.post("/drive-time")
+def suggest_drive_time_business_service_areas(
+    request: Request,
+    body: BusinessServiceAreaDriveTimeIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = business_service_area_service.suggest_communities_by_drive_time(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        travel_minutes=body.travel_minutes,
     )
     keyword_research_service.reclassify_latest(
         db, tenant_id=user["tenant_id"], campaign_id=body.campaign_id
