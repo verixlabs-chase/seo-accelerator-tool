@@ -46,9 +46,12 @@
 > page opportunities. Nearby-community mapping now includes mileage, custom
 > shapes, and real road-network travel-time boundaries. A versioned synonym
 > library and append-only owner correction history now improve relevance
-> without allowing AI to create permanent business rules. The remaining
-> MKT1.1 work covers competitor expansion, historical comparisons, measured
-> classifier quality, and conversion into governed content and profile
+> without allowing AI to create permanent business rules. **Saved competitor
+> expansion is now implemented:** up to three saved competitor domains add
+> exact ranking-page evidence without replacing the customer's own position or
+> bypassing the business relevance gate. The remaining MKT1.1 work covers
+> historical comparisons, measured classifier quality, and conversion into
+> governed content and profile
 > actions. **UX13: Natural Product Voice and Comprehension** is scheduled as a
 > later site-wide refinement because customer review still finds technically
 > simple phrases that sound artificial, self-conscious, or unlike the way a
@@ -1971,8 +1974,16 @@ Implementation status (2026-08-04):
   reapplies the latest choice on future refreshes, allows the owner to undo it,
   and keeps explicit excluded service areas authoritative. AI cannot write or
   broaden these durable rules.
-- Remaining MKT1.1 work: competitor-domain expansion, historical trend
-  comparisons, measured classifier quality, and conversion into content
+- The local competitor-domain expansion slice checks at most three saved
+  competitors after the core business research. It stores the exact competing
+  domain, URL, observed position, and observation time with each phrase, keeps
+  that evidence separate from the customer's own position, and prices the
+  bounded extra checks into the customer-visible credit ceiling. Competitor
+  phrases still pass the same confirmed-service, service-area, exclusion, and
+  owner-feedback rules; search demand or a competitor rank alone cannot make a
+  phrase a best match.
+- Remaining MKT1.1 work: historical trend comparisons, measured classifier
+  quality, and conversion into content
   briefs, profile actions, or governed opportunities.
 
 Remaining delivery slices:
@@ -2014,6 +2025,13 @@ Remaining delivery slices:
   library, durable reversible owner corrections, future-refresh reuse, and
   excluded-area precedence are also implemented locally. Measured classifier
   quality and carefully governed vocabulary expansion remain.
+- **MKT1.1 competitor-domain expansion - local core complete:** use up to three
+  saved campaign competitors to find missed searches. Preserve the competitor's
+  exact domain, ranking URL, observed position, and freshness as supporting
+  evidence; never overwrite the business's own position. Only phrases that
+  survive the existing business and market relevance rules can enter the
+  customer review flow. The upper-bound refresh price includes the extra calls,
+  while actual usage remains reconciled per request.
 - **MKT1.1D - Customer-Need Clusters and Page Decisions â€” local core complete:**
   group useful phrases by service, customer problem, place, and intent. Use the
   provider's observed ranking URL first, then bounded title, heading,

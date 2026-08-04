@@ -68,6 +68,14 @@ type SearchSuggestion = {
   ai_reason?: string | null;
   relevance_reason?: string | null;
   owner_feedback?: "relevant" | "unrelated" | null;
+  competitor_evidence?: Array<{
+    competitor_id: string;
+    domain: string;
+    label?: string | null;
+    position?: number | null;
+    url?: string | null;
+    observed_at: string;
+  }>;
   opportunity_score: number;
   recommended_action: string;
   recommendation_reason: string;
@@ -264,6 +272,7 @@ function sourceLabel(source: string) {
     dataforseo_volume: "Local demand",
     tracked_rankings: "Your tracked list",
     website_content: "Your website",
+    competitor_rankings: "Competitor search results",
   }[source] ?? source;
 }
 
@@ -1895,6 +1904,11 @@ export default function KeywordResearchPage() {
                             AI checked
                           </span>
                         ) : null}
+                        {item.competitor_evidence?.length ? (
+                          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+                            Competitor opportunity
+                          </span>
+                        ) : null}
                       </div>
                       {item.relevance_reason ? (
                         <p className="mt-2 text-xs leading-5 text-zinc-500">{item.relevance_reason}</p>
@@ -1911,6 +1925,31 @@ export default function KeywordResearchPage() {
                     <div>
                       <p className="text-sm font-semibold text-white">{item.recommended_action}</p>
                       <p className="mt-1 text-sm leading-5 text-zinc-400">{item.recommendation_reason}</p>
+                      {item.competitor_evidence?.length ? (
+                        <p className="mt-2 text-xs leading-5 text-amber-100/80">
+                          Seen from {item.competitor_evidence.map((competitor, index) => {
+                            const name = competitor.label || competitor.domain;
+                            return (
+                              <span key={`${competitor.competitor_id}-${competitor.url || index}`}>
+                                {index > 0 ? " · " : ""}
+                                {competitor.url ? (
+                                  <a
+                                    href={competitor.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="underline decoration-amber-300/30 underline-offset-2 hover:text-white"
+                                  >
+                                    {name}
+                                  </a>
+                                ) : name}
+                                {competitor.position
+                                  ? ` near #${Math.round(competitor.position)}`
+                                  : ""}
+                              </span>
+                            );
+                          })}
+                        </p>
+                      ) : null}
                       <details className="mt-2 text-xs text-zinc-500">
                         <summary className="cursor-pointer hover:text-zinc-300">See the supporting data</summary>
                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
