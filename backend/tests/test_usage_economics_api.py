@@ -13,7 +13,7 @@ def _login(client, email: str, password: str) -> tuple[str, str]:
     return payload["access_token"], payload["user"]["tenant_id"]
 
 
-def test_customer_allowance_hides_internal_margin(client, db_session) -> None:
+def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_session) -> None:
     token, tenant_id = _login(client, "org-admin@example.com", "pass-org-admin")
     org = db_session.get(Organization, tenant_id)
     assert org is not None
@@ -21,14 +21,27 @@ def test_customer_allowance_hides_internal_margin(client, db_session) -> None:
     db_session.commit()
 
     response = client.get(
-        "/api/v1/usage/allowance",
+        "/api/v1/usage/credits",
         headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["plan"]["name"] == "Solo"
-    assert data["allowance"]["monthly"] == 14.95
+    assert data["credits"]["monthly"] == 1495
+    assert data["credits"]["remaining"] == 1495
+    assert data["credits"]["name"] == "Insight Credits"
+    assert data["catalog_version"] == "insight-credits-2026-08-v1"
+    assert {item["code"] for item in data["action_prices"]} >= {
+        "keyword_research_refresh",
+        "ranking_check",
+        "keyword_relevance_review",
+    }
+    serialized = str(data).lower()
+    assert "currency" not in serialized
+    assert "monthly_revenue" not in serialized
+    assert "api_budget" not in serialized
+    assert "provider_reported_cost" not in serialized
     assert "gross_margin_percent" not in data
     assert "revenue" not in data
 

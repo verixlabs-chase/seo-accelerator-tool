@@ -73,9 +73,10 @@ type UsageAllowance = {
   period: {
     start: string;
     end: string;
+    resets_at: string;
   };
-  allowance: {
-    currency: string;
+  credits: {
+    name: string;
     monthly: number;
     used: number;
     reserved: number;
@@ -84,8 +85,24 @@ type UsageAllowance = {
     warning_level?: number | null;
     blocked: boolean;
   };
-  organization_owned_operations: number;
+  connected_account_actions: number;
   recovery_actions: string[];
+  recent_activity: Array<{
+    id: string;
+    label: string;
+    result: string;
+    credits: number;
+    state: "completed" | "reserved" | "returned" | "connected_account";
+    created_at: string;
+  }>;
+  action_prices: Array<{
+    code: string;
+    label: string;
+    result: string;
+    credits: number;
+    price_type: "up_to" | "per_item" | "fixed_ceiling";
+  }>;
+  important_note: string;
 };
 
 const primaryButtonClass =
@@ -105,6 +122,12 @@ function formatTimestamp(value?: string | null) {
     hour: "numeric",
     minute: "2-digit",
   }).format(parsed);
+}
+
+function formatResetDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "next month";
+  return new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric" }).format(parsed);
 }
 
 function toneClasses(tone: string) {
@@ -195,7 +218,7 @@ export default function SettingsPage() {
         const [campaignResponse, connectionResponse, allowanceResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
-          platformApi("/usage/allowance", { method: "GET" }) as Promise<UsageAllowance>,
+          platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
@@ -329,13 +352,13 @@ export default function SettingsPage() {
         tone: portfolioSummary.tone as TrustSignal["tone"],
       },
       {
-        label: "Paid data allowance",
+        label: "Insight Credits",
         value: usageAllowance
-          ? `${usageAllowance.allowance.percent_committed.toFixed(1)}% committed`
+          ? `${usageAllowance.credits.remaining.toLocaleString()} available`
           : "Checking",
-        tone: usageAllowance?.allowance.blocked
+        tone: usageAllowance?.credits.blocked
           ? "danger"
-          : usageAllowance?.allowance.warning_level
+          : usageAllowance?.credits.warning_level
             ? "warning"
             : "info",
       },
@@ -463,11 +486,11 @@ export default function SettingsPage() {
               <details className="rounded-md border border-[#292a2f] bg-[#141518] p-4">
                 <summary className="cursor-pointer list-none">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
-                    Monthly data budget
+                    Insight Credits available this month
                   </p>
                   <div className="mt-1 flex items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-white">
-                      ${usageAllowance.allowance.remaining.toFixed(2)} available
+                      {usageAllowance.credits.remaining.toLocaleString()} credits available
                     </h2>
                     <span className="text-xs text-zinc-400">See usage</span>
                   </div>
@@ -478,30 +501,30 @@ export default function SettingsPage() {
                       {usageAllowance.plan.name} plan
                     </p>
                     <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-white">
-                      ${usageAllowance.allowance.remaining.toFixed(2)} remaining this month
+                      {usageAllowance.credits.remaining.toLocaleString()} credits left this month
                     </h2>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-                      Used ${usageAllowance.allowance.used.toFixed(2)} and holding $
-                      {usageAllowance.allowance.reserved.toFixed(2)} for work that is still running.
-                      Checks made with your own connected account do not reduce this allowance.
+                      You have used {usageAllowance.credits.used.toLocaleString()} credits. {" "}
+                      {usageAllowance.credits.reserved.toLocaleString()} are set aside for work that
+                      is still running. Your balance resets {formatResetDate(usageAllowance.period.resets_at)}.
                     </p>
                   </div>
                   <div className="min-w-[220px]">
                     <div className="flex items-center justify-between text-xs text-zinc-400">
-                      <span>{usageAllowance.allowance.percent_committed.toFixed(1)}% committed</span>
-                      <span>${usageAllowance.allowance.monthly.toFixed(2)} monthly</span>
+                      <span>{usageAllowance.credits.percent_committed.toFixed(1)}% used or reserved</span>
+                      <span>{usageAllowance.credits.monthly.toLocaleString()} each month</span>
                     </div>
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#24252a]">
                       <div
                         className={`h-full rounded-full ${
-                          usageAllowance.allowance.blocked
+                          usageAllowance.credits.blocked
                             ? "bg-rose-400"
-                            : usageAllowance.allowance.warning_level
+                            : usageAllowance.credits.warning_level
                               ? "bg-amber-400"
                               : "bg-emerald-400"
                         }`}
                         style={{
-                          width: `${Math.min(100, usageAllowance.allowance.percent_committed)}%`,
+                          width: `${Math.min(100, usageAllowance.credits.percent_committed)}%`,
                         }}
                       />
                     </div>
@@ -512,6 +535,23 @@ export default function SettingsPage() {
                     {usageAllowance.recovery_actions[0]}
                   </div>
                 ) : null}
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  {usageAllowance.action_prices.map((action) => (
+                    <div key={action.code} className="border-l-2 border-[#303137] pl-3">
+                      <p className="text-sm font-semibold text-white">{action.label}</p>
+                      <p className="mt-1 text-xs text-zinc-400">{action.result}</p>
+                      <p className="mt-2 text-xs font-semibold text-accent-200">
+                        {action.price_type === "up_to" ? "Up to " : ""}
+                        {action.credits.toLocaleString()} {action.credits === 1 ? "credit" : "credits"}
+                        {action.price_type === "per_item" ? " each" : ""}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-4 text-xs leading-5 text-zinc-500">
+                  {usageAllowance.important_note} Failed work returns unused credits automatically.
+                  Eligible checks made through your own connected account use 0 Insight Credits.
+                </p>
               </details>
             ) : null}
 

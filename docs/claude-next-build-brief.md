@@ -1,6 +1,6 @@
 # Claude Next Build Brief
 
-> **Active roadmap status (2026-08-03):** Release R1 is production-verified, and
+> **Active roadmap status (2026-08-04):** Release R1 is production-verified, and
 > the TR1 security/recovery implementation is published. Tenant isolation,
 > Windows-native recovery tooling, bounded key rotation, sanitized evidence
 > capture, and deployment rollback controls are in place. The production
@@ -30,8 +30,21 @@
 > now in progress.** Its first slice adds durable, location-scoped discovery
 > from DataForSEO, Search Console, and tracked searches, plain-language
 > opportunity grouping, demand visualization, and one-click promotion into
-> Search Rankings. Service clustering, competitor expansion, target-page
-> mapping, and downstream content/profile actions remain in this sprint.
+> Search Rankings. **The first MKT1.1A implementation slice is now complete in
+> the local worktree:** it adds tenant-safe service profiles, website-derived
+> service suggestions, owner confirmation and rejection, manual service entry,
+> and immediate deterministic reclassification of saved search ideas into Best
+> matches, Needs your review, and Hidden as unrelated. The remaining MKT1.1
+> work is divided into three bounded
+> slices: smart service discovery and owner confirmation, deterministic
+> service-area mapping, and business-aware keyword relevance. These slices use
+> crawl and business-profile evidence to remove irrelevant phrases before AI
+> reviews only genuinely ambiguous candidates. Competitor expansion,
+> target-page mapping, and downstream content/profile actions remain in this
+> sprint. **UX13: Natural Product Voice and Comprehension** is scheduled as a
+> later site-wide refinement because customer review still finds technically
+> simple phrases that sound artificial, self-conscious, or unlike the way a
+> helpful business advisor would speak.
 > **I1.4/T29: Measured Website and Google
 > Business Profile Action Tracks** is now scheduled after G1.4 connects live
 > profile performance data. It will show the real metric each action is meant
@@ -72,7 +85,7 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 
 ## 1A. Active Customer UX Sprint Sequence
 
-> **Execution status (2026-08-03):** UX5-UX9 established the working customer
+> **Execution status (2026-08-04):** UX5-UX9 established the working customer
 > baseline, UX10 established the shared plain-language and visual system, and
 > UX11-UX12 completed the owner-journey and cross-page rollout. MKT1.1 automated
 > local keyword discovery is now in progress; the durable discovery, evidence,
@@ -444,6 +457,69 @@ Completion record (2026-08-03):
   decision visuals, accessible progress state, and removal of duplicated
   console-style summaries.
 
+### Sprint 13 - Natural Product Voice and Comprehension
+
+Goal: make every customer-facing sentence sound like it was written by a
+knowledgeable, straightforward business advisor rather than by an SEO tool or
+an AI system.
+
+Placement:
+- Run after the active MKT1.1 research and onboarding slices have stabilized
+  their customer concepts and before broad paid-beta onboarding.
+- Treat this as a comprehension and conversion sprint across the public site,
+  onboarding, authenticated product, transactional messages, and AI-generated
+  guidance. It is not a visual rebrand or a reason to reopen working backend
+  architecture.
+
+Scope:
+- Rewrite headlines around the outcome the owner wants. Do not announce that
+  the product is using `plain English`, is `easy`, or avoids `SEO tooling`;
+  demonstrate those qualities through the words and workflow.
+- Prefer concrete language such as `See how your business shows up on Google`,
+  `Know what changed`, and `Work on what matters next` over abstract phrases
+  such as `Local search visibility explained in plain English`.
+- Write for a capable, busy service-business owner who may not know SEO terms.
+  Never describe the customer as non-technical, less tech-savvy, confused, or
+  in need of simplified treatment in customer-visible copy.
+- Replace self-conscious product narration, filler, stacked abstractions, and
+  common AI phrasing with short, natural sentences and specific business
+  meaning. Extend the prohibited-copy list to phrases such as `unlock`,
+  `leverage`, `actionable insights`, `seamless`, `explained in plain English`,
+  and `without digging through SEO tooling` unless a reviewed context truly
+  requires them.
+- Audit the public home page, sign-in and setup, every page introduction,
+  navigation label, metric explanation, empty state, warning, error, button,
+  tooltip, report narrative, notification, and AI-generated action message.
+- Give each screen one clear job. Lead with what the owner can learn or do,
+  then show the supporting measurement, and keep methodology optional.
+- Add reviewed reference examples and counterexamples to the shared
+  service-business language guide so deterministic copy and governed AI output
+  use the same voice.
+- Add copy-contract tests for prohibited phrases, sentence length, unexplained
+  jargon, provider names, internal labels, and customer-insulting language.
+- Test representative screens with service-business owners using two prompts:
+  `What is this page for?` and `What would you do next?` Record failures and
+  revise the copy rather than explaining it to the participant.
+
+Reference home-page direction:
+- Headline: `Know how your business is showing up on Google.`
+- Supporting copy: `See which searches help customers find you, how each
+  location is doing, and what to work on next.`
+- The final wording must remain accurate to connected data and must not imply
+  measured calls, leads, or customers when those sources are not connected.
+
+Acceptance criteria:
+- A service-business owner can state the purpose and next action of every
+  primary screen after a five-second review without knowing SEO terminology.
+- Customer-facing copy sounds natural when read aloud and does not describe
+  itself as simple, plain, intelligent, or AI-powered.
+- No primary headline leads with a methodology, product category, provider,
+  internal system term, or statement about the customer's technical ability.
+- Static, deterministic, and AI-generated language pass the same voice and
+  prohibited-copy checks.
+- Usability review shows no material regression in accuracy, accessibility,
+  or disclosure of missing and partial data.
+
 ## 1B. Roadmap Tracks and Next Product Phase
 
 Sprint numbers in older documents refer to different bodies of work. Use these
@@ -451,7 +527,7 @@ names in issues, commits, and status reports so a number is never ambiguous:
 
 - **Platform P1-P10:** the historical platform-foundation sequence in
   [product_overview/sprint_roadmap.md](./product_overview/sprint_roadmap.md).
-- **Customer UX UX1-UX12:** the active usability and productization sequence in
+- **Customer UX UX1-UX13:** the active usability and productization sequence in
   Section 1A and [ui-ux-productization-plan.md](./ui-ux-productization-plan.md).
 - **Production Readiness PR0-PR6:** cross-cutting deployment, security, provider,
   and release gates in
@@ -478,7 +554,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 10 | **I1.4/T27 - Action Measurement Readiness — completed** | Starting measurements, completed-work proof, success measurements, and honest waiting periods make a checked box different from a proven result. |
 | 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling — completed** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
 | 12 | **I1.3 - Governed AI Utility Expansion — completed** | The daily brief, cited evidence Q&A, and review-only drafting use one metered gateway while the deterministic engine keeps action authority. |
-| 13 | **MKT1.1 - Automated Local Keyword Discovery — in progress** | Each location receives useful keyword ideas, demand data, intent, and tracking recommendations without recurring manual entry. |
+| 13 | **MKT1.1 - Automated Local Keyword Discovery — in progress** | Each location receives useful keyword ideas based on confirmed services and real service areas, while irrelevant phrases are removed before the owner has to review them. |
 | 14 | **G1.3A - Customer Usage Credits** | Customers see simple Insight Credits instead of the platform's internal monthly dollar budget, while cost accounting still protects the 85% software-usage margin. |
 | 15 | **VAL1 - Research-Backed Search Value** | Search Value uses current location-specific market research and measured Search Console behavior to show a traceable paid-search replacement-cost range rather than a subjective dollar guess. |
 | 16 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
@@ -492,22 +568,23 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 24 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
 | 25 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
 | 26 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
-| 27 | **COM1 paid-beta slice - Checkout and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, recover payment, and cancel without operator database work. |
-| 28 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
-| 29 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
-| 30 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 31 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
-| 32 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
-| 33 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 34 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 35 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 36 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 37 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 38 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 39 | **AIV1 - AI Search and Entity Visibility** | The product measures visibility across supported AI-answer surfaces. |
-| 40 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
-| 41 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 42 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
+| 27 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
+| 28 | **COM1 paid-beta slice - Checkout and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, recover payment, and cancel without operator database work. |
+| 29 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
+| 30 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
+| 31 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 32 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
+| 33 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
+| 34 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 35 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 36 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 37 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 38 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 39 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 40 | **AIV1 - AI Search Visibility and Entity Intelligence** | A dedicated AI Search Visibility section shows where each business and location is mentioned or cited across supported major AI answer engines, how that changes over time, which competitors appear instead, and what evidence-backed work may improve coverage. |
+| 41 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
+| 42 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 43 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 ### External API enablement map
 
@@ -852,6 +929,23 @@ Acceptance criteria:
   clearly discloses it.
 - Heavy-use simulations prove that every published plan remains at or above
   the 85% software-usage margin target.
+
+Implementation record (2026-08-04):
+
+- The append-only provider ledger now records versioned integer Insight Credit
+  reservations and adjustments beside the authoritative internal currency
+  amounts. Reconciliation lowers or raises the final credit charge, terminal
+  failures return the reservation, and organization-owned credentials consume
+  zero platform credits.
+- The tenant `/usage/credits` response exposes monthly, used, reserved,
+  remaining, reset date, recent activity, and customer-safe action prices
+  without exposing vendor names, dollar budgets, price cards, or margin data.
+- Customer Settings now uses `Insight Credits available this month` and shows
+  plain-language reset and refund behavior. Keyword Research previews the
+  current refresh ceiling and bounded AI-review price before those actions run.
+- Current paid ranking, keyword-research, and bounded relevance-review actions
+  are in the v1 catalog. Every later paid action must add a catalog label,
+  result description, price preview, and ledger test before release.
 
 ### Growth G1.4 - Google Business Profile Intelligence
 
@@ -1785,15 +1879,76 @@ Implementation status (2026-08-03):
 - The customer page shows demand, current visibility, intent, source detail,
   deterministic opportunity groups, a demand chart, and one-click promotion
   into Search Rankings.
+- The local 2026-08-04 MKT1.1A slice adds durable organization/location service
+  profiles, owner-added services, reviewable website suggestions, supporting
+  page evidence, confirmed/rejected state, tenant-safe APIs, and an owner
+  workflow on Find Searches. Confirmed services now seed new research and
+  reclassify saved results without buying another provider request.
+- The local 2026-08-04 MKT1.1B core slice adds a separate location-scoped
+  service-area profile for cities, ZIP/postal codes, counties, mileage radius,
+  and explicit exclusions. The office city and website area-page evidence are
+  suggestions only until the owner confirms them. Confirmed areas seed local
+  research and reclassify saved results without another provider request.
+- The MKT1.1C deterministic gate is present: confirmed service
+  and confirmed-market matches enter `Best matches`, named excluded places are
+  kept out, uncertain measured phrases enter `Needs your review`, and unmatched
+  discovery-only phrases enter the recoverable `Hidden as unrelated` view.
+  The local governed-AI ambiguity-review slice is also implemented: one metered,
+  idempotent Mistral batch reviews only server-selected uncertain phrases through
+  a strict schema. The server validates every suggestion, service, service area,
+  and evidence identifier and applies results only above a fixed confidence gate.
 - Remaining MKT1.1 work: service/problem/location clusters, competitor-domain
-  expansion, historical trend comparisons, target-page mapping, map visibility,
-  and conversion into content briefs, profile actions, or governed
-  opportunities.
+  expansion, richer crawl evidence, onboarding integration, service-area
+  map selection and nearby-community resolution, semantic synonym expansion,
+  historical trend comparisons,
+  target-page mapping, map visibility, and conversion into content briefs,
+  profile actions, or governed opportunities.
+
+Remaining delivery slices:
+
+- **MKT1.1A - Smart Business Discovery and Service Confirmation — active:** crawl the
+  website for service evidence, combine it with owner-entered and connected
+  business-profile facts, and present a reviewable service catalog. Store
+  confirmed, suggested, and rejected services; common names; supporting pages;
+  company defaults; and per-location overrides. The owner can add services the
+  website omitted and reject services the system misunderstood. The durable
+  profile, title/URL evidence extraction, review API, deterministic keyword
+  reclassification, and Find Searches workflow are implemented locally;
+  onboarding integration and richer heading/description/body evidence remain.
+- **MKT1.1B - Service-Area Mapping — core local slice complete:** collect physical locations separately
+  from the places each location serves. Support cities, ZIP codes, counties,
+  distance or drive-time boundaries, map selection, and explicit exclusions.
+  Resolve nearby communities through deterministic geographic data; AI may
+  organize and explain the candidates but may not invent service boundaries.
+  The durable city/ZIP/county/radius/exclusion profile, location and website
+  suggestions, owner review workflow, tenant-safe API, research seeds, and
+  saved-result reclassification are implemented locally. Drive-time boundaries,
+  map selection, and deterministic nearby-community expansion remain.
+- **MKT1.1C - Business-Aware Keyword Relevance — local core complete:** require a confirmed service,
+  plausible customer intent, and valid service-area relationship before a
+  phrase enters `Best matches`. Use deterministic rules and semantic matching
+  first, then governed AI only for ambiguous candidates. Show `Best matches`,
+  `Google already shows you`, `Needs your review`, and a recoverable `Hidden as
+  unrelated` group with `Track`, `Hide`, and `We don't offer this` feedback.
+  The three review states, service and service-area evidence, strict governed-AI
+  batch contract, confidence gate, audit trail, allowance control, and bounded
+  customer action are implemented locally. Richer semantic synonym rules,
+  owner correction feedback, and measured classifier quality remain.
 
 Scope:
 
 - Add local keyword discovery using services, city/service area, Search Console
   queries, related searches, DataForSEO Labs, and DataForSEO Keywords Data.
+- Build one versioned business-relevance profile per organization and location
+  from confirmed services, rejected services, service areas, crawl evidence,
+  connected profile facts, tracked phrases, and measured search behavior.
+- Treat geographic slogans, city nicknames, trivia, jobs, DIY intent, unrelated
+  industries, and unsupported services as noise by default. Search demand alone
+  must never make an unrelated phrase a recommendation.
+- Cache AI relevance decisions against the business-profile version and require
+  every accepted ambiguous phrase to name the matched service and supporting
+  evidence. AI failure falls back to the deterministic filter rather than
+  exposing an unfiltered list.
 - Prefer Labs keyword ideas, related keywords, ranked keywords, competitor
   domains, and historical demand for discovery; use Keywords Data only where
   its location-specific volume, trend, or Google Ads-derived fields materially
@@ -1812,6 +1967,13 @@ Acceptance criteria:
   without a source label.
 - The default suggestions are generated from connected data and location facts;
   the owner is not required to build the starting keyword list manually.
+- No phrase appears in `Best matches` without a confirmed or reviewable service
+  match, customer intent, service-area fit, confidence, and an owner-readable
+  explanation. A geographic reference without a service relationship, such as
+  a city nickname, is hidden rather than recommended.
+- Owner feedback changes only the scoped organization/location relevance
+  profile and remains reviewable and reversible; it does not silently train a
+  global model or remove the phrase permanently.
 
 ### Value VAL1 - Research-Backed Search Value
 
@@ -2275,10 +2437,21 @@ Acceptance criteria:
 ### AI Visibility AIV1 - AI Search and Entity Visibility
 
 Goal: turn the existing deterministic AI Visibility specification into a real
-upper-tier product rather than a documentation-only promise.
+customer product rather than a documentation-only promise. An owner should be
+able to answer `Where does my business appear in AI search?`, `For which
+questions and locations?`, `Who appears instead?`, and `What should I improve?`
+from one dedicated workspace.
 
 Scope:
 
+- Add a customer-facing `AI Search Visibility` section with persistent
+  organization/location context and filters for platform, service, service
+  area, customer question, buying intent, and date range.
+- Maintain a versioned engine registry instead of hardcoding permanent platform
+  assumptions. Evaluate Google AI Overviews and AI Mode, ChatGPT Search,
+  Perplexity, Microsoft Copilot, Gemini, and newly material AI-search surfaces;
+  expose only engines for which the production provider, geography, language,
+  collection method, and evidence quality have passed QA.
 - Evaluate DataForSEO AI Optimization and LLM Mentions as the first production
   provider for prompts, responses, mentions, citations, competitors, and
   platform metadata across supported AI-search surfaces. Ship only the
@@ -2288,20 +2461,54 @@ Scope:
   evidence to the deterministic intelligence engine and does not receive tool
   access or become a customer chatbot.
 - Track prompt clusters by service, location, customer question, and buying
-  intent.
+  intent. Generate the starting questions from the confirmed service catalog
+  and deterministic service-area profile created in MKT1.1A-MKT1.1C; let the
+  owner add, pause, or reject a question without turning the feature into a
+  general chatbot.
+- Keep the monitored question set neutral and reproducible. Store the exact
+  question, location/language/device context when available, engine, collection
+  version, result timestamp, and source evidence so a later check is a valid
+  comparison rather than a differently worded test.
 - Surface inclusion frequency, citation presence, position/prominence,
-  competitor share, entity consistency, and volatility over time.
+  competitor share, entity consistency, and volatility over time. Keep
+  `mentioned`, `recommended`, `cited as a source`, and `linked` as separate
+  facts rather than combining them into one flattering score.
+- Lead the workspace with an owner-readable summary and platform comparison,
+  then show question-level evidence: whether the business appeared, which
+  location/entity appeared, the cited or linked pages, competitors shown, and
+  the supported answer excerpt or evidence reference.
+- Add historical charts and before/after comparisons by engine, question
+  cluster, service, and location. Disclose sample size, missing engines,
+  personalization/geography limits, collection gaps, and response volatility;
+  never imply continuous or universal monitoring.
+- Add portfolio comparison for the Multi-location plan so an operator can find
+  locations that are absent, inconsistently described, or losing share to the
+  same competitor without opening every location separately.
 - Tie AI visibility findings to content, schema, entity, review, and authority
   actions without guaranteeing inclusion.
 - Add per-plan prompt/check allowances, provider cost reconciliation, and
-  customer-owned credential support where available.
+  customer-owned credential support where available. Scheduled sampling is the
+  default; repeated manual checks are credit-priced and rate-limited.
 
 Acceptance criteria:
 
+- The AI Search Visibility section lets an owner identify the supported engines
+  checked, the questions checked, where the business appeared, what source was
+  cited, which competitors appeared, and the most defensible next action
+  without reading raw provider output.
 - Every AI visibility metric identifies platform, prompt set, source, date,
-  model/collection version when available, and known limitations.
+  model/collection version when available, location/language context, sample
+  size, and known limitations.
 - No static readiness score is presented as proof that an AI system recommends
   the business.
+- A missing mention, a mention without a citation, a citation, a link, and a
+  recommendation remain distinct states in storage, API, charts, reports, and
+  AI explanations.
+- Unsupported or temporarily unavailable engines are labeled as unavailable or
+  omitted; the product never silently reports them as a zero result.
+- Re-running a frozen prompt set with the same stored context preserves a
+  comparable observation, while prompt, engine, provider, or collection-model
+  changes begin a clearly labeled new comparison version.
 - Recommended actions are evidence-backed and flow into the same governed
   Action Center.
 

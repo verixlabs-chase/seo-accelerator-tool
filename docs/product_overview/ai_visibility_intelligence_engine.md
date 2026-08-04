@@ -307,6 +307,50 @@ This module is:
 
 ------------------------------------------------------------------------
 
+# 18. Customer AI Search Visibility Workspace
+
+The customer product is a dedicated `AI Search Visibility` section, not a
+general chatbot and not a single unexplained score.
+
+It answers four owner questions:
+
+1.  Where does my business appear in AI search?
+2.  Which services, customer questions, and locations cause it to appear?
+3.  Which competitors appear when my business does not?
+4.  What evidence-backed improvement should I work on next?
+
+The default workspace includes:
+
+-   A location and portfolio selector
+-   A supported-engine comparison
+-   Mention, recommendation, citation, and link rates as separate facts
+-   Question clusters based on confirmed services and service areas
+-   Competitor share and cited-source comparisons
+-   Historical change, sample size, volatility, and collection gaps
+-   Question-level evidence and supported response excerpts
+-   A direct path into governed content, entity, review, authority, and website
+    actions
+
+Supported engines are controlled by a versioned registry. Candidate surfaces
+include Google AI Overviews and AI Mode, ChatGPT Search, Perplexity, Microsoft
+Copilot, Gemini, and future material AI-search products. A surface is visible to
+customers only after its production collection method, geography, language,
+evidence, and historical-comparison behavior pass QA. Unavailable coverage is
+never converted into a zero visibility result.
+
+The monitored question set is bounded and reproducible. It is generated from
+the confirmed business service catalog, real service areas, owner-approved
+customer problems, and buying intent. Owners may add, pause, or reject a
+question, but cannot use the feature for open-ended conversation. Each check
+stores the exact question and available platform, location, language, device,
+model, provider, and collection-version context.
+
+Scheduled sampling is the default. Manual reruns are credit-priced,
+rate-limited, and deduplicated so the product can protect margin without
+weakening the saved historical record.
+
+------------------------------------------------------------------------
+
 # Conclusion
 
 The Dynamic AI Visibility Intelligence Engine is not a static scoring

@@ -61,6 +61,21 @@ test("dashboard date range rejects reversed or oversized periods", () => {
   );
 });
 
+test("dashboard rejects comparisons with a different number of days", () => {
+  assert.throws(
+    () =>
+      buildSearchMetricsQuery({
+        rangePreset: "custom",
+        dateFrom: "2026-07-01",
+        dateTo: "2026-07-28",
+        comparisonMode: "custom",
+        comparisonDateFrom: "2026-06-01",
+        comparisonDateTo: "2026-06-14",
+      }),
+    /same number of days/i,
+  );
+});
+
 test("comparison chart aligns independently dated periods by day number", () => {
   const aligned = alignSearchComparisonPoints(
     [
@@ -99,4 +114,30 @@ test("comparison chart aligns independently dated periods by day number", () => 
     comparisonAvgPosition: 12,
   });
   assert.equal(aligned[1].comparisonClicks, null);
+});
+
+test("comparison chart preserves missing calendar days instead of shifting later data", () => {
+  const aligned = alignSearchComparisonPoints(
+    [
+      { date: "2026-07-01", clicks: 8, impressions: 200, avg_position: 9 },
+      { date: "2026-07-03", clicks: 10, impressions: 240, avg_position: 8 },
+    ],
+    [
+      { date: "2026-06-01", clicks: 4, impressions: 120, avg_position: 12 },
+      { date: "2026-06-02", clicks: 5, impressions: 130, avg_position: 11 },
+      { date: "2026-06-03", clicks: 6, impressions: 140, avg_position: 10 },
+    ],
+    {
+      primaryDateFrom: "2026-07-01",
+      comparisonDateFrom: "2026-06-01",
+      primaryPeriodDays: 3,
+      comparisonPeriodDays: 3,
+    },
+  );
+
+  assert.equal(aligned[1].date, null);
+  assert.equal(aligned[1].clicks, null);
+  assert.equal(aligned[1].comparisonDate, "2026-06-02");
+  assert.equal(aligned[2].date, "2026-07-03");
+  assert.equal(aligned[2].comparisonDate, "2026-06-03");
 });

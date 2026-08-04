@@ -6,6 +6,8 @@ from app.api.v1 import (
     automation,
     authority,
     business_locations,
+    business_services,
+    business_service_areas,
     campaigns,
     competitors,
     content,
@@ -80,6 +82,8 @@ tenant_api_router.include_router(reports.router)
 tenant_api_router.include_router(strategy_memory.router)
 tenant_api_router.include_router(subaccounts.router)
 tenant_api_router.include_router(business_locations.router)
+tenant_api_router.include_router(business_services.router)
+tenant_api_router.include_router(business_service_areas.router)
 tenant_api_router.include_router(locations.router)
 tenant_api_router.include_router(hierarchy_observability.router)
 tenant_api_router.include_router(usage_economics.tenant_router)

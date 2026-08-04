@@ -14,7 +14,7 @@ from app.models.organization import Organization
 from app.services.audit_service import write_audit_log
 from app.services.cost_economics_service import (
     CostEconomicsError,
-    get_allowance_summary,
+    get_customer_credit_summary,
     get_margin_report,
     list_tier_margin_models,
     record_monthly_allocation,
@@ -36,14 +36,15 @@ class CostAllocationIn(BaseModel):
     source: str = Field(default="operator", min_length=1, max_length=80)
 
 
-@tenant_router.get("/usage/allowance")
+@tenant_router.get("/usage/credits")
+@tenant_router.get("/usage/allowance", include_in_schema=False)
 def get_customer_allowance(
     request: Request,
     user: dict = Depends(require_org_role({"org_user"})),
     db: Session = Depends(get_db),
 ) -> dict:
     try:
-        data = get_allowance_summary(db, organization_id=user["organization_id"])
+        data = get_customer_credit_summary(db, organization_id=user["organization_id"])
     except CostEconomicsError as exc:
         raise _http_error(exc) from exc
     return envelope(request, data)

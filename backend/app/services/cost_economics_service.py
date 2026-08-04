@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any
 
 from sqlalchemy import func
@@ -16,6 +16,35 @@ from app.models.organization import Organization
 MONEY = Decimal("0.00000001")
 DISPLAY_MONEY = Decimal("0.01")
 ONE_MILLION = Decimal("1000000")
+CREDIT_COST_QUANTUM = Decimal("0.01")
+CREDIT_POLICY_VERSION = "insight-credits-2026-08-v1"
+
+CREDIT_ACTION_CATALOG: dict[tuple[str, str], tuple[str, str]] = {
+    ("rank_tracking", "google_organic_live_advanced"): (
+        "Check one search ranking",
+        "Checks where one search appears for one location.",
+    ),
+    ("keyword_research", "ranked_keywords_live"): (
+        "Find searches already showing",
+        "Finds searches where this website already appears.",
+    ),
+    ("keyword_research", "keyword_ideas_live"): (
+        "Find related customer searches",
+        "Finds other searches that match the work and service area.",
+    ),
+    ("keyword_research", "google_ads_search_volume_live"): (
+        "Measure local search demand",
+        "Checks how often the shortlisted searches are used nearby.",
+    ),
+    ("governed_ai", "keyword_relevance_review"): (
+        "Sort unclear searches",
+        "Reviews a small saved batch against confirmed services and service areas.",
+    ),
+    ("governed_ai", "intelligence_brief"): (
+        "Explain today's priorities",
+        "Turns verified business facts into a short action summary.",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -75,8 +104,8 @@ class CostAllowanceExceeded(CostEconomicsError):
         requested_cost: Decimal,
     ) -> None:
         super().__init__(
-            "This paid data request would exceed the organization's monthly provider allowance.",
-            reason_code="platform_provider_allowance_exhausted",
+            "This action needs more Insight Credits than this account has available this month.",
+            reason_code="insight_credit_allowance_exhausted",
             status_code=402,
         )
         self.budget = budget
@@ -163,6 +192,9 @@ def reserve_provider_cost(
         output_tokens=output_tokens,
     )
     budget_impact = estimated_cost if credential_owner == "platform" else Decimal("0")
+    requested_credit_units = (
+        _credits_for_cost(estimated_cost) if credential_owner == "platform" else 0
+    )
 
     if credential_owner == "platform":
         period_start, period_end = period_bounds(occurred_at)
@@ -172,6 +204,18 @@ def reserve_provider_cost(
             period_start=period_start,
             period_end=period_end,
         )
+        current_credit_exposure = _platform_credit_exposure(
+            db,
+            organization_id=organization_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        if current_credit_exposure + requested_credit_units > _plan_credit_allowance(plan):
+            raise CostAllowanceExceeded(
+                budget=plan.initial_api_budget,
+                current_exposure=current_exposure,
+                requested_cost=budget_impact,
+            )
         if current_exposure + budget_impact > plan.initial_api_budget:
             raise CostAllowanceExceeded(
                 budget=plan.initial_api_budget,
@@ -192,6 +236,8 @@ def reserve_provider_cost(
         estimated_cost=estimated_cost,
         provider_reported_cost=None,
         budget_impact_cost=budget_impact,
+        customer_credit_units=requested_credit_units,
+        credit_policy_version=CREDIT_POLICY_VERSION,
         currency=price_card.currency,
         status="reserved",
         event_type="reservation",
@@ -287,12 +333,19 @@ def reconcile_provider_cost(
         if reservation_row.credential_owner == "platform"
         else Decimal("0")
     )
+    actual_credit_units = (
+        _credits_for_cost(actual_cost)
+        if reservation_row.credential_owner == "platform"
+        else 0
+    )
+    credit_delta = actual_credit_units - int(reservation_row.customer_credit_units or 0)
     row = _terminal_ledger_event(
         reservation_row,
         event_type="reconciliation",
         status="reconciled",
         provider_reported_cost=actual_cost,
         budget_impact_cost=budget_delta,
+        customer_credit_units=credit_delta,
         occurred_at=occurred_at,
     )
     db.add(row)
@@ -320,12 +373,18 @@ def release_provider_cost(
         if reservation_row.credential_owner == "platform"
         else Decimal("0")
     )
+    credit_delta = (
+        -int(reservation_row.customer_credit_units or 0)
+        if reservation_row.credential_owner == "platform"
+        else 0
+    )
     row = _terminal_ledger_event(
         reservation_row,
         event_type="release",
         status="released",
         provider_reported_cost=None,
         budget_impact_cost=budget_delta,
+        customer_credit_units=credit_delta,
         occurred_at=occurred_at,
     )
     db.add(row)
@@ -409,6 +468,104 @@ def get_allowance_summary(
         },
         "organization_owned_operations": int(org_owned_operations or 0),
         "recovery_actions": _recovery_actions(warning_level),
+    }
+
+
+def get_customer_credit_summary(
+    db: Session,
+    *,
+    organization_id: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Return customer usage without exposing vendor prices or platform dollars."""
+
+    occurred_at = _as_utc(now or datetime.now(UTC))
+    org = db.get(Organization, organization_id)
+    if org is None:
+        raise CostEconomicsError(
+            "Organization not found.",
+            reason_code="organization_not_found",
+            status_code=404,
+        )
+    plan = resolve_plan_economics(org.plan_type)
+    period_start, period_end = period_bounds(occurred_at)
+    rows = (
+        db.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.organization_id == organization_id,
+            CostLedgerEntry.created_at >= period_start,
+            CostLedgerEntry.created_at < period_end,
+        )
+        .order_by(CostLedgerEntry.created_at.asc(), CostLedgerEntry.id.asc())
+        .all()
+    )
+    recent_rows = list(
+        reversed(
+            db.query(CostLedgerEntry)
+            .filter(
+                CostLedgerEntry.organization_id == organization_id,
+                CostLedgerEntry.created_at < period_end,
+            )
+            .order_by(CostLedgerEntry.created_at.desc(), CostLedgerEntry.id.desc())
+            .limit(32)
+            .all()
+        )
+    )
+
+    platform_rows = [row for row in rows if row.credential_owner == "platform"]
+    terminal_reservation_ids = {
+        row.reservation_id
+        for row in platform_rows
+        if row.event_type in {"reconciliation", "release"} and row.reservation_id
+    }
+    reserved = sum(
+        int(row.customer_credit_units or 0)
+        for row in platform_rows
+        if row.event_type == "reservation" and row.id not in terminal_reservation_ids
+    )
+    committed = sum(int(row.customer_credit_units or 0) for row in platform_rows)
+    used = max(0, committed - reserved)
+    reserved = max(0, reserved)
+    monthly = _plan_credit_allowance(plan)
+    remaining = max(0, monthly - used - reserved)
+    percent = (
+        Decimal(used + reserved) / Decimal(monthly) * Decimal("100")
+        if monthly > 0
+        else Decimal("100")
+    ).quantize(Decimal("0.1"))
+    warning_level = _warning_level(percent)
+    connected_account_actions = sum(
+        1
+        for row in rows
+        if row.credential_owner == "organization" and row.event_type == "reservation"
+    )
+
+    return {
+        "plan": {"code": plan.code, "name": plan.name},
+        "period": {
+            "start": period_start.isoformat(),
+            "end": period_end.isoformat(),
+            "resets_at": period_end.isoformat(),
+        },
+        "credits": {
+            "name": "Insight Credits",
+            "monthly": monthly,
+            "used": used,
+            "reserved": reserved,
+            "remaining": remaining,
+            "percent_committed": float(percent),
+            "warning_level": warning_level,
+            "blocked": used + reserved >= monthly,
+        },
+        "catalog_version": CREDIT_POLICY_VERSION,
+        "connected_account_actions": connected_account_actions,
+        "recovery_actions": _credit_recovery_actions(warning_level),
+        "recent_activity": _recent_credit_activity(recent_rows),
+        "action_prices": _customer_action_prices(db, now=occurred_at),
+        "important_note": (
+            "Insight Credits measure optional paid checks inside InsightOS. "
+            "They are not cash and do not change your subscription price."
+        ),
     }
 
 
@@ -695,6 +852,26 @@ def _platform_exposure(
     return _money(Decimal(str(value or 0)))
 
 
+def _platform_credit_exposure(
+    db: Session,
+    *,
+    organization_id: str,
+    period_start: datetime,
+    period_end: datetime,
+) -> int:
+    value = (
+        db.query(func.coalesce(func.sum(CostLedgerEntry.customer_credit_units), 0))
+        .filter(
+            CostLedgerEntry.organization_id == organization_id,
+            CostLedgerEntry.credential_owner == "platform",
+            CostLedgerEntry.created_at >= period_start,
+            CostLedgerEntry.created_at < period_end,
+        )
+        .scalar()
+    )
+    return max(0, int(value or 0))
+
+
 def _reservation_or_error(db: Session, reservation: CostLedgerEntry | str) -> CostLedgerEntry:
     row = reservation if isinstance(reservation, CostLedgerEntry) else db.get(CostLedgerEntry, reservation)
     if row is None or row.event_type != "reservation":
@@ -729,6 +906,7 @@ def _terminal_ledger_event(
     status: str,
     provider_reported_cost: Decimal | None,
     budget_impact_cost: Decimal,
+    customer_credit_units: int,
     occurred_at: datetime,
 ) -> CostLedgerEntry:
     return CostLedgerEntry(
@@ -744,6 +922,8 @@ def _terminal_ledger_event(
         estimated_cost=reservation.estimated_cost,
         provider_reported_cost=provider_reported_cost,
         budget_impact_cost=budget_impact_cost,
+        customer_credit_units=customer_credit_units,
+        credit_policy_version=reservation.credit_policy_version,
         currency=reservation.currency,
         status=status,
         event_type=event_type,
@@ -778,6 +958,187 @@ def _recovery_actions(warning_level: int | None) -> list[str]:
     if warning_level >= 90:
         actions.insert(0, "Use smaller or fewer paid checks for the rest of this month.")
     return actions
+
+
+def _credit_recovery_actions(warning_level: int | None) -> list[str]:
+    if warning_level is None:
+        return []
+    actions = [
+        "Wait for your monthly Insight Credits to reset before running optional paid checks.",
+        "If you connected your own data account, eligible checks can use that connection instead.",
+    ]
+    if warning_level >= 90:
+        actions.insert(0, "Save the remaining Insight Credits for your most important location.")
+    return actions
+
+
+def _credits_for_cost(value: Decimal | int | float | str) -> int:
+    cost = Decimal(str(value))
+    if cost == 0:
+        return 0
+    magnitude = int(
+        (abs(cost) / CREDIT_COST_QUANTUM).to_integral_value(rounding=ROUND_CEILING)
+    )
+    return magnitude if cost > 0 else -magnitude
+
+
+def _plan_credit_allowance(plan: PlanEconomics) -> int:
+    return int(
+        (plan.initial_api_budget / CREDIT_COST_QUANTUM).to_integral_value(rounding=ROUND_FLOOR)
+    )
+
+
+def _recent_credit_activity(rows: list[CostLedgerEntry]) -> list[dict[str, Any]]:
+    terminals = {
+        row.reservation_id: row
+        for row in rows
+        if row.event_type in {"reconciliation", "release"} and row.reservation_id
+    }
+    activity: list[dict[str, Any]] = []
+    reservations = [row for row in rows if row.event_type == "reservation"]
+    for reservation in reversed(reservations[-8:]):
+        terminal = terminals.get(reservation.id)
+        if reservation.credential_owner == "organization":
+            state = "connected_account"
+            credits = 0
+        elif terminal is None:
+            state = "reserved"
+            credits = max(0, int(reservation.customer_credit_units or 0))
+        elif terminal.event_type == "release":
+            state = "returned"
+            credits = 0
+        else:
+            state = "completed"
+            credits = max(
+                0,
+                int(reservation.customer_credit_units or 0)
+                + int(terminal.customer_credit_units or 0),
+            )
+        label, result = CREDIT_ACTION_CATALOG.get(
+            (reservation.capability, reservation.operation),
+            ("Run a paid check", "Collected fresh information for this account."),
+        )
+        activity.append(
+            {
+                "id": reservation.id,
+                "label": label,
+                "result": result,
+                "credits": credits,
+                "state": state,
+                "created_at": reservation.created_at.isoformat(),
+            }
+        )
+    return activity
+
+
+def _customer_action_prices(db: Session, *, now: datetime) -> list[dict[str, Any]]:
+    """Build safe customer prices from active internal price cards."""
+
+    items: list[dict[str, Any]] = []
+
+    research_cost = Decimal("0")
+    research_available = True
+    for operation in (
+        "ranked_keywords_live",
+        "keyword_ideas_live",
+        "google_ads_search_volume_live",
+    ):
+        try:
+            card = _find_price_card(
+                db,
+                provider_name="dataforseo",
+                capability="keyword_research",
+                operation=operation,
+                model_name=None,
+                now=now,
+            )
+        except CostEconomicsError:
+            research_available = False
+            break
+        research_cost += _estimate_cost(
+            card,
+            quantity=Decimal("1"),
+            input_tokens=None,
+            cached_input_tokens=None,
+            output_tokens=None,
+        )
+    if research_available:
+        items.append(
+            {
+                "code": "keyword_research_refresh",
+                "label": "Refresh customer search ideas",
+                "result": "Updates rankings, related searches, and local demand for one location.",
+                "credits": _credits_for_cost(research_cost),
+                "price_type": "up_to",
+            }
+        )
+
+    try:
+        rank_card = _find_price_card(
+            db,
+            provider_name="dataforseo",
+            capability="rank_tracking",
+            operation="google_organic_live_advanced",
+            model_name=None,
+            now=now,
+        )
+    except CostEconomicsError:
+        rank_card = None
+    if rank_card is not None:
+        items.append(
+            {
+                "code": "ranking_check",
+                "label": "Check one search ranking",
+                "result": "Checks one search for one location.",
+                "credits": _credits_for_cost(
+                    _estimate_cost(
+                        rank_card,
+                        quantity=Decimal("1"),
+                        input_tokens=None,
+                        cached_input_tokens=None,
+                        output_tokens=None,
+                    )
+                ),
+                "price_type": "per_item",
+            }
+        )
+
+    ai_card = (
+        db.query(ProviderPriceCard)
+        .filter(
+            ProviderPriceCard.capability == "governed_ai",
+            ProviderPriceCard.operation == "keyword_relevance_review",
+            ProviderPriceCard.active.is_(True),
+            ProviderPriceCard.effective_from <= now,
+            (
+                ProviderPriceCard.effective_to.is_(None)
+                | (ProviderPriceCard.effective_to > now)
+            ),
+        )
+        .order_by(ProviderPriceCard.effective_from.desc())
+        .first()
+    )
+    if ai_card is not None:
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        maximum_review_cost = _estimate_cost(
+            ai_card,
+            quantity=Decimal("1"),
+            input_tokens=settings.ai_max_input_tokens,
+            cached_input_tokens=None,
+            output_tokens=settings.ai_max_output_tokens,
+        )
+        items.append(
+            {
+                "code": "keyword_relevance_review",
+                "label": "Sort unclear searches",
+                "result": "Reviews up to 8 saved searches against confirmed business details.",
+                "credits": _credits_for_cost(maximum_review_cost),
+                "price_type": "fixed_ceiling",
+            }
+        )
+    return items
 
 
 def _money(value: Decimal) -> Decimal:

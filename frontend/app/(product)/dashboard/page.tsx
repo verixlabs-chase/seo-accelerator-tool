@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -112,6 +110,7 @@ type SearchConsoleMetrics = {
   data_status: "not_connected" | "no_data" | "ready";
   date_from?: string | null;
   date_to?: string | null;
+  days_requested: number;
   data_days: number;
   coverage_percent?: number;
   summary?: {
@@ -129,6 +128,8 @@ type SearchConsoleMetrics = {
     data_days?: number;
     coverage_percent?: number;
     is_complete?: boolean;
+    change_is_comparable?: boolean;
+    change_unavailable_reason?: string | null;
     summary?: {
       clicks: number;
       impressions: number;
@@ -290,6 +291,21 @@ function formatPositionChange(value?: number | null) {
     : `Dropped ${Math.abs(value).toFixed(1)}`;
 }
 
+function formatComparableChange(
+  value: number | null | undefined,
+  comparable: boolean | undefined,
+  noun: string,
+) {
+  return comparable === false ? "Not enough matching days" : formatChange(value, noun);
+}
+
+function formatComparablePositionChange(
+  value: number | null | undefined,
+  comparable: boolean | undefined,
+) {
+  return comparable === false ? "Not enough matching days" : formatPositionChange(value);
+}
+
 function getPositionChangeTone(value?: number | null) {
   if (value === null || value === undefined || Math.abs(value) < 0.05) {
     return "neutral" as const;
@@ -402,9 +418,9 @@ function TrendTooltip({
     color?: string;
     value?: number;
     name?: string;
-    payload?: { comparisonLabel?: string };
+    payload?: { label?: string; comparisonLabel?: string };
   }>;
-  label?: string;
+  label?: string | number;
 }) {
   if (!active || !payload || payload.length === 0) {
     return null;
@@ -413,7 +429,7 @@ function TrendTooltip({
   return (
     <div className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-2.5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-        {label}
+        {payload[0]?.payload?.label || `Day ${label}`}
       </p>
       {payload[0]?.payload?.comparisonLabel ? (
         <p className="mt-1 text-xs text-zinc-500">
@@ -441,95 +457,148 @@ function SearchConsoleTrendChart({
 }: {
   data: SearchComparisonChartPoint[];
 }) {
-  const hasComparison = data.some(
-    (point) =>
-      point.comparisonClicks !== null ||
-      point.comparisonImpressions !== null,
+  const hasVisitsComparison = data.some(
+    (point) => point.comparisonClicks !== null,
+  );
+  const hasAppearancesComparison = data.some(
+    (point) => point.comparisonImpressions !== null,
   );
 
   return (
-    <div className="h-72">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data}>
-          <defs>
-            <linearGradient id="searchImpressionsFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#FF944F" stopOpacity={0.28} />
-              <stop offset="95%" stopColor="#FF944F" stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
-          <XAxis
-            dataKey="label"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: "#71717a", fontSize: 11 }}
-            minTickGap={22}
-          />
-          <YAxis
-            yAxisId="clicks"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: "#71717a", fontSize: 11 }}
-            width={34}
-            allowDecimals={false}
-          />
-          <YAxis
-            yAxisId="impressions"
-            orientation="right"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: "#71717a", fontSize: 11 }}
-            width={46}
-            allowDecimals={false}
-          />
-          <Tooltip content={<TrendTooltip />} />
-          <Area
-            yAxisId="impressions"
-            type="monotone"
-            dataKey="impressions"
-            stroke="#FF944F"
-            strokeWidth={1.8}
-            fill="url(#searchImpressionsFill)"
-            name="Times shown"
-          />
-          <Line
-            yAxisId="clicks"
-            type="monotone"
-            dataKey="clicks"
-            stroke="#FF6A1A"
-            strokeWidth={2.4}
-            dot={false}
-            activeDot={{ r: 4, fill: "#FF6A1A", stroke: "#0a0a0a", strokeWidth: 2 }}
-            name="Visits"
-          />
-          {hasComparison ? (
-            <>
-              <Line
-                yAxisId="impressions"
-                type="monotone"
-                dataKey="comparisonImpressions"
-                stroke="#94a3b8"
-                strokeWidth={1.6}
-                strokeDasharray="6 5"
-                dot={false}
-                connectNulls
-                name="Times shown — comparison"
+    <div className="grid gap-4">
+      <section
+        aria-label="Website visits trend"
+        className="rounded-md border border-[#26272c] bg-[#101114] p-3"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-white">Website visits</h4>
+            <p className="mt-0.5 text-xs text-zinc-500">People who clicked through from Google.</p>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-0.5 w-5 bg-[#FF6A1A]" aria-hidden="true" />
+              Selected dates
+            </span>
+            {hasVisitsComparison ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-5 border-t-2 border-dashed border-[#38bdf8]" aria-hidden="true" />
+                Comparison dates
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-3 h-40">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+              <XAxis
+                dataKey="periodDay"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: "#71717a", fontSize: 11 }}
+                minTickGap={22}
+                tickFormatter={(value) => `Day ${value}`}
               />
-              <Line
-                yAxisId="clicks"
-                type="monotone"
-                dataKey="comparisonClicks"
-                stroke="#38bdf8"
-                strokeWidth={2}
-                strokeDasharray="6 5"
-                dot={false}
-                connectNulls
-                name="Visits — comparison"
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: "#71717a", fontSize: 11 }}
+                width={34}
+                allowDecimals={false}
               />
-            </>
-          ) : null}
-        </AreaChart>
-      </ResponsiveContainer>
+              <Tooltip content={<TrendTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="clicks"
+                stroke="#FF6A1A"
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{ r: 4, fill: "#FF6A1A", stroke: "#0a0a0a", strokeWidth: 2 }}
+                name="Visits — selected dates"
+              />
+              {hasVisitsComparison ? (
+                <Line
+                  type="monotone"
+                  dataKey="comparisonClicks"
+                  stroke="#38bdf8"
+                  strokeWidth={2}
+                  strokeDasharray="6 5"
+                  dot={false}
+                  name="Visits — comparison dates"
+                />
+              ) : null}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      <section
+        aria-label="Google appearances trend"
+        className="rounded-md border border-[#26272c] bg-[#101114] p-3"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-white">Times shown in Google</h4>
+            <p className="mt-0.5 text-xs text-zinc-500">How often your business appeared in search results.</p>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-0.5 w-5 bg-[#fbbf24]" aria-hidden="true" />
+              Selected dates
+            </span>
+            {hasAppearancesComparison ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-5 border-t-2 border-dashed border-[#94a3b8]" aria-hidden="true" />
+                Comparison dates
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-3 h-40">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+              <XAxis
+                dataKey="periodDay"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: "#71717a", fontSize: 11 }}
+                minTickGap={22}
+                tickFormatter={(value) => `Day ${value}`}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: "#71717a", fontSize: 11 }}
+                width={46}
+                allowDecimals={false}
+              />
+              <Tooltip content={<TrendTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="impressions"
+                stroke="#fbbf24"
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{ r: 4, fill: "#fbbf24", stroke: "#0a0a0a", strokeWidth: 2 }}
+                name="Times shown — selected dates"
+              />
+              {hasAppearancesComparison ? (
+                <Line
+                  type="monotone"
+                  dataKey="comparisonImpressions"
+                  stroke="#94a3b8"
+                  strokeWidth={2}
+                  strokeDasharray="6 5"
+                  dot={false}
+                  name="Times shown — comparison dates"
+                />
+              ) : null}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
     </div>
   );
 }
@@ -539,11 +608,7 @@ function SearchPositionTrendChart({
 }: {
   data: SearchComparisonChartPoint[];
 }) {
-  const positionData = data.filter(
-    (point) =>
-      point.avgPosition !== null ||
-      point.comparisonAvgPosition !== null,
-  );
+  const positionData = data;
   const hasComparison = positionData.some(
     (point) => point.comparisonAvgPosition !== null,
   );
@@ -554,11 +619,12 @@ function SearchPositionTrendChart({
         <LineChart data={positionData}>
           <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
           <XAxis
-            dataKey="label"
+            dataKey="periodDay"
             axisLine={false}
             tickLine={false}
             tick={{ fill: "#71717a", fontSize: 11 }}
             minTickGap={22}
+            tickFormatter={(value) => `Day ${value}`}
           />
           <YAxis
             reversed
@@ -585,7 +651,6 @@ function SearchPositionTrendChart({
               strokeWidth={2}
               strokeDasharray="6 5"
               dot={false}
-              connectNulls
               name="Comparison position"
             />
           ) : null}
@@ -783,7 +848,11 @@ function SearchPerformanceOverview({
                 icon: "arrow-up",
                 label: "Visits from Google",
                 value: metrics.summary.clicks.toLocaleString("en-US"),
-                changeLabel: formatChange(metrics.comparison?.clicks_change_percent, "visits"),
+                changeLabel: formatComparableChange(
+                  metrics.comparison?.clicks_change_percent,
+                  metrics.comparison?.change_is_comparable,
+                  "visits",
+                ),
                 changeTone: !metrics.comparison?.clicks_change_percent
                   ? "neutral"
                   : metrics.comparison.clicks_change_percent > 0
@@ -795,7 +864,11 @@ function SearchPerformanceOverview({
                 icon: "search-value",
                 label: "Times you appeared",
                 value: metrics.summary.impressions.toLocaleString("en-US"),
-                changeLabel: formatChange(metrics.comparison?.impressions_change_percent, "appearances"),
+                changeLabel: formatComparableChange(
+                  metrics.comparison?.impressions_change_percent,
+                  metrics.comparison?.change_is_comparable,
+                  "appearances",
+                ),
                 changeTone: !metrics.comparison?.impressions_change_percent
                   ? "neutral"
                   : metrics.comparison.impressions_change_percent > 0
@@ -818,7 +891,10 @@ function SearchPerformanceOverview({
                   metrics.summary.avg_position === undefined
                     ? "Not available"
                     : `#${metrics.summary.avg_position.toFixed(1)}`,
-                changeLabel: formatPositionChange(metrics.comparison?.position_improvement),
+                changeLabel: formatComparablePositionChange(
+                  metrics.comparison?.position_improvement,
+                  metrics.comparison?.change_is_comparable,
+                ),
                 changeTone: getPositionChangeTone(metrics.comparison?.position_improvement),
               },
             ]}
@@ -830,8 +906,8 @@ function SearchPerformanceOverview({
               title="Google appearances and website visits"
               summary={
                 metrics.comparison
-                  ? "Solid orange shows the selected dates. Dashed blue and gray show the comparison dates."
-                  : "The light area shows how often you appeared. The orange line shows visits."
+                  ? "Visits and appearances are separated so each result can be compared clearly with the earlier dates."
+                  : "Visits and appearances are separated so changes are easy to see."
               }
               chart={<SearchConsoleTrendChart data={trend} />}
               scope={{
@@ -839,13 +915,6 @@ function SearchPerformanceOverview({
                 dateRangeLabel: `${formatMetricDate(metrics.date_from)}–${formatMetricDate(metrics.date_to)}`,
                 comparisonLabel: metrics.comparison?.label || "No comparison",
               }}
-              legend={[
-                { label: "Visits", color: "#FF6A1A" },
-                { label: "Times shown", color: "#FF944F" },
-                ...(metrics.comparison
-                  ? [{ label: "Earlier dates", color: "#38bdf8" }]
-                  : []),
-              ]}
               footer={
                 <p className="text-sm leading-5 text-zinc-300">
                   {metrics.comparison
@@ -853,7 +922,9 @@ function SearchPerformanceOverview({
                         metrics.comparison.date_from,
                       )}–${formatMetricDate(metrics.comparison.date_to)}. ${
                         metrics.comparison.data_days ?? 0
-                      } of ${metrics.comparison.period_days} comparison days are available.`
+                      } of ${metrics.comparison.period_days} comparison days are available. The selected dates have ${
+                        metrics.data_days
+                      } of ${metrics.days_requested} days.`
                     : "Comparison is turned off for this view."}
                 </p>
               }
@@ -1406,6 +1477,12 @@ export default function DashboardPage() {
       alignSearchComparisonPoints(
         searchConsoleMetrics?.points || [],
         searchConsoleMetrics?.comparison_points || [],
+        {
+          primaryDateFrom: searchConsoleMetrics?.date_from || null,
+          comparisonDateFrom: searchConsoleMetrics?.comparison?.date_from || null,
+          primaryPeriodDays: searchConsoleMetrics?.days_requested || 0,
+          comparisonPeriodDays: searchConsoleMetrics?.comparison?.period_days || 0,
+        },
       ).map(
         (point: {
           periodDay: number;

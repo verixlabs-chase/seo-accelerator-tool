@@ -331,6 +331,114 @@ class GovernedActionDraft(BaseModel):
             )
 
 
+class GovernedKeywordRelevanceDecision(BaseModel):
+    """One bounded classification of a server-selected uncertain search phrase."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    suggestion_id: str = Field(min_length=1, max_length=36)
+    classification: Literal["relevant", "unrelated", "still_unclear"]
+    confidence: float = Field(ge=0, le=1)
+    matched_service_id: str | None = Field(default=None, max_length=36)
+    matched_service_area_id: str | None = Field(default=None, max_length=36)
+    area_basis: Literal[
+        "included_area",
+        "confirmed_market",
+        "excluded_area",
+        "unclear",
+    ]
+    reason: str = Field(min_length=1, max_length=320)
+    evidence_used: list[str] = Field(min_length=1, max_length=8)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="reason",
+            max_words=40,
+            max_sentences=2,
+            require_action_start=False,
+        )
+
+    @field_validator("evidence_used")
+    @classmethod
+    def evidence_must_be_unique(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            stripped = item.strip()
+            if not stripped:
+                raise ValueError("Evidence identifiers must not be empty.")
+            if stripped not in normalized:
+                normalized.append(stripped)
+        return normalized
+
+    @model_validator(mode="after")
+    def relevant_decisions_require_business_facts(self) -> "GovernedKeywordRelevanceDecision":
+        if self.classification == "relevant":
+            if self.matched_service_id is None:
+                raise ValueError("A relevant search must match a confirmed service.")
+            if self.area_basis not in {"included_area", "confirmed_market"}:
+                raise ValueError("A relevant search must use a confirmed service market.")
+        if self.area_basis == "included_area" and self.matched_service_area_id is None:
+            raise ValueError("An included-area decision must identify that service area.")
+        if self.area_basis == "excluded_area" and self.matched_service_area_id is None:
+            raise ValueError("An excluded-area decision must identify that service area.")
+        return self
+
+
+class GovernedKeywordRelevanceReview(BaseModel):
+    """Strict batch output for uncertain keyword review; never an open-ended chat response."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    decisions: list[GovernedKeywordRelevanceDecision] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def suggestion_ids_must_be_unique(self) -> "GovernedKeywordRelevanceReview":
+        ids = [item.suggestion_id for item in self.decisions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Each search suggestion may appear only once.")
+        return self
+
+    def validate_against_context(
+        self,
+        *,
+        suggestion_ids: set[str],
+        service_ids: set[str],
+        included_area_ids: set[str],
+        excluded_area_ids: set[str],
+        evidence_ids: set[str],
+    ) -> None:
+        returned_ids = {item.suggestion_id for item in self.decisions}
+        if returned_ids != suggestion_ids:
+            raise ValueError("AI output must classify every supplied search exactly once.")
+        for item in self.decisions:
+            if item.matched_service_id and item.matched_service_id not in service_ids:
+                raise ValueError("AI output referenced a service outside the confirmed profile.")
+            if item.matched_service_area_id:
+                allowed_area_ids = included_area_ids | excluded_area_ids
+                if item.matched_service_area_id not in allowed_area_ids:
+                    raise ValueError("AI output referenced an unknown service area.")
+            if (
+                item.area_basis == "included_area"
+                and item.matched_service_area_id not in included_area_ids
+            ):
+                raise ValueError("AI output treated an unconfirmed area as included.")
+            if (
+                item.area_basis == "excluded_area"
+                and item.matched_service_area_id not in excluded_area_ids
+            ):
+                raise ValueError("AI output treated an included area as excluded.")
+            if item.area_basis == "confirmed_market" and not included_area_ids:
+                raise ValueError("AI output used a confirmed market when none exists.")
+            unknown_evidence = sorted(set(item.evidence_used) - evidence_ids)
+            if unknown_evidence:
+                raise ValueError(
+                    f"AI output cited evidence outside the supplied context: {unknown_evidence}"
+                )
+
+
 def _validate_plain_language(
     value: str,
     *,
