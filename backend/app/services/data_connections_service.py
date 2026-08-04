@@ -229,6 +229,7 @@ def get_search_console_metrics(
         date_from=primary_start,
         date_to=primary_end,
     )
+    primary_period_days = (primary_end - primary_start).days + 1
     summary = _summarize_search_console_rows(rows) if rows else None
     comparison = None
     comparison_rows: list[SearchConsoleDailyMetric] = []
@@ -246,6 +247,11 @@ def get_search_console_metrics(
             else None
         )
         comparison_period_days = (comparison_end - comparison_start).days + 1
+        change_is_comparable = (
+            len(rows) == primary_period_days
+            and len(comparison_rows) == comparison_period_days
+            and primary_period_days == comparison_period_days
+        )
         comparison = {
             "mode": normalized_comparison_mode,
             "label": _comparison_label(normalized_comparison_mode),
@@ -258,10 +264,18 @@ def get_search_console_metrics(
                 1,
             ),
             "is_complete": len(comparison_rows) == comparison_period_days,
+            "change_is_comparable": change_is_comparable,
+            "change_unavailable_reason": (
+                None
+                if change_is_comparable
+                else "The selected and comparison periods need the same complete set of days."
+            ),
             "summary": comparison_summary,
             "clicks_change_percent": (
                 _percent_change(summary["clicks"], comparison_summary["clicks"])
-                if summary is not None and comparison_summary is not None
+                if change_is_comparable
+                and summary is not None
+                and comparison_summary is not None
                 else None
             ),
             "impressions_change_percent": (
@@ -269,7 +283,9 @@ def get_search_console_metrics(
                     summary["impressions"],
                     comparison_summary["impressions"],
                 )
-                if summary is not None and comparison_summary is not None
+                if change_is_comparable
+                and summary is not None
+                and comparison_summary is not None
                 else None
             ),
             "ctr_change_points": (
@@ -277,7 +293,9 @@ def get_search_console_metrics(
                     summary["ctr_percent"] - comparison_summary["ctr_percent"],
                     2,
                 )
-                if summary is not None and comparison_summary is not None
+                if change_is_comparable
+                and summary is not None
+                and comparison_summary is not None
                 else None
             ),
             "position_improvement": (
@@ -285,7 +303,8 @@ def get_search_console_metrics(
                     comparison_summary["avg_position"] - summary["avg_position"],
                     2,
                 )
-                if summary is not None
+                if change_is_comparable
+                and summary is not None
                 and comparison_summary is not None
                 and comparison_summary["avg_position"] is not None
                 and summary["avg_position"] is not None
@@ -305,10 +324,10 @@ def get_search_console_metrics(
         ),
         "date_from": primary_start.isoformat(),
         "date_to": primary_end.isoformat(),
-        "days_requested": (primary_end - primary_start).days + 1,
+        "days_requested": primary_period_days,
         "data_days": len(rows),
         "coverage_percent": round(
-            (len(rows) / ((primary_end - primary_start).days + 1)) * 100,
+            (len(rows) / primary_period_days) * 100,
             1,
         ),
         "summary": summary,
@@ -371,6 +390,14 @@ def _resolve_search_console_periods(
             comparison_date_to,
             label="comparison",
         )
+        comparison_period_days = (
+            resolved_comparison_end - resolved_comparison_start
+        ).days + 1
+        if comparison_period_days != primary_period_days:
+            raise DataConnectionError(
+                "Choose comparison dates with the same number of days as the selected dates.",
+                reason_code="comparison_period_length_mismatch",
+            )
     else:
         raise DataConnectionError(
             "Choose a supported comparison option.",

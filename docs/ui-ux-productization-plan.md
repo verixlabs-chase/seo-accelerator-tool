@@ -9,16 +9,18 @@
 
 ---
 
-> **Current status (2026-08-03):** Customer UX Sprints UX1-UX9 created the
+> **Current status (2026-08-04):** Customer UX Sprints UX1-UX9 created the
 > working baseline. Customer screenshot review found that the interface still
 > has dense operations-console patterns, repeated status content, technical
 > copy, weak visual hierarchy, and too little decision-useful visualization.
 > UX10-UX12, I1.4/T27 measurement readiness, and I1.2/T28 evidence-backed
 > forecasting, the bounded I1.3 daily action brief, and evidence-based location
 > questions and governed drafting are now complete. **MKT1.1 automated local
-> keyword discovery is now in progress**: its first slice adds a location-aware
+> keyword discovery is now in progress**: its first slices add a location-aware
 > Find Searches page, real demand visualization, owner-friendly opportunity
-> groups, source detail, and direct promotion into Search Rankings. The follow-on
+> groups, confirmed service and service-area setup, explicit excluded markets,
+> a bounded AI action for sorting only unclear phrases, and direct promotion
+> into Search Rankings. The follow-on
 > **I1.4/T29 measured action-value
 > sprint** is scheduled after G1.4 supplies live Google Business Profile
 > performance data; it adds separate Website and Google Profile action lanes
@@ -27,6 +29,10 @@
 > analytics, onboarding, and paid-beta foundations are operating. The
 > authoritative execution brief is
 > [claude-next-build-brief.md](./claude-next-build-brief.md).
+> A later **UX13 natural product voice and comprehension sprint** now covers
+> the remaining gap between technically simple copy and language that sounds
+> natural when a service-business owner reads it aloud. It includes public,
+> onboarding, product, report, notification, and AI-generated copy.
 >
 > **Sprint 9 language standard:** Design and write for an owner or manager of a service-based
 > business. Customer-facing screens must explain business meaning first and retain SEO,
@@ -550,6 +556,27 @@ space, dead controls, unnecessary badges, and priority content below the fold.
 60. Complete route-by-route visual regression, keyboard, screen-reader, and
 five-second comprehension QA.
 
+### Sprint 13 — Natural product voice and comprehension
+
+61. Rewrite public and authenticated headlines around the outcome the owner
+wants instead of announcing `plain English`, simplicity, AI, or the absence of
+SEO tooling.
+62. Write for a capable, busy service-business owner. Use natural spoken
+language, concrete verbs, and specific business meaning without describing the
+customer as non-technical or less tech-savvy.
+63. Audit onboarding, page introductions, navigation, metrics, empty and error
+states, actions, reports, notifications, and AI messages for self-conscious
+product narration, filler, stacked abstractions, and familiar AI phrasing.
+64. Add approved examples, counterexamples, prohibited phrases, and
+read-aloud/five-second comprehension checks to the shared language guide and
+automated copy contracts.
+65. Use the public home-page direction `Know how your business is showing up on
+Google` and `See which searches help customers find you, how each location is
+doing, and what to work on next` as a reference, subject to data-truth review.
+66. Require representative service-business owners to answer `What is this
+page for?` and `What would you do next?` without coaching before the sprint is
+accepted.
+
 ### Planned product UX — G1.3A customer usage credits
 
 - Replace `Monthly data budget` and customer-visible dollar balances with
@@ -560,6 +587,15 @@ five-second comprehension QA.
   not describe credits as cash, API tokens, or general AI tokens.
 - Explain failed-work refunds and organization-owned credentials without
   exposing provider accounting details.
+
+Completion record (2026-08-04):
+
+- Settings now shows Insight Credits, the monthly balance, credits used and
+  reserved, reset date, action prices, and automatic returns for failed work.
+- Keyword Research shows the refresh ceiling before the paid check and the
+  bounded AI sorting price beside that action.
+- The tenant response and source tests prevent customer UI from exposing the
+  internal monthly dollar budget or vendor-cost accounting.
 
 ### Planned product UX — VAL1 research-backed Search Value
 
@@ -575,21 +611,21 @@ five-second comprehension QA.
 
 ### Follow-on product sprint — I1.4/T29 measured website and Google Profile actions
 
-61. Separate the action workspace into `Improve your website` and `Improve your
+67. Separate the action workspace into `Improve your website` and `Improve your
 Google Business Profile` so a service owner immediately understands where the
 work will happen.
-62. Put a compact real-metric strip beside every action: metric name, current
+68. Put a compact real-metric strip beside every action: metric name, current
 value, source date, target or supported range, and `check again` date.
-63. After the waiting period, replace the forecast emphasis with a simple
+69. After the waiting period, replace the forecast emphasis with a simple
 before/after visual and `improved`, `about the same`, `worse`, or `not enough
 information` result.
-64. Keep source, scope, provider, device, and technical evidence available in
+70. Keep source, scope, provider, device, and technical evidence available in
 details while the default view answers `What do I do?`, `Which number should
 move?`, and `Did it help?`.
-65. Never display a success state from checklist completion alone. Require a
+71. Never display a success state from checklist completion alone. Require a
 new same-scope provider measurement, and explain the missing connection or
 baseline when a result cannot be measured.
-66. Use live website measurements from CWV, Search Console, and governed crawl
+72. Use live website measurements from CWV, Search Console, and governed crawl
 facts. Use location-scoped Google Business Profile performance and reputation
 metrics only after G1.4's authorized production connection is active.
 
@@ -604,27 +640,27 @@ Completion record (2026-08-03):
 
 ### Later product sprint — ENG1 verified progress and healthy habits
 
-67. Create a small achievement system with three clearly different types:
+73. Create a small achievement system with three clearly different types:
 foundation milestones, useful-work consistency badges, and verified-result
 badges.
-68. Put progress toward the next relevant achievement beside the related plan
+74. Put progress toward the next relevant achievement beside the related plan
 without moving the current priority, metric, or next action below the fold.
-69. When a badge is earned, show a brief accessible celebration that says what
+75. When a badge is earned, show a brief accessible celebration that says what
 the owner accomplished, which location it applies to, and which work or metric
 proved it. Include a direct evidence link and one useful next goal.
-70. Allow checklist completion to earn a plainly labeled habit badge, but
+76. Allow checklist completion to earn a plainly labeled habit badge, but
 require a genuinely later same-scope provider measurement before granting any
 improvement badge.
-71. Favor weekly and monthly progress over brittle daily streaks. Add grace for
+77. Favor weekly and monthly progress over brittle daily streaks. Add grace for
 provider outages and missing observations, and never reward unnecessary scans,
 repeated clicks, provider spend, or busywork.
-72. Keep deterministic achievement rules and evidence authoritative. AI may
+78. Keep deterministic achievement rules and evidence authoritative. AI may
 write the friendly celebration and next-goal explanation but cannot grant,
 upgrade, or invent an achievement.
-73. Add a compact achievement history and optional notification controls. Avoid
+79. Add a compact achievement history and optional notification controls. Avoid
 public leaderboards, shame, artificial urgency, pay-to-win rewards, intrusive
 animation, and notification fatigue.
-74. Use PA1 cohort measurement and explicit stop conditions to prove that the
+80. Use PA1 cohort measurement and explicit stop conditions to prove that the
 system improves useful follow-through and retention before expanding the badge
 catalog.
 

@@ -65,7 +65,7 @@ class ProviderPriceCard(Base):
 
 
 class CostLedgerEntry(Base):
-    """Append-only currency events for provider and future AI work."""
+    """Append-only provider events with internal cost and customer credit views."""
 
     __tablename__ = "cost_ledger_entries"
     __table_args__ = (
@@ -125,6 +125,10 @@ class CostLedgerEntry(Base):
     estimated_cost: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
     provider_reported_cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     budget_impact_cost: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    customer_credit_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    credit_policy_version: Mapped[str] = mapped_column(
+        String(80), nullable=False, default="insight-credits-2026-08-v1"
+    )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     event_type: Mapped[str] = mapped_column(String(24), nullable=False)

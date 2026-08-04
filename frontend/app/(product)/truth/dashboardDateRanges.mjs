@@ -72,15 +72,62 @@ export function buildSearchMetricsQuery(selection) {
     );
     params.set("comparison_date_from", selection.comparisonDateFrom);
     params.set("comparison_date_to", selection.comparisonDateTo);
+    const primaryDays =
+      preset === "custom"
+        ? rangeDays(selection.dateFrom, selection.dateTo)
+        : Number(preset);
+    const comparisonDays = rangeDays(
+      selection.comparisonDateFrom,
+      selection.comparisonDateTo,
+    );
+    if (primaryDays !== comparisonDays) {
+      throw new Error("Choose comparison dates with the same number of days.");
+    }
   }
   return params.toString();
 }
 
-export function alignSearchComparisonPoints(points = [], comparisonPoints = []) {
-  const pointCount = Math.max(points.length, comparisonPoints.length);
+function rangeDays(dateFrom, dateTo) {
+  const start = parseDate(dateFrom, "range start date");
+  const end = parseDate(dateTo, "range end date");
+  return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+}
+
+function dateOffset(value, startValue) {
+  if (!value || !startValue) return null;
+  const valueDate = parseDate(value, "chart date");
+  const startDate = parseDate(startValue, "chart start date");
+  return Math.round((valueDate.getTime() - startDate.getTime()) / 86400000);
+}
+
+function indexedByPeriodDay(items, startValue) {
+  const indexed = new Map();
+  items.forEach((item, index) => {
+    const offset = startValue ? dateOffset(item?.date, startValue) : index;
+    if (offset !== null && offset >= 0) indexed.set(offset, item);
+  });
+  return indexed;
+}
+
+export function alignSearchComparisonPoints(
+  points = [],
+  comparisonPoints = [],
+  periods = {},
+) {
+  const primaryStart = periods.primaryDateFrom || points[0]?.date || null;
+  const comparisonStart =
+    periods.comparisonDateFrom || comparisonPoints[0]?.date || null;
+  const primaryByDay = indexedByPeriodDay(points, primaryStart);
+  const comparisonByDay = indexedByPeriodDay(comparisonPoints, comparisonStart);
+  const pointCount = Math.max(
+    Number(periods.primaryPeriodDays || 0),
+    Number(periods.comparisonPeriodDays || 0),
+    primaryByDay.size ? Math.max(...primaryByDay.keys()) + 1 : 0,
+    comparisonByDay.size ? Math.max(...comparisonByDay.keys()) + 1 : 0,
+  );
   return Array.from({ length: pointCount }, (_, index) => {
-    const current = points[index] || null;
-    const comparison = comparisonPoints[index] || null;
+    const current = primaryByDay.get(index) || null;
+    const comparison = comparisonByDay.get(index) || null;
     return {
       periodDay: index + 1,
       date: current?.date || null,

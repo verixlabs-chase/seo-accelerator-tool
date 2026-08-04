@@ -16,6 +16,8 @@ from app.models.authority import (
     OutreachContact,
 )
 from app.models.business_location import BusinessLocation
+from app.models.business_service import BusinessService
+from app.models.business_service_area import BusinessServiceArea
 from app.models.campaign import Campaign
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
@@ -202,6 +204,8 @@ __all__ = [
     "Backlink",
     "Citation",
     "BusinessLocation",
+    "BusinessService",
+    "BusinessServiceArea",
     "StrategyRecommendation",
     "IntelligenceGraphNode",
     "IntelligenceGraphEdge",

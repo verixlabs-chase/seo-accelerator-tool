@@ -4,8 +4,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
-from app.schemas.keyword_research import KeywordResearchDiscoverIn, KeywordResearchTrackIn
-from app.services import keyword_research_service
+from app.schemas.keyword_research import (
+    KeywordResearchAIReviewIn,
+    KeywordResearchDiscoverIn,
+    KeywordResearchTrackIn,
+)
+from app.services import keyword_relevance_ai_service, keyword_research_service
 
 
 router = APIRouter(prefix="/keyword-research", tags=["keyword-research"])
@@ -54,5 +58,23 @@ def track_keyword_suggestions(
         tenant_id=user["tenant_id"],
         campaign_id=body.campaign_id,
         suggestion_ids=body.suggestion_ids,
+    )
+    return envelope(request, payload)
+
+
+@router.post("/review-uncertain")
+def review_uncertain_keyword_suggestions(
+    request: Request,
+    body: KeywordResearchAIReviewIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = keyword_relevance_ai_service.review_uncertain(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        requested_by_user_id=user["user_id"],
+        max_items=body.max_items,
+        retry_failed=body.retry_failed,
     )
     return envelope(request, payload)

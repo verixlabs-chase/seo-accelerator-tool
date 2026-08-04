@@ -176,6 +176,9 @@ def test_keyword_research_api_returns_empty_state_before_first_run(client) -> No
             "new_opportunities": 0,
             "already_found": 0,
             "tracked": 0,
+            "best_matches": 0,
+            "needs_review": 0,
+            "hidden_unrelated": 0,
         },
     }
 
@@ -216,6 +219,7 @@ def test_discovery_scores_real_sources_and_promotes_selected_searches(
     assert emergency["opportunity_group"] == "quick_win"
     assert emergency["recommended_action"] == "Improve the page already showing"
     assert emergency["intent"] == "Ready to hire"
+    assert emergency["relevance_status"] == "needs_review"
 
     tracked = keyword_research_service.track_suggestions(
         db_session,

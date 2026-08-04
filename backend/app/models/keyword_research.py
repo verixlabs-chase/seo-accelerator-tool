@@ -98,6 +98,29 @@ class KeywordResearchSuggestion(Base):
     intent: Mapped[str] = mapped_column(String(40), nullable=False)
     opportunity_group: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     relevance_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    relevance_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="needs_review", index=True
+    )
+    matched_service_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("business_services.id", ondelete="SET NULL"), nullable=True
+    )
+    matched_service_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    matched_service_area_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("business_service_areas.id", ondelete="SET NULL"), nullable=True
+    )
+    matched_service_area_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    area_match_type: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    ai_review_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="not_requested", index=True
+    )
+    ai_relevance_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    ai_run_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("governed_ai_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    ai_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    relevance_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     opportunity_score: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     recommended_action: Mapped[str] = mapped_column(String(160), nullable=False)
     recommendation_reason: Mapped[str] = mapped_column(String(500), nullable=False)

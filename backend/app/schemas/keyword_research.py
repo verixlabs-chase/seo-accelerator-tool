@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class KeywordResearchDiscoverIn(BaseModel):
@@ -18,3 +18,11 @@ class KeywordResearchTrackIn(BaseModel):
         if not unique:
             raise ValueError("Choose at least one search to track.")
         return unique
+
+
+class KeywordResearchAIReviewIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    campaign_id: str = Field(min_length=1, max_length=36)
+    max_items: int = Field(default=8, ge=1, le=12)
+    retry_failed: bool = False

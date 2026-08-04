@@ -7,6 +7,7 @@ from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocatio
 from app.services.cost_economics_service import (
     CostAllowanceExceeded,
     get_allowance_summary,
+    get_customer_credit_summary,
     get_margin_report,
     list_tier_margin_models,
     reconcile_provider_cost,
@@ -42,6 +43,8 @@ def test_platform_cost_reserves_reconciles_and_is_idempotent(db_session, create_
     assert Decimal(reservation.estimated_cost) == Decimal("0.02000000")
     assert Decimal(reservation.budget_impact_cost) == Decimal("0.02000000")
     assert reservation.price_card_version == "dataforseo-google-organic-2026-07-30-v1"
+    assert reservation.customer_credit_units == 2
+    assert reservation.credit_policy_version == "insight-credits-2026-08-v1"
 
     reconciliation = reconcile_provider_cost(
         db_session,
@@ -51,6 +54,7 @@ def test_platform_cost_reserves_reconciles_and_is_idempotent(db_session, create_
     )
     assert Decimal(reconciliation.provider_reported_cost) == Decimal("0.01800000")
     assert Decimal(reconciliation.budget_impact_cost) == Decimal("-0.00200000")
+    assert reconciliation.customer_credit_units == 0
 
     summary = get_allowance_summary(
         db_session,
@@ -61,6 +65,24 @@ def test_platform_cost_reserves_reconciles_and_is_idempotent(db_session, create_
     assert summary["allowance"]["monthly"] == 14.95
     assert summary["allowance"]["used"] == 0.02
     assert summary["allowance"]["reserved"] == 0.0
+
+    credits = get_customer_credit_summary(
+        db_session,
+        organization_id=org.id,
+        now=datetime(2026, 7, 30, 16, 0, tzinfo=UTC),
+    )
+    assert credits["credits"] == {
+        "name": "Insight Credits",
+        "monthly": 1495,
+        "used": 2,
+        "reserved": 0,
+        "remaining": 1493,
+        "percent_committed": 0.1,
+        "warning_level": None,
+        "blocked": False,
+    }
+    assert credits["recent_activity"][0]["state"] == "completed"
+    assert credits["recent_activity"][0]["credits"] == 2
 
 
 def test_organization_credentials_do_not_consume_platform_cogs(db_session, create_test_org) -> None:
@@ -90,17 +112,29 @@ def test_organization_credentials_do_not_consume_platform_cogs(db_session, creat
     assert summary["organization_owned_operations"] == 1
     assert Decimal(reservation.estimated_cost) == Decimal("0.02000000")
     assert Decimal(reservation.budget_impact_cost) == Decimal("0E-8")
+    assert reservation.customer_credit_units == 0
+
+    credits = get_customer_credit_summary(
+        db_session,
+        organization_id=org.id,
+        now=datetime(2026, 7, 30, 16, 0, tzinfo=UTC),
+    )
+    assert credits["credits"]["used"] == 0
+    assert credits["connected_account_actions"] == 1
+    assert credits["recent_activity"][0]["state"] == "connected_account"
 
 
 def test_platform_allowance_stops_before_dispatch(db_session, create_test_org) -> None:
     org = create_test_org(name="Hard allowance org")
     db_session.commit()
 
-    _reserve(db_session, org.id, key="rank:test:full", quantity=7475)
+    _reserve(db_session, org.id, key="rank:test:first", quantity=1)
+    _reserve(db_session, org.id, key="rank:test:full", quantity=7470)
     with pytest.raises(CostAllowanceExceeded) as exc_info:
         _reserve(db_session, org.id, key="rank:test:blocked", quantity=1)
 
     assert exc_info.value.budget == Decimal("14.95000000")
+    assert exc_info.value.reason_code == "insight_credit_allowance_exhausted"
     assert (
         db_session.query(CostLedgerEntry)
         .filter(CostLedgerEntry.idempotency_key == "rank:test:blocked")
@@ -119,9 +153,14 @@ def test_failed_provider_cost_is_released(db_session, create_test_org) -> None:
 
     assert replay.id == released.id
     assert Decimal(released.budget_impact_cost) == Decimal("-0.02000000")
+    assert released.customer_credit_units == -2
     summary = get_allowance_summary(db_session, organization_id=org.id)
     assert summary["allowance"]["used"] == 0.0
     assert summary["allowance"]["reserved"] == 0.0
+    credits = get_customer_credit_summary(db_session, organization_id=org.id)
+    assert credits["credits"]["used"] == 0
+    assert credits["credits"]["reserved"] == 0
+    assert credits["recent_activity"][0]["state"] == "returned"
 
 
 @pytest.mark.parametrize(

@@ -20,6 +20,8 @@ from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_search_console import SearchConsoleProviderAdapter
 from app.providers.keyword_research import DataForSeoKeywordResearchProvider
 from app.services import rank_service
+from app.services import business_service_service
+from app.services import business_service_area_service
 from app.services.cost_economics_service import (
     CostEconomicsError,
     reconcile_provider_cost,
@@ -129,6 +131,18 @@ def discover(
     warnings: list[str] = []
     sources: set[str] = set()
     provider_cost = Decimal("0")
+    confirmed_services = business_service_service.confirmed_services_for_campaign(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
+    confirmed_areas, excluded_areas = (
+        business_service_area_service.confirmed_areas_for_campaign(
+            db,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+        )
+    )
 
     tracked = (
         db.query(CampaignKeyword)
@@ -224,11 +238,29 @@ def discover(
         except (CostEconomicsError, ValueError) as exc:
             warnings.append(_plain_provider_warning(exc, "ranked searches"))
 
-    website_seeds = _website_seeds(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    website_seeds = (
+        []
+        if confirmed_services
+        else _website_seeds(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    )
     if website_seeds:
         sources.add("website_content")
+    service_seeds = [service.name for service in confirmed_services]
+    area_terms = business_service_area_service.search_terms(confirmed_areas)
+    service_area_seeds = [
+        f"{service.name} {area}"
+        for service in confirmed_services[:8]
+        for area in area_terms[:8]
+    ][:20]
     seeds = list(
-        dict.fromkeys([*_choose_seeds(candidates, location=location), *website_seeds])
+        dict.fromkeys(
+            [
+                *service_area_seeds,
+                *service_seeds,
+                *_choose_seeds(candidates, location_terms=area_terms),
+                *website_seeds,
+            ]
+        )
     )[:20]
     if live_provider is not None and seeds:
         try:
@@ -291,9 +323,24 @@ def discover(
         except (CostEconomicsError, ValueError) as exc:
             warnings.append(_plain_provider_warning(exc, "local search demand"))
 
-    scored = [_score_candidate(value, location=location) for value in candidates.values()]
+    scored = [
+        _score_candidate(
+            value,
+            location=location,
+            confirmed_services=confirmed_services,
+            confirmed_service_areas=confirmed_areas,
+            excluded_service_areas=excluded_areas,
+        )
+        for value in candidates.values()
+    ]
     scored.sort(
-        key=lambda item: (item["opportunity_score"], item.get("search_volume") or 0),
+        key=lambda item: (
+            {"relevant": 2, "needs_review": 1, "unrelated": 0}.get(
+                item["relevance_status"], 0
+            ),
+            item["opportunity_score"],
+            item.get("search_volume") or 0,
+        ),
         reverse=True,
     )
     scored = scored[: max(1, min(max_suggestions, 100))]
@@ -323,6 +370,13 @@ def discover(
                 intent=item["intent"],
                 opportunity_group=item["opportunity_group"],
                 relevance_score=item["relevance_score"],
+                relevance_status=item["relevance_status"],
+                matched_service_id=item.get("matched_service_id"),
+                matched_service_name=item.get("matched_service_name"),
+                matched_service_area_id=item.get("matched_service_area_id"),
+                matched_service_area_name=item.get("matched_service_area_name"),
+                area_match_type=item.get("area_match_type"),
+                relevance_reason=item.get("relevance_reason"),
                 opportunity_score=item["opportunity_score"],
                 recommended_action=item["recommended_action"],
                 recommendation_reason=item["recommendation_reason"],
@@ -383,6 +437,96 @@ def track_suggestions(
         "location_code": result["location_code"],
         "tracked_ids": [row.id for row in rows],
     }
+
+
+def reclassify_latest(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+) -> None:
+    campaign = _campaign_or_404(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    run = (
+        db.query(KeywordResearchRun)
+        .filter(
+            KeywordResearchRun.tenant_id == tenant_id,
+            KeywordResearchRun.campaign_id == campaign_id,
+        )
+        .order_by(KeywordResearchRun.created_at.desc())
+        .first()
+    )
+    if run is None:
+        return
+    services = business_service_service.confirmed_services_for_campaign(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
+    confirmed_areas, excluded_areas = (
+        business_service_area_service.confirmed_areas_for_campaign(
+            db,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+        )
+    )
+    location = (
+        db.get(BusinessLocation, campaign.business_location_id)
+        if campaign.business_location_id
+        else None
+    )
+    rows = (
+        db.query(KeywordResearchSuggestion)
+        .filter(
+            KeywordResearchSuggestion.run_id == run.id,
+            KeywordResearchSuggestion.tenant_id == tenant_id,
+        )
+        .all()
+    )
+    for row in rows:
+        item = {
+            "keyword": row.keyword,
+            "normalized_keyword": row.normalized_keyword,
+            "source_types": set(row.source_types or []),
+            "monthly_searches": row.monthly_searches or [],
+            "tracked": row.tracked_at is not None,
+            "search_volume": row.search_volume,
+            "cpc": row.cpc,
+            "competition": row.competition,
+            "competition_level": row.competition_level,
+            "keyword_difficulty": row.keyword_difficulty,
+            "current_position": row.current_position,
+            "gsc_clicks": row.gsc_clicks,
+            "gsc_impressions": row.gsc_impressions,
+            "gsc_position": row.gsc_position,
+        }
+        scored = _score_candidate(
+            item,
+            location=location,
+            confirmed_services=services,
+            confirmed_service_areas=confirmed_areas,
+            excluded_service_areas=excluded_areas,
+        )
+        row.intent = scored["intent"]
+        row.opportunity_group = scored["opportunity_group"]
+        row.relevance_score = scored["relevance_score"]
+        row.relevance_status = scored["relevance_status"]
+        row.matched_service_id = scored.get("matched_service_id")
+        row.matched_service_name = scored.get("matched_service_name")
+        row.matched_service_area_id = scored.get("matched_service_area_id")
+        row.matched_service_area_name = scored.get("matched_service_area_name")
+        row.area_match_type = scored.get("area_match_type")
+        row.ai_review_status = "not_requested"
+        row.ai_relevance_status = None
+        row.ai_confidence = None
+        row.ai_reason = None
+        row.ai_run_id = None
+        row.ai_reviewed_at = None
+        row.relevance_reason = scored.get("relevance_reason")
+        row.opportunity_score = scored["opportunity_score"]
+        row.recommended_action = scored["recommended_action"]
+        row.recommendation_reason = scored["recommendation_reason"]
+        row.evidence = scored["evidence"]
+    db.commit()
 
 
 def _run_provider_call(
@@ -539,7 +683,7 @@ def _parse_volume_item(item: dict[str, Any]) -> dict[str, Any]:
 def _choose_seeds(
     candidates: dict[str, dict[str, Any]],
     *,
-    location: BusinessLocation | None,
+    location_terms: list[str] | None = None,
 ) -> list[str]:
     ranked = sorted(
         candidates.values(),
@@ -551,11 +695,10 @@ def _choose_seeds(
         reverse=True,
     )
     seeds = [item["keyword"] for item in ranked[:10]]
-    city = ((location.city or location.primary_city) if location else None) or ""
-    if city:
+    for area in (location_terms or [])[:5]:
         for item in list(seeds[:5]):
-            if city.casefold() not in item.casefold():
-                seeds.append(f"{item} {city}")
+            if area.casefold() not in item.casefold():
+                seeds.append(f"{item} {area}")
     return list(dict.fromkeys(seeds))[:20]
 
 
@@ -590,7 +733,14 @@ def _website_seeds(
     return list(dict.fromkeys(seeds))[:10]
 
 
-def _score_candidate(item: dict[str, Any], *, location: BusinessLocation | None) -> dict[str, Any]:
+def _score_candidate(
+    item: dict[str, Any],
+    *,
+    location: BusinessLocation | None,
+    confirmed_services: list[Any] | None = None,
+    confirmed_service_areas: list[Any] | None = None,
+    excluded_service_areas: list[Any] | None = None,
+) -> dict[str, Any]:
     sources = sorted(item["source_types"])
     tracked = bool(item.get("tracked"))
     position = _number(item.get("current_position"))
@@ -599,17 +749,64 @@ def _score_candidate(item: dict[str, Any], *, location: BusinessLocation | None)
     volume = int(item.get("search_volume") or 0)
     impressions = float(item.get("gsc_impressions") or 0)
 
-    relevance = 55
-    if "google_search_console" in sources:
-        relevance += 25
-    if "dataforseo_ranked" in sources:
-        relevance += 20
-    if tracked:
-        relevance = 100
     city = ((location.city or location.primary_city) if location else None) or ""
-    if city and city.casefold() in item["normalized_keyword"]:
-        relevance += 5
-    relevance = min(100, relevance)
+    services = confirmed_services or []
+    matched_service, service_match = business_service_service.match_keyword_to_service(
+        item["normalized_keyword"],
+        services,
+    )
+    included_areas = confirmed_service_areas or []
+    excluded_areas = excluded_service_areas or []
+    matched_area, area_match_type = business_service_area_service.match_keyword_to_area(
+        item["normalized_keyword"],
+        included_areas,
+        excluded_areas,
+    )
+    if tracked:
+        relevance_status = "relevant"
+        relevance = 100
+        relevance_reason = "You already chose to track this search."
+    elif matched_service is not None and service_match >= 0.75:
+        if area_match_type == "excluded":
+            relevance_status = "unrelated"
+            relevance = 3
+            relevance_reason = (
+                f"Matches {matched_service.name}, but {matched_area.name} is marked outside your service area."
+            )
+        elif area_match_type == "missing":
+            relevance_status = "needs_review"
+            relevance = 55
+            relevance_reason = (
+                f"Matches {matched_service.name}. Confirm where this location takes jobs before treating it as a best match."
+            )
+        else:
+            relevance_status = "relevant"
+            relevance = 95 if service_match >= 0.9 else 82
+            relevance_reason = (
+                f"Matches {matched_service.name} in {matched_area.name}, which you confirmed you serve."
+                if matched_area is not None
+                else f"Matches {matched_service.name} and this location's confirmed service market."
+            )
+    elif matched_service is not None and service_match > 0:
+        relevance_status = "needs_review"
+        relevance = 52
+        relevance_reason = (
+            f"May relate to {matched_service.name}, but the match is not clear enough yet."
+        )
+    elif services and ({"google_search_console", "dataforseo_ranked"} & set(sources)):
+        relevance_status = "needs_review"
+        relevance = 28
+        relevance_reason = (
+            "Your business has appeared for this search, but it does not match a confirmed service."
+        )
+    elif services:
+        relevance_status = "unrelated"
+        relevance = 5
+        relevance_reason = "Does not match a service confirmed for this location."
+    else:
+        relevance_status = "needs_review"
+        relevance = 35
+        relevance_reason = "Confirm your services so this search can be checked for business fit."
 
     demand_points = min(30, int(math.log10(max(1, volume) + 1) * 12))
     evidence_points = 15 if impressions > 0 else (10 if position else 4)
@@ -656,10 +853,21 @@ def _score_candidate(item: dict[str, Any], *, location: BusinessLocation | None)
             "location": city or None,
             "has_real_demand": volume > 0,
             "has_existing_visibility": effective_position is not None or impressions > 0,
+            "matched_service": matched_service.name if matched_service else None,
+            "service_match": round(service_match, 2),
+            "matched_service_area": matched_area.name if matched_area else None,
+            "area_match_type": area_match_type,
         },
         "intent": intent,
         "opportunity_group": opportunity_group,
         "relevance_score": relevance,
+        "relevance_status": relevance_status,
+        "matched_service_id": matched_service.id if matched_service else None,
+        "matched_service_name": matched_service.name if matched_service else None,
+        "matched_service_area_id": matched_area.id if matched_area else None,
+        "matched_service_area_name": matched_area.name if matched_area else None,
+        "area_match_type": area_match_type,
+        "relevance_reason": relevance_reason,
         "opportunity_score": score,
         "recommended_action": action,
         "recommendation_reason": reason,
@@ -677,6 +885,9 @@ def _summary(items: list[dict[str, Any]]) -> dict[str, int]:
             item.get("opportunity_group") == "already_found" for item in items
         ),
         "tracked": sum(item.get("tracked_at") is not None for item in items),
+        "best_matches": sum(item.get("relevance_status") == "relevant" for item in items),
+        "needs_review": sum(item.get("relevance_status") == "needs_review" for item in items),
+        "hidden_unrelated": sum(item.get("relevance_status") == "unrelated" for item in items),
     }
 
 
@@ -713,6 +924,18 @@ def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
         "intent": item.intent,
         "opportunity_group": item.opportunity_group,
         "relevance_score": item.relevance_score,
+        "relevance_status": item.relevance_status,
+        "matched_service_id": item.matched_service_id,
+        "matched_service_name": item.matched_service_name,
+        "matched_service_area_id": item.matched_service_area_id,
+        "matched_service_area_name": item.matched_service_area_name,
+        "area_match_type": item.area_match_type,
+        "ai_review_status": item.ai_review_status,
+        "ai_relevance_status": item.ai_relevance_status,
+        "ai_confidence": item.ai_confidence,
+        "ai_reason": item.ai_reason,
+        "ai_reviewed_at": item.ai_reviewed_at.isoformat() if item.ai_reviewed_at else None,
+        "relevance_reason": item.relevance_reason,
         "opportunity_score": item.opportunity_score,
         "recommended_action": item.recommended_action,
         "recommendation_reason": item.recommendation_reason,

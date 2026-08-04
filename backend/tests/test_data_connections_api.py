@@ -277,10 +277,34 @@ def test_search_console_metrics_compares_custom_date_ranges(client, db_session) 
     assert payload["comparison"]["date_from"] == "2026-06-01"
     assert payload["comparison"]["date_to"] == "2026-06-10"
     assert payload["comparison"]["summary"]["clicks"] == 30
+    assert payload["comparison"]["change_is_comparable"] is True
     assert payload["comparison"]["clicks_change_percent"] == 100.0
     assert payload["comparison"]["position_improvement"] == 3.0
     assert len(payload["points"]) == 10
     assert len(payload["comparison_points"]) == 10
+
+    db_session.query(SearchConsoleDailyMetric).filter(
+        SearchConsoleDailyMetric.organization_id == organization_id,
+        SearchConsoleDailyMetric.campaign_id == campaign_id,
+        SearchConsoleDailyMetric.metric_date == date(2026, 7, 5),
+    ).delete()
+    db_session.commit()
+    incomplete_response = client.get(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-search-console/metrics/{campaign_id}"
+            "?date_from=2026-07-01&date_to=2026-07-10"
+            "&comparison_mode=custom"
+            "&comparison_date_from=2026-06-01"
+            "&comparison_date_to=2026-06-10"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    incomplete = incomplete_response.json()["data"]
+    assert incomplete["data_days"] == 9
+    assert incomplete["comparison"]["change_is_comparable"] is False
+    assert incomplete["comparison"]["clicks_change_percent"] is None
+    assert incomplete["comparison"]["position_improvement"] is None
 
 
 def test_search_console_metrics_rejects_invalid_custom_date_ranges(
@@ -325,6 +349,24 @@ def test_search_console_metrics_rejects_invalid_custom_date_ranges(
 
     assert response.status_code == 400
     assert response.json()["errors"][0]["details"]["reason_code"] == "invalid_date_range"
+
+    unequal_response = client.get(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-search-console/metrics/{campaign_id}"
+            "?date_from=2026-07-01&date_to=2026-07-10"
+            "&comparison_mode=custom"
+            "&comparison_date_from=2026-06-01"
+            "&comparison_date_to=2026-06-05"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert unequal_response.status_code == 400
+    assert (
+        unequal_response.json()["errors"][0]["details"]["reason_code"]
+        == "comparison_period_length_mismatch"
+    )
 
 
 def test_search_console_metrics_explains_when_location_is_not_connected(client) -> None:

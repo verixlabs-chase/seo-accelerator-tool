@@ -30,11 +30,48 @@ test("keyword research keeps business-owner language ahead of technical evidence
   const page = source("../app/(product)/keyword-research/page.tsx");
 
   assert.match(page, /Close to the top/);
-  assert.match(page, /New opportunities/);
+  assert.match(page, /Best matches/);
+  assert.match(page, /Needs your review/);
+  assert.match(page, /Hidden as unrelated/);
   assert.match(page, /Google already finds you/);
   assert.match(page, /See the supporting data/);
   assert.match(page, /Demand is an estimate, not a promise of new jobs/);
   assert.doesNotMatch(page, /deterministic summary/i);
+});
+
+test("keyword research confirms real services before presenting strong matches", () => {
+  const page = source("../app/(product)/keyword-research/page.tsx");
+
+  assert.match(page, /\/business-services\/discover/);
+  assert.match(page, /Find services on your website/);
+  assert.match(page, /What work should these searches match/);
+  assert.match(page, /We offer this/);
+  assert.match(page, /Not a service/);
+  assert.match(page, /Matches \{item\.matched_service_name\}/);
+});
+
+test("keyword research confirms real service areas and keeps exclusions visible", () => {
+  const page = source("../app/(product)/keyword-research/page.tsx");
+
+  assert.match(page, /\/business-service-areas\/suggest/);
+  assert.match(page, /Where do you want these customers to come from/);
+  assert.match(page, /Places this location serves/);
+  assert.match(page, /Places this location does not serve/);
+  assert.match(page, /We serve this area/);
+  assert.match(page, /We do not serve here/);
+  assert.match(page, /Outside area:/);
+});
+
+test("unclear-search AI review is a bounded action instead of a chatbot", () => {
+  const page = source("../app/(product)/keyword-research/page.tsx");
+
+  assert.match(page, /\/keyword-research\/review-uncertain/);
+  assert.match(page, /Use AI to sort unclear searches/);
+  assert.match(page, /Checks up to 8 phrases against your confirmed services and service areas/);
+  assert.match(page, /It cannot change your website/);
+  assert.match(page, /AI checked/);
+  assert.doesNotMatch(page, /placeholder="Ask AI/i);
+  assert.doesNotMatch(page, /chatbot/i);
 });
 
 test("customer pages keep the market-data supplier private", () => {
