@@ -16,7 +16,7 @@
 > UX10-UX12, I1.4/T27 measurement readiness, and I1.2/T28 evidence-backed
 > forecasting, the bounded I1.3 daily action brief, and evidence-based location
 > questions and governed drafting are now complete. **MKT1.1 automated local
-> keyword discovery is now in progress**: its first slices add a location-aware
+> keyword discovery is now locally complete**: its slices add a location-aware
 > Find Searches page, real demand visualization, owner-friendly opportunity
 > groups, confirmed service and service-area setup, explicit excluded markets,
 > a bounded AI action for sorting only unclear phrases, and direct promotion
@@ -25,7 +25,12 @@
 > scoped decision reused on later refreshes. Saved competitor domains now add
 > clearly labeled competitor opportunities with the competing page and
 > observed position, without presenting that position as the customer's own
-> result or bypassing the same service and service-area checks. The follow-on
+> result or bypassing the same service and service-area checks. Saved research
+> dates now show search-demand and visibility movement, individual phrases carry
+> plain-language change labels, and owner answers measure filter quality from the
+> prediction that existed before the correction. Confirmed groups with real saved
+> measurements can be added to Next Steps once without changing the website.
+> The follow-on
 > **I1.4/T29 measured action-value
 > sprint** is scheduled after G1.4 supplies live Google Business Profile
 > performance data; it adds separate Website and Google Profile action lanes

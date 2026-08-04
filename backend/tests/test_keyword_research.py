@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -10,6 +11,7 @@ from app.models.keyword_research import (
     KeywordResearchRun,
     KeywordResearchSuggestion,
 )
+from app.models.intelligence import StrategyRecommendation
 from app.models.rank import CampaignKeyword
 from app.providers.keyword_research import DataForSeoKeywordResearchProvider
 from app.services import business_service_service, keyword_research_service
@@ -98,9 +100,7 @@ class FakeCompetitorKeywordProvider:
                         "keyword": "the biggest little city",
                         "keyword_info": {"search_volume": 900},
                     },
-                    "ranked_serp_element": {
-                        "serp_item": {"rank_absolute": 2}
-                    },
+                    "ranked_serp_element": {"serp_item": {"rank_absolute": 2}},
                 },
             ],
             "cost": Decimal("0.02"),
@@ -120,9 +120,7 @@ def test_provider_uses_current_endpoints_and_resolved_location_code() -> None:
         payload = json.loads(request.content.decode("utf-8"))
         requests.append((request.url.path, payload))
         if request.url.path.endswith("/search_volume/live"):
-            result: list[dict] = [
-                {"keyword": "free tv recycling reno nv", "search_volume": 10}
-            ]
+            result: list[dict] = [{"keyword": "free tv recycling reno nv", "search_volume": 10}]
         else:
             result = [{"items": []}]
         return httpx.Response(
@@ -217,13 +215,12 @@ def test_confirmed_service_uses_bounded_versioned_synonyms() -> None:
         [service],
     )
 
-    assert business_service_service.SERVICE_MATCH_RULES_VERSION == (
-        "service-synonyms-2026-08-v1"
-    )
+    assert business_service_service.SERVICE_MATCH_RULES_VERSION == ("service-synonyms-2026-08-v1")
     assert matched is service
     assert score == 0.84
     assert unrelated is None
     assert unrelated_score == 0
+
 
 def test_ranked_search_keeps_the_page_that_is_already_showing() -> None:
     parsed = keyword_research_service._parse_labs_item(
@@ -271,9 +268,7 @@ def test_planning_context_groups_customer_needs_and_maps_a_real_page() -> None:
         "intent": "Ready to hire",
     }
     assert planned["target_page"]["status"] == "existing"
-    assert planned["target_page"]["url"] == (
-        "https://plumber.example/emergency-plumbing-reno"
-    )
+    assert planned["target_page"]["url"] == ("https://plumber.example/emergency-plumbing-reno")
 
 
 def test_planning_context_keeps_missing_pages_and_uncertain_searches_honest() -> None:
@@ -339,6 +334,26 @@ def test_keyword_research_api_returns_empty_state_before_first_run(client) -> No
             "needs_review": 0,
             "hidden_unrelated": 0,
         },
+        "history": {"snapshot_count": 0, "series": [], "comparison": None},
+        "filter_quality": {
+            "state": "gathering_feedback",
+            "headline": "We are still learning what fits your business",
+            "message": (
+                "0 of 10 suggested matches have been checked. We will show a "
+                "dependable match rate after more answers."
+            ),
+            "owner_checked": 0,
+            "automatic_decisions_checked": 0,
+            "agreements": 0,
+            "corrections": 0,
+            "agreement_rate": None,
+            "false_matches": 0,
+            "missed_matches": 0,
+            "unclear_searches_resolved": 0,
+            "minimum_sample": 10,
+            "rules_version": keyword_research_service.RELEVANCE_RULES_VERSION,
+        },
+        "governed_actions": [],
     }
 
 
@@ -412,6 +427,7 @@ def test_keyword_feedback_api_saves_a_scoped_owner_choice(client, db_session) ->
     assert feedback.campaign_id == campaign.id
     assert feedback.created_by_user_id is not None
 
+
 def test_discovery_scores_real_sources_and_promotes_selected_searches(
     db_session,
     create_test_org,
@@ -458,15 +474,23 @@ def test_discovery_scores_real_sources_and_promotes_selected_searches(
         suggestion_ids=[emergency["id"]],
     )
     assert tracked["created_count"] == 1
-    assert db_session.query(CampaignKeyword).filter(
-        CampaignKeyword.campaign_id == campaign.id,
-        CampaignKeyword.keyword == "emergency plumber",
-    ).count() == 1
+    assert (
+        db_session.query(CampaignKeyword)
+        .filter(
+            CampaignKeyword.campaign_id == campaign.id,
+            CampaignKeyword.keyword == "emergency plumber",
+        )
+        .count()
+        == 1
+    )
     persisted = db_session.get(KeywordResearchSuggestion, emergency["id"])
     assert persisted is not None and persisted.tracked_at is not None
-    assert db_session.query(KeywordResearchRun).filter(
-        KeywordResearchRun.campaign_id == campaign.id
-    ).count() == 1
+    assert (
+        db_session.query(KeywordResearchRun)
+        .filter(KeywordResearchRun.campaign_id == campaign.id)
+        .count()
+        == 1
+    )
 
 
 def test_discovery_adds_saved_competitor_gaps_without_overwriting_customer_position(
@@ -565,9 +589,7 @@ def test_owner_relevance_choice_is_audited_and_survives_future_refreshes(
         max_suggestions=25,
         provider=FakeKeywordResearchProvider(),
     )
-    suggestion = next(
-        item for item in first["items"] if item["keyword"] == "emergency plumber"
-    )
+    suggestion = next(item for item in first["items"] if item["keyword"] == "emergency plumber")
     assert suggestion["relevance_status"] == "needs_review"
 
     saved = keyword_research_service.save_relevance_feedback(
@@ -579,9 +601,7 @@ def test_owner_relevance_choice_is_audited_and_survives_future_refreshes(
         service_id=service.id,
         created_by_user_id=None,
     )
-    saved_item = next(
-        item for item in saved["items"] if item["keyword"] == "emergency plumber"
-    )
+    saved_item = next(item for item in saved["items"] if item["keyword"] == "emergency plumber")
     assert saved_item["relevance_status"] == "relevant"
     assert saved_item["owner_feedback"] == "relevant"
     assert saved_item["matched_service_name"] == "Plumbing"
@@ -608,9 +628,7 @@ def test_owner_relevance_choice_is_audited_and_survives_future_refreshes(
         service_id=None,
         created_by_user_id=None,
     )
-    cleared_item = next(
-        item for item in cleared["items"] if item["keyword"] == "emergency plumber"
-    )
+    cleared_item = next(item for item in cleared["items"] if item["keyword"] == "emergency plumber")
     assert cleared_item["relevance_status"] == "needs_review"
     assert cleared_item["owner_feedback"] is None
 
@@ -623,9 +641,7 @@ def test_owner_relevance_choice_is_audited_and_survives_future_refreshes(
         service_id=None,
         created_by_user_id=None,
     )
-    hidden_item = next(
-        item for item in hidden["items"] if item["keyword"] == "emergency plumber"
-    )
+    hidden_item = next(item for item in hidden["items"] if item["keyword"] == "emergency plumber")
     assert hidden_item["relevance_status"] == "unrelated"
     assert hidden_item["owner_feedback"] == "unrelated"
 
@@ -637,9 +653,7 @@ def test_owner_relevance_choice_is_audited_and_survives_future_refreshes(
         provider=FakeKeywordResearchProvider(),
     )
     hidden_refresh_item = next(
-        item
-        for item in hidden_refresh["items"]
-        if item["keyword"] == "emergency plumber"
+        item for item in hidden_refresh["items"] if item["keyword"] == "emergency plumber"
     )
     assert hidden_refresh_item["relevance_status"] == "unrelated"
     assert hidden_refresh_item["owner_feedback"] == "unrelated"
@@ -649,6 +663,309 @@ def test_owner_relevance_choice_is_audited_and_survives_future_refreshes(
         .count()
         == 3
     )
+
+
+def _add_saved_search(
+    db_session,
+    *,
+    campaign: Campaign,
+    run: KeywordResearchRun,
+    keyword: str,
+    search_volume: int | None,
+    position: float | None,
+    opportunity_score: int,
+    relevance_status: str = "relevant",
+) -> KeywordResearchSuggestion:
+    row = KeywordResearchSuggestion(
+        run_id=run.id,
+        tenant_id=campaign.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        business_location_id=campaign.business_location_id,
+        keyword=keyword,
+        normalized_keyword=keyword.casefold(),
+        source_types=["dataforseo_ranked"],
+        evidence={"sources": ["dataforseo_ranked"], "location": "Reno"},
+        search_volume=search_volume,
+        current_position=position,
+        intent="Ready to hire",
+        opportunity_group="quick_win",
+        relevance_score=80 if relevance_status == "relevant" else 55,
+        relevance_status=relevance_status,
+        matched_service_name="Junk Removal" if relevance_status == "relevant" else None,
+        opportunity_score=opportunity_score,
+        recommended_action="Improve the page already showing",
+        recommendation_reason="This search is supported by saved evidence.",
+    )
+    db_session.add(row)
+    return row
+
+
+def test_keyword_history_compares_saved_runs_and_labels_each_search(
+    db_session,
+    create_test_org,
+) -> None:
+    organization = create_test_org(name="Keyword History Org")
+    campaign = Campaign(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        name="Junk Removal Shop",
+        domain="history.example",
+        setup_state="Active",
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    previous_at = datetime(2026, 7, 1, tzinfo=UTC)
+    current_at = previous_at + timedelta(days=30)
+    previous = KeywordResearchRun(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        status="complete",
+        location_name="Reno",
+        completed_at=previous_at,
+        created_at=previous_at,
+    )
+    current = KeywordResearchRun(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        status="complete",
+        location_name="Reno",
+        completed_at=current_at,
+        created_at=current_at,
+    )
+    db_session.add_all([previous, current])
+    db_session.flush()
+    _add_saved_search(
+        db_session,
+        campaign=campaign,
+        run=previous,
+        keyword="junk removal reno",
+        search_volume=100,
+        position=10,
+        opportunity_score=50,
+    )
+    _add_saved_search(
+        db_session,
+        campaign=campaign,
+        run=previous,
+        keyword="old cleanup phrase",
+        search_volume=20,
+        position=None,
+        opportunity_score=35,
+    )
+    _add_saved_search(
+        db_session,
+        campaign=campaign,
+        run=current,
+        keyword="junk removal reno",
+        search_volume=140,
+        position=7,
+        opportunity_score=60,
+    )
+    _add_saved_search(
+        db_session,
+        campaign=campaign,
+        run=current,
+        keyword="appliance removal reno",
+        search_volume=50,
+        position=None,
+        opportunity_score=55,
+    )
+    db_session.commit()
+
+    payload = keyword_research_service.get_latest(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+    )
+
+    assert payload["history"]["snapshot_count"] == 2
+    assert [item["measured_demand"] for item in payload["history"]["series"]] == [
+        120,
+        190,
+    ]
+    comparison = payload["history"]["comparison"]
+    assert comparison["new_searches"] == 1
+    assert comparison["no_longer_seen"] == 1
+    assert comparison["rising_demand"] == 1
+    assert comparison["improved_positions"] == 1
+    assert comparison["demand_change"] == 70
+    improved = next(item for item in payload["items"] if item["keyword"] == "junk removal reno")
+    assert improved["trend"]["status"] == "improving_rank"
+    assert improved["trend"]["position_improvement"] == 3
+    new_search = next(
+        item for item in payload["items"] if item["keyword"] == "appliance removal reno"
+    )
+    assert new_search["trend"]["status"] == "new"
+
+
+def test_filter_quality_uses_prediction_snapshots_instead_of_owner_overrides(
+    db_session,
+    create_test_org,
+) -> None:
+    organization = create_test_org(name="Keyword Quality Org")
+    campaign = Campaign(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        name="Junk Removal Shop",
+        domain="quality.example",
+        setup_state="Active",
+    )
+    db_session.add(campaign)
+    db_session.commit()
+    business_service_service.add_manual_service(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        name="Junk Removal",
+    )
+    service = business_service_service.confirmed_services_for_campaign(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+    )[0]
+    run = KeywordResearchRun(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        status="complete",
+        location_name="Reno",
+    )
+    db_session.add(run)
+    db_session.flush()
+    unclear = _add_saved_search(
+        db_session,
+        campaign=campaign,
+        run=run,
+        keyword="trash hauling",
+        search_volume=90,
+        position=None,
+        opportunity_score=50,
+        relevance_status="needs_review",
+    )
+    predicted_match = _add_saved_search(
+        db_session,
+        campaign=campaign,
+        run=run,
+        keyword="junk removal quote",
+        search_volume=120,
+        position=8,
+        opportunity_score=65,
+    )
+    db_session.commit()
+
+    keyword_research_service.save_relevance_feedback(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        suggestion_id=predicted_match.id,
+        decision="unrelated",
+        service_id=None,
+        created_by_user_id=None,
+    )
+    keyword_research_service.save_relevance_feedback(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        suggestion_id=unclear.id,
+        decision="relevant",
+        service_id=service.id,
+        created_by_user_id=None,
+    )
+
+    payload = keyword_research_service.get_latest(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+    )
+    quality = payload["filter_quality"]
+    assert quality["owner_checked"] == 2
+    assert quality["automatic_decisions_checked"] == 1
+    assert quality["agreements"] == 0
+    assert quality["corrections"] == 1
+    assert quality["false_matches"] == 1
+    assert quality["unclear_searches_resolved"] == 1
+    feedback = (
+        db_session.query(KeywordRelevanceFeedback)
+        .filter(KeywordRelevanceFeedback.normalized_keyword == "trash hauling")
+        .one()
+    )
+    assert feedback.predicted_relevance_status == "needs_review"
+    assert feedback.predicted_relevance_score == 55
+    assert feedback.prediction_source == "rules"
+
+
+def test_confirmed_measured_cluster_creates_one_idempotent_governed_action(
+    db_session,
+    create_test_org,
+) -> None:
+    organization = create_test_org(name="Keyword Action Org")
+    campaign = Campaign(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        name="Junk Removal Shop",
+        domain="action.example",
+        setup_state="Active",
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    run = KeywordResearchRun(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        status="complete",
+        location_name="Reno",
+    )
+    db_session.add(run)
+    db_session.flush()
+    suggestion = _add_saved_search(
+        db_session,
+        campaign=campaign,
+        run=run,
+        keyword="junk removal reno",
+        search_volume=120,
+        position=9,
+        opportunity_score=70,
+    )
+    db_session.commit()
+
+    created = keyword_research_service.create_governed_action(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        suggestion_ids=[suggestion.id],
+    )
+    repeated = keyword_research_service.create_governed_action(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        suggestion_ids=[suggestion.id],
+    )
+
+    assert created["created"] is True
+    assert created["item"]["action_id"] == "publish_cluster_support_pages"
+    assert repeated["created"] is False
+    assert repeated["item"]["id"] == created["item"]["id"]
+    assert (
+        db_session.query(StrategyRecommendation)
+        .filter(
+            StrategyRecommendation.campaign_id == campaign.id,
+            StrategyRecommendation.engine_version
+            == keyword_research_service.KEYWORD_INTELLIGENCE_VERSION,
+        )
+        .count()
+        == 1
+    )
+    recommendation = db_session.get(StrategyRecommendation, created["item"]["id"])
+    evidence = json.loads(recommendation.evidence_json)
+    assert evidence["source"] == "keyword_research"
+    assert evidence["measured_monthly_demand"] == 120
+    assert evidence["best_observed_position"] == 9
+    assert "No website changes were made" in created["message"]
+
+
 def test_latest_keyword_research_is_tenant_scoped(
     db_session,
     create_test_org,

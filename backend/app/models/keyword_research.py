@@ -31,9 +31,7 @@ class KeywordResearchRun(Base):
         ),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -44,7 +42,10 @@ class KeywordResearchRun(Base):
         String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
     )
     business_location_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("business_locations.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36),
+        ForeignKey("business_locations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="complete")
     location_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -74,11 +75,12 @@ class KeywordResearchSuggestion(Base):
         ),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     run_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("keyword_research_runs.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("keyword_research_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     tenant_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
@@ -90,7 +92,10 @@ class KeywordResearchSuggestion(Base):
         String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
     )
     business_location_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("business_locations.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36),
+        ForeignKey("business_locations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     keyword: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_keyword: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -137,7 +142,9 @@ class KeywordResearchSuggestion(Base):
     recommendation_reason: Mapped[str] = mapped_column(String(500), nullable=False)
     tracked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
     )
@@ -158,9 +165,7 @@ class KeywordRelevanceFeedback(Base):
         ),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -192,6 +197,9 @@ class KeywordRelevanceFeedback(Base):
     decision: Mapped[str] = mapped_column(String(24), nullable=False)
     source: Mapped[str] = mapped_column(String(24), nullable=False, default="owner")
     rules_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    predicted_relevance_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    predicted_relevance_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prediction_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
     )

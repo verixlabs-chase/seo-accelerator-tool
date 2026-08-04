@@ -117,6 +117,31 @@ test("saved competitors can reveal gaps without being confused with the owner's 
   assert.match(page, /href=\{competitor\.url\}/);
 });
 
+test("saved research dates show keyword movement without buying another comparison", () => {
+  const page = source("../app/(product)/keyword-research/page.tsx");
+
+  assert.match(page, /What changed since the last research/);
+  assert.match(page, /data\.history\.comparison/);
+  assert.match(page, /Measured searches\/month/);
+  assert.match(page, /Useful searches/);
+  assert.match(page, /New searches found/);
+  assert.match(page, /Searches moving up/);
+  assert.match(page, /item\.trend\.label/);
+  assert.match(page, /Search demand is an estimate, not promised jobs/);
+});
+
+test("keyword intelligence measures owner checks and creates governed next steps", () => {
+  const page = source("../app/(product)/keyword-research/page.tsx");
+
+  assert.match(page, /Your saved choices/);
+  assert.match(page, /matched your answer/);
+  assert.match(page, /\/keyword-research\/create-action/);
+  assert.match(page, /Add to Next Steps/);
+  assert.match(page, /In Next Steps/);
+  assert.match(page, /This group needs measured search evidence first/);
+  assert.doesNotMatch(page, /automatically change your website/i);
+});
+
 test("customer pages keep the market-data supplier private", () => {
   const keywordResearch = source("../app/(product)/keyword-research/page.tsx");
   const locations = source("../app/(product)/locations/page.tsx");

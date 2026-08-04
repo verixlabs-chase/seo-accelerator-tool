@@ -6,6 +6,7 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.schemas.keyword_research import (
     KeywordRelevanceFeedbackIn,
+    KeywordResearchActionIn,
     KeywordResearchAIReviewIn,
     KeywordResearchDiscoverIn,
     KeywordResearchTrackIn,
@@ -55,6 +56,22 @@ def track_keyword_suggestions(
     db: Session = Depends(get_db),
 ) -> dict:
     payload = keyword_research_service.track_suggestions(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        suggestion_ids=body.suggestion_ids,
+    )
+    return envelope(request, payload)
+
+
+@router.post("/create-action")
+def create_keyword_action(
+    request: Request,
+    body: KeywordResearchActionIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = keyword_research_service.create_governed_action(
         db,
         tenant_id=user["tenant_id"],
         campaign_id=body.campaign_id,
