@@ -141,11 +141,19 @@ type BusinessServiceAreaItem = {
   region?: string | null;
   country_code: string;
   radius_miles?: number | null;
+  center_latitude?: number | null;
+  center_longitude?: number | null;
   relationship: "included" | "excluded";
   status: "suggested" | "confirmed" | "rejected";
-  source: "manual" | "website" | "location" | "business_profile";
+  source: "manual" | "website" | "location" | "business_profile" | "map";
   confidence: number;
-  evidence: Array<{ url?: string; title?: string; note?: string }>;
+  evidence: Array<{
+    url?: string;
+    title?: string;
+    note?: string;
+    distance_miles?: number;
+    radius_miles?: number;
+  }>;
 };
 
 type ServiceAreaProfile = {
@@ -157,7 +165,21 @@ type ServiceAreaProfile = {
     confirmed_excluded: number;
     suggested: number;
   };
-  discovery?: { pages_reviewed: number; created: number; updated: number; message: string };
+  map?: {
+    status: "ready" | "setup_required";
+    center_latitude?: number | null;
+    center_longitude?: number | null;
+    radius_miles: number;
+    radius_saved: boolean;
+  };
+  discovery?: {
+    pages_reviewed?: number;
+    created: number;
+    updated: number;
+    reviewed?: number;
+    radius_miles?: number;
+    message: string;
+  };
 };
 
 type CreditSummary = {
@@ -216,6 +238,88 @@ function sourceLabel(source: string) {
   }[source] ?? source;
 }
 
+function ServiceAreaMap({ profile }: { profile: ServiceAreaProfile }) {
+  const centerLatitude = profile.map?.center_latitude;
+  const centerLongitude = profile.map?.center_longitude;
+  if (
+    profile.map?.status !== "ready" ||
+    centerLatitude === null ||
+    centerLatitude === undefined ||
+    centerLongitude === null ||
+    centerLongitude === undefined
+  ) {
+    return (
+      <div className="mt-5 rounded-md border border-amber-500/25 bg-amber-500/10 p-4">
+        <p className="text-sm font-semibold text-amber-100">Add the location&apos;s map position first</p>
+        <p className="mt-1 text-sm leading-6 text-zinc-400">
+          Open Locations and finish the address check before using a mileage range or finding nearby towns.
+        </p>
+      </div>
+    );
+  }
+
+  const radiusMiles = Math.max(1, profile.map.radius_miles || 25);
+  const latitudeSpan = (radiusMiles / 69) * 1.25;
+  const longitudeSpan = latitudeSpan / Math.max(0.25, Math.cos((centerLatitude * Math.PI) / 180));
+  const minimumLatitude = centerLatitude - latitudeSpan;
+  const maximumLatitude = centerLatitude + latitudeSpan;
+  const minimumLongitude = centerLongitude - longitudeSpan;
+  const maximumLongitude = centerLongitude + longitudeSpan;
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${minimumLongitude}%2C${minimumLatitude}%2C${maximumLongitude}%2C${maximumLatitude}&layer=mapnik&marker=${centerLatitude}%2C${centerLongitude}`;
+  const mapItems = profile.items.filter(
+    (item) =>
+      item.area_type !== "radius" &&
+      item.status !== "rejected" &&
+      item.center_latitude !== null &&
+      item.center_latitude !== undefined &&
+      item.center_longitude !== null &&
+      item.center_longitude !== undefined,
+  );
+
+  return (
+    <div className="mt-5 overflow-hidden rounded-md border border-[#303137] bg-[#111214]">
+      <div className="relative h-72 overflow-hidden bg-[#18191c]">
+        <iframe
+          title="Service area map"
+          src={mapUrl}
+          className="h-full w-full border-0 opacity-80 grayscale-[0.15]"
+          loading="lazy"
+        />
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute left-[10%] top-[10%] h-[80%] w-[80%] rounded-full border-2 border-dashed border-accent-500/80 bg-accent-500/5" />
+          {mapItems.map((item) => {
+            const left = Math.min(
+              98,
+              Math.max(2, ((Number(item.center_longitude) - minimumLongitude) / (maximumLongitude - minimumLongitude)) * 100),
+            );
+            const top = Math.min(
+              98,
+              Math.max(2, ((maximumLatitude - Number(item.center_latitude)) / (maximumLatitude - minimumLatitude)) * 100),
+            );
+            return (
+              <span
+                key={item.id}
+                title={`${item.name}: ${item.status === "confirmed" ? "served" : "needs your answer"}`}
+                style={{ left: `${left}%`, top: `${top}%` }}
+                className={`absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-lg ${
+                  item.status === "confirmed" ? "bg-emerald-500" : "bg-amber-400"
+                }`}
+              />
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#303137] px-4 py-3 text-xs text-zinc-400">
+        <p>
+          Dashed circle: about {radiusMiles.toLocaleString(undefined, { maximumFractionDigits: 1 })} miles.
+          Orange: needs your answer. Green: confirmed.
+        </p>
+        <p>Map suggestions never count as service areas until you approve them.</p>
+      </div>
+    </div>
+  );
+}
+
 export default function KeywordResearchPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -253,6 +357,7 @@ export default function KeywordResearchPage() {
   const [newAreaType, setNewAreaType] = useState<BusinessServiceAreaItem["area_type"]>("city");
   const [newAreaRelationship, setNewAreaRelationship] =
     useState<BusinessServiceAreaItem["relationship"]>("included");
+  const [nearbyRadius, setNearbyRadius] = useState("25");
   const [areaBusy, setAreaBusy] = useState<"" | "suggest" | "add" | string>("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"" | "discover" | "track" | "review">("");
@@ -291,6 +396,7 @@ export default function KeywordResearchPage() {
       `/business-service-areas?campaign_id=${encodeURIComponent(campaignId)}`,
     )) as ServiceAreaProfile;
     setServiceAreaProfile(response);
+    if (response.map?.radius_saved) setNearbyRadius(String(response.map.radius_miles));
   }, []);
 
   const loadCredits = useCallback(async () => {
@@ -332,6 +438,7 @@ export default function KeywordResearchPage() {
         items: [],
         summary: { confirmed_included: 0, confirmed_excluded: 0, suggested: 0 },
       });
+      setNearbyRadius("25");
       return;
     }
     void Promise.all([
@@ -457,6 +564,30 @@ export default function KeywordResearchPage() {
       await loadResearch(selectedCampaignId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The service area could not be added.");
+    } finally {
+      setAreaBusy("");
+    }
+  };
+
+  const suggestNearbyCommunities = async () => {
+    if (!selectedCampaignId) return;
+    const radius = Number(nearbyRadius);
+    if (!Number.isFinite(radius) || radius < 1 || radius > 75) {
+      setError("Choose a mileage range from 1 to 75 miles.");
+      return;
+    }
+    setAreaBusy("nearby");
+    setError("");
+    try {
+      const response = (await platformApi("/business-service-areas/nearby", {
+        method: "POST",
+        body: JSON.stringify({ campaign_id: selectedCampaignId, radius_miles: radius }),
+      })) as ServiceAreaProfile;
+      setServiceAreaProfile(response);
+      setNotice(response.discovery?.message ?? "Review the nearby communities on the map.");
+      await loadResearch(selectedCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nearby communities could not be checked.");
     } finally {
       setAreaBusy("");
     }
@@ -839,9 +970,44 @@ export default function KeywordResearchPage() {
                   disabled={areaBusy !== ""}
                   className="rounded-md border border-[#303137] bg-[#17181b] px-4 py-2 text-sm font-semibold text-zinc-100 hover:border-accent-500/50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {areaBusy === "suggest" ? "Checking saved details…" : "Find possible service areas"}
+                  {areaBusy === "suggest" ? "Checking saved details…" : "Check website for places"}
                 </button>
               </div>
+
+              <div className="mt-5 flex flex-col gap-3 rounded-md border border-[#2a2b30] bg-[#141518] p-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">Find towns inside your work range</p>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
+                    Choose how far this crew normally travels. We&apos;ll show real nearby communities,
+                    then you decide which ones belong in your plan.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-end gap-2">
+                  <label className="text-xs font-semibold text-zinc-300" htmlFor="nearby-service-radius">
+                    Miles
+                    <input
+                      id="nearby-service-radius"
+                      value={nearbyRadius}
+                      onChange={(event) => setNearbyRadius(event.target.value)}
+                      type="number"
+                      min="1"
+                      max="75"
+                      step="1"
+                      className="mt-1 block w-24 rounded-md border border-[#303137] bg-[#0b0b0c] px-3 py-2 text-sm text-white outline-none focus:border-accent-500"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void suggestNearbyCommunities()}
+                    disabled={areaBusy !== "" || serviceAreaProfile.map?.status !== "ready"}
+                    className="rounded-md bg-accent-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {areaBusy === "nearby" ? "Checking nearby towns..." : "Show nearby towns"}
+                  </button>
+                </div>
+              </div>
+
+              <ServiceAreaMap profile={serviceAreaProfile} />
 
               {confirmedIncludedAreas.length ? (
                 <div className="mt-5">
@@ -905,7 +1071,7 @@ export default function KeywordResearchPage() {
               {suggestedAreas.length ? (
                 <div className="mt-5">
                   <p className="text-xs font-semibold text-zinc-300">
-                    We found these in your saved business and website details. Do you take jobs here?
+                    Do you take jobs in these places?
                   </p>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {suggestedAreas.map((area) => (
@@ -918,7 +1084,8 @@ export default function KeywordResearchPage() {
                             {area.name}{area.region ? `, ${area.region}` : ""}
                           </p>
                           <p className="mt-1 text-xs text-zinc-500">
-                            Possible {area.area_type === "postal_code" ? "ZIP or postal code" : area.area_type}
+                            {area.evidence.find((item) => item.distance_miles !== undefined)?.note ??
+                              `Found in your saved ${area.area_type === "postal_code" ? "ZIP or postal code" : area.area_type} details`}
                           </p>
                         </div>
                         <div className="flex shrink-0 gap-2">

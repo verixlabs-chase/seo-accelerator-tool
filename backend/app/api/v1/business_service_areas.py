@@ -6,6 +6,7 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.schemas.business_service_area import (
     BusinessServiceAreaCreateIn,
+    BusinessServiceAreaNearbyIn,
     BusinessServiceAreaPatchIn,
     BusinessServiceAreaSuggestIn,
 )
@@ -68,6 +69,25 @@ def suggest_business_service_areas(
 ) -> dict:
     payload = business_service_area_service.suggest_areas(
         db, tenant_id=user["tenant_id"], campaign_id=body.campaign_id
+    )
+    keyword_research_service.reclassify_latest(
+        db, tenant_id=user["tenant_id"], campaign_id=body.campaign_id
+    )
+    return envelope(request, payload)
+
+
+@router.post("/nearby")
+def suggest_nearby_business_service_areas(
+    request: Request,
+    body: BusinessServiceAreaNearbyIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = business_service_area_service.suggest_nearby_communities(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        radius_miles=body.radius_miles,
     )
     keyword_research_service.reclassify_latest(
         db, tenant_id=user["tenant_id"], campaign_id=body.campaign_id

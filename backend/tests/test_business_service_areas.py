@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
 
 from app.models.campaign import Campaign
+from app.models.business_location import BusinessLocation
 from app.models.crawl import CrawlPageResult, CrawlRun, Page
+from app.services import business_service_area_service
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -143,3 +145,69 @@ def test_service_areas_are_tenant_scoped(client) -> None:
         headers={"Authorization": f"Bearer {token_a}"},
     )
     assert response.status_code == 404
+
+
+def test_nearby_communities_are_distance_checked_and_require_confirmation(
+    client, db_session
+) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    campaign_data = _create_location_campaign(client, token, org_id, name="Reno Service Area")
+    campaign = db_session.get(Campaign, campaign_data["id"])
+    assert campaign is not None
+    location = db_session.get(BusinessLocation, campaign.business_location_id)
+    assert location is not None
+    location.latitude = 39.5296
+    location.longitude = -119.8138
+    db_session.commit()
+
+    profile = business_service_area_service.suggest_nearby_communities(
+        db_session,
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        radius_miles=25,
+        resolver=lambda _latitude, _longitude, _radius: [
+            {
+                "name": "Sparks",
+                "region": "Nevada",
+                "country_code": "US",
+                "latitude": 39.5349,
+                "longitude": -119.7527,
+                "place_type": "city",
+                "source_id": "node:1",
+            },
+            {
+                "name": "Too Far Away",
+                "region": "Nevada",
+                "country_code": "US",
+                "latitude": 40.5,
+                "longitude": -119.8,
+                "place_type": "town",
+                "source_id": "node:2",
+            },
+        ],
+    )
+
+    assert profile["map"] == {
+        "status": "ready",
+        "center_latitude": 39.5296,
+        "center_longitude": -119.8138,
+        "radius_miles": 25.0,
+        "radius_saved": True,
+    }
+    sparks = next(item for item in profile["items"] if item["name"] == "Sparks")
+    assert sparks["status"] == "suggested"
+    assert sparks["source"] == "map"
+    assert sparks["center_latitude"] == 39.5349
+    assert sparks["evidence"][0]["distance_miles"] < 4
+    assert all(item["name"] != "Too Far Away" for item in profile["items"])
+    assert profile["discovery"]["reviewed"] == 1
+
+    confirmed = business_service_area_service.review_area(
+        db_session,
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        area_id=sparks["id"],
+        next_status="confirmed",
+    )
+    confirmed_sparks = next(item for item in confirmed["items"] if item["id"] == sparks["id"])
+    assert confirmed_sparks["status"] == "confirmed"

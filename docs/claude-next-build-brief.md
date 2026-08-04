@@ -1925,6 +1925,11 @@ Implementation status (2026-08-03):
   and explicit exclusions. The office city and website area-page evidence are
   suggestions only until the owner confirms them. Confirmed areas seed local
   research and reclassify saved results without another provider request.
+- The local 2026-08-04 MKT1.1B map slice lets the owner save a 1-75 mile work
+  range, resolves named communities from deterministic geographic data, checks
+  every result with a Haversine distance calculation, and plots the reviewable
+  candidates on an OpenStreetMap base map. A map result remains a suggestion
+  until the owner confirms it; rejected places are not silently resurrected.
 - The MKT1.1C deterministic gate is present: confirmed service
   and confirmed-market matches enter `Best matches`, named excluded places are
   kept out, uncertain measured phrases enter `Needs your review`, and unmatched
@@ -1946,10 +1951,10 @@ Implementation status (2026-08-03):
   already appearing in search, otherwise scores the latest indexable crawl
   evidence, and labels the group as a page opportunity when no defensible page
   exists. The customer can filter the full search list from each group.
-- Remaining MKT1.1 work: competitor-domain expansion, service-area
-  map selection and nearby-community resolution, semantic synonym expansion,
-  historical trend comparisons, map visibility, and conversion into content briefs,
-  profile actions, or governed opportunities.
+- Remaining MKT1.1 work: competitor-domain expansion, drive-time and custom
+  service-boundary selection, semantic synonym expansion, historical trend
+  comparisons, and conversion into content briefs, profile actions, or
+  governed opportunities.
 
 Remaining delivery slices:
 
@@ -1962,7 +1967,7 @@ Remaining delivery slices:
   profile, title/URL evidence extraction, review API, deterministic keyword
   reclassification, Find Searches workflow, guided setup capture, and bounded
   heading/description/body evidence are implemented locally.
-- **MKT1.1B - Service-Area Mapping — core local slice complete:** collect physical locations separately
+- **MKT1.1B - Service-Area Mapping — radius-map slice complete:** collect physical locations separately
   from the places each location serves. Support cities, ZIP codes, counties,
   distance or drive-time boundaries, map selection, and explicit exclusions.
   Resolve nearby communities through deterministic geographic data; AI may
@@ -1970,8 +1975,9 @@ Remaining delivery slices:
   The durable city/ZIP/county/radius/exclusion profile, location and website
   suggestions, owner review workflow, tenant-safe API, research seeds, and
   saved-result reclassification and guided setup capture are implemented
-  locally. Drive-time boundaries, map selection, and deterministic
-  nearby-community expansion remain.
+  locally. The bounded mileage selector, deterministic nearby-community
+  expansion, auditable distance evidence, and owner review map are also
+  implemented locally. Drive-time and custom drawn boundaries remain.
 - **MKT1.1C - Business-Aware Keyword Relevance — local core complete:** require a confirmed service,
   plausible customer intent, and valid service-area relationship before a
   phrase enters `Best matches`. Use deterministic rules and semantic matching

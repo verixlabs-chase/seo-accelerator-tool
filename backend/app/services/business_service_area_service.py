@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import html
+import math
 import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import unquote, urlparse
 
+import httpx
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.settings import get_settings
 from app.models.business_location import BusinessLocation
 from app.models.business_service_area import BusinessServiceArea
 from app.models.campaign import Campaign
@@ -17,6 +20,8 @@ from app.models.crawl import CrawlPageResult, Page
 
 AREA_TYPES = {"city", "postal_code", "county", "radius"}
 AREA_RELATIONSHIPS = {"included", "excluded"}
+MAX_NEARBY_COMMUNITIES = 30
+NearbyCommunityResolver = Callable[[float, float, float], list[dict[str, Any]]]
 _AREA_PATH_MARKERS = {
     "areas-we-serve",
     "locations",
@@ -50,6 +55,7 @@ def _campaign_or_404(db: Session, *, tenant_id: str, campaign_id: str) -> Campai
 
 def get_profile(db: Session, *, tenant_id: str, campaign_id: str) -> dict[str, Any]:
     campaign = _campaign_or_404(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    location = db.get(BusinessLocation, campaign.business_location_id)
     rows = (
         db.query(BusinessServiceArea)
         .filter(
@@ -68,6 +74,20 @@ def get_profile(db: Session, *, tenant_id: str, campaign_id: str) -> dict[str, A
         )
     )
     items = [_serialize(row) for row in rows]
+    active_radius = next(
+        (
+            row
+            for row in sorted(
+                rows,
+                key=lambda item: item.reviewed_at or item.updated_at or item.created_at,
+                reverse=True,
+            )
+            if row.area_type == "radius"
+            and row.relationship == "included"
+            and row.status == "confirmed"
+        ),
+        None,
+    )
     return {
         "campaign_id": campaign.id,
         "business_location_id": campaign.business_location_id,
@@ -82,6 +102,27 @@ def get_profile(db: Session, *, tenant_id: str, campaign_id: str) -> dict[str, A
                 for item in items
             ),
             "suggested": sum(item["status"] == "suggested" for item in items),
+        },
+        "map": {
+            "status": (
+                "ready"
+                if location is not None
+                and location.latitude is not None
+                and location.longitude is not None
+                else "setup_required"
+            ),
+            "center_latitude": (
+                float(location.latitude)
+                if location is not None and location.latitude is not None
+                else None
+            ),
+            "center_longitude": (
+                float(location.longitude)
+                if location is not None and location.longitude is not None
+                else None
+            ),
+            "radius_miles": float(active_radius.radius_miles) if active_radius else 25.0,
+            "radius_saved": active_radius is not None,
         },
     }
 
@@ -124,6 +165,22 @@ def add_manual_area(
                 detail="Enter the city, ZIP code, or county.",
             )
     resolved_now = now or datetime.now(UTC)
+    if area_type == "radius" and relationship == "included":
+        previous_radii = (
+            db.query(BusinessServiceArea)
+            .filter(
+                BusinessServiceArea.business_location_id == campaign.business_location_id,
+                BusinessServiceArea.area_type == "radius",
+                BusinessServiceArea.relationship == "included",
+                BusinessServiceArea.status == "confirmed",
+                BusinessServiceArea.normalized_name != normalized_name,
+            )
+            .all()
+        )
+        for previous in previous_radii:
+            previous.status = "rejected"
+            previous.reviewed_at = resolved_now
+            previous.updated_at = resolved_now
     row = _find_area(
         db,
         business_location_id=str(campaign.business_location_id),
@@ -303,6 +360,175 @@ def suggest_areas(
     return payload
 
 
+def suggest_nearby_communities(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    radius_miles: float,
+    resolver: NearbyCommunityResolver | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    if radius_miles < 1 or radius_miles > 75:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Choose a radius from 1 to 75 miles.",
+        )
+    campaign = _campaign_or_404(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    location = db.get(BusinessLocation, campaign.business_location_id)
+    if location is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Location not found")
+    if location.latitude is None or location.longitude is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Add this location's map position before finding nearby communities.",
+        )
+
+    resolved_now = now or datetime.now(UTC)
+    add_manual_area(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        area_type="radius",
+        name=None,
+        region=location.region,
+        country_code=location.country_code,
+        radius_miles=radius_miles,
+        relationship="included",
+        now=resolved_now,
+    )
+
+    center_latitude = float(location.latitude)
+    center_longitude = float(location.longitude)
+    lookup = resolver or _load_nearby_communities
+    try:
+        raw_candidates = lookup(center_latitude, center_longitude, radius_miles)
+    except (httpx.HTTPError, ValueError, TypeError):
+        payload = get_profile(db, tenant_id=tenant_id, campaign_id=campaign_id)
+        payload["discovery"] = {
+            "created": 0,
+            "updated": 0,
+            "reviewed": 0,
+            "radius_miles": radius_miles,
+            "message": (
+                "Your mileage range was saved, but nearby communities could not be checked right now. "
+                "Try again later or add a city by hand."
+            ),
+        }
+        return payload
+
+    prepared: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for candidate in raw_candidates:
+        if not isinstance(candidate, dict):
+            continue
+        name = _display_name(candidate.get("name") or "")
+        normalized_name = _normalize(name)
+        try:
+            latitude = float(candidate["latitude"])
+            longitude = float(candidate["longitude"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not normalized_name or not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            continue
+        distance_miles = _distance_miles(
+            center_latitude,
+            center_longitude,
+            latitude,
+            longitude,
+        )
+        if distance_miles > radius_miles + 0.05:
+            continue
+        region = _optional(candidate.get("region"))
+        key = (normalized_name, _normalize(region or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        prepared.append(
+            {
+                "name": name,
+                "normalized_name": normalized_name,
+                "region": region,
+                "country_code": str(
+                    candidate.get("country_code") or location.country_code or "US"
+                ).upper()[:2],
+                "latitude": latitude,
+                "longitude": longitude,
+                "distance_miles": round(distance_miles, 1),
+                "place_type": str(candidate.get("place_type") or "community"),
+                "source_id": candidate.get("source_id"),
+            }
+        )
+    prepared.sort(key=lambda item: (item["distance_miles"], item["name"].casefold()))
+    prepared = prepared[:MAX_NEARBY_COMMUNITIES]
+
+    created_count = 0
+    updated_count = 0
+    for candidate in prepared:
+        evidence = {
+            "source": "map",
+            "note": f"About {candidate['distance_miles']:g} miles from this location",
+            "distance_miles": candidate["distance_miles"],
+            "radius_miles": float(radius_miles),
+            "place_type": candidate["place_type"],
+            "source_id": candidate["source_id"],
+        }
+        row = _find_area(
+            db,
+            business_location_id=str(campaign.business_location_id),
+            area_type="city",
+            normalized_name=candidate["normalized_name"],
+            relationship="included",
+        )
+        if row is None:
+            db.add(
+                BusinessServiceArea(
+                    tenant_id=tenant_id,
+                    organization_id=str(campaign.organization_id),
+                    business_location_id=str(campaign.business_location_id),
+                    area_type="city",
+                    name=candidate["name"],
+                    normalized_name=candidate["normalized_name"],
+                    region=candidate["region"],
+                    country_code=candidate["country_code"],
+                    center_latitude=candidate["latitude"],
+                    center_longitude=candidate["longitude"],
+                    relationship="included",
+                    status="suggested",
+                    source="map",
+                    confidence=0.85,
+                    evidence=[evidence],
+                    created_at=resolved_now,
+                    updated_at=resolved_now,
+                )
+            )
+            created_count += 1
+        elif row.status != "rejected":
+            row.center_latitude = candidate["latitude"]
+            row.center_longitude = candidate["longitude"]
+            row.evidence = _merge_evidence(row.evidence, [evidence])
+            row.confidence = max(float(row.confidence or 0), 0.85)
+            if row.status == "suggested" and row.source == "location":
+                row.source = "map"
+            row.updated_at = resolved_now
+            updated_count += 1
+    db.commit()
+
+    payload = get_profile(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    payload["discovery"] = {
+        "created": created_count,
+        "updated": updated_count,
+        "reviewed": len(prepared),
+        "radius_miles": float(radius_miles),
+        "message": (
+            "Review the nearby communities on the map. They will not affect search ideas until you confirm them."
+            if prepared
+            else "No named communities were found in this range. Try a larger radius or add a city by hand."
+        ),
+    }
+    return payload
+
+
 def review_area(
     db: Session,
     *,
@@ -477,6 +703,8 @@ def _serialize(row: BusinessServiceArea) -> dict[str, Any]:
         "region": row.region,
         "country_code": row.country_code,
         "radius_miles": row.radius_miles,
+        "center_latitude": row.center_latitude,
+        "center_longitude": row.center_longitude,
         "relationship": row.relationship,
         "status": row.status,
         "source": row.source,
@@ -484,6 +712,84 @@ def _serialize(row: BusinessServiceArea) -> dict[str, Any]:
         "evidence": list(row.evidence or []),
         "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
     }
+
+
+def _load_nearby_communities(
+    latitude: float,
+    longitude: float,
+    radius_miles: float,
+) -> list[dict[str, Any]]:
+    settings = get_settings()
+    radius_meters = min(int(radius_miles * 1609.344), int(75 * 1609.344))
+    query = (
+        "[out:json][timeout:15];"
+        "("
+        f'nwr["place"~"^(city|town|village|hamlet)$"](around:{radius_meters},{latitude},{longitude});'
+        ");"
+        "out center tags;"
+    )
+    headers = {
+        "User-Agent": (
+            f"SEOAccelerator/1.0 (+{settings.public_base_url.rstrip('/')}; "
+            "owner-requested service-area review)"
+        )
+    }
+    with httpx.Client(timeout=settings.service_area_places_timeout_seconds) as client:
+        response = client.post(
+            settings.service_area_places_endpoint,
+            data={"data": query},
+            headers=headers,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    elements = payload.get("elements") if isinstance(payload, dict) else None
+    if not isinstance(elements, list):
+        raise ValueError("Nearby-community response did not contain a place list")
+    communities: list[dict[str, Any]] = []
+    for element in elements:
+        if not isinstance(element, dict):
+            continue
+        tags = element.get("tags") if isinstance(element.get("tags"), dict) else {}
+        center = element.get("center") if isinstance(element.get("center"), dict) else {}
+        name = tags.get("name")
+        item_latitude = element.get("lat", center.get("lat"))
+        item_longitude = element.get("lon", center.get("lon"))
+        if not name or item_latitude is None or item_longitude is None:
+            continue
+        country_code = tags.get("addr:country") or tags.get("ISO3166-1")
+        communities.append(
+            {
+                "name": name,
+                "region": tags.get("addr:state") or tags.get("is_in:state"),
+                "country_code": country_code,
+                "latitude": item_latitude,
+                "longitude": item_longitude,
+                "place_type": tags.get("place"),
+                "source_id": f"{element.get('type', 'place')}:{element.get('id', '')}",
+            }
+        )
+    return communities
+
+
+def _distance_miles(
+    start_latitude: float,
+    start_longitude: float,
+    end_latitude: float,
+    end_longitude: float,
+) -> float:
+    earth_radius_miles = 3958.7613
+    start_latitude_radians = math.radians(start_latitude)
+    end_latitude_radians = math.radians(end_latitude)
+    latitude_delta = math.radians(end_latitude - start_latitude)
+    longitude_delta = math.radians(end_longitude - start_longitude)
+    haversine = (
+        math.sin(latitude_delta / 2) ** 2
+        + math.cos(start_latitude_radians)
+        * math.cos(end_latitude_radians)
+        * math.sin(longitude_delta / 2) ** 2
+    )
+    haversine = max(0.0, min(1.0, haversine))
+    return earth_radius_miles * 2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine))
 
 
 def _normalize(value: str) -> str:

@@ -37,6 +37,11 @@ class BusinessServiceAreaSuggestIn(BaseModel):
     campaign_id: str = Field(min_length=1, max_length=36)
 
 
+class BusinessServiceAreaNearbyIn(BaseModel):
+    campaign_id: str = Field(min_length=1, max_length=36)
+    radius_miles: float = Field(default=25, ge=1, le=75)
+
+
 class BusinessServiceAreaPatchIn(BaseModel):
     campaign_id: str = Field(min_length=1, max_length=36)
     status: Literal["confirmed", "rejected"]
