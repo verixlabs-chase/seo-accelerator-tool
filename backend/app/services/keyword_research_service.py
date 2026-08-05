@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 from datetime import UTC, datetime, timedelta
@@ -10,6 +12,8 @@ from urllib.parse import urlparse
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.enums import StrategyRecommendationStatus
+from app.events import emit_event
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.competitor import Competitor
@@ -20,6 +24,7 @@ from app.models.keyword_research import (
     KeywordResearchRun,
     KeywordResearchSuggestion,
 )
+from app.models.intelligence import StrategyRecommendation
 from app.models.rank import CampaignKeyword
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_search_console import SearchConsoleProviderAdapter
@@ -48,6 +53,10 @@ RANKED_OPERATION = "ranked_keywords_live"
 IDEAS_OPERATION = "keyword_ideas_live"
 VOLUME_OPERATION = "google_ads_search_volume_live"
 RELEVANCE_RULES_VERSION = "keyword-relevance-2026-08-v2"
+KEYWORD_INTELLIGENCE_VERSION = "keyword-intelligence-2026-08-v1"
+HISTORY_RUN_LIMIT = 13
+QUALITY_MINIMUM_SAMPLE = 10
+QUALITY_RELIABLE_SAMPLE = 20
 
 
 def _campaign_or_404(db: Session, *, tenant_id: str, campaign_id: str) -> Campaign:
@@ -79,7 +88,18 @@ def get_latest(
         .first()
     )
     if run is None:
-        return {"run": None, "items": [], "summary": _summary([])}
+        return {
+            "run": None,
+            "items": [],
+            "summary": _summary([]),
+            "history": _empty_history(),
+            "filter_quality": _filter_quality(
+                db,
+                tenant_id=tenant_id,
+                campaign_id=campaign_id,
+            ),
+            "governed_actions": [],
+        }
     items = (
         db.query(KeywordResearchSuggestion)
         .filter(
@@ -103,7 +123,29 @@ def get_latest(
         _add_planning_context(_serialize_suggestion(item), target_pages=target_pages)
         for item in items
     ]
-    return {"run": _serialize_run(run), "items": serialized, "summary": _summary(serialized)}
+    history = _keyword_history(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        latest_run=run,
+        latest_items=serialized,
+    )
+    return {
+        "run": _serialize_run(run),
+        "items": serialized,
+        "summary": _summary(serialized),
+        "history": history,
+        "filter_quality": _filter_quality(
+            db,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+        ),
+        "governed_actions": _keyword_governed_actions(
+            db,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+        ),
+    }
 
 
 def discover(
@@ -153,12 +195,10 @@ def discover(
         tenant_id=tenant_id,
         campaign_id=campaign_id,
     )
-    confirmed_areas, excluded_areas = (
-        business_service_area_service.confirmed_areas_for_campaign(
-            db,
-            tenant_id=tenant_id,
-            campaign_id=campaign_id,
-        )
+    confirmed_areas, excluded_areas = business_service_area_service.confirmed_areas_for_campaign(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
     )
     owner_feedback = _latest_feedback_by_keyword(
         db,
@@ -271,9 +311,7 @@ def discover(
     service_seeds = [service.name for service in confirmed_services]
     area_terms = business_service_area_service.search_terms(confirmed_areas)
     service_area_seeds = [
-        f"{service.name} {area}"
-        for service in confirmed_services[:8]
-        for area in area_terms[:8]
+        f"{service.name} {area}" for service in confirmed_services[:8] for area in area_terms[:8]
     ][:20]
     seeds = list(
         dict.fromkeys(
@@ -414,9 +452,7 @@ def discover(
     ]
     scored.sort(
         key=lambda item: (
-            {"relevant": 2, "needs_review": 1, "unrelated": 0}.get(
-                item["relevance_status"], 0
-            ),
+            {"relevant": 2, "needs_review": 1, "unrelated": 0}.get(item["relevance_status"], 0),
             item["opportunity_score"],
             item.get("search_volume") or 0,
         ),
@@ -518,6 +554,199 @@ def track_suggestions(
     }
 
 
+def create_governed_action(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    suggestion_ids: list[str],
+) -> dict[str, Any]:
+    """Convert one confirmed customer-need group into a reviewable Next Steps item."""
+
+    campaign = _campaign_or_404(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    run = (
+        db.query(KeywordResearchRun)
+        .filter(
+            KeywordResearchRun.tenant_id == tenant_id,
+            KeywordResearchRun.campaign_id == campaign_id,
+        )
+        .order_by(KeywordResearchRun.created_at.desc())
+        .first()
+    )
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Refresh customer searches before adding work to Next Steps.",
+        )
+    unique_ids = list(dict.fromkeys(suggestion_ids))
+    rows = (
+        db.query(KeywordResearchSuggestion)
+        .filter(
+            KeywordResearchSuggestion.run_id == run.id,
+            KeywordResearchSuggestion.tenant_id == tenant_id,
+            KeywordResearchSuggestion.campaign_id == campaign_id,
+            KeywordResearchSuggestion.id.in_(unique_ids),
+            KeywordResearchSuggestion.dismissed_at.is_(None),
+        )
+        .all()
+    )
+    if len(rows) != len(unique_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or more selected searches are no longer in the latest research.",
+        )
+    if any(row.relevance_status != "relevant" for row in rows):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only confirmed searches can be added to Next Steps.",
+        )
+
+    target_pages = _load_target_pages(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
+    planned = [
+        _add_planning_context(_serialize_suggestion(row), target_pages=target_pages) for row in rows
+    ]
+    cluster_keys = {str(item["cluster"]["key"]) for item in planned}
+    if len(cluster_keys) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Choose searches from one customer-need group at a time.",
+        )
+    if not any(_has_measured_keyword_evidence(item) for item in planned):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This group needs a measured ranking, customer search appearance, local demand, "
+                "or competitor result before it can become a Next Step."
+            ),
+        )
+
+    cluster_key = next(iter(cluster_keys))
+    cluster = planned[0]["cluster"]
+    existing_page = next(
+        (
+            item.get("target_page")
+            for item in planned
+            if (item.get("target_page") or {}).get("status") == "existing"
+        ),
+        None,
+    )
+    action_id = (
+        "organic.align_snippet_intent"
+        if existing_page is not None
+        else "publish_cluster_support_pages"
+    )
+    target_page = existing_page or planned[0].get("target_page") or {}
+    evidence_key = json.dumps(
+        {
+            "cluster_key": cluster_key,
+            "action_id": action_id,
+            "target_url": target_page.get("url"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    idempotency_key = (
+        "keyword-research:" + hashlib.sha256(evidence_key.encode("utf-8")).hexdigest()[:32]
+    )
+    existing = (
+        db.query(StrategyRecommendation)
+        .filter(
+            StrategyRecommendation.tenant_id == tenant_id,
+            StrategyRecommendation.campaign_id == campaign_id,
+            StrategyRecommendation.idempotency_key == idempotency_key,
+        )
+        .first()
+    )
+    if existing is not None:
+        existing_status = (
+            existing.status.value if hasattr(existing.status, "value") else str(existing.status)
+        )
+        active_statuses = {"GENERATED", "VALIDATED", "APPROVED", "SCHEDULED"}
+        return {
+            "created": False,
+            "message": (
+                "This customer need is already in Next Steps."
+                if existing_status in active_statuses
+                else "This customer need was already handled. Its history remains in Next Steps."
+            ),
+            "item": _serialize_keyword_action(existing),
+        }
+
+    measured_demand = sum(int(item.get("search_volume") or 0) for item in planned)
+    positions = [
+        float(position)
+        for item in planned
+        for position in [item.get("current_position") or item.get("gsc_position")]
+        if position is not None
+    ]
+    best_position = min(positions) if positions else None
+    competitor_count = sum(len(item.get("competitor_evidence") or []) for item in planned)
+    evidence = {
+        "source": "keyword_research",
+        "action_id": action_id,
+        "research_run_id": run.id,
+        "cluster_key": cluster_key,
+        "cluster_label": cluster.get("label"),
+        "service_name": cluster.get("service_name"),
+        "location_name": cluster.get("location_name"),
+        "suggestion_ids": sorted(row.id for row in rows),
+        "keywords": sorted(str(item.get("keyword") or "") for item in planned),
+        "measured_monthly_demand": measured_demand,
+        "best_observed_position": best_position,
+        "competitor_observation_count": competitor_count,
+        "target_page": target_page,
+        "evidence_note": (
+            "This action comes only from owner-confirmed searches with saved measured evidence."
+        ),
+    }
+    recommendation = StrategyRecommendation(
+        tenant_id=tenant_id,
+        campaign_id=campaign.id,
+        recommendation_type=action_id,
+        rationale=_keyword_action_rationale(
+            cluster_label=str(cluster.get("label") or "this customer need"),
+            target_page=target_page,
+            measured_demand=measured_demand,
+            best_position=best_position,
+        ),
+        confidence=0.78 if measured_demand > 0 and best_position is not None else 0.68,
+        confidence_score=(0.78 if measured_demand > 0 and best_position is not None else 0.68),
+        evidence_json=json.dumps(evidence, sort_keys=True),
+        risk_tier=1,
+        rollback_plan_json=json.dumps(
+            {"steps": ["archive_recommendation_without_changing_the_website"]}
+        ),
+        status=StrategyRecommendationStatus.GENERATED,
+        engine_version=KEYWORD_INTELLIGENCE_VERSION,
+        threshold_bundle_version=RELEVANCE_RULES_VERSION,
+        idempotency_key=idempotency_key,
+    )
+    db.add(recommendation)
+    db.flush()
+    emit_event(
+        db,
+        tenant_id=tenant_id,
+        event_type="recommendation.generated",
+        payload={
+            "campaign_id": campaign.id,
+            "recommendation_id": recommendation.id,
+            "status": recommendation.status.value,
+            "source": "keyword_research",
+        },
+    )
+    db.commit()
+    db.refresh(recommendation)
+    return {
+        "created": True,
+        "message": "Added to Next Steps for review. No website changes were made.",
+        "item": _serialize_keyword_action(recommendation),
+    }
+
+
 def save_relevance_feedback(
     db: Session,
     *,
@@ -570,12 +799,10 @@ def save_relevance_feedback(
             detail="A service is only needed when you mark a search as a match.",
         )
 
-    _confirmed_areas, excluded_areas = (
-        business_service_area_service.confirmed_areas_for_campaign(
-            db,
-            tenant_id=tenant_id,
-            campaign_id=campaign_id,
-        )
+    _confirmed_areas, excluded_areas = business_service_area_service.confirmed_areas_for_campaign(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
     )
     excluded_area, area_match_type = business_service_area_service.match_keyword_to_area(
         suggestion.normalized_keyword,
@@ -591,6 +818,12 @@ def save_relevance_feedback(
             ),
         )
 
+    prior_owner_feedback = (suggestion.evidence or {}).get("owner_feedback")
+    prediction_source = (
+        "owner_override"
+        if prior_owner_feedback
+        else ("governed_ai" if suggestion.ai_review_status == "validated" else "rules")
+    )
     db.add(
         KeywordRelevanceFeedback(
             tenant_id=tenant_id,
@@ -605,6 +838,9 @@ def save_relevance_feedback(
             decision=decision,
             source="owner",
             rules_version=RELEVANCE_RULES_VERSION,
+            predicted_relevance_status=suggestion.relevance_status,
+            predicted_relevance_score=suggestion.relevance_score,
+            prediction_source=prediction_source,
             created_at=now or datetime.now(UTC),
         )
     )
@@ -646,12 +882,10 @@ def reclassify_latest(
         tenant_id=tenant_id,
         campaign_id=campaign_id,
     )
-    confirmed_areas, excluded_areas = (
-        business_service_area_service.confirmed_areas_for_campaign(
-            db,
-            tenant_id=tenant_id,
-            campaign_id=campaign_id,
-        )
+    confirmed_areas, excluded_areas = business_service_area_service.confirmed_areas_for_campaign(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
     )
     owner_feedback = _latest_feedback_by_keyword(
         db,
@@ -796,7 +1030,10 @@ def _load_search_console_queries(
         )
     )
     if not result.success:
-        return [], "Search Console query details could not be refreshed, so saved sources were used."
+        return (
+            [],
+            "Search Console query details could not be refreshed, so saved sources were used.",
+        )
     payload = result.raw_payload or {}
     rows = payload.get("rows", [])
     return ([row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []), None
@@ -881,9 +1118,7 @@ def _parse_labs_item(item: dict[str, Any]) -> dict[str, Any]:
         "competition_level": _text(info.get("competition_level")),
         "keyword_difficulty": _integer(properties.get("keyword_difficulty")),
         "monthly_searches": info.get("monthly_searches", []),
-        "current_position": _number(
-            serp_item.get("rank_absolute") or serp_item.get("rank_group")
-        ),
+        "current_position": _number(serp_item.get("rank_absolute") or serp_item.get("rank_group")),
         "ranked_url": _text(serp_item.get("url")),
     }
 
@@ -1037,9 +1272,7 @@ def _score_candidate(
         if area_match_type == "excluded":
             relevance_status = "unrelated"
             relevance = 3
-            relevance_reason = (
-                f"Matches {feedback_service.name}, but {matched_area.name} is marked outside your service area."
-            )
+            relevance_reason = f"Matches {feedback_service.name}, but {matched_area.name} is marked outside your service area."
         else:
             relevance_status = "relevant"
             relevance = 98
@@ -1048,15 +1281,11 @@ def _score_candidate(
         if area_match_type == "excluded":
             relevance_status = "unrelated"
             relevance = 3
-            relevance_reason = (
-                f"Matches {matched_service.name}, but {matched_area.name} is marked outside your service area."
-            )
+            relevance_reason = f"Matches {matched_service.name}, but {matched_area.name} is marked outside your service area."
         elif area_match_type == "missing":
             relevance_status = "needs_review"
             relevance = 55
-            relevance_reason = (
-                f"Matches {matched_service.name}. Confirm where this location takes jobs before treating it as a best match."
-            )
+            relevance_reason = f"Matches {matched_service.name}. Confirm where this location takes jobs before treating it as a best match."
         else:
             relevance_status = "relevant"
             relevance = 95 if service_match >= 0.9 else 82
@@ -1112,7 +1341,9 @@ def _score_candidate(
         opportunity_group = "already_found"
         position_points = 20
         action = "Track this search"
-        reason = "Google already shows your website for this search, but it is not near the top yet."
+        reason = (
+            "Google already shows your website for this search, but it is not near the top yet."
+        )
     elif competitor_evidence:
         opportunity_group = "new_opportunity"
         position_points = 26
@@ -1154,9 +1385,7 @@ def _score_candidate(
             "area_match_type": area_match_type,
             "owner_feedback": owner_feedback.decision if owner_feedback else None,
             "relevance_rules_version": RELEVANCE_RULES_VERSION,
-            "service_match_rules_version": (
-                business_service_service.SERVICE_MATCH_RULES_VERSION
-            ),
+            "service_match_rules_version": (business_service_service.SERVICE_MATCH_RULES_VERSION),
             "ranked_url": _text(item.get("ranked_url")),
             "competitors": competitor_evidence,
         },
@@ -1183,14 +1412,398 @@ def _summary(items: list[dict[str, Any]]) -> dict[str, int]:
         "new_opportunities": sum(
             item.get("opportunity_group") == "new_opportunity" for item in items
         ),
-        "already_found": sum(
-            item.get("opportunity_group") == "already_found" for item in items
-        ),
+        "already_found": sum(item.get("opportunity_group") == "already_found" for item in items),
         "tracked": sum(item.get("tracked_at") is not None for item in items),
         "best_matches": sum(item.get("relevance_status") == "relevant" for item in items),
         "needs_review": sum(item.get("relevance_status") == "needs_review" for item in items),
         "hidden_unrelated": sum(item.get("relevance_status") == "unrelated" for item in items),
     }
+
+
+def _empty_history() -> dict[str, Any]:
+    return {
+        "snapshot_count": 0,
+        "series": [],
+        "comparison": None,
+    }
+
+
+def _keyword_history(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    latest_run: KeywordResearchRun,
+    latest_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    runs = (
+        db.query(KeywordResearchRun)
+        .filter(
+            KeywordResearchRun.tenant_id == tenant_id,
+            KeywordResearchRun.campaign_id == campaign_id,
+            KeywordResearchRun.status.in_(("complete", "partial")),
+        )
+        .order_by(KeywordResearchRun.created_at.desc())
+        .limit(HISTORY_RUN_LIMIT)
+        .all()
+    )
+    if not runs or runs[0].id != latest_run.id:
+        runs = [latest_run, *[run for run in runs if run.id != latest_run.id]][:HISTORY_RUN_LIMIT]
+    run_ids = [run.id for run in runs]
+    rows = (
+        db.query(KeywordResearchSuggestion)
+        .filter(
+            KeywordResearchSuggestion.tenant_id == tenant_id,
+            KeywordResearchSuggestion.campaign_id == campaign_id,
+            KeywordResearchSuggestion.run_id.in_(run_ids),
+            KeywordResearchSuggestion.dismissed_at.is_(None),
+        )
+        .all()
+    )
+    by_run: dict[str, list[KeywordResearchSuggestion]] = {run_id: [] for run_id in run_ids}
+    for row in rows:
+        by_run.setdefault(row.run_id, []).append(row)
+
+    series: list[dict[str, Any]] = []
+    for run in reversed(runs):
+        run_rows = by_run.get(run.id, [])
+        relevant = [row for row in run_rows if row.relevance_status == "relevant"]
+        positions = [
+            position
+            for row in relevant
+            for position in [_suggestion_position(row)]
+            if position is not None
+        ]
+        series.append(
+            {
+                "run_id": run.id,
+                "completed_at": (
+                    (run.completed_at or run.created_at).isoformat()
+                    if (run.completed_at or run.created_at)
+                    else None
+                ),
+                "useful_searches": len(relevant),
+                "measured_demand": sum(int(row.search_volume or 0) for row in relevant),
+                "visible_searches": len(positions),
+                "average_position": (
+                    round(sum(positions) / len(positions), 1) if positions else None
+                ),
+                "average_opportunity_score": (
+                    round(
+                        sum(row.opportunity_score for row in relevant) / len(relevant),
+                        1,
+                    )
+                    if relevant
+                    else None
+                ),
+            }
+        )
+
+    if len(runs) < 2:
+        for item in latest_items:
+            item["trend"] = _empty_item_trend()
+        return {
+            "snapshot_count": len(runs),
+            "series": series,
+            "comparison": None,
+        }
+
+    previous_run = runs[1]
+    current_by_keyword = {
+        _normalize_keyword(str(item.get("keyword") or "")): item for item in latest_items
+    }
+    previous_by_keyword = {row.normalized_keyword: row for row in by_run.get(previous_run.id, [])}
+    new_keywords = sorted(set(current_by_keyword) - set(previous_by_keyword))
+    missing_keywords = sorted(set(previous_by_keyword) - set(current_by_keyword))
+    rising_demand = 0
+    falling_demand = 0
+    improved_positions = 0
+    slipped_positions = 0
+
+    for normalized, item in current_by_keyword.items():
+        previous = previous_by_keyword.get(normalized)
+        if previous is None:
+            item["trend"] = {
+                **_empty_item_trend(),
+                "status": "new",
+                "label": "New since the last research",
+                "comparison_run_id": previous_run.id,
+            }
+            continue
+        current_demand = item.get("search_volume")
+        previous_demand = previous.search_volume
+        demand_change = (
+            int(current_demand) - int(previous_demand)
+            if current_demand is not None and previous_demand is not None
+            else None
+        )
+        current_position = _item_position(item)
+        previous_position = _suggestion_position(previous)
+        position_improvement = (
+            round(previous_position - current_position, 1)
+            if current_position is not None and previous_position is not None
+            else None
+        )
+        opportunity_change = int(item.get("opportunity_score") or 0) - int(
+            previous.opportunity_score or 0
+        )
+        demand_is_material = _material_demand_change(
+            demand_change,
+            previous_demand,
+        )
+        if demand_is_material and demand_change is not None and demand_change > 0:
+            rising_demand += 1
+        if demand_is_material and demand_change is not None and demand_change < 0:
+            falling_demand += 1
+        if position_improvement is not None and position_improvement >= 1:
+            improved_positions += 1
+        if position_improvement is not None and position_improvement <= -1:
+            slipped_positions += 1
+
+        trend_status = "steady"
+        trend_label = "No clear change"
+        if position_improvement is not None and position_improvement >= 1:
+            trend_status = "improving_rank"
+            trend_label = f"Up {position_improvement:g} positions"
+        elif position_improvement is not None and position_improvement <= -1:
+            trend_status = "slipping_rank"
+            trend_label = f"Down {abs(position_improvement):g} positions"
+        elif demand_is_material and demand_change is not None and demand_change > 0:
+            trend_status = "gaining_demand"
+            trend_label = f"About {demand_change:,} more searches/month"
+        elif demand_is_material and demand_change is not None and demand_change < 0:
+            trend_status = "losing_demand"
+            trend_label = f"About {abs(demand_change):,} fewer searches/month"
+        item["trend"] = {
+            "status": trend_status,
+            "label": trend_label,
+            "demand_change": demand_change,
+            "position_improvement": position_improvement,
+            "opportunity_change": opportunity_change,
+            "previous_search_volume": previous_demand,
+            "previous_position": previous_position,
+            "comparison_run_id": previous_run.id,
+        }
+
+    current_series = series[-1]
+    previous_series = series[-2]
+    return {
+        "snapshot_count": len(runs),
+        "series": series,
+        "comparison": {
+            "current_run_id": latest_run.id,
+            "previous_run_id": previous_run.id,
+            "current_completed_at": current_series["completed_at"],
+            "previous_completed_at": previous_series["completed_at"],
+            "new_searches": len(new_keywords),
+            "no_longer_seen": len(missing_keywords),
+            "rising_demand": rising_demand,
+            "falling_demand": falling_demand,
+            "improved_positions": improved_positions,
+            "slipped_positions": slipped_positions,
+            "demand_change": (
+                current_series["measured_demand"] - previous_series["measured_demand"]
+            ),
+            "new_keyword_examples": [
+                current_by_keyword[key]["keyword"] for key in new_keywords[:5]
+            ],
+            "missing_keyword_examples": [
+                previous_by_keyword[key].keyword for key in missing_keywords[:5]
+            ],
+        },
+    }
+
+
+def _empty_item_trend() -> dict[str, Any]:
+    return {
+        "status": "not_enough_history",
+        "label": "Needs another research date",
+        "demand_change": None,
+        "position_improvement": None,
+        "opportunity_change": None,
+        "previous_search_volume": None,
+        "previous_position": None,
+        "comparison_run_id": None,
+    }
+
+
+def _suggestion_position(item: KeywordResearchSuggestion) -> float | None:
+    value = item.current_position if item.current_position is not None else item.gsc_position
+    return float(value) if value is not None else None
+
+
+def _item_position(item: dict[str, Any]) -> float | None:
+    value = (
+        item.get("current_position")
+        if item.get("current_position") is not None
+        else item.get("gsc_position")
+    )
+    return float(value) if value is not None else None
+
+
+def _material_demand_change(change: int | None, previous: int | None) -> bool:
+    if change is None or change == 0:
+        return False
+    return abs(change) >= max(10, round(abs(int(previous or 0)) * 0.1))
+
+
+def _filter_quality(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+) -> dict[str, Any]:
+    rows = (
+        db.query(KeywordRelevanceFeedback)
+        .filter(
+            KeywordRelevanceFeedback.tenant_id == tenant_id,
+            KeywordRelevanceFeedback.campaign_id == campaign_id,
+            KeywordRelevanceFeedback.source == "owner",
+        )
+        .order_by(KeywordRelevanceFeedback.created_at.desc())
+        .all()
+    )
+    latest_by_keyword: dict[str, KeywordRelevanceFeedback] = {}
+    for row in rows:
+        latest_by_keyword.setdefault(row.normalized_keyword, row)
+    checked = [
+        row
+        for row in latest_by_keyword.values()
+        if row.decision in {"relevant", "unrelated"}
+        and row.prediction_source in {"rules", "governed_ai"}
+        and row.predicted_relevance_status in {"relevant", "needs_review", "unrelated"}
+    ]
+    automatic = [
+        row for row in checked if row.predicted_relevance_status in {"relevant", "unrelated"}
+    ]
+    agreements = sum(row.predicted_relevance_status == row.decision for row in automatic)
+    corrections = len(automatic) - agreements
+    agreement_rate = round((agreements / len(automatic)) * 100, 1) if automatic else None
+    false_matches = sum(
+        row.predicted_relevance_status == "relevant" and row.decision == "unrelated"
+        for row in automatic
+    )
+    missed_matches = sum(
+        row.predicted_relevance_status == "unrelated" and row.decision == "relevant"
+        for row in automatic
+    )
+    review_resolved = sum(row.predicted_relevance_status == "needs_review" for row in checked)
+    if len(automatic) < QUALITY_MINIMUM_SAMPLE:
+        state = "gathering_feedback"
+        headline = "We are still learning what fits your business"
+        message = (
+            f"{len(automatic)} of {QUALITY_MINIMUM_SAMPLE} suggested matches have been "
+            "checked. We will show a dependable match rate after more answers."
+        )
+    elif len(automatic) >= QUALITY_RELIABLE_SAMPLE and (agreement_rate or 0) >= 85:
+        state = "reliable"
+        headline = "The search sorting matches your choices well"
+        message = (
+            f"The search sorting agreed with {agreements} of {len(automatic)} answers you checked."
+        )
+    else:
+        state = "measuring"
+        headline = "We are checking how well the search sorting works"
+        message = (
+            f"The search sorting agreed with {agreements} of {len(automatic)} "
+            "answers you checked. Your corrections will be reused on future refreshes."
+        )
+    return {
+        "state": state,
+        "headline": headline,
+        "message": message,
+        "owner_checked": len(checked),
+        "automatic_decisions_checked": len(automatic),
+        "agreements": agreements,
+        "corrections": corrections,
+        "agreement_rate": agreement_rate,
+        "false_matches": false_matches,
+        "missed_matches": missed_matches,
+        "unclear_searches_resolved": review_resolved,
+        "minimum_sample": QUALITY_MINIMUM_SAMPLE,
+        "rules_version": RELEVANCE_RULES_VERSION,
+    }
+
+
+def _has_measured_keyword_evidence(item: dict[str, Any]) -> bool:
+    return bool(
+        int(item.get("search_volume") or 0) > 0
+        or _item_position(item) is not None
+        or float(item.get("gsc_impressions") or 0) > 0
+        or item.get("competitor_evidence")
+    )
+
+
+def _keyword_action_rationale(
+    *,
+    cluster_label: str,
+    target_page: dict[str, Any],
+    measured_demand: int,
+    best_position: float | None,
+) -> str:
+    evidence_parts: list[str] = []
+    if measured_demand > 0:
+        evidence_parts.append(f"about {measured_demand:,} measured searches per month")
+    if best_position is not None:
+        evidence_parts.append(f"a best observed position near #{round(best_position)}")
+    evidence_text = " and ".join(evidence_parts) or "saved search evidence"
+    if target_page.get("status") == "existing":
+        return (
+            f"Improve the existing page for {cluster_label}. The recommendation is based on "
+            f"{evidence_text}; review the wording before making any website change."
+        )
+    return (
+        f"Plan a useful page for {cluster_label}. No saved page clearly covers this need, "
+        f"and the recommendation is supported by {evidence_text}."
+    )
+
+
+def _serialize_keyword_action(item: StrategyRecommendation) -> dict[str, Any]:
+    try:
+        evidence = json.loads(item.evidence_json or "{}")
+    except json.JSONDecodeError:
+        evidence = {}
+    if not isinstance(evidence, dict):
+        evidence = {}
+    status_value = item.status.value if hasattr(item.status, "value") else str(item.status)
+    return {
+        "id": item.id,
+        "cluster_key": evidence.get("cluster_key"),
+        "cluster_label": evidence.get("cluster_label"),
+        "action_id": evidence.get("action_id") or item.recommendation_type,
+        "status": status_value,
+        "rationale": item.rationale,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+    }
+
+
+def _keyword_governed_actions(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+) -> list[dict[str, Any]]:
+    rows = (
+        db.query(StrategyRecommendation)
+        .filter(
+            StrategyRecommendation.tenant_id == tenant_id,
+            StrategyRecommendation.campaign_id == campaign_id,
+            StrategyRecommendation.engine_version == KEYWORD_INTELLIGENCE_VERSION,
+        )
+        .order_by(StrategyRecommendation.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    result: list[dict[str, Any]] = []
+    seen_clusters: set[str] = set()
+    for row in rows:
+        serialized = _serialize_keyword_action(row)
+        cluster_key = str(serialized.get("cluster_key") or "")
+        if not cluster_key or cluster_key in seen_clusters:
+            continue
+        seen_clusters.add(cluster_key)
+        result.append(serialized)
+    return result
 
 
 def _load_target_pages(
@@ -1444,9 +2057,7 @@ def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
         "evidence": evidence,
         "owner_feedback": evidence.get("owner_feedback"),
         "competitor_evidence": (
-            evidence.get("competitors")
-            if isinstance(evidence.get("competitors"), list)
-            else []
+            evidence.get("competitors") if isinstance(evidence.get("competitors"), list) else []
         ),
         "tracked_at": item.tracked_at.isoformat() if item.tracked_at else None,
         "source_updated_at": item.source_updated_at.isoformat() if item.source_updated_at else None,
@@ -1476,11 +2087,7 @@ def _latest_feedback_by_keyword(
         if row.normalized_keyword in latest:
             continue
         latest[row.normalized_keyword] = row
-    return {
-        keyword: row
-        for keyword, row in latest.items()
-        if row.decision != "cleared"
-    }
+    return {keyword: row for keyword, row in latest.items() if row.decision != "cleared"}
 
 
 def _feedback_message(

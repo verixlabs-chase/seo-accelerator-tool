@@ -27,7 +27,7 @@
 > location evidence and allowed actions. Owners can also create review-only
 > search-result wording, review requests, review responses, and page outlines
 > for supported saved actions. **MKT1.1: Automated Local Keyword Discovery is
-> now in progress.** Its first slice adds durable, location-scoped discovery
+> now locally complete.** Its first slice adds durable, location-scoped discovery
 > from DataForSEO, Search Console, and tracked searches, plain-language
 > opportunity grouping, demand visualization, and one-click promotion into
 > Search Rankings. **The MKT1.1 onboarding bridge is now implemented in the
@@ -49,10 +49,14 @@
 > without allowing AI to create permanent business rules. **Saved competitor
 > expansion is now implemented:** up to three saved competitor domains add
 > exact ranking-page evidence without replacing the customer's own position or
-> bypassing the business relevance gate. The remaining MKT1.1 work covers
-> historical comparisons, measured classifier quality, and conversion into
-> governed content and profile
-> actions. **UX13: Natural Product Voice and Comprehension** is scheduled as a
+> bypassing the business relevance gate. **The closing MKT1.1 intelligence slice
+> is now implemented:** immutable research dates produce demand, visibility,
+> opportunity, new-search, and missing-search comparisons; each current phrase
+> receives a plain-language movement label; owner feedback preserves the
+> system's prediction at decision time so filter quality is measured honestly;
+> and an owner can convert one confirmed, measured customer-need group into one
+> idempotent, review-only Next Steps item. Uncertain or unmeasured phrases cannot
+> create work, and no website change is automatic. **UX13: Natural Product Voice and Comprehension** is scheduled as a
 > later site-wide refinement because customer review still finds technically
 > simple phrases that sound artificial, self-conscious, or unlike the way a
 > helpful business advisor would speak.
@@ -565,7 +569,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 10 | **I1.4/T27 - Action Measurement Readiness — completed** | Starting measurements, completed-work proof, success measurements, and honest waiting periods make a checked box different from a proven result. |
 | 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling — completed** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
 | 12 | **I1.3 - Governed AI Utility Expansion — completed** | The daily brief, cited evidence Q&A, and review-only drafting use one metered gateway while the deterministic engine keeps action authority. |
-| 13 | **MKT1.1 - Automated Local Keyword Discovery — in progress** | Each location receives useful keyword ideas based on confirmed services and real service areas, while irrelevant phrases are removed before the owner has to review them. |
+| 13 | **MKT1.1 - Automated Local Keyword Discovery — completed locally** | Each location receives useful keyword ideas based on confirmed services and real service areas, while irrelevant phrases are removed before the owner has to review them. Saved dates now expose movement, owner checks measure filter quality, and confirmed measured groups can become governed Next Steps. |
 | 14 | **G1.3A - Customer Usage Credits** | Customers see simple Insight Credits instead of the platform's internal monthly dollar budget, while cost accounting still protects the 85% software-usage margin. |
 | 15 | **VAL1 - Research-Backed Search Value** | Search Value uses current location-specific market research and measured Search Console behavior to show a traceable paid-search replacement-cost range rather than a subjective dollar guess. |
 | 16 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
@@ -1982,13 +1986,25 @@ Implementation status (2026-08-04):
   phrases still pass the same confirmed-service, service-area, exclusion, and
   owner-feedback rules; search demand or a competitor rank alone cannot make a
   phrase a best match.
-- Remaining MKT1.1 work: historical trend comparisons, measured classifier
-  quality, and conversion into content
-  briefs, profile actions, or governed opportunities.
+- The closing MKT1.1 intelligence slice compares up to 13 immutable research
+  dates without buying another provider request. It shows demand, useful-search,
+  visibility, opportunity, new-search, and missing-search movement and gives
+  each current phrase a plain-language change label against the prior run.
+- Owner feedback now snapshots the relevance status, score, source, and rules
+  version that existed before the owner's answer. Quality reporting counts the
+  latest non-cleared choice per phrase, separates withheld `Needs review`
+  decisions from automatic decisions, and withholds a dependable match rate
+  until the governed minimum sample exists.
+- One owner-confirmed customer-need group can become one idempotent Next Steps
+  recommendation only when a saved rank, Search Console appearance, measured
+  demand value, or exact competitor observation supports it. The evidence packet
+  preserves the phrases, service, place, target-page decision, measured values,
+  and research run. The recommendation remains review-only and cannot change the
+  website automatically.
 
 Remaining delivery slices:
 
-- **MKT1.1A - Smart Business Discovery and Service Confirmation — active:** crawl the
+- **MKT1.1A - Smart Business Discovery and Service Confirmation — complete:** crawl the
   website for service evidence, combine it with owner-entered and connected
   business-profile facts, and present a reviewable service catalog. Store
   confirmed, suggested, and rejected services; common names; supporting pages;
@@ -2023,8 +2039,9 @@ Remaining delivery slices:
   batch contract, confidence gate, audit trail, allowance control, and bounded
   customer action are implemented locally. The versioned deterministic synonym
   library, durable reversible owner corrections, future-refresh reuse, and
-  excluded-area precedence are also implemented locally. Measured classifier
-  quality and carefully governed vocabulary expansion remain.
+  excluded-area precedence are also implemented locally. Prediction snapshots,
+  minimum-sample quality reporting, and correction counts now measure the filter
+  without allowing AI to create or broaden permanent vocabulary rules.
 - **MKT1.1 competitor-domain expansion - local core complete:** use up to three
   saved campaign competitors to find missed searches. Preserve the competitor's
   exact domain, ranking URL, observed position, and freshness as supporting

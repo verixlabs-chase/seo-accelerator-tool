@@ -13,6 +13,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -93,6 +96,22 @@ type SearchSuggestion = {
     title?: string | null;
     reason: string;
   };
+  trend?: {
+    status:
+      | "new"
+      | "gaining_demand"
+      | "losing_demand"
+      | "improving_rank"
+      | "slipping_rank"
+      | "steady"
+      | "not_enough_history";
+    label: string;
+    demand_change?: number | null;
+    position_improvement?: number | null;
+    opportunity_change?: number | null;
+    previous_search_volume?: number | null;
+    previous_position?: number | null;
+  };
   tracked_at?: string | null;
 };
 
@@ -107,6 +126,57 @@ type SearchClusterSummary = {
   totalDemand: number;
   bestPosition?: number | null;
   targetPage?: SearchSuggestion["target_page"];
+  suggestionIds: string[];
+  hasMeasuredEvidence: boolean;
+};
+
+type KeywordHistory = {
+  snapshot_count: number;
+  series: Array<{
+    run_id: string;
+    completed_at?: string | null;
+    useful_searches: number;
+    measured_demand: number;
+    visible_searches: number;
+    average_position?: number | null;
+    average_opportunity_score?: number | null;
+  }>;
+  comparison?: {
+    current_completed_at?: string | null;
+    previous_completed_at?: string | null;
+    new_searches: number;
+    no_longer_seen: number;
+    rising_demand: number;
+    falling_demand: number;
+    improved_positions: number;
+    slipped_positions: number;
+    demand_change: number;
+    new_keyword_examples: string[];
+    missing_keyword_examples: string[];
+  } | null;
+};
+
+type FilterQuality = {
+  state: "gathering_feedback" | "measuring" | "reliable";
+  headline: string;
+  message: string;
+  owner_checked: number;
+  automatic_decisions_checked: number;
+  agreements: number;
+  corrections: number;
+  agreement_rate?: number | null;
+  unclear_searches_resolved: number;
+  minimum_sample: number;
+};
+
+type GovernedKeywordAction = {
+  id: string;
+  cluster_key: string;
+  cluster_label?: string | null;
+  action_id: string;
+  status: string;
+  rationale: string;
+  created_at?: string | null;
 };
 
 type ResearchResponse = {
@@ -122,6 +192,9 @@ type ResearchResponse = {
     needs_review: number;
     hidden_unrelated: number;
   };
+  history?: KeywordHistory;
+  filter_quality?: FilterQuality;
+  governed_actions?: GovernedKeywordAction[];
   ai_review?: {
     state: string;
     reviewed: number;
@@ -262,6 +335,21 @@ function demandLabel(value?: number | null) {
   if (value === null || value === undefined) return "Not measured";
   if (value === 0) return "Very low";
   return `About ${value.toLocaleString()}/month`;
+}
+
+function trendTone(status?: NonNullable<SearchSuggestion["trend"]>["status"]) {
+  if (status === "new" || status === "gaining_demand" || status === "improving_rank") {
+    return "bg-emerald-500/10 text-emerald-200";
+  }
+  if (status === "losing_demand" || status === "slipping_rank") {
+    return "bg-rose-500/10 text-rose-200";
+  }
+  return "bg-[#1a1b1e] text-zinc-400";
+}
+
+function shortDate(value?: string | null) {
+  if (!value) return "Saved date";
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function sourceLabel(source: string) {
@@ -579,6 +667,7 @@ export default function KeywordResearchPage() {
     Record<string, string>
   >({});
   const [feedbackBusy, setFeedbackBusy] = useState("");
+  const [actionBusy, setActionBusy] = useState("");
   const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(null);
 
   const loadResearch = useCallback(async (campaignId: string) => {
@@ -996,6 +1085,28 @@ export default function KeywordResearchPage() {
     }
   };
 
+  const createNextStep = async (cluster: SearchClusterSummary) => {
+    if (!selectedCampaignId || cluster.suggestionIds.length === 0) return;
+    setActionBusy(cluster.key);
+    setError("");
+    setNotice("");
+    try {
+      const response = await platformApi("/keyword-research/create-action", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          suggestion_ids: cluster.suggestionIds,
+        }),
+      });
+      setNotice(response.message ?? "Added to Next Steps for review.");
+      await loadResearch(selectedCampaignId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "This group could not be added to Next Steps.");
+    } finally {
+      setActionBusy("");
+    }
+  };
+
   const filteredItems = useMemo(
     () => data.items.filter((item) => {
       const matchesView =
@@ -1043,12 +1154,28 @@ export default function KeywordResearchPage() {
             totalDemand: item.search_volume ?? 0,
             bestPosition: position,
             targetPage: item.target_page,
+            suggestionIds: [item.id],
+            hasMeasuredEvidence: Boolean(
+              (item.search_volume ?? 0) > 0
+              || item.current_position !== null && item.current_position !== undefined
+              || item.gsc_position !== null && item.gsc_position !== undefined
+              || (item.gsc_impressions ?? 0) > 0
+              || item.competitor_evidence?.length,
+            ),
           });
           return;
         }
         existing.keywordCount += 1;
         existing.trackedCount += item.tracked_at ? 1 : 0;
         existing.totalDemand += item.search_volume ?? 0;
+        existing.suggestionIds.push(item.id);
+        existing.hasMeasuredEvidence = existing.hasMeasuredEvidence || Boolean(
+          (item.search_volume ?? 0) > 0
+          || item.current_position !== null && item.current_position !== undefined
+          || item.gsc_position !== null && item.gsc_position !== undefined
+          || (item.gsc_impressions ?? 0) > 0
+          || item.competitor_evidence?.length,
+        );
         if (existing.keywords.length < 3) existing.keywords.push(item.keyword);
         if (position !== null && (existing.bestPosition === null || existing.bestPosition === undefined || position < existing.bestPosition)) {
           existing.bestPosition = position;
@@ -1062,6 +1189,17 @@ export default function KeywordResearchPage() {
       .slice(0, 8);
   }, [data.items]);
   const selectedCluster = searchClusters.find((item) => item.key === selectedClusterKey) ?? null;
+  const actionByCluster = useMemo(
+    () => new Map((data.governed_actions ?? []).map((item) => [item.cluster_key, item])),
+    [data.governed_actions],
+  );
+  const trendChartData = useMemo(
+    () => (data.history?.series ?? []).map((item) => ({
+      ...item,
+      date: shortDate(item.completed_at),
+    })),
+    [data.history?.series],
+  );
   const selectableVisible = filteredItems.filter(
     (item) => !item.tracked_at && item.relevance_status !== "unrelated",
   );
@@ -1660,6 +1798,140 @@ export default function KeywordResearchPage() {
               </dl>
             </section>
 
+            {data.history ? (
+              <section className="border-b border-[#26272c] pb-6">
+                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                      Search movement
+                    </p>
+                    <h2 className="mt-1 text-xl font-semibold text-white">
+                      What changed since the last research
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+                      Compare saved research dates to see which customer searches are growing,
+                      slipping, appearing for the first time, or no longer showing up.
+                    </p>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    {data.history.snapshot_count} saved {data.history.snapshot_count === 1 ? "date" : "dates"}
+                  </p>
+                </div>
+
+                {data.history.comparison ? (
+                  <>
+                    <dl className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="border-l-2 border-emerald-500 pl-4">
+                        <dt className="text-xs text-zinc-500">New searches found</dt>
+                        <dd className="mt-1 text-2xl font-bold text-emerald-300">
+                          ↑ {data.history.comparison.new_searches}
+                        </dd>
+                      </div>
+                      <div className="border-l-2 border-emerald-500 pl-4">
+                        <dt className="text-xs text-zinc-500">Searches moving up</dt>
+                        <dd className="mt-1 text-2xl font-bold text-emerald-300">
+                          ↑ {data.history.comparison.improved_positions}
+                        </dd>
+                      </div>
+                      <div className={`border-l-2 pl-4 ${
+                        data.history.comparison.demand_change >= 0
+                          ? "border-emerald-500"
+                          : "border-rose-500"
+                      }`}>
+                        <dt className="text-xs text-zinc-500">Measured demand change</dt>
+                        <dd className={`mt-1 text-2xl font-bold ${
+                          data.history.comparison.demand_change >= 0
+                            ? "text-emerald-300"
+                            : "text-rose-300"
+                        }`}>
+                          {data.history.comparison.demand_change >= 0 ? "↑" : "↓"}{" "}
+                          {Math.abs(data.history.comparison.demand_change).toLocaleString()}
+                        </dd>
+                      </div>
+                      <div className="border-l-2 border-[#303137] pl-4">
+                        <dt className="text-xs text-zinc-500">No longer found</dt>
+                        <dd className="mt-1 text-2xl font-bold text-zinc-200">
+                          {data.history.comparison.no_longer_seen}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    {trendChartData.length > 1 ? (
+                      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(260px,0.7fr)]">
+                        <div className="h-[280px] min-w-0">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={trendChartData} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
+                              <CartesianGrid stroke="#27282d" vertical={false} />
+                              <XAxis dataKey="date" tick={{ fill: "#a1a1aa", fontSize: 11 }} axisLine={false} tickLine={false} />
+                              <YAxis yAxisId="demand" tick={{ fill: "#a1a1aa", fontSize: 11 }} axisLine={false} tickLine={false} />
+                              <YAxis yAxisId="count" orientation="right" allowDecimals={false} tick={{ fill: "#a1a1aa", fontSize: 11 }} axisLine={false} tickLine={false} />
+                              <Tooltip
+                                contentStyle={{ background: "#141518", border: "1px solid #303137", borderRadius: 6 }}
+                                labelStyle={{ color: "#f4f4f5" }}
+                              />
+                              <Legend wrapperStyle={{ fontSize: 12, color: "#d4d4d8" }} />
+                              <Line yAxisId="demand" type="monotone" dataKey="measured_demand" name="Measured searches/month" stroke="#ff6a1a" strokeWidth={2.5} dot={{ r: 3 }} />
+                              <Line yAxisId="count" type="monotone" dataKey="useful_searches" name="Useful searches" stroke="#38bdf8" strokeWidth={2} dot={{ r: 3 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="border-l border-[#26272c] pl-5 text-sm leading-6 text-zinc-400">
+                          <p className="font-semibold text-white">How to read this</p>
+                          <p className="mt-2">
+                            Orange shows the measured monthly demand across confirmed searches.
+                            Blue shows how many useful searches passed your business and service-area checks.
+                          </p>
+                          <p className="mt-3 text-xs text-zinc-500">
+                            Compared {shortDate(data.history.comparison.previous_completed_at)} with{" "}
+                            {shortDate(data.history.comparison.current_completed_at)}. Search demand is an estimate, not promised jobs.
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="mt-5 border-l-2 border-sky-500 pl-4">
+                    <p className="font-semibold text-white">Your trend line has started</p>
+                    <p className="mt-1 text-sm leading-6 text-zinc-400">
+                      Refresh this research on another date to see which searches changed. The first saved date is your starting point.
+                    </p>
+                  </div>
+                )}
+              </section>
+            ) : null}
+
+            {data.filter_quality ? (
+              <section className="grid gap-4 border-b border-[#26272c] pb-6 lg:grid-cols-[1fr_auto] lg:items-center">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    Your saved choices
+                  </p>
+                  <h2 className="mt-1 text-lg font-semibold text-white">
+                    {data.filter_quality.headline}
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+                    {data.filter_quality.message}
+                  </p>
+                </div>
+                <div className="flex gap-6 text-right">
+                  <div>
+                    <p className="text-2xl font-bold text-white">{data.filter_quality.owner_checked}</p>
+                    <p className="text-xs text-zinc-500">choices checked</p>
+                  </div>
+                  {data.filter_quality.agreement_rate !== null &&
+                  data.filter_quality.agreement_rate !== undefined &&
+                  data.filter_quality.automatic_decisions_checked >= data.filter_quality.minimum_sample ? (
+                    <div>
+                      <p className="text-2xl font-bold text-emerald-300">
+                        {data.filter_quality.agreement_rate}%
+                      </p>
+                      <p className="text-xs text-zinc-500">matched your answer</p>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
             {data.run.warnings.length ? (
               <section className="rounded-md border border-amber-500/20 bg-amber-500/8 p-4">
                 <p className="text-sm font-semibold text-amber-100">
@@ -1709,16 +1981,45 @@ export default function KeywordResearchPage() {
                               : " · demand not measured"}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFilter("best");
-                            setSelectedClusterKey(cluster.key);
-                          }}
-                          className="shrink-0 text-xs font-semibold text-accent-300 hover:text-white"
-                        >
-                          Review group
-                        </button>
+                        <div className="flex shrink-0 flex-col items-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFilter("best");
+                              setSelectedClusterKey(cluster.key);
+                            }}
+                            className="text-xs font-semibold text-accent-300 hover:text-white"
+                          >
+                            Review group
+                          </button>
+                          {actionByCluster.has(cluster.key) ? (
+                            <button
+                              type="button"
+                              onClick={() => router.push("/opportunities")}
+                              className="text-xs font-semibold text-emerald-300 hover:text-white"
+                            >
+                              {["GENERATED", "VALIDATED", "APPROVED", "SCHEDULED"].includes(
+                                actionByCluster.get(cluster.key)?.status ?? "",
+                              )
+                                ? "In Next Steps →"
+                                : "Already handled →"}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => void createNextStep(cluster)}
+                              disabled={!cluster.hasMeasuredEvidence || actionBusy !== ""}
+                              title={
+                                cluster.hasMeasuredEvidence
+                                  ? "Add a reviewable action backed by these saved searches"
+                                  : "This group needs measured search evidence first"
+                              }
+                              className="rounded-md border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {actionBusy === cluster.key ? "Adding…" : "Add to Next Steps"}
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <p className="mt-3 text-sm leading-5 text-zinc-300">
                         {cluster.keywords.join(" · ")}
@@ -1907,6 +2208,19 @@ export default function KeywordResearchPage() {
                         {item.competitor_evidence?.length ? (
                           <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
                             Competitor opportunity
+                          </span>
+                        ) : null}
+                        {item.trend && item.trend.status !== "not_enough_history" ? (
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] ${trendTone(item.trend.status)}`}>
+                            {item.trend.status === "new" ||
+                            item.trend.status === "gaining_demand" ||
+                            item.trend.status === "improving_rank"
+                              ? "↑ "
+                              : item.trend.status === "losing_demand" ||
+                                  item.trend.status === "slipping_rank"
+                                ? "↓ "
+                                : "→ "}
+                            {item.trend.label}
                           </span>
                         ) : null}
                       </div>
