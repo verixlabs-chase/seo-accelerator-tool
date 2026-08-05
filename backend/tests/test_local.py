@@ -96,13 +96,10 @@ def test_location_context_resolves_and_caches_map_and_provider_metadata(
     assert before.status_code == 200
     assert before.json()["data"]["base_map"]["status"] == "setup_required"
     assert before.json()["data"]["map_rank_coverage"] == {
-        "status": "not_enabled",
+        "status": "setup_required",
         "coverage_type": "paid_geo_grid",
         "is_paid": True,
-        "message": (
-            "Paid geo-grid ranking coverage is not enabled. "
-            "The base map does not represent search rankings."
-        ),
+        "message": "Finish the map and search-area setup before running area-by-area checks.",
     }
 
     monkeypatch.setattr(
@@ -138,6 +135,8 @@ def test_location_context_resolves_and_caches_map_and_provider_metadata(
     assert payload["provider_location"]["status"] == "ready"
     assert payload["provider_location"]["name"] == "Reno, Nevada, United States"
     assert payload["provider_location"]["code"] == "1022653"
+    assert payload["map_rank_coverage"]["status"] == "available"
+    assert "separate reference" in payload["map_rank_coverage"]["message"]
 
     execution_location = db_session.execute(
         text(

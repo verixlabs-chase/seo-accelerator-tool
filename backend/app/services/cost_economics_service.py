@@ -21,6 +21,10 @@ CREDIT_COST_QUANTUM = Decimal("0.01")
 CREDIT_POLICY_VERSION = "insight-credits-2026-08-v1"
 
 CREDIT_ACTION_CATALOG: dict[tuple[str, str], tuple[str, str]] = {
+    ("local_rank_grid", "google_maps_standard"): (
+        "Check one map search point",
+        "Checks where a business appears in Google Maps from one nearby spot.",
+    ),
     ("rank_tracking", "google_organic_live_advanced"): (
         "Check one search ranking",
         "Checks where one search appears for one location.",

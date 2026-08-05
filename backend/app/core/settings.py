@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     crawl_max_active_runs_per_campaign: int = 2
     rank_provider_backend: str = "synthetic"
     local_provider_backend: str = "synthetic"
+    local_rank_grid_provider_backend: str = ""
     authority_provider_backend: str = "synthetic"
     competitor_provider_backend: str = "dataset"
     google_oauth_client_id: str = ""
@@ -86,6 +87,12 @@ class Settings(BaseSettings):
     rank_provider_dataforseo_timeout_seconds: float = 30.0
     rank_provider_dataforseo_language_code: str = "en"
     rank_provider_dataforseo_depth: int = 100
+    local_rank_grid_task_post_endpoint: str = "https://api.dataforseo.com/v3/serp/google/maps/task_post"
+    local_rank_grid_task_get_endpoint: str = "https://api.dataforseo.com/v3/serp/google/maps/task_get/advanced"
+    local_rank_grid_timeout_seconds: float = 30.0
+    local_rank_grid_language_code: str = "en"
+    local_rank_grid_depth: int = 100
+    local_rank_grid_zoom: int = 15
     dataforseo_locations_endpoint: str = "https://api.dataforseo.com/v3/serp/google/locations"
     location_geocoder_endpoint: str = "https://nominatim.openstreetmap.org/search"
     location_resolver_timeout_seconds: float = 20.0

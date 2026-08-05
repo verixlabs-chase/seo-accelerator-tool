@@ -21,6 +21,7 @@ import {
   buildRuntimeTruthSignal,
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
+import { LocalRankGridPanel } from "./LocalRankGridPanel";
 
 type Campaign = {
   id: string;
@@ -718,18 +719,20 @@ export default function LocalVisibilityPage() {
                 </p>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-base font-semibold text-white">Area-by-area tracking is not turned on</h2>
+                    <h2 className="text-base font-semibold text-white">Area-by-area tracking is ready below</h2>
                     <p className="mt-1 text-sm leading-6 text-zinc-400">
-                      This optional paid check would show how the location appears across nearby
-                      neighborhoods. The business map above does not show search positions.
+                      Choose customer searches and an area to see how this business appears from
+                      different nearby spots. The business map above remains a separate reference.
                     </p>
                   </div>
                   <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
-                    No paid checks
+                    Confirm before each check
                   </span>
                 </div>
               </section>
             </div>
+
+            <LocalRankGridPanel campaignId={selectedCampaignId} />
 
             <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
               <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">

@@ -8,7 +8,9 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.services import local_service
+from app.schemas.local_rank_grid import LocalRankGridCreateRequest, LocalRankGridRequest
+from app.services import local_rank_grid_service, local_service
+from app.services.cost_economics_service import CostEconomicsError
 from app.services.location_normalization_service import (
     LocationContextError,
     get_campaign_location_context,
@@ -73,6 +75,132 @@ def _raise_location_context_error(exc: LocationContextError) -> None:
             "reason_code": reason,
         },
     ) from exc
+
+
+def _raise_rank_grid_error(exc: Exception) -> None:
+    response_status = int(getattr(exc, "status_code", status.HTTP_409_CONFLICT))
+    raise HTTPException(
+        status_code=response_status,
+        detail={
+            "message": str(exc),
+            "reason_code": str(getattr(exc, "reason_code", "area_search_unavailable")),
+        },
+    ) from exc
+
+
+@local_router.post("/rank-grid/preview")
+def preview_local_rank_grid(
+    request: Request,
+    body: LocalRankGridRequest,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = local_rank_grid_service.preview_run(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=body.campaign_id,
+            keyword_ids=body.keyword_ids,
+            grid_size=body.grid_size,
+            radius_miles=body.radius_miles,
+        )
+    except (local_rank_grid_service.LocalRankGridError, CostEconomicsError) as exc:
+        _raise_rank_grid_error(exc)
+    return envelope(request, payload)
+
+
+@local_router.post("/rank-grid/runs", status_code=status.HTTP_202_ACCEPTED)
+def create_local_rank_grid_run(
+    request: Request,
+    body: LocalRankGridCreateRequest,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        run, created = local_rank_grid_service.create_run(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            created_by_user_id=user["id"],
+            campaign_id=body.campaign_id,
+            keyword_ids=body.keyword_ids,
+            grid_size=body.grid_size,
+            radius_miles=body.radius_miles,
+            idempotency_key=body.idempotency_key,
+        )
+    except (local_rank_grid_service.LocalRankGridError, CostEconomicsError) as exc:
+        db.rollback()
+        _raise_rank_grid_error(exc)
+    return envelope(
+        request,
+        {
+            "created": created,
+            "run": local_rank_grid_service.serialize_run(db, run),
+        },
+    )
+
+
+@local_router.get("/rank-grid/runs")
+def list_local_rank_grid_runs(
+    request: Request,
+    campaign_id: str = Query(...),
+    limit: int = Query(default=12, ge=1, le=50),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = local_rank_grid_service.list_runs(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        limit=limit,
+    )
+    return envelope(
+        request,
+        {
+            "items": [local_rank_grid_service.serialize_run(db, row) for row in rows],
+            "count": len(rows),
+        },
+    )
+
+
+@local_router.get("/rank-grid/runs/{run_id}")
+def get_local_rank_grid_run(
+    request: Request,
+    run_id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        run = local_rank_grid_service.get_run(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            run_id=run_id,
+        )
+    except local_rank_grid_service.LocalRankGridError as exc:
+        _raise_rank_grid_error(exc)
+    return envelope(request, local_rank_grid_service.serialize_run(db, run))
+
+
+@local_router.post("/rank-grid/runs/{run_id}/refresh")
+def refresh_local_rank_grid_run(
+    request: Request,
+    run_id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        run = local_rank_grid_service.refresh_run(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            run_id=run_id,
+        )
+    except local_rank_grid_service.LocalRankGridError as exc:
+        _raise_rank_grid_error(exc)
+    return envelope(request, local_rank_grid_service.serialize_run(db, run))
 
 
 def _local_provider_truth(*, has_data: bool, job_queued: bool, captured_at: str | None = None) -> dict:
