@@ -20,6 +20,7 @@ from app.schemas.campaign_dashboard import CampaignDashboardOut
 from app.schemas.campaign_performance import CampaignPerformanceSummaryOut, CampaignPerformanceTrendOut, CampaignReportOut
 from app.schemas.campaigns import CampaignCreateRequest, CampaignOut, CampaignSetupTransitionRequest
 from app.schemas.organic_value_baseline import OrganicValueBaselineOut, OrganicValueBaselineRequest
+from app.schemas.search_value import SearchValueOut
 from app.services.campaign_dashboard_service import build_campaign_dashboard
 from app.services.campaign_performance_service import build_campaign_performance_summary, build_campaign_performance_trend
 from app.services.feature_gate_service import assert_feature_available
@@ -27,6 +28,7 @@ from app.services.organic_value_baseline_service import (
     build_baseline as build_organic_value_baseline,
     resolve_monthly_seo_investment as resolve_organic_value_monthly_investment,
 )
+from app.services.search_value_service import build_search_value
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.services.strategy_engine.schemas import CampaignStrategyOut, StrategyWindow
 from app.services.strategy_build_service import build_campaign_strategy_idempotent
@@ -451,6 +453,30 @@ def get_campaign_strategy(
         for key in ("current_strategy_phase", "momentum_score", "trend_direction", "volatility_level"):
             if key in temporal_meta:
                 response_payload[key] = temporal_meta[key]
+    return envelope(request, response_payload)
+
+
+@router.get("/{id}/search-value")
+def get_campaign_search_value(
+    request: Request,
+    id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    campaign = (
+        db.query(Campaign)
+        .filter(Campaign.id == id, Campaign.tenant_id == user["tenant_id"])
+        .first()
+    )
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+
+    payload = build_search_value(
+        db,
+        campaign_id=campaign.id,
+        tenant_id=user["tenant_id"],
+    )
+    response_payload = SearchValueOut.model_validate(payload).model_dump(mode="json")
     return envelope(request, response_payload)
 
 

@@ -569,9 +569,9 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 10 | **I1.4/T27 - Action Measurement Readiness — completed** | Starting measurements, completed-work proof, success measurements, and honest waiting periods make a checked box different from a proven result. |
 | 11 | **I1.2/T28 - Improvement Forecasting and Scenario Modeling — completed** | Supported action plans add conservative improvement ranges and compare them with the eventual measured result. |
 | 12 | **I1.3 - Governed AI Utility Expansion — completed** | The daily brief, cited evidence Q&A, and review-only drafting use one metered gateway while the deterministic engine keeps action authority. |
-| 13 | **MKT1.1 - Automated Local Keyword Discovery — completed locally** | Each location receives useful keyword ideas based on confirmed services and real service areas, while irrelevant phrases are removed before the owner has to review them. Saved dates now expose movement, owner checks measure filter quality, and confirmed measured groups can become governed Next Steps. |
-| 14 | **G1.3A - Customer Usage Credits** | Customers see simple Insight Credits instead of the platform's internal monthly dollar budget, while cost accounting still protects the 85% software-usage margin. |
-| 15 | **VAL1 - Research-Backed Search Value** | Search Value uses current location-specific market research and measured Search Console behavior to show a traceable paid-search replacement-cost range rather than a subjective dollar guess. |
+| 13 | **MKT1.1 - Automated Local Keyword Discovery — completed** | Each location receives useful keyword ideas based on confirmed services and real service areas, while irrelevant phrases are removed before the owner has to review them. Saved dates now expose movement, owner checks measure filter quality, and confirmed measured groups can become governed Next Steps. |
+| 14 | **G1.3A - Customer Usage Credits — completed** | Customers see simple Insight Credits instead of the platform's internal monthly dollar budget, while cost accounting still protects the 85% software-usage margin. |
+| 15 | **VAL1 - Research-Backed Search Value — completed locally** | Search Value uses current location-specific market research and measured Search Console behavior to show a traceable paid-search replacement-cost range rather than a subjective dollar guess. |
 | 16 | **G1.2 - Local Search Rank Grid** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
 | 17 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
 | 18 | **I1.4/T29 - Measured Website and Google Business Profile Action Tracks** | Every website and profile action identifies the real metric it is meant to improve, shows the location's starting value, and returns with an honest measured result after the waiting period. |
@@ -2155,6 +2155,28 @@ Acceptance criteria:
   not duplicate a fresh MKT1.1 snapshot.
 - No Search Value screen or AI explanation describes the estimate as customer
   revenue or guaranteed financial return.
+
+Implementation record (2026-08-04):
+
+- The tenant-scoped Search Value contract now reuses up to 13 immutable MKT1.1
+  research runs and performs no provider call when the page opens or compares
+  saved dates.
+- Confirmed useful phrases with researched CPC are valued from sufficient
+  Search Console query clicks first. Missing or undersized query samples use a
+  versioned, device-blended CTR curve and remain visibly labeled as modeled.
+- The response includes a conservative range, central estimate, measured and
+  modeled shares, data coverage, confidence, source date, geography, formula
+  and CTR versions, deterministic input hash, per-phrase contributions, saved
+  history, and comparison signals for rankings, demand, CPC, coverage, and
+  model changes.
+- Research older than 90 days withholds the dollar estimate. Unrelated phrases,
+  missing market evidence, cross-tenant campaigns, supplier names, and
+  subjective manual values cannot enter the customer result.
+- The Search Value page now leads with `What similar visibility could cost in
+  paid search`, removes the manual SEO-investment ratio, separates measured
+  Google clicks from modeled gaps, and makes every displayed contribution
+  auditable without describing the estimate as revenue, leads, profit, or a
+  guaranteed result.
 
 ### Market MKT1.2 - Competitor and Content-Gap Research
 

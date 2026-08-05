@@ -2,6 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import {
   AppShell,
@@ -12,14 +21,10 @@ import {
   ProductPageIntro,
   TruthNotice,
   useLocationContext,
-  type RuntimeTruth,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
-import {
-  buildRuntimeTruthSignal,
-} from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
   id: string;
@@ -27,311 +32,270 @@ type Campaign = {
   domain?: string;
 };
 
-type BaselineMetric = {
-  amount?: string | null;
-  ratio?: string | null;
-  net_amount?: string | null;
-  currency?: string;
-  status: string;
-  source_type: string;
-  label: string;
+type SearchValueKeyword = {
+  id: string;
+  keyword: string;
+  position?: number | null;
+  target_position?: number | null;
+  search_volume?: number | null;
+  clicks?: number | null;
+  click_method: "measured" | "modeled";
+  cpc?: string | null;
+  contribution?: string | null;
+  contribution_lower?: string | null;
+  contribution_upper?: string | null;
+  possible_contribution?: string | null;
+  source: string;
+  source_date: string;
+  service?: string | null;
+  location?: string | null;
 };
 
-type BaselineScenario = {
+type SearchValueHistory = {
+  run_id: string;
+  saved_at: string;
+  status: string;
+  central?: string | null;
+  lower?: string | null;
+  upper?: string | null;
+  coverage_percent: number;
+  measured_share_percent: number;
+  confidence: string;
+  formula_version: string;
+};
+
+type ChangeSignal = {
   key: string;
   label: string;
-  projected_value: string;
-  upside_value: string;
-  percentage_lift: string;
-  target_rank_rule: string;
-  roi_baseline: BaselineMetric;
+  direction: "up" | "down" | "same";
+  detail: string;
 };
 
-type BaselineAssumption = {
-  key: string;
-  label: string;
-  value?: string | null;
-  status: string;
-  source_type: string;
-  note?: string | null;
-};
-
-type BaselineKeywordDriver = {
-  keyword_id: string;
-  keyword?: string | null;
-  current_value?: string | null;
-  projected_value?: string | null;
-  upside_value?: string | null;
-  current_rank?: number | null;
-  projected_rank?: number | null;
-  ctr_model_version?: string | null;
-};
-
-type BaselineConfidence = {
-  level: string;
-  score: string;
-  reasons: string[];
-};
-
-type OrganicValueBaseline = {
+type SearchValuePayload = {
   campaign_id: string;
-  feature: string;
+  status: "available" | "withheld" | "unavailable";
+  formula_version: string;
+  ctr_model_version: string;
   currency: string;
-  as_of?: string | null;
-  current_value: BaselineMetric;
-  upside_opportunity: BaselineMetric;
-  roi_baseline: BaselineMetric;
-  scenarios: BaselineScenario[];
-  assumptions: BaselineAssumption[];
-  confidence: BaselineConfidence;
-  top_keywords_by_value: BaselineKeywordDriver[];
-  opportunity_drivers: BaselineKeywordDriver[];
+  scope: {
+    business_location_id?: string | null;
+    location_name?: string | null;
+    language_code: string;
+    device: string;
+  };
+  research: {
+    run_id?: string | null;
+    saved_at?: string | null;
+    age_days?: number | null;
+    freshness: string;
+    source: string;
+    new_paid_check_required: boolean;
+  };
+  estimate: {
+    status: string;
+    central?: string | null;
+    lower?: string | null;
+    upper?: string | null;
+    possible_central?: string | null;
+    possible_lower?: string | null;
+    possible_upper?: string | null;
+    upside?: string | null;
+    change_from_previous?: string | null;
+    change_percent?: number | null;
+  };
+  coverage: {
+    confirmed_phrases: number;
+    valued_phrases: number;
+    percent: number;
+    missing_market_data: number;
+  };
+  confidence: {
+    level: string;
+    score: number;
+    reasons: string[];
+  };
+  source_split: {
+    measured_value?: string | null;
+    modeled_value?: string | null;
+    measured_share_percent: number;
+    modeled_share_percent: number;
+    measured_phrase_count: number;
+    modeled_phrase_count: number;
+  };
+  comparison?: {
+    previous_run_id: string;
+    previous_saved_at: string;
+    previous_value?: string | null;
+    change?: string | null;
+    change_percent?: number | null;
+    signals: ChangeSignal[];
+    formula_changed: boolean;
+  } | null;
+  history: SearchValueHistory[];
+  keywords: SearchValueKeyword[];
+  input_hash?: string | null;
+  explanation: string;
   caveats: string[];
-  truth?: RuntimeTruth;
 };
 
-function formatMetric(metric?: BaselineMetric | null) {
-  if (!metric || metric.status !== "available") {
-    return "Unavailable";
-  }
-  return metric.amount ? `$${metric.amount}` : "Available";
+function money(value?: string | number | null) {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(number);
 }
 
-function formatRatio(metric?: BaselineMetric | null) {
-  if (!metric?.ratio) {
-    return "Unavailable";
-  }
-  return `${metric.ratio}x`;
+function moneyPrecise(value?: string | number | null) {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(number);
 }
 
-function formatDate(value?: string | null) {
-  if (!value) {
-    return "No economics snapshot yet";
-  }
-  return value;
+function shortDate(value?: string | null) {
+  if (!value) return "No saved date";
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
-function getConfidenceTone(level: string) {
-  if (level === "high") {
-    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
-  }
-  if (level === "medium") {
-    return "border-amber-500/20 bg-amber-500/10 text-amber-100";
-  }
-  return "border-rose-500/20 bg-rose-500/10 text-rose-100";
+function rangeLabel(payload?: SearchValuePayload | null) {
+  if (!payload || payload.status !== "available") return "Not available yet";
+  return `${money(payload.estimate.lower)}–${money(payload.estimate.upper)}/month`;
 }
 
-function getSourceTone(sourceType: string, status: string) {
-  if (status === "unavailable") {
-    return "border-[#26272c] bg-[#111214] text-zinc-400";
-  }
-  if (sourceType === "user_provided") {
-    return "border-sky-500/20 bg-sky-500/10 text-sky-100";
-  }
-  if (sourceType === "provider_derived") {
-    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
-  }
-  return "border-amber-500/20 bg-amber-500/10 text-amber-100";
+function movementLabel(change?: string | null, percent?: number | null) {
+  if (!change) return "No comparison yet";
+  const numeric = Number(change);
+  const arrow = numeric > 0 ? "↑" : numeric < 0 ? "↓" : "→";
+  const percentText = percent === null || percent === undefined ? "" : ` (${Math.abs(percent).toFixed(1)}%)`;
+  return `${arrow} ${money(Math.abs(numeric))}${percentText}`;
 }
 
-function SourceChip({ sourceType, status }: { sourceType: string; status: string }) {
-  const label = status === "unavailable" ? "Unavailable" : sourceType.replace(/_/g, " ");
-  return (
-    <span className={`rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${getSourceTone(sourceType, status)}`}>
-      {label}
-    </span>
-  );
+function movementTone(change?: string | null) {
+  const numeric = Number(change || 0);
+  if (numeric > 0) return "text-emerald-300";
+  if (numeric < 0) return "text-rose-300";
+  return "text-zinc-400";
 }
 
-export default function OrganicValuePage() {
+function signalTone(direction: ChangeSignal["direction"]) {
+  if (direction === "up") return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
+  if (direction === "down") return "border-rose-500/20 bg-rose-500/10 text-rose-100";
+  return "border-[#2a2b30] bg-[#111214] text-zinc-300";
+}
+
+export default function SearchValuePage() {
   const pathname = usePathname();
   const router = useRouter();
   const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [monthlyInvestment, setMonthlyInvestment] = useState("");
-  const [appliedMonthlyInvestment, setAppliedMonthlyInvestment] = useState("");
-  const [baseline, setBaseline] = useState<OrganicValueBaseline | null>(null);
+  const [payload, setPayload] = useState<SearchValuePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
-  const loadCampaigns = useCallback(async () => {
-    const response = await platformApi("/campaigns", { method: "GET" });
-    const items = Array.isArray(response?.items) ? (response.items as Campaign[]) : [];
-    setCampaigns(items);
-    setSelectedCampaignId((current) => {
-      if (current && items.some((item) => item.id === current)) {
-        return current;
-      }
-      return items[0]?.id || "";
-    });
-    return items;
-  }, []);
-
-  const loadBaseline = useCallback(async (campaignId: string, investmentInput: string) => {
-    if (!campaignId) {
-      setBaseline(null);
-      return;
+  const loadSearchValue = useCallback(async (campaignId: string, quiet = false) => {
+    if (!campaignId) return;
+    if (!quiet) setLoading(true);
+    setError("");
+    try {
+      const response = (await platformApi(`/campaigns/${campaignId}/search-value`, {
+        method: "GET",
+      })) as SearchValuePayload;
+      setPayload(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Search Value could not be loaded.");
+      setPayload(null);
+    } finally {
+      if (!quiet) setLoading(false);
     }
-
-    const trimmed = investmentInput.trim();
-    const response = (await platformApi(
-      `/campaigns/${campaignId}/organic-value-baseline`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          monthly_seo_investment: trimmed ? trimmed : null,
-        }),
-      },
-    )) as OrganicValueBaseline;
-    setBaseline(response);
-    const persistedInvestment =
-      response.assumptions.find((item) => item.key === "monthly_seo_investment")?.value || "";
-    setMonthlyInvestment(persistedInvestment);
-    setAppliedMonthlyInvestment(persistedInvestment);
   }, []);
 
   useEffect(() => {
-    async function loadPage() {
-      setLoading(true);
-      setError("");
+    let active = true;
+    async function loadCampaigns() {
       try {
         await platformApi("/auth/me", { method: "GET" });
-        const items = await loadCampaigns();
-        if (items[0]?.id) {
-          await loadBaseline(items[0].id, appliedMonthlyInvestment);
-        }
+        const response = await platformApi("/campaigns", { method: "GET" });
+        const items = Array.isArray(response?.items) ? (response.items as Campaign[]) : [];
+        if (!active) return;
+        setCampaigns(items);
+        setSelectedCampaignId((current) =>
+          current && items.some((item) => item.id === current) ? current : items[0]?.id || "",
+        );
+        if (items.length === 0) setLoading(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to load organic value baseline.");
-      } finally {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Search Value could not be loaded.");
         setLoading(false);
       }
     }
-
-    void loadPage();
-  }, [loadBaseline, loadCampaigns, appliedMonthlyInvestment]);
+    void loadCampaigns();
+    return () => {
+      active = false;
+    };
+  }, [setSelectedCampaignId]);
 
   useEffect(() => {
-    if (!selectedCampaignId || loading) {
-      return;
-    }
+    if (selectedCampaignId) void loadSearchValue(selectedCampaignId);
+  }, [selectedCampaignId, loadSearchValue]);
 
-    void loadBaseline(selectedCampaignId, appliedMonthlyInvestment).catch((err) => {
-      setError(err instanceof Error ? err.message : "Unable to load organic value baseline.");
-    });
-  }, [selectedCampaignId, loading, loadBaseline, appliedMonthlyInvestment]);
-
-  async function refreshBaseline() {
-    if (!selectedCampaignId) {
-      return;
-    }
+  async function refreshSavedValue() {
+    if (!selectedCampaignId) return;
     setRefreshing(true);
-    setError("");
-    setNotice("");
-    try {
-      await loadBaseline(selectedCampaignId, appliedMonthlyInvestment);
-      setNotice("Organic value baseline refreshed.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to refresh the baseline.");
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  async function applyInvestmentBaseline() {
-    if (!selectedCampaignId) {
-      return;
-    }
-    setAppliedMonthlyInvestment(monthlyInvestment);
-    setRefreshing(true);
-    setError("");
-    setNotice("");
-    try {
-      await loadBaseline(selectedCampaignId, monthlyInvestment);
-      setNotice("Organic value baseline recalculated with the latest manual assumption.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to recalculate the baseline.");
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  async function clearSavedInvestment() {
-    if (!selectedCampaignId) {
-      return;
-    }
-    setRefreshing(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = (await platformApi(
-        `/campaigns/${selectedCampaignId}/organic-value-baseline`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            clear_monthly_seo_investment: true,
-          }),
-        },
-      )) as OrganicValueBaseline;
-      setBaseline(response);
-      setMonthlyInvestment("");
-      setAppliedMonthlyInvestment("");
-      setNotice("Saved monthly SEO investment cleared for this campaign.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to clear the saved assumption.");
-    } finally {
-      setRefreshing(false);
-    }
+    await loadSearchValue(selectedCampaignId, true);
+    setRefreshing(false);
   }
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
-  const expectedScenario = baseline?.scenarios.find((item) => item.key === "expected") ?? null;
-  const scenarioMaxValue = useMemo(
+  const history = useMemo(
     () =>
-      baseline
-        ? Math.max(
-            1,
-            ...baseline.scenarios.map((scenario) => Number(scenario.projected_value) || 0),
-          )
-        : 1,
-    [baseline],
+      (payload?.history || []).map((item) => ({
+        ...item,
+        date: new Date(item.saved_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        centralValue: item.central === null || item.central === undefined ? null : Number(item.central),
+        lowerValue: item.lower === null || item.lower === undefined ? null : Number(item.lower),
+        upperValue: item.upper === null || item.upper === undefined ? null : Number(item.upper),
+      })),
+    [payload],
   );
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
-      buildRuntimeTruthSignal(
-        "Estimate status",
-        baseline?.truth || null,
-        "Organic value is a modeled baseline, not direct revenue truth.",
-      ),
       {
-        label: "Current value",
-        value: baseline ? formatMetric(baseline.current_value) : "Awaiting baseline",
-        tone: baseline?.current_value.status === "available" ? "success" : "warning",
+        label: "Estimated replacement cost",
+        value: rangeLabel(payload),
+        tone: payload?.status === "available" ? "success" : "warning",
       },
       {
-        label: "Upside",
-        value: baseline ? formatMetric(baseline.upside_opportunity) : "Awaiting baseline",
-        tone: baseline?.upside_opportunity.status === "available" ? "info" : "warning",
+        label: "Data coverage",
+        value: payload ? `${payload.coverage.percent.toFixed(0)}%` : "Waiting",
+        tone: payload && payload.coverage.percent >= 70 ? "success" : "warning",
       },
       {
-        label: "Confidence",
-        value: baseline ? `${baseline.confidence.level} (${baseline.confidence.score})` : "Unavailable",
-        tone:
-          baseline?.confidence.level === "high"
-            ? "success"
-            : baseline?.confidence.level === "medium"
-              ? "warning"
-              : "danger",
+        label: "Measured share",
+        value: payload ? `${payload.source_split.measured_share_percent.toFixed(0)}%` : "Waiting",
+        tone: payload && payload.source_split.measured_share_percent >= 50 ? "success" : "info",
       },
       {
-        label: "Value compared with cost",
-        value: baseline ? formatRatio(baseline.roi_baseline) : "Unavailable",
-        tone: baseline?.roi_baseline.status === "available" ? "info" : "warning",
+        label: "Research date",
+        value: shortDate(payload?.research.saved_at),
+        tone: payload?.research.freshness === "current" ? "success" : "warning",
       },
     ],
-    [baseline],
+    [payload],
   );
 
   return (
@@ -340,24 +304,24 @@ export default function OrganicValuePage() {
       trustSignals={trustSignals}
       accountLabel={
         selectedCampaign
-          ? `${selectedCampaign.name || "Unnamed campaign"} / ${selectedCampaign.domain || "No domain"}`
-          : "No campaign selected"
+          ? `${selectedCampaign.name || "Unnamed location"} / ${selectedCampaign.domain || "No website"}`
+          : "No location selected"
       }
-      dateRangeLabel="Search value estimate"
+      dateRangeLabel="Saved research history"
       topBarActions={
         <>
           <button
-            onClick={() => void refreshBaseline()}
+            onClick={() => void refreshSavedValue()}
             disabled={!selectedCampaignId || refreshing}
-            className="rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-[#2a2b30] bg-[#141518] px-3 py-1.5 text-sm text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {refreshing ? "Reloading..." : "Reload saved data"}
+            {refreshing ? "Reloading…" : "Reload saved results"}
           </button>
           <button
-            onClick={() => router.push("/rankings")}
+            onClick={() => router.push("/keyword-research")}
             className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-sm font-medium text-zinc-100"
           >
-            View rankings
+            Find customer searches
           </button>
         </>
       }
@@ -366,19 +330,19 @@ export default function OrganicValuePage() {
         <ProductPageIntro
           compact
           eyebrow="Search value"
-          title="What your search visibility may be worth"
-          summary="Estimate what your current unpaid search traffic might cost to replace with ads, and see where better search positions could add value."
+          title="What similar visibility could cost in paid search"
+          summary="See a researched monthly range, what comes from real Google clicks, and which customer searches contribute to it."
         />
 
-        <TruthNotice title="This is an estimate, not a revenue promise.">
-          The estimate uses saved search positions and typical ad costs. It does not predict actual
-          leads, sales, profit, or guaranteed return.
+        <TruthNotice title="This is replacement cost—not business revenue.">
+          Search Value estimates what similar visibility might cost through paid search. It does not
+          estimate sales, profit, leads, or guaranteed results.
         </TruthNotice>
 
         {loading ? (
           <LoadingCard
-            title="Loading the search value estimate"
-            summary="Using saved search positions and ad-cost information to build this estimate."
+            title="Building the Search Value estimate"
+            summary="Using this location’s saved customer-search research and Search Console results."
           />
         ) : null}
 
@@ -388,306 +352,220 @@ export default function OrganicValuePage() {
           </section>
         ) : null}
 
-        {notice ? (
-          <section className="rounded-md border border-accent-500/20 bg-accent-500/10 p-4 text-sm text-zinc-100">
-            {notice}
-          </section>
-        ) : null}
-
         {!loading && campaigns.length === 0 ? (
           <EmptyState
-            title="There is not enough information for an estimate yet"
-            summary="Set up a business and collect search-position and ad-cost information first."
-            actionLabel="Go to dashboard setup"
+            title="Set up a location first"
+            summary="Search Value needs one business location and its saved customer-search research."
+            actionLabel="Open setup"
             onAction={() => router.push("/dashboard")}
           />
         ) : null}
 
-        {!loading && campaigns.length > 0 && baseline ? (
+        {!loading && payload?.status === "unavailable" ? (
+          <EmptyState
+            title="There is not enough saved information yet"
+            summary="Confirm useful customer searches, then refresh their rankings and local demand. Search Value will reuse that saved work automatically."
+            actionLabel="Find customer searches"
+            onAction={() => router.push("/keyword-research")}
+          />
+        ) : null}
+
+        {!loading && payload?.status === "withheld" ? (
+          <OwnerDecisionPanel
+            title="The saved research is too old for a trustworthy dollar estimate"
+            summary={`The latest research for ${payload.scope.location_name || "this location"} is ${payload.research.age_days ?? "more than 90"} days old.`}
+            nextStep="Refresh customer-search research before using Search Value for a decision."
+            actionLabel="Refresh customer searches"
+            onAction={() => router.push("/keyword-research")}
+            tone="warning"
+          />
+        ) : null}
+
+        {!loading && payload?.status === "available" ? (
           <>
             <OwnerDecisionPanel
-              title={
-                baseline.current_value.status === "available"
-                  ? `Your current search visibility is estimated at ${formatMetric(baseline.current_value)}`
-                  : "There is not enough market data for a value estimate"
-              }
-              summary={
-                baseline.current_value.status === "available"
-                  ? `The tracked search phrases show ${formatMetric(baseline.upside_opportunity)} in possible near-term upside. This is the cost of replacing visibility with ads, not promised revenue.`
-                  : "InsightOS will not guess a dollar value without saved search demand and typical ad-cost information."
-              }
-              nextStep={
-                baseline.current_value.status === "available"
-                  ? "Open Search Rankings and start with a valuable phrase that is already close to page one."
-                  : "Run a ranking check, then collect market data for the phrases this location tracks."
-              }
-              actionLabel="Choose a search phrase"
-              onAction={() => router.push("/rankings")}
-              tone={Number(baseline.current_value.amount || 0) > 0 ? "positive" : "warning"}
+              title={`Similar visibility could cost ${rangeLabel(payload)} in paid search`}
+              summary={`The central estimate is ${money(payload.estimate.central)} per month for ${payload.scope.location_name || "this location"}. ${payload.source_split.measured_share_percent.toFixed(0)}% is based on measured Search Console clicks; the rest is clearly labeled modeled.`}
+              nextStep="Open the phrase list below to see exactly what contributes to the estimate."
+              actionLabel="Review phrase details"
+              onAction={() => document.getElementById("phrase-contributions")?.scrollIntoView({ behavior: "smooth" })}
+              tone="positive"
             />
 
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
-                label="Current value"
-                value={formatMetric(baseline.current_value)}
-                summary="Estimated current paid-equivalent value from tracked organic visibility."
+                label="Researched monthly range"
+                value={`${money(payload.estimate.lower)}–${money(payload.estimate.upper)}`}
+                summary={`Central estimate: ${money(payload.estimate.central)}.`}
                 tone="highlight"
               />
               <KpiCard
-                label="Near-term upside"
-                value={formatMetric(baseline.upside_opportunity)}
-                summary="Estimated upside from the conservative one-step improvement path."
+                label="If priority phrases improve"
+                value={`${money(payload.estimate.possible_lower)}–${money(payload.estimate.possible_upper)}`}
+                summary={`Modeled upside: ${money(payload.estimate.upside)}. This is not a promised result.`}
               />
               <KpiCard
-                label="Expected scenario"
-                value={expectedScenario ? `$${expectedScenario.projected_value}` : "Unavailable"}
-                summary="Estimated value under the expected scenario, not an actual outcome promise."
+                label="Data coverage"
+                value={`${payload.coverage.percent.toFixed(0)}%`}
+                summary={`${payload.coverage.valued_phrases} of ${payload.coverage.confirmed_phrases} confirmed phrases have enough information.`}
               />
               <KpiCard
-                label="Value compared with cost"
-                value={formatRatio(baseline.roi_baseline)}
-                summary="Paid-equivalent value divided by optional monthly SEO investment."
+                label="Change from the last saved date"
+                value={movementLabel(payload.estimate.change_from_previous, payload.estimate.change_percent)}
+                summary={payload.comparison ? `Compared with ${shortDate(payload.comparison.previous_saved_at)}.` : "A comparison appears after the next saved research date."}
               />
             </div>
 
-            <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-              <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+              <section className="rounded-md border border-[#2a2b30] bg-[#141518] p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Saved history
+                </p>
+                <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-semibold text-white">How the estimate has changed</h2>
+                    <p className="mt-1 text-sm text-zinc-400">
+                      The center line is the central estimate. The outer lines show the conservative range.
+                    </p>
+                  </div>
+                  <span className={`text-sm font-semibold ${movementTone(payload.estimate.change_from_previous)}`}>
+                    {movementLabel(payload.estimate.change_from_previous, payload.estimate.change_percent)}
+                  </span>
+                </div>
+                {history.length > 1 ? (
+                  <div className="mt-5 h-72" aria-label="Estimated search value by scenario">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={history} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+                        <CartesianGrid stroke="#28292e" vertical={false} />
+                        <XAxis dataKey="date" stroke="#8b8d96" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#8b8d96" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `$${Number(value).toLocaleString()}`} />
+                        <Tooltip
+                          contentStyle={{ background: "#111214", border: "1px solid #2a2b30", borderRadius: 8 }}
+                          formatter={(value, name) => [money(Number(value)), name === "centralValue" ? "Central estimate" : name === "lowerValue" ? "Low end" : "High end"]}
+                        />
+                        <Line type="monotone" dataKey="upperValue" stroke="#71717a" strokeDasharray="4 4" dot={false} connectNulls={false} />
+                        <Line type="monotone" dataKey="centralValue" stroke="#ff6b1a" strokeWidth={3} dot={{ r: 3 }} connectNulls={false} />
+                        <Line type="monotone" dataKey="lowerValue" stroke="#71717a" strokeDasharray="4 4" dot={false} connectNulls={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="mt-5 border-y border-[#2a2b30] py-8 text-sm text-zinc-400">
+                    One saved date is available. The trend appears after the next research refresh.
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-md border border-[#2a2b30] bg-[#141518] p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  What the number uses
+                </p>
+                <h2 className="mt-1 text-xl font-semibold text-white">Measured clicks vs. modeled gaps</h2>
+                <div className="mt-6 overflow-hidden rounded-full bg-[#27282d]" role="img" aria-label={`${payload.source_split.measured_share_percent}% measured clicks and ${payload.source_split.modeled_share_percent}% modeled clicks`}>
+                  <div className="flex h-4 w-full">
+                    <div className="bg-emerald-500" style={{ width: `${payload.source_split.measured_share_percent}%` }} />
+                    <div className="bg-sky-500" style={{ width: `${payload.source_split.modeled_share_percent}%` }} />
+                  </div>
+                </div>
+                <div className="mt-5 space-y-4">
+                  <div className="border-l-2 border-emerald-500 pl-3">
+                    <p className="text-sm font-semibold text-white">Measured from Google clicks</p>
+                    <p className="mt-1 text-2xl font-semibold text-emerald-300">{money(payload.source_split.measured_value)}</p>
+                    <p className="mt-1 text-sm text-zinc-400">{payload.source_split.measured_phrase_count} phrases · {payload.source_split.measured_share_percent.toFixed(0)}% of the estimate</p>
+                  </div>
+                  <div className="border-l-2 border-sky-500 pl-3">
+                    <p className="text-sm font-semibold text-white">Filled with the position model</p>
+                    <p className="mt-1 text-2xl font-semibold text-sky-300">{money(payload.source_split.modeled_value)}</p>
+                    <p className="mt-1 text-sm text-zinc-400">{payload.source_split.modeled_phrase_count} phrases · {payload.source_split.modeled_share_percent.toFixed(0)}% of the estimate</p>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {payload.comparison ? (
+              <section className="rounded-md border border-[#2a2b30] bg-[#141518] p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Why it changed</p>
+                <h2 className="mt-1 text-xl font-semibold text-white">Five things checked on every comparison</h2>
+                <p className="mt-1 text-sm text-zinc-400">These signals explain the movement without pretending one change caused the whole result.</p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  {payload.comparison.signals.map((signal) => (
+                    <div key={signal.key} className={`rounded-md border p-4 ${signalTone(signal.direction)}`}>
+                      <p className="text-sm font-semibold">{signal.direction === "up" ? "↑" : signal.direction === "down" ? "↓" : "→"} {signal.label}</p>
+                      <p className="mt-2 text-sm leading-5 opacity-80">{signal.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <section id="phrase-contributions" className="rounded-md border border-[#2a2b30] bg-[#141518] p-5">
+              <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    What this estimate means
-                  </p>
-                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">
-                    Estimated current value: {formatMetric(baseline.current_value)}
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">
-                    As of {formatDate(baseline.as_of)}, the current keyword economics rows suggest{" "}
-                    {formatMetric(baseline.current_value)} in monthly paid-equivalent value, with{" "}
-                    {formatMetric(baseline.upside_opportunity)} in near-term upside from the current
-                    tracked keyword set.
-                  </p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Phrase details</p>
+                  <h2 className="mt-1 text-xl font-semibold text-white">Every dollar can be traced to a customer search</h2>
+                  <p className="mt-1 text-sm text-zinc-400">Sorted by current monthly contribution. Open Search Rankings to work on a phrase.</p>
                 </div>
-                <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Optional assumption
-                  </p>
-                  <label className="mt-3 block text-sm font-medium text-white">
-                    Monthly SEO investment
-                  </label>
-                  <input
-                    value={monthlyInvestment}
-                    onChange={(event) => setMonthlyInvestment(event.target.value)}
-                    placeholder="e.g. 2500"
-                    className="mt-2 w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
-                  />
-                  <p className="mt-2 text-sm leading-6 text-zinc-400">
-                    Leave this blank if you do not want to compare visibility value with your
-                    monthly cost. Leads and sales are never guessed.
-                  </p>
-                  <button
-                    onClick={() => void applyInvestmentBaseline()}
-                    disabled={refreshing || !selectedCampaignId}
-                    className="mt-4 rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Update estimate
-                  </button>
-                  <button
-                    onClick={() => void clearSavedInvestment()}
-                    disabled={refreshing || !selectedCampaignId}
-                    className="mt-3 rounded-md border border-[#26272c] bg-[#141518] px-4 py-2 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Clear saved assumption
-                  </button>
-                </div>
+                <button onClick={() => router.push("/rankings")} className="rounded-md border border-[#2a2b30] px-3 py-2 text-sm text-zinc-200">Open Search Rankings</button>
               </div>
-            </section>
-
-            <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Scenario range
-              </p>
-              <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                Conservative, expected, and aggressive upside
-              </h2>
-              <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                These examples use conservative position improvements built from the current
-                keyword economics rows. They are useful for demos and pilots, not for precision
-                forecasting.
-              </p>
-              {baseline.scenarios.some((scenario) => Number(scenario.projected_value) > 0) ? (
-                <div
-                  className="mt-5 space-y-3 border-y border-[#2b2c31] py-4"
-                  aria-label="Estimated search value by scenario"
-                >
-                  {baseline.scenarios.map((scenario) => {
-                    const projectedValue = Number(scenario.projected_value) || 0;
-                    const width = (projectedValue / scenarioMaxValue) * 100;
-                    return (
-                      <div key={`visual-${scenario.key}`}>
-                        <div className="flex items-center justify-between gap-3 text-sm">
-                          <span className="font-medium text-zinc-200">{scenario.label}</span>
-                          <span className="text-zinc-300">${scenario.projected_value}</span>
-                        </div>
-                        <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-[#27282d]">
-                          <div
-                            className="h-full rounded-full bg-accent-500"
-                            style={{ width: `${Math.min(100, width)}%` }}
-                            role="img"
-                            aria-label={`${scenario.label}: $${scenario.projected_value} estimated monthly search value`}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <p className="text-xs leading-5 text-zinc-500">
-                    Longer bars show a larger estimated paid-ad replacement value. They do not show
-                    guaranteed revenue or profit.
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-5 border-y border-[#2b2c31] py-4">
-                  <p className="text-sm font-semibold text-white">
-                    A scenario comparison needs market data
-                  </p>
-                  <p className="mt-1.5 text-sm leading-6 text-zinc-400">
-                    No bars are shown because every current estimate is $0.00. Run ranking and
-                    market-data collection before comparing possible values.
-                  </p>
-                </div>
-              )}
-              <div className="mt-4 grid gap-4 xl:grid-cols-3">
-                {baseline.scenarios.map((scenario) => (
-                  <div key={scenario.key} className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-white">{scenario.label}</p>
-                        <p className="mt-1 text-sm text-zinc-400">{scenario.target_rank_rule}</p>
-                      </div>
-                      <SourceChip sourceType={scenario.roi_baseline.source_type} status={scenario.roi_baseline.status} />
-                    </div>
-                    <div className="mt-4 space-y-2 text-sm text-zinc-300">
-                      <p>Projected value: <span className="font-medium text-white">${scenario.projected_value}</span></p>
-                      <p>Upside: <span className="font-medium text-white">${scenario.upside_value}</span></p>
-                      <p>Lift: <span className="font-medium text-white">{scenario.percentage_lift}%</span></p>
-                      <p>Value compared with cost: <span className="font-medium text-white">{formatRatio(scenario.roi_baseline)}</span></p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-              <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Assumptions
-                </p>
-                <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  What drives this estimate
-                </h2>
-                <div className="mt-4 space-y-3">
-                  {baseline.assumptions.map((assumption) => (
-                    <div key={assumption.key} className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-white">{assumption.label}</p>
-                          <p className="mt-1 text-sm text-zinc-300">
-                            {assumption.value || "Not available in this V1"}
-                          </p>
-                        </div>
-                        <SourceChip sourceType={assumption.source_type} status={assumption.status} />
-                      </div>
-                      {assumption.note ? (
-                        <p className="mt-2 text-sm leading-6 text-zinc-400">{assumption.note}</p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Confidence
-                </p>
-                <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  How trustworthy the baseline is today
-                </h2>
-                <div className={`mt-4 rounded-md border p-4 ${getConfidenceTone(baseline.confidence.level)}`}>
-                  <p className="text-sm font-medium text-white">
-                    {baseline.confidence.level.toUpperCase()} confidence ({baseline.confidence.score})
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {baseline.confidence.reasons.map((reason) => (
-                      <p key={reason}>{reason}</p>
+              <div className="mt-5 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b border-[#2a2b30] text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+                    <tr>
+                      <th className="px-3 py-3 font-semibold">Customer search</th>
+                      <th className="px-3 py-3 font-semibold">Position</th>
+                      <th className="px-3 py-3 font-semibold">Monthly clicks used</th>
+                      <th className="px-3 py-3 font-semibold">Typical ad cost</th>
+                      <th className="px-3 py-3 font-semibold">Monthly contribution</th>
+                      <th className="px-3 py-3 font-semibold">Source and date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#24252a]">
+                    {payload.keywords.map((keyword) => (
+                      <tr key={keyword.id} className="align-top text-zinc-300">
+                        <td className="px-3 py-4">
+                          <p className="font-semibold text-white">{keyword.keyword}</p>
+                          <p className="mt-1 text-xs text-zinc-500">{keyword.service || "Confirmed service"} · {keyword.location || payload.scope.location_name}</p>
+                        </td>
+                        <td className="px-3 py-4">{keyword.position ? `#${keyword.position}` : "Not measured"}</td>
+                        <td className="px-3 py-4">
+                          <p>{keyword.clicks?.toFixed(1) ?? "—"}</p>
+                          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs ${keyword.click_method === "measured" ? "bg-emerald-500/10 text-emerald-200" : "bg-sky-500/10 text-sky-200"}`}>
+                            {keyword.click_method === "measured" ? "Measured" : "Modeled"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-4">{moneyPrecise(keyword.cpc)}/click</td>
+                        <td className="px-3 py-4">
+                          <p className="font-semibold text-white">{money(keyword.contribution)}</p>
+                          <p className="mt-1 text-xs text-zinc-500">{money(keyword.contribution_lower)}–{money(keyword.contribution_upper)}</p>
+                        </td>
+                        <td className="px-3 py-4">
+                          <p>{keyword.source}</p>
+                          <p className="mt-1 text-xs text-zinc-500">{shortDate(keyword.source_date)}</p>
+                        </td>
+                      </tr>
                     ))}
-                  </div>
-                </div>
-                <div className="mt-4 space-y-3">
-                  {baseline.caveats.map((caveat) => (
-                    <div key={caveat} className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
-                      {caveat}
-                    </div>
-                  ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <div className="grid gap-5 xl:grid-cols-2">
+              <section className="rounded-md border border-[#2a2b30] bg-[#141518] p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Confidence</p>
+                <h2 className="mt-1 text-xl font-semibold text-white">{payload.confidence.level} confidence · {payload.confidence.score}/100</h2>
+                <div className="mt-4 space-y-2 text-sm text-zinc-300">
+                  {payload.confidence.reasons.map((reason) => <p key={reason}>• {reason}</p>)}
                 </div>
               </section>
-            </div>
-
-            <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-              <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Current drivers
-                </p>
-                <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  Top keywords by current value
-                </h2>
-                <div className="mt-4 space-y-3">
-                  {baseline.top_keywords_by_value.length === 0 ? (
-                    <EmptyState
-                      title="No keyword economics rows yet"
-                      summary="Run ranking collection and store market data before using the value baseline."
-                    />
-                  ) : (
-                    baseline.top_keywords_by_value.map((keyword, index) => (
-                      <div key={keyword.keyword_id} className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                        <p className="text-sm font-medium text-white">
-                          {keyword.keyword || `Keyword #${index + 1}`}
-                        </p>
-                        <p className="mt-2 text-sm text-zinc-300">Current value: ${keyword.current_value || "0.00"}</p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">
-                          {keyword.keyword_id}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </section>
-
-              <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Opportunity drivers
-                </p>
-                <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  Keywords with the clearest upside
-                </h2>
-                <div className="mt-4 space-y-3">
-                  {baseline.opportunity_drivers.length === 0 ? (
-                    <EmptyState
-                      title="No opportunity drivers yet"
-                      summary="Opportunity drivers appear once keyword economics rows exist for this business."
-                    />
-                  ) : (
-                    baseline.opportunity_drivers.map((keyword, index) => (
-                      <div key={keyword.keyword_id} className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                        <p className="text-sm font-medium text-white">
-                          {keyword.keyword || `Keyword #${index + 1}`}
-                        </p>
-                        <p className="mt-2 text-sm text-zinc-300">
-                          Upside: ${keyword.upside_value || "0.00"} from rank {keyword.current_rank ?? "?"} to {keyword.projected_rank ?? "?"}
-                        </p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">
-                          {keyword.keyword_id}
-                        </p>
-                      </div>
-                    ))
-                  )}
+              <section className="rounded-md border border-[#2a2b30] bg-[#141518] p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Saved calculation</p>
+                <h2 className="mt-1 text-xl font-semibold text-white">Reproducible from the same inputs</h2>
+                <div className="mt-4 space-y-2 text-sm text-zinc-300">
+                  <p>Location: {payload.scope.location_name || "Not recorded"}</p>
+                  <p>Research date: {shortDate(payload.research.saved_at)}</p>
+                  <p>Formula: {payload.formula_version}</p>
+                  <p>Click model: {payload.ctr_model_version}</p>
+                  <p className="break-all text-xs text-zinc-500">Input record: {payload.input_hash}</p>
                 </div>
               </section>
             </div>
