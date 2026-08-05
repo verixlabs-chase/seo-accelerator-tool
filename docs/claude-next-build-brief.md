@@ -572,7 +572,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 13 | **MKT1.1 - Automated Local Keyword Discovery — completed** | Each location receives useful keyword ideas based on confirmed services and real service areas, while irrelevant phrases are removed before the owner has to review them. Saved dates now expose movement, owner checks measure filter quality, and confirmed measured groups can become governed Next Steps. |
 | 14 | **G1.3A - Customer Usage Credits — completed** | Customers see simple Insight Credits instead of the platform's internal monthly dollar budget, while cost accounting still protects the 85% software-usage margin. |
 | 15 | **VAL1 - Research-Backed Search Value — completed locally** | Search Value uses current location-specific market research and measured Search Console behavior to show a traceable paid-search replacement-cost range rather than a subjective dollar guess. |
-| 16 | **G1.2 - Local Search Rank Grid — completed locally** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
+| 16 | **G1.2 - Local Search Rank Grid — released** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
 | 17 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
 | 18 | **I1.4/T29 - Measured Website and Google Business Profile Action Tracks** | Every website and profile action identifies the real metric it is meant to improve, shows the location's starting value, and returns with an honest measured result after the waiting period. |
 | 19 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
@@ -751,8 +751,8 @@ G1 acceptance criteria:
 
 ### Growth G1.2 - Local Search Rank Grid
 
-> **Implementation status (2026-08-04):** G1.2 is complete locally on
-> `codex/g12-local-search-rank-grid` and awaits production release. Revision
+> **Implementation status (2026-08-04):** G1.2 is released in production.
+> Revision
 > `20260805_0097` adds tenant- and organization-isolated grid runs and points,
 > the standard queued Google Maps price card, durable idempotent dispatch, and
 > reservation/reconciliation through Insight Credits. Local Search now has a
@@ -760,7 +760,10 @@ G1 acceptance criteria:
 > confirmation showing exact checks and credits, separate reference and rank
 > maps, stable position colors, pending/sparse/stale/not-found states, saved
 > run history, and plain-language result refresh. Provider names and mechanics
-> remain internal. Focused backend tests and the frontend production build pass.
+> remain internal. A confirmed manual check is submitted immediately through
+> the same durable job, while the scheduled drain remains its retry safety net.
+> Focused backend tests, the full backend suite, Ruff, frontend behavior tests,
+> Windows preflight, Supabase migration, and the production Vercel builds pass.
 
 Goal: let an owner run a truthful heat map for one location and one or more
 tracked search phrases without exposing provider mechanics or allowing

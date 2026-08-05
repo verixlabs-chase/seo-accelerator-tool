@@ -673,6 +673,59 @@ def run_website_performance_job_now(
     }
 
 
+def run_local_rank_grid_dispatch_now(
+    db: Session,
+    *,
+    tenant_id: str,
+    run_id: str,
+) -> dict[str, Any]:
+    job = (
+        db.query(PlatformJob)
+        .filter(
+            PlatformJob.tenant_id == tenant_id,
+            PlatformJob.job_type == LOCAL_RANK_GRID_DISPATCH_JOB_TYPE,
+            PlatformJob.entity_type == "local_rank_grid_run",
+            PlatformJob.entity_id == run_id,
+        )
+        .first()
+    )
+    if job is None:
+        raise ValueError("Area search job was not found.")
+    if job.status == job_service.JOB_STATUS_COMPLETED:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "idempotent_replay": True,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    if job.status in {job_service.JOB_STATUS_RUNNING, job_service.JOB_STATUS_DEAD_LETTER}:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "idempotent_replay": False,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+
+    job_service.start_job(
+        db,
+        job.id,
+        worker_id=f"tenant-rank-grid-{uuid.uuid4()}",
+        lease_seconds=get_settings().durable_job_lease_seconds,
+    )
+    db.commit()
+    execution = execute_claimed_job(db, job_id=job.id)
+    refreshed = db.get(PlatformJob, job.id)
+    return {
+        "job_id": job.id,
+        "status": execution["status"],
+        "idempotent_replay": False,
+        "result": _json_safe(refreshed.result if refreshed is not None else None),
+        "error": refreshed.error if refreshed is not None else None,
+    }
+
+
 def run_intelligence_campaign_job_now(
     db: Session,
     *,

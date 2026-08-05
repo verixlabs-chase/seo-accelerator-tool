@@ -9,7 +9,7 @@ from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.local_rank_grid import LocalRankGridCreateRequest, LocalRankGridRequest
-from app.services import local_rank_grid_service, local_service
+from app.services import durable_job_service, local_rank_grid_service, local_service
 from app.services.cost_economics_service import CostEconomicsError
 from app.services.location_normalization_service import (
     LocationContextError,
@@ -128,6 +128,17 @@ def create_local_rank_grid_run(
             grid_size=body.grid_size,
             radius_miles=body.radius_miles,
             idempotency_key=body.idempotency_key,
+        )
+        durable_job_service.run_local_rank_grid_dispatch_now(
+            db,
+            tenant_id=user["tenant_id"],
+            run_id=run.id,
+        )
+        run = local_rank_grid_service.get_run(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            run_id=run.id,
         )
     except (local_rank_grid_service.LocalRankGridError, CostEconomicsError) as exc:
         db.rollback()

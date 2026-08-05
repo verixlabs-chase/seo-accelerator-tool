@@ -224,22 +224,34 @@ def test_rank_grid_api_requires_confirmation_contract_and_returns_location_run(
     assert preview.status_code == 200
     assert preview.json()["data"]["total_checks"] == 50
 
+    create_payload = {
+        "campaign_id": campaign.id,
+        "keyword_ids": [row.id for row in keywords],
+        "grid_size": 5,
+        "radius_miles": 5,
+        "idempotency_key": "api-confirmed-grid-001",
+    }
     created = client.post(
         "/api/v1/local/rank-grid/runs",
         headers=headers,
-        json={
-            "campaign_id": campaign.id,
-            "keyword_ids": [row.id for row in keywords],
-            "grid_size": 5,
-            "radius_miles": 5,
-            "idempotency_key": "api-confirmed-grid-001",
-        },
+        json=create_payload,
     )
     assert created.status_code == 202
     run = created.json()["data"]["run"]
     assert run["business_location_id"] == location.id
-    assert run["status"] == "queued"
+    assert run["status"] == "completed"
+    assert run["completed_checks"] == 50
     assert len(run["points"]) == 50
+
+    replayed = client.post(
+        "/api/v1/local/rank-grid/runs",
+        headers=headers,
+        json=create_payload,
+    )
+    assert replayed.status_code == 202
+    assert replayed.json()["data"]["created"] is False
+    assert replayed.json()["data"]["run"]["id"] == run["id"]
+    assert replayed.json()["data"]["run"]["status"] == "completed"
 
     history = client.get(
         f"/api/v1/local/rank-grid/runs?campaign_id={campaign.id}", headers=headers
