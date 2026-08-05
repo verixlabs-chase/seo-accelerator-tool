@@ -619,6 +619,18 @@ Completion record (2026-08-04):
 - Use `What similar visibility could cost in paid search`; never use revenue,
   profit, lead, or guaranteed-return language for this estimate.
 
+Completion record (2026-08-04):
+
+- Search Value now puts the researched monthly range, central estimate,
+  confidence, coverage, measured share, and saved-date change above the fold.
+- The page separates measured Search Console clicks from clearly labeled
+  modeled gaps, visualizes saved history, and explains changes through ranking,
+  demand, ad-cost, coverage, and calculation-version signals.
+- A location-scoped phrase table exposes position, clicks used, researched CPC,
+  monthly contribution range, source, and source date. The former manual SEO
+  investment input and subjective ROI ratio are removed from the customer
+  journey.
+
 ### Follow-on product sprint — I1.4/T29 measured website and Google Profile actions
 
 67. Separate the action workspace into `Improve your website` and `Improve your
