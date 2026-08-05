@@ -15,6 +15,7 @@ from app.models.organization_provider_credential import OrganizationProviderCred
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.services.provider_credentials_service import (
     ProviderCredentialConfigurationError,
+    get_organization_provider_credentials,
     resolve_provider_credentials,
 )
 
@@ -53,9 +54,27 @@ def google_oauth_connection_summary(db: Session, organization_id: str) -> dict[s
         )
         .first()
     )
+    scopes: list[str] = []
+    if row is not None:
+        try:
+            credentials = get_organization_provider_credentials(db, organization_id, "google")
+            scopes = sorted(set(str(credentials.get("scope") or "").split()))
+        except ProviderCredentialConfigurationError:
+            scopes = []
+    settings = get_settings()
     return {
         "connected": row is not None,
         "provider_name": "google",
+        "approved_access": {
+            "search_console": bool(
+                row is not None
+                and (not scopes or settings.google_oauth_scope_gsc in scopes)
+            ),
+            "business_profile": bool(
+                row is not None
+                and settings.google_oauth_scope_gbp in scopes
+            ),
+        },
         "updated_at": row.updated_at.isoformat() if row is not None and row.updated_at else None,
     }
 
@@ -107,10 +126,7 @@ def serialize_connection(
         "last_error_code": connection.last_error_code,
         "last_error_message": connection.last_error_message,
         "sync_cursor": dict(connection.sync_cursor or {}),
-        "source_truth": (
-            "Website-property data from Google Search Console. If multiple locations share "
-            "one property, the metrics describe that shared website property."
-        ),
+        "source_truth": _connection_source_truth(connection.provider_name),
         "updated_at": _iso(connection.updated_at),
     }
 
@@ -833,3 +849,15 @@ def _as_aware(value: datetime) -> datetime:
 
 def _iso(value: datetime | None) -> str | None:
     return _as_aware(value).isoformat() if value is not None else None
+
+
+def _connection_source_truth(provider_name: str) -> str:
+    if provider_name == "google_business_profile":
+        return (
+            "Authorized data for one Google business listing. Results stay tied to the "
+            "matched business location and are never blended with another listing."
+        )
+    return (
+        "Website-property data from Google Search Console. If multiple locations share "
+        "one property, the metrics describe that shared website property."
+    )

@@ -31,7 +31,7 @@ current source of truth.
 | Email delivery | Adapter contract exists; hosted configuration is optional | configure a real SMTP provider and verify delivery outcomes |
 | Crawling | Small request-based crawls can execute eagerly | convert crawl frontier steps to durable jobs before increasing limits |
 | Rankings | Real SerpAPI adapter exists | select backend, configure organization credentials, and validate a live campaign |
-| Local visibility / reviews | Base location map and G1.2 queued, credit-controlled local rank grid are live; synthetic local/review provider is test-only | implement G1.4 GBP and G1.6 reputation providers and workflows |
+| Local visibility / reviews | Base location map and G1.2 queued, credit-controlled local rank grid are live. G1.4's authorized listing mapping, snapshots, field checks, performance history, customer search terms, and customer UI are implemented locally; synthetic local/review data remains test-only. | obtain Google Business Profile API project approval, validate one production owned-listing sync, finish G1.4 competitor/photo/post and approved-edit slices, then implement G1.6 reputation workflows |
 | Citations / backlinks | Synthetic provider is test-only | implement G1.5 listings/citations provider first, then CNT1 editorial authority data |
 | Competitors | Stored-dataset workflow works | add durable collection and a live upstream provider if required |
 | Recommendations | Heuristic generation and governance are implemented | validate recommendations against live provider inputs |

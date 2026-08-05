@@ -20,6 +20,7 @@ from app.models.reporting import ReportSchedule
 from app.models.website_performance import WebsitePerformanceMeasurement
 from app.services import (
     data_connections_service,
+    google_business_profile_service,
     job_service,
     local_rank_grid_service,
     reporting_service,
@@ -32,6 +33,7 @@ JobHandler = Callable[[Session, PlatformJob], dict[str, Any]]
 REPORT_SCHEDULE_JOB_TYPE = "reporting.process_schedule"
 INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE = "intelligence.campaign_cycle"
 SEARCH_CONSOLE_SYNC_JOB_TYPE = "data_connections.search_console_sync"
+BUSINESS_PROFILE_SYNC_JOB_TYPE = "data_connections.google_business_profile_sync"
 CWV_STANDARDS_CHECK_JOB_TYPE = "reference_library.cwv_standards_check"
 WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE = "website_performance.collect"
 LOCAL_RANK_GRID_DISPATCH_JOB_TYPE = "local.rank_grid.dispatch"
@@ -127,6 +129,39 @@ def _search_console_sync_handler(
     }
 
 
+def _business_profile_sync_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    connection_id = str(job.payload.get("connection_id") or job.entity_id or "").strip()
+    connection = db.get(DataConnection, connection_id) if connection_id else None
+    if (
+        not tenant_id
+        or connection is None
+        or connection.tenant_id != tenant_id
+        or connection.provider_name
+        != google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER
+        or connection.status == data_connections_service.CONNECTION_STATUS_DISCONNECTED
+    ):
+        raise ValueError("Google business listing sync has no active location connection.")
+    start_date, end_date = _business_profile_sync_window(connection, payload=job.payload)
+    data_connections_service.mark_sync_started(db, connection)
+    result = google_business_profile_service.sync_profile_connection(
+        db,
+        connection=connection,
+        date_from=start_date,
+        date_to=end_date,
+    )
+    data_connections_service.mark_sync_succeeded(
+        db,
+        connection,
+        metric_start_date=start_date.isoformat(),
+        metric_end_date=end_date.isoformat(),
+    )
+    return result
+
+
 def _cwv_standards_check_handler(
     db: Session,
     job: PlatformJob,
@@ -189,6 +224,7 @@ DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
     INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
     SEARCH_CONSOLE_SYNC_JOB_TYPE: _search_console_sync_handler,
+    BUSINESS_PROFILE_SYNC_JOB_TYPE: _business_profile_sync_handler,
     CWV_STANDARDS_CHECK_JOB_TYPE: _cwv_standards_check_handler,
     WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE: _website_performance_collection_handler,
     LOCAL_RANK_GRID_DISPATCH_JOB_TYPE: _local_rank_grid_dispatch_handler,
@@ -242,6 +278,29 @@ def _search_console_sync_window(
     return start_date, end_date
 
 
+def _business_profile_sync_window(
+    connection: DataConnection,
+    *,
+    payload: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> tuple[date, date]:
+    resolved_now = now or datetime.now(UTC)
+    end_date = resolved_now.date() - timedelta(days=3)
+    payload = payload or {}
+    payload_start = str(payload.get("start_date") or "").strip()
+    payload_end = str(payload.get("end_date") or "").strip()
+    if payload_start and payload_end:
+        return date.fromisoformat(payload_start), date.fromisoformat(payload_end)
+    cursor_date_raw = str((connection.sync_cursor or {}).get("last_metric_date") or "").strip()
+    if cursor_date_raw:
+        start_date = min(date.fromisoformat(cursor_date_raw) + timedelta(days=1), end_date)
+    else:
+        start_date = end_date - timedelta(
+            days=google_business_profile_service.PROFILE_SYNC_BACKFILL_DAYS - 1
+        )
+    return start_date, end_date
+
+
 def _search_console_sync_idempotency_key(
     connection_id: str,
     *,
@@ -288,6 +347,35 @@ def create_search_console_sync_job(
     )
 
 
+def create_business_profile_sync_job(
+    db: Session,
+    *,
+    connection: DataConnection,
+    now: datetime | None = None,
+) -> PlatformJob:
+    resolved_now = now or datetime.now(UTC)
+    start_date, end_date = _business_profile_sync_window(connection, now=resolved_now)
+    return job_service.create_job(
+        db,
+        tenant_id=connection.tenant_id,
+        job_type=BUSINESS_PROFILE_SYNC_JOB_TYPE,
+        entity_type="data_connection",
+        entity_id=connection.id,
+        idempotency_key=f"business-profile-sync:{connection.id}:{end_date.isoformat()}",
+        payload={
+            "tenant_id": connection.tenant_id,
+            "organization_id": connection.organization_id,
+            "connection_id": connection.id,
+            "campaign_id": connection.campaign_id,
+            "business_location_id": connection.business_location_id,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        },
+        available_at=resolved_now,
+        max_retries=2,
+    )
+
+
 def enqueue_due_data_connection_jobs(
     db: Session,
     *,
@@ -298,7 +386,12 @@ def enqueue_due_data_connection_jobs(
     rows = (
         db.query(DataConnection)
         .filter(
-            DataConnection.provider_name == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER,
+            DataConnection.provider_name.in_(
+                (
+                    data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER,
+                    google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER,
+                )
+            ),
             DataConnection.status != data_connections_service.CONNECTION_STATUS_DISCONNECTED,
             DataConnection.next_sync_at.isnot(None),
             DataConnection.next_sync_at <= resolved_now,
@@ -309,7 +402,10 @@ def enqueue_due_data_connection_jobs(
         .all()
     )
     for connection in rows:
-        create_search_console_sync_job(db, connection=connection, now=resolved_now)
+        if connection.provider_name == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER:
+            create_search_console_sync_job(db, connection=connection, now=resolved_now)
+        else:
+            create_business_profile_sync_job(db, connection=connection, now=resolved_now)
     db.flush()
     return len(rows)
 
@@ -371,6 +467,77 @@ def run_search_console_sync_now(
         db,
         job.id,
         worker_id=f"tenant-data-connection-{uuid.uuid4()}",
+        lease_seconds=get_settings().durable_job_lease_seconds,
+    )
+    db.commit()
+    execution = execute_claimed_job(db, job_id=job.id)
+    refreshed = db.get(PlatformJob, job.id)
+    return {
+        "job_id": job.id,
+        "status": execution["status"],
+        "created": created,
+        "idempotent_replay": False,
+        "result": _json_safe(refreshed.result if refreshed is not None else None),
+        "error": refreshed.error if refreshed is not None else None,
+    }
+
+
+def run_business_profile_sync_now(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    connection_id: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    resolved_now = now or datetime.now(UTC)
+    connection = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.id == connection_id,
+            DataConnection.tenant_id == tenant_id,
+            DataConnection.organization_id == organization_id,
+            DataConnection.provider_name
+            == google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER,
+            DataConnection.status != data_connections_service.CONNECTION_STATUS_DISCONNECTED,
+        )
+        .first()
+    )
+    if connection is None:
+        raise ValueError("Google business listing connection not found.")
+    _start_date, end_date = _business_profile_sync_window(connection, now=resolved_now)
+    idempotency_key = f"business-profile-sync:{connection.id}:{end_date.isoformat()}"
+    existing = (
+        db.query(PlatformJob)
+        .filter(PlatformJob.idempotency_key == idempotency_key)
+        .first()
+    )
+    job = create_business_profile_sync_job(db, connection=connection, now=resolved_now)
+    created = existing is None
+    db.commit()
+    db.refresh(job)
+    if job.status == job_service.JOB_STATUS_COMPLETED:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": False,
+            "idempotent_replay": True,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    if job.status in {job_service.JOB_STATUS_RUNNING, job_service.JOB_STATUS_DEAD_LETTER}:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": False,
+            "idempotent_replay": False,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    job_service.start_job(
+        db,
+        job.id,
+        worker_id=f"tenant-business-profile-{uuid.uuid4()}",
         lease_seconds=get_settings().durable_job_lease_seconds,
     )
     db.commit()
@@ -815,7 +982,7 @@ def _record_handler_failure(
     tenant_id: str | None,
     error: Exception,
 ) -> None:
-    if job_type == SEARCH_CONSOLE_SYNC_JOB_TYPE:
+    if job_type in {SEARCH_CONSOLE_SYNC_JOB_TYPE, BUSINESS_PROFILE_SYNC_JOB_TYPE}:
         connection_id = str(payload.get("connection_id") or "").strip()
         if connection_id:
             data_connections_service.mark_sync_failed(
