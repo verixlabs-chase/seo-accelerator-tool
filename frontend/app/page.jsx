@@ -29,6 +29,20 @@ export default function HomePage() {
               Open dashboard
             </Link>
           </div>
+          <div className="mt-8 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#26272c] pt-5 text-xs text-zinc-500">
+            <Link className="transition hover:text-zinc-200" href="/privacy">
+              Privacy policy
+            </Link>
+            <Link className="transition hover:text-zinc-200" href="/terms">
+              Terms of service
+            </Link>
+            <a
+              className="transition hover:text-zinc-200"
+              href="mailto:chase@topdogdigitalsolutions.com"
+            >
+              Support
+            </a>
+          </div>
         </div>
       </div>
     </main>
