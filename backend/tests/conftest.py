@@ -37,6 +37,7 @@ from app.models.experiment import Experiment, ExperimentAssignment, ExperimentOu
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge  # noqa: F401
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
+from app.models.local_rank_grid import LocalRankGridPoint, LocalRankGridRun  # noqa: F401
 from app.models.learning_metric_snapshot import LearningMetricSnapshot  # noqa: F401
 from app.models.learning_report import LearningReport  # noqa: F401
 from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode  # noqa: F401
@@ -155,6 +156,8 @@ def _verify_required_tables(database_url: str) -> None:
             "keyword_research_runs",
             "keyword_research_suggestions",
             "keyword_relevance_feedback",
+            "local_rank_grid_runs",
+            "local_rank_grid_points",
             "auth_sessions",
             "crawl_runs",
             "strategy_cohort_patterns",

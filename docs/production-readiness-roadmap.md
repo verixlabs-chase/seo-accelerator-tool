@@ -31,7 +31,7 @@ current source of truth.
 | Email delivery | Adapter contract exists; hosted configuration is optional | configure a real SMTP provider and verify delivery outcomes |
 | Crawling | Small request-based crawls can execute eagerly | convert crawl frontier steps to durable jobs before increasing limits |
 | Rankings | Real SerpAPI adapter exists | select backend, configure organization credentials, and validate a live campaign |
-| Local visibility / reviews | Base location map is live; synthetic local/review provider is test-only | implement G1.2 rank-grid, G1.4 GBP, and G1.6 reputation providers and workflows |
+| Local visibility / reviews | Base location map is live; G1.2 queued, credit-controlled local rank grid is complete locally; synthetic local/review provider is test-only | release G1.2, then implement G1.4 GBP and G1.6 reputation providers and workflows |
 | Citations / backlinks | Synthetic provider is test-only | implement G1.5 listings/citations provider first, then CNT1 editorial authority data |
 | Competitors | Stored-dataset workflow works | add durable collection and a live upstream provider if required |
 | Recommendations | Heuristic generation and governance are implemented | validate recommendations against live provider inputs |

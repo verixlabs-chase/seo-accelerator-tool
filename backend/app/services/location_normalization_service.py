@@ -473,12 +473,13 @@ def _context_payload(campaign: Campaign, location: BusinessLocation) -> dict[str
             ),
         },
         "map_rank_coverage": {
-            "status": "not_enabled",
+            "status": "available" if coordinates_ready and provider_ready else "setup_required",
             "coverage_type": "paid_geo_grid",
             "is_paid": True,
             "message": (
-                "Paid geo-grid ranking coverage is not enabled. "
-                "The base map does not represent search rankings."
+                "Area-by-area Google Maps checks are ready. The base map remains a separate reference."
+                if coordinates_ready and provider_ready
+                else "Finish the map and search-area setup before running area-by-area checks."
             ),
         },
     }

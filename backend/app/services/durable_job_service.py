@@ -21,6 +21,7 @@ from app.models.website_performance import WebsitePerformanceMeasurement
 from app.services import (
     data_connections_service,
     job_service,
+    local_rank_grid_service,
     reporting_service,
     traffic_fact_service,
     website_performance_service,
@@ -33,6 +34,7 @@ INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE = "intelligence.campaign_cycle"
 SEARCH_CONSOLE_SYNC_JOB_TYPE = "data_connections.search_console_sync"
 CWV_STANDARDS_CHECK_JOB_TYPE = "reference_library.cwv_standards_check"
 WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE = "website_performance.collect"
+LOCAL_RANK_GRID_DISPATCH_JOB_TYPE = "local.rank_grid.dispatch"
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -172,12 +174,24 @@ def _website_performance_collection_handler(
     }
 
 
+def _local_rank_grid_dispatch_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    run_id = str(job.payload.get("run_id") or job.entity_id or "").strip()
+    if not tenant_id or not run_id:
+        raise ValueError("Area search job is missing its location or run.")
+    return local_rank_grid_service.dispatch_run(db, run_id=run_id, tenant_id=tenant_id)
+
+
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
     INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
     SEARCH_CONSOLE_SYNC_JOB_TYPE: _search_console_sync_handler,
     CWV_STANDARDS_CHECK_JOB_TYPE: _cwv_standards_check_handler,
     WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE: _website_performance_collection_handler,
+    LOCAL_RANK_GRID_DISPATCH_JOB_TYPE: _local_rank_grid_dispatch_handler,
 }
 
 

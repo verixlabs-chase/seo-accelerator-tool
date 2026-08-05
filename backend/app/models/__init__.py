@@ -58,6 +58,7 @@ from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.learning_report import LearningReport
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
+from app.models.local_rank_grid import LocalRankGridPoint, LocalRankGridRun
 from app.models.onboarding_state import OnboardingState
 from app.models.onboarding_session import OnboardingSession
 from app.models.runtime_version_lock import RuntimeVersionLock
@@ -179,6 +180,8 @@ __all__ = [
     "LocalHealthSnapshot",
     "Review",
     "ReviewVelocitySnapshot",
+    "LocalRankGridRun",
+    "LocalRankGridPoint",
     "OnboardingState",
     "OnboardingSession",
     "SearchConsoleDailyMetric",
