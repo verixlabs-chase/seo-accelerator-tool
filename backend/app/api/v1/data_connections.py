@@ -12,7 +12,11 @@ from app.db.session import get_db
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
-from app.services import data_connections_service, durable_job_service
+from app.services import (
+    data_connections_service,
+    durable_job_service,
+    google_business_profile_service,
+)
 
 
 router = APIRouter(tags=["data-connections"])
@@ -21,6 +25,10 @@ router = APIRouter(tags=["data-connections"])
 class SearchConsoleMappingIn(BaseModel):
     external_resource_id: str = Field(..., min_length=1, max_length=500)
     external_resource_name: str | None = Field(default=None, max_length=500)
+
+
+class BusinessProfileMappingIn(BaseModel):
+    external_resource_id: str = Field(..., min_length=1, max_length=120)
 
 
 def _raise_connection_error(exc: data_connections_service.DataConnectionError) -> None:
@@ -55,9 +63,9 @@ def get_data_connections(
                     "purpose": "Website visibility, clicks, impressions, and average search position.",
                 },
                 {
-                    "provider_name": "google_business_profile",
-                    "label": "Google Business Profile",
-                    "status": "planned",
+                    "provider_name": google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER,
+                    "label": "Google business listing",
+                    "status": "available",
                     "purpose": "Business profile, reviews, and local search activity.",
                 },
                 {
@@ -69,6 +77,93 @@ def get_data_connections(
             ],
         },
     )
+
+
+@router.get(
+    "/organizations/{organization_id}/data-connections/google-business-profile/resources"
+)
+def get_business_profile_resources(
+    request: Request,
+    organization_id: str,
+    user: dict = Depends(require_org_role({"org_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    enforce_organization_scope(user=user, organization_id=organization_id, allow_platform=False)
+    try:
+        resources = google_business_profile_service.discover_profiles(db, organization_id)
+    except data_connections_service.DataConnectionError as exc:
+        _raise_connection_error(exc)
+    return envelope(
+        request,
+        {
+            "organization_id": organization_id,
+            "provider_name": google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER,
+            "resources": [
+                {key: value for key, value in resource.items() if key != "profile"}
+                for resource in resources
+            ],
+        },
+    )
+
+
+@router.put(
+    "/organizations/{organization_id}/data-connections/google-business-profile/mappings/{campaign_id}"
+)
+def map_business_profile_resource(
+    request: Request,
+    organization_id: str,
+    campaign_id: str,
+    body: BusinessProfileMappingIn,
+    user: dict = Depends(require_org_role({"org_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    enforce_organization_scope(user=user, organization_id=organization_id, allow_platform=False)
+    try:
+        connection = google_business_profile_service.upsert_mapping(
+            db,
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            external_resource_id=body.external_resource_id,
+            actor_user_id=user["id"],
+        )
+    except data_connections_service.DataConnectionError as exc:
+        _raise_connection_error(exc)
+    campaign = db.get(Campaign, connection.campaign_id)
+    location = db.get(BusinessLocation, connection.business_location_id)
+    return envelope(
+        request,
+        {
+            "connection": data_connections_service.serialize_connection(
+                connection,
+                campaign=campaign,
+                location=location,
+            )
+        },
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/data-connections/google-business-profile/intelligence/{campaign_id}"
+)
+def get_business_profile_intelligence(
+    request: Request,
+    organization_id: str,
+    campaign_id: str,
+    days: int = Query(default=90, ge=7, le=180),
+    user: dict = Depends(require_org_role({"org_user"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    enforce_organization_scope(user=user, organization_id=organization_id, allow_platform=False)
+    try:
+        payload = google_business_profile_service.get_profile_intelligence(
+            db,
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            days=days,
+        )
+    except data_connections_service.DataConnectionError as exc:
+        _raise_connection_error(exc)
+    return envelope(request, payload)
 
 
 @router.get(
@@ -194,15 +289,26 @@ def sync_data_connection(
     )
     if connection is None:
         raise HTTPException(status_code=404, detail="Data connection not found.")
-    if connection.provider_name != data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER:
+    if connection.provider_name not in {
+        data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER,
+        google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER,
+    }:
         raise HTTPException(status_code=400, detail="This connection cannot be synchronized yet.")
     try:
-        job = durable_job_service.run_search_console_sync_now(
-            db,
-            tenant_id=connection.tenant_id,
-            organization_id=organization_id,
-            connection_id=connection.id,
-        )
+        if connection.provider_name == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER:
+            job = durable_job_service.run_search_console_sync_now(
+                db,
+                tenant_id=connection.tenant_id,
+                organization_id=organization_id,
+                connection_id=connection.id,
+            )
+        else:
+            job = durable_job_service.run_business_profile_sync_now(
+                db,
+                tenant_id=connection.tenant_id,
+                organization_id=organization_id,
+                connection_id=connection.id,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     db.expire_all()

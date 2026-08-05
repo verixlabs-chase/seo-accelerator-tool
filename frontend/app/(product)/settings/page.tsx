@@ -39,6 +39,19 @@ type SearchConsoleResource = {
   resource_scope: string;
 };
 
+type BusinessProfileResource = {
+  id: string;
+  name: string;
+  account_name: string;
+  account_role: string;
+  permission_level: string;
+  verified: boolean;
+  address: string;
+  website: string;
+  phone: string;
+  primary_category: string;
+};
+
 type DataConnection = {
   id: string;
   provider_name: string;
@@ -60,6 +73,10 @@ type DataConnection = {
 type ConnectionsPayload = {
   google_oauth: {
     connected: boolean;
+    approved_access?: {
+      search_console: boolean;
+      business_profile: boolean;
+    };
     updated_at?: string | null;
   };
   connections: DataConnection[];
@@ -145,6 +162,8 @@ export default function SettingsPage() {
   const [usageAllowance, setUsageAllowance] = useState<UsageAllowance | null>(null);
   const [resources, setResources] = useState<SearchConsoleResource[]>([]);
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
+  const [profileResources, setProfileResources] = useState<BusinessProfileResource[]>([]);
+  const [profileDrafts, setProfileDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadingResources, setLoadingResources] = useState(false);
   const [busyAction, setBusyAction] = useState("");
@@ -157,13 +176,25 @@ export default function SettingsPage() {
     [campaigns],
   );
   const connections = payload?.connections || [];
-  const connectionByCampaign = useMemo(
-    () => new Map(connections.map((connection) => [connection.campaign_id, connection])),
+  const searchConsoleConnections = useMemo(
+    () => connections.filter((connection) => connection.provider_name === "google_search_console"),
     [connections],
   );
+  const profileConnections = useMemo(
+    () => connections.filter((connection) => connection.provider_name === "google_business_profile"),
+    [connections],
+  );
+  const connectionByCampaign = useMemo(
+    () => new Map(searchConsoleConnections.map((connection) => [connection.campaign_id, connection])),
+    [searchConsoleConnections],
+  );
+  const profileConnectionByCampaign = useMemo(
+    () => new Map(profileConnections.map((connection) => [connection.campaign_id, connection])),
+    [profileConnections],
+  );
   const portfolioSummary = useMemo(
-    () => getConnectionPortfolioSummary(connections, manageableCampaigns.length),
-    [connections, manageableCampaigns.length],
+    () => getConnectionPortfolioSummary(searchConsoleConnections, manageableCampaigns.length),
+    [searchConsoleConnections, manageableCampaigns.length],
   );
 
   const loadConnections = useCallback(async (orgId: string) => {
@@ -174,7 +205,20 @@ export default function SettingsPage() {
     setPayload(next);
     setResourceDrafts((current) => {
       const seeded = { ...current };
-      for (const connection of next.connections || []) {
+      for (const connection of (next.connections || []).filter(
+        (item) => item.provider_name === "google_search_console",
+      )) {
+        if (!seeded[connection.campaign_id]) {
+          seeded[connection.campaign_id] = connection.external_resource_id;
+        }
+      }
+      return seeded;
+    });
+    setProfileDrafts((current) => {
+      const seeded = { ...current };
+      for (const connection of (next.connections || []).filter(
+        (item) => item.provider_name === "google_business_profile",
+      )) {
         if (!seeded[connection.campaign_id]) {
           seeded[connection.campaign_id] = connection.external_resource_id;
         }
@@ -182,6 +226,27 @@ export default function SettingsPage() {
       return seeded;
     });
     return next;
+  }, []);
+
+  const loadProfileResources = useCallback(async (orgId: string) => {
+    setLoadingResources(true);
+    setError("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${orgId}/data-connections/google-business-profile/resources`,
+        { method: "GET" },
+      )) as { resources?: BusinessProfileResource[] };
+      setProfileResources(response.resources || []);
+      if ((response.resources || []).length === 0) {
+        setNotice(
+          "Google is connected, but no business listings were returned. Confirm that this Google account manages the listing.",
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load Google business listings.");
+    } finally {
+      setLoadingResources(false);
+    }
   }, []);
 
   const loadResources = useCallback(async (orgId: string) => {
@@ -222,11 +287,21 @@ export default function SettingsPage() {
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
-        const googleReturned = new URLSearchParams(window.location.search).get("google");
+        const returnParams = new URLSearchParams(window.location.search);
+        const googleReturned = returnParams.get("google");
+        const returnSource = returnParams.get("source");
         if (googleReturned === "connected") {
-          setNotice("Google Search Console is connected. Match each location to its website next.");
+          setNotice(
+            returnSource === "business-profile"
+              ? "Google business listings are connected. Match each location to its listing next."
+              : "Google Search Console is connected. Match each location to its website next.",
+          );
           window.history.replaceState({}, "", "/settings");
-          await loadResources(currentUser.organization_id);
+          if (returnSource === "business-profile") {
+            await loadProfileResources(currentUser.organization_id);
+          } else {
+            await loadResources(currentUser.organization_id);
+          }
         } else if (connectionResponse.google_oauth.connected) {
           setNotice("");
         }
@@ -237,16 +312,17 @@ export default function SettingsPage() {
       }
     }
     void loadPage();
-  }, [loadConnections, loadResources]);
+  }, [loadConnections, loadProfileResources, loadResources]);
 
-  async function connectGoogle() {
+  async function connectGoogle(scopeTarget: "gsc" | "gbp" = "gsc") {
     if (!organizationId) return;
-    setBusyAction("oauth");
+    setBusyAction(`oauth-${scopeTarget}`);
     setError("");
     setNotice("");
     try {
+      const returnPath = scopeTarget === "gbp" ? "/settings?source=business-profile" : "/settings";
       const response = (await platformApi(
-        `/organizations/${organizationId}/providers/google/oauth/start?scope_target=gsc&return_path=${encodeURIComponent("/settings")}`,
+        `/organizations/${organizationId}/providers/google/oauth/start?scope_target=${scopeTarget}&return_path=${encodeURIComponent(returnPath)}`,
         { method: "POST" },
       )) as { authorization_url?: string };
       if (!response.authorization_url) {
@@ -255,6 +331,45 @@ export default function SettingsPage() {
       window.location.assign(response.authorization_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to start the Google connection.");
+      setBusyAction("");
+    }
+  }
+
+  async function saveProfileMapping(campaign: Campaign) {
+    if (!organizationId) return;
+    const resourceId = profileDrafts[campaign.id] || "";
+    const resource = profileResources.find((item) => item.id === resourceId);
+    if (!resourceId || !resource) {
+      setError("Choose the Google business listing for this location.");
+      return;
+    }
+    setBusyAction(`profile-mapping-${campaign.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const mappingResponse = (await platformApi(
+        `/organizations/${organizationId}/data-connections/google-business-profile/mappings/${campaign.id}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ external_resource_id: resource.id }),
+        },
+      )) as { connection?: DataConnection };
+      const connectionId = mappingResponse.connection?.id;
+      if (!connectionId) throw new Error("The Google business listing match was not saved.");
+      const syncResponse = (await platformApi(
+        `/organizations/${organizationId}/data-connections/${connectionId}/sync`,
+        { method: "POST" },
+      )) as { job?: { status?: string } };
+      await loadConnections(organizationId);
+      setNotice(
+        syncResponse.job?.status === "completed"
+          ? `${campaign.name} is matched and its Google listing check is ready.`
+          : `${campaign.name} is matched. Its first Google listing check is queued.`,
+      );
+    } catch (err) {
+      await loadConnections(organizationId).catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Unable to save this listing match.");
+    } finally {
       setBusyAction("");
     }
   }
@@ -304,7 +419,9 @@ export default function SettingsPage() {
   async function syncConnection(connection: DataConnection) {
     if (!organizationId) return;
     if (connection.status === "reconnect_required") {
-      await connectGoogle();
+      await connectGoogle(
+        connection.provider_name === "google_business_profile" ? "gbp" : "gsc",
+      );
       return;
     }
     setBusyAction(`sync-${connection.id}`);
@@ -318,7 +435,7 @@ export default function SettingsPage() {
       await loadConnections(organizationId);
       setNotice(
         response.job?.idempotent_replay
-          ? `${connection.business_location_name || connection.campaign_name} is already up to date for the latest available Search Console day.`
+          ? `${connection.business_location_name || connection.campaign_name} is already up to date.`
           : response.job?.status === "completed"
             ? `${connection.business_location_name || connection.campaign_name} was updated successfully.`
             : "The update is queued and will continue automatically.",
@@ -341,8 +458,8 @@ export default function SettingsPage() {
       },
       {
         label: "Locations mapped",
-        value: `${connections.length}/${manageableCampaigns.length}`,
-        tone: connections.length === manageableCampaigns.length && connections.length > 0
+        value: `${searchConsoleConnections.length}/${manageableCampaigns.length}`,
+        tone: searchConsoleConnections.length === manageableCampaigns.length && searchConsoleConnections.length > 0
           ? "success"
           : "warning",
       },
@@ -363,7 +480,7 @@ export default function SettingsPage() {
             : "info",
       },
     ],
-    [connections.length, manageableCampaigns.length, payload, portfolioSummary, usageAllowance],
+    [manageableCampaigns.length, payload, portfolioSummary, searchConsoleConnections.length, usageAllowance],
   );
 
   return (
@@ -375,7 +492,7 @@ export default function SettingsPage() {
       topBarActions={
         <button
           className={primaryButtonClass}
-          disabled={busyAction === "oauth"}
+          disabled={busyAction.startsWith("oauth-")}
           onClick={() => void connectGoogle()}
         >
           {payload?.google_oauth.connected ? "Reconnect Google" : "Connect Google"}
@@ -474,7 +591,7 @@ export default function SettingsPage() {
                 manageableCampaigns.length > 0
                   ? {
                       label: "Locations matched to a website",
-                      value: connections.length,
+                      value: searchConsoleConnections.length,
                       total: manageableCampaigns.length,
                       summary: "Each location keeps its own mapping and update history.",
                     }
@@ -588,7 +705,7 @@ export default function SettingsPage() {
                   </button>
                   <button
                     className={primaryButtonClass}
-                    disabled={busyAction === "oauth"}
+                    disabled={busyAction === "oauth-gsc"}
                     onClick={() => void connectGoogle()}
                   >
                     {payload?.google_oauth.connected ? "Reconnect Google" : "Connect Google"}
@@ -743,20 +860,210 @@ export default function SettingsPage() {
               </section>
             )}
 
-            <section className="grid gap-3 md:grid-cols-2">
+            <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">
+                      Google business listing
+                    </h2>
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        payload?.google_oauth.approved_access?.business_profile
+                          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                          : "border-amber-500/25 bg-amber-500/10 text-amber-100"
+                      }`}
+                    >
+                      {payload?.google_oauth.approved_access?.business_profile
+                        ? "Access approved"
+                        : "Connection required"}
+                    </span>
+                  </div>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
+                    Match each location to the listing customers see on Google. InsightOS will
+                    check its details, save changes, and show calls, website clicks, directions,
+                    appearances, and customer search terms when Google makes them available.
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                    InsightOS will not edit the listing automatically. Any future change will
+                    require review and approval first.
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    className={secondaryButtonClass}
+                    disabled={
+                      !payload?.google_oauth.approved_access?.business_profile || loadingResources
+                    }
+                    onClick={() => void loadProfileResources(organizationId)}
+                  >
+                    {loadingResources ? "Loading listings..." : "Load available listings"}
+                  </button>
+                  <button
+                    className={primaryButtonClass}
+                    disabled={busyAction === "oauth-gbp"}
+                    onClick={() => void connectGoogle("gbp")}
+                  >
+                    {payload?.google_oauth.approved_access?.business_profile
+                      ? "Reconnect listing access"
+                      : "Connect business listings"}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {!payload?.google_oauth.approved_access?.business_profile ? (
+              <EmptyState
+                title="Connect the Google account that manages your listings"
+                summary="Google requires separate permission before InsightOS can read a business listing. Your Google password is never shared with InsightOS."
+                actionLabel="Connect Google business listings"
+                onAction={() => void connectGoogle("gbp")}
+              />
+            ) : manageableCampaigns.length > 0 ? (
+              <section id="profile-mappings" className="space-y-3">
+                <div>
+                  <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">
+                    Match listings to locations
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    One listing can belong to only one location. This prevents results from two
+                    locations being mixed together.
+                  </p>
+                </div>
+                {manageableCampaigns.map((campaign) => {
+                  const connection = profileConnectionByCampaign.get(campaign.id);
+                  const statusView = connection ? getConnectionStatusView(connection) : null;
+                  const selectedResource =
+                    profileDrafts[campaign.id] || connection?.external_resource_id || "";
+                  const selectedProfile = profileResources.find(
+                    (resource) => resource.id === selectedResource,
+                  );
+                  return (
+                    <article
+                      key={`profile-${campaign.id}`}
+                      className="rounded-md border border-[#292a2f] bg-[#141518] p-5"
+                    >
+                      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)_auto] lg:items-center">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold text-white">{campaign.name}</h3>
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                                statusView
+                                  ? toneClasses(statusView.tone)
+                                  : "border-zinc-500/25 bg-zinc-500/10 text-zinc-300"
+                              }`}
+                            >
+                              {statusView?.label || "Listing not matched"}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-zinc-500">
+                            {connection
+                              ? `${statusView?.summary} Last successful check: ${formatTimestamp(connection.last_success_at)}.`
+                              : "Choose the listing customers see for this business location."}
+                          </p>
+                          {connection?.last_error_message ? (
+                            <p className="mt-2 text-xs leading-5 text-rose-200">
+                              {connection.last_error_message}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div>
+                          <label
+                            htmlFor={`profile-resource-${campaign.id}`}
+                            className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500"
+                          >
+                            Google business listing
+                          </label>
+                          <select
+                            id={`profile-resource-${campaign.id}`}
+                            className={selectClass}
+                            value={selectedResource}
+                            disabled={
+                              profileResources.length === 0 || Boolean(connection?.last_success_at)
+                            }
+                            onChange={(event) =>
+                              setProfileDrafts((current) => ({
+                                ...current,
+                                [campaign.id]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">
+                              {profileResources.length === 0
+                                ? "Load available listings first"
+                                : "Choose a listing"}
+                            </option>
+                            {profileResources.map((resource) => (
+                              <option key={resource.id} value={resource.id}>
+                                {resource.name}
+                                {resource.address ? ` · ${resource.address}` : ""}
+                              </option>
+                            ))}
+                            {connection &&
+                            !profileResources.some(
+                              (resource) => resource.id === connection.external_resource_id,
+                            ) ? (
+                              <option value={connection.external_resource_id}>
+                                {connection.external_resource_name || connection.external_resource_id}
+                              </option>
+                            ) : null}
+                          </select>
+                          {selectedProfile ? (
+                            <p className="mt-1.5 text-xs leading-5 text-zinc-500">
+                              {selectedProfile.primary_category || "Category not returned"}
+                              {selectedProfile.verified ? " · Verified listing" : ""}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                          {connection?.last_success_at ? (
+                            <button
+                              className={secondaryButtonClass}
+                              onClick={() => window.location.assign("/local-visibility")}
+                            >
+                              See listing results
+                            </button>
+                          ) : null}
+                          {connection ? (
+                            <button
+                              className={secondaryButtonClass}
+                              disabled={
+                                busyAction === `sync-${connection.id}` ||
+                                connection.status === "syncing"
+                              }
+                              onClick={() => void syncConnection(connection)}
+                            >
+                              {busyAction === `sync-${connection.id}`
+                                ? "Checking..."
+                                : statusView?.action || "Check now"}
+                            </button>
+                          ) : (
+                            <button
+                              className={primaryButtonClass}
+                              disabled={
+                                busyAction === `profile-mapping-${campaign.id}` ||
+                                !selectedResource
+                              }
+                              onClick={() => void saveProfileMapping(campaign)}
+                            >
+                              {busyAction === `profile-mapping-${campaign.id}`
+                                ? "Matching..."
+                                : "Match and run first check"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            ) : null}
+
+            <section>
               <article className="rounded-md border border-[#292a2f] bg-[#141518] p-5 opacity-80">
                 <span className="rounded-full border border-zinc-500/25 bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-300">
-                  Planned next
-                </span>
-                <h2 className="mt-3 text-lg font-semibold text-white">Google Business Profile</h2>
-                <p className="mt-2 text-sm leading-6 text-zinc-400">
-                  Profile details, reviews, and local search activity will use the same secure
-                  organization connection and per-location mapping pattern.
-                </p>
-              </article>
-              <article className="rounded-md border border-[#292a2f] bg-[#141518] p-5 opacity-80">
-                <span className="rounded-full border border-zinc-500/25 bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-300">
-                  Planned after GBP
+                  Planned later
                 </span>
                 <h2 className="mt-3 text-lg font-semibold text-white">
                   Website analytics and forms

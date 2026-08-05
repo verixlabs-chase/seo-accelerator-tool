@@ -22,6 +22,14 @@ import {
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
 import { LocalRankGridPanel } from "./LocalRankGridPanel";
+import {
+  GoogleBusinessListingPanel,
+  type BusinessListingIntelligence,
+} from "./GoogleBusinessListingPanel";
+
+type Me = {
+  organization_id?: string;
+};
 
 type Campaign = {
   id: string;
@@ -289,12 +297,14 @@ export default function LocalVisibilityPage() {
   const pathname = usePathname();
   const router = useRouter();
   const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
+  const [organizationId, setOrganizationId] = useState("");
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [health, setHealth] = useState<LocalHealth | null>(null);
   const [mapPack, setMapPack] = useState<MapPack | null>(null);
   const [locationContext, setLocationContext] = useState<LocationContext | null>(null);
   const [velocity, setVelocity] = useState<ReviewVelocity | null>(null);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [listingIntelligence, setListingIntelligence] = useState<BusinessListingIntelligence | null>(null);
   const [healthTruth, setHealthTruth] = useState<RuntimeTruth | null>(null);
   const [mapPackTruth, setMapPackTruth] = useState<RuntimeTruth | null>(null);
   const [velocityTruth, setVelocityTruth] = useState<RuntimeTruth | null>(null);
@@ -327,15 +337,22 @@ export default function LocalVisibilityPage() {
       setLocationContext(null);
       setVelocity(null);
       setReviews([]);
+      setListingIntelligence(null);
       return;
     }
 
-    const [healthResponse, mapPackResponse, velocityResponse, reviewsResponse, contextResponse] = await Promise.all([
+    const [healthResponse, mapPackResponse, velocityResponse, reviewsResponse, contextResponse, listingResponse] = await Promise.all([
       platformApi(`/local/health?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi(`/local/map-pack?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi(`/reviews/velocity?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi(`/reviews?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi(`/local/location-context?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
+      organizationId
+        ? platformApi(
+            `/organizations/${organizationId}/data-connections/google-business-profile/intelligence/${encodeURIComponent(campaignId)}?days=90`,
+            { method: "GET" },
+          )
+        : Promise.resolve(null),
     ]);
 
     const normalizedHealth = (healthResponse as LocalResponse<LocalHealth>) || null;
@@ -351,11 +368,12 @@ export default function LocalVisibilityPage() {
     setVelocity(normalizedVelocity || null);
     setReviews(Array.isArray(normalizedReviews?.items) ? (normalizedReviews.items as ReviewItem[]) : []);
     setLocationContext((contextResponse as LocationContext) || null);
+    setListingIntelligence((listingResponse as BusinessListingIntelligence) || null);
     setHealthTruth(normalizedHealth?.truth || null);
     setMapPackTruth(normalizedMapPack?.truth || null);
     setVelocityTruth(normalizedVelocity?.truth || null);
     setReviewsTruth(normalizedReviews?.truth || null);
-  }, []);
+  }, [organizationId]);
 
   const resolveMapLocation = useCallback(async () => {
     if (!selectedCampaignId) return;
@@ -395,7 +413,8 @@ export default function LocalVisibilityPage() {
       setError("");
 
       try {
-        await platformApi("/auth/me", { method: "GET" });
+        const currentUser = (await platformApi("/auth/me", { method: "GET" })) as Me;
+        setOrganizationId(currentUser.organization_id || "");
         await loadCampaigns();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load local SEO data.");
@@ -420,6 +439,7 @@ export default function LocalVisibilityPage() {
     setLocationContext(null);
     setVelocity(null);
     setReviews([]);
+    setListingIntelligence(null);
     setHealthTruth(null);
     setMapPackTruth(null);
     setVelocityTruth(null);
@@ -733,6 +753,11 @@ export default function LocalVisibilityPage() {
             </div>
 
             <LocalRankGridPanel campaignId={selectedCampaignId} />
+
+            <GoogleBusinessListingPanel
+              intelligence={listingIntelligence}
+              onOpenSettings={() => router.push("/settings")}
+            />
 
             <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
               <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">

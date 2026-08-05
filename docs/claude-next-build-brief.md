@@ -573,7 +573,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 14 | **G1.3A - Customer Usage Credits — completed** | Customers see simple Insight Credits instead of the platform's internal monthly dollar budget, while cost accounting still protects the 85% software-usage margin. |
 | 15 | **VAL1 - Research-Backed Search Value — completed locally** | Search Value uses current location-specific market research and measured Search Console behavior to show a traceable paid-search replacement-cost range rather than a subjective dollar guess. |
 | 16 | **G1.2 - Local Search Rank Grid — released** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
-| 17 | **G1.4 - Google Business Profile Intelligence** | Owners can audit and improve the correct profile, categories, services, content, and local competitor position for each location. |
+| 17 | **G1.4 - Google Business Profile Intelligence — implemented locally; live approval check pending** | Owners can connect the authorized listing for each location, see its saved details and changes, review a plain-language completeness check, and visualize Search/Maps appearances, website clicks, call clicks, direction requests, bookings, and customer search terms. Google project approval and a production-owned-profile validation remain required before release. |
 | 18 | **I1.4/T29 - Measured Website and Google Business Profile Action Tracks** | Every website and profile action identifies the real metric it is meant to improve, shows the location's starting value, and returns with an honest measured result after the waiting period. |
 | 19 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
 | 20 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, policy-controlled AI replies, and multi-location comparisons replace the core BrightLocal reputation workflow. |
@@ -1029,6 +1029,17 @@ Acceptance criteria:
 - A profile mutation cannot run without an authorized connection, explicit
   approval, audit history, and rollback/recovery guidance where the provider
   supports it.
+
+> **Implementation status (2026-08-05):** The read-only owned-listing slice is
+> implemented locally. It adds separate Google OAuth consent, authorized
+> account and listing discovery, one-listing-per-location mapping, durable
+> synchronization, row-secured profile snapshots, honest field checks, change
+> history, supported daily performance measurements, monthly customer search
+> terms, and a plain-language visual workspace on Local Search. Automatic
+> listing changes remain disabled. Google Cloud project approval and a live
+> production sync against an owned listing are still required; competitor
+> profile comparison, photo/post ingestion, and approved mutation workflows
+> remain inside G1.4 after that external gate.
 
 ### Intelligence I1.4/T29 - Measured Website and Google Business Profile Action Tracks
 

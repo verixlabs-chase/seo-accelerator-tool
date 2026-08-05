@@ -38,6 +38,11 @@ from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge  # 
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
 from app.models.local_rank_grid import LocalRankGridPoint, LocalRankGridRun  # noqa: F401
+from app.models.google_business_profile import (  # noqa: F401
+    GoogleBusinessProfileDailyMetric,
+    GoogleBusinessProfileSearchKeyword,
+    GoogleBusinessProfileSnapshot,
+)
 from app.models.learning_metric_snapshot import LearningMetricSnapshot  # noqa: F401
 from app.models.learning_report import LearningReport  # noqa: F401
 from app.models.knowledge_graph import KnowledgeEdge, KnowledgeNode  # noqa: F401
@@ -158,6 +163,9 @@ def _verify_required_tables(database_url: str) -> None:
             "keyword_relevance_feedback",
             "local_rank_grid_runs",
             "local_rank_grid_points",
+            "google_business_profile_snapshots",
+            "google_business_profile_daily_metrics",
+            "google_business_profile_search_keywords",
             "auth_sessions",
             "crawl_runs",
             "strategy_cohort_patterns",
