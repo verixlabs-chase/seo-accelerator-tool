@@ -6,14 +6,15 @@ export default function HomePage() {
       <div className="mx-auto max-w-5xl">
         <div className="max-w-3xl rounded-2xl border border-[#26272c] bg-[#111214]/90 p-8 shadow-[0_0_30px_rgba(0,0,0,0.35)] backdrop-blur">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
-            InsightOS
+            InsightOS local-search platform
           </p>
           <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-white md:text-5xl">
-            Local search visibility, explained in plain English.
+            InsightOS helps service businesses improve how they appear on Google.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-300">
-            Track how customers find your business, see what changed, and get a
-            clear next step without digging through SEO tooling.
+            InsightOS connects to Google Search Console and Google Business Profile,
+            measures search rankings and website health for each business location,
+            and turns those results into clear, practical next steps.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -29,6 +30,30 @@ export default function HomePage() {
               Open dashboard
             </Link>
           </div>
+          <section
+            aria-labelledby="what-insightos-does"
+            className="mt-8 border-t border-[#26272c] pt-6"
+          >
+            <h2
+              id="what-insightos-does"
+              className="text-lg font-semibold tracking-[-0.02em] text-white"
+            >
+              What InsightOS does
+            </h2>
+            <ul className="mt-3 grid gap-3 text-sm leading-6 text-zinc-300 md:grid-cols-3">
+              <li className="rounded-lg border border-[#26272c] bg-[#141518] p-4">
+                Shows how customers find and visit your business from Google Search.
+              </li>
+              <li className="rounded-lg border border-[#26272c] bg-[#141518] p-4">
+                Tracks rankings, local visibility, business listings, and website
+                health by location.
+              </li>
+              <li className="rounded-lg border border-[#26272c] bg-[#141518] p-4">
+                Recommends prioritized work in plain language so you know what to do
+                and why it matters.
+              </li>
+            </ul>
+          </section>
           <div className="mt-8 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#26272c] pt-5 text-xs text-zinc-500">
             <Link className="transition hover:text-zinc-200" href="/privacy">
               Privacy policy
