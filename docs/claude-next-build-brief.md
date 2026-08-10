@@ -1489,7 +1489,8 @@ Acceptance criteria:
 ### Growth G1.6 - Reputation Management
 
 > **Implementation status (2026-08-10):** G1.6A, G1.6B, the code-complete
-> G1.6C execution boundary, and G1.6D1 review intelligence are implemented
+> G1.6C execution boundary, G1.6D1 review intelligence, and the G1.6D2A
+> governed review-request foundation are implemented
 > locally with a
 > separate tenant-, organization-, campaign-, and location-scoped owned-review
 > inventory, immutable response-state observations, paginated and idempotent
@@ -1508,8 +1509,13 @@ Acceptance criteria:
 > capability; successful proof promotes that connection to `verified`. G1.6D1
 > now derives exact 30-day comparisons, 12-week trends, transparent review
 > themes with review-level evidence, metric-linked actions, and multi-location
-> outliers from authorized saved reviews. G1.6D2 compliant request campaigns
-> remain pending.
+> outliers from authorized saved reviews. G1.6D2A now adds durable,
+> location-scoped request campaigns, service-completion and consent records,
+> organization-wide suppression, delivery-receipt and cost-reference storage,
+> a fixed all-eligible-customer audience rule, review-gating rejection, passive
+> link/QR-ready/kiosk workflows, and honest time-window reporting that never
+> claims causation. Live email, SMS, provider receipts, price reconciliation,
+> and generated QR image downloads remain gated for G1.6D2B.
 
 Goal: replace BrightLocal-style review monitoring, response, generation, and
 multi-location reputation reporting while adding an intelligence layer.
@@ -1582,9 +1588,22 @@ Implementation slices:
      customer UI exposes `This location` and `All locations` views, 12-week
      charts, recurring feedback, ordered metric-linked actions, and portfolio
      attention flags in plain language.
-   - **G1.6D2 - Compliant review growth: pending.** Add consent-aware email,
-     SMS, link, QR, and kiosk request campaigns with suppression, delivery,
-     cost, attribution, and no-review-gating controls.
+   - **G1.6D2A - Governed request foundation: implemented locally.** Stores
+     location-scoped campaigns, confirmed eligibility and service completion,
+     consent basis and source, durable organization-wide suppression, future
+     delivery receipts and cost references, and a pre-campaign review baseline.
+     Link, QR-ready, and kiosk sharing use the connected location's Google
+     review URL or an owner-supplied verified Google URL. Every eligible
+     customer receives the same request; rating and satisfaction filters are
+     absent and review-gating wording is rejected. Results report only reviews
+     observed after the start time and explicitly do not claim causation.
+   - **G1.6D2B - Governed delivery: pending.** Connect a real transactional
+     email provider and verified sender, reserve and reconcile credits against
+     a versioned price card, process signed delivery/bounce/complaint/
+     unsubscribe webhooks, generate downloadable QR artwork, and prove one
+     end-to-end receipt. SMS remains unavailable until it has a separate
+     provider, consent rule set, price card, allowance, receipts, and launch
+     approval.
 
 Acceptance criteria:
 

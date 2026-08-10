@@ -180,6 +180,42 @@ type PortfolioReviewIntelligence = {
   locations: PortfolioReviewLocation[];
 };
 
+type ReviewRequestChannel = "link" | "qr" | "kiosk" | "email" | "sms";
+
+type ReviewRequestReadiness = {
+  channels: Record<
+    ReviewRequestChannel,
+    { available: boolean; label: string; reason: string }
+  >;
+  review_gating_allowed: false;
+  automatic_satisfaction_filtering_allowed: false;
+};
+
+type ReviewRequestCampaign = {
+  id: string;
+  name: string;
+  channel: ReviewRequestChannel;
+  status: "draft" | "active" | "paused" | "completed" | "cancelled";
+  subject?: string | null;
+  message_body: string;
+  review_url: string;
+  share_url: string;
+  recipient_summary: {
+    total: number;
+    eligible: number;
+    suppressed: number;
+    sent: number;
+  };
+  result_summary: {
+    baseline_review_count: number;
+    current_review_count: number;
+    new_reviews_since_start: number;
+    attribution_state: "time_window_only";
+    note: string;
+  };
+  created_at: string;
+};
+
 type ReviewFilter = "all" | "unanswered" | "low" | "responded";
 type ReviewView = "location" | "portfolio";
 
@@ -500,6 +536,159 @@ function PortfolioReviewOverview({
   );
 }
 
+function ReviewGrowthTools({
+  readiness,
+  campaigns,
+  working,
+  onCreate,
+}: {
+  readiness: ReviewRequestReadiness | null;
+  campaigns: ReviewRequestCampaign[];
+  working: boolean;
+  onCreate: (input: { channel: "link" | "qr" | "kiosk"; messageBody: string; reviewUrl: string }) => Promise<void>;
+}) {
+  const [channel, setChannel] = useState<"link" | "qr" | "kiosk">("link");
+  const [messageBody, setMessageBody] = useState(
+    "Thank you for choosing us. Would you share an honest review? Your feedback helps us improve.",
+  );
+  const [reviewUrl, setReviewUrl] = useState("");
+
+  return (
+    <section className="rounded-md border border-[#26272c] bg-[#141518] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-3xl">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Get more honest reviews</p>
+          <h2 className="mt-1.5 text-xl font-semibold text-white">Ask every eligible customer the same way</h2>
+          <p className="mt-1 text-sm leading-6 text-zinc-400">
+            Create one trusted review link for this location. The tool never asks whether a customer is happy and never
+            hides the link from unhappy customers.
+          </p>
+        </div>
+        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-100">
+          No review gating
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {(Object.entries(readiness?.channels || {}) as Array<
+          [ReviewRequestChannel, { available: boolean; label: string; reason: string }]
+        >).map(([key, item]) => (
+          <article key={key} className="rounded-md border border-[#2d2e34] bg-[#101113] p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-white">{item.label}</p>
+              <span className={`h-2 w-2 rounded-full ${item.available ? "bg-emerald-400" : "bg-amber-400"}`} />
+            </div>
+            <p className="mt-2 text-xs leading-5 text-zinc-400">{item.reason}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-5 border-t border-[#292a2f] pt-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onCreate({ channel, messageBody, reviewUrl });
+          }}
+          className="space-y-4"
+        >
+          <div>
+            <label htmlFor="review-request-type" className="text-sm font-semibold text-white">
+              How will you share it?
+            </label>
+            <select
+              id="review-request-type"
+              value={channel}
+              onChange={(event) => setChannel(event.target.value as "link" | "qr" | "kiosk")}
+              className="mt-2 w-full rounded-md border border-[#34353c] bg-[#0e0f11] px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff6b18]/60"
+            >
+              <option value="link">Copyable link</option>
+              <option value="qr">Link for a QR code</option>
+              <option value="kiosk">Checkout or kiosk link</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="review-request-message" className="text-sm font-semibold text-white">
+              Message customers will see
+            </label>
+            <textarea
+              id="review-request-message"
+              value={messageBody}
+              maxLength={700}
+              onChange={(event) => setMessageBody(event.target.value)}
+              className="mt-2 min-h-28 w-full rounded-md border border-[#34353c] bg-[#0e0f11] p-3 text-sm leading-6 text-white outline-none focus:border-[#ff6b18]/60"
+            />
+          </div>
+          <div>
+            <label htmlFor="review-request-url" className="text-sm font-semibold text-white">
+              Google review link <span className="font-normal text-zinc-500">(only if it was not found automatically)</span>
+            </label>
+            <input
+              id="review-request-url"
+              type="url"
+              placeholder="https://g.page/.../review"
+              value={reviewUrl}
+              onChange={(event) => setReviewUrl(event.target.value)}
+              className="mt-2 w-full rounded-md border border-[#34353c] bg-[#0e0f11] px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff6b18]/60"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={working || !messageBody.trim()}
+            className="rounded-md bg-[#ff6b18] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {working ? "Saving..." : "Create review link"}
+          </button>
+        </form>
+
+        <div>
+          <p className="text-sm font-semibold text-white">Saved review links</p>
+          {campaigns.length ? (
+            <div className="mt-2 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+              {campaigns.map((campaign) => (
+                <article key={campaign.id} className="py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-white">{campaign.name}</p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {campaign.channel === "link"
+                          ? "Copyable link"
+                          : campaign.channel === "qr"
+                            ? "QR-ready link"
+                            : campaign.channel === "kiosk"
+                              ? "Checkout link"
+                              : campaign.channel}
+                        {" · "}
+                        {campaign.status}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void navigator.clipboard?.writeText(campaign.share_url)}
+                      className="rounded-md border border-[#3a3b42] px-3 py-2 text-xs font-semibold text-white hover:border-[#ff6b18]/60"
+                    >
+                      Copy review link
+                    </button>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-zinc-300">{campaign.message_body}</p>
+                  <div className="mt-3 border-l-2 border-[#34353b] pl-3 text-xs leading-5 text-zinc-400">
+                    <span className="font-semibold text-white">{campaign.result_summary.new_reviews_since_start}</span> new
+                    reviews since this link was created. {campaign.result_summary.note}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 rounded-md border border-dashed border-[#34353c] p-5 text-sm text-zinc-400">
+              Create the first link for this location. Existing reviews are saved as the starting point so later changes
+              can be shown honestly.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function ReviewsPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -518,6 +707,9 @@ export default function ReviewsPage() {
   const [responsePolicy, setResponsePolicy] = useState<ReviewResponsePolicy | null>(null);
   const [postingStatus, setPostingStatus] = useState<ReviewPostingStatus | null>(null);
   const [executionsByReview, setExecutionsByReview] = useState<Record<string, ReviewResponseExecution>>({});
+  const [requestReadiness, setRequestReadiness] = useState<ReviewRequestReadiness | null>(null);
+  const [requestCampaigns, setRequestCampaigns] = useState<ReviewRequestCampaign[]>([]);
+  const [requestWorking, setRequestWorking] = useState(false);
   const [publishConfirmations, setPublishConfirmations] = useState<Record<string, boolean>>({});
   const [workingReviewId, setWorkingReviewId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -534,6 +726,8 @@ export default function ReviewsPage() {
       executionResponse,
       intelligenceResponse,
       portfolioResponse,
+      requestReadinessResponse,
+      requestCampaignResponse,
     ] = await Promise.all([
       platformApi(
         `/reviews/inventory?campaign_id=${encodeURIComponent(campaignId)}&source_type=owned_profile&limit=250`,
@@ -555,6 +749,10 @@ export default function ReviewsPage() {
         method: "GET",
       }) as Promise<LocationReviewIntelligence>,
       platformApi("/reviews/portfolio", { method: "GET" }) as Promise<PortfolioReviewIntelligence>,
+      platformApi("/reviews/request-readiness", { method: "GET" }) as Promise<ReviewRequestReadiness>,
+      platformApi(`/reviews/request-campaigns?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }).catch(() => ({ items: [] })) as Promise<{ items: ReviewRequestCampaign[] }>,
     ]);
     setInventory({
       items: Array.isArray(response?.items) ? response.items : [],
@@ -577,6 +775,8 @@ export default function ReviewsPage() {
     setExecutionsByReview(nextExecutions);
     setIntelligence(intelligenceResponse || null);
     setPortfolio(portfolioResponse || null);
+    setRequestReadiness(requestReadinessResponse || null);
+    setRequestCampaigns(Array.isArray(requestCampaignResponse?.items) ? requestCampaignResponse.items : []);
   }, []);
 
   useEffect(() => {
@@ -649,6 +849,41 @@ export default function ReviewsPage() {
       setError(err instanceof Error ? err.message : "Reviews could not be updated.");
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function createReviewRequestCampaign(input: {
+    channel: "link" | "qr" | "kiosk";
+    messageBody: string;
+    reviewUrl: string;
+  }) {
+    if (!selectedCampaignId) return;
+    setRequestWorking(true);
+    setError("");
+    setNotice("");
+    try {
+      await platformApi("/reviews/request-campaigns", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          name: "Customer review link",
+          channel: input.channel,
+          message_body: input.messageBody,
+          review_url: input.reviewUrl.trim() || null,
+        }),
+      });
+      await loadInventory(selectedCampaignId);
+      setNotice(
+        input.channel === "qr"
+          ? "The review link is saved and ready to place in a QR code."
+          : input.channel === "kiosk"
+            ? "The checkout review link is saved. Show the same link to every eligible customer."
+            : "The review link is saved and ready to share with eligible customers.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The review link could not be saved.");
+    } finally {
+      setRequestWorking(false);
     }
   }
 
@@ -907,7 +1142,15 @@ export default function ReviewsPage() {
         {!loading && campaigns.length > 0 ? (
           <>
             {view === "location" ? (
-              <LocationReviewInsights intelligence={intelligence} reviews={inventory.items} />
+              <>
+                <LocationReviewInsights intelligence={intelligence} reviews={inventory.items} />
+                <ReviewGrowthTools
+                  readiness={requestReadiness}
+                  campaigns={requestCampaigns}
+                  working={requestWorking}
+                  onCreate={createReviewRequestCampaign}
+                />
+              </>
             ) : portfolio ? (
               <PortfolioReviewOverview
                 portfolio={portfolio}

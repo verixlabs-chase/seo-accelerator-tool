@@ -117,6 +117,10 @@ from app.models.reporting import (
 )
 from app.models.reputation import (
     ReputationProviderCapability,
+    ReputationReviewRequestCampaign,
+    ReputationReviewRequestDelivery,
+    ReputationReviewRequestRecipient,
+    ReputationReviewRequestSuppression,
     ReputationResponseExecution,
     ReputationResponseDraft,
     ReputationResponsePolicy,
@@ -212,6 +216,10 @@ __all__ = [
     "ReputationReview",
     "ReputationReviewObservation",
     "ReputationProviderCapability",
+    "ReputationReviewRequestCampaign",
+    "ReputationReviewRequestRecipient",
+    "ReputationReviewRequestSuppression",
+    "ReputationReviewRequestDelivery",
     "ReputationResponsePolicy",
     "ReputationResponseDraft",
     "ReputationResponseExecution",

@@ -16,6 +16,10 @@ from app.schemas.reputation import (
     ReputationResponseExecutionControl,
     ReputationResponsePublishRequest,
     ReputationReviewOut,
+    ReputationReviewRequestCampaignControl,
+    ReputationReviewRequestCampaignCreate,
+    ReputationReviewRequestRecipientCreate,
+    ReputationReviewRequestSuppressionCreate,
 )
 from app.services import (
     data_connections_service,
@@ -24,6 +28,7 @@ from app.services import (
     local_service,
     reputation_intelligence_service,
     reputation_inventory_service,
+    reputation_request_service,
     reputation_response_execution_service,
     reputation_response_service,
 )
@@ -480,6 +485,125 @@ def get_review_portfolio(
             db,
             tenant_id=user["tenant_id"],
             organization_id=user["organization_id"],
+        ),
+    )
+
+
+@reviews_router.get("/request-readiness")
+def get_review_request_readiness(
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+) -> dict:
+    del user
+    return envelope(request, reputation_request_service.delivery_readiness())
+
+
+@reviews_router.get("/request-campaigns")
+def get_review_request_campaigns(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        {
+            "items": reputation_request_service.list_campaigns(
+                db,
+                tenant_id=user["tenant_id"],
+                organization_id=user["organization_id"],
+                campaign_id=campaign_id,
+            )
+        },
+    )
+
+
+@reviews_router.post("/request-campaigns")
+def create_review_request_campaign(
+    payload: ReputationReviewRequestCampaignCreate,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_request_service.create_campaign(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=payload.campaign_id,
+            user_id=user["id"],
+            name=payload.name,
+            channel=payload.channel,
+            subject=payload.subject,
+            message_body=payload.message_body,
+            review_url=payload.review_url,
+        ),
+    )
+
+
+@reviews_router.post("/request-campaigns/{request_campaign_id}/recipients")
+def add_review_request_recipient(
+    request_campaign_id: str,
+    payload: ReputationReviewRequestRecipientCreate,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_request_service.add_recipient(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            request_campaign_id=request_campaign_id,
+            email_address=payload.email_address,
+            customer_name=payload.customer_name,
+            consent_basis=payload.consent_basis,
+            consent_source=payload.consent_source,
+            consent_confirmed=payload.consent_confirmed,
+            service_completed_at=payload.service_completed_at,
+        ),
+    )
+
+
+@reviews_router.post("/request-campaigns/{request_campaign_id}/control")
+def control_review_request_campaign(
+    request_campaign_id: str,
+    payload: ReputationReviewRequestCampaignControl,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_request_service.control_campaign(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            request_campaign_id=request_campaign_id,
+            action=payload.action,
+        ),
+    )
+
+
+@reviews_router.post("/request-recipients/{recipient_id}/suppress")
+def suppress_review_request_recipient(
+    recipient_id: str,
+    payload: ReputationReviewRequestSuppressionCreate,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_request_service.suppress_recipient(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            recipient_id=recipient_id,
+            reason=payload.reason,
+            source=payload.source,
         ),
     )
 

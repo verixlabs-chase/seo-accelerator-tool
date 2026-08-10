@@ -44,3 +44,34 @@ class ReputationResponsePublishRequest(BaseModel):
 
 class ReputationResponseExecutionControl(BaseModel):
     action: Literal["pause", "resume", "cancel", "retry"]
+
+
+class ReputationReviewRequestCampaignCreate(BaseModel):
+    campaign_id: str = Field(..., min_length=1, max_length=36)
+    name: str = Field(default="", max_length=160)
+    channel: Literal["email", "link", "qr", "kiosk", "sms"]
+    subject: str | None = Field(default=None, max_length=180)
+    message_body: str = Field(default="", max_length=700)
+    review_url: str | None = Field(default=None, max_length=1200)
+
+
+class ReputationReviewRequestRecipientCreate(BaseModel):
+    email_address: str = Field(..., min_length=3, max_length=320)
+    customer_name: str | None = Field(default=None, max_length=160)
+    consent_basis: Literal[
+        "explicit_opt_in",
+        "existing_customer_relationship",
+        "customer_requested",
+    ]
+    consent_source: str = Field(..., min_length=1, max_length=160)
+    consent_confirmed: bool
+    service_completed_at: datetime
+
+
+class ReputationReviewRequestCampaignControl(BaseModel):
+    action: Literal["activate", "pause", "complete", "cancel"]
+
+
+class ReputationReviewRequestSuppressionCreate(BaseModel):
+    reason: str = Field(default="Do not send review requests", max_length=160)
+    source: str = Field(default="Account owner", max_length=120)

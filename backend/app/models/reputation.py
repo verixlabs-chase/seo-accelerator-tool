@@ -410,3 +410,216 @@ class ReputationResponseExecution(Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReputationReviewRequestCampaign(Base):
+    __tablename__ = "reputation_review_request_campaigns"
+    __table_args__ = (
+        CheckConstraint(
+            "channel in ('email','link','qr','kiosk','sms')",
+            name="ck_reputation_review_request_campaign_channel",
+        ),
+        CheckConstraint(
+            "status in ('draft','active','paused','completed','cancelled')",
+            name="ck_reputation_review_request_campaign_status",
+        ),
+        CheckConstraint(
+            "review_url_source in ('connected_profile','owner_provided')",
+            name="ck_reputation_review_request_campaign_url_source",
+        ),
+        Index(
+            "ix_reputation_review_request_campaigns_campaign_status",
+            "campaign_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    business_location_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("business_locations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    channel: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft", index=True)
+    subject: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    message_body: Mapped[str] = mapped_column(Text, nullable=False)
+    review_url: Mapped[str] = mapped_column(Text, nullable=False)
+    review_url_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    audience_rule: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    consent_policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    suppression_policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    baseline_review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    baseline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReputationReviewRequestRecipient(Base):
+    __tablename__ = "reputation_review_request_recipients"
+    __table_args__ = (
+        UniqueConstraint(
+            "request_campaign_id",
+            "contact_hash",
+            name="uq_reputation_review_request_recipient_campaign_contact",
+        ),
+        CheckConstraint(
+            "consent_basis in ('explicit_opt_in','existing_customer_relationship','customer_requested')",
+            name="ck_reputation_review_request_recipient_consent_basis",
+        ),
+        CheckConstraint(
+            "status in ('eligible','suppressed','queued','sent','delivered','failed','bounced','complained','unsubscribed')",
+            name="ck_reputation_review_request_recipient_status",
+        ),
+        Index(
+            "ix_reputation_review_request_recipients_campaign_status",
+            "request_campaign_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    business_location_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("business_locations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    request_campaign_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("reputation_review_request_campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    email_address: Mapped[str] = mapped_column(String(320), nullable=False)
+    contact_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    customer_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    consent_basis: Mapped[str] = mapped_column(String(48), nullable=False)
+    consent_source: Mapped[str] = mapped_column(String(160), nullable=False)
+    consent_confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    service_completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="eligible", index=True)
+    suppression_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    suppressed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReputationReviewRequestSuppression(Base):
+    __tablename__ = "reputation_review_request_suppressions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "channel",
+            "contact_hash",
+            name="uq_reputation_review_request_suppression_contact",
+        ),
+        CheckConstraint(
+            "channel in ('email','sms')",
+            name="ck_reputation_review_request_suppression_channel",
+        ),
+        Index(
+            "ix_reputation_review_request_suppressions_org_channel",
+            "organization_id",
+            "channel",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    channel: Mapped[str] = mapped_column(String(24), nullable=False)
+    contact_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(String(160), nullable=False)
+    source: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+
+class ReputationReviewRequestDelivery(Base):
+    __tablename__ = "reputation_review_request_deliveries"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "idempotency_key",
+            name="uq_reputation_review_request_delivery_org_key",
+        ),
+        CheckConstraint(
+            "status in ('queued','sending','sent','delivered','failed','bounced','complained','suppressed','cancelled')",
+            name="ck_reputation_review_request_delivery_status",
+        ),
+        Index(
+            "ix_reputation_review_request_deliveries_campaign_status",
+            "request_campaign_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    business_location_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("business_locations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    request_campaign_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("reputation_review_request_campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    recipient_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("reputation_review_request_recipients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    platform_job_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("platform_jobs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    cost_reservation_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("cost_ledger_entries.id", ondelete="SET NULL"), nullable=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    channel: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued", index=True)
+    provider_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_receipt: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
