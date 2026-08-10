@@ -23,7 +23,12 @@ test("customer review inbox is location scoped, filterable, and governed", () =>
   assert.match(page, /A person should handle this reply/);
   assert.match(page, /No AI action or credit was used/);
   assert.match(page, /textarea/);
-  assert.match(page, /does not post it/);
+  assert.match(page, /reviews\/posting-status/);
+  assert.match(page, /confirm_publish_to_google: true/);
+  assert.match(page, /Post approved reply to Google/);
+  assert.match(page, /Automatic replies are off/);
+  assert.match(page, /Pause posting/);
+  assert.match(page, /Posting history stays attached/);
   assert.doesNotMatch(page, /Post reply/);
   assert.doesNotMatch(page, /chat/i);
 });

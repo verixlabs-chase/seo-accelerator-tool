@@ -13,6 +13,8 @@ from app.schemas.local_rank_grid import LocalRankGridCreateRequest, LocalRankGri
 from app.schemas.reputation import (
     ReputationResponseDraftCreate,
     ReputationResponseDraftDecision,
+    ReputationResponseExecutionControl,
+    ReputationResponsePublishRequest,
     ReputationReviewOut,
 )
 from app.services import (
@@ -21,6 +23,7 @@ from app.services import (
     local_rank_grid_service,
     local_service,
     reputation_inventory_service,
+    reputation_response_execution_service,
     reputation_response_service,
 )
 from app.services.cost_economics_service import CostEconomicsError
@@ -416,6 +419,12 @@ def get_review_inventory(
         rating_lte=rating_lte,
         limit=limit,
     )
+    posting = reputation_response_execution_service.posting_status(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
     return envelope(
         request,
         {
@@ -431,8 +440,8 @@ def get_review_inventory(
                     else "No owned-profile review inventory has been collected for this location yet."
                 ),
                 "source_coverage": "owned_profiles",
-                "direct_reply_available": False,
-                "direct_reply_reason": "InsightOS saves approved wording but does not post it.",
+                "direct_reply_available": posting["available"],
+                "direct_reply_reason": posting["reason"],
                 "ai_reply_available": True,
                 "ai_reply_reason": "AI can prepare a draft when the review passes the safety check.",
             },
@@ -455,6 +464,84 @@ def get_review_response_policy(
         requested_by_user_id=user["id"],
     )
     return envelope(request, payload)
+
+
+@reviews_router.get("/posting-status")
+def get_review_posting_status(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_response_execution_service.posting_status(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=campaign_id,
+        ),
+    )
+
+
+@reviews_router.get("/executions")
+def get_review_response_executions(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        {
+            "items": reputation_response_execution_service.list_executions(
+                db,
+                tenant_id=user["tenant_id"],
+                organization_id=user["organization_id"],
+                campaign_id=campaign_id,
+            )
+        },
+    )
+
+
+@reviews_router.post("/drafts/{draft_id}/publish")
+def publish_review_response_draft(
+    draft_id: str,
+    payload: ReputationResponsePublishRequest,
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = reputation_response_execution_service.queue_execution(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        draft_id=draft_id,
+        requested_by_user_id=user["id"],
+        confirmation_version=payload.confirmation_version,
+        confirm_publish_to_google=payload.confirm_publish_to_google,
+    )
+    return envelope(request, reputation_response_execution_service.serialize_execution(row))
+
+
+@reviews_router.patch("/executions/{execution_id}")
+def control_review_response_execution(
+    execution_id: str,
+    payload: ReputationResponseExecutionControl,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = reputation_response_execution_service.control_execution(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        execution_id=execution_id,
+        action=payload.action,
+    )
+    return envelope(request, reputation_response_execution_service.serialize_execution(row))
 
 
 @reviews_router.get("/drafts")

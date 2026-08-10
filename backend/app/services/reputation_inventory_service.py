@@ -324,6 +324,68 @@ def inventory_summary(rows: list[ReputationReview]) -> dict[str, Any]:
     }
 
 
+def google_access_token(db: Session, organization_id: str) -> str:
+    """Return the scoped Google token used by owned-profile review operations."""
+    return _google_access_token(db, organization_id)
+
+
+def record_owned_reply(
+    db: Session,
+    *,
+    review: ReputationReview,
+    response_text: str,
+    response_updated_at: datetime | None,
+    captured_at: datetime | None = None,
+) -> ReputationReviewObservation:
+    """Record a provider-confirmed reply and its immutable evidence snapshot."""
+    capture_time = _as_utc(captured_at or datetime.now(UTC))
+    review.response_status = "responded"
+    review.response_text = response_text.strip()
+    review.response_updated_at = _as_utc(response_updated_at or capture_time)
+    review.provider_updated_at = review.response_updated_at
+    review.last_seen_at = capture_time
+    review.updated_at = capture_time
+
+    snapshot = {key: _json_value(getattr(review, key)) for key in SNAPSHOT_FIELDS}
+    digest = sha256(
+        json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    observation = (
+        db.query(ReputationReviewObservation)
+        .filter(
+            ReputationReviewObservation.review_id == review.id,
+            ReputationReviewObservation.evidence_digest == digest,
+        )
+        .first()
+    )
+    if observation is None:
+        observation = ReputationReviewObservation(
+            tenant_id=review.tenant_id,
+            organization_id=review.organization_id,
+            campaign_id=review.campaign_id,
+            business_location_id=review.business_location_id,
+            review_id=review.id,
+            snapshot=snapshot,
+            evidence_digest=digest,
+            captured_at=capture_time,
+        )
+        db.add(observation)
+    emit_event(
+        db,
+        tenant_id=review.tenant_id,
+        event_type="reputation.review.reply.confirmed",
+        payload={
+            "organization_id": review.organization_id,
+            "campaign_id": review.campaign_id,
+            "business_location_id": review.business_location_id,
+            "review_id": review.id,
+            "evidence_digest": digest,
+        },
+    )
+    db.flush()
+    return observation
+
+
 def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:
     source_type = str(record.get("source_type") or "").strip().lower()
     response_status = str(record.get("response_status") or "unanswered").strip().lower()

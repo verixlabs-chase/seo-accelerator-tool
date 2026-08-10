@@ -126,6 +126,8 @@ def test_migration_upgrade_and_downgrade():
         assert "reputation_review_observations" in inspector.get_table_names()
         assert "reputation_response_policies" in inspector.get_table_names()
         assert "reputation_response_drafts" in inspector.get_table_names()
+        assert "reputation_provider_capabilities" in inspector.get_table_names()
+        assert "reputation_response_executions" in inspector.get_table_names()
         assert "strategy_recommendations" in inspector.get_table_names()
         assert "intelligence_scores" in inspector.get_table_names()
         assert "campaign_milestones" in inspector.get_table_names()
@@ -299,6 +301,39 @@ def test_migration_upgrade_and_downgrade():
             "approved_text",
             "reviewed_by_user_id",
         }.issubset(reputation_response_draft_cols)
+        reputation_capability_cols = {
+            col["name"]
+            for col in inspector.get_columns("reputation_provider_capabilities")
+        }
+        assert {
+            "tenant_id",
+            "organization_id",
+            "connection_id",
+            "provider_method",
+            "status",
+            "proof_reference",
+            "verified_at",
+            "last_failure_code",
+        }.issubset(reputation_capability_cols)
+        reputation_execution_cols = {
+            col["name"] for col in inspector.get_columns("reputation_response_executions")
+        }
+        assert {
+            "tenant_id",
+            "organization_id",
+            "campaign_id",
+            "review_id",
+            "draft_id",
+            "connection_id",
+            "capability_id",
+            "platform_job_id",
+            "status",
+            "approved_text_hash",
+            "confirmation_hash",
+            "provider_receipt",
+            "attempt_count",
+            "posted_at",
+        }.issubset(reputation_execution_cols)
         assert "sub_account_id" in campaign_cols
         assert "business_location_id" in campaign_cols
         assert "sub_account_id" in business_location_cols

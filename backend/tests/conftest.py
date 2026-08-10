@@ -75,6 +75,14 @@ from app.models.reference_library import (
     StandardsSourceRegistry,  # noqa: F401
     StandardsSourceSnapshot,  # noqa: F401
 )
+from app.models.reputation import (  # noqa: F401
+    ReputationProviderCapability,
+    ReputationResponseDraft,
+    ReputationResponseExecution,
+    ReputationResponsePolicy,
+    ReputationReview,
+    ReputationReviewObservation,
+)
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent, ReportSchedule, ReportTemplateVersion  # noqa: F401
 from app.models.role import Role, UserRole
 from app.models.strategy_evolution_log import StrategyEvolutionLog  # noqa: F401
@@ -193,6 +201,8 @@ def _verify_required_tables(database_url: str) -> None:
             "learning_reports",
             "knowledge_nodes",
             "knowledge_edges",
+            "reputation_provider_capabilities",
+            "reputation_response_executions",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:

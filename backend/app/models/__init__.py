@@ -116,6 +116,8 @@ from app.models.reporting import (
     ReportTemplateVersion,
 )
 from app.models.reputation import (
+    ReputationProviderCapability,
+    ReputationResponseExecution,
     ReputationResponseDraft,
     ReputationResponsePolicy,
     ReputationReview,
@@ -209,8 +211,10 @@ __all__ = [
     "ReviewVelocitySnapshot",
     "ReputationReview",
     "ReputationReviewObservation",
+    "ReputationProviderCapability",
     "ReputationResponsePolicy",
     "ReputationResponseDraft",
+    "ReputationResponseExecution",
     "LocalRankGridRun",
     "LocalRankGridPoint",
     "OnboardingState",

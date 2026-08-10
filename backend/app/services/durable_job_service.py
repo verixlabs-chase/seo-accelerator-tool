@@ -26,6 +26,7 @@ from app.services import (
     local_rank_grid_service,
     reporting_service,
     reputation_inventory_service,
+    reputation_response_execution_service,
     standards_source_service,
     traffic_fact_service,
     website_performance_service,
@@ -43,6 +44,7 @@ WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE = "website_performance.collect"
 LOCAL_RANK_GRID_DISPATCH_JOB_TYPE = "local.rank_grid.dispatch"
 DIRECTORY_LISTING_DISCOVERY_JOB_TYPE = "directory_listings.discover"
 OWNED_REVIEW_SYNC_JOB_TYPE = "reputation.owned_reviews_sync"
+REVIEW_RESPONSE_PUBLISH_JOB_TYPE = reputation_response_execution_service.JOB_TYPE
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -270,6 +272,20 @@ def _owned_review_sync_handler(
     return reputation_inventory_service.sync_owned_profile_reviews(db, connection=connection)
 
 
+def _review_response_publish_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    execution_id = str(job.payload.get("execution_id") or job.entity_id or "").strip()
+    if not tenant_id or not execution_id:
+        raise ValueError("Review reply job is missing its customer or approved reply.")
+    return reputation_response_execution_service.dispatch_execution(
+        db,
+        execution_id=execution_id,
+    )
+
+
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
     INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
@@ -281,6 +297,7 @@ DEFAULT_HANDLERS: dict[str, JobHandler] = {
     LOCAL_RANK_GRID_DISPATCH_JOB_TYPE: _local_rank_grid_dispatch_handler,
     DIRECTORY_LISTING_DISCOVERY_JOB_TYPE: _directory_listing_discovery_handler,
     OWNED_REVIEW_SYNC_JOB_TYPE: _owned_review_sync_handler,
+    REVIEW_RESPONSE_PUBLISH_JOB_TYPE: _review_response_publish_handler,
 }
 
 
@@ -1222,6 +1239,15 @@ def _record_handler_failure(
     tenant_id: str | None,
     error: Exception,
 ) -> None:
+    if job_type == REVIEW_RESPONSE_PUBLISH_JOB_TYPE:
+        execution_id = str(payload.get("execution_id") or "").strip()
+        if execution_id:
+            reputation_response_execution_service.record_dispatch_failure(
+                db,
+                execution_id=execution_id,
+                error=error,
+            )
+        return
     if job_type in {SEARCH_CONSOLE_SYNC_JOB_TYPE, BUSINESS_PROFILE_SYNC_JOB_TYPE}:
         connection_id = str(payload.get("connection_id") or "").strip()
         if connection_id:

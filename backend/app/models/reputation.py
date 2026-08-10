@@ -10,6 +10,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     JSON,
     String,
     Text,
@@ -272,3 +273,140 @@ class ReputationResponseDraft(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
+
+
+class ReputationProviderCapability(Base):
+    __tablename__ = "reputation_provider_capabilities"
+    __table_args__ = (
+        UniqueConstraint(
+            "connection_id",
+            "capability",
+            name="uq_reputation_provider_capabilities_connection_capability",
+        ),
+        CheckConstraint(
+            "status in ('validation_authorized','verified','revoked')",
+            name="ck_reputation_provider_capabilities_status",
+        ),
+        Index(
+            "ix_reputation_provider_capabilities_org_status",
+            "organization_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    connection_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("data_connections.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    capability: Mapped[str] = mapped_column(String(80), nullable=False)
+    provider_method: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    proof_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    proof_reference: Mapped[str] = mapped_column(Text, nullable=False)
+    authorized_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    authorized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReputationResponseExecution(Base):
+    __tablename__ = "reputation_response_executions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "idempotency_key",
+            name="uq_reputation_response_executions_org_idempotency",
+        ),
+        UniqueConstraint(
+            "draft_id",
+            name="uq_reputation_response_executions_draft",
+        ),
+        CheckConstraint(
+            "status in ('queued','posting','retrying','posted','paused','blocked','failed','cancelled')",
+            name="ck_reputation_response_executions_status",
+        ),
+        Index(
+            "ix_reputation_response_executions_campaign_status",
+            "campaign_id",
+            "status",
+        ),
+        Index(
+            "ix_reputation_response_executions_review_created",
+            "review_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    business_location_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("business_locations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    review_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reputation_reviews.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    draft_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reputation_response_drafts.id", ondelete="RESTRICT"), nullable=False
+    )
+    connection_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("data_connections.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    capability_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("reputation_provider_capabilities.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    platform_job_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("platform_jobs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    approved_text: Mapped[str] = mapped_column(Text, nullable=False)
+    approved_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    approval_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    review_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    capability_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    confirmation_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    confirmation_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    provider_method: Mapped[str] = mapped_column(String(160), nullable=False)
+    external_review_resource_name: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_reply_state: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    provider_policy_violation: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_receipt: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

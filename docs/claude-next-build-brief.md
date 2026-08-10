@@ -1488,7 +1488,8 @@ Acceptance criteria:
 
 ### Growth G1.6 - Reputation Management
 
-> **Implementation status (2026-08-10):** G1.6A and G1.6B are implemented locally with a
+> **Implementation status (2026-08-10):** G1.6A, G1.6B, and the code-complete
+> G1.6C execution boundary are implemented locally with a
 > separate tenant-, organization-, campaign-, and location-scoped owned-review
 > inventory, immutable response-state observations, paginated and idempotent
 > durable synchronization from each authorized Google Business Profile
@@ -1496,9 +1497,14 @@ Acceptance criteria:
 > filters. The inbox now adds a versioned draft-only response policy, deterministic
 > sensitive-topic routing before any model call, evidence-bounded Mistral response
 > drafts, Insight Credit reservation and reconciliation, editable human approval,
-> and a complete AI/policy audit trail. Approval saves wording only: direct and
-> automatic posting remain disabled. Production review collection still depends
-> on Business Profile API access for the production project.
+> and a complete AI/policy audit trail. G1.6C adds platform-authorized provider
+> capability proof, a separate customer confirmation for every public reply,
+> one execution per approved draft, durable idempotent jobs, exact-text and
+> review-state revalidation, provider receipts, retry/pause/cancel controls,
+> local response observations, and access-revocation handling. Automatic replies
+> remain disabled. Direct posting stays fail-closed until the production Google
+> project is authorized and the first customer-approved reply proves the live
+> capability; successful proof promotes that connection to `verified`.
 
 Goal: replace BrightLocal-style review monitoring, response, generation, and
 multi-location reputation reporting while adding an intelligence layer.
@@ -1559,7 +1565,8 @@ Implementation slices:
 2. **G1.6B - Governed response assistance:** versioned policy, sensitive-topic
    routing, bounded AI drafts, human approval, credits, and complete evidence.
 3. **G1.6C - Direct response execution:** provider capability proof,
-   idempotent approved posting, receipts, retries, pause, and audit.
+   idempotent approved posting, receipts, retries, pause, and audit. **Implemented
+   locally; production release awaits one authorized live capability proof.**
 4. **G1.6D - Review growth and portfolio intelligence:** compliant request
    campaigns, theme/velocity intelligence, multi-location outliers, and
    portfolio actions.

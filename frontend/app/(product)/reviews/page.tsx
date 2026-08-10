@@ -74,6 +74,29 @@ type ReviewResponsePolicy = {
   maximum_credits_per_draft?: number | null;
 };
 
+type ReviewPostingStatus = {
+  available: boolean;
+  automatic_posting_enabled: false;
+  explicit_confirmation_required: true;
+  confirmation_version: string;
+  confirmation_label: string;
+  capability_status: "not_authorized" | "validation_authorized" | "verified" | "revoked";
+  reason: string;
+  reason_code?: string | null;
+};
+
+type ReviewResponseExecution = {
+  id: string;
+  review_id: string;
+  draft_id: string;
+  status: "queued" | "posting" | "retrying" | "posted" | "paused" | "blocked" | "failed" | "cancelled";
+  attempt_count: number;
+  error_code?: string | null;
+  error_message?: string | null;
+  requested_at: string;
+  posted_at?: string | null;
+};
+
 type ReviewFilter = "all" | "unanswered" | "low" | "responded";
 
 const EMPTY_SUMMARY: ReviewSummary = {
@@ -117,6 +140,9 @@ export default function ReviewsPage() {
   const [draftsByReview, setDraftsByReview] = useState<Record<string, ReviewResponseDraft>>({});
   const [draftEdits, setDraftEdits] = useState<Record<string, string>>({});
   const [responsePolicy, setResponsePolicy] = useState<ReviewResponsePolicy | null>(null);
+  const [postingStatus, setPostingStatus] = useState<ReviewPostingStatus | null>(null);
+  const [executionsByReview, setExecutionsByReview] = useState<Record<string, ReviewResponseExecution>>({});
+  const [publishConfirmations, setPublishConfirmations] = useState<Record<string, boolean>>({});
   const [workingReviewId, setWorkingReviewId] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -124,7 +150,7 @@ export default function ReviewsPage() {
   const [notice, setNotice] = useState("");
 
   const loadInventory = useCallback(async (campaignId: string) => {
-    const [response, draftResponse, policyResponse] = await Promise.all([
+    const [response, draftResponse, policyResponse, postingResponse, executionResponse] = await Promise.all([
       platformApi(
         `/reviews/inventory?campaign_id=${encodeURIComponent(campaignId)}&source_type=owned_profile&limit=250`,
         { method: "GET" },
@@ -135,6 +161,12 @@ export default function ReviewsPage() {
       platformApi(`/reviews/response-policy?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }) as Promise<ReviewResponsePolicy>,
+      platformApi(`/reviews/posting-status?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }) as Promise<ReviewPostingStatus>,
+      platformApi(`/reviews/executions?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }) as Promise<{ items: ReviewResponseExecution[] }>,
     ]);
     setInventory({
       items: Array.isArray(response?.items) ? response.items : [],
@@ -149,6 +181,12 @@ export default function ReviewsPage() {
     setDraftsByReview(nextDrafts);
     setDraftEdits(nextEdits);
     setResponsePolicy(policyResponse || null);
+    setPostingStatus(postingResponse || null);
+    const nextExecutions: Record<string, ReviewResponseExecution> = {};
+    for (const execution of executionResponse?.items || []) {
+      if (!nextExecutions[execution.review_id]) nextExecutions[execution.review_id] = execution;
+    }
+    setExecutionsByReview(nextExecutions);
   }, []);
 
   useEffect(() => {
@@ -188,6 +226,18 @@ export default function ReviewsPage() {
       setError(err instanceof Error ? err.message : "Reviews could not be loaded.");
     });
   }, [loadInventory, loading, selectedCampaignId]);
+
+  useEffect(() => {
+    if (!selectedCampaignId) return;
+    const hasPendingWork = Object.values(executionsByReview).some((item) =>
+      ["queued", "posting", "retrying"].includes(item.status),
+    );
+    if (!hasPendingWork) return;
+    const timer = window.setInterval(() => {
+      void loadInventory(selectedCampaignId).catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [executionsByReview, loadInventory, selectedCampaignId]);
 
   async function checkForReviews() {
     if (!selectedCampaignId) return;
@@ -272,6 +322,62 @@ export default function ReviewsPage() {
     setNotice("Approved reply copied. You can paste it into your business profile.");
   }
 
+  async function publishApprovedReply(reviewId: string, draft: ReviewResponseDraft) {
+    if (!selectedCampaignId || !postingStatus || !publishConfirmations[draft.id]) return;
+    setWorkingReviewId(reviewId);
+    setError("");
+    setNotice("");
+    try {
+      await platformApi(
+        `/reviews/drafts/${encodeURIComponent(draft.id)}/publish?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            confirmation_version: postingStatus.confirmation_version,
+            confirm_publish_to_google: true,
+          }),
+        },
+      );
+      await loadInventory(selectedCampaignId);
+      setNotice("Your approved reply is queued for Google. We will show the confirmed result here.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The approved reply could not be queued.");
+    } finally {
+      setWorkingReviewId("");
+    }
+  }
+
+  async function controlPublish(
+    reviewId: string,
+    execution: ReviewResponseExecution,
+    action: "pause" | "resume" | "cancel" | "retry",
+  ) {
+    if (!selectedCampaignId) return;
+    setWorkingReviewId(reviewId);
+    setError("");
+    setNotice("");
+    try {
+      await platformApi(`/reviews/executions/${encodeURIComponent(execution.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action }),
+      });
+      await loadInventory(selectedCampaignId);
+      setNotice(
+        action === "pause"
+          ? "Posting is paused."
+          : action === "resume"
+            ? "Posting is queued again."
+            : action === "cancel"
+              ? "Posting was cancelled before Google received it."
+              : "Posting is queued to try again.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The posting action could not be completed.");
+    } finally {
+      setWorkingReviewId("");
+    }
+  }
+
   const filteredReviews = useMemo(() => {
     if (filter === "unanswered") {
       return inventory.items.filter((item) => item.response_status === "unanswered");
@@ -340,8 +446,8 @@ export default function ReviewsPage() {
         />
 
         <TruthNotice title="AI can prepare wording, but you stay in control.">
-          Every suggested reply must be checked and approved by a person. Approval only saves the wording;
-          InsightOS does not post it to your business profile.
+          Every suggested reply must be checked and approved by a person. Posting is a separate step
+          with its own confirmation. Automatic replies are off.
         </TruthNotice>
 
         {responsePolicy && !responsePolicy.ai_configured ? (
@@ -463,6 +569,7 @@ export default function ReviewsPage() {
                       {review.response_status === "unanswered"
                         ? (() => {
                             const draft = draftsByReview[review.id];
+                            const execution = executionsByReview[review.id];
                             const isWorking = workingReviewId === review.id;
                             if (!draft) {
                               const creditLabel = responsePolicy?.maximum_credits_per_draft
@@ -555,9 +662,104 @@ export default function ReviewsPage() {
                             if (draft.status === "approved") {
                               return (
                                 <div className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/[0.06] p-4">
-                                  <p className="font-semibold text-emerald-100">Approved wording</p>
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <p className="font-semibold text-emerald-100">Approved wording</p>
+                                    <span className="rounded-full border border-emerald-500/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-100">
+                                      {execution?.status === "posted"
+                                        ? "Posted to Google"
+                                        : execution?.status === "posting"
+                                          ? "Posting now"
+                                          : execution?.status === "retrying"
+                                            ? "Waiting to try again"
+                                            : execution?.status === "queued"
+                                              ? "Queued"
+                                              : execution?.status === "paused"
+                                                ? "Paused"
+                                                : execution?.status === "blocked"
+                                                  ? "Needs attention"
+                                                  : execution?.status === "failed"
+                                                    ? "Could not post"
+                                                    : execution?.status === "cancelled"
+                                                      ? "Cancelled"
+                                                      : "Not posted"}
+                                    </span>
+                                  </div>
                                   <p className="mt-2 text-sm leading-6 text-zinc-200">{draft.approved_text}</p>
+                                  {execution?.error_message ? (
+                                    <p className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/[0.08] px-3 py-2 text-sm text-amber-100">
+                                      {execution.error_message}
+                                    </p>
+                                  ) : null}
+                                  {!execution && postingStatus?.available ? (
+                                    <label className="mt-4 flex max-w-2xl cursor-pointer items-start gap-3 rounded-md border border-[#34353c] bg-[#101113] p-3 text-sm leading-6 text-zinc-200">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(publishConfirmations[draft.id])}
+                                        onChange={(event) =>
+                                          setPublishConfirmations((current) => ({
+                                            ...current,
+                                            [draft.id]: event.target.checked,
+                                          }))
+                                        }
+                                        className="mt-1 h-4 w-4 accent-[#ff6b18]"
+                                      />
+                                      <span>{postingStatus.confirmation_label}</span>
+                                    </label>
+                                  ) : null}
+                                  {!execution && postingStatus && !postingStatus.available ? (
+                                    <p className="mt-3 text-sm leading-6 text-zinc-400">{postingStatus.reason}</p>
+                                  ) : null}
                                   <div className="mt-3 flex flex-wrap items-center gap-3">
+                                    {!execution && postingStatus?.available ? (
+                                      <button
+                                        type="button"
+                                        disabled={isWorking || !publishConfirmations[draft.id]}
+                                        onClick={() => void publishApprovedReply(review.id, draft)}
+                                        className="rounded-md bg-[#ff6b18] px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {isWorking ? "Queuing..." : "Post approved reply to Google"}
+                                      </button>
+                                    ) : null}
+                                    {execution && ["queued", "retrying"].includes(execution.status) ? (
+                                      <button
+                                        type="button"
+                                        disabled={isWorking}
+                                        onClick={() => void controlPublish(review.id, execution, "pause")}
+                                        className="rounded-md border border-amber-500/25 px-3.5 py-2 text-sm font-semibold text-amber-100 disabled:opacity-50"
+                                      >
+                                        Pause posting
+                                      </button>
+                                    ) : null}
+                                    {execution?.status === "paused" ? (
+                                      <button
+                                        type="button"
+                                        disabled={isWorking}
+                                        onClick={() => void controlPublish(review.id, execution, "resume")}
+                                        className="rounded-md bg-[#ff6b18] px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                                      >
+                                        Resume posting
+                                      </button>
+                                    ) : null}
+                                    {execution && ["queued", "retrying", "paused"].includes(execution.status) ? (
+                                      <button
+                                        type="button"
+                                        disabled={isWorking}
+                                        onClick={() => void controlPublish(review.id, execution, "cancel")}
+                                        className="rounded-md border border-[#34353c] px-3.5 py-2 text-sm font-semibold text-zinc-200 disabled:opacity-50"
+                                      >
+                                        Cancel
+                                      </button>
+                                    ) : null}
+                                    {execution?.status === "failed" ? (
+                                      <button
+                                        type="button"
+                                        disabled={isWorking}
+                                        onClick={() => void controlPublish(review.id, execution, "retry")}
+                                        className="rounded-md bg-[#ff6b18] px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                                      >
+                                        Try posting again
+                                      </button>
+                                    ) : null}
                                     <button
                                       type="button"
                                       onClick={() => void copyApprovedReply(draft)}
@@ -566,7 +768,9 @@ export default function ReviewsPage() {
                                       Copy approved reply
                                     </button>
                                     <span className="text-xs text-zinc-500">
-                                      InsightOS saved this wording but did not post it.
+                                      {execution
+                                        ? "Posting history stays attached to this approved reply."
+                                        : "Copying does not post or change anything."}
                                     </span>
                                   </div>
                                 </div>

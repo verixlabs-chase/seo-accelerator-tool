@@ -8,6 +8,7 @@ import httpx
 
 
 _PARENT_PATTERN = re.compile(r"^accounts/[^/]+/locations/[^/]+$")
+_REVIEW_PATTERN = re.compile(r"^accounts/[^/]+/locations/[^/]+/reviews/[^/]+$")
 _STAR_RATINGS = {
     "ONE": 1.0,
     "TWO": 2.0,
@@ -17,8 +18,23 @@ _STAR_RATINGS = {
 }
 
 
+class GoogleReviewsProviderError(ValueError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str,
+        retryable: bool,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.retryable = retryable
+        self.status_code = status_code
+
+
 class GoogleBusinessProfileReviewsProvider:
-    """Read-only boundary for reviews from an authorized owned business profile."""
+    """Bounded review API for an authorized owned business profile."""
 
     BASE_URL = "https://mybusiness.googleapis.com/v4"
 
@@ -66,6 +82,45 @@ class GoogleBusinessProfileReviewsProvider:
             "next_page_token": str(body.get("nextPageToken") or "") or None,
         }
 
+    def update_reply(self, *, review_name: str, comment: str) -> dict[str, Any]:
+        clean_name = review_name.strip().strip("/")
+        if not _REVIEW_PATTERN.fullmatch(clean_name):
+            raise GoogleReviewsProviderError(
+                "The connected review is invalid.",
+                reason_code="review_resource_invalid",
+                retryable=False,
+            )
+        clean_comment = comment.strip()
+        if not clean_comment:
+            raise GoogleReviewsProviderError(
+                "Reply wording is required.",
+                reason_code="review_reply_empty",
+                retryable=False,
+            )
+        if len(clean_comment.encode("utf-8")) > 4096:
+            raise GoogleReviewsProviderError(
+                "The approved reply is too long for Google.",
+                reason_code="review_reply_too_long",
+                retryable=False,
+            )
+        body = self._put(
+            f"{self.BASE_URL}/{clean_name}/reply",
+            json_body={"comment": clean_comment},
+        )
+        confirmed_comment = str(body.get("comment") or "").strip()
+        if confirmed_comment != clean_comment:
+            raise GoogleReviewsProviderError(
+                "Google did not return a matching review-reply receipt.",
+                reason_code="review_reply_receipt_mismatch",
+                retryable=True,
+            )
+        return {
+            "comment": confirmed_comment,
+            "update_time": _timestamp(body.get("updateTime")),
+            "reply_state": str(body.get("reviewReplyState") or "").strip().upper() or None,
+            "policy_violation": str(body.get("policyViolation") or "").strip().upper() or None,
+        }
+
     def _get(self, url: str, *, params: dict[str, str | int]) -> dict[str, Any]:
         headers = {"Authorization": f"Bearer {self.access_token}", "Accept": "application/json"}
         try:
@@ -100,6 +155,93 @@ class GoogleBusinessProfileReviewsProvider:
             raise ValueError("The review connection returned an unreadable response.") from exc
         if not isinstance(body, dict):
             raise ValueError("The review connection returned an unexpected response.")
+        return body
+
+    def _put(self, url: str, *, json_body: dict[str, str]) -> dict[str, Any]:
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        try:
+            if self._client is not None:
+                response = self._client.put(
+                    url,
+                    json=json_body,
+                    headers=headers,
+                    timeout=self.timeout_seconds,
+                )
+            else:
+                with httpx.Client() as client:
+                    response = client.put(
+                        url,
+                        json=json_body,
+                        headers=headers,
+                        timeout=self.timeout_seconds,
+                    )
+        except httpx.TimeoutException as exc:
+            raise GoogleReviewsProviderError(
+                "Google did not confirm the reply before the request timed out.",
+                reason_code="review_reply_timeout",
+                retryable=True,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise GoogleReviewsProviderError(
+                "The review reply could not reach Google.",
+                reason_code="review_reply_connection_error",
+                retryable=True,
+            ) from exc
+        if response.status_code in {401, 403}:
+            raise GoogleReviewsProviderError(
+                "Google review-reply access needs attention.",
+                reason_code="review_reply_access_denied",
+                retryable=False,
+                status_code=response.status_code,
+            )
+        if response.status_code == 404:
+            raise GoogleReviewsProviderError(
+                "Google no longer returned this review for the connected location.",
+                reason_code="review_not_found",
+                retryable=False,
+                status_code=response.status_code,
+            )
+        if response.status_code in {400, 409, 412}:
+            raise GoogleReviewsProviderError(
+                "Google rejected the review reply request.",
+                reason_code="review_reply_rejected",
+                retryable=False,
+                status_code=response.status_code,
+            )
+        if response.status_code == 429 or response.status_code >= 500:
+            raise GoogleReviewsProviderError(
+                "Google review replies are temporarily busy.",
+                reason_code="review_reply_temporarily_unavailable",
+                retryable=True,
+                status_code=response.status_code,
+            )
+        if response.status_code >= 400:
+            raise GoogleReviewsProviderError(
+                "The review reply could not be posted.",
+                reason_code="review_reply_http_error",
+                retryable=False,
+                status_code=response.status_code,
+            )
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise GoogleReviewsProviderError(
+                "Google returned an unreadable review-reply receipt.",
+                reason_code="review_reply_unreadable_receipt",
+                retryable=True,
+                status_code=response.status_code,
+            ) from exc
+        if not isinstance(body, dict):
+            raise GoogleReviewsProviderError(
+                "Google returned an unexpected review-reply receipt.",
+                reason_code="review_reply_invalid_receipt",
+                retryable=True,
+                status_code=response.status_code,
+            )
         return body
 
 

@@ -35,3 +35,12 @@ class ReputationResponseDraftCreate(BaseModel):
 class ReputationResponseDraftDecision(BaseModel):
     decision: Literal["approve", "reject"]
     approved_text: str | None = Field(default=None, max_length=600)
+
+
+class ReputationResponsePublishRequest(BaseModel):
+    confirmation_version: str = Field(..., min_length=1, max_length=80)
+    confirm_publish_to_google: bool
+
+
+class ReputationResponseExecutionControl(BaseModel):
+    action: Literal["pause", "resume", "cancel", "retry"]
