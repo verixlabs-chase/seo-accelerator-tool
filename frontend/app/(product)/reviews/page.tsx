@@ -2,6 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import {
   AppShell,
@@ -97,7 +107,81 @@ type ReviewResponseExecution = {
   posted_at?: string | null;
 };
 
+type ReviewIntelligenceMetrics = {
+  total_reviews: number;
+  average_rating?: number | null;
+  reviews_last_30_days: number;
+  reviews_previous_30_days: number;
+  review_pace_change: number;
+  unanswered_reviews: number;
+  urgent_unanswered_reviews: number;
+  response_rate_percent?: number | null;
+  median_response_hours?: number | null;
+};
+
+type ReviewTrendWeek = {
+  week_start: string;
+  reviews_received: number;
+  average_rating?: number | null;
+  positive: number;
+  mixed: number;
+  negative: number;
+};
+
+type ReviewTheme = {
+  key: string;
+  label: string;
+  mentions: number;
+  positive_mentions: number;
+  mixed_mentions: number;
+  negative_mentions: number;
+  evidence_review_ids: string[];
+  tone: "strength" | "mixed" | "needs_attention";
+};
+
+type ReviewAction = {
+  id: string;
+  priority: "high" | "medium" | "low";
+  title: string;
+  why: string;
+  metric_label: string;
+  current_value: number;
+  target_value: number;
+  evidence_review_ids: string[];
+};
+
+type LocationReviewIntelligence = {
+  campaign_id: string;
+  location_name: string;
+  city?: string | null;
+  region?: string | null;
+  metrics: ReviewIntelligenceMetrics;
+  weekly_trend: ReviewTrendWeek[];
+  themes: ReviewTheme[];
+  actions: ReviewAction[];
+};
+
+type PortfolioReviewLocation = LocationReviewIntelligence & {
+  attention_score: number;
+  outliers: Array<{ code: string; label: string }>;
+};
+
+type PortfolioReviewIntelligence = {
+  summary: {
+    locations: number;
+    locations_with_reviews: number;
+    locations_needing_attention: number;
+    total_reviews: number;
+    reviews_last_30_days: number;
+    unanswered_reviews: number;
+    average_rating?: number | null;
+    response_rate_percent?: number | null;
+  };
+  locations: PortfolioReviewLocation[];
+};
+
 type ReviewFilter = "all" | "unanswered" | "low" | "responded";
+type ReviewView = "location" | "portfolio";
 
 const EMPTY_SUMMARY: ReviewSummary = {
   total: 0,
@@ -117,6 +201,17 @@ function reviewDate(value: string) {
   });
 }
 
+function weekLabel(value: string) {
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function metricValue(value: number | null | undefined, suffix = "") {
+  if (value === null || value === undefined) return "—";
+  return `${value}${suffix}`;
+}
+
 function Stars({ rating }: { rating: number }) {
   const filled = Math.max(1, Math.min(5, Math.round(rating)));
   return (
@@ -124,6 +219,284 @@ function Stars({ rating }: { rating: number }) {
       <span className="text-amber-400">{"★".repeat(filled)}</span>
       <span className="text-zinc-700">{"★".repeat(5 - filled)}</span>
     </span>
+  );
+}
+
+function LocationReviewInsights({
+  intelligence,
+  reviews,
+}: {
+  intelligence: LocationReviewIntelligence | null;
+  reviews: ReviewItem[];
+}) {
+  if (!intelligence) return null;
+  return (
+    <>
+      <section className="grid gap-3 sm:grid-cols-3">
+        <KpiCard
+          icon="reviews"
+          label="Reviews in 30 days"
+          value={String(intelligence.metrics.reviews_last_30_days)}
+          changeLabel={`${intelligence.metrics.review_pace_change >= 0 ? "+" : ""}${intelligence.metrics.review_pace_change} vs. prior 30 days`}
+          changeTone={
+            intelligence.metrics.review_pace_change === 0
+              ? "neutral"
+              : intelligence.metrics.review_pace_change > 0
+                ? "positive"
+                : "negative"
+          }
+          summary="New customer reviews received during the latest 30 days."
+        />
+        <KpiCard
+          icon="check"
+          label="Reviews answered"
+          value={metricValue(intelligence.metrics.response_rate_percent, "%")}
+          summary="Share of saved reviews with a confirmed business response."
+        />
+        <KpiCard
+          icon="calendar"
+          label="Typical reply time"
+          value={metricValue(intelligence.metrics.median_response_hours, " hours")}
+          summary="Middle response time across replies with confirmed dates."
+        />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
+        <div className="rounded-md border border-[#26272c] bg-[#141518] p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Last 12 weeks</p>
+          <h2 className="mt-1.5 text-xl font-semibold text-white">How customer feedback is changing</h2>
+          <p className="mt-1 text-sm text-zinc-400">
+            Each bar is one week. Green is 4–5 stars, gray is 3 stars, and red is 1–2 stars.
+          </p>
+          <div className="mt-5 h-64" aria-label="Customer review trend chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={intelligence.weekly_trend} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+                <XAxis
+                  dataKey="week_start"
+                  axisLine={false}
+                  tickLine={false}
+                  minTickGap={22}
+                  tick={{ fill: "#71717a", fontSize: 11 }}
+                  tickFormatter={weekLabel}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                  tick={{ fill: "#71717a", fontSize: 11 }}
+                />
+                <Tooltip
+                  labelFormatter={(value) => `Week of ${weekLabel(String(value))}`}
+                  contentStyle={{ background: "#101113", border: "1px solid #303138", borderRadius: 6 }}
+                />
+                <Bar dataKey="positive" name="4–5 star reviews" stackId="reviews" fill="#34d399" />
+                <Bar dataKey="mixed" name="3 star reviews" stackId="reviews" fill="#a1a1aa" />
+                <Bar
+                  dataKey="negative"
+                  name="1–2 star reviews"
+                  stackId="reviews"
+                  fill="#fb7185"
+                  radius={[3, 3, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-[#26272c] bg-[#141518] p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">What to do next</p>
+          <h2 className="mt-1.5 text-xl font-semibold text-white">Actions tied to your reviews</h2>
+          <div className="mt-4 space-y-3">
+            {intelligence.actions.map((action, index) => (
+              <article key={action.id} className="border-l-2 border-[#ff6b18] bg-[#101113] px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#ff6b18] text-xs font-bold text-white">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <h3 className="font-semibold text-white">{action.title}</h3>
+                    <p className="mt-1 text-sm leading-6 text-zinc-300">{action.why}</p>
+                    <p className="mt-2 text-xs font-semibold text-zinc-400">
+                      {action.metric_label}: {action.current_value} now → goal {action.target_value}
+                    </p>
+                    {action.evidence_review_ids.length > 0 ? (
+                      <details className="mt-2 text-xs text-zinc-500">
+                        <summary className="cursor-pointer text-[#ff9b67]">See the customer feedback behind this</summary>
+                        <ul className="mt-2 space-y-1.5">
+                          {action.evidence_review_ids.map((reviewId) => {
+                            const review = reviews.find((item) => item.id === reviewId);
+                            return (
+                              <li key={reviewId}>
+                                {review
+                                  ? `${review.rating} stars — ${review.body || "No written comment"}`
+                                  : "Saved customer review"}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </details>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-md border border-[#26272c] bg-[#141518] p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">What customers mention</p>
+        <h2 className="mt-1.5 text-xl font-semibold text-white">Common feedback from the last 180 days</h2>
+        {intelligence.themes.length ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {intelligence.themes.map((theme) => (
+              <article key={theme.key} className="rounded-md border border-[#2d2e34] bg-[#101113] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-semibold text-white">{theme.label}</h3>
+                  <span
+                    className={`text-xs font-semibold ${
+                      theme.tone === "strength"
+                        ? "text-emerald-300"
+                        : theme.tone === "needs_attention"
+                          ? "text-rose-300"
+                          : "text-zinc-400"
+                    }`}
+                  >
+                    {theme.mentions} mention{theme.mentions === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="mt-3 flex gap-4 text-xs text-zinc-400">
+                  <span className="text-emerald-300">{theme.positive_mentions} positive</span>
+                  <span className="text-rose-300">{theme.negative_mentions} negative</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-zinc-400">
+            There is not enough written customer feedback to show recurring subjects yet.
+          </p>
+        )}
+      </section>
+    </>
+  );
+}
+
+function PortfolioReviewOverview({
+  portfolio,
+  onOpenLocation,
+}: {
+  portfolio: PortfolioReviewIntelligence;
+  onOpenLocation: (campaignId: string) => void;
+}) {
+  return (
+    <>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          icon="locations"
+          label="Locations"
+          value={String(portfolio.summary.locations)}
+          summary="Active locations included in this comparison."
+        />
+        <KpiCard
+          icon="reviews"
+          label="Reviews in 30 days"
+          value={String(portfolio.summary.reviews_last_30_days)}
+          summary="New reviews received across every location."
+        />
+        <KpiCard
+          icon="spark"
+          label="Average rating"
+          value={metricValue(portfolio.summary.average_rating)}
+          summary="Combined rating, weighted by each saved customer review."
+        />
+        <KpiCard
+          icon="warning"
+          label="Need attention"
+          value={String(portfolio.summary.locations_needing_attention)}
+          summary="Locations that differ meaningfully from the rest of the business."
+          tone={portfolio.summary.locations_needing_attention > 0 ? "highlight" : "default"}
+        />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1fr_1.25fr]">
+        <div className="rounded-md border border-[#26272c] bg-[#141518] p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Location comparison</p>
+          <h2 className="mt-1.5 text-xl font-semibold text-white">Reviews received in the last 30 days</h2>
+          <div className="mt-5 h-72" aria-label="Reviews by location chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={portfolio.locations} layout="vertical" margin={{ top: 0, right: 12, left: 16, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(148,163,184,0.12)" horizontal={false} />
+                <XAxis
+                  type="number"
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                  tick={{ fill: "#71717a", fontSize: 11 }}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="location_name"
+                  axisLine={false}
+                  tickLine={false}
+                  width={92}
+                  tick={{ fill: "#d4d4d8", fontSize: 11 }}
+                />
+                <Tooltip contentStyle={{ background: "#101113", border: "1px solid #303138", borderRadius: 6 }} />
+                <Bar dataKey="metrics.reviews_last_30_days" name="Reviews in 30 days" radius={[0, 4, 4, 0]}>
+                  {portfolio.locations.map((location) => (
+                    <Cell
+                      key={location.campaign_id}
+                      fill={location.attention_score > 0 ? "#f59e0b" : "#ff6b18"}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-[#26272c] bg-[#141518] p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Where to focus</p>
+          <h2 className="mt-1.5 text-xl font-semibold text-white">Locations ordered by attention needed</h2>
+          <div className="mt-4 divide-y divide-[#292a2f]">
+            {portfolio.locations.map((location) => (
+              <article key={location.campaign_id} className="flex flex-wrap items-center justify-between gap-4 py-4">
+                <div>
+                  <h3 className="font-semibold text-white">{location.location_name}</h3>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    {metricValue(location.metrics.average_rating)} stars · {location.metrics.reviews_last_30_days} recent
+                    reviews · {location.metrics.unanswered_reviews} waiting for a reply
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {location.outliers.length ? (
+                      location.outliers.map((outlier) => (
+                        <span
+                          key={outlier.code}
+                          className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-100"
+                        >
+                          {outlier.label}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-emerald-300">No meaningful difference needs attention.</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenLocation(location.campaign_id)}
+                  className="rounded-md border border-[#3a3b42] px-3.5 py-2 text-sm font-semibold text-white hover:border-[#ff6b18]/60"
+                >
+                  Open this location
+                </button>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+    </>
   );
 }
 
@@ -137,6 +510,9 @@ export default function ReviewsPage() {
     summary: EMPTY_SUMMARY,
   });
   const [filter, setFilter] = useState<ReviewFilter>("all");
+  const [view, setView] = useState<ReviewView>("location");
+  const [intelligence, setIntelligence] = useState<LocationReviewIntelligence | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioReviewIntelligence | null>(null);
   const [draftsByReview, setDraftsByReview] = useState<Record<string, ReviewResponseDraft>>({});
   const [draftEdits, setDraftEdits] = useState<Record<string, string>>({});
   const [responsePolicy, setResponsePolicy] = useState<ReviewResponsePolicy | null>(null);
@@ -150,7 +526,15 @@ export default function ReviewsPage() {
   const [notice, setNotice] = useState("");
 
   const loadInventory = useCallback(async (campaignId: string) => {
-    const [response, draftResponse, policyResponse, postingResponse, executionResponse] = await Promise.all([
+    const [
+      response,
+      draftResponse,
+      policyResponse,
+      postingResponse,
+      executionResponse,
+      intelligenceResponse,
+      portfolioResponse,
+    ] = await Promise.all([
       platformApi(
         `/reviews/inventory?campaign_id=${encodeURIComponent(campaignId)}&source_type=owned_profile&limit=250`,
         { method: "GET" },
@@ -167,6 +551,10 @@ export default function ReviewsPage() {
       platformApi(`/reviews/executions?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }) as Promise<{ items: ReviewResponseExecution[] }>,
+      platformApi(`/reviews/intelligence?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }) as Promise<LocationReviewIntelligence>,
+      platformApi("/reviews/portfolio", { method: "GET" }) as Promise<PortfolioReviewIntelligence>,
     ]);
     setInventory({
       items: Array.isArray(response?.items) ? response.items : [],
@@ -187,6 +575,8 @@ export default function ReviewsPage() {
       if (!nextExecutions[execution.review_id]) nextExecutions[execution.review_id] = execution;
     }
     setExecutionsByReview(nextExecutions);
+    setIntelligence(intelligenceResponse || null);
+    setPortfolio(portfolioResponse || null);
   }, []);
 
   useEffect(() => {
@@ -253,6 +643,7 @@ export default function ReviewsPage() {
         items: Array.isArray(response?.items) ? (response.items as ReviewItem[]) : [],
         summary: (response?.summary as ReviewSummary) || EMPTY_SUMMARY,
       });
+      await loadInventory(selectedCampaignId);
       setNotice(response?.job?.message || "The latest saved reviews are shown below.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Reviews could not be updated.");
@@ -427,14 +818,16 @@ export default function ReviewsPage() {
       }
       dateRangeLabel="Latest saved customer reviews"
       topBarActions={
-        <button
-          type="button"
-          onClick={() => void checkForReviews()}
-          disabled={!selectedCampaignId || refreshing}
-          className="rounded-md bg-[#ff6b18] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {refreshing ? "Checking..." : "Check for new reviews"}
-        </button>
+        view === "location" ? (
+          <button
+            type="button"
+            onClick={() => void checkForReviews()}
+            disabled={!selectedCampaignId || refreshing}
+            className="rounded-md bg-[#ff6b18] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {refreshing ? "Checking..." : "Check for new reviews"}
+          </button>
+        ) : null
       }
     >
       <section className="space-y-6">
@@ -468,6 +861,39 @@ export default function ReviewsPage() {
           </section>
         ) : null}
 
+        {!loading && campaigns.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#292a2f] pb-4">
+            <div>
+              <p className="text-sm font-semibold text-white">Choose what you want to see</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Check one location’s customer feedback or compare every location in the business.
+              </p>
+            </div>
+            <div className="inline-flex rounded-md border border-[#303138] bg-[#101113] p-1" aria-label="Review view">
+              <button
+                type="button"
+                aria-pressed={view === "location"}
+                onClick={() => setView("location")}
+                className={`rounded px-3 py-1.5 text-sm font-semibold ${
+                  view === "location" ? "bg-[#ff6b18] text-white" : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                This location
+              </button>
+              <button
+                type="button"
+                aria-pressed={view === "portfolio"}
+                onClick={() => setView("portfolio")}
+                className={`rounded px-3 py-1.5 text-sm font-semibold ${
+                  view === "portfolio" ? "bg-[#ff6b18] text-white" : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                All locations
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {!loading && campaigns.length === 0 ? (
           <EmptyState
             icon="reviews"
@@ -480,29 +906,21 @@ export default function ReviewsPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
-            <section className="grid gap-3 sm:grid-cols-3">
-              <KpiCard
-                icon="reviews"
-                label="Needs a reply"
-                value={String(inventory.summary.unanswered)}
-                summary="Customer reviews with no saved business response."
-                tone={inventory.summary.unanswered > 0 ? "highlight" : "default"}
+            {view === "location" ? (
+              <LocationReviewInsights intelligence={intelligence} reviews={inventory.items} />
+            ) : portfolio ? (
+              <PortfolioReviewOverview
+                portfolio={portfolio}
+                onOpenLocation={(campaignId) => {
+                  setSelectedCampaignId(campaignId);
+                  setView("location");
+                }}
               />
-              <KpiCard
-                icon="spark"
-                label="Average rating"
-                value={inventory.summary.average_rating?.toFixed(1) || "—"}
-                summary="Average across the reviews saved for this location."
-              />
-              <KpiCard
-                icon="warning"
-                label="3 stars or lower"
-                value={String(inventory.summary.rating_three_or_lower)}
-                summary="Start here when a customer had a poor experience."
-              />
-            </section>
+            ) : null}
 
-            <section className="rounded-md border border-[#26272c] bg-[#141518] p-5">
+            <section
+              className={`${view === "location" ? "block" : "hidden"} rounded-md border border-[#26272c] bg-[#141518] p-5`}
+            >
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">

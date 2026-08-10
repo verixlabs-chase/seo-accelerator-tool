@@ -1488,8 +1488,9 @@ Acceptance criteria:
 
 ### Growth G1.6 - Reputation Management
 
-> **Implementation status (2026-08-10):** G1.6A, G1.6B, and the code-complete
-> G1.6C execution boundary are implemented locally with a
+> **Implementation status (2026-08-10):** G1.6A, G1.6B, the code-complete
+> G1.6C execution boundary, and G1.6D1 review intelligence are implemented
+> locally with a
 > separate tenant-, organization-, campaign-, and location-scoped owned-review
 > inventory, immutable response-state observations, paginated and idempotent
 > durable synchronization from each authorized Google Business Profile
@@ -1504,7 +1505,11 @@ Acceptance criteria:
 > local response observations, and access-revocation handling. Automatic replies
 > remain disabled. Direct posting stays fail-closed until the production Google
 > project is authorized and the first customer-approved reply proves the live
-> capability; successful proof promotes that connection to `verified`.
+> capability; successful proof promotes that connection to `verified`. G1.6D1
+> now derives exact 30-day comparisons, 12-week trends, transparent review
+> themes with review-level evidence, metric-linked actions, and multi-location
+> outliers from authorized saved reviews. G1.6D2 compliant request campaigns
+> remain pending.
 
 Goal: replace BrightLocal-style review monitoring, response, generation, and
 multi-location reputation reporting while adding an intelligence layer.
@@ -1570,6 +1575,16 @@ Implementation slices:
 4. **G1.6D - Review growth and portfolio intelligence:** compliant request
    campaigns, theme/velocity intelligence, multi-location outliers, and
    portfolio actions.
+   - **G1.6D1 - Review intelligence: implemented locally.** Uses equal 30-day
+     periods, star-rating-defined positive/mixed/negative counts, exact response
+     timestamps, a versioned service-business theme dictionary, cited review
+     evidence, and at least two locations before making comparative claims. The
+     customer UI exposes `This location` and `All locations` views, 12-week
+     charts, recurring feedback, ordered metric-linked actions, and portfolio
+     attention flags in plain language.
+   - **G1.6D2 - Compliant review growth: pending.** Add consent-aware email,
+     SMS, link, QR, and kiosk request campaigns with suppression, delivery,
+     cost, attribution, and no-review-gating controls.
 
 Acceptance criteria:
 

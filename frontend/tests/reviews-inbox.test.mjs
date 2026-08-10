@@ -29,6 +29,16 @@ test("customer review inbox is location scoped, filterable, and governed", () =>
   assert.match(page, /Automatic replies are off/);
   assert.match(page, /Pause posting/);
   assert.match(page, /Posting history stays attached/);
+  assert.match(page, /reviews\/intelligence/);
+  assert.match(page, /reviews\/portfolio/);
+  assert.match(page, /This location/);
+  assert.match(page, /All locations/);
+  assert.match(page, /How customer feedback is changing/);
+  assert.match(page, /Actions tied to your reviews/);
+  assert.match(page, /See the customer feedback behind this/);
+  assert.match(page, /Reviews by location chart/);
+  assert.match(page, /Locations ordered by attention needed/);
+  assert.doesNotMatch(page, /sentiment|velocity|taxonomy|deterministic summary/i);
   assert.doesNotMatch(page, /Post reply/);
   assert.doesNotMatch(page, /chat/i);
 });

@@ -22,6 +22,7 @@ from app.services import (
     durable_job_service,
     local_rank_grid_service,
     local_service,
+    reputation_intelligence_service,
     reputation_inventory_service,
     reputation_response_execution_service,
     reputation_response_service,
@@ -446,6 +447,40 @@ def get_review_inventory(
                 "ai_reply_reason": "AI can prepare a draft when the review passes the safety check.",
             },
         },
+    )
+
+
+@reviews_router.get("/intelligence")
+def get_review_intelligence(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_intelligence_service.location_intelligence(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=campaign_id,
+        ),
+    )
+
+
+@reviews_router.get("/portfolio")
+def get_review_portfolio(
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_intelligence_service.portfolio_intelligence(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+        ),
     )
 
 
