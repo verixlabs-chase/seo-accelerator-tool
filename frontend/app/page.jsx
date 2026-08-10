@@ -63,7 +63,7 @@ export default function HomePage() {
             </Link>
             <a
               className="transition hover:text-zinc-200"
-              href="mailto:chase@topdogdigitalsolutions.com"
+              href="mailto:support@verixlabs.com"
             >
               Support
             </a>
