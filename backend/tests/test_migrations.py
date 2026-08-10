@@ -1,3 +1,4 @@
+import ast
 import os
 import shutil
 import tempfile
@@ -9,6 +10,27 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import NullPool
 
 from app.core.settings import get_settings
+
+
+def test_explicit_migration_identifiers_fit_postgres_limit():
+    """Keep named constraints and indexes valid on PostgreSQL, not only SQLite."""
+    versions_dir = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+    prefixes = ("pk_", "fk_", "uq_", "ck_", "ix_")
+    overlong: list[tuple[str, int, str]] = []
+
+    for migration_path in versions_dir.glob("*.py"):
+        tree = ast.parse(migration_path.read_text(encoding="utf-8"), filename=str(migration_path))
+        for node in ast.walk(tree):
+            value = node.value if isinstance(node, ast.Constant) else None
+            if (
+                isinstance(value, str)
+                and value.startswith(prefixes)
+                and value.replace("_", "").isalnum()
+                and len(value) > 63
+            ):
+                overlong.append((migration_path.name, node.lineno, value))
+
+    assert not overlong, f"PostgreSQL identifiers exceed 63 characters: {overlong}"
 
 
 def test_migration_upgrade_and_downgrade():

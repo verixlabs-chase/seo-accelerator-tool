@@ -36,7 +36,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         )
         batch_op.create_foreign_key(
-            "fk_provider_metric_contract_versions_standards_change_candidate_id",
+            "fk_metric_contract_versions_change_candidate_id",
             "standards_change_candidates",
             ["standards_change_candidate_id"],
             ["id"],
@@ -54,7 +54,7 @@ def upgrade() -> None:
             ["supersedes_version_id"],
         )
         batch_op.create_index(
-            "ix_provider_metric_contract_versions_standards_change_candidate_id",
+            "ix_metric_contract_versions_change_candidate_id",
             ["standards_change_candidate_id"],
         )
 
@@ -145,11 +145,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("standards_replay_reports")
     with op.batch_alter_table("provider_metric_contract_versions") as batch_op:
-        batch_op.drop_index("ix_provider_metric_contract_versions_standards_change_candidate_id")
+        batch_op.drop_index("ix_metric_contract_versions_change_candidate_id")
         batch_op.drop_index("ix_provider_metric_contract_versions_supersedes_version_id")
         batch_op.drop_index("ix_provider_metric_contract_versions_lifecycle_status")
         batch_op.drop_constraint(
-            "fk_provider_metric_contract_versions_standards_change_candidate_id", type_="foreignkey"
+            "fk_metric_contract_versions_change_candidate_id", type_="foreignkey"
         )
         batch_op.drop_constraint(
             "fk_provider_metric_contract_versions_supersedes_version_id", type_="foreignkey"
