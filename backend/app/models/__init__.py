@@ -12,6 +12,8 @@ from app.models.authority import (
     Backlink,
     BacklinkOpportunity,
     Citation,
+    DirectoryListing,
+    DirectoryListingObservation,
     OutreachCampaign,
     OutreachContact,
 )
@@ -237,6 +239,8 @@ __all__ = [
     "BacklinkOpportunity",
     "Backlink",
     "Citation",
+    "DirectoryListing",
+    "DirectoryListingObservation",
     "BusinessLocation",
     "BusinessService",
     "BusinessServiceArea",

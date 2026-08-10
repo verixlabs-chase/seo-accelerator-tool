@@ -119,6 +119,8 @@ def test_migration_upgrade_and_downgrade():
         assert "backlink_opportunities" in inspector.get_table_names()
         assert "backlinks" in inspector.get_table_names()
         assert "citations" in inspector.get_table_names()
+        assert "directory_listings" in inspector.get_table_names()
+        assert "directory_listing_observations" in inspector.get_table_names()
         assert "strategy_recommendations" in inspector.get_table_names()
         assert "intelligence_scores" in inspector.get_table_names()
         assert "campaign_milestones" in inspector.get_table_names()

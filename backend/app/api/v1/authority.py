@@ -9,8 +9,14 @@ from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.authority import Citation
-from app.schemas.authority import BacklinkOut, CitationSubmissionIn, OutreachCampaignIn, OutreachContactIn
-from app.services import authority_service
+from app.schemas.authority import (
+    BacklinkOut,
+    CitationSubmissionIn,
+    DirectoryListingOut,
+    OutreachCampaignIn,
+    OutreachContactIn,
+)
+from app.services import authority_service, listing_inventory_service
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     authority_sync_backlinks,
@@ -179,6 +185,38 @@ def submit_citation(
     )
 
 
+@citations_router.get("/inventory")
+def get_listing_inventory(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = listing_inventory_service.list_inventory(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(
+        request,
+        {
+            "items": [
+                DirectoryListingOut.model_validate(row).model_dump(mode="json")
+                for row in rows
+            ],
+            "summary": listing_inventory_service.inventory_summary(rows),
+            "truth": {
+                "classification": "provider_backed" if rows else "not_collected",
+                "summary": (
+                    "These are saved public listing observations for this business location."
+                    if rows
+                    else "No public listing inventory has been collected for this business location yet."
+                ),
+                "correction_available": False,
+                "correction_reason": "A directory correction provider has not been approved.",
+            },
+        },
+    )
 @citations_router.get("/status")
 def get_citation_status(
     request: Request,
