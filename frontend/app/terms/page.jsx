@@ -5,7 +5,7 @@ export const metadata = {
   description: "Terms governing access to and use of InsightOS."
 };
 
-const UPDATED_ON = "August 5, 2026";
+const UPDATED_ON = "August 10, 2026";
 
 export default function TermsOfServicePage() {
   return (
@@ -27,8 +27,8 @@ export default function TermsOfServicePage() {
             <h2 className="text-xl font-semibold text-white">Agreement</h2>
             <p className="mt-3">
               These terms govern access to InsightOS, a local-search performance platform
-              operated by Top Dog Digital Solutions. By creating an account or using the service,
-              you agree to these terms on behalf of yourself and the organization you represent.
+              operated by VerixLabs. By creating an account or using the service, you agree to
+              these terms on behalf of yourself and the organization you represent.
             </p>
           </section>
 
@@ -91,7 +91,7 @@ export default function TermsOfServicePage() {
               You retain ownership of the information and content you provide. You grant us the
               limited right to process that information only as needed to operate, secure, and
               support InsightOS. InsightOS, its software, design, and documentation remain the
-              property of Top Dog Digital Solutions and its licensors.
+              property of VerixLabs and its licensors.
             </p>
           </section>
 
@@ -100,7 +100,7 @@ export default function TermsOfServicePage() {
             <p className="mt-3">
               The service is provided on an “as available” basis to the extent permitted by law.
               We are not responsible for outages or changes caused by third-party platforms. To
-              the extent permitted by law, Top Dog Digital Solutions will not be liable for
+              the extent permitted by law, VerixLabs will not be liable for
               indirect, incidental, special, consequential, or lost-profit damages arising from
               use of the service.
             </p>
@@ -113,9 +113,9 @@ export default function TermsOfServicePage() {
               with a revised date. Questions may be sent to{" "}
               <a
                 className="text-orange-400 hover:text-orange-300"
-                href="mailto:chase@topdogdigitalsolutions.com"
+                href="mailto:support@verixlabs.com"
               >
-                chase@topdogdigitalsolutions.com
+                support@verixlabs.com
               </a>
               .
             </p>

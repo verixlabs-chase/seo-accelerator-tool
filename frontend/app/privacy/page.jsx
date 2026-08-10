@@ -5,7 +5,7 @@ export const metadata = {
   description: "How InsightOS collects, uses, protects, and deletes customer data."
 };
 
-const UPDATED_ON = "August 5, 2026";
+const UPDATED_ON = "August 10, 2026";
 
 export default function PrivacyPolicyPage() {
   return (
@@ -26,9 +26,9 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-xl font-semibold text-white">What this policy covers</h2>
             <p className="mt-3">
-              InsightOS is a local-search performance platform operated by Top Dog Digital
-              Solutions. This policy explains the information we collect when a business uses
-              InsightOS, why we use it, and the choices available to the business.
+              InsightOS is a local-search performance platform operated by VerixLabs. This
+              policy explains the information we collect when a business uses InsightOS, why we
+              use it, and the choices available to the business.
             </p>
           </section>
 
@@ -113,9 +113,9 @@ export default function PrivacyPolicyPage() {
               Questions, access requests, or deletion requests can be sent to{" "}
               <a
                 className="text-orange-400 hover:text-orange-300"
-                href="mailto:chase@topdogdigitalsolutions.com"
+                href="mailto:support@verixlabs.com"
               >
-                chase@topdogdigitalsolutions.com
+                support@verixlabs.com
               </a>
               .
             </p>
