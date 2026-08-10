@@ -9,7 +9,13 @@ from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.local_rank_grid import LocalRankGridCreateRequest, LocalRankGridRequest
-from app.services import durable_job_service, local_rank_grid_service, local_service
+from app.schemas.reputation import ReputationReviewOut
+from app.services import (
+    durable_job_service,
+    local_rank_grid_service,
+    local_service,
+    reputation_inventory_service,
+)
 from app.services.cost_economics_service import CostEconomicsError
 from app.services.location_normalization_service import (
     LocationContextError,
@@ -365,6 +371,52 @@ def get_reviews(
     )
 
 
+@reviews_router.get("/inventory")
+def get_review_inventory(
+    request: Request,
+    campaign_id: str = Query(...),
+    source_type: str | None = Query(default=None),
+    response_status: str | None = Query(default=None),
+    rating_lte: float | None = Query(default=None, ge=1, le=5),
+    limit: int = Query(default=100, ge=1, le=250),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = reputation_inventory_service.list_reviews(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        source_type=source_type,
+        response_status=response_status,
+        rating_lte=rating_lte,
+        limit=limit,
+    )
+    return envelope(
+        request,
+        {
+            "items": [
+                ReputationReviewOut.model_validate(row).model_dump(mode="json")
+                for row in rows
+            ],
+            "summary": reputation_inventory_service.inventory_summary(rows),
+            "truth": {
+                "classification": "provider_backed" if rows else "not_collected",
+                "summary": (
+                    "These reviews were saved from an authorized owned business profile."
+                    if rows
+                    else "No owned-profile review inventory has been collected for this location yet."
+                ),
+                "source_coverage": "owned_profiles",
+                "direct_reply_available": False,
+                "direct_reply_reason": (
+                    "Reply posting stays off until the owned-profile connection and mutation policy are approved."
+                ),
+                "ai_reply_available": False,
+                "ai_reply_reason": "AI response drafting belongs to a later governed sprint slice.",
+            },
+        },
+    )
 @reviews_router.get("/velocity")
 def get_review_velocity(
     request: Request,

@@ -122,6 +122,8 @@ def test_migration_upgrade_and_downgrade():
         assert "directory_listings" in inspector.get_table_names()
         assert "directory_listing_observations" in inspector.get_table_names()
         assert "directory_listing_discovery_runs" in inspector.get_table_names()
+        assert "reputation_reviews" in inspector.get_table_names()
+        assert "reputation_review_observations" in inspector.get_table_names()
         assert "strategy_recommendations" in inspector.get_table_names()
         assert "intelligence_scores" in inspector.get_table_names()
         assert "campaign_milestones" in inspector.get_table_names()
@@ -236,6 +238,21 @@ def test_migration_upgrade_and_downgrade():
             "provider_reported_cost",
             "result_count",
         }.issubset(listing_discovery_cols)
+        reputation_review_cols = {
+            col["name"] for col in inspector.get_columns("reputation_reviews")
+        }
+        assert {
+            "tenant_id",
+            "organization_id",
+            "campaign_id",
+            "business_location_id",
+            "source_type",
+            "external_review_id",
+            "response_status",
+            "response_text",
+            "provider_updated_at",
+            "last_seen_at",
+        }.issubset(reputation_review_cols)
         assert "sub_account_id" in campaign_cols
         assert "business_location_id" in campaign_cols
         assert "sub_account_id" in business_location_cols

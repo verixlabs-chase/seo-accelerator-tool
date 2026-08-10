@@ -1488,6 +1488,14 @@ Acceptance criteria:
 
 ### Growth G1.6 - Reputation Management
 
+> **Implementation status (2026-08-10):** G1.6A has started with a separate
+> tenant-, organization-, campaign-, and location-scoped owned-review
+> inventory, immutable response-state observations, a read-only authorized
+> Google Business Profile reviews boundary, inbox filters, and a customer-safe
+> summary API. Live synchronization is not enabled until Business Profile API
+> access is approved for the production project. Direct replies, AI drafts,
+> and automatic posting remain off.
+
 Goal: replace BrightLocal-style review monitoring, response, generation, and
 multi-location reputation reporting while adding an intelligence layer.
 
@@ -1539,6 +1547,19 @@ Scope:
 - Add a multi-location reputation overview with leaderboards, outlier alerts,
   campaign performance, recent-review velocity, response time, and average
   rating.
+
+Implementation slices:
+
+1. **G1.6A - Owned-review truth:** authorized read-only provider boundary,
+   normalized location-scoped inbox, immutable observations, response-state
+   truth, freshness, and filters.
+2. **G1.6B - Governed response assistance:** versioned policy, sensitive-topic
+   routing, bounded AI drafts, human approval, credits, and complete evidence.
+3. **G1.6C - Direct response execution:** provider capability proof,
+   idempotent approved posting, receipts, retries, pause, and audit.
+4. **G1.6D - Review growth and portfolio intelligence:** compliant request
+   campaigns, theme/velocity intelligence, multi-location outliers, and
+   portfolio actions.
 
 Acceptance criteria:
 
