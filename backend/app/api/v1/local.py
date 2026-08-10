@@ -8,9 +8,11 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
+from app.models.data_connection import DataConnection
 from app.schemas.local_rank_grid import LocalRankGridCreateRequest, LocalRankGridRequest
 from app.schemas.reputation import ReputationReviewOut
 from app.services import (
+    data_connections_service,
     durable_job_service,
     local_rank_grid_service,
     local_service,
@@ -23,7 +25,12 @@ from app.services.location_normalization_service import (
     normalize_campaign_location,
 )
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
-from app.tasks.tasks import local_collect_profile_snapshot, local_compute_health_score, reviews_compute_velocity, reviews_ingest
+from app.tasks.tasks import (
+    local_collect_profile_snapshot,
+    local_compute_health_score,
+    reviews_compute_velocity,
+    reviews_ingest,
+)
 
 local_router = APIRouter(prefix="/local", tags=["local"])
 reviews_router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -220,7 +227,9 @@ def refresh_local_rank_grid_run(
     return envelope(request, local_rank_grid_service.serialize_run(db, run))
 
 
-def _local_provider_truth(*, has_data: bool, job_queued: bool, captured_at: str | None = None) -> dict:
+def _local_provider_truth(
+    *, has_data: bool, job_queued: bool, captured_at: str | None = None
+) -> dict:
     settings = get_settings()
     backend = getattr(settings, "local_provider_backend", "synthetic").strip().lower()
     environment = getattr(settings, "app_env", "").strip().lower()
@@ -277,13 +286,19 @@ def get_local_health(
     db: Session = Depends(get_db),
 ) -> dict:
     try:
-        snapshot_task = local_collect_profile_snapshot.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
-        score_task = local_compute_health_score.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        snapshot_task = local_collect_profile_snapshot.delay(
+            tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
+        score_task = local_compute_health_score.delay(
+            tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except KombuError:
         snapshot_task = None
         score_task = None
     try:
-        latest_health = local_service.get_latest_health(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        latest_health = local_service.get_latest_health(
+            db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except ValueError:
         latest_health = {"campaign_id": campaign_id, "health_score": None, "captured_at": None}
     truth = _local_provider_truth(
@@ -310,7 +325,9 @@ def get_map_pack(
     db: Session = Depends(get_db),
 ) -> dict:
     try:
-        profile = local_service.collect_profile_snapshot(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        profile = local_service.collect_profile_snapshot(
+            db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
         payload = {
             "campaign_id": campaign_id,
             "provider": profile.provider,
@@ -352,7 +369,9 @@ def get_reviews(
     except KombuError:
         task = None
     try:
-        reviews = local_service.get_reviews(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        reviews = local_service.get_reviews(
+            db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except ValueError:
         reviews = []
     truth = _local_provider_truth(
@@ -396,8 +415,7 @@ def get_review_inventory(
         request,
         {
             "items": [
-                ReputationReviewOut.model_validate(row).model_dump(mode="json")
-                for row in rows
+                ReputationReviewOut.model_validate(row).model_dump(mode="json") for row in rows
             ],
             "summary": reputation_inventory_service.inventory_summary(rows),
             "truth": {
@@ -417,6 +435,84 @@ def get_review_inventory(
             },
         },
     )
+
+
+@reviews_router.post("/sync")
+def sync_review_inventory(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    connection = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.tenant_id == user["tenant_id"],
+            DataConnection.organization_id == user["organization_id"],
+            DataConnection.campaign_id == campaign_id,
+            DataConnection.provider_name == reputation_inventory_service.OWNED_PROFILE_PROVIDER,
+            DataConnection.status != data_connections_service.CONNECTION_STATUS_DISCONNECTED,
+        )
+        .first()
+    )
+    if connection is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Connect this location to its Google business listing before reviews can update.",
+                "reason_code": "owned_profile_connection_required",
+            },
+        )
+    try:
+        job = durable_job_service.run_owned_review_sync_now(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            connection_id=connection.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": str(exc),
+                "reason_code": "review_update_unavailable",
+            },
+        ) from exc
+
+    rows = reputation_inventory_service.list_reviews(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        source_type="owned_profile",
+        limit=250,
+    )
+    job_status = str(job.get("status") or "queued")
+    if job_status == "completed":
+        message = f"Review check finished. {len(rows)} reviews are saved for this location."
+    elif job_status == "running":
+        message = "Review check is still running. Saved reviews remain available below."
+    else:
+        message = (
+            "Reviews could not be updated yet. Check the business listing connection and try again."
+        )
+    return envelope(
+        request,
+        {
+            "job": {
+                "id": job.get("job_id"),
+                "status": job_status,
+                "message": message,
+            },
+            "items": [
+                ReputationReviewOut.model_validate(row).model_dump(mode="json") for row in rows
+            ],
+            "summary": reputation_inventory_service.inventory_summary(rows),
+            "reply_tools_available": False,
+        },
+    )
+
+
 @reviews_router.get("/velocity")
 def get_review_velocity(
     request: Request,
@@ -426,12 +522,16 @@ def get_review_velocity(
 ) -> dict:
     try:
         ingest_task = reviews_ingest.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
-        velocity_task = reviews_compute_velocity.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        velocity_task = reviews_compute_velocity.delay(
+            tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except KombuError:
         ingest_task = None
         velocity_task = None
     try:
-        velocity = local_service.get_velocity(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        velocity = local_service.get_velocity(
+            db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except ValueError:
         velocity = {
             "campaign_id": campaign_id,

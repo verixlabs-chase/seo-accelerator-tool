@@ -8,10 +8,18 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.settings import get_settings
 from app.events import emit_event
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.data_connection import DataConnection
 from app.models.reputation import ReputationReview, ReputationReviewObservation
+from app.providers.google_reviews import GoogleBusinessProfileReviewsProvider
+from app.services import data_connections_service
+from app.services.provider_credentials_service import (
+    ProviderCredentialConfigurationError,
+    resolve_provider_credentials,
+)
 
 
 SOURCE_TYPES = {"owned_profile", "public_competitor"}
@@ -27,6 +35,111 @@ SNAPSHOT_FIELDS = (
     "reviewed_at",
     "provider_updated_at",
 )
+OWNED_PROFILE_PROVIDER = "google_business_profile"
+MAX_OWNED_REVIEW_PAGES = 20
+OWNED_REVIEW_PAGE_SIZE = 50
+
+
+def sync_owned_profile_reviews(
+    db: Session,
+    *,
+    connection: DataConnection,
+) -> dict[str, Any]:
+    """Collect owned-profile reviews without enabling drafting or reply mutations."""
+    if (
+        connection.provider_name != OWNED_PROFILE_PROVIDER
+        or connection.status == data_connections_service.CONNECTION_STATUS_DISCONNECTED
+    ):
+        raise ValueError("The connected business listing is not available for review updates.")
+
+    campaign, location = _campaign_context(
+        db,
+        tenant_id=connection.tenant_id,
+        organization_id=connection.organization_id,
+        campaign_id=connection.campaign_id,
+    )
+    if location.id != connection.business_location_id:
+        raise ValueError("The business listing is no longer matched to this location.")
+
+    metadata = dict(connection.connection_metadata or {})
+    account_id = str(metadata.get("account_id") or "").strip().strip("/")
+    location_id = str(connection.external_resource_id or "").strip().strip("/")
+    if not account_id.startswith("accounts/") or not location_id.startswith("locations/"):
+        raise ValueError(
+            "Match this location to its Google business listing again before reviews can update."
+        )
+
+    provider = GoogleBusinessProfileReviewsProvider(
+        access_token=_google_access_token(db, connection.organization_id),
+        timeout_seconds=float(get_settings().google_oauth_http_timeout_seconds),
+    )
+    parent = f"{account_id}/{location_id}"
+    page_token: str | None = None
+    records: list[dict[str, Any]] = []
+    provider_total: int | None = None
+    provider_average: float | None = None
+    pages_received = 0
+    truncated = False
+
+    for _page_number in range(MAX_OWNED_REVIEW_PAGES):
+        page = provider.list_reviews(
+            parent=parent,
+            page_size=OWNED_REVIEW_PAGE_SIZE,
+            page_token=page_token,
+        )
+        pages_received += 1
+        records.extend(page["items"])
+        if provider_total is None:
+            provider_total = page.get("total_review_count")
+            provider_average = page.get("average_rating")
+        page_token = page.get("next_page_token")
+        if not page_token:
+            break
+    else:
+        truncated = bool(page_token)
+
+    saved = upsert_reviews(
+        db,
+        tenant_id=connection.tenant_id,
+        organization_id=connection.organization_id,
+        campaign_id=campaign.id,
+        records=records,
+    )
+    synced_at = datetime.now(UTC)
+    cursor = dict(connection.sync_cursor or {})
+    cursor["owned_reviews"] = {
+        "synced_at": synced_at.isoformat(),
+        "reviews_received": len(records),
+        "pages_received": pages_received,
+        "truncated": truncated,
+    }
+    connection.sync_cursor = cursor
+    connection.connection_metadata = {
+        **metadata,
+        "owned_reviews": {
+            "last_success_at": synced_at.isoformat(),
+            "provider_total": provider_total,
+            "provider_average_rating": provider_average,
+            "saved_count": len(saved),
+            "truncated": truncated,
+            "reply_mutations_enabled": False,
+        },
+    }
+    connection.updated_at = synced_at
+    db.commit()
+    return {
+        "connection_id": connection.id,
+        "campaign_id": campaign.id,
+        "business_location_id": location.id,
+        "reviews_received": len(records),
+        "reviews_saved": len(saved),
+        "pages_received": pages_received,
+        "provider_total": provider_total,
+        "provider_average_rating": provider_average,
+        "truncated": truncated,
+        "synced_at": synced_at.isoformat(),
+        "reply_mutations_enabled": False,
+    }
 
 
 def _campaign_context(
@@ -111,10 +224,7 @@ def upsert_reviews(
                 setattr(row, field, value)
         row.last_seen_at = capture_time
         row.updated_at = capture_time
-        snapshot = {
-            key: _json_value(getattr(row, key))
-            for key in SNAPSHOT_FIELDS
-        }
+        snapshot = {key: _json_value(getattr(row, key)) for key in SNAPSHOT_FIELDS}
         digest = sha256(
             json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
@@ -284,3 +394,24 @@ def _as_utc(value: datetime) -> datetime:
 
 def _json_value(value: Any) -> Any:
     return value.isoformat() if isinstance(value, datetime) else value
+
+
+def _google_access_token(db: Session, organization_id: str) -> str:
+    try:
+        credentials = resolve_provider_credentials(
+            db,
+            organization_id,
+            "google",
+            required_credential_mode="byo_required",
+            require_org_oauth=True,
+        )
+    except ProviderCredentialConfigurationError as exc:
+        raise ValueError(str(exc)) from exc
+    access_token = str(credentials.get("access_token") or "").strip()
+    if not access_token:
+        raise ValueError("Reconnect Google before reviews can update.")
+    expected_scope = get_settings().google_oauth_scope_gbp.strip()
+    granted_scopes = str(credentials.get("scope") or "").split()
+    if expected_scope and granted_scopes and expected_scope not in granted_scopes:
+        raise ValueError("Approve business listing access before reviews can update.")
+    return access_token

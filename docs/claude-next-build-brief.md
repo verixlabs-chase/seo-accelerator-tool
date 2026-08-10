@@ -1488,13 +1488,14 @@ Acceptance criteria:
 
 ### Growth G1.6 - Reputation Management
 
-> **Implementation status (2026-08-10):** G1.6A has started with a separate
-> tenant-, organization-, campaign-, and location-scoped owned-review
-> inventory, immutable response-state observations, a read-only authorized
-> Google Business Profile reviews boundary, inbox filters, and a customer-safe
-> summary API. Live synchronization is not enabled until Business Profile API
-> access is approved for the production project. Direct replies, AI drafts,
-> and automatic posting remain off.
+> **Implementation status (2026-08-10):** G1.6A is implemented locally with a
+> separate tenant-, organization-, campaign-, and location-scoped owned-review
+> inventory, immutable response-state observations, paginated and idempotent
+> durable synchronization from each authorized Google Business Profile
+> mapping, and a customer review inbox with location, response, and rating
+> filters. Production collection still depends on Business Profile API access
+> for the production project. Direct replies, AI drafts, and automatic posting
+> remain off.
 
 Goal: replace BrightLocal-style review monitoring, response, generation, and
 multi-location reputation reporting while adding an intelligence layer.

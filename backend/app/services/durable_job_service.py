@@ -25,6 +25,7 @@ from app.services import (
     listing_discovery_service,
     local_rank_grid_service,
     reporting_service,
+    reputation_inventory_service,
     standards_source_service,
     traffic_fact_service,
     website_performance_service,
@@ -41,6 +42,7 @@ STANDARDS_SOURCE_CHECK_JOB_TYPE = "reference_library.standards_source_check"
 WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE = "website_performance.collect"
 LOCAL_RANK_GRID_DISPATCH_JOB_TYPE = "local.rank_grid.dispatch"
 DIRECTORY_LISTING_DISCOVERY_JOB_TYPE = "directory_listings.discover"
+OWNED_REVIEW_SYNC_JOB_TYPE = "reputation.owned_reviews_sync"
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -223,10 +225,7 @@ def _website_performance_collection_handler(
         "campaign_id": campaign.id,
         "business_location_id": campaign.business_location_id,
         "form_factor": form_factor,
-        "measurements": [
-            website_performance_service.serialize_measurement(row)
-            for row in rows
-        ],
+        "measurements": [website_performance_service.serialize_measurement(row) for row in rows],
     }
 
 
@@ -252,6 +251,25 @@ def _directory_listing_discovery_handler(
     return listing_discovery_service.dispatch_run(db, run_id=run_id, tenant_id=tenant_id)
 
 
+def _owned_review_sync_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    connection_id = str(job.payload.get("connection_id") or job.entity_id or "").strip()
+    connection = db.get(DataConnection, connection_id) if connection_id else None
+    if (
+        not tenant_id
+        or connection is None
+        or connection.tenant_id != tenant_id
+        or connection.provider_name
+        != google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER
+        or connection.status == data_connections_service.CONNECTION_STATUS_DISCONNECTED
+    ):
+        raise ValueError("Review update has no active location connection.")
+    return reputation_inventory_service.sync_owned_profile_reviews(db, connection=connection)
+
+
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
     INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
@@ -262,6 +280,7 @@ DEFAULT_HANDLERS: dict[str, JobHandler] = {
     WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE: _website_performance_collection_handler,
     LOCAL_RANK_GRID_DISPATCH_JOB_TYPE: _local_rank_grid_dispatch_handler,
     DIRECTORY_LISTING_DISCOVERY_JOB_TYPE: _directory_listing_discovery_handler,
+    OWNED_REVIEW_SYNC_JOB_TYPE: _owned_review_sync_handler,
 }
 
 
@@ -410,6 +429,33 @@ def create_business_profile_sync_job(
     )
 
 
+def create_owned_review_sync_job(
+    db: Session,
+    *,
+    connection: DataConnection,
+    now: datetime | None = None,
+) -> PlatformJob:
+    resolved_now = now or datetime.now(UTC)
+    hour_bucket = resolved_now.replace(minute=0, second=0, microsecond=0)
+    return job_service.create_job(
+        db,
+        tenant_id=connection.tenant_id,
+        job_type=OWNED_REVIEW_SYNC_JOB_TYPE,
+        entity_type="data_connection",
+        entity_id=connection.id,
+        idempotency_key=f"owned-review-sync:{connection.id}:{hour_bucket.isoformat()}",
+        payload={
+            "tenant_id": connection.tenant_id,
+            "organization_id": connection.organization_id,
+            "connection_id": connection.id,
+            "campaign_id": connection.campaign_id,
+            "business_location_id": connection.business_location_id,
+        },
+        available_at=resolved_now,
+        max_retries=2,
+    )
+
+
 def enqueue_due_data_connection_jobs(
     db: Session,
     *,
@@ -440,6 +486,7 @@ def enqueue_due_data_connection_jobs(
             create_search_console_sync_job(db, connection=connection, now=resolved_now)
         else:
             create_business_profile_sync_job(db, connection=connection, now=resolved_now)
+            create_owned_review_sync_job(db, connection=connection, now=resolved_now)
     db.flush()
     return len(rows)
 
@@ -541,11 +588,7 @@ def run_business_profile_sync_now(
         raise ValueError("Google business listing connection not found.")
     _start_date, end_date = _business_profile_sync_window(connection, now=resolved_now)
     idempotency_key = f"business-profile-sync:{connection.id}:{end_date.isoformat()}"
-    existing = (
-        db.query(PlatformJob)
-        .filter(PlatformJob.idempotency_key == idempotency_key)
-        .first()
-    )
+    existing = db.query(PlatformJob).filter(PlatformJob.idempotency_key == idempotency_key).first()
     job = create_business_profile_sync_job(db, connection=connection, now=resolved_now)
     created = existing is None
     db.commit()
@@ -718,7 +761,10 @@ def enqueue_due_standards_source_checks(
     limit: int = 25,
 ) -> int:
     settings = get_settings()
-    if not settings.intelligence_lexicon_enabled or not settings.standards_source_monitoring_enabled:
+    if (
+        not settings.intelligence_lexicon_enabled
+        or not settings.standards_source_monitoring_enabled
+    ):
         return 0
     resolved_now = now or datetime.now(UTC)
     rows = standards_source_service.ensure_default_sources(
@@ -780,10 +826,7 @@ def create_website_performance_job(
         job_type=WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE,
         entity_type="campaign",
         entity_id=campaign.id,
-        idempotency_key=(
-            f"website-performance:{campaign.id}:{form_factor}:"
-            f"{resolved_suffix}"
-        ),
+        idempotency_key=(f"website-performance:{campaign.id}:{form_factor}:{resolved_suffix}"),
         payload={
             "tenant_id": campaign.tenant_id,
             "organization_id": campaign.organization_id,
@@ -868,15 +911,8 @@ def run_website_performance_job_now(
         f"manual:{resolved_now.date().isoformat()}:"
         f"{resolved_now.hour:02d}:{resolved_now.minute // 15}"
     )
-    idempotency_key = (
-        f"website-performance:{campaign.id}:{form_factor}:"
-        f"{manual_bucket}"
-    )
-    existing = (
-        db.query(PlatformJob)
-        .filter(PlatformJob.idempotency_key == idempotency_key)
-        .first()
-    )
+    idempotency_key = f"website-performance:{campaign.id}:{form_factor}:{manual_bucket}"
+    existing = db.query(PlatformJob).filter(PlatformJob.idempotency_key == idempotency_key).first()
     job = create_website_performance_job(
         db,
         campaign=campaign,
@@ -910,6 +946,73 @@ def run_website_performance_job_now(
         db,
         job.id,
         worker_id=f"tenant-performance-{uuid.uuid4()}",
+        lease_seconds=get_settings().durable_job_lease_seconds,
+    )
+    db.commit()
+    execution = execute_claimed_job(db, job_id=job.id)
+    refreshed = db.get(PlatformJob, job.id)
+    return {
+        "job_id": job.id,
+        "status": execution["status"],
+        "created": created,
+        "idempotent_replay": False,
+        "result": _json_safe(refreshed.result if refreshed is not None else None),
+        "error": refreshed.error if refreshed is not None else None,
+    }
+
+
+def run_owned_review_sync_now(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    connection_id: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    resolved_now = now or datetime.now(UTC)
+    connection = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.id == connection_id,
+            DataConnection.tenant_id == tenant_id,
+            DataConnection.organization_id == organization_id,
+            DataConnection.provider_name
+            == google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER,
+            DataConnection.status != data_connections_service.CONNECTION_STATUS_DISCONNECTED,
+        )
+        .first()
+    )
+    if connection is None:
+        raise ValueError("Google business listing connection not found.")
+    hour_bucket = resolved_now.replace(minute=0, second=0, microsecond=0)
+    idempotency_key = f"owned-review-sync:{connection.id}:{hour_bucket.isoformat()}"
+    existing = db.query(PlatformJob).filter(PlatformJob.idempotency_key == idempotency_key).first()
+    job = create_owned_review_sync_job(db, connection=connection, now=resolved_now)
+    created = existing is None
+    db.commit()
+    db.refresh(job)
+    if job.status == job_service.JOB_STATUS_COMPLETED:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": False,
+            "idempotent_replay": True,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    if job.status in {job_service.JOB_STATUS_RUNNING, job_service.JOB_STATUS_DEAD_LETTER}:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "created": False,
+            "idempotent_replay": False,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    job_service.start_job(
+        db,
+        job.id,
+        worker_id=f"tenant-review-inventory-{uuid.uuid4()}",
         lease_seconds=get_settings().durable_job_lease_seconds,
     )
     db.commit()

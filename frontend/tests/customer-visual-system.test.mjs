@@ -84,6 +84,7 @@ test("every customer route has an original navigation and page-heading icon", ()
     "search-value",
     "competitors",
     "listings",
+    "reviews",
   ];
 
   for (const icon of routeIcons) {
