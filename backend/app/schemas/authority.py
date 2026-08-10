@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class OutreachCampaignIn(BaseModel):
@@ -46,6 +46,14 @@ class DirectoryListingOut(BaseModel):
     last_verified_at: datetime | None
 
     model_config = {"from_attributes": True}
+
+
+class DirectoryListingDiscoveryPreviewIn(BaseModel):
+    campaign_id: str
+
+
+class DirectoryListingDiscoveryRunIn(DirectoryListingDiscoveryPreviewIn):
+    idempotency_key: str = Field(min_length=1, max_length=160)
 
 
 class BacklinkOut(BaseModel):

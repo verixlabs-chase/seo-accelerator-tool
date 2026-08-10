@@ -22,6 +22,7 @@ from app.services import (
     data_connections_service,
     google_business_profile_service,
     job_service,
+    listing_discovery_service,
     local_rank_grid_service,
     reporting_service,
     standards_source_service,
@@ -39,6 +40,7 @@ CWV_STANDARDS_CHECK_JOB_TYPE = "reference_library.cwv_standards_check"
 STANDARDS_SOURCE_CHECK_JOB_TYPE = "reference_library.standards_source_check"
 WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE = "website_performance.collect"
 LOCAL_RANK_GRID_DISPATCH_JOB_TYPE = "local.rank_grid.dispatch"
+DIRECTORY_LISTING_DISCOVERY_JOB_TYPE = "directory_listings.discover"
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -239,6 +241,17 @@ def _local_rank_grid_dispatch_handler(
     return local_rank_grid_service.dispatch_run(db, run_id=run_id, tenant_id=tenant_id)
 
 
+def _directory_listing_discovery_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    run_id = str(job.payload.get("run_id") or job.entity_id or "").strip()
+    if not tenant_id or not run_id:
+        raise ValueError("Public listing check is missing its location or run.")
+    return listing_discovery_service.dispatch_run(db, run_id=run_id, tenant_id=tenant_id)
+
+
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
     INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
@@ -248,6 +261,7 @@ DEFAULT_HANDLERS: dict[str, JobHandler] = {
     STANDARDS_SOURCE_CHECK_JOB_TYPE: _standards_source_check_handler,
     WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE: _website_performance_collection_handler,
     LOCAL_RANK_GRID_DISPATCH_JOB_TYPE: _local_rank_grid_dispatch_handler,
+    DIRECTORY_LISTING_DISCOVERY_JOB_TYPE: _directory_listing_discovery_handler,
 }
 
 
@@ -905,6 +919,58 @@ def run_website_performance_job_now(
         "job_id": job.id,
         "status": execution["status"],
         "created": created,
+        "idempotent_replay": False,
+        "result": _json_safe(refreshed.result if refreshed is not None else None),
+        "error": refreshed.error if refreshed is not None else None,
+    }
+
+
+def run_directory_listing_discovery_now(
+    db: Session,
+    *,
+    tenant_id: str,
+    run_id: str,
+) -> dict[str, Any]:
+    job = (
+        db.query(PlatformJob)
+        .filter(
+            PlatformJob.tenant_id == tenant_id,
+            PlatformJob.job_type == DIRECTORY_LISTING_DISCOVERY_JOB_TYPE,
+            PlatformJob.entity_type == "directory_listing_discovery_run",
+            PlatformJob.entity_id == run_id,
+        )
+        .first()
+    )
+    if job is None:
+        raise ValueError("Public listing check job was not found.")
+    if job.status == job_service.JOB_STATUS_COMPLETED:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "idempotent_replay": True,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    if job.status in {job_service.JOB_STATUS_RUNNING, job_service.JOB_STATUS_DEAD_LETTER}:
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "idempotent_replay": False,
+            "result": _json_safe(job.result),
+            "error": job.error,
+        }
+    job_service.start_job(
+        db,
+        job.id,
+        worker_id=f"tenant-listing-discovery-{uuid.uuid4()}",
+        lease_seconds=get_settings().durable_job_lease_seconds,
+    )
+    db.commit()
+    execution = execute_claimed_job(db, job_id=job.id)
+    refreshed = db.get(PlatformJob, job.id)
+    return {
+        "job_id": job.id,
+        "status": execution["status"],
         "idempotent_replay": False,
         "result": _json_safe(refreshed.result if refreshed is not None else None),
         "error": refreshed.error if refreshed is not None else None,

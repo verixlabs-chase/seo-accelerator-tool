@@ -1,7 +1,20 @@
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -173,3 +186,71 @@ class DirectoryListingObservation(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     evidence_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+
+class DirectoryListingDiscoveryRun(Base):
+    __tablename__ = "directory_listing_discovery_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "idempotency_key",
+            name="uq_dir_listing_discovery_org_idempotency",
+        ),
+        CheckConstraint(
+            "status in ('queued','running','completed','failed')",
+            name="ck_dir_listing_discovery_status",
+        ),
+        CheckConstraint(
+            "credential_owner in ('platform','organization')",
+            name="ck_dir_listing_discovery_credential_owner",
+        ),
+        CheckConstraint(
+            "result_limit >= 1 and result_limit <= 100",
+            name="ck_dir_listing_discovery_result_limit",
+        ),
+        Index(
+            "ix_dir_listing_discovery_campaign_created",
+            "campaign_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    business_location_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("business_locations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued", index=True)
+    provider_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    credential_owner: Mapped[str] = mapped_column(String(20), nullable=False)
+    radius_km: Mapped[Decimal] = mapped_column(Numeric(9, 2), nullable=False)
+    result_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    reservation_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("cost_ledger_entries.id", ondelete="SET NULL"), nullable=True
+    )
+    estimated_cost: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False, default=Decimal("0"))
+    provider_reported_cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    estimated_credit_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )

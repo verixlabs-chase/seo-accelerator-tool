@@ -1425,15 +1425,19 @@ Full implementation and truth contract:
 
 ### Growth G1.5 - Listings and Citation Intelligence
 
-> **Implementation status (2026-08-10):** G1.5A is in progress. The first
-> slice adds a tenant-, organization-, campaign-, and location-scoped public
+> **Implementation status (2026-08-10):** G1.5A and G1.5B are implemented.
+> The first slice adds a tenant-, organization-, campaign-, and location-scoped public
 > listing inventory, immutable observations, deterministic business-detail
 > comparison, exact field differences, confidence, freshness, and a
 > customer-safe read API. A read-only Business Listings provider boundary is
-> implemented for public Google Maps records, but paid dispatch, cost
-> reservation, durable scheduling, multi-directory discovery, and every
-> correction or syndication action remain disabled until the provider coverage
-> and commercial contract are explicitly approved.
+> implemented for public Google Maps records. The second slice adds a
+> customer-visible allowance preview, an idempotent durable run, provider-cost
+> reservation and actual-cost reconciliation, strict business matching,
+> same-source duplicate flags, source-coverage disclosure, and a saved listing
+> comparison UI. The currently approved discovery source is still limited to
+> supported public Google Maps records. Multi-directory discovery and every
+> correction or syndication action remain disabled until provider coverage and
+> the commercial contract are explicitly approved.
 
 Goal: replace BrightLocal-style citation tracking and listing management with a
 truthful inventory, consistency audit, and approval-driven correction workflow.

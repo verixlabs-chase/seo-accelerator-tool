@@ -121,6 +121,7 @@ def test_migration_upgrade_and_downgrade():
         assert "citations" in inspector.get_table_names()
         assert "directory_listings" in inspector.get_table_names()
         assert "directory_listing_observations" in inspector.get_table_names()
+        assert "directory_listing_discovery_runs" in inspector.get_table_names()
         assert "strategy_recommendations" in inspector.get_table_names()
         assert "intelligence_scores" in inspector.get_table_names()
         assert "campaign_milestones" in inspector.get_table_names()
@@ -221,6 +222,20 @@ def test_migration_upgrade_and_downgrade():
         analytics_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("analytics_daily_metrics")}
         keyword_daily_economics_indexes = {idx["name"] for idx in inspector.get_indexes("keyword_daily_economics")}
         keyword_market_snapshot_indexes = {idx["name"] for idx in inspector.get_indexes("keyword_market_snapshots")}
+        listing_discovery_cols = {
+            col["name"] for col in inspector.get_columns("directory_listing_discovery_runs")
+        }
+        assert {
+            "tenant_id",
+            "organization_id",
+            "campaign_id",
+            "business_location_id",
+            "idempotency_key",
+            "reservation_id",
+            "estimated_credit_units",
+            "provider_reported_cost",
+            "result_count",
+        }.issubset(listing_discovery_cols)
         assert "sub_account_id" in campaign_cols
         assert "business_location_id" in campaign_cols
         assert "sub_account_id" in business_location_cols
