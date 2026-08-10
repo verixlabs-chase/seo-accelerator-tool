@@ -10,13 +10,18 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.data_connection import DataConnection
 from app.schemas.local_rank_grid import LocalRankGridCreateRequest, LocalRankGridRequest
-from app.schemas.reputation import ReputationReviewOut
+from app.schemas.reputation import (
+    ReputationResponseDraftCreate,
+    ReputationResponseDraftDecision,
+    ReputationReviewOut,
+)
 from app.services import (
     data_connections_service,
     durable_job_service,
     local_rank_grid_service,
     local_service,
     reputation_inventory_service,
+    reputation_response_service,
 )
 from app.services.cost_economics_service import CostEconomicsError
 from app.services.location_normalization_service import (
@@ -427,14 +432,90 @@ def get_review_inventory(
                 ),
                 "source_coverage": "owned_profiles",
                 "direct_reply_available": False,
-                "direct_reply_reason": (
-                    "Reply posting stays off until the owned-profile connection and mutation policy are approved."
-                ),
-                "ai_reply_available": False,
-                "ai_reply_reason": "AI response drafting belongs to a later governed sprint slice.",
+                "direct_reply_reason": "InsightOS saves approved wording but does not post it.",
+                "ai_reply_available": True,
+                "ai_reply_reason": "AI can prepare a draft when the review passes the safety check.",
             },
         },
     )
+
+
+@reviews_router.get("/response-policy")
+def get_review_response_policy(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = reputation_response_service.policy_status(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        requested_by_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@reviews_router.get("/drafts")
+def get_review_response_drafts(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        {
+            "items": reputation_response_service.list_response_drafts(
+                db,
+                tenant_id=user["tenant_id"],
+                organization_id=user["organization_id"],
+                campaign_id=campaign_id,
+            )
+        },
+    )
+
+
+@reviews_router.post("/{review_id}/drafts")
+def create_review_response_draft(
+    review_id: str,
+    payload: ReputationResponseDraftCreate,
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = reputation_response_service.generate_response_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        review_id=review_id,
+        requested_by_user_id=user["id"],
+        refresh=payload.refresh,
+    )
+    return envelope(request, row)
+
+
+@reviews_router.patch("/drafts/{draft_id}")
+def decide_review_response_draft(
+    draft_id: str,
+    payload: ReputationResponseDraftDecision,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = reputation_response_service.review_response_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        draft_id=draft_id,
+        user_id=user["id"],
+        decision=payload.decision,
+        approved_text=payload.approved_text,
+    )
+    return envelope(request, row)
 
 
 @reviews_router.post("/sync")
@@ -508,7 +589,7 @@ def sync_review_inventory(
                 ReputationReviewOut.model_validate(row).model_dump(mode="json") for row in rows
             ],
             "summary": reputation_inventory_service.inventory_summary(rows),
-            "reply_tools_available": False,
+            "reply_tools_available": True,
         },
     )
 

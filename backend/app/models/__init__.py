@@ -115,7 +115,12 @@ from app.models.reporting import (
     ReportSchedule,
     ReportTemplateVersion,
 )
-from app.models.reputation import ReputationReview, ReputationReviewObservation
+from app.models.reputation import (
+    ReputationResponseDraft,
+    ReputationResponsePolicy,
+    ReputationReview,
+    ReputationReviewObservation,
+)
 from app.models.role import Role, UserRole
 from app.models.sub_account import SubAccount
 from app.models.strategy_execution_key import StrategyExecutionKey
@@ -204,6 +209,8 @@ __all__ = [
     "ReviewVelocitySnapshot",
     "ReputationReview",
     "ReputationReviewObservation",
+    "ReputationResponsePolicy",
+    "ReputationResponseDraft",
     "LocalRankGridRun",
     "LocalRankGridPoint",
     "OnboardingState",

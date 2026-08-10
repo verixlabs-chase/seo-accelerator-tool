@@ -1488,14 +1488,17 @@ Acceptance criteria:
 
 ### Growth G1.6 - Reputation Management
 
-> **Implementation status (2026-08-10):** G1.6A is implemented locally with a
+> **Implementation status (2026-08-10):** G1.6A and G1.6B are implemented locally with a
 > separate tenant-, organization-, campaign-, and location-scoped owned-review
 > inventory, immutable response-state observations, paginated and idempotent
 > durable synchronization from each authorized Google Business Profile
 > mapping, and a customer review inbox with location, response, and rating
-> filters. Production collection still depends on Business Profile API access
-> for the production project. Direct replies, AI drafts, and automatic posting
-> remain off.
+> filters. The inbox now adds a versioned draft-only response policy, deterministic
+> sensitive-topic routing before any model call, evidence-bounded Mistral response
+> drafts, Insight Credit reservation and reconciliation, editable human approval,
+> and a complete AI/policy audit trail. Approval saves wording only: direct and
+> automatic posting remain disabled. Production review collection still depends
+> on Business Profile API access for the production project.
 
 Goal: replace BrightLocal-style review monitoring, response, generation, and
 multi-location reputation reporting while adding an intelligence layer.
@@ -1512,12 +1515,11 @@ Scope:
   provide a direct source link and track completion.
 - Generate response drafts and reusable templates, but require human review by
   default and clearly label AI-generated text.
-- Add a later **G1.6B governed AI review-response automation** slice. It can use
+- The **G1.6B governed AI review-response assistance** slice uses
   the exact review, rating, location, confirmed services, approved business
   facts, product voice guidance, and the organization's saved response policy
-  to prepare a context-specific reply and, where the provider permits it, post
-  that reply automatically. The detailed eligibility, escalation, and plan
-  allowances will be finalized during sprint design.
+  to prepare a context-specific reply. It never posts. Posting eligibility,
+  provider receipts, and mutation controls remain isolated in G1.6C.
 - Keep automation off by default. Support explicit per-organization and
   per-location modes such as `Draft only`, `Approve before posting`, and
   `Automatic for approved cases`. Automatic posting requires an authorized

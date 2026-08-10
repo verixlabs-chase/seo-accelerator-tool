@@ -179,7 +179,8 @@ def test_reputation_inventory_api_is_read_only_and_hides_internal_provider(
     assert data["items"][0]["source_name"] == "Google Business Profile"
     assert "provider_name" not in data["items"][0]
     assert data["truth"]["direct_reply_available"] is False
-    assert data["truth"]["ai_reply_available"] is False
+    assert data["truth"]["ai_reply_available"] is True
+    assert "does not post" in data["truth"]["direct_reply_reason"]
     assert "provider_name" not in str(data).lower()
 
 

@@ -53,6 +53,10 @@ CREDIT_ACTION_CATALOG: dict[tuple[str, str], tuple[str, str]] = {
         "Explain today's priorities",
         "Turns verified business facts into a short action summary.",
     ),
+    ("governed_ai", "review_response_draft"): (
+        "Draft one review reply",
+        "Prepares one reply for a person to edit and approve. It does not post the reply.",
+    ),
 }
 
 
@@ -172,10 +176,7 @@ def reserve_provider_cost(
 
     occurred_at = _as_utc(now or datetime.now(UTC))
     org = (
-        db.query(Organization)
-        .filter(Organization.id == organization_id)
-        .with_for_update()
-        .first()
+        db.query(Organization).filter(Organization.id == organization_id).with_for_update().first()
     )
     if org is None:
         raise CostEconomicsError(
@@ -343,9 +344,7 @@ def reconcile_provider_cost(
         else Decimal("0")
     )
     actual_credit_units = (
-        _credits_for_cost(actual_cost)
-        if reservation_row.credential_owner == "platform"
-        else 0
+        _credits_for_cost(actual_cost) if reservation_row.credential_owner == "platform" else 0
     )
     credit_delta = actual_credit_units - int(reservation_row.customer_credit_units or 0)
     row = _terminal_ledger_event(
@@ -882,7 +881,11 @@ def _platform_credit_exposure(
 
 
 def _reservation_or_error(db: Session, reservation: CostLedgerEntry | str) -> CostLedgerEntry:
-    row = reservation if isinstance(reservation, CostLedgerEntry) else db.get(CostLedgerEntry, reservation)
+    row = (
+        reservation
+        if isinstance(reservation, CostLedgerEntry)
+        else db.get(CostLedgerEntry, reservation)
+    )
     if row is None or row.event_type != "reservation":
         raise CostEconomicsError(
             "Cost reservation not found.",
@@ -985,9 +988,7 @@ def _credits_for_cost(value: Decimal | int | float | str) -> int:
     cost = Decimal(str(value))
     if cost == 0:
         return 0
-    magnitude = int(
-        (abs(cost) / CREDIT_COST_QUANTUM).to_integral_value(rounding=ROUND_CEILING)
-    )
+    magnitude = int((abs(cost) / CREDIT_COST_QUANTUM).to_integral_value(rounding=ROUND_CEILING))
     return magnitude if cost > 0 else -magnitude
 
 
@@ -1122,10 +1123,7 @@ def _customer_action_prices(db: Session, *, now: datetime) -> list[dict[str, Any
             ProviderPriceCard.operation == "keyword_relevance_review",
             ProviderPriceCard.active.is_(True),
             ProviderPriceCard.effective_from <= now,
-            (
-                ProviderPriceCard.effective_to.is_(None)
-                | (ProviderPriceCard.effective_to > now)
-            ),
+            (ProviderPriceCard.effective_to.is_(None) | (ProviderPriceCard.effective_to > now)),
         )
         .order_by(ProviderPriceCard.effective_from.desc())
         .first()

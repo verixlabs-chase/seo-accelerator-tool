@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 
 class ReputationReviewOut(BaseModel):
@@ -24,3 +26,12 @@ class ReputationReviewOut(BaseModel):
     last_seen_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ReputationResponseDraftCreate(BaseModel):
+    refresh: bool = False
+
+
+class ReputationResponseDraftDecision(BaseModel):
+    decision: Literal["approve", "reject"]
+    approved_text: str | None = Field(default=None, max_length=600)

@@ -32,6 +32,7 @@ type ReviewItem = {
   response_status: string;
   response_text?: string | null;
   response_updated_at?: string | null;
+  review_url?: string | null;
   reviewed_at: string;
 };
 
@@ -47,6 +48,30 @@ type ReviewSummary = {
 type ReviewInventory = {
   items: ReviewItem[];
   summary: ReviewSummary;
+};
+
+type ReviewResponseDraft = {
+  id: string;
+  review_id: string;
+  status: "human_required" | "ready_for_review" | "approved" | "rejected" | "unavailable";
+  risk_class: "standard" | "sensitive";
+  sensitive_topics: string[];
+  policy_version: string;
+  draft_text?: string | null;
+  approved_text?: string | null;
+  human_reason?: string | null;
+  approval_required: boolean;
+  posting_enabled: false;
+  created_at: string;
+};
+
+type ReviewResponsePolicy = {
+  mode: "draft_only";
+  human_approval_required: true;
+  direct_posting_enabled: false;
+  automatic_posting_enabled: false;
+  ai_configured: boolean;
+  maximum_credits_per_draft?: number | null;
 };
 
 type ReviewFilter = "all" | "unanswered" | "low" | "responded";
@@ -89,20 +114,41 @@ export default function ReviewsPage() {
     summary: EMPTY_SUMMARY,
   });
   const [filter, setFilter] = useState<ReviewFilter>("all");
+  const [draftsByReview, setDraftsByReview] = useState<Record<string, ReviewResponseDraft>>({});
+  const [draftEdits, setDraftEdits] = useState<Record<string, string>>({});
+  const [responsePolicy, setResponsePolicy] = useState<ReviewResponsePolicy | null>(null);
+  const [workingReviewId, setWorkingReviewId] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   const loadInventory = useCallback(async (campaignId: string) => {
-    const response = (await platformApi(
-      `/reviews/inventory?campaign_id=${encodeURIComponent(campaignId)}&source_type=owned_profile&limit=250`,
-      { method: "GET" },
-    )) as ReviewInventory;
+    const [response, draftResponse, policyResponse] = await Promise.all([
+      platformApi(
+        `/reviews/inventory?campaign_id=${encodeURIComponent(campaignId)}&source_type=owned_profile&limit=250`,
+        { method: "GET" },
+      ) as Promise<ReviewInventory>,
+      platformApi(`/reviews/drafts?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }) as Promise<{ items: ReviewResponseDraft[] }>,
+      platformApi(`/reviews/response-policy?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }) as Promise<ReviewResponsePolicy>,
+    ]);
     setInventory({
       items: Array.isArray(response?.items) ? response.items : [],
       summary: response?.summary || EMPTY_SUMMARY,
     });
+    const nextDrafts: Record<string, ReviewResponseDraft> = {};
+    const nextEdits: Record<string, string> = {};
+    for (const draft of draftResponse?.items || []) {
+      nextDrafts[draft.review_id] = draft;
+      nextEdits[draft.id] = draft.approved_text || draft.draft_text || "";
+    }
+    setDraftsByReview(nextDrafts);
+    setDraftEdits(nextEdits);
+    setResponsePolicy(policyResponse || null);
   }, []);
 
   useEffect(() => {
@@ -163,6 +209,67 @@ export default function ReviewsPage() {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  async function draftReply(reviewId: string, refresh = false) {
+    if (!selectedCampaignId) return;
+    setWorkingReviewId(reviewId);
+    setError("");
+    setNotice("");
+    try {
+      const draft = (await platformApi(
+        `/reviews/${encodeURIComponent(reviewId)}/drafts?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST", body: JSON.stringify({ refresh }) },
+      )) as ReviewResponseDraft;
+      setDraftsByReview((current) => ({ ...current, [reviewId]: draft }));
+      setDraftEdits((current) => ({
+        ...current,
+        [draft.id]: draft.approved_text || draft.draft_text || "",
+      }));
+      if (draft.status === "human_required") {
+        setNotice("This review needs a person to write the reply. No AI action or credit was used.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "A reply draft could not be prepared.");
+    } finally {
+      setWorkingReviewId("");
+    }
+  }
+
+  async function decideDraft(reviewId: string, draft: ReviewResponseDraft, decision: "approve" | "reject") {
+    setWorkingReviewId(reviewId);
+    setError("");
+    setNotice("");
+    try {
+      const updated = (await platformApi(`/reviews/drafts/${encodeURIComponent(draft.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          decision,
+          approved_text: decision === "approve" ? draftEdits[draft.id] || draft.draft_text || "" : null,
+        }),
+      })) as ReviewResponseDraft;
+      setDraftsByReview((current) => ({ ...current, [reviewId]: updated }));
+      setDraftEdits((current) => ({
+        ...current,
+        [updated.id]: updated.approved_text || updated.draft_text || "",
+      }));
+      setNotice(
+        decision === "approve"
+          ? "Approved wording was saved. InsightOS did not post it."
+          : "The draft was discarded.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The draft decision could not be saved.");
+    } finally {
+      setWorkingReviewId("");
+    }
+  }
+
+  async function copyApprovedReply(draft: ReviewResponseDraft) {
+    const text = draft.approved_text || "";
+    if (!text || !navigator.clipboard) return;
+    await navigator.clipboard.writeText(text);
+    setNotice("Approved reply copied. You can paste it into your business profile.");
   }
 
   const filteredReviews = useMemo(() => {
@@ -232,9 +339,16 @@ export default function ReviewsPage() {
           compact
         />
 
-        <TruthNotice title="Review replies are not turned on yet.">
-          You can read and sort saved reviews here. InsightOS cannot write or post a reply in this version.
+        <TruthNotice title="AI can prepare wording, but you stay in control.">
+          Every suggested reply must be checked and approved by a person. Approval only saves the wording;
+          InsightOS does not post it to your business profile.
         </TruthNotice>
+
+        {responsePolicy && !responsePolicy.ai_configured ? (
+          <section className="rounded-md border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+            AI reply drafting is not connected yet. Your reviews remain available and no credits will be used.
+          </section>
+        ) : null}
 
         {loading ? <LoadingCard title="Loading customer reviews" summary="Checking the selected location." /> : null}
         {error ? (
@@ -346,6 +460,138 @@ export default function ReviewsPage() {
                           <p className="mt-1.5 text-sm leading-6 text-zinc-300">{review.response_text}</p>
                         </div>
                       ) : null}
+                      {review.response_status === "unanswered"
+                        ? (() => {
+                            const draft = draftsByReview[review.id];
+                            const isWorking = workingReviewId === review.id;
+                            if (!draft) {
+                              const creditLabel = responsePolicy?.maximum_credits_per_draft
+                                ? `Up to ${responsePolicy.maximum_credits_per_draft} Insight Credit${
+                                    responsePolicy.maximum_credits_per_draft === 1 ? "" : "s"
+                                  }`
+                                : "Usage is measured before work starts";
+                              return (
+                                <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[#292a2f] pt-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => void draftReply(review.id)}
+                                    disabled={isWorking || responsePolicy?.ai_configured === false}
+                                    className="rounded-md bg-[#ff6b18] px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isWorking ? "Preparing wording..." : "Draft a reply"}
+                                  </button>
+                                  <span className="text-xs text-zinc-500">{creditLabel}. Nothing is posted.</span>
+                                </div>
+                              );
+                            }
+                            if (draft.status === "human_required") {
+                              return (
+                                <div className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/[0.07] p-4">
+                                  <p className="font-semibold text-amber-100">A person should handle this reply</p>
+                                  <p className="mt-1 text-sm leading-6 text-zinc-300">{draft.human_reason}</p>
+                                  {draft.sensitive_topics.length > 0 ? (
+                                    <p className="mt-2 text-xs text-zinc-500">
+                                      Safety check: {draft.sensitive_topics.join(", ")}
+                                    </p>
+                                  ) : null}
+                                  {review.review_url ? (
+                                    <a
+                                      href={review.review_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="mt-3 inline-flex text-sm font-semibold text-[#ff8a4c] hover:text-[#ffa06f]"
+                                    >
+                                      Open the original review →
+                                    </a>
+                                  ) : null}
+                                </div>
+                              );
+                            }
+                            if (draft.status === "ready_for_review") {
+                              return (
+                                <div className="mt-4 rounded-md border border-violet-500/20 bg-violet-500/[0.06] p-4">
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <div>
+                                      <p className="font-semibold text-white">Check this suggested reply</p>
+                                      <p className="mt-1 text-sm text-zinc-400">
+                                        Edit anything that does not sound like your business, then approve or discard it.
+                                      </p>
+                                    </div>
+                                    <span className="rounded-full border border-violet-400/20 px-2.5 py-1 text-[11px] font-semibold text-violet-100">
+                                      Not posted
+                                    </span>
+                                  </div>
+                                  <textarea
+                                    aria-label={`Reply draft for ${review.author_name || "customer"}`}
+                                    value={draftEdits[draft.id] ?? draft.draft_text ?? ""}
+                                    maxLength={600}
+                                    onChange={(event) =>
+                                      setDraftEdits((current) => ({ ...current, [draft.id]: event.target.value }))
+                                    }
+                                    className="mt-3 min-h-28 w-full resize-y rounded-md border border-[#34353c] bg-[#0e0f11] p-3 text-sm leading-6 text-zinc-100 outline-none focus:border-violet-400/50"
+                                  />
+                                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      disabled={isWorking || !(draftEdits[draft.id] ?? draft.draft_text ?? "").trim()}
+                                      onClick={() => void decideDraft(review.id, draft, "approve")}
+                                      className="rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {isWorking ? "Saving..." : "Approve this wording"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={isWorking}
+                                      onClick={() => void decideDraft(review.id, draft, "reject")}
+                                      className="rounded-md border border-[#34353c] px-3.5 py-2 text-sm font-semibold text-zinc-200 disabled:opacity-50"
+                                    >
+                                      Discard draft
+                                    </button>
+                                    <span className="text-xs text-zinc-500">Approval saves it here only.</span>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            if (draft.status === "approved") {
+                              return (
+                                <div className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/[0.06] p-4">
+                                  <p className="font-semibold text-emerald-100">Approved wording</p>
+                                  <p className="mt-2 text-sm leading-6 text-zinc-200">{draft.approved_text}</p>
+                                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => void copyApprovedReply(draft)}
+                                      className="rounded-md border border-emerald-500/25 px-3.5 py-2 text-sm font-semibold text-emerald-100"
+                                    >
+                                      Copy approved reply
+                                    </button>
+                                    <span className="text-xs text-zinc-500">
+                                      InsightOS saved this wording but did not post it.
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] p-4">
+                                <p className="font-semibold text-amber-100">
+                                  {draft.status === "rejected" ? "Draft discarded" : "Wording is not available yet"}
+                                </p>
+                                <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                  {draft.human_reason || "You can ask for a fresh draft when you are ready."}
+                                </p>
+                                <button
+                                  type="button"
+                                  disabled={isWorking || responsePolicy?.ai_configured === false}
+                                  onClick={() => void draftReply(review.id, true)}
+                                  className="mt-3 rounded-md border border-amber-500/25 px-3.5 py-2 text-sm font-semibold text-amber-100 disabled:opacity-50"
+                                >
+                                  {isWorking ? "Preparing wording..." : "Try a fresh draft"}
+                                </button>
+                              </div>
+                            );
+                          })()
+                        : null}
                     </article>
                   ))}
                 </div>

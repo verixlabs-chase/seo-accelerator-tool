@@ -8,14 +8,22 @@ const page = readFileSync(
   "utf8",
 );
 
-test("customer review inbox is location scoped, filterable, and read only", () => {
+test("customer review inbox is location scoped, filterable, and governed", () => {
   assert.match(page, /useLocationContext/);
   assert.match(page, /reviews\/inventory/);
   assert.match(page, /reviews\/sync/);
   assert.match(page, /Needs a reply/);
   assert.match(page, /3 stars or lower/);
   assert.match(page, /Answered/);
-  assert.match(page, /Review replies are not turned on yet/);
-  assert.doesNotMatch(page, /textarea/);
+  assert.match(page, /reviews\/response-policy/);
+  assert.match(page, /reviews\/drafts/);
+  assert.match(page, /Draft a reply/);
+  assert.match(page, /Approve this wording/);
+  assert.match(page, /Discard draft/);
+  assert.match(page, /A person should handle this reply/);
+  assert.match(page, /No AI action or credit was used/);
+  assert.match(page, /textarea/);
+  assert.match(page, /does not post it/);
   assert.doesNotMatch(page, /Post reply/);
+  assert.doesNotMatch(page, /chat/i);
 });
