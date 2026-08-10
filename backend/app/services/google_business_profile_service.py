@@ -19,7 +19,7 @@ from app.models.google_business_profile import (
     GoogleBusinessProfileSnapshot,
 )
 from app.providers import google_business_profile as provider
-from app.services import data_connections_service
+from app.services import data_connections_service, metric_contract_service, standards_source_service
 from app.services.provider_credentials_service import (
     ProviderCredentialConfigurationError,
     resolve_provider_credentials,
@@ -44,6 +44,7 @@ METRIC_LABELS = {
 
 
 def discover_profiles(db: Session, organization_id: str) -> list[dict[str, Any]]:
+    _assert_provider_contract_ready(db)
     credentials = _resolve_credentials(db, organization_id)
     try:
         return provider.discover_profiles(
@@ -168,6 +169,7 @@ def sync_profile_connection(
     date_from: date,
     date_to: date,
 ) -> dict[str, Any]:
+    _assert_provider_contract_ready(db)
     campaign, location = _campaign_and_location(
         db,
         organization_id=connection.organization_id,
@@ -251,6 +253,20 @@ def sync_profile_connection(
         "start_date": date_from.isoformat(),
         "end_date": date_to.isoformat(),
     }
+
+
+def _assert_provider_contract_ready(db: Session) -> None:
+    try:
+        standards_source_service.assert_provider_contract_ready(
+            db,
+            GOOGLE_BUSINESS_PROFILE_PROVIDER,
+        )
+    except standards_source_service.StandardsContractBlockedError as exc:
+        raise data_connections_service.DataConnectionError(
+            str(exc),
+            reason_code="provider_contract_review_required",
+            status_code=409,
+        ) from exc
 
 
 def get_profile_intelligence(
@@ -376,6 +392,12 @@ def get_profile_intelligence(
                 "month": row.metric_month.isoformat(),
                 "keyword": row.keyword,
                 "impressions": row.impressions,
+                "measurement_kind": row.measurement_kind,
+                "metric_contract": {
+                    "id": row.metric_contract_id,
+                    "version": row.metric_contract_version,
+                    "scope_key": row.scope_key,
+                },
             }
             for row in keyword_rows
         ],
@@ -511,6 +533,25 @@ def _save_snapshot(
     )
     if existing is not None:
         return existing, False
+    captured_at = datetime.now(UTC)
+    source_account_id = str(
+        (connection.connection_metadata or {}).get("account_id") or "unknown"
+    )
+    contract_scope = metric_contract_service.scope_evidence(
+        "gbp.profile.configuration",
+        {
+            "organization_id": connection.organization_id,
+            "campaign_id": connection.campaign_id,
+            "business_location_id": connection.business_location_id,
+            "connection_id": connection.id,
+            "external_resource_id": connection.external_resource_id,
+            "source_account_id": source_account_id,
+            "captured_at": captured_at,
+            "available_fields": sorted(profile),
+            "unavailable_fields": ["photos", "posts"],
+        },
+        db=db,
+    )
     row = GoogleBusinessProfileSnapshot(
         connection_id=connection.id,
         tenant_id=connection.tenant_id,
@@ -521,7 +562,11 @@ def _save_snapshot(
         profile_hash=profile_hash,
         profile_data=profile,
         audit_summary=audit,
-        captured_at=datetime.now(UTC),
+        metric_contract_id="gbp.profile.configuration",
+        metric_contract_version=contract_scope["metric_contract_version"],
+        source_account_id=source_account_id,
+        scope_key=contract_scope["scope_key"],
+        captured_at=captured_at,
     )
     db.add(row)
     db.flush()
@@ -542,6 +587,9 @@ def _upsert_daily_metrics(
         if isinstance(row.get("metric_date"), date)
     }
     saved = 0
+    source_account_id = str(
+        (connection.connection_metadata or {}).get("account_id") or "unknown"
+    )
     current_date = date_from
     while current_date <= date_to:
         for metric_name in provider.DAILY_METRICS:
@@ -552,6 +600,21 @@ def _upsert_daily_metrics(
                 None
                 if source is not None
                 else "Google did not return this measurement for this date."
+            )
+            contract_id = metric_contract_service.business_profile_contract_id(metric_name)
+            contract_scope = metric_contract_service.scope_evidence(
+                contract_id,
+                {
+                    "organization_id": connection.organization_id,
+                    "campaign_id": connection.campaign_id,
+                    "business_location_id": connection.business_location_id,
+                    "connection_id": connection.id,
+                    "external_resource_id": connection.external_resource_id,
+                    "source_account_id": source_account_id,
+                    "window_start": current_date,
+                    "window_end": current_date,
+                },
+                db=db,
             )
             row = (
                 db.query(GoogleBusinessProfileDailyMetric)
@@ -573,12 +636,22 @@ def _upsert_daily_metrics(
                     metric_name=metric_name,
                     metric_value=value,
                     missing_reason=missing_reason,
+                    metric_contract_id=contract_id,
+                    metric_contract_version=contract_scope["metric_contract_version"],
+                    source_account_id=source_account_id,
+                    external_resource_id=connection.external_resource_id,
+                    scope_key=contract_scope["scope_key"],
                     captured_at=datetime.now(UTC),
                 )
                 db.add(row)
             else:
                 row.metric_value = value
                 row.missing_reason = missing_reason
+                row.metric_contract_id = contract_id
+                row.metric_contract_version = contract_scope["metric_contract_version"]
+                row.source_account_id = source_account_id
+                row.external_resource_id = connection.external_resource_id
+                row.scope_key = contract_scope["scope_key"]
                 row.captured_at = datetime.now(UTC)
             saved += 1
         current_date += timedelta(days=1)
@@ -592,10 +665,30 @@ def _upsert_search_keywords(
     rows: list[tuple[date, dict[str, Any]]],
 ) -> int:
     saved = 0
+    source_account_id = str(
+        (connection.connection_metadata or {}).get("account_id") or "unknown"
+    )
     for month, source in rows:
         keyword = str(source.get("keyword") or "").strip().lower()
         if not keyword:
             continue
+        measurement_kind = str(source.get("measurement") or "exact")
+        contract_id = "gbp.search_terms.monthly_impressions"
+        contract_scope = metric_contract_service.scope_evidence(
+            contract_id,
+            {
+                "organization_id": connection.organization_id,
+                "campaign_id": connection.campaign_id,
+                "business_location_id": connection.business_location_id,
+                "connection_id": connection.id,
+                "external_resource_id": connection.external_resource_id,
+                "source_account_id": source_account_id,
+                "metric_month": month,
+                "keyword": keyword,
+                "measurement_kind": measurement_kind,
+            },
+            db=db,
+        )
         row = (
             db.query(GoogleBusinessProfileSearchKeyword)
             .filter(
@@ -615,11 +708,23 @@ def _upsert_search_keywords(
                 metric_month=month,
                 keyword=keyword,
                 impressions=int(source.get("impressions") or 0),
+                measurement_kind=measurement_kind,
+                metric_contract_id=contract_id,
+                metric_contract_version=contract_scope["metric_contract_version"],
+                source_account_id=source_account_id,
+                external_resource_id=connection.external_resource_id,
+                scope_key=contract_scope["scope_key"],
                 captured_at=datetime.now(UTC),
             )
             db.add(row)
         else:
             row.impressions = int(source.get("impressions") or 0)
+            row.measurement_kind = measurement_kind
+            row.metric_contract_id = contract_id
+            row.metric_contract_version = contract_scope["metric_contract_version"]
+            row.source_account_id = source_account_id
+            row.external_resource_id = connection.external_resource_id
+            row.scope_key = contract_scope["scope_key"]
             row.captured_at = datetime.now(UTC)
         saved += 1
     return saved

@@ -31,7 +31,7 @@ current source of truth.
 | Email delivery | Adapter contract exists; hosted configuration is optional | configure a real SMTP provider and verify delivery outcomes |
 | Crawling | Small request-based crawls can execute eagerly | convert crawl frontier steps to durable jobs before increasing limits |
 | Rankings | Real SerpAPI adapter exists | select backend, configure organization credentials, and validate a live campaign |
-| Local visibility / reviews | Base location map and G1.2 queued, credit-controlled local rank grid are live. G1.4's authorized listing mapping, snapshots, field checks, performance history, customer search terms, and customer UI are implemented locally; synthetic local/review data remains test-only. | obtain Google Business Profile API project approval, validate one production owned-listing sync, finish G1.4 competitor/photo/post and approved-edit slices, then implement G1.6 reputation workflows |
+| Local visibility / reviews | Base location map and G1.2 queued, credit-controlled local rank grid are live. G1.4's authorized listing mapping, snapshots, field checks, performance history, customer search terms, and customer UI are implemented locally; synthetic local/review data remains test-only. | obtain Google Business Profile API project approval, validate one production owned-listing sync, finish G1.4 competitor/photo/post and approved-edit slices, implement ML1 fleet primitives and G1.4B Growth/Enterprise bulk profile campaigns, then implement G1.6 reputation workflows |
 | Citations / backlinks | Synthetic provider is test-only | implement G1.5 listings/citations provider first, then CNT1 editorial authority data |
 | Competitors | Stored-dataset workflow works | add durable collection and a live upstream provider if required |
 | Recommendations | Heuristic generation and governance are implemented | validate recommendations against live provider inputs |
@@ -40,6 +40,7 @@ current source of truth.
 | Rate limiting | Disabled in hosted mode because Redis is absent | implement a database or managed edge-compatible limiter |
 | Usage economics | Provider calls and entitlement consumption are counted, but currency cost and margin are not reconciled | add platform-vs-organization credential attribution, cost reservations, reconciliation, and hard monthly spend stops |
 | Commerce | Tier and entitlement foundations exist, but customer billing is not implemented | implement COM1 checkout, subscription lifecycle, enforced allowances, account recovery, and plan-change workflows |
+| External automation | No customer-facing third-party automation or generic webhook gateway is released | implement vendor-neutral AUT1 contracts first, then enable reviewed connectors such as n8n, Make, Zapier, and Pipedream only after signed delivery, scoped service accounts, replay protection, typed commands, durable status, entitlements, privacy filtering, conformance tests, and audit proof are complete |
 | Frontend testing | 30 truth-state tests | component tests and Playwright production-journey coverage |
 | Backend testing | Large SQLite suite and migration validation | PostgreSQL API, concurrency, lease, and RLS integration lanes |
 
@@ -140,9 +141,13 @@ is designed or implemented.
 3. Ranking collection
 4. Local/review collection
    - require estimate, reservation, reconciliation, and organization spend-limit checks before enabling customer-run geo-grid tasks
+   - fan G1.4B profile campaigns into bounded, idempotent per-location jobs;
+     preserve the approved target snapshot, respect Google quotas, and expose
+     partial failure, pause, resume, safe retry, and provider receipts
 5. Citation and authority refresh
 6. Growth G1 search, profile, website analytics, and form-event synchronization
 7. Intelligence and automation cycles
+8. AUT1 outbound webhook deliveries and accepted inbound commands
 
 Each migration requires:
 
@@ -162,6 +167,10 @@ Each migration requires:
 - disable automatic table exposure and expose no application tables through
   Supabase Data API unless there is a deliberate client-side use case
 - add invitations, password recovery, session revocation, and organization switching
+- add organization-scoped AUT1 service accounts with named permissions,
+  expiration, rotation, last-use evidence, immediate revocation, signed webhook
+  secrets, timestamp windows, and replay protection; never expose database or
+  provider credentials to an automation client
 
 Automatic RLS is not a substitute for this phase. It affects new tables only
 and does not define the required policies or application session context.
@@ -170,6 +179,9 @@ and does not define the required policies or application session context.
 
 - configure and validate rankings
 - connect Google Business Profile and Search Console
+- validate supported Google local-post and media actions on one owned profile,
+  then a dry-run and bounded live G1.4B campaign across a reviewed location
+  group before enabling Growth or Enterprise fleet dispatch
 - connect the approved website analytics/form-event source
 - keep call-tracking, CRM, job-management, booked-job, payment, revenue, and
   sales-attribution connections out of Growth G1
@@ -207,6 +219,10 @@ and agency portfolio features based on launch scope.
 - backup and restore drill
 - backward-compatible migration and deployment sequencing
 - alerting for dead-letter jobs, stale leases, provider failures, and delivery failures
+- AUT1 contract tests for webhook signatures, duplicate delivery,
+  idempotency-key reuse, revoked credentials, wrong-location access, privacy
+  field allow-lists, entitlement denial, approval bypass attempts, and
+  destination SSRF defenses
 
 ### PR6: final UI/UX revamp
 

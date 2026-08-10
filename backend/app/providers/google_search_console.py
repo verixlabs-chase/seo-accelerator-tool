@@ -13,6 +13,7 @@ from app.providers.errors import (
     ProviderAuthError,
     ProviderBadRequestError,
     ProviderConnectionError,
+    ProviderContractReviewError,
     ProviderDependencyError,
     ProviderQuotaExceededError,
     ProviderRateLimitError,
@@ -24,6 +25,7 @@ from app.services.provider_credentials_service import (
     ProviderCredentialConfigurationError,
     resolve_provider_credentials,
 )
+from app.services import standards_source_service
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,13 @@ class SearchConsoleProviderAdapter(ProviderBase):
         self._endpoint_base = "https://searchconsole.googleapis.com/webmasters/v3"
 
     def _execute_impl(self, request: ProviderExecutionRequest) -> dict:
+        try:
+            standards_source_service.assert_provider_contract_ready(
+                self._db,
+                "google_search_console",
+            )
+        except standards_source_service.StandardsContractBlockedError as exc:
+            raise ProviderContractReviewError(str(exc)) from exc
         payload = request.payload
         organization_id = str(payload.get("organization_id", "")).strip()
         site_url = str(payload.get("site_url", "")).strip()
@@ -127,19 +136,29 @@ class SearchConsoleProviderAdapter(ProviderBase):
         for item in rows:
             if not isinstance(item, dict):
                 raise ProviderResponseFormatError("Google Search Console row must be an object.")
+            required_metrics = ("clicks", "impressions", "ctr", "position")
+            if any(metric not in item for metric in required_metrics):
+                raise ProviderResponseFormatError(
+                    "Google Search Console changed a measurement row that InsightOS has not reviewed yet."
+                )
             keys = item.get("keys", [])
             if not isinstance(keys, list):
                 keys = []
-            metrics.append(
-                SearchMetrics(
-                    query=str(keys[0]) if keys else "",
-                    clicks=float(item.get("clicks", 0.0)),
-                    impressions=float(item.get("impressions", 0.0)),
-                    ctr=float(item.get("ctr", 0.0)),
-                    position=float(item.get("position", 0.0)),
-                    keys=[str(v) for v in keys],
+            try:
+                metrics.append(
+                    SearchMetrics(
+                        query=str(keys[0]) if keys else "",
+                        clicks=float(item["clicks"]),
+                        impressions=float(item["impressions"]),
+                        ctr=float(item["ctr"]),
+                        position=float(item["position"]),
+                        keys=[str(v) for v in keys],
+                    )
                 )
-            )
+            except (TypeError, ValueError) as exc:
+                raise ProviderResponseFormatError(
+                    "Google Search Console returned an unreadable measurement row."
+                ) from exc
 
         return {
             "dataset": "search_metrics",

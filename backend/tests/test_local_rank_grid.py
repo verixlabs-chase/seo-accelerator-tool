@@ -127,6 +127,10 @@ def test_run_is_idempotent_location_scoped_and_persists_every_point(
     assert run.business_location_id == location.id
     points = db_session.query(LocalRankGridPoint).filter(LocalRankGridPoint.run_id == run.id).all()
     assert len(points) == 50
+    assert run.metric_contract_id == "local_grid.position"
+    assert run.metric_contract_version == "1.0"
+    assert run.grid_definition_hash != "legacy"
+    assert all(point.scope_key != "legacy" for point in points)
     assert {(row.row_index, row.column_index) for row in points} == {
         (row, column) for row in range(5) for column in range(5)
     }
@@ -242,6 +246,10 @@ def test_rank_grid_api_requires_confirmation_contract_and_returns_location_run(
     assert run["status"] == "completed"
     assert run["completed_checks"] == 50
     assert len(run["points"]) == 50
+    assert run["measurement_contract"]["id"] == "local_grid.position"
+    assert run["measurement_contract"]["grid_definition_hash"] != "legacy"
+    assert len(run["visibility_summary"]) == 2
+    assert all("top_3_share" in item for item in run["visibility_summary"])
 
     replayed = client.post(
         "/api/v1/local/rank-grid/runs",

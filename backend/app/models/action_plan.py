@@ -195,6 +195,10 @@ class ActionPlanMeasurement(Base):
             "outcome_status in ('pending','helped','did_not_help','insufficient_data')",
             name="ck_action_plan_measurements_outcome_status",
         ),
+        CheckConstraint(
+            "result_classification in ('waiting_for_results','improved','about_the_same','worse','not_enough_information')",
+            name="ck_action_plan_measurements_result_classification",
+        ),
         UniqueConstraint(
             "occurrence_id",
             name="uq_action_plan_measurements_occurrence_id",
@@ -261,6 +265,13 @@ class ActionPlanMeasurement(Base):
         default="pending",
         index=True,
     )
+    result_classification: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="waiting_for_results",
+        index=True,
+    )
+    measurement_contract: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     success_metric_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     baseline_metrics: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     baseline_evidence: Mapped[list] = mapped_column(JSON, nullable=False, default=list)

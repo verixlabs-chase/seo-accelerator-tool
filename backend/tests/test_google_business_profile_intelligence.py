@@ -113,6 +113,64 @@ def test_provider_discovers_authorized_profiles_across_accounts() -> None:
     assert "Reno" in profiles[0]["address"]
 
 
+def test_provider_fails_closed_for_unknown_daily_metric(monkeypatch) -> None:
+    monkeypatch.setattr(
+        provider,
+        "_get_json",
+        lambda *_args, **_kwargs: {
+            "multiDailyMetricTimeSeries": [
+                {
+                    "dailyMetricTimeSeries": [
+                        {
+                            "dailyMetric": "NEW_GOOGLE_METRIC",
+                            "timeSeries": {"datedValues": []},
+                        }
+                    ]
+                }
+            ]
+        },
+    )
+
+    try:
+        provider.fetch_daily_metrics(
+            access_token="access-token",
+            resource_id="locations/123456789",
+            date_from=date(2026, 1, 1),
+            date_to=date(2026, 1, 31),
+        )
+    except provider.GoogleBusinessProfileProviderError as exc:
+        assert exc.reason_code == "provider_contract_unknown"
+        assert exc.status_code == 409
+    else:
+        raise AssertionError("Unknown Business Profile metrics must fail closed.")
+
+
+def test_provider_fails_closed_for_unknown_search_keyword_measurement(monkeypatch) -> None:
+    monkeypatch.setattr(
+        provider,
+        "_paged_get",
+        lambda *_args, **_kwargs: [
+            {
+                "searchKeyword": "junk removal reno",
+                "insightsValue": {"newShape": 12},
+            }
+        ],
+    )
+
+    try:
+        provider.fetch_search_keywords(
+            access_token="access-token",
+            resource_id="locations/123456789",
+            month_from=date(2026, 1, 1),
+            month_to=date(2026, 1, 31),
+        )
+    except provider.GoogleBusinessProfileProviderError as exc:
+        assert exc.reason_code == "provider_contract_unknown"
+        assert exc.status_code == 409
+    else:
+        raise AssertionError("Unknown Business Profile keyword measurements must fail closed.")
+
+
 def test_profile_audit_is_honest_about_unmeasured_fields(client, db_session) -> None:
     token, organization_id = _login(client)
     location_id, campaign_id = _create_location_campaign(client, token, organization_id)
@@ -255,6 +313,15 @@ def test_profile_mapping_sync_and_intelligence_are_location_scoped(
     assert db_session.query(GoogleBusinessProfileSnapshot).count() == 1
     assert db_session.query(GoogleBusinessProfileDailyMetric).count() == 56
     assert db_session.query(GoogleBusinessProfileSearchKeyword).count() == 3
+    saved_metric = db_session.query(GoogleBusinessProfileDailyMetric).first()
+    assert saved_metric.metric_contract_id.startswith("gbp.performance.")
+    assert saved_metric.metric_contract_version == "1.0"
+    assert saved_metric.external_resource_id == "locations/123456789"
+    assert saved_metric.scope_key != "legacy"
+    saved_keyword = db_session.query(GoogleBusinessProfileSearchKeyword).first()
+    assert saved_keyword.measurement_kind == "exact"
+    assert saved_keyword.metric_contract_id == "gbp.search_terms.monthly_impressions"
+    assert saved_keyword.scope_key != "legacy"
 
     other_token, other_organization_id = _login(
         client,

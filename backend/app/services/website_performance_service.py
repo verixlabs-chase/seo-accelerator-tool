@@ -12,6 +12,7 @@ from app.intelligence.lexicon.evaluator import evaluate_core_web_vitals
 from app.intelligence.lexicon.loader import get_active_lexicon
 from app.models.campaign import Campaign
 from app.models.website_performance import WebsitePerformanceMeasurement
+from app.services import metric_contract_service
 
 
 CRUX_ENDPOINT = "https://chromeuxreport.googleapis.com/v1/records:queryRecord"
@@ -28,6 +29,20 @@ METRIC_COLUMNS = {
     "cumulative_layout_shift": "cls_value",
     "experimental_time_to_first_byte": "ttfb_ms",
 }
+CRUX_CONTRACT_IDS = (
+    "web.crux.lcp",
+    "web.crux.inp",
+    "web.crux.cls",
+    "web.crux.ttfb",
+)
+PAGESPEED_CONTRACT_IDS = (
+    "web.pagespeed.lcp",
+    "web.pagespeed.cls",
+    "web.pagespeed.ttfb",
+    "web.pagespeed.fcp",
+    "web.pagespeed.tbt",
+    "web.pagespeed.performance_score",
+)
 
 
 class WebsitePerformanceProviderError(RuntimeError):
@@ -386,6 +401,26 @@ def collect_campaign_performance(
             )
             diagnostics = dict(result.get("diagnostics") or {})
             diagnostics["assessment"] = assessment
+            contract_ids = CRUX_CONTRACT_IDS if source == "crux_field" else PAGESPEED_CONTRACT_IDS
+            contract_scope = {
+                "organization_id": campaign.organization_id,
+                "campaign_id": campaign.id,
+                "measured_url": str(result.get("measured_url") or requested_url),
+                "scope": str(result.get("scope") or "url"),
+                "form_factor": form_factor,
+                "collection_start": result.get("collection_start"),
+                "collection_end": result.get("collection_end"),
+                "source_version": result.get("source_version"),
+                "captured_at": measured_at,
+                "run_environment": diagnostics.get("test_environment"),
+                "fallback_to_origin": bool(result.get("fallback_to_origin")),
+            }
+            contract_evidence = metric_contract_service.scope_evidence(
+                contract_ids[0],
+                contract_scope,
+                require_complete=False,
+                db=db,
+            )
             row = WebsitePerformanceMeasurement(
                 tenant_id=campaign.tenant_id,
                 organization_id=campaign.organization_id,
@@ -407,6 +442,10 @@ def collect_campaign_performance(
                 collection_start=result.get("collection_start"),
                 collection_end=result.get("collection_end"),
                 source_version=result.get("source_version"),
+                metric_contract_versions=metric_contract_service.contract_versions(
+                    contract_ids, db=db
+                ),
+                scope_key=contract_evidence["scope_key"],
                 lexicon_id=lexicon.meta.lexicon_id,
                 lexicon_version=lexicon.meta.version,
                 fallback_to_origin=bool(result.get("fallback_to_origin")),
@@ -453,6 +492,10 @@ def serialize_measurement(row: WebsitePerformanceMeasurement) -> dict[str, Any]:
             "end": row.collection_end.isoformat() if row.collection_end else None,
         },
         "source_version": row.source_version,
+        "metric_contracts": {
+            "versions": dict(row.metric_contract_versions or {}),
+            "scope_key": row.scope_key,
+        },
         "lexicon": {
             "id": row.lexicon_id,
             "version": row.lexicon_version,

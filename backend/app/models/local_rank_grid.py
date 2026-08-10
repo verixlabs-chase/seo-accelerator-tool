@@ -103,6 +103,14 @@ class LocalRankGridRun(Base):
     source_name: Mapped[str] = mapped_column(
         String(64), nullable=False, default="google_maps_results"
     )
+    metric_contract_id: Mapped[str] = mapped_column(
+        String(180), nullable=False, default="local_grid.position"
+    )
+    metric_contract_version: Mapped[str] = mapped_column(String(40), nullable=False, default="1.0")
+    grid_definition_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="legacy")
+    language_code: Mapped[str] = mapped_column(String(16), nullable=False, default="en")
+    device_class: Mapped[str] = mapped_column(String(20), nullable=False, default="provider_default")
+    provider_method: Mapped[str] = mapped_column(String(80), nullable=False, default="maps_search")
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[str | None] = mapped_column(
@@ -189,6 +197,11 @@ class LocalRankGridPoint(Base):
     source_name: Mapped[str] = mapped_column(
         String(64), nullable=False, default="google_maps_results"
     )
+    metric_contract_id: Mapped[str] = mapped_column(
+        String(180), nullable=False, default="local_grid.position"
+    )
+    metric_contract_version: Mapped[str] = mapped_column(String(40), nullable=False, default="1.0")
+    scope_key: Mapped[str] = mapped_column(String(64), nullable=False, default="legacy")
     provider_task_id: Mapped[str | None] = mapped_column(String(80), nullable=True, unique=True)
     provider_status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     provider_status_message: Mapped[str | None] = mapped_column(String(255), nullable=True)

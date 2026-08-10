@@ -278,7 +278,13 @@ def validate_version(
 
 
 def activate_version(
-    db: Session, tenant_id: str, actor_user_id: str, version: str, reason: str | None
+    db: Session,
+    tenant_id: str,
+    actor_user_id: str,
+    version: str,
+    reason: str | None,
+    standards_rollout_id: str | None = None,
+    commit: bool = True,
 ) -> dict[str, Any]:
     row = (
         db.query(ReferenceLibraryVersion)
@@ -321,6 +327,22 @@ def activate_version(
         .first()
     )
     if previous is not None and previous.id != row.id:
+        from app.models.standards_governance import StandardsRollout
+
+        rollout = db.get(StandardsRollout, standards_rollout_id) if standards_rollout_id else None
+        if (
+            rollout is None
+            or rollout.reference_library_version_id != row.id
+            or rollout.status != "in_progress"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Activation blocked: a sealed replay, platform-owner approval, and active "
+                    "standards rollout are required."
+                ),
+            )
+    if previous is not None and previous.id != row.id:
         previous.status = "validated"
         previous.updated_at = _now()
 
@@ -348,7 +370,9 @@ def activate_version(
             "rollback_from_version": activation.rollback_from_version,
         },
     )
-    db.commit()
+    db.flush()
+    if commit:
+        db.commit()
     return {
         "activation_id": activation.id,
         "version": version,

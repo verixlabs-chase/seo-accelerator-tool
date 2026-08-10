@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.campaign import Campaign
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
 from app.providers import get_local_provider
+from app.services import metric_contract_service
 
 
 def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
@@ -122,7 +123,9 @@ def ingest_reviews(db: Session, tenant_id: str, campaign_id: str) -> dict:
 
 def compute_review_velocity(db: Session, tenant_id: str, campaign_id: str) -> dict:
     profile = _get_profile_or_create(db, tenant_id, campaign_id)
-    window_start = datetime.now(UTC) - timedelta(days=30)
+    campaign = _campaign_or_404(db, tenant_id, campaign_id)
+    captured_at = datetime.now(UTC)
+    window_start = captured_at - timedelta(days=30)
     rows = (
         db.query(Review)
         .filter(
@@ -135,12 +138,32 @@ def compute_review_velocity(db: Session, tenant_id: str, campaign_id: str) -> di
     )
     count = len(rows)
     avg = round(sum(r.rating for r in rows) / count, 2) if count else 0.0
+    contract_ids = (
+        "reputation.review_count_30d",
+        "reputation.review_pace",
+        "reputation.average_rating_30d",
+    )
+    scope = metric_contract_service.scope_evidence(
+        "reputation.review_count_30d",
+        {
+            "tenant_id": tenant_id,
+            "campaign_id": campaign_id,
+            "business_location_id": campaign.business_location_id or "unmapped",
+            "profile_id": profile.id,
+            "window_start": window_start,
+            "window_end": captured_at,
+        },
+        db=db,
+    )
     snap = ReviewVelocitySnapshot(
         tenant_id=tenant_id,
         campaign_id=campaign_id,
         profile_id=profile.id,
         reviews_last_30d=count,
         avg_rating_last_30d=avg,
+        metric_contract_versions=metric_contract_service.contract_versions(contract_ids, db=db),
+        scope_key=scope["scope_key"],
+        captured_at=captured_at,
     )
     db.add(snap)
     db.commit()
@@ -149,6 +172,10 @@ def compute_review_velocity(db: Session, tenant_id: str, campaign_id: str) -> di
         "profile_id": profile.id,
         "reviews_last_30d": count,
         "avg_rating_last_30d": avg,
+        "metric_contracts": {
+            "versions": dict(snap.metric_contract_versions or {}),
+            "scope_key": snap.scope_key,
+        },
     }
 
 
@@ -184,5 +211,9 @@ def get_velocity(db: Session, tenant_id: str, campaign_id: str) -> dict:
         "profile_id": snap.profile_id,
         "reviews_last_30d": snap.reviews_last_30d,
         "avg_rating_last_30d": snap.avg_rating_last_30d,
+        "metric_contracts": {
+            "versions": dict(snap.metric_contract_versions or {}),
+            "scope_key": snap.scope_key,
+        },
         "captured_at": snap.captured_at.isoformat(),
     }

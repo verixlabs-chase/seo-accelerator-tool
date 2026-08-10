@@ -55,6 +55,12 @@ class GoogleBusinessProfileSnapshot(Base):
     profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     profile_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     audit_summary: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    metric_contract_id: Mapped[str] = mapped_column(
+        String(180), nullable=False, default="gbp.profile.configuration"
+    )
+    metric_contract_version: Mapped[str] = mapped_column(String(40), nullable=False, default="1.0")
+    source_account_id: Mapped[str] = mapped_column(String(120), nullable=False, default="unknown")
+    scope_key: Mapped[str] = mapped_column(String(64), nullable=False, default="legacy")
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
     )
@@ -110,6 +116,11 @@ class GoogleBusinessProfileDailyMetric(Base):
     source_name: Mapped[str] = mapped_column(
         String(64), nullable=False, default="google_business_profile"
     )
+    metric_contract_id: Mapped[str] = mapped_column(String(180), nullable=False, default="legacy")
+    metric_contract_version: Mapped[str] = mapped_column(String(40), nullable=False, default="1.0")
+    source_account_id: Mapped[str] = mapped_column(String(120), nullable=False, default="unknown")
+    external_resource_id: Mapped[str] = mapped_column(String(120), nullable=False, default="unknown")
+    scope_key: Mapped[str] = mapped_column(String(64), nullable=False, default="legacy")
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -161,9 +172,17 @@ class GoogleBusinessProfileSearchKeyword(Base):
     metric_month: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     keyword: Mapped[str] = mapped_column(String(500), nullable=False)
     impressions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    measurement_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="exact")
     source_name: Mapped[str] = mapped_column(
         String(64), nullable=False, default="google_business_profile"
     )
+    metric_contract_id: Mapped[str] = mapped_column(
+        String(180), nullable=False, default="gbp.search_terms.monthly_impressions"
+    )
+    metric_contract_version: Mapped[str] = mapped_column(String(40), nullable=False, default="1.0")
+    source_account_id: Mapped[str] = mapped_column(String(120), nullable=False, default="unknown")
+    external_resource_id: Mapped[str] = mapped_column(String(120), nullable=False, default="unknown")
+    scope_key: Mapped[str] = mapped_column(String(64), nullable=False, default="legacy")
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )

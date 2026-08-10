@@ -59,6 +59,10 @@ def test_search_console_daily_metric_upsert_is_idempotent(db_session) -> None:
     assert second.skipped is True
     assert row.clicks == 12
     assert row.impressions == 300
+    assert row.ctr == 0.04
+    assert row.metric_contract_versions["search_console.clicks"] == "1.0"
+    assert row.metric_contract_versions["search_console.position"] == "1.0"
+    assert row.scope_key != "legacy"
 
 
 def test_analytics_daily_metric_upsert_updates_on_hash_change(db_session) -> None:
@@ -147,6 +151,8 @@ def test_search_console_sync_only_fetches_missing_days_and_is_idempotent(db_sess
     assert second.provider_calls == 0
     assert len(calls) == 1
     assert len(rows) == 2
+    assert all(row.property_uri == "sc-domain:facts.example" for row in rows)
+    assert all(row.scope_key != "legacy" for row in rows)
 
 
 def test_analytics_sync_replay_mode_skips_provider_calls(db_session, monkeypatch) -> None:

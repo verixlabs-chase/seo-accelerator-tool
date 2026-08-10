@@ -110,6 +110,14 @@ def test_migration_upgrade_and_downgrade():
         assert "reference_library_artifacts" in inspector.get_table_names()
         assert "reference_library_validation_runs" in inspector.get_table_names()
         assert "reference_library_activations" in inspector.get_table_names()
+        assert "standards_source_registry" in inspector.get_table_names()
+        assert "standards_source_snapshots" in inspector.get_table_names()
+        assert "standards_change_candidates" in inspector.get_table_names()
+        assert "standards_impact_links" in inspector.get_table_names()
+        assert "provider_metric_contract_versions" in inspector.get_table_names()
+        assert "standards_replay_reports" in inspector.get_table_names()
+        assert "standards_approvals" in inspector.get_table_names()
+        assert "standards_rollouts" in inspector.get_table_names()
         assert "page_entities" in inspector.get_table_names()
         assert "competitor_entities" in inspector.get_table_names()
         assert "entity_analysis_runs" in inspector.get_table_names()
@@ -173,6 +181,19 @@ def test_migration_upgrade_and_downgrade():
         campaign_daily_metric_cols = {col["name"] for col in inspector.get_columns("campaign_daily_metrics")}
         campaign_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("campaign_daily_metrics")}
         search_console_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("search_console_daily_metrics")}
+        search_console_daily_metric_cols = {
+            col["name"] for col in inspector.get_columns("search_console_daily_metrics")
+        }
+        provider_metric_contract_cols = {
+            col["name"] for col in inspector.get_columns("provider_metric_contract_versions")
+        }
+        assert {
+            "lifecycle_status",
+            "supersedes_version_id",
+            "standards_change_candidate_id",
+            "proposed_by_user_id",
+            "proposed_at",
+        }.issubset(provider_metric_contract_cols)
         analytics_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("analytics_daily_metrics")}
         keyword_daily_economics_indexes = {idx["name"] for idx in inspector.get_indexes("keyword_daily_economics")}
         keyword_market_snapshot_indexes = {idx["name"] for idx in inspector.get_indexes("keyword_market_snapshots")}
@@ -216,6 +237,16 @@ def test_migration_upgrade_and_downgrade():
         assert "deterministic_hash" in campaign_daily_metric_cols
         assert "ix_campaign_daily_metrics_campaign_date" in campaign_daily_metric_indexes
         assert "ix_search_console_daily_metrics_campaign_date" in search_console_daily_metric_indexes
+        assert {
+            "ctr",
+            "property_uri",
+            "search_type",
+            "dimensions",
+            "filters",
+            "metric_contract_versions",
+            "scope_key",
+            "captured_at",
+        }.issubset(search_console_daily_metric_cols)
         assert "ix_analytics_daily_metrics_campaign_date" in analytics_daily_metric_indexes
         assert "ix_keyword_daily_economics_keyword_date" in keyword_daily_economics_indexes
         assert "ix_keyword_market_snapshots_geo_device_date" in keyword_market_snapshot_indexes

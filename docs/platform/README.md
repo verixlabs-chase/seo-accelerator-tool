@@ -7,6 +7,8 @@ This directory describes the runtime platform implemented by the backend in this
 - `platform_overview.md`: top-level platform summary and execution model
 - `system_architecture.md`: process model, core services, and runtime boundaries
 - `intelligence_engine.md`: intelligence pipeline, orchestration, digital twin, and learning loop
+- `intelligence_lexicon.md`: canonical metrics, standards, diagnoses, actions, and version governance
+- `google-standards-and-measurement-governance.md`: I1.6 official-source monitoring, objective Search/GBP metric contracts, replay, approval, and performance-drift rules
 - `knowledge_graph.md`: local/global knowledge graph and graph update mechanics
 - `event_system.md`: synchronous event bus, Redis Streams, and outbox flow
 - `worker_architecture.md`: Celery queues, intelligence workers, queue controls, and worker partitioning

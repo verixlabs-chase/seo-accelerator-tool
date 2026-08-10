@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 import json
@@ -17,6 +17,7 @@ from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_analytics import GoogleAnalyticsProviderAdapter
 from app.providers.google_search_console import SearchConsoleProviderAdapter
 from app.services.provider_credentials_service import resolve_provider_credentials
+from app.services import metric_contract_service
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,11 @@ class SearchConsoleDailyMetricInput:
     clicks: int
     impressions: int
     avg_position: float | None
+    property_uri: str = "unknown"
+    search_type: str = "web"
+    dimensions: tuple[str, ...] = ("date",)
+    filters: dict[str, Any] = field(default_factory=dict)
+    captured_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -64,7 +70,7 @@ class TrafficFactSyncResult:
 
 
 def upsert_search_console_daily_metric(*, db: Session, metric_input: SearchConsoleDailyMetricInput) -> MetricUpsertResult:
-    payload = _normalize_search_console_daily_metric(metric_input)
+    payload = _normalize_search_console_daily_metric(db, metric_input)
     existing = (
         db.query(SearchConsoleDailyMetric)
         .filter(
@@ -206,6 +212,10 @@ def sync_search_console_daily_metrics_for_campaign(
                 clicks=int(round(float(values['clicks']))),
                 impressions=int(round(impressions)),
                 avg_position=avg_position,
+                property_uri=resolved_site_url,
+                search_type="web",
+                dimensions=("date",),
+                filters={},
             ),
         )
         inserted_rows += int(outcome.inserted)
@@ -369,16 +379,52 @@ def _inactive_organization_result(
 
 
 
-def _normalize_search_console_daily_metric(metric_input: SearchConsoleDailyMetricInput) -> dict[str, Any]:
+def _normalize_search_console_daily_metric(
+    db: Session,
+    metric_input: SearchConsoleDailyMetricInput,
+) -> dict[str, Any]:
+    window_start = metric_input.metric_date.isoformat()
+    window_end = metric_input.metric_date.isoformat()
+    scope = {
+        "organization_id": metric_input.organization_id,
+        "campaign_id": metric_input.campaign_id,
+        "property_uri": metric_input.property_uri,
+        "search_type": metric_input.search_type,
+        "dimensions": list(metric_input.dimensions),
+        "filters": dict(metric_input.filters),
+        "window_start": window_start,
+        "window_end": window_end,
+    }
+    contract_ids = (
+        "search_console.clicks",
+        "search_console.impressions",
+        "search_console.ctr",
+        "search_console.position",
+    )
+    contract_scope = metric_contract_service.scope_evidence(
+        "search_console.clicks",
+        scope,
+        db=db,
+    )
+    impressions = int(metric_input.impressions)
+    clicks = int(metric_input.clicks)
     payload: dict[str, Any] = {
         'organization_id': metric_input.organization_id,
         'campaign_id': metric_input.campaign_id,
         'metric_date': metric_input.metric_date,
-        'clicks': int(metric_input.clicks),
-        'impressions': int(metric_input.impressions),
+        'clicks': clicks,
+        'impressions': impressions,
+        'ctr': (float(clicks) / float(impressions)) if impressions > 0 else None,
         'avg_position': metric_input.avg_position,
+        'property_uri': metric_input.property_uri,
+        'search_type': metric_input.search_type,
+        'dimensions': list(metric_input.dimensions),
+        'filters': dict(metric_input.filters),
+        'metric_contract_versions': metric_contract_service.contract_versions(contract_ids, db=db),
+        'scope_key': contract_scope["scope_key"],
     }
     payload['deterministic_hash'] = _stable_hash(payload)
+    payload['captured_at'] = metric_input.captured_at or datetime.now(UTC)
     return payload
 
 

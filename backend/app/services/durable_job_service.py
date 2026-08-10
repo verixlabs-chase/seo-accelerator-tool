@@ -24,6 +24,7 @@ from app.services import (
     job_service,
     local_rank_grid_service,
     reporting_service,
+    standards_source_service,
     traffic_fact_service,
     website_performance_service,
 )
@@ -35,6 +36,7 @@ INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE = "intelligence.campaign_cycle"
 SEARCH_CONSOLE_SYNC_JOB_TYPE = "data_connections.search_console_sync"
 BUSINESS_PROFILE_SYNC_JOB_TYPE = "data_connections.google_business_profile_sync"
 CWV_STANDARDS_CHECK_JOB_TYPE = "reference_library.cwv_standards_check"
+STANDARDS_SOURCE_CHECK_JOB_TYPE = "reference_library.standards_source_check"
 WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE = "website_performance.collect"
 LOCAL_RANK_GRID_DISPATCH_JOB_TYPE = "local.rank_grid.dispatch"
 
@@ -177,6 +179,23 @@ def _cwv_standards_check_handler(
     )
 
 
+def _standards_source_check_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    settings = get_settings()
+    source_id = str(job.payload.get("source_id") or "").strip()
+    if not source_id:
+        raise ValueError("Standards source check job is missing source_id.")
+    return standards_source_service.check_source(
+        db,
+        source_id=source_id,
+        timeout_seconds=settings.standards_source_http_timeout_seconds,
+        max_content_bytes=settings.standards_source_max_content_bytes,
+        commit=False,
+    )
+
+
 def _website_performance_collection_handler(
     db: Session,
     job: PlatformJob,
@@ -226,6 +245,7 @@ DEFAULT_HANDLERS: dict[str, JobHandler] = {
     SEARCH_CONSOLE_SYNC_JOB_TYPE: _search_console_sync_handler,
     BUSINESS_PROFILE_SYNC_JOB_TYPE: _business_profile_sync_handler,
     CWV_STANDARDS_CHECK_JOB_TYPE: _cwv_standards_check_handler,
+    STANDARDS_SOURCE_CHECK_JOB_TYPE: _standards_source_check_handler,
     WEBSITE_PERFORMANCE_COLLECTION_JOB_TYPE: _website_performance_collection_handler,
     LOCAL_RANK_GRID_DISPATCH_JOB_TYPE: _local_rank_grid_dispatch_handler,
 }
@@ -677,6 +697,57 @@ def enqueue_due_cwv_standards_check(
     return 1
 
 
+def enqueue_due_standards_source_checks(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    limit: int = 25,
+) -> int:
+    settings = get_settings()
+    if not settings.intelligence_lexicon_enabled or not settings.standards_source_monitoring_enabled:
+        return 0
+    resolved_now = now or datetime.now(UTC)
+    rows = standards_source_service.ensure_default_sources(
+        db,
+        now=resolved_now,
+        commit=False,
+    )
+    created = 0
+    for source in rows:
+        if created >= max(1, min(int(limit), 100)):
+            break
+        if not source.is_active:
+            continue
+        last_checked_at = source.last_checked_at
+        if last_checked_at is not None:
+            if last_checked_at.tzinfo is None:
+                last_checked_at = last_checked_at.replace(tzinfo=UTC)
+            due_at = last_checked_at + timedelta(hours=max(1, source.review_interval_hours))
+            if due_at > resolved_now:
+                continue
+        interval_seconds = max(3600, int(source.review_interval_hours) * 3600)
+        interval_bucket = int(resolved_now.timestamp()) // interval_seconds
+        job_service.create_job(
+            db,
+            tenant_id=None,
+            job_type=STANDARDS_SOURCE_CHECK_JOB_TYPE,
+            entity_type="standards_source",
+            entity_id=None,
+            idempotency_key=f"standards-source:{source.source_id}:{interval_bucket}",
+            payload={
+                "source_id": source.source_id,
+                "source_uri": source.source_uri,
+                "parser_version": source.parser_version,
+                "automatic_activation_allowed": False,
+            },
+            available_at=resolved_now,
+            max_retries=2,
+        )
+        created += 1
+    db.flush()
+    return created
+
+
 def create_website_performance_job(
     db: Session,
     *,
@@ -1088,6 +1159,10 @@ def drain_platform_jobs(
         limit=resolved_batch_size * 5,
     )
     due_cwv_standards_checks_seen = enqueue_due_cwv_standards_check(db)
+    due_standards_source_checks_seen = enqueue_due_standards_source_checks(
+        db,
+        limit=resolved_batch_size * 5,
+    )
     due_website_performance_jobs_seen = enqueue_due_website_performance_jobs(
         db,
         limit=resolved_batch_size * 5,
@@ -1129,6 +1204,7 @@ def drain_platform_jobs(
         "due_intelligence_campaigns_seen": due_intelligence_campaigns_seen,
         "due_data_connections_seen": due_data_connections_seen,
         "due_cwv_standards_checks_seen": due_cwv_standards_checks_seen,
+        "due_standards_source_checks_seen": due_standards_source_checks_seen,
         "due_website_performance_jobs_seen": due_website_performance_jobs_seen,
         "claimed": len(claimed_ids),
         "processed": len(results),

@@ -4,7 +4,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
+  getActionTrack,
+  getActionTrackGroups,
   getCanonicalActionKey,
+  getPrimaryMeasurement,
   getRecommendationPortfolio,
   getRecommendationRoutines,
   getWorkProgress,
@@ -107,6 +110,63 @@ test("work progress uses required checklist steps", () => {
   });
 });
 
+test("actions are separated into website and Google profile work", () => {
+  const website = recommendation({
+    id: "website",
+    action_plan: {
+      action_id: "technical.speed",
+      category: "technical",
+      primary_metric_id: "cwv.lcp",
+      measurement_track: "website",
+    },
+  });
+  const profile = recommendation({
+    id: "profile",
+    action_plan: {
+      action_id: "reputation.reviews",
+      category: "reputation",
+      primary_metric_id: "local.review_velocity_30d",
+    },
+  });
+
+  const groups = getActionTrackGroups([website, profile]);
+
+  assert.equal(getActionTrack(website), "website");
+  assert.equal(getActionTrack(profile), "google_business_profile");
+  assert.deepEqual(groups.website.map((item) => item.id), ["website"]);
+  assert.deepEqual(groups.google_business_profile.map((item) => item.id), ["profile"]);
+});
+
+test("primary measurement stays tied to the governed main metric", () => {
+  const item = recommendation({
+    action_plan: {
+      action_id: "technical.speed",
+      primary_metric_id: "cwv.lcp",
+      work_item: {
+        measurement: {
+          result_classification: "improved",
+          observation_due_at: "2026-09-01T00:00:00Z",
+          baseline_metrics: [
+            { metric_id: "cwv.lcp", value: 4200, status: "available" },
+            { metric_id: "organic.impressions", value: 100, status: "available" },
+          ],
+          outcome_metrics: [
+            { metric_id: "organic.impressions", value: 120, status: "available" },
+            { metric_id: "cwv.lcp", value: 2400, status: "available" },
+          ],
+        },
+      },
+    },
+  });
+
+  const primary = getPrimaryMeasurement(item);
+
+  assert.equal(primary.metricId, "cwv.lcp");
+  assert.equal(primary.baseline.value, 4200);
+  assert.equal(primary.outcome.value, 2400);
+  assert.equal(primary.resultClassification, "improved");
+});
+
 test("next steps separates finished work from a measured result", () => {
   const pageSource = readFileSync(
     fileURLToPath(new URL("../app/(product)/opportunities/page.tsx", import.meta.url)),
@@ -114,6 +174,11 @@ test("next steps separates finished work from a measured result", () => {
   );
 
   assert.match(pageSource, /Measured result/);
+  assert.match(pageSource, /Improve your website/);
+  assert.match(pageSource, /Improve your Google Business Profile/);
+  assert.match(pageSource, /How we&apos;ll know this helped/);
+  assert.match(pageSource, /The result is about the same/);
+  assert.match(pageSource, /The measurement got worse/);
   assert.match(pageSource, /Finishing a step records the work, but it does not claim the result improved/);
   assert.match(pageSource, /Work recorded — waiting for results/);
   assert.match(pageSource, /Check results now/);

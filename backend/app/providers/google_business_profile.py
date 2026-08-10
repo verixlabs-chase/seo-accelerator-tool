@@ -164,6 +164,12 @@ def fetch_daily_metrics(
             if not isinstance(series, dict):
                 continue
             metric_name = str(series.get("dailyMetric") or "").strip()
+            if metric_name and metric_name not in DAILY_METRICS:
+                raise GoogleBusinessProfileProviderError(
+                    "Google changed a business listing measurement that InsightOS has not reviewed yet.",
+                    reason_code="provider_contract_unknown",
+                    status_code=409,
+                )
             dated_values = (series.get("timeSeries") or {}).get("datedValues", [])
             if not metric_name or not isinstance(dated_values, list):
                 continue
@@ -216,9 +222,15 @@ def fetch_search_keywords(
         if "value" in value:
             impressions = int(value.get("value") or 0)
             measurement = "exact"
-        else:
+        elif "threshold" in value:
             impressions = int(value.get("threshold") or 0)
             measurement = "below_threshold"
+        else:
+            raise GoogleBusinessProfileProviderError(
+                "Google changed a search-term measurement that InsightOS has not reviewed yet.",
+                reason_code="provider_contract_unknown",
+                status_code=409,
+            )
         normalized.append(
             {
                 "keyword": keyword,

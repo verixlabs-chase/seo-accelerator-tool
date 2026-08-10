@@ -1,5 +1,6 @@
 import os
 os.environ["APP_ENV"] = "test"
+os.environ["STANDARDS_SOURCE_MONITORING_ENABLED"] = "false"
 if os.getenv("DATABASE_URL"):
     os.environ["POSTGRES_DSN"] = os.environ["DATABASE_URL"]
 
@@ -57,14 +58,22 @@ from app.models.platform_provider_credential import PlatformProviderCredential  
 from app.models.policy_performance import PolicyPerformance  # noqa: F401
 from app.models.provider_health import ProviderHealthState  # noqa: F401
 from app.models.provider_metric import ProviderExecutionMetric  # noqa: F401
+from app.models.provider_metric_contract import ProviderMetricContractVersion  # noqa: F401
+from app.models.standards_replay import StandardsReplayReport  # noqa: F401
+from app.models.standards_governance import StandardsApproval, StandardsRollout  # noqa: F401
 from app.models.provider_policy import ProviderPolicy  # noqa: F401
 from app.models.provider_quota import ProviderQuotaState  # noqa: F401
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot  # noqa: F401
 from app.models.reference_library import (
     ReferenceLibraryActivation,  # noqa: F401
     ReferenceLibraryArtifact,  # noqa: F401
+    ReferenceLibraryStandardsCheck,  # noqa: F401
     ReferenceLibraryValidationRun,  # noqa: F401
     ReferenceLibraryVersion,  # noqa: F401
+    StandardsChangeCandidate,  # noqa: F401
+    StandardsImpactLink,  # noqa: F401
+    StandardsSourceRegistry,  # noqa: F401
+    StandardsSourceSnapshot,  # noqa: F401
 )
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent, ReportSchedule, ReportTemplateVersion  # noqa: F401
 from app.models.role import Role, UserRole

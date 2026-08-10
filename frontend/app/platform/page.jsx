@@ -13,6 +13,9 @@ export default function PlatformHomePage() {
           <Link href="/platform/providers">Provider Health</Link>
         </li>
         <li>
+          <Link href="/platform/standards">Standards &amp; Measurement</Link>
+        </li>
+        <li>
           <Link href="/platform/audit">Audit Log</Link>
         </li>
       </ul>
