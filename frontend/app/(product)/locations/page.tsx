@@ -339,7 +339,7 @@ type PortfolioFleetRun = {
   target_snapshot_id: string;
   target_hash: string;
   action_key: string;
-  status: "awaiting_approval" | "blocked" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
+  status: "awaiting_approval" | "blocked" | "running" | "paused" | "succeeded" | "partial" | "failed" | "cancelled";
   status_label: string;
   counts: {
     targeted: number;
@@ -365,6 +365,8 @@ type PortfolioFleetRun = {
   version: number;
   items: PortfolioFleetRunItem[];
   can_approve: boolean;
+  can_pause: boolean;
+  can_resume: boolean;
   can_retry_failed: boolean;
   provider_changes_enabled: boolean;
 };
@@ -835,6 +837,40 @@ export default function LocationsPage() {
       const retried = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
       if (!retried) throw new Error("The failed locations could not be retried.");
       return "Only the failed locations were placed back in line.";
+    });
+  }
+
+  async function pauseFleetRun(run: PortfolioFleetRun) {
+    if (!organizationId) return;
+    await runMutation("fleet-pause", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs/${run.id}/pause`,
+        {
+          method: "POST",
+          body: JSON.stringify({ expected_version: run.version }),
+        },
+      );
+      const paused = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!paused) throw new Error("The remaining location checks could not be paused.");
+      return `${paused.counts.queued} waiting ${paused.counts.queued === 1 ? "location is" : "locations are"} paused. Completed results were kept.`;
+    });
+  }
+
+  async function resumeFleetRun(run: PortfolioFleetRun) {
+    if (!organizationId) return;
+    await runMutation("fleet-resume", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs/${run.id}/resume`,
+        {
+          method: "POST",
+          body: JSON.stringify({ expected_version: run.version }),
+        },
+      );
+      const resumed = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!resumed) throw new Error("The remaining location checks could not be resumed.");
+      return resumed.status === "running"
+        ? "The waiting locations are running again."
+        : "The run was refreshed and all finished results were kept.";
     });
   }
 
@@ -1342,6 +1378,26 @@ export default function LocationsPage() {
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <p className="text-sm font-semibold text-white">Progress by location</p>
                               <div className="flex flex-wrap gap-2">
+                                {visibleFleetRun.can_pause ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void pauseFleetRun(visibleFleetRun)}
+                                    disabled={busyAction === "fleet-pause"}
+                                    className={secondaryButtonClass}
+                                  >
+                                    {busyAction === "fleet-pause" ? "Pausing..." : "Pause waiting locations"}
+                                  </button>
+                                ) : null}
+                                {visibleFleetRun.can_resume ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void resumeFleetRun(visibleFleetRun)}
+                                    disabled={busyAction === "fleet-resume"}
+                                    className={primaryButtonClass}
+                                  >
+                                    {busyAction === "fleet-resume" ? "Resuming..." : "Resume waiting locations"}
+                                  </button>
+                                ) : null}
                                 {visibleFleetRun.can_retry_failed ? (
                                   <button
                                     type="button"

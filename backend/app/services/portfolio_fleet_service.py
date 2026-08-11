@@ -209,6 +209,15 @@ def approve_portfolio_fleet_run(
     if snapshot.target_hash != run.target_hash:
         raise PortfolioFleetError("fleet_target_snapshot_changed", status_code=409)
 
+    allowance = get_customer_credit_summary(
+        db,
+        organization_id=organization_id,
+        now=datetime.now(UTC),
+    )
+    remaining_credits = int((allowance.get("credits") or {}).get("remaining") or 0)
+    if run.estimated_credit_units > remaining_credits:
+        raise PortfolioFleetError("fleet_credit_allowance_exhausted", status_code=402)
+
     policy = SUPPORTED_ACTIONS[run.action_key]
     current_capabilities = {
         row["business_location_id"]: row
@@ -379,19 +388,119 @@ def retry_failed_portfolio_fleet_run_items(
     return run
 
 
+def pause_portfolio_fleet_run(
+    db: Session,
+    *,
+    organization_id: str,
+    run_id: str,
+    actor_user_id: str,
+    expected_version: int,
+) -> PortfolioFleetRun:
+    run = _locked_run_or_error(db, organization_id=organization_id, run_id=run_id)
+    if run.version != expected_version:
+        raise PortfolioFleetError("fleet_run_version_conflict", status_code=409)
+    _sync_run_from_jobs(db, run)
+    if run.status != "running":
+        raise PortfolioFleetError("fleet_run_not_running", status_code=409)
+    if run.queued_count < 1:
+        raise PortfolioFleetError("fleet_run_has_no_waiting_locations", status_code=409)
+
+    now = datetime.now(UTC)
+    run.status = "paused"
+    run.updated_at = now
+    run.version += 1
+    write_audit_log(
+        db,
+        tenant_id=organization_id,
+        actor_user_id=actor_user_id,
+        event_type="portfolio.fleet_run.paused",
+        payload={
+            "organization_id": organization_id,
+            "portfolio_fleet_run_id": run.id,
+            "target_hash": run.target_hash,
+            "waiting_location_count": run.queued_count,
+            "completed_location_count": run.succeeded_count,
+        },
+    )
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def resume_portfolio_fleet_run(
+    db: Session,
+    *,
+    organization_id: str,
+    run_id: str,
+    actor_user_id: str,
+    expected_version: int,
+) -> PortfolioFleetRun:
+    run = _locked_run_or_error(db, organization_id=organization_id, run_id=run_id)
+    if run.version != expected_version:
+        raise PortfolioFleetError("fleet_run_version_conflict", status_code=409)
+    if run.status != "paused":
+        raise PortfolioFleetError("fleet_run_not_paused", status_code=409)
+
+    _sync_run_from_jobs(db, run, allow_paused=True)
+    if run.status == "paused":
+        # Defensive fallback for a run without linked jobs.
+        run.status = "running"
+        run.updated_at = datetime.now(UTC)
+        run.version += 1
+    portfolio_ids = {
+        item.portfolio_id
+        for item in _run_items(db, run.id)
+        if item.portfolio_id and item.status == "queued"
+    }
+    write_audit_log(
+        db,
+        tenant_id=organization_id,
+        actor_user_id=actor_user_id,
+        event_type="portfolio.fleet_run.resumed",
+        payload={
+            "organization_id": organization_id,
+            "portfolio_fleet_run_id": run.id,
+            "target_hash": run.target_hash,
+            "waiting_location_count": run.queued_count,
+            "current_status": run.status,
+        },
+    )
+    db.commit()
+
+    if run.status == "running":
+        for portfolio_id in sorted(portfolio_ids):
+            try:
+                enqueue_pending_items_for_portfolio(
+                    db=db,
+                    organization_id=organization_id,
+                    portfolio_id=portfolio_id,
+                )
+            except Exception:  # noqa: BLE001
+                continue
+    db.refresh(run)
+    return run
+
+
 def list_portfolio_fleet_runs(
     db: Session,
     *,
     organization_id: str,
     limit: int = 10,
+    location_group_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    rows = (
-        db.query(PortfolioFleetRun)
-        .filter(PortfolioFleetRun.organization_id == organization_id)
-        .order_by(PortfolioFleetRun.created_at.desc(), PortfolioFleetRun.id.desc())
-        .limit(limit)
-        .all()
+    query = db.query(PortfolioFleetRun).filter(
+        PortfolioFleetRun.organization_id == organization_id
     )
+    if location_group_ids is not None:
+        if not location_group_ids:
+            return []
+        query = query.join(
+            PortfolioTargetSnapshot,
+            PortfolioTargetSnapshot.id == PortfolioFleetRun.target_snapshot_id,
+        ).filter(PortfolioTargetSnapshot.location_group_id.in_(location_group_ids))
+    rows = query.order_by(
+        PortfolioFleetRun.created_at.desc(), PortfolioFleetRun.id.desc()
+    ).limit(limit).all()
     changed = False
     for row in rows:
         changed = _sync_run_from_jobs(db, row) or changed
@@ -463,8 +572,14 @@ def serialize_portfolio_fleet_run(
             }
             for item in items
         ],
-        "can_approve": row.status == "awaiting_approval" and row.ready_count > 0,
-        "can_retry_failed": row.failed_count > 0,
+        "can_approve": (
+            row.status == "awaiting_approval"
+            and row.ready_count > 0
+            and bool((row.preflight_json.get("credits") or {}).get("confirmed"))
+        ),
+        "can_pause": row.status == "running" and row.queued_count > 0,
+        "can_resume": row.status == "paused",
+        "can_retry_failed": row.failed_count > 0 and row.status != "paused",
         "provider_changes_enabled": False,
     }
 
@@ -666,9 +781,15 @@ def _preflight_payload(
     }
 
 
-def _sync_run_from_jobs(db: Session, run: PortfolioFleetRun) -> bool:
+def _sync_run_from_jobs(
+    db: Session,
+    run: PortfolioFleetRun,
+    *,
+    allow_paused: bool = False,
+) -> bool:
     if run.status in {"awaiting_approval", "blocked", "cancelled"}:
         return False
+    preserve_pause = run.status == "paused" and not allow_paused
     items = _run_items(db, run.id)
     job_ids = [item.fleet_job_id for item in items if item.fleet_job_id]
     jobs = (
@@ -744,7 +865,9 @@ def _sync_run_from_jobs(db: Session, run: PortfolioFleetRun) -> bool:
             changed = True
 
     next_status = run.status
-    if counts["queued"] or counts["running"]:
+    if preserve_pause and (counts["queued"] or counts["running"]):
+        next_status = "paused"
+    elif counts["queued"] or counts["running"]:
         next_status = "running"
     elif counts["failed"]:
         next_status = "partial" if counts["succeeded"] else "failed"
@@ -852,6 +975,7 @@ def _status_label(status: str) -> str:
         "awaiting_approval": "Ready for approval",
         "blocked": "Needs setup",
         "running": "In progress",
+        "paused": "Paused",
         "succeeded": "Complete",
         "partial": "Some locations need attention",
         "failed": "Needs attention",

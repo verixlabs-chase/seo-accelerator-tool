@@ -51,3 +51,14 @@ class PortfolioFleetRunCreateIn(BaseModel):
 
 class PortfolioFleetRunDecisionIn(BaseModel):
     expected_version: int = Field(ge=1)
+
+
+class PortfolioAccessGrantCreateIn(BaseModel):
+    grantee_email: str = Field(min_length=3, max_length=320)
+    location_group_id: str = Field(min_length=36, max_length=36)
+    access_role: Literal["viewer", "operator", "approver"]
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class PortfolioAccessGrantDecisionIn(BaseModel):
+    expected_version: int = Field(ge=1)

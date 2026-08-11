@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.core.passwords import hash_password
 from app.models.audit_log import AuditLog
 from app.models.campaign import Campaign
 from app.models.fleet_job import FleetJob, FleetJobStatus, FleetJobType
 from app.models.fleet_job_item import FleetJobItem, FleetJobItemStatus
 from app.models.organization import Organization
+from app.models.organization_membership import OrganizationMembership
 from app.models.portfolio import Portfolio
+from app.models.user import User
 from app.services.fleet_service import create_schedule_job, process_fleet_job_item
+from app.services.portfolio_fleet_service import SUPPORTED_ACTIONS
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -168,6 +172,30 @@ def test_portfolio_fleet_preflight_approval_progress_and_failed_only_retry(
         .filter(FleetJobItem.fleet_job_id == jobs[0].id)
         .one()
     )
+    pause_response = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/pause",
+        headers=headers,
+        json={"expected_version": approved["version"]},
+    )
+    assert pause_response.status_code == 200
+    paused = pause_response.json()["data"]["portfolio_fleet_run"]
+    assert paused["status"] == "paused"
+    assert paused["can_resume"] is True
+    assert paused["can_pause"] is False
+    paused_result = process_fleet_job_item(db=db_session, fleet_job_item_id=first_item.id)
+    assert paused_result["status"] == "ignored"
+    assert paused_result["reason"] == "run_paused"
+
+    resume_response = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/resume",
+        headers=headers,
+        json={"expected_version": paused["version"]},
+    )
+    assert resume_response.status_code == 200
+    resumed = resume_response.json()["data"]["portfolio_fleet_run"]
+    assert resumed["status"] == "running"
+    assert resumed["can_resume"] is False
+
     result = process_fleet_job_item(db=db_session, fleet_job_item_id=first_item.id)
     assert result["status"] == "succeeded"
 
@@ -222,7 +250,184 @@ def test_portfolio_fleet_preflight_approval_progress_and_failed_only_retry(
     }
     assert "portfolio.fleet_run.preflight_created" in events
     assert "portfolio.fleet_run.approved" in events
+    assert "portfolio.fleet_run.paused" in events
+    assert "portfolio.fleet_run.resumed" in events
     assert "portfolio.fleet_run.failed_locations_retried" in events
+
+
+def test_delegated_location_group_access_separates_operator_and_approver(
+    client,
+    db_session,
+) -> None:
+    admin_token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    organization = db_session.get(Organization, org_id)
+    organization.plan_type = "multi_location"
+    delegated_user = User(
+        tenant_id=org_id,
+        email="fleet-operator@example.com",
+        hashed_password=hash_password("pass-fleet-operator"),
+        is_active=True,
+    )
+    db_session.add(delegated_user)
+    db_session.flush()
+    db_session.add(
+        OrganizationMembership(
+            user_id=delegated_user.id,
+            organization_id=org_id,
+            role="org_user",
+            status="active",
+        )
+    )
+    db_session.commit()
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    locations = [
+        _create_location(
+            client,
+            token=admin_token,
+            organization_id=org_id,
+            name="Delegated North",
+        ),
+        _create_location(
+            client,
+            token=admin_token,
+            organization_id=org_id,
+            name="Delegated South",
+        ),
+    ]
+    _add_campaigns(db_session, organization_id=org_id, locations=locations)
+
+    allowed_group_response = client.post(
+        f"/api/v1/organizations/{org_id}/location-groups",
+        headers=admin_headers,
+        json={"name": "North team", "location_ids": [locations[0]["id"]]},
+    )
+    other_group_response = client.post(
+        f"/api/v1/organizations/{org_id}/location-groups",
+        headers=admin_headers,
+        json={"name": "South team", "location_ids": [locations[1]["id"]]},
+    )
+    allowed_group = allowed_group_response.json()["data"]["location_group"]
+    other_group = other_group_response.json()["data"]["location_group"]
+
+    grant_response = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-access-grants",
+        headers=admin_headers,
+        json={
+            "grantee_email": delegated_user.email,
+            "location_group_id": allowed_group["id"],
+            "access_role": "operator",
+        },
+    )
+    assert grant_response.status_code == 201
+    grant = grant_response.json()["data"]["portfolio_access_grant"]
+    assert grant["access_role"] == "operator"
+
+    delegate_token, delegated_org_id = _login(
+        client,
+        delegated_user.email,
+        "pass-fleet-operator",
+    )
+    assert delegated_org_id == org_id
+    delegate_headers = {"Authorization": f"Bearer {delegate_token}"}
+    groups_response = client.get(
+        f"/api/v1/organizations/{org_id}/location-groups",
+        headers=delegate_headers,
+    )
+    assert groups_response.status_code == 200
+    assert [item["id"] for item in groups_response.json()["data"]["items"]] == [
+        allowed_group["id"]
+    ]
+
+    forbidden_snapshot = client.post(
+        f"/api/v1/organizations/{org_id}/target-snapshots",
+        headers=delegate_headers,
+        json={
+            "action_key": "portfolio_review",
+            "request_key": "delegate-forbidden-snapshot",
+            "location_group_id": other_group["id"],
+        },
+    )
+    assert forbidden_snapshot.status_code == 403
+    assert (
+        forbidden_snapshot.json()["errors"][0]["details"]["reason_code"]
+        == "portfolio_access_operator_required"
+    )
+
+    snapshot_response = client.post(
+        f"/api/v1/organizations/{org_id}/target-snapshots",
+        headers=delegate_headers,
+        json={
+            "action_key": "portfolio_review",
+            "request_key": "delegate-allowed-snapshot",
+            "location_group_id": allowed_group["id"],
+        },
+    )
+    assert snapshot_response.status_code == 201
+    snapshot = snapshot_response.json()["data"]["target_snapshot"]
+    run_response = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs",
+        headers=delegate_headers,
+        json={
+            "target_snapshot_id": snapshot["id"],
+            "request_key": "delegate-run",
+        },
+    )
+    assert run_response.status_code == 201
+    run = run_response.json()["data"]["portfolio_fleet_run"]
+
+    operator_approval = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/approve",
+        headers=delegate_headers,
+        json={"expected_version": run["version"]},
+    )
+    assert operator_approval.status_code == 403
+    assert (
+        operator_approval.json()["errors"][0]["details"]["reason_code"]
+        == "portfolio_access_approval_required"
+    )
+
+    elevated_grant_response = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-access-grants",
+        headers=admin_headers,
+        json={
+            "grantee_email": delegated_user.email,
+            "location_group_id": allowed_group["id"],
+            "access_role": "approver",
+            "expected_version": grant["version"],
+        },
+    )
+    assert elevated_grant_response.status_code == 201
+    elevated_grant = elevated_grant_response.json()["data"]["portfolio_access_grant"]
+    assert elevated_grant["id"] == grant["id"]
+    assert elevated_grant["access_role"] == "approver"
+    assert elevated_grant["version"] == grant["version"] + 1
+
+    approval_response = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/approve",
+        headers=delegate_headers,
+        json={"expected_version": run["version"]},
+    )
+    assert approval_response.status_code == 200
+
+    revoke_response = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-access-grants/{grant['id']}/revoke",
+        headers=admin_headers,
+        json={"expected_version": elevated_grant["version"]},
+    )
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()["data"]["portfolio_access_grant"]["status"] == "revoked"
+
+    hidden_groups_response = client.get(
+        f"/api/v1/organizations/{org_id}/location-groups",
+        headers=delegate_headers,
+    )
+    assert hidden_groups_response.status_code == 200
+    assert hidden_groups_response.json()["data"]["items"] == []
+    denied_run_response = client.get(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}",
+        headers=delegate_headers,
+    )
+    assert denied_run_response.status_code == 403
 
 
 def test_portfolio_fleet_runs_are_organization_scoped(client, db_session) -> None:
@@ -280,6 +485,63 @@ def test_portfolio_fleet_runs_are_organization_scoped(client, db_session) -> Non
     assert (
         gated_response.json()["errors"][0]["details"]["reason_code"]
         == "fleet_feature_upgrade_required"
+    )
+
+
+def test_portfolio_fleet_approval_rechecks_shared_credit_allowance(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    organization = db_session.get(Organization, org_id)
+    organization.plan_type = "multi_location"
+    db_session.commit()
+    location = _create_location(
+        client,
+        token=token,
+        organization_id=org_id,
+        name="Credit guarded location",
+    )
+    _add_campaigns(db_session, organization_id=org_id, locations=[location])
+    monkeypatch.setitem(
+        SUPPORTED_ACTIONS["portfolio_review"],
+        "estimated_credit_units_per_location",
+        999_999,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    snapshot_response = client.post(
+        f"/api/v1/organizations/{org_id}/target-snapshots",
+        headers=headers,
+        json={
+            "action_key": "portfolio_review",
+            "request_key": "credit-guarded-target",
+            "included_location_ids": [location["id"]],
+        },
+    )
+    snapshot = snapshot_response.json()["data"]["target_snapshot"]
+    run_response = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs",
+        headers=headers,
+        json={
+            "target_snapshot_id": snapshot["id"],
+            "request_key": "credit-guarded-run",
+        },
+    )
+    assert run_response.status_code == 201
+    run = run_response.json()["data"]["portfolio_fleet_run"]
+    assert run["preflight"]["credits"]["confirmed"] is False
+    assert run["can_approve"] is False
+
+    approval_response = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/approve",
+        headers=headers,
+        json={"expected_version": run["version"]},
+    )
+    assert approval_response.status_code == 402
+    assert (
+        approval_response.json()["errors"][0]["details"]["reason_code"]
+        == "fleet_credit_allowance_exhausted"
     )
 
 

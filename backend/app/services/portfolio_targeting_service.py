@@ -30,17 +30,24 @@ class PortfolioTargetingError(RuntimeError):
         self.status_code = status_code
 
 
-def list_location_groups(db: Session, *, organization_id: str) -> list[dict[str, Any]]:
-    groups = (
-        db.query(PortfolioLocationGroup)
-        .filter(PortfolioLocationGroup.organization_id == organization_id)
-        .order_by(
-            PortfolioLocationGroup.status.asc(),
-            PortfolioLocationGroup.name.asc(),
-            PortfolioLocationGroup.id.asc(),
-        )
-        .all()
+def list_location_groups(
+    db: Session,
+    *,
+    organization_id: str,
+    location_group_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    query = db.query(PortfolioLocationGroup).filter(
+        PortfolioLocationGroup.organization_id == organization_id
     )
+    if location_group_ids is not None:
+        if not location_group_ids:
+            return []
+        query = query.filter(PortfolioLocationGroup.id.in_(location_group_ids))
+    groups = query.order_by(
+        PortfolioLocationGroup.status.asc(),
+        PortfolioLocationGroup.name.asc(),
+        PortfolioLocationGroup.id.asc(),
+    ).all()
     return [_serialize_group(db, group) for group in groups]
 
 
@@ -208,17 +215,19 @@ def list_target_snapshots(
     *,
     organization_id: str,
     limit: int,
+    location_group_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    rows = (
-        db.query(PortfolioTargetSnapshot)
-        .filter(PortfolioTargetSnapshot.organization_id == organization_id)
-        .order_by(
-            PortfolioTargetSnapshot.created_at.desc(),
-            PortfolioTargetSnapshot.id.desc(),
-        )
-        .limit(limit)
-        .all()
+    query = db.query(PortfolioTargetSnapshot).filter(
+        PortfolioTargetSnapshot.organization_id == organization_id
     )
+    if location_group_ids is not None:
+        if not location_group_ids:
+            return []
+        query = query.filter(PortfolioTargetSnapshot.location_group_id.in_(location_group_ids))
+    rows = query.order_by(
+        PortfolioTargetSnapshot.created_at.desc(),
+        PortfolioTargetSnapshot.id.desc(),
+    ).limit(limit).all()
     return [serialize_target_snapshot(row) for row in rows]
 
 
