@@ -12,6 +12,7 @@ from app.models.campaign import Campaign
 from app.models.intelligence import StrategyRecommendation
 from app.services.account_hierarchy_service import build_account_hierarchy
 from app.services.data_connections_service import get_connection_health
+from app.services.portfolio_trend_service import build_portfolio_trends
 
 
 _STATE_ORDER = {
@@ -66,6 +67,11 @@ def build_portfolio_overview(db: Session, *, organization_id: str) -> dict[str, 
     ordered_items = [*active_items, *archived_items]
     shared_issues = _shared_issue_groups(active_items)
     repeatable_wins = _repeatable_win_candidates(active_items)
+    trends = build_portfolio_trends(
+        db,
+        organization_id=organization_id,
+        locations=active_items,
+    )
 
     counts = {
         "urgent": sum(item["attention_state"] == "urgent" for item in active_items),
@@ -115,6 +121,7 @@ def build_portfolio_overview(db: Session, *, organization_id: str) -> dict[str, 
         "top_attention": top_attention,
         "shared_issues": shared_issues,
         "repeatable_wins": repeatable_wins,
+        "trends": trends,
         "locations": ordered_items,
     }
 
@@ -513,6 +520,7 @@ def _location_overview(
         "region": location.get("region"),
         "account_group": account_group,
         "campaign_id": primary_campaign_id,
+        "campaign_ids": campaign_ids,
         "campaign_count": len(campaigns),
         "attention_state": attention_state,
         "attention_label": _attention_label(attention_state),

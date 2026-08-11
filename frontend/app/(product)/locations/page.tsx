@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import {
   AppShell,
@@ -124,6 +132,7 @@ type PortfolioLocation = {
   region?: string | null;
   account_group?: { id: string; name: string } | null;
   campaign_id?: string | null;
+  campaign_ids: string[];
   attention_state: "urgent" | "needs_attention" | "watch" | "on_track";
   attention_label: string;
   reason_count: number;
@@ -190,6 +199,55 @@ type RepeatableWin = {
   guardrail: string;
 };
 
+type PortfolioTrendMetric = {
+  code: "daily_clicks" | "daily_impressions" | "avg_position" | "website_issues";
+  label: string;
+  current?: number | null;
+  previous?: number | null;
+  change?: number | null;
+  change_percent?: number | null;
+  direction: "improved" | "declined" | "steady" | "not_measured";
+  tone: "positive" | "negative" | "neutral";
+  unit: string;
+};
+
+type PortfolioTrendPoint = {
+  date: string;
+  clicks: number;
+  impressions: number;
+  avg_position?: number | null;
+  website_issues: number;
+  locations_reporting: number;
+};
+
+type PortfolioChangeAlert = {
+  code: string;
+  tone: "positive" | "negative";
+  location_id: string;
+  location_name: string;
+  campaign_id?: string | null;
+  title: string;
+  detail: string;
+  evidence: { label: string; value: string | number };
+  action: { label: string; href: string };
+};
+
+type PortfolioTrends = {
+  data_state: "ready" | "collecting_history" | "no_history";
+  window_days: number;
+  minimum_reporting_days: number;
+  date_from?: string | null;
+  date_to?: string | null;
+  comparison_date_from?: string | null;
+  comparison_date_to?: string | null;
+  locations_compared: number;
+  locations_excluded: number;
+  coverage_note: string;
+  summary: PortfolioTrendMetric[];
+  points: PortfolioTrendPoint[];
+  alerts: PortfolioChangeAlert[];
+};
+
 type PortfolioOverview = {
   generated_at: string;
   summary: {
@@ -207,6 +265,7 @@ type PortfolioOverview = {
   top_attention: PortfolioLocation[];
   shared_issues: SharedIssue[];
   repeatable_wins: RepeatableWin[];
+  trends: PortfolioTrends;
   locations: PortfolioLocation[];
 };
 
@@ -258,6 +317,37 @@ function positionLabel(value?: number | null) {
 
 function ratingLabel(value?: number | null) {
   return value == null ? "Not measured" : `${Number(value).toFixed(1)} stars`;
+}
+
+function shortDate(value?: string | null) {
+  if (!value) return "Not available";
+  return new Date(`${value}T12:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function trendValue(item: PortfolioTrendMetric) {
+  if (item.current == null) return "Not measured";
+  if (item.code === "avg_position") return `#${item.current.toFixed(1)}`;
+  return Math.round(item.current).toLocaleString();
+}
+
+function trendChangeLabel(item: PortfolioTrendMetric) {
+  if (item.direction === "not_measured") return "Not enough information";
+  if (item.direction === "steady") return "→ No clear change";
+  const arrow = item.direction === "improved" ? "↑" : "↓";
+  const label = item.direction === "improved" ? "Improved" : "Needs attention";
+  if (item.code === "avg_position" && item.change != null) {
+    return `${arrow} ${label} by ${Math.abs(item.change).toFixed(1)} positions`;
+  }
+  if (item.code === "website_issues" && item.change != null) {
+    return `${arrow} ${label} by ${Math.abs(item.change).toFixed(0)} problems`;
+  }
+  if (item.change_percent != null) {
+    return `${arrow} ${label} ${Math.abs(item.change_percent).toFixed(0)}%`;
+  }
+  return `${arrow} ${label}`;
 }
 
 export default function LocationsPage() {
@@ -792,6 +882,197 @@ export default function LocationsPage() {
                       No current setup, connection, website, ranking, or review warning was found in the saved comparison.
                     </p>
                   </div>
+                )}
+
+                {portfolio.trends.data_state === "ready" ? (
+                  <section className="mt-4 rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                    <div className="flex flex-col gap-3 border-b border-[#292a2f] pb-4 lg:flex-row lg:items-end lg:justify-between">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                          Recent movement
+                        </p>
+                        <h3 className="mt-1.5 text-base font-semibold text-white">
+                          What changed across your locations
+                        </h3>
+                        <p className="mt-1 text-xs leading-5 text-zinc-400">
+                          {shortDate(portfolio.trends.date_from)}–{shortDate(portfolio.trends.date_to)} compared with {shortDate(portfolio.trends.comparison_date_from)}–{shortDate(portfolio.trends.comparison_date_to)}.
+                        </p>
+                      </div>
+                      <p className="max-w-xl text-xs leading-5 text-zinc-500">
+                        {portfolio.trends.coverage_note}
+                      </p>
+                    </div>
+
+                    <div className="grid border-b border-[#292a2f] md:grid-cols-2 xl:grid-cols-4">
+                      {portfolio.trends.summary.map((item) => (
+                        <div
+                          key={item.code}
+                          className="border-b border-[#292a2f] px-3 py-4 last:border-b-0 md:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0 xl:border-r xl:last:border-r-0"
+                        >
+                          <p className="text-[11px] text-zinc-500">{item.label}</p>
+                          <div className="mt-1 flex flex-wrap items-baseline gap-2">
+                            <p className="text-xl font-semibold text-white">{trendValue(item)}</p>
+                            <p
+                              className={`text-xs font-semibold ${
+                                item.tone === "positive"
+                                  ? "text-emerald-300"
+                                  : item.tone === "negative"
+                                    ? "text-rose-300"
+                                    : "text-zinc-500"
+                              }`}
+                            >
+                              {trendChangeLabel(item)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
+                      <div className="rounded-md border border-[#292a2f] bg-[#111215] p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              Daily Google visits and average position
+                            </p>
+                            <p className="mt-1 text-[11px] text-zinc-500">
+                              Orange shows visits. Blue shows position; a smaller position number is better.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 text-[11px] text-zinc-400">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-[#ff6b18]" /> Visits
+                            </span>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-sky-400" /> Position
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-3 h-64 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart
+                              data={portfolio.trends.points}
+                              margin={{ top: 8, right: 8, left: -18, bottom: 0 }}
+                            >
+                              <XAxis
+                                dataKey="date"
+                                tickFormatter={(value) => shortDate(String(value))}
+                                minTickGap={28}
+                                tick={{ fill: "#71717a", fontSize: 10 }}
+                                axisLine={{ stroke: "#292a2f" }}
+                                tickLine={false}
+                              />
+                              <YAxis
+                                yAxisId="visits"
+                                tick={{ fill: "#71717a", fontSize: 10 }}
+                                axisLine={false}
+                                tickLine={false}
+                                allowDecimals={false}
+                              />
+                              <YAxis
+                                yAxisId="position"
+                                orientation="right"
+                                reversed
+                                tick={{ fill: "#71717a", fontSize: 10 }}
+                                axisLine={false}
+                                tickLine={false}
+                              />
+                              <Tooltip
+                                contentStyle={{
+                                  background: "#111215",
+                                  border: "1px solid #303137",
+                                  borderRadius: "6px",
+                                  color: "#fff",
+                                  fontSize: "12px",
+                                }}
+                                labelFormatter={(value) => shortDate(String(value))}
+                              />
+                              <Line
+                                yAxisId="visits"
+                                type="monotone"
+                                dataKey="clicks"
+                                name="Google visits"
+                                stroke="#ff6b18"
+                                strokeWidth={2}
+                                dot={false}
+                                connectNulls={false}
+                              />
+                              <Line
+                                yAxisId="position"
+                                type="monotone"
+                                dataKey="avg_position"
+                                name="Average position"
+                                stroke="#38bdf8"
+                                strokeWidth={2}
+                                dot={false}
+                                connectNulls={false}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <p className="mt-2 text-[11px] leading-4 text-zinc-600">
+                          The chart shows saved daily totals. The change cards only compare locations with enough information in both periods.
+                        </p>
+                      </div>
+
+                      <div className="rounded-md border border-[#292a2f] bg-[#111215] p-3">
+                        <p className="text-sm font-semibold text-white">Meaningful location changes</p>
+                        <p className="mt-1 text-[11px] leading-4 text-zinc-500">
+                          Only larger changes with enough history appear here. At most one change is shown for each location.
+                        </p>
+                        {portfolio.trends.alerts.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            {portfolio.trends.alerts.map((alert) => (
+                              <article
+                                key={`${alert.location_id}-${alert.code}`}
+                                className={`rounded-md border p-3 ${
+                                  alert.tone === "positive"
+                                    ? "border-emerald-500/20 bg-emerald-500/10"
+                                    : "border-rose-500/20 bg-rose-500/10"
+                                }`}
+                              >
+                                <p
+                                  className={`text-xs font-semibold ${
+                                    alert.tone === "positive"
+                                      ? "text-emerald-100"
+                                      : "text-rose-100"
+                                  }`}
+                                >
+                                  {alert.tone === "positive" ? "↑" : "↓"} {alert.title}
+                                </p>
+                                <p className="mt-1 text-[11px] leading-4 text-zinc-400">
+                                  {alert.detail}
+                                </p>
+                                <p className="mt-1 text-[11px] font-medium text-zinc-300">
+                                  {alert.evidence.label}: {String(alert.evidence.value)}
+                                </p>
+                                <button
+                                  type="button"
+                                  className={`${secondaryButtonClass} mt-2`}
+                                  onClick={() =>
+                                    openPortfolioPath(alert.campaign_id, alert.action.href)
+                                  }
+                                >
+                                  {alert.action.label}
+                                </button>
+                              </article>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-3 rounded-md border border-[#292a2f] bg-[#17181b] p-3 text-xs leading-5 text-zinc-500">
+                            No location crossed a meaningful change threshold in this comparison.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                ) : (
+                  <section className="mt-4 rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                    <p className="text-sm font-semibold text-white">Building location history</p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      {portfolio.trends.coverage_note}
+                    </p>
+                  </section>
                 )}
 
                 <div className="mt-4 grid gap-4 xl:grid-cols-2">
