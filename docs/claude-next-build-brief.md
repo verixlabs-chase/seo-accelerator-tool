@@ -3092,7 +3092,7 @@ Implementation status (2026-08-10):
   position, recent rating, or website issues without running another paid
   provider check. Choosing a row carries that location into its relevant
   customer workflow.
-- **ML1B is implemented locally.** Matching evidence codes are grouped into
+- **ML1B is implemented and published in draft PR #28.** Matching evidence codes are grouped into
   shared problems only when at least two active locations are affected, while
   every location keeps its own supporting value and direct action. The same
   portfolio response also surfaces up to three measured locations worth
@@ -3109,8 +3109,14 @@ Implementation status (2026-08-10):
   shown per location. Positive and negative changes retain their exact metric,
   direct workflow, comparison dates, and coverage explanation. No paid refresh
   is triggered by opening the view.
-- Maps, governed saved groups, immutable bulk target snapshots, fan-out
-  execution, delegation, and pooled allowance controls remain later ML1
+- **ML1D is implemented and published in draft PR #30.** Organization owners and admins can save
+  reusable location groups, update membership with stale-version protection,
+  temporarily include or exclude locations for one planned action, and freeze
+  the exact ready and blocked target list for later review. Frozen target
+  records are tenant-scoped, idempotent, audit logged, hash-addressed, and
+  database-immutable to the application role. The customer UI makes clear that
+  this is a preview and does not run work.
+- Maps, fan-out execution, delegation, and pooled allowance controls remain later ML1
   slices. Alert delivery and configurable digests remain part of the packaged
   notification work rather than this in-product comparison slice.
 
