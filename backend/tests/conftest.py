@@ -214,6 +214,8 @@ def _verify_required_tables(database_url: str) -> None:
             "portfolio_fleet_run_items",
             "google_business_profile_campaigns",
             "google_business_profile_campaign_variants",
+            "product_analytics_events",
+            "product_feedback",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:

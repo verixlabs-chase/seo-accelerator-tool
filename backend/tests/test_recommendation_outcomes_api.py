@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.models.product_analytics import ProductAnalyticsEvent
+
 
 def _login(client, email: str, password: str) -> str:
     response = client.post(
@@ -20,7 +22,7 @@ def _create_campaign(client, token: str) -> dict:
     return response.json()["data"]
 
 
-def test_measure_and_list_recommendation_outcomes(client) -> None:
+def test_measure_and_list_recommendation_outcomes(client, db_session) -> None:
     token = _login(client, "a@example.com", "pass-a")
     headers = {"Authorization": f"Bearer {token}"}
     campaign = _create_campaign(client, token)
@@ -62,6 +64,16 @@ def test_measure_and_list_recommendation_outcomes(client) -> None:
         "causal_claims_allowed": False,
         "minimum_outcomes_before_review": 5,
     }
+    measured_event = (
+        db_session.query(ProductAnalyticsEvent)
+        .filter(
+            ProductAnalyticsEvent.campaign_id == campaign["id"],
+            ProductAnalyticsEvent.event_name == "action.outcome_available",
+        )
+        .one()
+    )
+    assert measured_event.source == "product_server"
+    assert measured_event.properties_json == {"result_direction": "unchanged"}
 
     duplicate = client.post(
         (

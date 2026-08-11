@@ -103,6 +103,7 @@ from app.models.standards_governance import (
 )
 from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
+from app.models.product_analytics import ProductAnalyticsEvent, ProductFeedback
 from app.models.platform_provider_credential import PlatformProviderCredential
 from app.models.platform_job import PlatformJob
 from app.models.policy_weights import PolicyWeight
@@ -179,6 +180,8 @@ __all__ = [
     "ActionPlanForecast",
     "EventOutbox",
     "TaskExecution",
+    "ProductAnalyticsEvent",
+    "ProductFeedback",
     "Page",
     "CrawlRun",
     "CrawlPageResult",

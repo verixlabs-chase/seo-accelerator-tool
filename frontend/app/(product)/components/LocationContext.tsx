@@ -13,6 +13,7 @@ import {
 } from "react";
 
 import { platformApi } from "../../platform/api";
+import { trackProductEvent } from "../../lib/productAnalytics";
 
 export type LocationCampaign = {
   id: string;
@@ -123,6 +124,17 @@ export function LocationSelector() {
     loadingLocations,
   } = useLocationContext();
 
+  function chooseLocation(nextCampaignId: string) {
+    setSelectedCampaignId(nextCampaignId);
+    if (nextCampaignId) {
+      void trackProductEvent({
+        eventName: "workspace.location_switched",
+        campaignId: nextCampaignId,
+        properties: { selection_origin: "top_bar" },
+      });
+    }
+  }
+
   return (
     <label className="flex min-w-[220px] items-center gap-2 rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 shadow-[0_0_18px_rgba(255,106,26,0.08)]">
       <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-300">
@@ -131,7 +143,7 @@ export function LocationSelector() {
       <select
         aria-label="Choose the location shown across the workspace"
         value={selectedCampaignId}
-        onChange={(event) => setSelectedCampaignId(event.target.value)}
+        onChange={(event) => chooseLocation(event.target.value)}
         disabled={loadingLocations || campaigns.length === 0}
         className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none disabled:text-zinc-500"
       >

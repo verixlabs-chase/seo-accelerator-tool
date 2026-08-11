@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from app.models.intelligence import StrategyRecommendation
+from app.models.product_analytics import ProductAnalyticsEvent
 
 
 def _login(client, email: str, password: str) -> str:
@@ -63,6 +64,15 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
     work_item = item["action_plan"]["work_item"]
     assert work_item["cadence"] == "daily"
     assert work_item["progress"]["required_total"] == 3
+    first_value_event = (
+        db_session.query(ProductAnalyticsEvent)
+        .filter(
+            ProductAnalyticsEvent.campaign_id == campaign["id"],
+            ProductAnalyticsEvent.event_name == "value.first_verified_insight",
+        )
+        .one()
+    )
+    assert first_value_event.source == "product_server"
 
     first_step = work_item["steps"][0]
     updated = client.patch(
@@ -84,6 +94,15 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
     assert "scope_not_defined" in {
         reason["code"] for reason in forecast["unavailable_reasons"]
     }
+    completed_event = (
+        db_session.query(ProductAnalyticsEvent)
+        .filter(
+            ProductAnalyticsEvent.campaign_id == campaign["id"],
+            ProductAnalyticsEvent.event_name == "action.step_completed",
+        )
+        .one()
+    )
+    assert completed_event.source == "product_server"
 
     generated_forecast = client.post(
         (

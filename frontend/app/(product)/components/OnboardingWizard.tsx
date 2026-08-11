@@ -2,6 +2,7 @@
 
 import { useState, useEffect, type FormEvent } from "react";
 import { platformApi } from "../../platform/api";
+import { trackProductEvent } from "../../lib/productAnalytics";
 import {
   getStepThreeSummary,
   getTaskStatusMeaning,
@@ -206,6 +207,11 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
       return;
     }
     setError("");
+    void trackProductEvent({
+      eventName: "onboarding.started",
+      properties: { entry_point: "workspace_setup" },
+      idempotencyKey: `onboarding.started:${organizationId}`,
+    });
     setStep(2);
   }
 
@@ -627,15 +633,21 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
                   </p>
                 </div>
                 <button
-                  onClick={() =>
+                  onClick={() => {
+                    void trackProductEvent({
+                      eventName: "onboarding.completed",
+                      campaignId,
+                      properties: { result_status: hasSetupIssues ? "partial" : "success" },
+                      idempotencyKey: `onboarding.completed:${campaignId}`,
+                    });
                     onComplete({
                       campaignId,
                       campaignDomain,
                       notice: hasSetupIssues
                         ? "Business setup finished, but one or more first checks need attention on the dashboard."
                         : "Business setup finished. Your first checks were queued successfully and results are now filling in.",
-                    })
-                  }
+                    });
+                  }}
                   className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100"
                 >
                   Open your dashboard &rarr;

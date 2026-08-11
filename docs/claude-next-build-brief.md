@@ -607,7 +607,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 22 | **DT1 - Data Trust and Connection Health Center - PR #26 open** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
 | 23 | **ML1 - Portfolio Intelligence - ML1F published in PR #32** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, delegated location-group work, and recoverable bulk runs before that plan is sold broadly. |
 | 24 | **G1.4B - Google Business Profile Fleet Operations - G1.4B-A implemented locally** | Growth and Enterprise operators can preview, approve, schedule, and safely fan out supported posts, photo uploads, and later typed profile actions across location groups, including Enterprise fleets with hundreds of authorized profiles. |
-| 25 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
+| 25 | **PA1 first slice - Activation and Value Measurement - implemented locally** | A privacy-minimized governed event contract now measures setup, first evidence-backed value, location switching, recommendation and forecast use, completed action steps, measured outcomes, and structured usefulness/trust feedback. Platform owners receive aggregate plan-level funnels, time-to-value, return-value, churn-risk, feedback, and instrumentation coverage without session replay or sensitive business content. |
 | 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
 | 27 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
 | 28 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
@@ -2796,6 +2796,13 @@ Acceptance criteria:
 
 Goal: measure whether customers reach value, trust recommendations, complete
 work, and remain engaged so roadmap decisions use evidence.
+
+Implementation status (August 11, 2026): the first slice is implemented
+locally. It adds an append-only governed product-event store, structured-only
+feedback, explicit browser instrumentation for the first customer journey, and
+an aggregate platform-owner dashboard at `/platform/value`. No third-party
+analytics exporter is enabled. PostHog or another approved service may only be
+added later behind this same allowlisted contract.
 
 Scope:
 
