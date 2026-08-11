@@ -10,7 +10,18 @@ from app.db.session import get_db
 from app.schemas.portfolio_targeting import (
     LocationGroupCreateIn,
     LocationGroupUpdateIn,
+    PortfolioFleetRunCreateIn,
+    PortfolioFleetRunDecisionIn,
     TargetSnapshotCreateIn,
+)
+from app.services.portfolio_fleet_service import (
+    PortfolioFleetError,
+    approve_portfolio_fleet_run,
+    create_portfolio_fleet_run,
+    get_portfolio_fleet_run,
+    list_portfolio_fleet_runs,
+    retry_failed_portfolio_fleet_run_items,
+    serialize_portfolio_fleet_run,
 )
 from app.services.portfolio_targeting_service import (
     PortfolioTargetingError,
@@ -191,6 +202,147 @@ def post_target_snapshot(
     return response
 
 
+@router.get("/organizations/{organization_id}/portfolio-fleet-runs")
+def get_portfolio_fleet_runs(
+    request: Request,
+    organization_id: str,
+    limit: int = Query(default=10, ge=1, le=50),
+    user: dict = Depends(owner_or_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    _enforce_scope(user, organization_id)
+    return envelope(
+        request,
+        {
+            "items": list_portfolio_fleet_runs(
+                db,
+                organization_id=organization_id,
+                limit=limit,
+            )
+        },
+    )
+
+
+@router.post(
+    "/organizations/{organization_id}/portfolio-fleet-runs",
+    status_code=status.HTTP_201_CREATED,
+)
+def post_portfolio_fleet_run(
+    request: Request,
+    organization_id: str,
+    body: PortfolioFleetRunCreateIn,
+    user: dict = Depends(owner_or_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    _enforce_scope(user, organization_id)
+    try:
+        run, created = create_portfolio_fleet_run(
+            db,
+            organization_id=organization_id,
+            actor_user_id=user["id"],
+            target_snapshot_id=body.target_snapshot_id,
+            request_key=body.request_key,
+        )
+        db.commit()
+        db.refresh(run)
+    except PortfolioFleetError as exc:
+        db.rollback()
+        _raise_fleet_error(exc)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "This bulk-work request was already used for a different target list.",
+                "reason_code": "fleet_request_key_conflict",
+            },
+        ) from exc
+    response = envelope(
+        request,
+        {
+            "portfolio_fleet_run": serialize_portfolio_fleet_run(db, run),
+            "created": created,
+        },
+    )
+    if not created:
+        response["meta"]["idempotent_replay"] = True
+    return response
+
+
+@router.get(
+    "/organizations/{organization_id}/portfolio-fleet-runs/{run_id}"
+)
+def get_portfolio_fleet_run_detail(
+    request: Request,
+    organization_id: str,
+    run_id: str,
+    user: dict = Depends(owner_or_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    _enforce_scope(user, organization_id)
+    try:
+        run = get_portfolio_fleet_run(
+            db,
+            organization_id=organization_id,
+            run_id=run_id,
+        )
+    except PortfolioFleetError as exc:
+        _raise_fleet_error(exc)
+    return envelope(request, {"portfolio_fleet_run": serialize_portfolio_fleet_run(db, run)})
+
+
+@router.post(
+    "/organizations/{organization_id}/portfolio-fleet-runs/{run_id}/approve"
+)
+def post_portfolio_fleet_run_approval(
+    request: Request,
+    organization_id: str,
+    run_id: str,
+    body: PortfolioFleetRunDecisionIn,
+    user: dict = Depends(owner_or_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    _enforce_scope(user, organization_id)
+    try:
+        run = approve_portfolio_fleet_run(
+            db,
+            organization_id=organization_id,
+            run_id=run_id,
+            actor_user_id=user["id"],
+            expected_version=body.expected_version,
+        )
+    except PortfolioFleetError as exc:
+        db.rollback()
+        _raise_fleet_error(exc)
+    return envelope(request, {"portfolio_fleet_run": serialize_portfolio_fleet_run(db, run)})
+
+
+@router.post(
+    "/organizations/{organization_id}/portfolio-fleet-runs/{run_id}/retry-failed"
+)
+def post_portfolio_fleet_run_retry(
+    request: Request,
+    organization_id: str,
+    run_id: str,
+    body: PortfolioFleetRunDecisionIn,
+    user: dict = Depends(owner_or_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    _enforce_scope(user, organization_id)
+    try:
+        run = retry_failed_portfolio_fleet_run_items(
+            db,
+            organization_id=organization_id,
+            run_id=run_id,
+            actor_user_id=user["id"],
+            expected_version=body.expected_version,
+        )
+    except PortfolioFleetError as exc:
+        db.rollback()
+        _raise_fleet_error(exc)
+    return envelope(request, {"portfolio_fleet_run": serialize_portfolio_fleet_run(db, run)})
+
+
 def _enforce_scope(user: dict, organization_id: str) -> None:
     enforce_organization_scope(
         user=user,
@@ -216,6 +368,31 @@ def _raise_targeting_error(exc: PortfolioTargetingError) -> None:
         status_code=exc.status_code,
         detail={
             "message": messages.get(exc.reason_code, "The target list could not be saved."),
+            "reason_code": exc.reason_code,
+        },
+    ) from exc
+
+
+def _raise_fleet_error(exc: PortfolioFleetError) -> None:
+    messages = {
+        "target_snapshot_not_found": "The saved target list was not found.",
+        "fleet_action_not_supported": "This saved action is not available for bulk work yet.",
+        "fleet_request_key_required": "A safe request key is required.",
+        "fleet_request_key_conflict": "This request key was already used for a different target list.",
+        "fleet_run_not_found": "The bulk-work run was not found.",
+        "fleet_run_version_conflict": "This run changed after you opened it. Refresh before continuing.",
+        "fleet_run_has_no_ready_locations": "No locations are ready to start. Fix the listed setup items first.",
+        "fleet_run_not_awaiting_approval": "This run is not waiting for approval.",
+        "fleet_target_snapshot_changed": "The approved target record no longer matches this run.",
+        "fleet_run_has_no_failed_locations": "There are no failed locations to retry.",
+        "fleet_run_retry_not_available": "The failed locations cannot be retried from this run.",
+        "fleet_feature_upgrade_required": "Bulk location work is available on Growth and Enterprise plans.",
+        "organization_not_found": "The business account was not found.",
+    }
+    raise HTTPException(
+        status_code=exc.status_code,
+        detail={
+            "message": messages.get(exc.reason_code, "The bulk-work run could not be updated."),
             "reason_code": exc.reason_code,
         },
     ) from exc

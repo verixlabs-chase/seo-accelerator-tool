@@ -206,6 +206,8 @@ def _verify_required_tables(database_url: str) -> None:
             "portfolio_location_groups",
             "portfolio_location_group_members",
             "portfolio_target_snapshots",
+            "portfolio_fleet_runs",
+            "portfolio_fleet_run_items",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:

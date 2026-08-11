@@ -20,6 +20,7 @@ class FleetJobType(str, Enum):
     PAUSE = "pause"
     RESUME = "resume"
     REMEDIATE = "remediate"
+    PORTFOLIO_REVIEW = "portfolio_review"
 
 
 class FleetJobStatus(str, Enum):

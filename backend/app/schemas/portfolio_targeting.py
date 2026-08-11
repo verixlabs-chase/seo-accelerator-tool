@@ -42,3 +42,12 @@ class TargetSnapshotCreateIn(BaseModel):
     regions: list[str] = Field(default_factory=list, max_length=50)
     included_location_ids: list[str] = Field(default_factory=list, max_length=500)
     excluded_location_ids: list[str] = Field(default_factory=list, max_length=500)
+
+
+class PortfolioFleetRunCreateIn(BaseModel):
+    target_snapshot_id: str = Field(min_length=36, max_length=36)
+    request_key: SafeTargetingKey
+
+
+class PortfolioFleetRunDecisionIn(BaseModel):
+    expected_version: int = Field(ge=1)
