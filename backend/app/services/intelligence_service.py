@@ -113,6 +113,17 @@ def build_recommendation_action_plans(
             "owner_role": action.owner_role,
             "dependencies": list(action.dependencies),
             "success_metric_ids": list(action.success_metric_ids),
+            "success_metrics": [
+                {
+                    "metric_id": metric.metric_id,
+                    "display_name": metric.display_name,
+                    "plain_language": metric.plain_language,
+                    "unit": metric.unit,
+                    "aggregation": metric.aggregation,
+                }
+                for metric_id in action.success_metric_ids
+                if (metric := lexicon.metric_index.get(str(metric_id))) is not None
+            ],
             "primary_metric_id": primary_metric_id,
             "measurement_track": measurement_track,
             "observation_window_days": action.observation_window_days,

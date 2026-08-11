@@ -10,6 +10,8 @@ Defines LSOS white-label reporting architecture, data contracts, branding contro
 - Aggregate campaign outcomes across all LSOS modules.
 - Provide actionable strategy recommendations and next-30-day plan.
 - Support automated generation and delivery at production scale.
+- Make every displayed number traceable to a named source, saved date, and coverage state.
+- Give the owner a detailed, non-repeating action plan whose results can be checked against real measurements.
 
 ## 3) Report Structure (Authoritative Section Order)
 
@@ -24,6 +26,10 @@ Defines LSOS white-label reporting architecture, data contracts, branding contro
 9. Strategy Recommendations
 10. Next 30-Day Plan
 11. Appendix (methodology, glossary, data confidence)
+
+The browser preview, downloadable HTML, and PDF must preserve the same frozen
+facts and section meaning. A shorter visual treatment may be used in the product
+preview, but it may not omit source status or change the action order.
 
 ## 4) Data Sources
 
@@ -40,6 +46,13 @@ Section-to-source mapping:
 Data freshness policy:
 - Freeze reporting window before aggregation.
 - Include confidence indicator when data completeness is below threshold.
+- Never coerce a missing provider value to zero.
+- Store per-metric source name, last saved date, current-period coverage, and
+  comparison-period coverage in the frozen snapshot.
+- Treat website issue totals as crawl-run measurements. Do not use the number of
+  issues newly inserted on an arbitrary calendar day as the current site-health total.
+- Treat review volume and rating as business-profile snapshots. If no profile
+  snapshot exists, display `Not measured`.
 
 ## 5) Branding Customization
 
@@ -85,6 +98,17 @@ Required charts:
 - Backlink acquisition trend by quality tier.
 - Review volume and average rating trend.
 - Content output vs required quota chart.
+
+Client-ready minimum chart set for the current reporting sprint:
+- Visits from Google: current period plus earlier period.
+- Times shown on Google: current period plus earlier period.
+- Average tracked keyword position when rank snapshots exist.
+- Website issue count across completed crawl runs when at least one run exists.
+- Recent review pace when business-profile snapshots exist.
+
+Missing chart data renders a short explanation; it never renders an empty axis or
+an invented point. Chart legends must distinguish the current and comparison
+periods and explain whether higher or lower is better where that is not obvious.
 
 Chart standards:
 - Include units and time window labels.
@@ -181,6 +205,17 @@ Delivery tracking:
 - Inputs: month-stage logic + unresolved milestones.
 - Outputs: dated execution plan, owners, dependencies, expected outcomes.
 
+Action-plan rules:
+- Deduplicate by canonical lexicon `action_id` before limiting the list.
+- Prefer active occurrences over fallback recommendations.
+- Include at most five distinct actions, ordered by saved due date and priority.
+- Each action includes: plain-language title, why it matters, numbered steps,
+  evidence used when available, owner/effort, success metric, and observation window.
+- Do not invent a numeric target. If no baseline exists, say `Measure first` and
+  name the metric that will establish the baseline.
+- Completed work and measured outcomes remain separate; completing a checklist
+  does not prove the result improved.
+
 ## 12) Scaling and Performance
 
 Targets:
@@ -228,3 +263,19 @@ Key tasks:
 - `reporting.send_email`
 
 This document is the governing white-label reporting contract for LSOS.
+
+## 16) Client-Ready Reporting Quality Gate
+
+A report is client-ready only when all of the following pass:
+
+- The frozen snapshot validates against its stored hash.
+- Every metric contains a source label, last-updated value or explicit absence,
+  and current/comparison coverage.
+- Current and previous totals are calculated from the same location and equivalent
+  date windows.
+- No action title or canonical action ID appears more than once.
+- Every next action has at least one practical step and a named success measurement.
+- Browser preview, HTML, and PDF all contain the executive summary, results,
+  detailed next actions, and source appendix.
+- Automated tests cover partial data, missing sources, deduplication, and frozen
+  snapshot regeneration.

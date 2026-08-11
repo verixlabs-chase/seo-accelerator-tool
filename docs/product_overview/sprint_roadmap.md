@@ -310,6 +310,14 @@ Testing checklist:
 Objective:
 - Deliver white-label monthly reporting with artifact export and scheduled delivery.
 
+Current status (August 2026):
+- Beta generation, durable private HTML/PDF artifacts, authenticated download,
+  saved recipients, and private share links are complete.
+- The active reporting-quality sprint upgrades the beta to a client-ready report:
+  metric provenance and coverage, current/comparison charts, crawl-accurate site
+  issue totals, business-profile snapshot handling, detailed descriptions, and a
+  deduplicated measurable next-action plan.
+
 Deliverables:
 - KPI aggregation across all modules.
 - Brandable template renderer (HTML).
@@ -320,6 +328,12 @@ Acceptance criteria:
 - Monthly report generation succeeds for complete campaign snapshots.
 - PDF rendering supports tenant branding.
 - Report endpoints provide summary and downloadable artifacts.
+- Every metric names its source, last-updated date, and data coverage; missing
+  provider data is never presented as zero.
+- Browser, HTML, and PDF reports show useful dated visualizations when trend facts
+  exist and explain why a chart is absent when they do not.
+- `What to do next` contains distinct canonical actions only, with numbered steps,
+  evidence, a success metric, and a follow-up observation window.
 
 Database changes:
 - Add tables: monthly_reports, report_artifacts, report_delivery_events, report_template_versions.
