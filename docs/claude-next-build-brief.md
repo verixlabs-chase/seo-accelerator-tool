@@ -609,18 +609,18 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 24 | **G1.4B - Google Business Profile Fleet Operations - G1.4B-A implemented locally** | Growth and Enterprise operators can preview, approve, schedule, and safely fan out supported posts, photo uploads, and later typed profile actions across location groups, including Enterprise fleets with hundreds of authorized profiles. |
 | 25 | **PA1 first slice - Activation and Value Measurement - implemented locally** | A privacy-minimized governed event contract now measures setup, first evidence-backed value, location switching, recommendation and forecast use, completed action steps, measured outcomes, and structured usefulness/trust feedback. Platform owners receive aggregate plan-level funnels, time-to-value, return-value, churn-risk, feedback, and instrumentation coverage without session replay or sensitive business content. |
 | 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
-| 27 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
-| 28 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
-| 29 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
-| 30 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
-| 31 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
-| 32 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
-| 33 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 34 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
-| 35 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
-| 36 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 37 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 38 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 27 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 28 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
+| 29 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
+| 30 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
+| 31 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
+| 32 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 33 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
+| 34 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
+| 35 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 36 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 37 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 38 | **ALT1 - In-Product Alerts First; Automated Email Later** | Customers first receive useful notices inside InsightOS. Reliable automated email and delivery tracking remain a later, behind-the-scenes platform capability and do not block the current reporting or product sprints. |
 | 39 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
 | 40 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
 | 41 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
@@ -651,7 +651,7 @@ truthfulness gates pass.
 | **AUTH1** | DataForSEO Backlinks API | Add new/lost referring domains, link-level evidence, history, and competitor intersections under row and request allowances. |
 | **SEO2** | Search Console URL Inspection and Sitemaps APIs; Bing Webmaster API as a later optional source | Add owned-site indexation and sitemap evidence. Bing remains additive and cannot delay the Google-first owner workflow. |
 | **AIV1** | DataForSEO AI Optimization / LLM Mentions API or a later approved equivalent | Measure AI-answer mentions and citations as evidence. This is a visibility dataset, not another general-purpose model for the governed AI runtime. |
-| **RPT1 and ALT1** | Resend, Postmark, or an equivalently approved transactional-email API | Deliver reports, alerts, connection failures, and digests with bounce, complaint, suppression, retry, and delivery evidence. |
+| **ALT1 (deferred to sprint 38)** | Resend, Postmark, or an equivalently approved automated-email service | Send reports, alerts, connection failures, and digests reliably. This is an internal platform connection; customers do not choose or configure the provider. It does not block secure report links, downloads, or the current sprint sequence. |
 | **PA1, TR1, and OPS1** | Sentry plus PostHog, or approved privacy-equivalent observability and product-analytics services | Detect production failures and measure product value with tenant-safe redaction, approved retention, and no sensitive page-content capture. |
 | **COM1** | Stripe Checkout, Billing, Customer Portal, and signed webhooks | Operate subscriptions and entitlements. Provider webhooks must be signature-verified, idempotent, auditable, and unable to bypass the internal entitlement ledger. |
 | **AUT1** | Versioned InsightOS webhooks, scoped service-account API tokens, an OpenAPI contract, and approved clients such as n8n, Make, Zapier, and Pipedream | Send tenant-safe product events and accept only typed, policy-checked commands through a vendor-neutral contract. Automation tools receive no direct database access, provider credentials, browser session, arbitrary prompt authority, or mutation bypass. |
@@ -1572,7 +1572,7 @@ Scope:
   reviews, rating changes, and review-velocity gaps against local competitors.
 - Add compliant email, SMS, link, QR, and kiosk review-request campaigns with
   consent, suppression, delivery, and cost controls.
-- Route email through the transactional delivery provider selected in ALT1.
+- Route email through the automated-email service selected in deferred ALT1.
   SMS requires a separate vendor, consent model, price card, allowance, and
   launch decision; it is not implied by the email connection.
 - Do not implement review gating, selective suppression of negative customers,
@@ -1611,14 +1611,14 @@ Implementation slices:
      customer receives the same request; rating and satisfaction filters are
      absent and review-gating wording is rejected. Results report only reviews
      observed after the start time and explicitly do not claim causation.
-   - **G1.6D2B - Governed delivery: QR slice implemented; live delivery pending.**
+   - **G1.6D2B - Governed delivery: QR slice implemented; live email deferred to ALT1.**
      Generate a high-resolution downloadable QR image in the browser from the
      saved location review link, with a visible preview and owner testing
-     instruction. Next, connect a real transactional
-     email provider and verified sender, reserve and reconcile credits against
-     a versioned price card, process signed delivery/bounce/complaint/
-     unsubscribe webhooks, and prove one end-to-end receipt. SMS remains
-     unavailable until it has a separate
+     instruction. The later ALT1 email slice will connect an automated-email
+     service and verified sender, reserve and reconcile credits against a
+     versioned price card, process signed delivery/bounce/complaint/unsubscribe
+     webhooks, and prove one end-to-end receipt. SMS remains unavailable until
+     it has a separate
      provider, consent rule set, price card, allowance, receipts, and launch
      approval.
 
@@ -2258,8 +2258,10 @@ Implementation status (2026-08-11):
   reason, and separate sent/delivered/opened/failed timestamps. Synthetic
   email remains explicitly unverified and never claims provider-confirmed
   delivery.
-- RPT1B remains open for a real transactional-email provider and webhooks,
-  scheduled recipient delivery, accessible production-grade PDF rendering,
+- Automated report email and provider webhooks are explicitly deferred to
+  ALT1 in sprint 38. They are not a release gate for the current reporting
+  work because an owner can securely open, download, and share a report now.
+- The remaining RPT1 work is accessible production-grade PDF rendering,
   multi-location comparison, and customer-tested report branding. Those
   capabilities must preserve the RPT1A snapshot contract rather than
   recomputing facts at delivery time.
@@ -2273,8 +2275,9 @@ Scope:
 - Use consistent visual definitions and the same source, freshness, location,
   date range, and lexicon version as the product screens.
 - Add durable artifact storage, scheduled generation, recipient management,
-  delivery verification, retry state, failure recovery, history, and secure
-  expiring share links.
+  authenticated downloads, sharing history, and secure expiring share links.
+  Automated email delivery, retries, bounce handling, and inbox confirmation
+  belong to the later ALT1 sprint.
 - Let I1.3 write bounded narrative only from the report's verified facts and
   deterministic conclusions; retain a deterministic narrative fallback.
 - Provide accessible web and PDF output with a summary-first presentation and
@@ -2284,8 +2287,9 @@ Acceptance criteria:
 
 - A report can be regenerated from its stored input snapshot and produces
   internally consistent numbers across screen, export, and delivery.
-- Generated, delivered, failed, retried, opened when supported, and expired
-  states remain distinct and visible.
+- Generated, downloaded, shared, opened, revoked, and expired states remain
+  distinct and visible. Email-specific delivery states become release gates
+  only when ALT1 begins.
 - Reports never merge locations silently or claim outcomes not present in the
   evidence.
 - Solo receives polished owner reporting; Multi-location receives location
@@ -2297,14 +2301,26 @@ Acceptance criteria:
 Goal: notify the right person about meaningful SEO changes, completed work,
 connection failures, and required decisions without creating alert noise.
 
+Sequencing decision (2026-08-11): ALT1 is deferred to sprint 38. The product
+will first improve onboarding, language, paid-beta controls, engagement,
+analytics, research, content, WordPress execution, and customer migration.
+When ALT1 begins, in-product notices come first. Automated email follows only
+after the notice rules are useful and quiet enough to deserve an inbox.
+
+Plain-language definition: an automated-email service is an outside delivery
+system that InsightOS uses behind the scenes to send software-generated email
+reliably and report whether it arrived or failed. It is not a customer-facing
+SEO feature, and customers will not need to create, select, or manage that
+service.
+
 Scope:
 
-- Add an in-product notification center plus configurable email delivery and
-  weekly digest.
-- Replace the synthetic email adapter with Resend, Postmark, or an equivalently
-  approved transactional-email API. Record provider message ID, delivery,
-  bounce, complaint, suppression, retry, and terminal failure without storing
-  unnecessary message content.
+- Add an in-product notification center first. Configurable email delivery and
+  a weekly digest are a later ALT1 slice.
+- In that later slice, replace the synthetic email adapter with an approved
+  automated-email service. Record message ID, delivery, bounce, complaint,
+  suppression, retry, and terminal failure without storing unnecessary
+  message content.
 - Cover ranking and geo-grid movement, CWV regression, crawl/indexability
   problems, new review and reputation risk, provider reconnect, stale data,
   report delivery, pending approval, WordPress execution, verification
