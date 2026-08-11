@@ -30,6 +30,14 @@ test("premium reports expose metric provenance and do not hide missing coverage"
   assert.match(reportsPage, /coverage\?\.observed/);
 });
 
+test("multi-location reports compare frozen location facts without blending totals", () => {
+  assert.match(reportsPage, /\/reports\/portfolio-comparison/);
+  assert.match(reportsPage, /Compare location reports/);
+  assert.match(reportsPage, /Numbers are never blended across locations/);
+  assert.match(reportsPage, /only made when at least two locations use the same report dates/);
+  assert.match(reportsPage, /portfolioComparison\.locations\.map/);
+});
+
 test("premium reports deduplicate and fully explain next actions", () => {
   assert.match(reportsPage, /uniqueStories/);
   assert.match(reportsPage, /canonical_action_id/);

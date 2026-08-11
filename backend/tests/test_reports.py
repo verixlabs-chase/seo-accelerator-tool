@@ -1,3 +1,4 @@
+import json
 import tomllib
 from io import BytesIO
 from pathlib import Path
@@ -242,6 +243,70 @@ def test_reports_reject_cross_org_campaign_mismatch(client, db_session, create_t
         headers={"Authorization": f"Bearer {token_a}"},
     )
     assert schedule.status_code == 404
+
+
+def test_portfolio_report_comparison_keeps_location_snapshots_separate(client, db_session):
+    from app.models.reporting import MonthlyReport
+
+    token = _login(client, "a@example.com", "pass-a")
+    headers = {"Authorization": f"Bearer {token}"}
+    campaigns = [
+        client.post(
+            "/api/v1/campaigns",
+            json={"name": name, "domain": domain},
+            headers=headers,
+        ).json()["data"]
+        for name, domain in (
+            ("North Service Area", "north.example"),
+            ("South Service Area", "south.example"),
+            ("East Service Area", "east.example"),
+        )
+    ]
+
+    generated_report_ids = []
+    for campaign in campaigns[:2]:
+        generated = client.post(
+            "/api/v1/reports/generate",
+            json={"campaign_id": campaign["id"], "month_number": 6},
+            headers=headers,
+        )
+        assert generated.status_code == 200
+        generated_report_ids.append(generated.json()["data"]["id"])
+
+    comparison = client.get("/api/v1/reports/portfolio-comparison", headers=headers)
+    assert comparison.status_code == 200
+    payload = comparison.json()["data"]
+    rows = {item["campaign_id"]: item for item in payload["locations"]}
+
+    assert payload["source_contract"] == "latest_frozen_report_snapshot_per_location"
+    assert payload["totals_are_combined"] is False
+    assert payload["location_count"] == 3
+    assert payload["comparable_location_count"] == 2
+    assert payload["periods_aligned"] is True
+    assert payload["comparison_ready"] is True
+    assert rows[campaigns[0]["id"]]["comparison_state"] == "ready"
+    assert rows[campaigns[1]["id"]]["comparison_state"] == "ready"
+    assert rows[campaigns[2]["id"]]["comparison_state"] == "missing_report"
+    assert rows[campaigns[0]["id"]]["report"]["id"] == generated_report_ids[0]
+    assert rows[campaigns[1]["id"]]["report"]["id"] == generated_report_ids[1]
+    assert rows[campaigns[0]["id"]]["report"]["snapshot_hash"]
+    assert any("needs a report" in warning for warning in payload["warnings"])
+
+    tampered = db_session.get(MonthlyReport, generated_report_ids[1])
+    assert tampered is not None
+    tampered_snapshot = json.loads(tampered.summary_json)
+    tampered_snapshot["month_number"] = 99
+    tampered.summary_json = json.dumps(tampered_snapshot)
+    db_session.commit()
+
+    after_tamper = client.get("/api/v1/reports/portfolio-comparison", headers=headers)
+    assert after_tamper.status_code == 200
+    tampered_payload = after_tamper.json()["data"]
+    tampered_rows = {item["campaign_id"]: item for item in tampered_payload["locations"]}
+    assert tampered_payload["comparison_ready"] is False
+    assert tampered_payload["comparable_location_count"] == 1
+    assert tampered_rows[campaigns[1]["id"]]["comparison_state"] == "invalid_snapshot"
+    assert tampered_rows[campaigns[1]["id"]]["metrics"] == []
 
 
 def test_report_prefers_direct_search_console_facts_and_explains_readiness(client, db_session):

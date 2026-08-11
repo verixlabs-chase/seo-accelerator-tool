@@ -2273,13 +2273,20 @@ Implementation status (2026-08-11):
   document metadata, English-language metadata, page numbers, and navigable
   PDF outline bookmarks. Empty and orphaned pages are regression-tested. The
   product does not claim formal PDF/UA certification.
+- RPT1E's multi-location comparison slice is implemented locally. The Reports
+  page reads each campaign's latest frozen, integrity-checked RPT1 snapshot and
+  keeps every location, date range, metric, win, risk, and next action
+  separate. A direct comparison and `Start with` recommendation require at
+  least two matching report periods. Missing, legacy, mismatched, and invalid
+  reports remain visible with recovery guidance; location totals are never
+  blended.
 - Automated report email and provider webhooks are explicitly deferred to
   ALT1 in sprint 38. They are not a release gate for the current reporting
   work because an owner can securely open, download, and share a report now.
-- The remaining RPT1 work is multi-location comparison and customer-tested
-  report branding. Those
-  capabilities must preserve the RPT1A snapshot contract rather than
-  recomputing facts at delivery time.
+- The remaining RPT1 work is customer-tested report branding and extending
+  the same frozen-snapshot comparison contract into a downloadable portfolio
+  artifact. Those capabilities must preserve the RPT1A snapshot contract
+  rather than recomputing facts at delivery time.
 
 Scope:
 
