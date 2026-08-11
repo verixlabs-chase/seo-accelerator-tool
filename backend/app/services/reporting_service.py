@@ -185,6 +185,8 @@ def _artifact_readiness(artifact: ReportArtifact) -> dict:
     ready = bool(artifact.ready)
     if ready and storage_mode == "local_disk":
         ready = Path(storage_path or storage_key).is_file()
+    elif ready and storage_mode == "database_private":
+        ready = artifact.content_blob is not None
     elif ready and storage_mode == "s3_private":
         try:
             storage = report_artifact_storage_service.get_report_artifact_storage()
@@ -265,6 +267,7 @@ def _apply_stored_artifact(artifact: ReportArtifact, stored: report_artifact_sto
     artifact.content_type = stored.content_type
     artifact.byte_size = stored.byte_size
     artifact.checksum_sha256 = stored.checksum_sha256
+    artifact.content_blob = stored.content
     artifact.durable = stored.durable
     artifact.ready = stored.ready
 
@@ -435,14 +438,20 @@ def read_report_artifact(
     readiness = _artifact_readiness(artifact)
     if not readiness["ready"]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report file is not available")
-    if artifact.storage_mode == "local_disk":
+    if artifact.storage_mode == "database_private":
+        content = bytes(artifact.content_blob or b"")
+    elif artifact.storage_mode == "local_disk":
         storage = report_artifact_storage_service.LocalReportArtifactStorage()
+        try:
+            content = storage.read_bytes(artifact.storage_key or "", artifact.storage_path or "")
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report file is not available") from exc
     else:
         storage = report_artifact_storage_service.get_report_artifact_storage()
-    try:
-        content = storage.read_bytes(artifact.storage_key or "", artifact.storage_path or "")
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report file is not available") from exc
+        try:
+            content = storage.read_bytes(artifact.storage_key or "", artifact.storage_path or "")
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report file is not available") from exc
     if artifact.checksum_sha256 and sha256(content).hexdigest() != artifact.checksum_sha256:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report file failed its integrity check")
     return artifact, content

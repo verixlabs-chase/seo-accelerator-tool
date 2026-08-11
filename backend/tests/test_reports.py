@@ -1,4 +1,4 @@
-from app.services import reporting_service
+from app.services import report_artifact_storage_service, reporting_service
 
 
 class _WrappedDatabaseError(Exception):
@@ -85,6 +85,67 @@ def test_reports_generate_list_get_and_deliver(client):
     assert delivery_event["sent_at"] is not None
     assert delivery_event["delivered_at"] is None
     assert delivery_event["failure_reason"] is None
+
+
+def test_serverless_reports_persist_and_download_private_database_artifacts(
+    client,
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        report_artifact_storage_service,
+        "get_report_artifact_storage",
+        lambda: report_artifact_storage_service.DatabaseReportArtifactStorage(),
+    )
+    token = _login(client, "a@example.com", "pass-a")
+    headers = {"Authorization": f"Bearer {token}"}
+    campaign = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Durable Reporting Campaign", "domain": "durable-reports.com"},
+        headers=headers,
+    ).json()["data"]
+
+    generated = client.post(
+        "/api/v1/reports/generate",
+        json={"campaign_id": campaign["id"], "month_number": 1},
+        headers=headers,
+    )
+    assert generated.status_code == 200
+    report_id = generated.json()["data"]["id"]
+
+    detail = client.get(f"/api/v1/reports/{report_id}", headers=headers)
+    assert detail.status_code == 200
+    artifacts = detail.json()["data"]["artifacts"]
+    assert {item["artifact_type"] for item in artifacts} == {"html", "pdf"}
+    assert all(item["storage_mode"] == "database_private" for item in artifacts)
+    assert all(item["durable"] is True for item in artifacts)
+    assert all(item["retrievable"] is True for item in artifacts)
+    assert all(item["storage_path"] == "" for item in artifacts)
+
+    from app.models.reporting import ReportArtifact
+
+    stored_rows = (
+        db_session.query(ReportArtifact)
+        .filter(ReportArtifact.report_id == report_id)
+        .all()
+    )
+    assert all(item.content_blob for item in stored_rows)
+
+    html_artifact = next(item for item in artifacts if item["artifact_type"] == "html")
+    html_response = client.get(
+        f"/api/v1/reports/{report_id}/artifacts/{html_artifact['id']}",
+        headers=headers,
+    )
+    assert html_response.status_code == 200
+    assert html_response.content.startswith(b"<!doctype html>")
+
+    pdf_artifact = next(item for item in artifacts if item["artifact_type"] == "pdf")
+    pdf_response = client.get(
+        f"/api/v1/reports/{report_id}/artifacts/{pdf_artifact['id']}",
+        headers=headers,
+    )
+    assert pdf_response.status_code == 200
+    assert pdf_response.content.startswith(b"%PDF-")
 
 
 def test_reports_schedule_truth_exposes_schedule_state(client):

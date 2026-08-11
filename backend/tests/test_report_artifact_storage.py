@@ -6,8 +6,10 @@ from pathlib import Path
 from types import ModuleType
 
 from app.services.report_artifact_storage_service import (
+    DatabaseReportArtifactStorage,
     LocalReportArtifactStorage,
     S3ReportArtifactStorage,
+    get_report_artifact_storage,
 )
 
 
@@ -34,6 +36,35 @@ def test_local_report_storage_uses_writable_temp_directory_on_vercel(monkeypatch
     storage = LocalReportArtifactStorage()
 
     assert storage.root == Path(tempfile.gettempdir()) / "insightos-generated-reports"
+
+
+def test_database_report_storage_keeps_private_bytes_for_the_artifact_row():
+    storage = DatabaseReportArtifactStorage()
+    stored = storage.put_bytes(
+        tenant_id="tenant-a",
+        report_id="report-a",
+        filename="report.pdf",
+        content_type="application/pdf",
+        content=b"%PDF-durable-owner-report",
+    )
+
+    assert stored.storage_mode == "database_private"
+    assert stored.durable is True
+    assert stored.ready is True
+    assert stored.storage_key == "database://reports/report-a/report.pdf"
+    assert stored.content == b"%PDF-durable-owner-report"
+
+
+def test_serverless_report_storage_defaults_to_database(monkeypatch):
+    from app.core.settings import get_settings
+
+    monkeypatch.setenv("VERCEL", "1")
+    get_settings.cache_clear()
+    try:
+        storage = get_report_artifact_storage()
+        assert isinstance(storage, DatabaseReportArtifactStorage)
+    finally:
+        get_settings.cache_clear()
 
 
 def test_private_s3_report_storage_uses_tenant_scoped_keys(monkeypatch):
