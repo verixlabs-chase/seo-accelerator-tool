@@ -34,6 +34,8 @@ const START_HERE_BY_PATH: Record<string, string> = {
     "Fix failed or missing listings first; confirmed live listings need no action.",
   "/reviews":
     "Start with reviews that need a reply, especially any review with 3 stars or less.",
+  "/profile-campaigns":
+    "Choose a saved location group, write one update, and review every location before approval.",
 };
 
 const PAGE_ICON_BY_PATH: Record<string, ProductIconName> = {
@@ -50,6 +52,7 @@ const PAGE_ICON_BY_PATH: Record<string, ProductIconName> = {
   "/competitors": "competitors",
   "/citations": "listings",
   "/reviews": "reviews",
+  "/profile-campaigns": "profile-campaigns",
 };
 
 export function ProductPageIntro({

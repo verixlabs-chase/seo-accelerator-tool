@@ -75,6 +75,10 @@ from app.models.reference_library import (
     StandardsSourceRegistry,  # noqa: F401
     StandardsSourceSnapshot,  # noqa: F401
 )
+from app.models.google_business_profile_campaign import (  # noqa: F401
+    GoogleBusinessProfileCampaign,
+    GoogleBusinessProfileCampaignVariant,
+)
 from app.models.reputation import (  # noqa: F401
     ReputationProviderCapability,
     ReputationResponseDraft,
@@ -208,6 +212,8 @@ def _verify_required_tables(database_url: str) -> None:
             "portfolio_target_snapshots",
             "portfolio_fleet_runs",
             "portfolio_fleet_run_items",
+            "google_business_profile_campaigns",
+            "google_business_profile_campaign_variants",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:

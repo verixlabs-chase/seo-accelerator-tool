@@ -605,8 +605,8 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 20 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
 | 21 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, policy-controlled AI replies, and multi-location comparisons replace the core BrightLocal reputation workflow. |
 | 22 | **DT1 - Data Trust and Connection Health Center - PR #26 open** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
-| 23 | **ML1 - Portfolio Intelligence - ML1F active** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, delegated location-group work, and recoverable bulk runs before that plan is sold broadly. |
-| 24 | **G1.4B - Google Business Profile Fleet Operations** | Growth and Enterprise operators can preview, approve, schedule, and safely fan out supported posts, photo uploads, and later typed profile actions across location groups, including Enterprise fleets with hundreds of authorized profiles. |
+| 23 | **ML1 - Portfolio Intelligence - ML1F published in PR #32** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, delegated location-group work, and recoverable bulk runs before that plan is sold broadly. |
+| 24 | **G1.4B - Google Business Profile Fleet Operations - G1.4B-A implemented locally** | Growth and Enterprise operators can preview, approve, schedule, and safely fan out supported posts, photo uploads, and later typed profile actions across location groups, including Enterprise fleets with hundreds of authorized profiles. |
 | 25 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
 | 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
 | 27 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
@@ -1076,6 +1076,19 @@ Acceptance criteria:
 > remain inside G1.4 after that external gate.
 
 ### Growth G1.4B - Google Business Profile Fleet Operations
+
+> **Implementation status (2026-08-11): G1.4B-A is implemented locally.** A
+> dedicated Profile campaigns workspace and tenant-scoped API now create typed
+> local-post and photo contracts against immutable location-group snapshots,
+> render one exact location variant, check profile mapping, verification,
+> permissions, confirmed location facts, secure destinations, duplicate risk,
+> and single-profile action validation, and seal the approved variants with an
+> immutable approval hash. Growth/Enterprise and delegated operator/approver
+> gates are enforced. Approval currently ends in `approved_hold`; it creates no
+> Fleet jobs and performs no Google mutation. Live dispatch, quota discovery,
+> cost reservation/reconciliation, provider receipts, safe retry, and T29
+> measurement remain gated on production validation of one supported action on
+> an owned profile.
 
 Goal: let Growth and Enterprise operators safely carry out one approved Google
 Business Profile campaign across many authorized locations without opening and

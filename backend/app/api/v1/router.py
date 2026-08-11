@@ -18,6 +18,7 @@ from app.api.v1 import (
     entity,
     executions,
     google_oauth,
+    google_business_profile_campaigns,
     health,
     hierarchy_observability,
     intelligence,
@@ -58,6 +59,7 @@ if settings.app_env.lower() != 'production':
     tenant_api_router.include_router(debug_live_validation.router)
 tenant_api_router.include_router(entity.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
+tenant_api_router.include_router(google_business_profile_campaigns.router)
 tenant_api_router.include_router(rank.router)
 tenant_api_router.include_router(keyword_research.router)
 tenant_api_router.include_router(competitors.router)
