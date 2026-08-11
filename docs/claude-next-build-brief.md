@@ -2258,6 +2258,13 @@ Implementation status (2026-08-11):
   reason, and separate sent/delivered/opened/failed timestamps. Synthetic
   email remains explicitly unverified and never claims provider-confirmed
   delivery.
+- RPT1C's data-readiness slice is implemented locally. Report generation now
+  prefers tenant- and organization-scoped Search Console daily facts over a
+  lagging derived rollup, while retaining the rollup only as a compatibility
+  fallback for older data. The Reports page checks Google search history,
+  website scans, tracked searches, and optional review data before generation,
+  labels the result Ready, Limited, or Needs setup, and links directly to the
+  missing or stale step without blocking a truthful limited report.
 - Automated report email and provider webhooks are explicitly deferred to
   ALT1 in sprint 38. They are not a release gate for the current reporting
   work because an owner can securely open, download, and share a report now.

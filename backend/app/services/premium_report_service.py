@@ -19,6 +19,7 @@ from app.models.crawl import CrawlRun, TechnicalIssue
 from app.models.intelligence import StrategyRecommendation
 from app.models.local import ReviewVelocitySnapshot
 from app.models.rank import CampaignKeyword, RankingSnapshot
+from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.services import intelligence_service
 from app.services.strategy_engine.thresholds import version_id as strategy_threshold_version
 
@@ -48,17 +49,17 @@ def _round(value: float | int | None, digits: int = 1) -> float | int | None:
     return round(float(value), digits)
 
 
-def _sum(rows: Iterable[CampaignDailyMetric], field: str) -> int | None:
+def _sum(rows: Iterable[Any], field: str) -> int | None:
     values = [getattr(row, field) for row in rows if getattr(row, field) is not None]
     return int(sum(values)) if values else None
 
 
-def _mean(rows: Iterable[CampaignDailyMetric], field: str) -> float | None:
+def _mean(rows: Iterable[Any], field: str) -> float | None:
     values = [float(getattr(row, field)) for row in rows if getattr(row, field) is not None]
     return _round(fmean(values)) if values else None
 
 
-def _weighted_position(rows: Iterable[CampaignDailyMetric]) -> float | None:
+def _weighted_position(rows: Iterable[Any]) -> float | None:
     pairs = [
         (float(row.avg_position), int(row.impressions or 0))
         for row in rows
@@ -324,6 +325,211 @@ def _snapshot_hash(snapshot: dict[str, Any]) -> str:
     return sha256(json.dumps(hashable, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
 
 
+def build_report_readiness(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign: Campaign,
+    checked_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Describe what a report can prove before the owner creates it."""
+
+    resolved_checked_at = _aware(checked_at) or datetime.now(UTC)
+    latest_search_date = (
+        db.query(func.max(SearchConsoleDailyMetric.metric_date))
+        .filter(
+            SearchConsoleDailyMetric.organization_id == campaign.organization_id,
+            SearchConsoleDailyMetric.campaign_id == campaign.id,
+        )
+        .scalar()
+    )
+    search_period_end = latest_search_date or resolved_checked_at.date()
+    current_start = search_period_end - timedelta(days=REPORT_PERIOD_DAYS - 1)
+    comparison_end = current_start - timedelta(days=1)
+    comparison_start = comparison_end - timedelta(days=REPORT_PERIOD_DAYS - 1)
+    search_rows = (
+        db.query(SearchConsoleDailyMetric)
+        .filter(
+            SearchConsoleDailyMetric.organization_id == campaign.organization_id,
+            SearchConsoleDailyMetric.campaign_id == campaign.id,
+            SearchConsoleDailyMetric.metric_date >= comparison_start,
+            SearchConsoleDailyMetric.metric_date <= search_period_end,
+        )
+        .all()
+    )
+    current_search_days = len(
+        {row.metric_date for row in search_rows if current_start <= row.metric_date <= search_period_end}
+    )
+    comparison_search_days = len(
+        {row.metric_date for row in search_rows if comparison_start <= row.metric_date <= comparison_end}
+    )
+    search_age_days = (
+        (resolved_checked_at.date() - latest_search_date).days
+        if latest_search_date is not None
+        else None
+    )
+    if latest_search_date is None:
+        search_state = "missing"
+        search_detail = "Connect website search data so visits, appearances, and Google position can be shown."
+    elif search_age_days is not None and search_age_days > 4:
+        search_state = "stale"
+        search_detail = f"The newest saved Google search day is {search_age_days} days old. Refresh it before sharing the report."
+    elif current_search_days >= 24 and comparison_search_days >= 24:
+        search_state = "ready"
+        search_detail = "There is enough recent Google search history for a useful comparison."
+    else:
+        search_state = "partial"
+        search_detail = "Some Google search history is available, but the comparison will have gaps."
+
+    latest_crawl = (
+        db.query(CrawlRun)
+        .filter(
+            CrawlRun.tenant_id == tenant_id,
+            CrawlRun.campaign_id == campaign.id,
+            CrawlRun.status == "completed",
+            CrawlRun.finished_at.isnot(None),
+        )
+        .order_by(CrawlRun.finished_at.desc(), CrawlRun.id.desc())
+        .first()
+    )
+    crawl_age_days = (
+        (resolved_checked_at.date() - (_aware(latest_crawl.finished_at) or resolved_checked_at).date()).days
+        if latest_crawl is not None
+        else None
+    )
+    if latest_crawl is None:
+        crawl_state = "missing"
+        crawl_detail = "Run a website check to include current website problems and progress."
+    elif crawl_age_days is not None and crawl_age_days > 30:
+        crawl_state = "stale"
+        crawl_detail = f"The latest website check is {crawl_age_days} days old. Run it again before sharing."
+    else:
+        crawl_state = "ready"
+        crawl_detail = "A recent website check is ready to include."
+
+    tracked_keyword_count = int(
+        db.query(func.count(CampaignKeyword.id))
+        .filter(
+            CampaignKeyword.tenant_id == tenant_id,
+            CampaignKeyword.campaign_id == campaign.id,
+        )
+        .scalar()
+        or 0
+    )
+    latest_rank_at = (
+        db.query(func.max(RankingSnapshot.captured_at))
+        .filter(
+            RankingSnapshot.tenant_id == tenant_id,
+            RankingSnapshot.campaign_id == campaign.id,
+        )
+        .scalar()
+    )
+    rank_age_days = (
+        (resolved_checked_at.date() - (_aware(latest_rank_at) or resolved_checked_at).date()).days
+        if latest_rank_at is not None
+        else None
+    )
+    if tracked_keyword_count == 0:
+        rank_state = "missing"
+        rank_detail = "Choose the customer searches you want to track."
+    elif latest_rank_at is None:
+        rank_state = "partial"
+        rank_detail = f"{tracked_keyword_count} searches are tracked, but they do not have saved positions yet."
+    elif rank_age_days is not None and rank_age_days > 14:
+        rank_state = "stale"
+        rank_detail = f"Tracked search positions are {rank_age_days} days old. Refresh them before sharing."
+    else:
+        rank_state = "ready"
+        rank_detail = f"Recent positions are available for {tracked_keyword_count} tracked searches."
+
+    latest_review_at = (
+        db.query(func.max(ReviewVelocitySnapshot.captured_at))
+        .filter(
+            ReviewVelocitySnapshot.tenant_id == tenant_id,
+            ReviewVelocitySnapshot.campaign_id == campaign.id,
+        )
+        .scalar()
+    )
+    review_state = "ready" if latest_review_at is not None else "optional"
+    review_detail = (
+        "Recent review pace and rating are ready to include."
+        if latest_review_at is not None
+        else "Review data is optional. The report can still be created without it."
+    )
+
+    core_states = {search_state, crawl_state, rank_state}
+    if search_state == "ready" and (crawl_state == "ready" or rank_state == "ready"):
+        status = "ready"
+        title = "Ready for a detailed report"
+        summary = "Google search history and at least one supporting check are current."
+    elif core_states.intersection({"ready", "partial", "stale"}):
+        status = "limited"
+        title = "A report can be created, but some sections will be limited"
+        summary = "The report will show only saved facts. Complete the items below for a stronger client update."
+    else:
+        status = "needs_setup"
+        title = "Collect the first results before creating a report"
+        summary = "Connect search data or run a website and ranking check first."
+
+    sources = [
+        {
+            "key": "search_console",
+            "label": "Google search results",
+            "state": search_state,
+            "detail": search_detail,
+            "last_updated": _iso(latest_search_date),
+            "coverage": {
+                "current": _record_coverage(current_search_days, REPORT_PERIOD_DAYS),
+                "comparison": _record_coverage(comparison_search_days, REPORT_PERIOD_DAYS),
+            },
+            "action_label": "Open search connection",
+            "action_href": "/settings#website-mappings",
+        },
+        {
+            "key": "website_crawl",
+            "label": "Website check",
+            "state": crawl_state,
+            "detail": crawl_detail,
+            "last_updated": _iso(latest_crawl.finished_at if latest_crawl else None),
+            "action_label": "Open website health",
+            "action_href": "/site-health",
+        },
+        {
+            "key": "rank_tracking",
+            "label": "Tracked searches",
+            "state": rank_state,
+            "detail": rank_detail,
+            "last_updated": _iso(latest_rank_at),
+            "observed": tracked_keyword_count,
+            "action_label": "Open search rankings",
+            "action_href": "/rankings",
+        },
+        {
+            "key": "reviews",
+            "label": "Customer reviews",
+            "state": review_state,
+            "detail": review_detail,
+            "last_updated": _iso(latest_review_at),
+            "optional": True,
+            "action_label": "Open review connection",
+            "action_href": "/settings#profile-mappings",
+        },
+    ]
+    return {
+        "campaign_id": campaign.id,
+        "checked_at": resolved_checked_at.isoformat(),
+        "status": status,
+        "title": title,
+        "summary": summary,
+        "can_generate": True,
+        "warning_count": sum(
+            item["state"] in {"missing", "partial", "stale"} and not item.get("optional")
+            for item in sources
+        ),
+        "sources": sources,
+    }
+
+
 def build_report_snapshot(
     db: Session,
     *,
@@ -339,12 +545,35 @@ def build_report_snapshot(
         .order_by(CampaignDailyMetric.metric_date.asc())
         .all()
     )
-    observed_end = metric_rows[-1].metric_date if metric_rows else resolved_generated_at.date()
+    search_console_rows = (
+        db.query(SearchConsoleDailyMetric)
+        .filter(
+            SearchConsoleDailyMetric.organization_id == campaign.organization_id,
+            SearchConsoleDailyMetric.campaign_id == campaign.id,
+        )
+        .order_by(SearchConsoleDailyMetric.metric_date.asc())
+        .all()
+    )
+    observed_end = (
+        search_console_rows[-1].metric_date
+        if search_console_rows
+        else metric_rows[-1].metric_date
+        if metric_rows
+        else resolved_generated_at.date()
+    )
     current_start = observed_end - timedelta(days=REPORT_PERIOD_DAYS - 1)
     previous_end = current_start - timedelta(days=1)
     previous_start = previous_end - timedelta(days=REPORT_PERIOD_DAYS - 1)
     current_rows = [row for row in metric_rows if current_start <= row.metric_date <= observed_end]
     previous_rows = [row for row in metric_rows if previous_start <= row.metric_date <= previous_end]
+    # Search Console facts are the reporting source of truth. CampaignDailyMetric remains a
+    # compatibility fallback for older installs and derived intelligence fields.
+    current_search_rows = [
+        row for row in search_console_rows if current_start <= row.metric_date <= observed_end
+    ] if search_console_rows else current_rows
+    previous_search_rows = [
+        row for row in search_console_rows if previous_start <= row.metric_date <= previous_end
+    ] if search_console_rows else previous_rows
 
     current_start_dt = datetime.combine(current_start, datetime.min.time(), tzinfo=UTC)
     current_end_dt = datetime.combine(observed_end + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
@@ -446,7 +675,11 @@ def build_report_snapshot(
     )
 
     search_last_updated = max(
-        (row.metric_date for row in current_rows if row.clicks is not None or row.impressions is not None),
+        (
+            row.metric_date
+            for row in current_search_rows
+            if row.clicks is not None or row.impressions is not None
+        ),
         default=None,
     )
 
@@ -454,43 +687,43 @@ def build_report_snapshot(
         _metric(
             key="google_visits",
             label="Visits from Google",
-            current=_sum(current_rows, "clicks"),
-            previous=_sum(previous_rows, "clicks"),
+            current=_sum(current_search_rows, "clicks"),
+            previous=_sum(previous_search_rows, "clicks"),
             good_direction="up",
             unit="visits",
             explanation="How many people clicked from Google to the website.",
             source_label="Google Search Console",
             source_system="search_console",
-            current_coverage=_coverage(current_rows, "clicks"),
-            comparison_coverage=_coverage(previous_rows, "clicks"),
+            current_coverage=_coverage(current_search_rows, "clicks"),
+            comparison_coverage=_coverage(previous_search_rows, "clicks"),
             last_updated=search_last_updated,
         ),
         _metric(
             key="google_appearances",
             label="Times shown on Google",
-            current=_sum(current_rows, "impressions"),
-            previous=_sum(previous_rows, "impressions"),
+            current=_sum(current_search_rows, "impressions"),
+            previous=_sum(previous_search_rows, "impressions"),
             good_direction="up",
             unit="appearances",
             explanation="How often the business appeared in Google search results.",
             source_label="Google Search Console",
             source_system="search_console",
-            current_coverage=_coverage(current_rows, "impressions"),
-            comparison_coverage=_coverage(previous_rows, "impressions"),
+            current_coverage=_coverage(current_search_rows, "impressions"),
+            comparison_coverage=_coverage(previous_search_rows, "impressions"),
             last_updated=search_last_updated,
         ),
         _metric(
             key="average_google_position",
             label="Average Google position",
-            current=_weighted_position(current_rows),
-            previous=_weighted_position(previous_rows),
+            current=_weighted_position(current_search_rows),
+            previous=_weighted_position(previous_search_rows),
             good_direction="down",
             unit="position",
             explanation="A smaller position number means the business appeared closer to the top.",
             source_label="Google Search Console",
             source_system="search_console",
-            current_coverage=_coverage(current_rows, "avg_position"),
-            comparison_coverage=_coverage(previous_rows, "avg_position"),
+            current_coverage=_coverage(current_search_rows, "avg_position"),
+            comparison_coverage=_coverage(previous_search_rows, "avg_position"),
             last_updated=search_last_updated,
         ),
         _metric(
@@ -604,7 +837,7 @@ def build_report_snapshot(
                     "appearances": row.impressions,
                     "average_position": _round(row.avg_position),
                 }
-                for row in current_rows
+                for row in current_search_rows
                 if row.clicks is not None or row.impressions is not None or row.avg_position is not None
             ],
             "comparison_points": [
@@ -614,7 +847,7 @@ def build_report_snapshot(
                     "appearances": row.impressions,
                     "average_position": _round(row.avg_position),
                 }
-                for row in previous_rows
+                for row in previous_search_rows
                 if row.clicks is not None or row.impressions is not None or row.avg_position is not None
             ],
         },
@@ -991,6 +1224,8 @@ def build_report_snapshot(
         "appendix": {
             "current_daily_records": len(current_rows),
             "comparison_daily_records": len(previous_rows),
+            "current_search_console_records": len(current_search_rows),
+            "comparison_search_console_records": len(previous_search_rows),
             "rank_snapshot_records": db.query(RankingSnapshot).filter(
                 RankingSnapshot.tenant_id == tenant_id,
                 RankingSnapshot.campaign_id == campaign.id,

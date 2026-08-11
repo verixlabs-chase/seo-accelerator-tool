@@ -207,6 +207,12 @@ def test_reports_reject_cross_org_campaign_mismatch(client, db_session, create_t
     )
     assert generate.status_code == 404
 
+    readiness = client.get(
+        f"/api/v1/reports/readiness?campaign_id={mismatched_campaign.id}",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert readiness.status_code == 404
+
     schedule = client.put(
         "/api/v1/reports/schedule",
         json={
@@ -219,6 +225,92 @@ def test_reports_reject_cross_org_campaign_mismatch(client, db_session, create_t
         headers={"Authorization": f"Bearer {token_a}"},
     )
     assert schedule.status_code == 404
+
+
+def test_report_prefers_direct_search_console_facts_and_explains_readiness(client, db_session):
+    from datetime import date, timedelta
+
+    from app.models.campaign import Campaign
+    from app.models.campaign_daily_metric import CampaignDailyMetric
+    from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+
+    token = _login(client, "a@example.com", "pass-a")
+    headers = {"Authorization": f"Bearer {token}"}
+    campaign_data = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Direct Source Report", "domain": "direct-source.example"},
+        headers=headers,
+    ).json()["data"]
+    campaign = db_session.get(Campaign, campaign_data["id"])
+    assert campaign is not None
+    observed_end = date(2026, 8, 10)
+
+    db_session.add(
+        CampaignDailyMetric(
+            organization_id=campaign.organization_id,
+            portfolio_id=campaign.portfolio_id,
+            sub_account_id=campaign.sub_account_id,
+            campaign_id=campaign.id,
+            metric_date=observed_end,
+            clicks=999,
+            impressions=9999,
+            avg_position=99,
+            normalization_version="analytics-v1",
+            deterministic_hash="a" * 64,
+        )
+    )
+    for index, (metric_date, clicks, impressions, position) in enumerate(
+        (
+            (observed_end - timedelta(days=30), 10, 100, 8.0),
+            (observed_end - timedelta(days=1), 20, 200, 5.0),
+            (observed_end, 30, 300, 4.0),
+        )
+    ):
+        db_session.add(
+            SearchConsoleDailyMetric(
+                organization_id=campaign.organization_id,
+                campaign_id=campaign.id,
+                metric_date=metric_date,
+                clicks=clicks,
+                impressions=impressions,
+                ctr=clicks / impressions,
+                avg_position=position,
+                property_uri="sc-domain:direct-source.example",
+                deterministic_hash=f"{index + 1}" * 64,
+            )
+        )
+    db_session.commit()
+
+    readiness = client.get(
+        f"/api/v1/reports/readiness?campaign_id={campaign.id}",
+        headers=headers,
+    )
+    assert readiness.status_code == 200
+    readiness_payload = readiness.json()["data"]
+    assert readiness_payload["status"] == "limited"
+    assert readiness_payload["can_generate"] is True
+    search_source = next(
+        item for item in readiness_payload["sources"] if item["key"] == "search_console"
+    )
+    assert search_source["state"] in {"partial", "stale"}
+    assert search_source["coverage"]["current"]["observed"] == 2
+    assert search_source["coverage"]["comparison"]["observed"] == 1
+
+    generated = client.post(
+        "/api/v1/reports/generate",
+        json={"campaign_id": campaign.id, "month_number": 8},
+        headers=headers,
+    )
+    assert generated.status_code == 200
+    report_id = generated.json()["data"]["id"]
+    detail = client.get(f"/api/v1/reports/{report_id}", headers=headers)
+    snapshot = detail.json()["data"]["snapshot"]
+    visits = next(item for item in snapshot["metrics"] if item["key"] == "google_visits")
+    assert visits["current"] == 50
+    assert visits["previous"] == 10
+    assert visits["change_percent"] == 400.0
+    assert snapshot["appendix"]["current_search_console_records"] == 2
+    assert snapshot["appendix"]["comparison_search_console_records"] == 1
 
 
 def test_reports_delivery_fails_when_artifact_is_not_ready(client, db_session):
