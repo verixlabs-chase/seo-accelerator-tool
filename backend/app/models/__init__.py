@@ -124,7 +124,9 @@ from app.models.reporting import (
     MonthlyReport,
     ReportArtifact,
     ReportDeliveryEvent,
+    ReportRecipient,
     ReportSchedule,
+    ReportShareLink,
     ReportTemplateVersion,
 )
 from app.models.reputation import (
@@ -311,7 +313,9 @@ __all__ = [
     "MonthlyReport",
     "ReportArtifact",
     "ReportDeliveryEvent",
+    "ReportRecipient",
     "ReportSchedule",
+    "ReportShareLink",
     "ReportTemplateVersion",
     "UsageLedger",
     "WebsitePerformanceMeasurement",

@@ -31,3 +31,12 @@ test("saved report facts can rebuild files without silently changing the report"
   assert.match(reportsPage, /Rebuild selected report files/);
   assert.match(reportsPage, /same saved facts without changing the report numbers/);
 });
+
+test("reports expose durable files, saved recipients, and expiring private links", () => {
+  assert.match(reportsPage, /Save recipient/);
+  assert.match(reportsPage, /Each business keeps its own list/);
+  assert.match(reportsPage, /Private sharing/);
+  assert.match(reportsPage, /Create 7-day link/);
+  assert.match(reportsPage, /Turn off link/);
+  assert.match(reportsPage, /\/artifacts\/\$\{artifact\.id\}/);
+});

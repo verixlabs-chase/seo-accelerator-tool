@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     object_storage_bucket: str = ""
     object_storage_access_key: str = ""
     object_storage_secret_key: str = ""
+    object_storage_region: str = "us-east-1"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""

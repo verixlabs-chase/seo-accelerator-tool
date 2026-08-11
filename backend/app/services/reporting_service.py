@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -17,6 +18,7 @@ from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEv
 from app.providers import get_email_adapter
 from app.services import analytics_service
 from app.services import premium_report_service
+from app.services import report_artifact_storage_service
 
 REPORT_SCHEDULE_MAX_RETRIES = 3
 
@@ -144,24 +146,35 @@ def render_pdf_report(kpis: dict, report_id: str, campaign_name: str) -> str:
 
 def _artifact_readiness(artifact: ReportArtifact) -> dict:
     storage_path = (artifact.storage_path or "").strip()
-    path = Path(storage_path)
-    if path.is_file():
+    storage_key = (artifact.storage_key or "").strip()
+    storage_mode = str(artifact.storage_mode or "local_disk")
+    ready = bool(artifact.ready)
+    if ready and storage_mode == "local_disk":
+        ready = Path(storage_path or storage_key).is_file()
+    elif ready and storage_mode == "s3_private":
+        try:
+            storage = report_artifact_storage_service.get_report_artifact_storage()
+            ready = storage.storage_mode == "s3_private" and storage.exists(storage_key, storage_path)
+        except Exception:
+            ready = False
+
+    if ready:
         return {
             "artifact_id": artifact.id,
             "artifact_type": artifact.artifact_type,
-            "storage_mode": "local_disk",
+            "storage_mode": storage_mode,
             "ready": True,
-            "durable": False,
+            "durable": bool(artifact.durable),
             "reason": None,
         }
 
     return {
         "artifact_id": artifact.id,
         "artifact_type": artifact.artifact_type,
-        "storage_mode": "local_disk" if storage_path else "unknown",
+        "storage_mode": storage_mode if (storage_path or storage_key) else "unknown",
         "ready": False,
-        "durable": False,
-        "reason": "missing_file" if storage_path else "missing_storage_path",
+        "durable": bool(artifact.durable),
+        "reason": "artifact_unavailable" if (storage_path or storage_key) else "missing_storage_path",
     }
 
 
@@ -171,14 +184,55 @@ def artifact_contract(artifact: ReportArtifact) -> dict:
     return {
         "id": artifact.id,
         "artifact_type": artifact.artifact_type,
-        "storage_path": storage_path,
+        "storage_path": storage_path if readiness["storage_mode"] == "local_disk" else "",
         "storage_mode": readiness["storage_mode"],
         "ready": readiness["ready"],
-        "retrievable": False,
+        "retrievable": readiness["ready"],
         "durable": readiness["durable"],
+        "content_type": artifact.content_type,
+        "byte_size": artifact.byte_size,
+        "checksum_sha256": artifact.checksum_sha256,
         "reason": readiness["reason"],
         "created_at": artifact.created_at,
     }
+
+
+def _store_snapshot_artifacts(
+    *,
+    tenant_id: str,
+    report_id: str,
+    snapshot: dict,
+) -> dict[str, report_artifact_storage_service.StoredReportArtifact]:
+    storage = report_artifact_storage_service.get_report_artifact_storage()
+    html_content = premium_report_service.render_report_html(snapshot).encode("utf-8")
+    pdf_content = _build_simple_pdf(premium_report_service.report_pdf_lines(snapshot))
+    return {
+        "html": storage.put_bytes(
+            tenant_id=tenant_id,
+            report_id=report_id,
+            filename="report.html",
+            content_type="text/html; charset=utf-8",
+            content=html_content,
+        ),
+        "pdf": storage.put_bytes(
+            tenant_id=tenant_id,
+            report_id=report_id,
+            filename="report.pdf",
+            content_type="application/pdf",
+            content=pdf_content,
+        ),
+    }
+
+
+def _apply_stored_artifact(artifact: ReportArtifact, stored: report_artifact_storage_service.StoredReportArtifact) -> None:
+    artifact.storage_path = stored.storage_path
+    artifact.storage_mode = stored.storage_mode
+    artifact.storage_key = stored.storage_key
+    artifact.content_type = stored.content_type
+    artifact.byte_size = stored.byte_size
+    artifact.checksum_sha256 = stored.checksum_sha256
+    artifact.durable = stored.durable
+    artifact.ready = stored.ready
 
 
 def _report_delivery_readiness(artifacts: list[ReportArtifact]) -> dict:
@@ -206,24 +260,21 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
     )
     db.add(report)
     db.flush()
-
-    html_artifact = ReportArtifact(
+    stored_artifacts = _store_snapshot_artifacts(
         tenant_id=tenant_id,
-        campaign_id=campaign_id,
         report_id=report.id,
-        artifact_type="html",
-        storage_path=render_html_report(snapshot, report.id, campaign.name),
+        snapshot=snapshot,
     )
-    pdf_path = render_pdf_report(snapshot, report.id, campaign.name)
-    pdf_artifact = ReportArtifact(
-        tenant_id=tenant_id,
-        campaign_id=campaign_id,
-        report_id=report.id,
-        artifact_type="pdf",
-        storage_path=pdf_path,
-    )
-    db.add(html_artifact)
-    db.add(pdf_artifact)
+    for artifact_type, stored in stored_artifacts.items():
+        artifact = ReportArtifact(
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+            report_id=report.id,
+            artifact_type=artifact_type,
+            storage_path=stored.storage_path,
+        )
+        _apply_stored_artifact(artifact, stored)
+        db.add(artifact)
     emit_event(
         db,
         tenant_id=tenant_id,
@@ -266,7 +317,7 @@ def regenerate_report_artifacts(
     organization_id: str | None = None,
 ) -> dict:
     report = get_report(db, tenant_id, report_id, organization_id)
-    campaign = _campaign_or_404(db, tenant_id, report.campaign_id, organization_id)
+    _campaign_or_404(db, tenant_id, report.campaign_id, organization_id)
     snapshot = get_report_snapshot(db, tenant_id, report_id, organization_id)
     if snapshot.get("schema_version") == premium_report_service.REPORT_SNAPSHOT_VERSION and not premium_report_service.validate_snapshot(snapshot):
         raise HTTPException(
@@ -274,13 +325,14 @@ def regenerate_report_artifacts(
             detail="The saved report snapshot failed its integrity check",
         )
 
-    expected_paths = {
-        "html": render_html_report(snapshot, report.id, campaign.name),
-        "pdf": render_pdf_report(snapshot, report.id, campaign.name),
-    }
+    stored_artifacts = _store_snapshot_artifacts(
+        tenant_id=tenant_id,
+        report_id=report.id,
+        snapshot=snapshot,
+    )
     artifacts = get_report_artifacts(db, tenant_id, report_id, organization_id)
     by_type = {artifact.artifact_type: artifact for artifact in artifacts}
-    for artifact_type, storage_path in expected_paths.items():
+    for artifact_type, stored in stored_artifacts.items():
         artifact = by_type.get(artifact_type)
         if artifact is None:
             artifact = ReportArtifact(
@@ -288,11 +340,10 @@ def regenerate_report_artifacts(
                 campaign_id=report.campaign_id,
                 report_id=report.id,
                 artifact_type=artifact_type,
-                storage_path=storage_path,
+                storage_path=stored.storage_path,
             )
             db.add(artifact)
-        else:
-            artifact.storage_path = storage_path
+        _apply_stored_artifact(artifact, stored)
     report.report_status = "generated"
     emit_event(
         db,
@@ -313,6 +364,33 @@ def regenerate_report_artifacts(
         "snapshot_valid": premium_report_service.validate_snapshot(snapshot),
         "artifacts": [artifact_contract(item) for item in get_report_artifacts(db, tenant_id, report_id, organization_id)],
     }
+
+
+def read_report_artifact(
+    db: Session,
+    tenant_id: str,
+    report_id: str,
+    artifact_id: str,
+    organization_id: str | None = None,
+) -> tuple[ReportArtifact, bytes]:
+    artifacts = get_report_artifacts(db, tenant_id, report_id, organization_id)
+    artifact = next((item for item in artifacts if item.id == artifact_id), None)
+    if artifact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report file not found")
+    readiness = _artifact_readiness(artifact)
+    if not readiness["ready"]:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report file is not available")
+    if artifact.storage_mode == "local_disk":
+        storage = report_artifact_storage_service.LocalReportArtifactStorage()
+    else:
+        storage = report_artifact_storage_service.get_report_artifact_storage()
+    try:
+        content = storage.read_bytes(artifact.storage_key or "", artifact.storage_path or "")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report file is not available") from exc
+    if artifact.checksum_sha256 and sha256(content).hexdigest() != artifact.checksum_sha256:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report file failed its integrity check")
+    return artifact, content
 
 
 def list_reports(db: Session, tenant_id: str, campaign_id: str | None = None, organization_id: str | None = None) -> list[MonthlyReport]:
@@ -398,7 +476,18 @@ def deliver_report(db: Session, tenant_id: str, report_id: str, recipient: str, 
     report = get_report(db, tenant_id, report_id, organization_id)
     artifacts = get_report_artifacts(db, tenant_id, report_id, organization_id)
     readiness = _report_delivery_readiness(artifacts)
+    attempt_number = (
+        db.query(func.count(ReportDeliveryEvent.id))
+        .filter(
+            ReportDeliveryEvent.tenant_id == tenant_id,
+            ReportDeliveryEvent.report_id == report.id,
+            ReportDeliveryEvent.recipient == recipient,
+        )
+        .scalar()
+        or 0
+    ) + 1
     if not readiness["ready"]:
+        failed_at = datetime.now(UTC)
         event = ReportDeliveryEvent(
             tenant_id=tenant_id,
             campaign_id=report.campaign_id,
@@ -406,7 +495,10 @@ def deliver_report(db: Session, tenant_id: str, report_id: str, recipient: str, 
             delivery_channel="email",
             delivery_status="failed",
             recipient=recipient,
+            attempt_number=attempt_number,
+            failure_reason="artifact_not_ready",
             sent_at=None,
+            failed_at=failed_at,
         )
         db.add(event)
         db.commit()
@@ -425,22 +517,30 @@ def deliver_report(db: Session, tenant_id: str, report_id: str, recipient: str, 
         body=f"Report {report.id} delivery notification",
     )
     status_value = delivery.get("status", "failed")
+    delivery_status = "sent" if status_value == "sent" else "retry_pending" if status_value == "deferred" else "failed"
+    event_time = datetime.now(UTC)
     event = ReportDeliveryEvent(
         tenant_id=tenant_id,
         campaign_id=report.campaign_id,
         report_id=report.id,
         delivery_channel="email",
-        delivery_status="sent" if status_value == "sent" else "failed",
+        delivery_status=delivery_status,
         recipient=recipient,
-        sent_at=datetime.now(UTC) if status_value == "sent" else None,
+        provider_message_id=delivery.get("message_id") or delivery.get("id"),
+        attempt_number=attempt_number,
+        failure_reason=delivery.get("reason") if delivery_status != "sent" else None,
+        sent_at=event_time if delivery_status == "sent" else None,
+        failed_at=event_time if delivery_status == "failed" else None,
     )
-    report.report_status = "delivered" if status_value == "sent" else "generated"
+    report.report_status = "delivered" if delivery_status == "sent" else "generated"
     db.add(event)
     db.commit()
     return {
         "report_id": report.id,
         "delivery_status": event.delivery_status,
         "recipient": recipient,
+        "attempt_number": event.attempt_number,
+        "reason": event.failure_reason,
         "artifact_readiness": readiness,
     }
 

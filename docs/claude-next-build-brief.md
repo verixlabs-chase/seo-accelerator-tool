@@ -2249,11 +2249,20 @@ Implementation status (2026-08-11):
   and the report can rebuild its files without silently changing its facts.
 - Existing legacy report summaries remain readable, but they are identified as
   legacy and cannot claim RPT1 snapshot reproducibility.
-- RPT1B remains open for durable object storage, expiring share links,
-  recipient management, real transactional-email delivery evidence and retry,
-  accessible production-grade PDF rendering, scheduled owner delivery, and
-  multi-location comparison. Those capabilities must preserve the RPT1A
-  snapshot contract rather than recomputing facts at delivery time.
+- RPT1B's secure-delivery foundation is implemented locally. Reports can use
+  private S3-compatible object storage, authenticated HTML/PDF retrieval,
+  campaign-scoped saved recipients, and hashed expiring links that can be
+  revoked and record open counts. The raw share token is returned only when a
+  link is created and is never stored in the database.
+- Delivery events now retain attempt number, provider message ID, failure
+  reason, and separate sent/delivered/opened/failed timestamps. Synthetic
+  email remains explicitly unverified and never claims provider-confirmed
+  delivery.
+- RPT1B remains open for a real transactional-email provider and webhooks,
+  scheduled recipient delivery, accessible production-grade PDF rendering,
+  multi-location comparison, and customer-tested report branding. Those
+  capabilities must preserve the RPT1A snapshot contract rather than
+  recomputing facts at delivery time.
 
 Scope:
 

@@ -49,7 +49,34 @@ type ReportArtifact = {
   id: string;
   artifact_type?: string;
   storage_path?: string;
+  storage_mode?: string;
+  content_type?: string;
+  byte_size?: number;
+  ready?: boolean;
+  retrievable?: boolean;
+  durable?: boolean;
+  reason?: string;
   created_at?: string;
+};
+
+type ReportRecipient = {
+  id: string;
+  campaign_id: string;
+  email: string;
+  display_name?: string;
+  recipient_role: string;
+  enabled: boolean;
+};
+
+type ReportShareLink = {
+  id: string;
+  report_id: string;
+  expires_at: string;
+  revoked_at?: string;
+  last_opened_at?: string;
+  open_count: number;
+  status: "active" | "expired" | "revoked";
+  share_url?: string;
 };
 
 type ReportDeliveryEvent = {
@@ -440,6 +467,10 @@ export default function ReportsPage() {
   const [reportsTruth, setReportsTruth] = useState<RuntimeTruth | null>(null);
   const [monthNumber, setMonthNumber] = useState("1");
   const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipients, setRecipients] = useState<ReportRecipient[]>([]);
+  const [shareLinks, setShareLinks] = useState<ReportShareLink[]>([]);
+  const [newShareUrl, setNewShareUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -461,7 +492,7 @@ export default function ReportsPage() {
       return items[0]?.id || "";
     });
     return items;
-  }, []);
+  }, [setSelectedCampaignId]);
 
   const loadReportDetail = useCallback(async (reportId: string) => {
     if (!reportId) {
@@ -469,8 +500,24 @@ export default function ReportsPage() {
       return;
     }
 
-    const detail = (await platformApi(`/reports/${reportId}`, { method: "GET" })) as ReportDetail;
+    const [detail, linkResponse] = await Promise.all([
+      platformApi(`/reports/${reportId}`, { method: "GET" }),
+      platformApi(`/reports/${reportId}/share-links`, { method: "GET" }),
+    ]);
     setSelectedReportDetail(detail);
+    setShareLinks(Array.isArray(linkResponse?.items) ? (linkResponse.items as ReportShareLink[]) : []);
+  }, []);
+
+  const loadRecipients = useCallback(async (campaignId: string) => {
+    if (!campaignId) {
+      setRecipients([]);
+      return;
+    }
+    const response = await platformApi(
+      `/reports/recipients?campaign_id=${encodeURIComponent(campaignId)}`,
+      { method: "GET" },
+    );
+    setRecipients(Array.isArray(response?.items) ? (response.items as ReportRecipient[]) : []);
   }, []);
 
   const loadReports = useCallback(async (campaignId: string) => {
@@ -592,6 +639,71 @@ export default function ReportsPage() {
     });
   }
 
+  async function saveRecipient() {
+    if (!selectedCampaignId || !recipientEmail.trim()) {
+      setError("Add the email address you want to save.");
+      return;
+    }
+    await runAction("save-recipient", async () => {
+      await platformApi("/reports/recipients", {
+        method: "PUT",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          email: recipientEmail.trim(),
+          display_name: recipientName.trim() || null,
+          recipient_role: "owner",
+          enabled: true,
+        }),
+      });
+      await loadRecipients(selectedCampaignId);
+      setNotice("Recipient saved for this business.");
+    });
+  }
+
+  async function toggleRecipient(recipient: ReportRecipient) {
+    await runAction(`recipient-${recipient.id}`, async () => {
+      await platformApi(`/reports/recipients/${recipient.id}?enabled=${!recipient.enabled}`, {
+        method: "PATCH",
+      });
+      await loadRecipients(selectedCampaignId);
+      setNotice(recipient.enabled ? "Recipient paused." : "Recipient turned back on.");
+    });
+  }
+
+  async function createShareLink() {
+    const reportId = selectedReportDetail?.report.id || selectedReportId;
+    if (!reportId) {
+      setError("Select a report first.");
+      return;
+    }
+    await runAction("share-link", async () => {
+      const created = (await platformApi(`/reports/${reportId}/share-links`, {
+        method: "POST",
+        body: JSON.stringify({ expires_in_hours: 168 }),
+      })) as ReportShareLink;
+      setNewShareUrl(created.share_url || "");
+      await loadReportDetail(reportId);
+      setNotice("A private link was created. It will turn off automatically in 7 days.");
+    });
+  }
+
+  async function revokeShareLink(linkId: string) {
+    const reportId = selectedReportDetail?.report.id || selectedReportId;
+    await runAction(`revoke-${linkId}`, async () => {
+      await platformApi(`/reports/share-links/${linkId}`, { method: "DELETE" });
+      if (reportId) {
+        await loadReportDetail(reportId);
+      }
+      setNotice("The private report link was turned off.");
+    });
+  }
+
+  async function copyShareLink() {
+    if (!newShareUrl) return;
+    await navigator.clipboard.writeText(newShareUrl);
+    setNotice("Private report link copied.");
+  }
+
   async function regenerateReportFiles() {
     const reportId = selectedReportDetail?.report.id || selectedReportId;
     if (!reportId) {
@@ -647,6 +759,7 @@ export default function ReportsPage() {
         if (items[0]?.id) {
           await loadReports(items[0].id);
           await loadSchedule(items[0].id);
+          await loadRecipients(items[0].id);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load reports.");
@@ -656,7 +769,7 @@ export default function ReportsPage() {
     }
 
     void loadPage();
-  }, [loadCampaigns, loadReports, loadSchedule]);
+  }, [loadCampaigns, loadRecipients, loadReports, loadSchedule]);
 
   useEffect(() => {
     if (!selectedCampaignId || loading) {
@@ -669,7 +782,10 @@ export default function ReportsPage() {
     void loadSchedule(selectedCampaignId).catch((err) => {
       setError(err instanceof Error ? err.message : "Unable to load schedule.");
     });
-  }, [loadReports, loadSchedule, selectedCampaignId, loading]);
+    void loadRecipients(selectedCampaignId).catch((err) => {
+      setError(err instanceof Error ? err.message : "Unable to load saved recipients.");
+    });
+  }, [loadRecipients, loadReports, loadSchedule, selectedCampaignId, loading]);
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
@@ -1024,25 +1140,65 @@ export default function ReportsPage() {
                   </div>
 
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
-                    <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-zinc-500">
-                      Recipient email
-                    </label>
-                    <input
-                      value={recipientEmail}
-                      onChange={(event) => setRecipientEmail(event.target.value)}
-                      placeholder="name@example.com"
-                      className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
-                    />
+                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Who receives it</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <input
+                        value={recipientName}
+                        onChange={(event) => setRecipientName(event.target.value)}
+                        placeholder="Name (optional)"
+                        className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                      />
+                      <input
+                        value={recipientEmail}
+                        onChange={(event) => setRecipientEmail(event.target.value)}
+                        placeholder="name@example.com"
+                        className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+                      />
+                    </div>
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
-                      Send the selected report only after the workflow status above shows it is ready and you confirm the recipient is correct.
+                      Save people you report to, then choose one before sending. Each business keeps its own list.
                     </p>
-                    <button
-                      onClick={deliverReport}
-                      disabled={busyAction !== "" || !selectedReportId}
-                      className="mt-4 rounded-md border border-[#26272c] bg-[#141518] px-4 py-2 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {busyAction === "deliver" ? "Sending..." : "Send selected report"}
-                    </button>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        onClick={saveRecipient}
+                        disabled={busyAction !== "" || !recipientEmail.trim()}
+                        className="rounded-md border border-[#26272c] bg-[#0b0b0c] px-4 py-2 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyAction === "save-recipient" ? "Saving..." : "Save recipient"}
+                      </button>
+                      <button
+                        onClick={deliverReport}
+                        disabled={busyAction !== "" || !selectedReportId || !recipientEmail.trim()}
+                        className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyAction === "deliver" ? "Sending..." : "Send selected report"}
+                      </button>
+                    </div>
+                    {recipients.length ? (
+                      <div className="mt-4 space-y-2 border-t border-[#26272c] pt-4">
+                        {recipients.map((recipient) => (
+                          <div key={recipient.id} className="flex items-center justify-between gap-3 rounded-md border border-[#26272c] bg-[#0b0b0c] p-3">
+                            <button
+                              onClick={() => {
+                                setRecipientEmail(recipient.email);
+                                setRecipientName(recipient.display_name || "");
+                              }}
+                              className="min-w-0 text-left"
+                            >
+                              <p className="truncate text-sm font-medium text-white">{recipient.display_name || recipient.email}</p>
+                              {recipient.display_name ? <p className="truncate text-xs text-zinc-400">{recipient.email}</p> : null}
+                            </button>
+                            <button
+                              onClick={() => toggleRecipient(recipient)}
+                              disabled={busyAction !== ""}
+                              className="shrink-0 text-xs font-medium text-zinc-400 hover:text-white disabled:opacity-50"
+                            >
+                              {recipient.enabled ? "Pause" : "Turn on"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </section>
@@ -1082,7 +1238,7 @@ export default function ReportsPage() {
                   Available reports
                 </h2>
                 <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                  Select a report to review its purpose, inspect the local artifacts, and decide whether it is safe enough to send.
+                  Select a report to review its purpose, open its files, and decide whether it is ready to share.
                 </p>
               </div>
 
@@ -1104,6 +1260,7 @@ export default function ReportsPage() {
                         key={report.id}
                         onClick={() => {
                           setSelectedReportId(report.id);
+                          setNewShareUrl("");
                           void loadReportDetail(report.id);
                         }}
                         className={`w-full rounded-md border p-4 text-left shadow-[0_0_30px_rgba(0,0,0,0.4)] transition ${
@@ -1188,22 +1345,97 @@ export default function ReportsPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-medium text-white">
-                            {toTitleCase(artifact.artifact_type)} artifact
+                            {toTitleCase(artifact.artifact_type)} report
                           </p>
                           <p className="mt-1 text-sm leading-6 text-zinc-300">
-                            {artifact.storage_path || "No storage path available."}
+                            {artifact.ready
+                              ? artifact.durable
+                                ? "Saved privately and ready to open."
+                                : "Ready to open. Production storage still needs to be connected."
+                              : "This file is not available yet. Rebuild the report files and try again."}
                           </p>
                           <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
-                            Local artifact only. This file is not remotely retrievable or durable in the current runtime.
+                            {artifact.byte_size ? `${Math.max(1, Math.round(artifact.byte_size / 1024))} KB · ` : ""}
+                            {artifact.durable ? "Private cloud storage" : "Development storage"}
                           </p>
                         </div>
-                        <span className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                          {formatRelativeTime(artifact.created_at)}
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                            {formatRelativeTime(artifact.created_at)}
+                          </span>
+                          {artifact.retrievable ? (
+                            <a
+                              href={`/api/v1/reports/${selectedReportDetail.report.id}/artifacts/${artifact.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-xs font-medium text-zinc-100"
+                            >
+                              {artifact.artifact_type === "pdf" ? "Download" : "Open"}
+                            </a>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
+              </section>
+            ) : null}
+
+            {selectedReportDetail ? (
+              <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Private sharing
+                </p>
+                <div className="mt-1.5 flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">Share without emailing a file</h2>
+                    <p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-300">
+                      Create a private link for this report. The link turns off after 7 days, and you can turn it off sooner at any time.
+                    </p>
+                  </div>
+                  <button
+                    onClick={createShareLink}
+                    disabled={busyAction !== "" || !selectedReportDetail.artifacts.some((artifact) => artifact.retrievable)}
+                    className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "share-link" ? "Creating..." : "Create 7-day link"}
+                  </button>
+                </div>
+
+                {newShareUrl ? (
+                  <div className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4">
+                    <p className="text-sm font-medium text-emerald-100">Copy this link now</p>
+                    <p className="mt-1 break-all text-sm leading-6 text-zinc-200">{newShareUrl}</p>
+                    <button onClick={copyShareLink} className="mt-3 rounded-md border border-emerald-500/30 px-3 py-1.5 text-xs font-medium text-emerald-100">
+                      Copy link
+                    </button>
+                  </div>
+                ) : null}
+
+                {shareLinks.length ? (
+                  <div className="mt-4 space-y-2">
+                    {shareLinks.map((link) => (
+                      <div key={link.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#26272c] bg-[#111214] p-3">
+                        <div>
+                          <p className="text-sm font-medium text-white">{link.status === "active" ? "Active private link" : toTitleCase(link.status)}</p>
+                          <p className="mt-1 text-xs text-zinc-400">
+                            {link.status === "active" ? `Turns off ${formatRelativeTime(link.expires_at)}` : "This link can no longer open the report"}
+                            {link.open_count ? ` · Opened ${link.open_count} ${link.open_count === 1 ? "time" : "times"}` : " · Not opened yet"}
+                          </p>
+                        </div>
+                        {link.status === "active" ? (
+                          <button
+                            onClick={() => revokeShareLink(link.id)}
+                            disabled={busyAction !== ""}
+                            className="text-xs font-medium text-rose-300 hover:text-rose-200 disabled:opacity-50"
+                          >
+                            Turn off link
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </section>
             ) : null}
 
