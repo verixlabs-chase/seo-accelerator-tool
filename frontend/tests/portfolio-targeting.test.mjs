@@ -35,3 +35,14 @@ test("one-time target changes stay separate from permanent group membership", ()
   assert.match(source, /excluded_location_ids/);
   assert.match(source, /Any older target previews remain unchanged/);
 });
+
+test("bulk location work requires readiness review and explicit approval", () => {
+  assert.match(source, /\/portfolio-fleet-runs/);
+  assert.match(source, /Check readiness and credits/);
+  assert.match(source, /Approve and start/);
+  assert.match(source, /Progress by location/);
+  assert.match(source, /Retry failed locations/);
+  assert.match(source, /No Google profile or website\s+changes are enabled in this run/);
+  assert.match(source, /The frozen list cannot grow after approval/);
+  assert.doesNotMatch(source, /provider mutation/i);
+});

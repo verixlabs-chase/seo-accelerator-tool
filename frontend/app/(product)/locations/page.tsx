@@ -322,6 +322,53 @@ type TargetSnapshot = {
   immutable: boolean;
 };
 
+type PortfolioFleetRunItem = {
+  id: string;
+  business_location_id: string;
+  location_name: string;
+  campaign_id?: string | null;
+  status: "ready" | "blocked" | "queued" | "running" | "succeeded" | "failed";
+  status_label: string;
+  estimated_credits: number;
+  retries: number;
+  message: string;
+};
+
+type PortfolioFleetRun = {
+  id: string;
+  target_snapshot_id: string;
+  target_hash: string;
+  action_key: string;
+  status: "awaiting_approval" | "blocked" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
+  status_label: string;
+  counts: {
+    targeted: number;
+    ready: number;
+    blocked: number;
+    queued: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+  };
+  estimated_credits: number;
+  preflight: {
+    action: { label: string; description: string };
+    credits: { name: string; estimated: number; message: string };
+    approval: { required: boolean; message: string };
+    guardrails: string[];
+  };
+  approval: {
+    required: boolean;
+    approved: boolean;
+    approved_at?: string | null;
+  };
+  version: number;
+  items: PortfolioFleetRunItem[];
+  can_approve: boolean;
+  can_retry_failed: boolean;
+  provider_changes_enabled: boolean;
+};
+
 const EMPTY_TOTALS: Hierarchy["totals"] = {
   subaccounts: 0,
   business_locations: 0,
@@ -412,6 +459,7 @@ export default function LocationsPage() {
   const [portfolio, setPortfolio] = useState<PortfolioOverview | null>(null);
   const [locationGroups, setLocationGroups] = useState<LocationGroup[]>([]);
   const [targetSnapshots, setTargetSnapshots] = useState<TargetSnapshot[]>([]);
+  const [portfolioFleetRuns, setPortfolioFleetRuns] = useState<PortfolioFleetRun[]>([]);
   const [portfolioSort, setPortfolioSort] = useState("attention");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
@@ -448,11 +496,12 @@ export default function LocationsPage() {
   const organizationId = me?.organization_id || "";
 
   const loadHierarchy = useCallback(async (orgId: string) => {
-    const [hierarchyResponse, portfolioResponse, groupsResponse, snapshotsResponse] = await Promise.all([
+    const [hierarchyResponse, portfolioResponse, groupsResponse, snapshotsResponse, fleetRunsResponse] = await Promise.all([
       platformApi(`/organizations/${orgId}/hierarchy`, { method: "GET" }),
       platformApi(`/organizations/${orgId}/portfolio-overview`, { method: "GET" }),
       platformApi(`/organizations/${orgId}/location-groups`, { method: "GET" }),
       platformApi(`/organizations/${orgId}/target-snapshots?limit=5`, { method: "GET" }),
+      platformApi(`/organizations/${orgId}/portfolio-fleet-runs?limit=5`, { method: "GET" }),
     ]);
     const nextHierarchy = (hierarchyResponse?.hierarchy || null) as Hierarchy | null;
     const nextSnapshots = (snapshotsResponse?.items || []) as TargetSnapshot[];
@@ -460,6 +509,7 @@ export default function LocationsPage() {
     setPortfolio((portfolioResponse?.portfolio || null) as PortfolioOverview | null);
     setLocationGroups((groupsResponse?.items || []) as LocationGroup[]);
     setTargetSnapshots(nextSnapshots);
+    setPortfolioFleetRuns((fleetRunsResponse?.items || []) as PortfolioFleetRun[]);
     setLastTargetSnapshot(nextSnapshots[0] || null);
     return nextHierarchy;
   }, []);
@@ -735,6 +785,73 @@ export default function LocationsPage() {
     });
   }
 
+  async function createFleetPreflight(snapshot: TargetSnapshot) {
+    if (!organizationId) return;
+    await runMutation("fleet-preflight", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            target_snapshot_id: snapshot.id,
+            request_key: crypto.randomUUID(),
+          }),
+        },
+      );
+      const run = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!run) throw new Error("The readiness check could not be prepared.");
+      return run.counts.ready > 0
+        ? `Readiness checked. ${run.counts.ready} ${run.counts.ready === 1 ? "location is" : "locations are"} ready for approval.`
+        : "No locations are ready yet. Review the setup items below.";
+    });
+  }
+
+  async function approveFleetRun(run: PortfolioFleetRun) {
+    if (!organizationId) return;
+    await runMutation("fleet-approve", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs/${run.id}/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify({ expected_version: run.version }),
+        },
+      );
+      const approved = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!approved) throw new Error("The location checks could not be started.");
+      return `Approved. ${approved.counts.queued} ${approved.counts.queued === 1 ? "location is" : "locations are"} waiting to run.`;
+    });
+  }
+
+  async function retryFailedFleetRun(run: PortfolioFleetRun) {
+    if (!organizationId) return;
+    await runMutation("fleet-retry", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs/${run.id}/retry-failed`,
+        {
+          method: "POST",
+          body: JSON.stringify({ expected_version: run.version }),
+        },
+      );
+      const retried = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!retried) throw new Error("The failed locations could not be retried.");
+      return "Only the failed locations were placed back in line.";
+    });
+  }
+
+  async function refreshFleetProgress() {
+    if (!organizationId) return;
+    setBusyAction("fleet-refresh");
+    setError("");
+    try {
+      await loadHierarchy(organizationId);
+      setNotice("Location progress refreshed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Progress could not be refreshed.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function archiveLocation(location: BusinessLocation) {
     if (!organizationId) return;
     await runMutation(`archive-${location.id}`, async () => {
@@ -806,6 +923,11 @@ export default function LocationsPage() {
   const totals = hierarchy?.totals || EMPTY_TOTALS;
   const hierarchyTruth = getHierarchyTruth(hierarchy);
   const visibleTargetSnapshot = lastTargetSnapshot || targetSnapshots[0] || null;
+  const visibleFleetRun = visibleTargetSnapshot
+    ? portfolioFleetRuns.find(
+        (run) => run.target_snapshot_id === visibleTargetSnapshot.id,
+      ) || null
+    : null;
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
@@ -1112,6 +1234,177 @@ export default function LocationsPage() {
                     <p className="mt-4 break-all text-[10px] text-zinc-700">
                       Record {visibleTargetSnapshot.target_hash.slice(0, 16)} · saved {new Date(visibleTargetSnapshot.created_at).toLocaleString()}
                     </p>
+
+                    {!visibleFleetRun ? (
+                      <div className="mt-4 border-t border-[#292a2f] pt-4">
+                        <p className="text-sm font-semibold text-white">
+                          Check every location before starting
+                        </p>
+                        <p className="mt-1 max-w-2xl text-xs leading-5 text-zinc-500">
+                          Confirm each location still has its own active workspace and see the
+                          exact credit use. This check does not edit Google or any website.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void createFleetPreflight(visibleTargetSnapshot)}
+                          disabled={
+                            visibleTargetSnapshot.target_count === 0 ||
+                            busyAction === "fleet-preflight"
+                          }
+                          className={`${primaryButtonClass} mt-3`}
+                        >
+                          {busyAction === "fleet-preflight"
+                            ? "Checking locations..."
+                            : "Check readiness and credits"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-5 border-t border-[#303137] pt-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
+                              Bulk-work review
+                            </p>
+                            <h3 className="mt-1 text-base font-semibold text-white">
+                              {visibleFleetRun.preflight.action.label}
+                            </h3>
+                            <p className="mt-1 max-w-2xl text-xs leading-5 text-zinc-500">
+                              {visibleFleetRun.preflight.action.description}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                              visibleFleetRun.status === "succeeded"
+                                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                                : visibleFleetRun.status === "failed" ||
+                                    visibleFleetRun.status === "partial" ||
+                                    visibleFleetRun.status === "blocked"
+                                  ? "border-amber-500/25 bg-amber-500/10 text-amber-100"
+                                  : "border-sky-500/25 bg-sky-500/10 text-sky-100"
+                            }`}
+                          >
+                            {visibleFleetRun.status_label}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 border-y border-[#292a2f] py-3 sm:grid-cols-4">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.13em] text-zinc-600">Targeted</p>
+                            <p className="mt-1 text-lg font-semibold text-white">
+                              {visibleFleetRun.counts.targeted}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.13em] text-zinc-600">Ready</p>
+                            <p className="mt-1 text-lg font-semibold text-emerald-100">
+                              {visibleFleetRun.counts.ready}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.13em] text-zinc-600">Needs setup</p>
+                            <p className="mt-1 text-lg font-semibold text-amber-100">
+                              {visibleFleetRun.counts.blocked}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.13em] text-zinc-600">Credits</p>
+                            <p className="mt-1 text-lg font-semibold text-white">
+                              {visibleFleetRun.estimated_credits}
+                            </p>
+                          </div>
+                        </div>
+
+                        <p className="mt-3 text-xs leading-5 text-zinc-500">
+                          {visibleFleetRun.preflight.credits.message} No Google profile or website
+                          changes are enabled in this run.
+                        </p>
+
+                        {visibleFleetRun.can_approve ? (
+                          <div className="mt-4 flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => void approveFleetRun(visibleFleetRun)}
+                              disabled={busyAction === "fleet-approve"}
+                              className={primaryButtonClass}
+                            >
+                              {busyAction === "fleet-approve"
+                                ? "Starting location checks..."
+                                : `Approve and start ${visibleFleetRun.counts.ready} ${visibleFleetRun.counts.ready === 1 ? "location" : "locations"}`}
+                            </button>
+                            <span className="text-xs text-zinc-600">
+                              The frozen list cannot grow after approval.
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {visibleFleetRun.approval.approved ? (
+                          <div className="mt-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-white">Progress by location</p>
+                              <div className="flex flex-wrap gap-2">
+                                {visibleFleetRun.can_retry_failed ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void retryFailedFleetRun(visibleFleetRun)}
+                                    disabled={busyAction === "fleet-retry"}
+                                    className={primaryButtonClass}
+                                  >
+                                    {busyAction === "fleet-retry"
+                                      ? "Retrying..."
+                                      : "Retry failed locations"}
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => void refreshFleetProgress()}
+                                  disabled={busyAction === "fleet-refresh"}
+                                  className={secondaryButtonClass}
+                                >
+                                  {busyAction === "fleet-refresh" ? "Refreshing..." : "Refresh progress"}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="mt-3 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                              {visibleFleetRun.items.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                                >
+                                  <div>
+                                    <p className="text-sm font-medium text-zinc-100">
+                                      {item.location_name}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-zinc-600">{item.message}</p>
+                                  </div>
+                                  <span
+                                    className={`shrink-0 text-xs font-semibold ${
+                                      item.status === "succeeded"
+                                        ? "text-emerald-200"
+                                        : item.status === "failed" || item.status === "blocked"
+                                          ? "text-amber-200"
+                                          : "text-sky-200"
+                                    }`}
+                                  >
+                                    {item.status_label}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <details className="mt-4 border-t border-[#292a2f] pt-3">
+                          <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-400">
+                            Safety checks
+                          </summary>
+                          <ul className="mt-2 space-y-1.5 text-xs leading-5 text-zinc-600">
+                            {visibleFleetRun.preflight.guardrails.map((guardrail) => (
+                              <li key={guardrail}>- {guardrail}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      </div>
+                    )}
                   </section>
                 ) : null}
               </div>

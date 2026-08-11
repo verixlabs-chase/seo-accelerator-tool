@@ -3116,7 +3116,15 @@ Implementation status (2026-08-10):
   records are tenant-scoped, idempotent, audit logged, hash-addressed, and
   database-immutable to the application role. The customer UI makes clear that
   this is a preview and does not run work.
-- Maps, fan-out execution, delegation, and pooled allowance controls remain later ML1
+- **ML1E is implemented locally.** Growth and Enterprise owners can turn a frozen
+  target list into a capability and Insight Credit preflight, approve that exact
+  hash once, and follow independently scoped location jobs through queued,
+  running, complete, and needs-attention states. The run uses the existing
+  bounded Fleet worker, preserves partial completion, retries only failed
+  locations, and records the requester, approver, target hash, and retry in the
+  audit log. This first action is an internal readiness check: it consumes zero
+  credits and cannot call a provider or mutate Google or a website.
+- Maps, live profile-action campaigns, delegation, and pooled paid-action reservation controls remain later ML1
   slices. Alert delivery and configurable digests remain part of the packaged
   notification work rather than this in-product comparison slice.
 

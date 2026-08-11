@@ -517,7 +517,77 @@ def retry_failed_items(*, db: Session, organization_id: str, fleet_job_id: str, 
     return len(rows)
 
 
+def prepare_portfolio_review_job(
+    *,
+    db: Session,
+    organization_id: str,
+    portfolio_id: str,
+    user_id: str | None,
+    idempotency_key: str,
+    item_seed: dict,
+) -> tuple[FleetJob, bool]:
+    """Prepare one approved, provider-free location review job without dispatching it.
+
+    The caller owns the surrounding approval transaction. Queue dispatch must
+    happen only after that transaction commits.
+    """
+
+    return _prepare_bulk_job(
+        db=db,
+        organization_id=organization_id,
+        portfolio_id=portfolio_id,
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+        item_seeds=[item_seed],
+        job_type=FleetJobType.PORTFOLIO_REVIEW.value,
+    )
+
+
 def _create_bulk_job(
+    *,
+    db: Session,
+    organization_id: str,
+    portfolio_id: str,
+    user_id: str | None,
+    idempotency_key: str,
+    item_seeds: list[dict],
+    job_type: str,
+) -> tuple[FleetJob, bool]:
+    job, created = _prepare_bulk_job(
+        db=db,
+        organization_id=organization_id,
+        portfolio_id=portfolio_id,
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+        item_seeds=item_seeds,
+        job_type=job_type,
+    )
+    if not created:
+        return job, False
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = _find_existing_bulk_job(
+            db=db,
+            portfolio_id=portfolio_id,
+            job_type=job_type,
+            idempotency_key=idempotency_key.strip(),
+        )
+        if existing is None:
+            raise
+        return existing, False
+    db.refresh(job)
+    enqueue_pending_items_for_portfolio(
+        db=db,
+        organization_id=organization_id,
+        portfolio_id=portfolio_id,
+    )
+    return job, True
+
+
+def _prepare_bulk_job(
     *,
     db: Session,
     organization_id: str,
@@ -532,15 +602,11 @@ def _create_bulk_job(
     if not normalized_idempotency:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="idempotency_key is required")
 
-    existing = (
-        db.query(FleetJob)
-        .filter(
-            FleetJob.organization_id == organization_id,
-            FleetJob.portfolio_id == portfolio_id,
-            FleetJob.job_type == job_type,
-            FleetJob.idempotency_key == normalized_idempotency,
-        )
-        .first()
+    existing = _find_existing_bulk_job(
+        db=db,
+        portfolio_id=portfolio_id,
+        job_type=job_type,
+        idempotency_key=normalized_idempotency,
     )
     if existing is not None:
         return existing, False
@@ -588,26 +654,25 @@ def _create_bulk_job(
                 updated_at=now,
             )
         )
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        existing = (
-            db.query(FleetJob)
-            .filter(
-                FleetJob.organization_id == organization_id,
-                FleetJob.portfolio_id == portfolio_id,
-                FleetJob.job_type == job_type,
-                FleetJob.idempotency_key == normalized_idempotency,
-            )
-            .first()
-        )
-        if existing is None:
-            raise
-        return existing, False
-    db.refresh(job)
-    enqueue_pending_items_for_portfolio(db=db, organization_id=organization_id, portfolio_id=portfolio_id)
     return job, True
+
+
+def _find_existing_bulk_job(
+    *,
+    db: Session,
+    portfolio_id: str,
+    job_type: str,
+    idempotency_key: str,
+) -> FleetJob | None:
+    return (
+        db.query(FleetJob)
+        .filter(
+            FleetJob.portfolio_id == portfolio_id,
+            FleetJob.job_type == job_type,
+            FleetJob.idempotency_key == idempotency_key,
+        )
+        .first()
+    )
 
 
 def _run_stub_handler(*, job: FleetJob, item: FleetJobItem) -> None:
@@ -629,12 +694,23 @@ def _run_stub_handler(*, job: FleetJob, item: FleetJobItem) -> None:
 
 
 def _run_item_handler(*, job: FleetJob, item: FleetJobItem) -> None:
+    if _normalize_enum_value(job.job_type) == FleetJobType.PORTFOLIO_REVIEW.value:
+        _run_portfolio_review_handler(job=job, item=item)
+        return
     payload = _resolve_item_payload(job=job, item=item)
     provider_call = str(payload.get("provider_call", "")).strip().lower()
     if provider_call == FLEET_PROVIDER_CALL_SEARCH_CONSOLE:
         _run_search_console_live_call(job=job, item=item, payload=payload)
         return
     _run_stub_handler(job=job, item=item)
+
+
+def _run_portfolio_review_handler(*, job: FleetJob, item: FleetJobItem) -> None:
+    payload = _resolve_item_payload(job=job, item=item)
+    if payload.get("provider_call"):
+        raise RuntimeError("Portfolio review jobs cannot make provider calls")
+    if not payload.get("portfolio_fleet_run_id") or not payload.get("business_location_id"):
+        raise RuntimeError("Portfolio review job is missing its governed location scope")
 
 
 def _resolve_item_payload(*, job: FleetJob, item: FleetJobItem) -> dict:

@@ -84,6 +84,7 @@ from app.models.portfolio_targeting import (
     PortfolioLocationGroupMember,
     PortfolioTargetSnapshot,
 )
+from app.models.portfolio_fleet_run import PortfolioFleetRun, PortfolioFleetRunItem
 from app.models.portfolio_usage_daily import PortfolioUsageDaily
 from app.models.portfolio_policy import PortfolioPolicy
 from app.models.provider_health import ProviderHealthState
@@ -242,6 +243,8 @@ __all__ = [
     "PortfolioLocationGroup",
     "PortfolioLocationGroupMember",
     "PortfolioTargetSnapshot",
+    "PortfolioFleetRun",
+    "PortfolioFleetRunItem",
     "PortfolioUsageDaily",
     "Location",
     "PortfolioPolicy",
