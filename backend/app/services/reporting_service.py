@@ -21,6 +21,7 @@ from app.providers import get_email_adapter
 from app.services import analytics_service
 from app.services import premium_report_service
 from app.services import report_artifact_storage_service
+from app.services import report_pdf_service
 
 REPORT_SCHEDULE_MAX_RETRIES = 3
 logger = logging.getLogger("lsos.reporting")
@@ -130,51 +131,12 @@ def render_html_report(kpis: dict, report_id: str, campaign_name: str) -> str:
     return str(path)
 
 
-def _pdf_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
-def _build_simple_pdf(lines: list[str]) -> bytes:
-    content_lines = ["BT", "/F1 12 Tf", "50 780 Td", "14 TL"]
-    for idx, line in enumerate(lines):
-        escaped = _pdf_escape(line[:220])
-        if idx == 0:
-            content_lines.append(f"({_pdf_escape(line[:220])}) Tj")
-        else:
-            content_lines.append(f"T* ({escaped}) Tj")
-    content_lines.append("ET")
-    stream = "\n".join(content_lines).encode("latin-1", errors="replace")
-
-    objects = [
-        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
-        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
-        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n",
-        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
-        b"5 0 obj << /Length " + str(len(stream)).encode("ascii") + b" >> stream\n" + stream + b"\nendstream endobj\n",
-    ]
-    header = b"%PDF-1.4\n"
-    xref_offsets = [0]
-    body = b""
-    offset = len(header)
-    for obj in objects:
-        xref_offsets.append(offset)
-        body += obj
-        offset += len(obj)
-    xref_pos = len(header) + len(body)
-    xref = [f"xref\n0 {len(xref_offsets)}\n".encode("ascii"), b"0000000000 65535 f \n"]
-    for pos in xref_offsets[1:]:
-        xref.append(f"{pos:010d} 00000 n \n".encode("ascii"))
-    trailer = f"trailer << /Size {len(xref_offsets)} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode("ascii")
-    return header + body + b"".join(xref) + trailer
-
-
 def render_pdf_report(kpis: dict, report_id: str, campaign_name: str) -> str:
     out_dir = report_artifact_storage_service.local_report_artifact_root()
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{report_id}.pdf"
     snapshot = premium_report_service.normalize_snapshot(kpis, campaign_name)
-    lines = premium_report_service.report_pdf_lines(snapshot)
-    path.write_bytes(_build_simple_pdf(lines))
+    path.write_bytes(report_pdf_service.build_report_pdf(snapshot))
     return str(path)
 
 
@@ -241,7 +203,7 @@ def _store_snapshot_artifacts(
 ) -> dict[str, report_artifact_storage_service.StoredReportArtifact]:
     storage = report_artifact_storage_service.get_report_artifact_storage()
     html_content = premium_report_service.render_report_html(snapshot).encode("utf-8")
-    pdf_content = _build_simple_pdf(premium_report_service.report_pdf_lines(snapshot))
+    pdf_content = report_pdf_service.build_report_pdf(snapshot)
     return {
         "html": storage.put_bytes(
             tenant_id=tenant_id,

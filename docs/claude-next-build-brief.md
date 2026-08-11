@@ -2265,11 +2265,19 @@ Implementation status (2026-08-11):
   website scans, tracked searches, and optional review data before generation,
   labels the result Ready, Limited, or Needs setup, and links directly to the
   missing or stale step without blocking a truthful limited report.
+- RPT1D's client-ready PDF slice is implemented locally. The previous
+  one-page text stream is replaced by a multi-page vector document rendered
+  from the frozen report snapshot. It includes a summary-first metric grid,
+  current-versus-earlier charts, written chart descriptions, wins and risks,
+  a numbered measurable action plan, a source-and-coverage appendix, VerixLabs
+  document metadata, English-language metadata, page numbers, and navigable
+  PDF outline bookmarks. Empty and orphaned pages are regression-tested. The
+  product does not claim formal PDF/UA certification.
 - Automated report email and provider webhooks are explicitly deferred to
   ALT1 in sprint 38. They are not a release gate for the current reporting
   work because an owner can securely open, download, and share a report now.
-- The remaining RPT1 work is accessible production-grade PDF rendering,
-  multi-location comparison, and customer-tested report branding. Those
+- The remaining RPT1 work is multi-location comparison and customer-tested
+  report branding. Those
   capabilities must preserve the RPT1A snapshot contract rather than
   recomputing facts at delivery time.
 
