@@ -604,8 +604,8 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 19 | **I1.6 - Google Standards and Measurement Governance** | Official Google Search and Business Profile changes, provider metric drift, and unusual shared performance movement become reviewable evidence; versioned rules are replay-tested and explicitly approved before activation. |
 | 20 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
 | 21 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, policy-controlled AI replies, and multi-location comparisons replace the core BrightLocal reputation workflow. |
-| 22 | **DT1 - Data Trust and Connection Health Center** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
-| 23 | **ML1 - Portfolio Intelligence** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
+| 22 | **DT1 - Data Trust and Connection Health Center - PR #26 open** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
+| 23 | **ML1 - Portfolio Intelligence - ML1A active** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
 | 24 | **G1.4B - Google Business Profile Fleet Operations** | Growth and Enterprise operators can preview, approve, schedule, and safely fan out supported posts, photo uploads, and later typed profile actions across location groups, including Enterprise fleets with hundreds of authorized profiles. |
 | 25 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
 | 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
@@ -3078,6 +3078,22 @@ Acceptance criteria:
 
 Goal: make the $699 plan materially better than repeating a single-location
 dashboard ten times.
+
+Implementation status (2026-08-10):
+
+- **ML1A is implemented locally.** The Locations page now leads with a
+  tenant-scoped portfolio overview that ranks up to three active locations
+  needing attention from saved hierarchy, connection, search-position,
+  website-issue, review, and open-action facts. Every priority includes its
+  plain-language reason, supporting value when available, and a direct next
+  action; the product does not expose an opaque composite portfolio score.
+- The full active-location matrix can be sorted by attention, name, Google
+  position, recent rating, or website issues without running another paid
+  provider check. Choosing a row carries that location into its relevant
+  customer workflow.
+- Shared-problem grouping, trends, repeatable-win detection, maps, alerts,
+  governed saved groups, immutable bulk target snapshots, fan-out execution,
+  delegation, and pooled allowance controls remain later ML1 slices.
 
 Scope:
 
