@@ -87,6 +87,8 @@ class WebsitePerformanceMeasurement(Base):
     collection_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     collection_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     source_version: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    metric_contract_versions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    scope_key: Mapped[str] = mapped_column(String(64), nullable=False, default="legacy")
     lexicon_id: Mapped[str] = mapped_column(String(120), nullable=False)
     lexicon_version: Mapped[str] = mapped_column(String(80), nullable=False)
     fallback_to_origin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -101,4 +103,3 @@ class WebsitePerformanceMeasurement(Base):
         default=lambda: datetime.now(UTC),
         index=True,
     )
-

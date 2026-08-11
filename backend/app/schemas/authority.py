@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class OutreachCampaignIn(BaseModel):
@@ -20,6 +20,42 @@ class CitationSubmissionIn(BaseModel):
     directory_name: str
 
 
+class DirectoryListingOut(BaseModel):
+    id: str
+    campaign_id: str
+    business_location_id: str
+    source_key: str
+    source_name: str
+    external_id: str
+    listing_url: str | None
+    status: str
+    business_name: str | None
+    address_line1: str | None
+    city: str | None
+    region: str | None
+    postal_code: str | None
+    country_code: str | None
+    phone: str | None
+    website_url: str | None
+    primary_category: str | None
+    field_differences: list
+    directory_importance: str
+    confidence: float
+    first_seen_at: datetime
+    last_seen_at: datetime
+    last_verified_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class DirectoryListingDiscoveryPreviewIn(BaseModel):
+    campaign_id: str
+
+
+class DirectoryListingDiscoveryRunIn(DirectoryListingDiscoveryPreviewIn):
+    idempotency_key: str = Field(min_length=1, max_length=160)
+
+
 class BacklinkOut(BaseModel):
     id: str
     tenant_id: str
@@ -31,4 +67,3 @@ class BacklinkOut(BaseModel):
     discovered_at: datetime
 
     model_config = {"from_attributes": True}
-

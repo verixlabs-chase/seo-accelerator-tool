@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from hashlib import sha256
+import json
 import math
 import re
 from typing import Any
@@ -17,7 +19,7 @@ from app.models.local_rank_grid import LocalRankGridPoint, LocalRankGridRun
 from app.models.organization import Organization
 from app.models.rank import CampaignKeyword
 from app.providers.local_rank_grid import GridTaskRequest, build_provider, normalize_domain
-from app.services import job_service
+from app.services import job_service, metric_contract_service
 from app.services.cost_economics_service import (
     calculate_provider_cost,
     get_customer_credit_summary,
@@ -309,6 +311,27 @@ def create_run(
         campaign_id=campaign.id,
     )
     now = datetime.now(UTC)
+    language_code = get_settings().local_rank_grid_language_code or "en"
+    device_class = "provider_default"
+    configured_backend = (
+        get_settings().local_rank_grid_provider_backend.strip().lower()
+        or get_settings().rank_provider_backend.strip().lower()
+        or "configured_provider"
+    )
+    provider_method = f"{configured_backend}:google_maps_standard"
+    grid_definition = {
+        "grid_size": grid_size,
+        "radius_miles": float(radius_miles),
+        "center_latitude": round(float(location.latitude), 7),
+        "center_longitude": round(float(location.longitude), 7),
+        "provider_location_code": str(location.provider_location_code),
+        "language_code": language_code,
+        "device_class": device_class,
+        "provider_method": provider_method,
+    }
+    grid_definition_hash = sha256(
+        json.dumps(grid_definition, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     run = LocalRankGridRun(
         tenant_id=tenant_id,
         organization_id=organization_id,
@@ -334,6 +357,14 @@ def create_run(
         target_business_name=location.name,
         target_domain=location.domain or campaign.domain,
         source_name="google_maps_results",
+        metric_contract_id="local_grid.position",
+        metric_contract_version=metric_contract_service.contract_definition(
+            "local_grid.position", db=db
+        ).version,
+        grid_definition_hash=grid_definition_hash,
+        language_code=language_code,
+        device_class=device_class,
+        provider_method=provider_method,
         created_by_user_id=created_by_user_id,
         created_at=now,
         updated_at=now,
@@ -344,6 +375,22 @@ def create_run(
         db, tenant_id=tenant_id, campaign_id=campaign_id, keyword_ids=keyword_ids
     )
     for keyword in keywords:
+        point_scope = metric_contract_service.scope_evidence(
+            "local_grid.position",
+            {
+                "organization_id": organization_id,
+                "campaign_id": campaign.id,
+                "business_location_id": location.id,
+                "keyword_id": keyword.id,
+                "grid_definition_hash": grid_definition_hash,
+                "language_code": language_code,
+                "device_class": device_class,
+                "provider_method": provider_method,
+                "run_timestamp": now,
+                **grid_definition,
+            },
+            db=db,
+        )
         for index, row, column, latitude, longitude in _grid_points(
             float(location.latitude), float(location.longitude), grid_size, radius_miles
         ):
@@ -363,6 +410,9 @@ def create_run(
                     longitude=Decimal(str(round(longitude, 7))),
                     status="queued",
                     source_name="google_maps_results",
+                    metric_contract_id="local_grid.position",
+                    metric_contract_version=point_scope["metric_contract_version"],
+                    scope_key=point_scope["scope_key"],
                     created_at=now,
                     updated_at=now,
                 )
@@ -616,7 +666,8 @@ def list_runs(
 
 
 def serialize_run(db: Session, run: LocalRankGridRun, *, include_points: bool = True) -> dict[str, Any]:
-    points = []
+    points: list[dict[str, Any]] = []
+    rows: list[LocalRankGridPoint] = []
     if include_points:
         rows = (
             db.query(LocalRankGridPoint)
@@ -639,6 +690,11 @@ def serialize_run(db: Session, run: LocalRankGridRun, *, include_points: bool = 
                 "matched_business_name": row.matched_business_name,
                 "source_label": "Google Maps results",
                 "captured_at": row.captured_at.isoformat() if row.captured_at else None,
+                "metric_contract": {
+                    "id": row.metric_contract_id,
+                    "version": row.metric_contract_version,
+                    "scope_key": row.scope_key,
+                },
             }
             for row in rows
         ]
@@ -659,6 +715,15 @@ def serialize_run(db: Session, run: LocalRankGridRun, *, include_points: bool = 
         "estimated_credits": run.estimated_credit_units,
         "completion_mode": run.completion_mode,
         "source_label": "Google Maps results",
+        "measurement_contract": {
+            "id": run.metric_contract_id,
+            "version": run.metric_contract_version,
+            "grid_definition_hash": run.grid_definition_hash,
+            "language_code": run.language_code,
+            "device_class": run.device_class,
+            "provider_method": run.provider_method,
+        },
+        "visibility_summary": _grid_summary(db, run, rows) if rows else [],
         "error_message": (
             "Some map checks could not be completed." if run.error_message else None
         ),
@@ -667,3 +732,83 @@ def serialize_run(db: Session, run: LocalRankGridRun, *, include_points: bool = 
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
         "points": points,
     }
+
+
+def _grid_summary(
+    db: Session,
+    run: LocalRankGridRun,
+    rows: list[LocalRankGridPoint],
+) -> list[dict[str, Any]]:
+    by_keyword: dict[str, list[LocalRankGridPoint]] = {}
+    for row in rows:
+        if row.status not in {"ranked", "not_found"}:
+            continue
+        by_keyword.setdefault(row.keyword_id, []).append(row)
+    summaries: list[dict[str, Any]] = []
+    for keyword_id, keyword_rows in sorted(by_keyword.items()):
+        valid_count = len(keyword_rows)
+        ranked = [row for row in keyword_rows if row.rank is not None]
+        ranks = sorted(int(row.rank) for row in ranked if row.rank is not None)
+        top_3 = sum(rank <= 3 for rank in ranks)
+        top_10 = sum(rank <= 10 for rank in ranks)
+        median_position = None
+        if ranks:
+            middle = len(ranks) // 2
+            median_position = (
+                float(ranks[middle])
+                if len(ranks) % 2
+                else (float(ranks[middle - 1]) + float(ranks[middle])) / 2.0
+            )
+        ranking_radius = max(
+            (
+                _distance_miles(
+                    float(run.center_latitude),
+                    float(run.center_longitude),
+                    float(row.latitude),
+                    float(row.longitude),
+                )
+                for row in ranked
+                if row.rank is not None and int(row.rank) <= 10
+            ),
+            default=None,
+        )
+        summaries.append(
+            {
+                "keyword_id": keyword_id,
+                "keyword": keyword_rows[0].keyword,
+                "valid_points": valid_count,
+                "top_3_share": round(top_3 / valid_count, 4) if valid_count else None,
+                "top_10_share": round(top_10 / valid_count, 4) if valid_count else None,
+                "median_position": median_position,
+                "unranked_share": round((valid_count - len(ranks)) / valid_count, 4)
+                if valid_count
+                else None,
+                "ranking_radius_miles": round(ranking_radius, 2)
+                if ranking_radius is not None
+                else None,
+                "contract_versions": metric_contract_service.contract_versions(
+                    (
+                        "local_grid.top_3_share",
+                        "local_grid.top_10_share",
+                        "local_grid.median_position",
+                        "local_grid.unranked_share",
+                        "local_grid.ranking_radius",
+                    ),
+                    db=db,
+                ),
+            }
+        )
+    return summaries
+
+
+def _distance_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    earth_radius_miles = 3958.8
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
+    return earth_radius_miles * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))

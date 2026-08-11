@@ -13,6 +13,7 @@ export type ProductIconName =
   | "search-value"
   | "competitors"
   | "listings"
+  | "reviews"
   | "chart"
   | "calendar"
   | "check"
@@ -130,6 +131,13 @@ function iconPaths(name: ProductIconName): ReactNode {
           <rect x="3" y="4" width="18" height="16" rx="2" {...commonPathProps} />
           <path d="M3 9h18M8 9v11M12 13h5M12 16h3" {...commonPathProps} />
           <circle cx="5.5" cy="6.5" r=".5" fill="currentColor" />
+        </>
+      );
+    case "reviews":
+      return (
+        <>
+          <path d="M4 4h16v12H9l-5 4z" {...commonPathProps} />
+          <path d="m12 7 .8 1.7 1.9.2-1.4 1.3.4 1.9-1.7-.9-1.7.9.4-1.9-1.4-1.3 1.9-.2z" {...commonPathProps} />
         </>
       );
     case "chart":

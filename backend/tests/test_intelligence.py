@@ -5,6 +5,9 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.campaign import Campaign
+from app.models.business_location import BusinessLocation
+from app.models.data_connection import DataConnection
+from app.models.google_business_profile import GoogleBusinessProfileDailyMetric
 from app.models.action_plan import (
     ActionPlanForecast,
     ActionPlanMeasurement,
@@ -15,6 +18,7 @@ from app.models.intelligence import StrategyRecommendation
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.models.website_performance import WebsitePerformanceMeasurement
+from app.intelligence.lexicon import get_active_lexicon
 from app.schemas.intelligence import IntelligenceScoreOut, RecommendationOut
 from app.services import action_plan_measurement_service, intelligence_service
 
@@ -160,6 +164,8 @@ def test_recommendation_action_plan_uses_canonical_lexicon_steps(db_session):
     assert plan["effort"] == "medium"
     assert plan["owner_role"] == "developer"
     assert plan["observation_window_days"] == 28
+    assert plan["primary_metric_id"] == "cwv.lcp"
+    assert plan["measurement_track"] == "website"
     assert plan["lexicon_version"] == "1.0.0"
 
 
@@ -207,6 +213,8 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
             lcp_ms=4200.0,
             collection_start=date(2026, 7, 1),
             collection_end=date(2026, 7, 28),
+            metric_contract_versions={"web.crux.lcp": "1.0"},
+            scope_key="checklist-url-phone",
             lexicon_id="seo-intelligence-core",
             lexicon_version="1.0.0",
             idempotency_key="checklist-baseline-lcp",
@@ -267,6 +275,10 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
         if index == 0:
             baseline = db_session.query(ActionPlanMeasurement).one()
             assert baseline.baseline_metrics[0]["value"] == 4200.0
+            assert baseline.result_classification == "waiting_for_results"
+            assert baseline.measurement_contract["version"] == "2.0"
+            assert baseline.measurement_contract["track"] == "website"
+            assert baseline.measurement_contract["primary_metric_id"] == "cwv.lcp"
             forecast = db_session.query(ActionPlanForecast).one()
             assert forecast.forecast_status == "available"
             assert forecast.data_quality == "strong"
@@ -297,6 +309,8 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
                     lcp_ms=2400.0,
                     collection_start=date(2026, 8, 1),
                     collection_end=date(2026, 8, 28),
+                    metric_contract_versions={"web.crux.lcp": "1.0"},
+                    scope_key="checklist-url-phone",
                     lexicon_id="seo-intelligence-core",
                     lexicon_version="1.0.0",
                     idempotency_key="checklist-follow-up-lcp",
@@ -335,6 +349,8 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
     )
     assert measured["measurement_status"] == "measured"
     assert measured["outcome_status"] == "helped"
+    assert measured["result_classification"] == "improved"
+    assert measured["measurement_contract"]["result"]["classification"] == "improved"
     assert measured["outcome_metrics"][0]["baseline_value"] == 4200.0
     assert measured["outcome_metrics"][0]["value"] == 2400.0
     compared_forecast = db_session.query(ActionPlanForecast).one()
@@ -376,6 +392,134 @@ def test_action_plan_outcome_requires_new_post_completion_evidence():
 
     assert comparison["comparison"] == "insufficient_data"
     assert comparison["change"] is None
+
+
+def test_action_plan_outcome_rejects_a_different_measurement_scope():
+    completed_at = datetime(2026, 8, 3, 18, 0, tzinfo=UTC)
+    baseline = {
+        "metric_id": "cwv.lcp",
+        "value": 4200.0,
+        "direction": "lower_is_better",
+        "source_provider": "chrome_ux_report",
+        "aggregation": "p75",
+        "scope": "url:PHONE",
+        "measurement_window_days": 28,
+        "entity_scope": {
+            "campaign_id": "campaign-a",
+            "business_location_id": "location-a",
+            "measured_url": "https://example.com/service-a",
+            "form_factor": "PHONE",
+        },
+        "source_record_id": "baseline-record",
+    }
+    observed = {
+        **baseline,
+        "value": 2200.0,
+        "entity_scope": {
+            **baseline["entity_scope"],
+            "measured_url": "https://example.com/service-b",
+        },
+        "source_record_id": "outcome-record",
+        "measured_at": (completed_at + timedelta(days=29)).isoformat(),
+    }
+
+    comparison = action_plan_measurement_service._comparison(
+        baseline,
+        observed,
+        work_completed_at=completed_at,
+    )
+
+    assert comparison["comparison"] == "insufficient_data"
+    assert comparison["comparison_requirements_met"] is False
+    assert "does not match" in comparison["insufficient_reasons"][-1]
+
+
+def test_primary_metric_controls_the_action_result():
+    classification = action_plan_measurement_service._classify_primary_result(
+        [
+            {"metric_id": "primary", "comparison": "worse"},
+            {"metric_id": "secondary", "comparison": "improved"},
+        ],
+        ["primary", "secondary"],
+    )
+
+    assert classification[0] == "worse"
+    assert classification[1] == "did_not_help"
+    assert classification[2]["metric_id"] == "primary"
+
+
+def test_google_business_profile_measurement_is_location_scoped(db_session):
+    tenant = db_session.query(Tenant).filter(Tenant.name == "Tenant A").first()
+    assert tenant is not None
+    location = BusinessLocation(
+        organization_id=tenant.id,
+        name="Measurement Location",
+        domain="measurement.example",
+    )
+    db_session.add(location)
+    db_session.flush()
+    campaign = Campaign(
+        tenant_id=tenant.id,
+        organization_id=tenant.id,
+        business_location_id=location.id,
+        name="Measurement Campaign",
+        domain="measurement.example",
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    connection = DataConnection(
+        tenant_id=tenant.id,
+        organization_id=tenant.id,
+        business_location_id=location.id,
+        campaign_id=campaign.id,
+        provider_name="google_business_profile",
+        external_resource_id="locations/measurement",
+        resource_scope="location",
+        status="current",
+    )
+    db_session.add(connection)
+    db_session.flush()
+    for offset, value in enumerate((3, 5, 7)):
+        db_session.add(
+            GoogleBusinessProfileDailyMetric(
+                connection_id=connection.id,
+                tenant_id=tenant.id,
+                organization_id=tenant.id,
+                campaign_id=campaign.id,
+                business_location_id=location.id,
+                metric_date=date(2026, 8, 1) + timedelta(days=offset),
+                metric_name="WEBSITE_CLICKS",
+                metric_value=value,
+                source_name="google_business_profile",
+                metric_contract_id="gbp.performance.website_clicks",
+                metric_contract_version="1.0",
+                source_account_id="accounts/measurement",
+                external_resource_id="locations/measurement",
+                scope_key="measurement-profile-scope",
+                captured_at=datetime(2026, 8, 4, tzinfo=UTC),
+            )
+        )
+    db_session.commit()
+    metric = get_active_lexicon(db_session, tenant_id=tenant.id).metric_index[
+        "local.gbp.website_clicks"
+    ]
+
+    captured = action_plan_measurement_service._google_business_profile_metric(
+        db_session,
+        tenant_id=tenant.id,
+        organization_id=tenant.id,
+        campaign_id=campaign.id,
+        business_location_id=location.id,
+        metric=metric,
+        captured_at=datetime(2026, 8, 3, 23, 59, tzinfo=UTC),
+        observation_window_days=7,
+    )
+
+    assert captured["status"] == "available"
+    assert captured["value"] == 15.0
+    assert captured["source_provider"] == "google_business_profile"
+    assert captured["entity_scope"]["business_location_id"] == location.id
+    assert captured["measurement_window_days"] == 7
 
 
 def test_deep_recommendation_can_enter_human_review(db_session):

@@ -92,6 +92,16 @@ def build_recommendation_action_plans(
         if action is None:
             continue
 
+        primary_metric_id = (
+            str(action.success_metric_ids[0]) if action.success_metric_ids else None
+        )
+        measurement_track = (
+            "google_business_profile"
+            if str(action.category) in {"local", "reputation", "google_business_profile"}
+            or str(primary_metric_id or "").startswith("local.")
+            else "website"
+        )
+
         plans[recommendation.id] = {
             "action_id": action.action_id,
             "category": action.category,
@@ -103,6 +113,8 @@ def build_recommendation_action_plans(
             "owner_role": action.owner_role,
             "dependencies": list(action.dependencies),
             "success_metric_ids": list(action.success_metric_ids),
+            "primary_metric_id": primary_metric_id,
+            "measurement_track": measurement_track,
             "observation_window_days": action.observation_window_days,
             "lexicon_id": lexicon.meta.lexicon_id,
             "lexicon_version": lexicon.meta.version,
@@ -166,6 +178,8 @@ def _action_plan_content_hash(plan: dict, cadence: str) -> str:
         "steps": list(plan.get("steps", [])),
         "dependencies": list(plan.get("dependencies", [])),
         "success_metric_ids": list(plan.get("success_metric_ids", [])),
+        "primary_metric_id": plan.get("primary_metric_id"),
+        "measurement_track": plan.get("measurement_track"),
         "observation_window_days": plan.get("observation_window_days"),
         "lexicon_id": plan.get("lexicon_id"),
         "lexicon_version": plan.get("lexicon_version"),
@@ -905,4 +919,3 @@ def advance_month(db: Session, tenant_id: str, campaign_id: str, override: bool)
     campaign.month_number = min(12, campaign.month_number + 1)
     db.commit()
     return {"campaign_id": campaign.id, "advanced_to_month": campaign.month_number, "override": override}
-

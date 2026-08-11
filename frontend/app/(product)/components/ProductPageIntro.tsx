@@ -32,6 +32,8 @@ const START_HERE_BY_PATH: Record<string, string> = {
     "Start with the largest gap, then decide whether a fresh comparison is needed.",
   "/citations":
     "Fix failed or missing listings first; confirmed live listings need no action.",
+  "/reviews":
+    "Start with reviews that need a reply, especially any review with 3 stars or less.",
 };
 
 const PAGE_ICON_BY_PATH: Record<string, ProductIconName> = {
@@ -47,6 +49,7 @@ const PAGE_ICON_BY_PATH: Record<string, ProductIconName> = {
   "/organic-value": "search-value",
   "/competitors": "competitors",
   "/citations": "listings",
+  "/reviews": "reviews",
 };
 
 export function ProductPageIntro({

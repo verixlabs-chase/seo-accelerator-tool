@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -55,5 +55,6 @@ class ReviewVelocitySnapshot(Base):
     profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("local_profiles.id", ondelete="CASCADE"), nullable=False, index=True)
     reviews_last_30d: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     avg_rating_last_30d: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    metric_contract_versions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    scope_key: Mapped[str] = mapped_column(String(64), nullable=False, default="legacy")
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
-

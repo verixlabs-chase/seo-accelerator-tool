@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from kombu.exceptions import KombuError
 from sqlalchemy.orm import Session
 
@@ -9,8 +9,22 @@ from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.authority import Citation
-from app.schemas.authority import BacklinkOut, CitationSubmissionIn, OutreachCampaignIn, OutreachContactIn
-from app.services import authority_service
+from app.schemas.authority import (
+    BacklinkOut,
+    CitationSubmissionIn,
+    DirectoryListingDiscoveryPreviewIn,
+    DirectoryListingDiscoveryRunIn,
+    DirectoryListingOut,
+    OutreachCampaignIn,
+    OutreachContactIn,
+)
+from app.services import (
+    authority_service,
+    durable_job_service,
+    listing_discovery_service,
+    listing_inventory_service,
+)
+from app.services.cost_economics_service import CostEconomicsError
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     authority_sync_backlinks,
@@ -22,6 +36,18 @@ from app.tasks.tasks import (
 
 authority_router = APIRouter(prefix="/authority", tags=["authority"])
 citations_router = APIRouter(prefix="/citations", tags=["citations"])
+
+
+def _raise_listing_discovery_error(exc: Exception) -> None:
+    raise HTTPException(
+        status_code=int(getattr(exc, "status_code", status.HTTP_409_CONFLICT)),
+        detail={
+            "message": str(exc),
+            "reason_code": str(
+                getattr(exc, "reason_code", "public_listing_check_unavailable")
+            ),
+        },
+    ) from exc
 
 
 def _citation_truth(*, citation_count: int, live_count: int, job_queued: bool, captured_at: str | None = None) -> dict:
@@ -176,6 +202,123 @@ def submit_citation(
             "directory_name": citation.directory_name,
             "submission_status": citation.submission_status,
         },
+    )
+
+
+@citations_router.get("/inventory")
+def get_listing_inventory(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = listing_inventory_service.list_inventory(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(
+        request,
+        {
+            "items": [
+                DirectoryListingOut.model_validate(row).model_dump(mode="json")
+                for row in rows
+            ],
+            "summary": listing_inventory_service.inventory_summary(rows),
+            "truth": {
+                "classification": "provider_backed" if rows else "not_collected",
+                "summary": (
+                    "These are saved public listing observations for this business location."
+                    if rows
+                    else "No public listing inventory has been collected for this business location yet."
+                ),
+                "correction_available": False,
+                "correction_reason": "A directory correction provider has not been approved.",
+            },
+        },
+    )
+
+
+@citations_router.post("/discovery/preview")
+def preview_listing_discovery(
+    request: Request,
+    body: DirectoryListingDiscoveryPreviewIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = listing_discovery_service.preview_run(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=body.campaign_id,
+        )
+    except (listing_discovery_service.ListingDiscoveryError, CostEconomicsError) as exc:
+        _raise_listing_discovery_error(exc)
+    return envelope(request, payload)
+
+
+@citations_router.post(
+    "/discovery/runs",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def create_listing_discovery_run(
+    request: Request,
+    body: DirectoryListingDiscoveryRunIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        run, created = listing_discovery_service.create_run(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=body.campaign_id,
+            requested_by_user_id=user["id"],
+            idempotency_key=body.idempotency_key,
+        )
+        durable_job_service.run_directory_listing_discovery_now(
+            db,
+            tenant_id=user["tenant_id"],
+            run_id=run.id,
+        )
+        run = listing_discovery_service.get_run(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            run_id=run.id,
+        )
+    except (listing_discovery_service.ListingDiscoveryError, CostEconomicsError) as exc:
+        db.rollback()
+        _raise_listing_discovery_error(exc)
+    return envelope(
+        request,
+        {
+            "created": created,
+            "run": listing_discovery_service.serialize_run(run),
+        },
+    )
+
+
+@citations_router.get("/discovery/latest")
+def get_latest_listing_discovery_run(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        run = listing_discovery_service.latest_run(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=campaign_id,
+        )
+    except listing_discovery_service.ListingDiscoveryError as exc:
+        _raise_listing_discovery_error(exc)
+    return envelope(
+        request,
+        {"run": listing_discovery_service.serialize_run(run) if run is not None else None},
     )
 
 

@@ -61,10 +61,34 @@
 > simple phrases that sound artificial, self-conscious, or unlike the way a
 > helpful business advisor would speak.
 > **I1.4/T29: Measured Website and Google
-> Business Profile Action Tracks** is now scheduled after G1.4 connects live
-> profile performance data. It will show the real metric each action is meant
-> to move, the starting value, the waiting period, and the measured result
-> without treating checklist completion as proof of improvement.
+> Business Profile Action Tracks** is now implemented locally through T29A and
+> T29B. Next Steps separates website work from Google Business Profile work,
+> persists a versioned primary-metric contract, validates provider and entity
+> scope before comparing results, and shows the starting value, check date,
+> later value, and honest result beside the checklist. Secondary metrics can no
+> longer override the primary result. T29C production proof still requires G1.4
+> approval and a live owned-listing sync.
+> **I1.6: Google Standards and Measurement Governance** has started. I1.6A
+> through I1.6E are implemented locally with a ten-source official Google
+> registry,
+> immutable snapshots, conditional retrieval, raw and normalized digests,
+> visible failures, durable per-source scheduling, typed change candidates,
+> deterministic diffs, impact links, platform-admin review endpoints, and
+> fail-closed Search Console and Business Profile adapters. Production
+> migrations and the first live source/review proof remain pending. I1.6C adds
+> 51 versioned objective measurement contracts and exact comparison scopes for
+> supported website, Search Console, Business Profile, reputation, crawl, and
+> geo-grid evidence; unavailable collectors stay visibly `not_collected`.
+> I1.6D adds inactive candidate versions, deterministic fixture and approved
+> evidence replay, exact product-impact counts, and new-baseline reports. I1.6E
+> adds sealed platform-owner decisions, immediate and scheduled rollout,
+> rollback, active runtime contract resolution, audit evidence, and the
+> platform Standards workspace. I1.6F now adds a locally implemented,
+> minimum-sample Search Console drift monitor with equal-organization weighting,
+> contract/scope matching, incomplete-data and onboarding exclusions, Search
+> status/provider-change confounders, minimized evidence, and owner-reviewed
+> investigation states. Portfolio-wide movement can create an investigation signal
+> but never be presented as knowledge of Google's private algorithm.
 > The remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7 and DT1,
@@ -105,10 +129,12 @@ This brief is optimized for safe execution. Codex should work sprint-by-sprint, 
 > UX11-UX12 completed the owner-journey and cross-page rollout. MKT1.1 automated
 > local keyword discovery is now in progress; the durable discovery, evidence,
 > visualization, and tracking-promotion slice is implemented.
-> I1.4/T29 follows G1.4's
-> live Google Business Profile metric connection. Recommendation-only
+> I1.4/T29 T29A-T29B are implemented locally; T29C follows G1.4's
+> live Google Business Profile production connection. Recommendation-only
 > intelligence remains enabled; autonomous customer-site mutations and
-> automatic policy updates remain disabled.
+> automatic policy updates remain disabled. I1.6A-I1.6F are implemented
+> locally; production migration and live Search Console proof remain required,
+> while Business Profile drift stays gated by G1.4 approval and T29C proof.
 
 ### Sprint 5 - Location Context and Navigation Clarity
 
@@ -575,31 +601,34 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 16 | **G1.2 - Local Search Rank Grid — released** | Each location can run and view its own paid, allowance-controlled local ranking heat map. |
 | 17 | **G1.4 - Google Business Profile Intelligence — implemented locally; live approval check pending** | Owners can connect the authorized listing for each location, see its saved details and changes, review a plain-language completeness check, and visualize Search/Maps appearances, website clicks, call clicks, direction requests, bookings, and customer search terms. Google project approval and a production-owned-profile validation remain required before release. |
 | 18 | **I1.4/T29 - Measured Website and Google Business Profile Action Tracks** | Every website and profile action identifies the real metric it is meant to improve, shows the location's starting value, and returns with an honest measured result after the waiting period. |
-| 19 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
-| 20 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, policy-controlled AI replies, and multi-location comparisons replace the core BrightLocal reputation workflow. |
-| 21 | **DT1 - Data Trust and Connection Health Center** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
-| 22 | **ML1 - Portfolio Intelligence** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
-| 23 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
-| 24 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
-| 25 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
-| 26 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
-| 27 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
-| 28 | **COM1 paid-beta slice - Checkout and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, recover payment, and cancel without operator database work. |
-| 29 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
-| 30 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
-| 31 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 32 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
-| 33 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
-| 34 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 35 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 36 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 37 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 38 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 39 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 40 | **AIV1 - AI Search Visibility and Entity Intelligence** | A dedicated AI Search Visibility section shows where each business and location is mentioned or cited across supported major AI answer engines, how that changes over time, which competitors appear instead, and what evidence-backed work may improve coverage. |
-| 41 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
-| 42 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 43 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
+| 19 | **I1.6 - Google Standards and Measurement Governance** | Official Google Search and Business Profile changes, provider metric drift, and unusual shared performance movement become reviewable evidence; versioned rules are replay-tested and explicitly approved before activation. |
+| 20 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
+| 21 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, policy-controlled AI replies, and multi-location comparisons replace the core BrightLocal reputation workflow. |
+| 22 | **DT1 - Data Trust and Connection Health Center** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
+| 23 | **ML1 - Portfolio Intelligence** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
+| 24 | **G1.4B - Google Business Profile Fleet Operations** | Growth and Enterprise operators can preview, approve, schedule, and safely fan out supported posts, photo uploads, and later typed profile actions across location groups, including Enterprise fleets with hundreds of authorized profiles. |
+| 25 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
+| 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
+| 27 | **ALT1 - Alerts, Notifications, and Digests** | Customers learn about meaningful changes and failures without repeatedly checking every page. |
+| 28 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 29 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
+| 30 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
+| 31 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
+| 32 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
+| 33 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 34 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
+| 35 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
+| 36 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 37 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 38 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 39 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 40 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
+| 41 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
+| 42 | **AIV1 - AI Search Visibility and Entity Intelligence** | A dedicated AI Search Visibility section shows where each business and location is mentioned or cited across supported major AI answer engines, how that changes over time, which competitors appear instead, and what evidence-backed work may improve coverage. |
+| 43 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
+| 44 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 45 | **AUT1 - External Automation Gateway** | Growth and Enterprise customers can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, scoped service accounts, governed workflow templates, and typed actions without granting direct database or unrestricted execution access. |
+| 46 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 ### External API enablement map
 
@@ -614,7 +643,8 @@ truthfulness gates pass.
 | **MKT1.1** | DataForSEO Labs API plus Keywords Data API | Generate location-specific keyword ideas, demand, trend, competition, and competitor evidence. Keep provider metrics labeled and allowance-controlled. |
 | **VAL1** | Existing Search Console connection plus DataForSEO Keywords Data API | Calculate traceable paid-search replacement value from measured organic behavior and location-specific CPC/search-demand research. Store source, geography, observation date, and model version; do not present this as revenue or add the Google Ads API in this sprint. |
 | **G1.2** | DataForSEO Google Maps SERP and Google Local Finder SERP | Collect coordinate-specific local positions for the geo-grid. Default scheduled work to the less expensive queued method; reserve Live calls for an explicitly priced manual run. |
-| **G1.4, I1.4/T29, and G1.6** | Google Business Profile Account Management, Business Information, Performance, and supported review APIs | Connect and measure profiles the customer is authorized to manage. Submit the Google project access request before G1.4 implementation because enabling an API alone does not grant Business Profile API access. |
+| **G1.4, G1.4B, I1.4/T29, and G1.6** | Google Business Profile Account Management, Business Information, Performance, Local Posts, Media, and supported review APIs | Connect, measure, and perform explicitly approved work only on profiles the customer is authorized to manage. G1.4B fans an approved campaign into individually scoped post or media jobs, respects Google quotas, and requires production API access plus validated fleet permissions before release. |
+| **I1.6** | Official Google Search documentation and updates RSS, Search Status Dashboard, CrUX/Search Console definitions, Google Business Profile guidance, and Google Business Profile API change logs | Detect published standards and provider-contract changes, preserve immutable source evidence, replay affected rules, and require explicit platform-owner approval before activation. Public guidance and empirical movement cannot be presented as knowledge of Google's private algorithm. |
 | **G1.4 and G1.6** | DataForSEO Business Data API | Observe public competitor profiles and reviews. Never use public third-party data as permission to edit a profile or reply to a review. |
 | **G1.5** | DataForSEO Business Data API for discovery; separately approved listings-network provider for syndication | Audit public listings first. Creation, correction, suppression, or network distribution requires a commercial and technical approval for a Yext-, Uberall-, or equivalent production contract and explicit per-location cost confirmation. |
 | **G1.7** | Google Analytics Data API plus the first-party website-form event contract | Connect visits, landing pages, engaged sessions, and approved inquiry events without adding CRM, call tracking, payment, or revenue attribution. |
@@ -624,6 +654,7 @@ truthfulness gates pass.
 | **RPT1 and ALT1** | Resend, Postmark, or an equivalently approved transactional-email API | Deliver reports, alerts, connection failures, and digests with bounce, complaint, suppression, retry, and delivery evidence. |
 | **PA1, TR1, and OPS1** | Sentry plus PostHog, or approved privacy-equivalent observability and product-analytics services | Detect production failures and measure product value with tenant-safe redaction, approved retention, and no sensitive page-content capture. |
 | **COM1** | Stripe Checkout, Billing, Customer Portal, and signed webhooks | Operate subscriptions and entitlements. Provider webhooks must be signature-verified, idempotent, auditable, and unable to bypass the internal entitlement ledger. |
+| **AUT1** | Versioned InsightOS webhooks, scoped service-account API tokens, an OpenAPI contract, and approved clients such as n8n, Make, Zapier, and Pipedream | Send tenant-safe product events and accept only typed, policy-checked commands through a vendor-neutral contract. Automation tools receive no direct database access, provider credentials, browser session, arbitrary prompt authority, or mutation bypass. |
 
 Do not add another general-purpose LLM, Google Ads API, a paid map renderer,
 CRM, call tracking, job-management, payment attribution, or a broad Google
@@ -817,7 +848,7 @@ providers or future AI models from pushing the service below its target margin.
 > **Implementation status (2026-07-30):** G1.3 is production-released. Revision
 > `20260730_0078` adds versioned provider price cards, an
 > append-only and tenant-isolated reservation/reconciliation ledger, versioned
-> non-provider cost allocations, canonical Solo/Multi-location/Enterprise plan
+> non-provider cost allocations, canonical Solo/Growth/Enterprise plan
 > economics, and generic model/token fields before a paid LLM is enabled. The
 > current platform-paid DataForSEO rank path reserves its depth- and
 > operator-adjusted maximum before dispatch, reconciles the provider-reported
@@ -877,13 +908,16 @@ Margin guardrail:
 | Plan | Monthly revenue | Total software COGS ceiling at 85% margin | 5% platform-API budget |
 | --- | ---: | ---: | ---: |
 | Solo | $299 | $44.85 | $14.95 |
-| Multi-location | $699 | $104.85 | $34.95 |
+| Growth | $699 | $104.85 | $34.95 |
 | Enterprise starting point | $1,999 | $299.85 | $99.95 |
 
 Pricing decision:
 
 - Solo is `$299/month` and includes one active location.
-- Multi-location is `$699/month` and includes up to ten active locations.
+- Growth is `$699/month` and includes up to ten active locations. Growth is
+  positioned as the automation tier, not merely the multi-location tier, so a
+  one-location business can upgrade for execution, higher allowances, deeper
+  history, and faster monitoring without paying for a meaningless label.
 - Enterprise starts at `$1,999/month`, includes 11-20 active locations by
   default, and uses custom per-location pricing above 20 or when its approved
   user, provider, data-volume, or support allowance is exceeded.
@@ -1041,7 +1075,138 @@ Acceptance criteria:
 > profile comparison, photo/post ingestion, and approved mutation workflows
 > remain inside G1.4 after that external gate.
 
+### Growth G1.4B - Google Business Profile Fleet Operations
+
+Goal: let Growth and Enterprise operators safely carry out one approved Google
+Business Profile campaign across many authorized locations without opening and
+editing every profile separately.
+
+Placement and entitlement:
+
+- Design may begin after G1.4 proves the supported single-profile mutation
+  contracts. Production rollout follows G1.4 approval and the ML1 location
+  group, delegated-access, bulk-scheduling, and pooled-allowance foundation.
+- This is available only to **Tier 2 Growth** and **Tier 3 Enterprise**.
+  Growth can target locations inside its active-location allowance. Enterprise
+  supports hundreds of authorized profiles through contracted active-location,
+  concurrency, retention, support, and provider-quota limits.
+- A 200-profile organization is an Enterprise fleet, not a standard Growth
+  account. Its onboarding includes Google location-group mapping, bulk access
+  verification, quota validation or increase requests, a dry-run campaign, and
+  an approved operating policy before live dispatch.
+
+Provider boundary:
+
+- Google currently exposes local-post creation and media creation/upload as
+  location-scoped operations. InsightOS must perform controlled per-location
+  fan-out and cannot assume a single provider transaction will mutate an
+  entire fleet. Keep the adapter aligned with the official
+  [Local Posts create method](https://developers.google.com/my-business/reference/rest/v4/accounts.locations.localPosts/create),
+  [media upload guidance](https://developers.google.com/my-business/content/upload-photos),
+  and [API resource reference](https://developers.google.com/my-business/reference/rest).
+- Use Google Business Profile location groups for access organization where
+  appropriate, following Google's
+  [manage locations at scale](https://developers.google.com/my-business/content/manage-locations)
+  guidance. The customer must still authorize the profiles and InsightOS must
+  preserve its own organization and location mapping.
+- Read the project's live quota before dispatch and pace work below it. Follow
+  Google's [usage limits](https://developers.google.com/my-business/content/limits)
+  and request a justified increase for a contracted high-volume fleet rather
+  than hard-coding a permanent request rate.
+
+Initial fleet actions:
+
+- Create, schedule, edit, and remove supported local post types, including
+  normal updates, events, offers, and supported calls to action. Product posts
+  remain unavailable while Google does not support their creation through the
+  API.
+- Upload approved location photos and supported media categories from a
+  durable, policy-checked asset library. Preserve source, rights confirmation,
+  checksum, media type, alt/context note when applicable, and the exact target
+  profiles.
+- Apply other supported profile actions, such as special hours or selected
+  approved fields, only after each action has its own typed preview,
+  eligibility rules, recovery behavior, and measurement contract. A generic
+  arbitrary profile-edit batch is out of scope.
+
+Fleet workflow:
+
+- Select profiles by saved location group, brand, region, service, category,
+  label, profile state, or an explicit uploaded location list. Show the exact
+  included and excluded profiles before approval.
+- Build a reusable campaign with a base asset, per-location variables,
+  timezone-aware schedule, expiration where supported, destination URL rules,
+  and explicit exclusions. Missing location facts block only the affected
+  profiles and never invite AI to invent them.
+- Offer governed AI variation only as an optional drafting step over confirmed
+  business facts and an owner-approved campaign. AI cannot add an offer,
+  service, claim, location, target URL, or profile to the campaign.
+- Run a preflight matrix for authorization, profile mapping, verification,
+  supported action type, policy-sensitive content, media requirements,
+  duplicate risk, destination URL, local time, allowance, and current Google
+  connection health.
+- Show a per-location preview and final diff. Support campaign-level approval
+  with exception review, optional two-person approval, and an immutable
+  approval snapshot so later edits require a new approval.
+- Fan the approved campaign into one durable, idempotent job per profile.
+  Respect Google quotas with bounded concurrency, pacing, exponential backoff,
+  retry classification, pause, cancel, resume, and dead-letter recovery.
+- Record a provider receipt and customer-safe result for every location. Keep
+  `succeeded`, `pending`, `skipped`, `blocked`, and `failed` distinct; partial
+  completion can never be displayed as a fully successful campaign.
+- Support retrying only failed or blocked locations after the operator fixes
+  the cause. Replays cannot create duplicate posts or media.
+- Preserve the campaign, approved template, generated location variants,
+  target set, actor, approver, policy version, schedule, provider receipt,
+  failure history, and deletion or rollback/recovery result in the audit log.
+- Measure supported post/profile performance by location and in aggregate
+  using the G1.4 and T29 contracts. Campaign completion is not presented as
+  proof that visibility, calls, visits, or customer actions improved.
+
+Customer experience:
+
+- Add a `Profile campaigns` workspace with Draft, Preflight, Awaiting approval,
+  Scheduled, Running, Needs attention, and Complete views.
+- Lead with profiles targeted, profiles ready, blocked exceptions, scheduled
+  time, completed results, and the next operator action. Keep API methods,
+  request IDs, and raw error bodies inside optional technical details.
+- Provide a fleet calendar, reusable approved templates, asset library,
+  location-group targeting, progress visualization, failed-location queue,
+  and exportable audit report.
+
+Acceptance criteria:
+
+- An authorized operator can preview and approve one campaign for 200 mapped
+  profiles without manually opening 200 forms.
+- Every mutation remains individually authorized, tenant- and location-scoped,
+  idempotent, rate-limited, entitlement-checked, auditable, and recoverable.
+- One unavailable, ineligible, or malformed profile cannot prevent eligible
+  profiles from completing or be hidden by a campaign-level success label.
+- Editing the content, assets, target set, schedule, or location variables after
+  approval invalidates that approval and requires another preview.
+- Pausing a fleet campaign prevents undispatched jobs from starting while
+  preserving completed receipts and safe retry state.
+- Growth cannot exceed its active-location or pooled-credit allowance.
+  Enterprise fleet volume, Google quota, concurrency, support, and overage
+  behavior are explicit before a 200-profile campaign can run.
+- The operator can compare the campaign's supported location-level baseline
+  and later measurements without merging incompatible locations or claiming an
+  outcome from publication alone.
+
 ### Intelligence I1.4/T29 - Measured Website and Google Business Profile Action Tracks
+
+> **Implementation status (2026-08-05):** T29A and T29B are implemented
+> locally. Action measurements now store a versioned contract, a governing
+> primary metric, provider and entity scope, baseline, intervention, waiting
+> period, target when governed, and exact result classification. Search Console
+> values use governed date windows, Core Web Vitals retain URL/origin and device
+> scope, and Google Business Profile Performance measurements are summed only
+> for the mapped location and window. Mismatched scopes return `not enough
+> information`; a favorable secondary metric cannot overrule the primary
+> result. Next Steps now exposes separate website and profile lanes plus a
+> plain-language metric strip beside the checklist. T29C remains pending until
+> an approved production Google Business Profile connection can prove one live
+> profile action end to end for each test location.
 
 Goal: make every action answer a service owner's practical question: **What am
 I doing, which real number should it affect, and did that number improve after
@@ -1151,7 +1316,128 @@ Acceptance criteria:
 - In a five-second test, a non-technical service-business owner can answer:
   `What should I do?`, `Which number should move?`, and `Did it help?`
 
+### Intelligence I1.6 - Google Standards and Measurement Governance
+
+> **Implementation status (2026-08-09):** I1.6A-I1.6E are implemented locally.
+> Migrations `20260805_0100`, `20260809_0101`, `20260809_0102`,
+> `20260809_0103`, and `20260809_0104` add the allow-listed
+> official-source registry, immutable snapshots, typed change candidates, and
+> affected-contract/product impact links. Conditional checks create a
+> deterministic diff and classification only when normalized meaning changes.
+> Platform-admin endpoints expose source health and the review queue, while
+> unresolved provider-contract changes stop Search Console or Business Profile
+> collection instead of silently accepting a changed schema. Automatic
+> activation remains impossible. The I1.6C registry defines 51 versioned
+> contracts and exact comparable scopes, attaches them to supported saved
+> measurements, and stops action-result comparisons across contract or scope
+> boundaries. Unsupported indexing, structured-data, and review-response
+> measurements remain explicitly unavailable. I1.6D adds inactive candidate
+> metric-contract versions, exact contract and lexicon diffs, deterministic
+> fixed-fixture replay, minimized approved-evidence replay, product-impact
+> counts, and explicit comparison-boundary/new-baseline reports. Approved
+> evidence identifiers are hashed and raw tenant, organization, campaign, and
+> location identifiers are not accepted by the replay contract. Apply the
+> production migrations and capture live source/check/review/provider/replay
+> proof before marking these slices released. I1.6E approval, rollout,
+> rollback, and the operator workspace are implemented locally with sealed
+> owner decisions and audited, reversible activation. I1.6F adds the locally
+> implemented Search Console drift monitor, persisted privacy-minimized events,
+> platform-owner investigation workflow, and a no-automation operator view.
+
+Goal: keep website and Google Business Profile measurements aligned with
+published Google standards and provider definitions without silently changing
+production rules or pretending to know Google's private ranking algorithm.
+
+Scheduling and dependencies:
+
+- I1.6A-I1.6F are implemented locally after I1.4/T29; production migrations
+  and live provider evidence remain required before release.
+- Live profile validation for I1.6C and profile performance-drift monitoring in
+  I1.6F require G1.4 production approval and T29C proof.
+- I1.6 governs standards and measurement definitions. It does not replace I2's
+  later controlled outcome learning or DT1's customer connection-health UI.
+
+Scope:
+
+- Monitor official Google Search documentation updates, the Search Status
+  Dashboard, ranking-system and Core Web Vitals guidance, Search Console metric
+  definitions, local-ranking guidance, and Google Business Profile API change
+  logs through a versioned source registry and immutable snapshots.
+- Classify published changes as thresholds, metric definitions, API
+  deprecations, ranking-system guidance, policies, incidents, or editorial-only
+  changes. Link each material change to affected lexicon rules, measurement
+  contracts, adapters, forecasts, reports, and historical comparisons.
+- Expand objective website contracts to exact CrUX URL/origin and device scope;
+  Search Console clicks, impressions, CTR, and position by page, query, device,
+  country, and date window; indexing/canonical/sitemap evidence; structured
+  data; and direct crawl-health measures.
+- Expand objective profile contracts to supported Search/Maps appearances and
+  customer actions, monthly search terms, geo-grid top-3/top-10 share and
+  ranking radius, reputation measurements, and separate profile-configuration
+  evidence. A completeness check is never presented as a Google ranking score.
+- Create candidate lexicon and provider-contract versions, replay them against
+  regression fixtures and an approved tenant-safe evidence sample, and require
+  explicit platform-owner approval before activation. Preserve rollback and
+  the original definition attached to historical evidence.
+- Add a governed performance-drift monitor for unusual shared movement across
+  comparable locations. Exclude known outages, collection failures, migrations,
+  and definition changes; label remaining evidence as a `possible ecosystem
+  change`, never proof that Google changed its algorithm.
+- Add a platform-only Standards status workspace for source health, change
+  review, impact, replay, approval, rollout, rollback, and audit history.
+  Customer-facing copy explains only the useful consequence in plain language.
+
+Implementation slices:
+
+1. **I1.6A - Source registry and immutable snapshots — implemented locally;
+   production proof pending.**
+2. **I1.6B - Deterministic change classification and impact links — implemented
+   locally; production migration and review proof pending.**
+3. **I1.6C - Objective website and profile metric-contract expansion —
+   implemented locally; production migration and live provider proof pending.**
+4. **I1.6D - Candidate versions, replay, and comparison-boundary checks —
+   implemented locally; production migration and replay proof pending.**
+5. **I1.6E - Platform approval, rollout, rollback, and audit workspace — implemented locally; production proof pending.**
+6. **I1.6F - Minimum-sample empirical performance-drift monitoring — Search
+   Console slice implemented locally; production proof pending; Business
+   Profile metric families remain gated by G1.4 and T29C.**
+
+Acceptance criteria:
+
+- Every active Google-derived standard and provider metric records its version,
+  authoritative source, checked date, definition, scope, and effective date
+  when published.
+- Official or provider change detection creates a review candidate; it cannot
+  silently alter production behavior or customer history.
+- Unknown or redefined provider fields fail closed. Incompatible definitions,
+  units, or scopes create a visible version boundary or new baseline.
+- Replay reports every changed diagnosis, action, forecast, and result before
+  activation; approvals and rollbacks are audited.
+- Website, profile, and geo-grid measurements remain tenant-, organization-,
+  location-, entity-, provider-, and time-window-scoped.
+- Empirical drift requires a governed minimum sample, retains confounders and
+  confidence evidence, and never creates a causal or secret-algorithm claim.
+- AI remains explain-only and cannot approve, activate, or rewrite standards.
+
+Full implementation and truth contract:
+
+- [Google Standards and Measurement Governance](./platform/google-standards-and-measurement-governance.md)
+
 ### Growth G1.5 - Listings and Citation Intelligence
+
+> **Implementation status (2026-08-10):** G1.5A and G1.5B are implemented.
+> The first slice adds a tenant-, organization-, campaign-, and location-scoped public
+> listing inventory, immutable observations, deterministic business-detail
+> comparison, exact field differences, confidence, freshness, and a
+> customer-safe read API. A read-only Business Listings provider boundary is
+> implemented for public Google Maps records. The second slice adds a
+> customer-visible allowance preview, an idempotent durable run, provider-cost
+> reservation and actual-cost reconciliation, strict business matching,
+> same-source duplicate flags, source-coverage disclosure, and a saved listing
+> comparison UI. The currently approved discovery source is still limited to
+> supported public Google Maps records. Multi-directory discovery and every
+> correction or syndication action remain disabled until provider coverage and
+> the commercial contract are explicitly approved.
 
 Goal: replace BrightLocal-style citation tracking and listing management with a
 truthful inventory, consistency audit, and approval-driven correction workflow.
@@ -1180,6 +1466,17 @@ Scope:
 - Keep citation building pay-as-you-go or explicitly allowance-backed; never
   hide third-party directory fees inside an unlimited action.
 
+Implementation slices:
+
+1. **G1.5A - Listing inventory truth:** normalized location-scoped records,
+   immutable observations, exact field differences, and read-only API.
+2. **G1.5B - Governed public discovery:** cost reservation, durable collection,
+   source coverage disclosure, matching, duplicate detection, and freshness.
+3. **G1.5C - Customer correction workflow:** approval, provider capability and
+   price confirmation, idempotent dispatch, receipt, verification, and audit.
+4. **G1.5D - Portfolio intelligence:** cross-location consistency patterns and
+   shared work without blending individual records.
+
 Acceptance criteria:
 
 - A user can see which listings are actually live, which are only submitted,
@@ -1190,6 +1487,36 @@ Acceptance criteria:
   merging the underlying listing records.
 
 ### Growth G1.6 - Reputation Management
+
+> **Implementation status (2026-08-10):** G1.6A, G1.6B, the code-complete
+> G1.6C execution boundary, G1.6D1 review intelligence, and the G1.6D2A
+> governed review-request foundation are implemented
+> locally with a
+> separate tenant-, organization-, campaign-, and location-scoped owned-review
+> inventory, immutable response-state observations, paginated and idempotent
+> durable synchronization from each authorized Google Business Profile
+> mapping, and a customer review inbox with location, response, and rating
+> filters. The inbox now adds a versioned draft-only response policy, deterministic
+> sensitive-topic routing before any model call, evidence-bounded Mistral response
+> drafts, Insight Credit reservation and reconciliation, editable human approval,
+> and a complete AI/policy audit trail. G1.6C adds platform-authorized provider
+> capability proof, a separate customer confirmation for every public reply,
+> one execution per approved draft, durable idempotent jobs, exact-text and
+> review-state revalidation, provider receipts, retry/pause/cancel controls,
+> local response observations, and access-revocation handling. Automatic replies
+> remain disabled. Direct posting stays fail-closed until the production Google
+> project is authorized and the first customer-approved reply proves the live
+> capability; successful proof promotes that connection to `verified`. G1.6D1
+> now derives exact 30-day comparisons, 12-week trends, transparent review
+> themes with review-level evidence, metric-linked actions, and multi-location
+> outliers from authorized saved reviews. G1.6D2A now adds durable,
+> location-scoped request campaigns, service-completion and consent records,
+> organization-wide suppression, delivery-receipt and cost-reference storage,
+> a fixed all-eligible-customer audience rule, review-gating rejection, passive
+> link/downloadable-QR/kiosk workflows, and honest time-window reporting that never
+> claims causation. Live email, SMS, provider receipts, and price reconciliation
+> remain gated for G1.6D2B. Downloadable QR generation is implemented in the
+> browser without sending the review link to a separate QR service.
 
 Goal: replace BrightLocal-style review monitoring, response, generation, and
 multi-location reputation reporting while adding an intelligence layer.
@@ -1206,12 +1533,11 @@ Scope:
   provide a direct source link and track completion.
 - Generate response drafts and reusable templates, but require human review by
   default and clearly label AI-generated text.
-- Add a later **G1.6B governed AI review-response automation** slice. It can use
+- The **G1.6B governed AI review-response assistance** slice uses
   the exact review, rating, location, confirmed services, approved business
   facts, product voice guidance, and the organization's saved response policy
-  to prepare a context-specific reply and, where the provider permits it, post
-  that reply automatically. The detailed eligibility, escalation, and plan
-  allowances will be finalized during sprint design.
+  to prepare a context-specific reply. It never posts. Posting eligibility,
+  provider receipts, and mutation controls remain isolated in G1.6C.
 - Keep automation off by default. Support explicit per-organization and
   per-location modes such as `Draft only`, `Approve before posting`, and
   `Automatic for approved cases`. Automatic posting requires an authorized
@@ -1242,6 +1568,46 @@ Scope:
 - Add a multi-location reputation overview with leaderboards, outlier alerts,
   campaign performance, recent-review velocity, response time, and average
   rating.
+
+Implementation slices:
+
+1. **G1.6A - Owned-review truth:** authorized read-only provider boundary,
+   normalized location-scoped inbox, immutable observations, response-state
+   truth, freshness, and filters.
+2. **G1.6B - Governed response assistance:** versioned policy, sensitive-topic
+   routing, bounded AI drafts, human approval, credits, and complete evidence.
+3. **G1.6C - Direct response execution:** provider capability proof,
+   idempotent approved posting, receipts, retries, pause, and audit. **Implemented
+   locally; production release awaits one authorized live capability proof.**
+4. **G1.6D - Review growth and portfolio intelligence:** compliant request
+   campaigns, theme/velocity intelligence, multi-location outliers, and
+   portfolio actions.
+   - **G1.6D1 - Review intelligence: implemented locally.** Uses equal 30-day
+     periods, star-rating-defined positive/mixed/negative counts, exact response
+     timestamps, a versioned service-business theme dictionary, cited review
+     evidence, and at least two locations before making comparative claims. The
+     customer UI exposes `This location` and `All locations` views, 12-week
+     charts, recurring feedback, ordered metric-linked actions, and portfolio
+     attention flags in plain language.
+   - **G1.6D2A - Governed request foundation: implemented locally.** Stores
+     location-scoped campaigns, confirmed eligibility and service completion,
+     consent basis and source, durable organization-wide suppression, future
+     delivery receipts and cost references, and a pre-campaign review baseline.
+     Link, QR-ready, and kiosk sharing use the connected location's Google
+     review URL or an owner-supplied verified Google URL. Every eligible
+     customer receives the same request; rating and satisfaction filters are
+     absent and review-gating wording is rejected. Results report only reviews
+     observed after the start time and explicitly do not claim causation.
+   - **G1.6D2B - Governed delivery: QR slice implemented; live delivery pending.**
+     Generate a high-resolution downloadable QR image in the browser from the
+     saved location review link, with a visible preview and owner testing
+     instruction. Next, connect a real transactional
+     email provider and verified sender, reserve and reconcile credits against
+     a versioned price card, process signed delivery/bounce/complaint/
+     unsubscribe webhooks, and prove one end-to-end receipt. SMS remains
+     unavailable until it has a separate
+     provider, consent rule set, price card, allowance, receipts, and launch
+     approval.
 
 Acceptance criteria:
 
@@ -1354,6 +1720,9 @@ Remaining productization:
   approval, activation, and rollback UI.
 - Calibrate internal heuristics only after minimum sample and governance gates;
   never relabel them as Google standards.
+- Complete the broader official-source registry, provider-contract drift,
+  replay, approval, and empirical movement workflow in I1.6; the existing CWV
+  threshold probe remains the narrow last-known-good foundation until then.
 
 Acceptance criteria:
 
@@ -1371,6 +1740,7 @@ Acceptance criteria:
 Reference:
 
 - [platform/intelligence_lexicon.md](platform/intelligence_lexicon.md)
+- [platform/google-standards-and-measurement-governance.md](platform/google-standards-and-measurement-governance.md)
 
 ### Intelligence I1.1 - Live Website Performance and CWV Experience
 
@@ -2282,6 +2652,10 @@ Goal: harden the existing WordPress execution path into a production-safe
 connection that can read, preview, apply, verify, and reverse supported site
 changes.
 
+Plan entitlement: WP1.1 is Growth and Enterprise only. Solo can receive the
+same recommendation, evidence, draft, and manual implementation instructions,
+but cannot pair a site, provision plugin credentials, or dispatch a mutation.
+
 Scope:
 
 - Package and version the WordPress plugin with an owner-friendly installation
@@ -2316,6 +2690,11 @@ Acceptance criteria:
 
 Goal: let a customer opt into bounded policies that implement routine,
 low-risk content and on-page improvements without manually editing WordPress.
+
+Plan entitlement: WP1.2 is Growth and Enterprise only. Growth receives bounded
+single-site and portfolio automation within published allowances; Enterprise
+adds custom policy, provider, team, audit, and bulk-site controls. All tiers
+retain human-readable evidence and an honest verification plan.
 
 Scope:
 
@@ -2697,6 +3076,12 @@ Scope:
   to weaker locations with human review.
 - Add bulk checks, bulk scheduling, bulk action assignment, location groups,
   delegated access, and pooled provider allowances.
+- Provide the reusable fleet targeting and execution primitives required by
+  G1.4B: saved location groups and filters, explicit inclusions and exclusions,
+  immutable target snapshots, campaign preflight, per-location job fan-out,
+  partial-failure recovery, and aggregate progress that preserves individual
+  location truth. The primitives must support an Enterprise organization with
+  hundreds of profiles without loading or mutating the fleet in one request.
 - Never expose or transfer one tenant's identifiable data to another tenant.
   Any future cohort benchmark must be privacy-safe, minimum-sample gated, and
   governance approved.
@@ -2707,6 +3092,9 @@ Acceptance criteria:
   and why in one minute.
 - Shared issues are grouped without erasing location-specific evidence.
 - Bulk work remains idempotent, approval-gated, cost-confirmed, and auditable.
+- A 200-profile operator can select a governed location group, see exceptions,
+  approve the exact target set, and follow per-location results without
+  manually repeating the same workflow.
 
 ### Commerce COM1 - Billing, Entitlements, and Self-Service Accounts
 
@@ -2729,6 +3117,70 @@ Scope:
   margin.
 - Model normal and heavy-use COGS before a tier can be published.
 
+#### COM1.1 - Feature Gates and Upgrade Paths
+
+Goal: make each plan complete at its promised job while giving a one-location
+business a clear reason to upgrade for automation, speed, depth, and control.
+Do not make location count the only reason to buy the `$699/month` plan.
+
+Packaging principle:
+
+- Solo tells the owner what is happening, what to do, and whether the work
+  helped. It must remain a useful end-to-end intelligence product rather than a
+  crippled trial.
+- Growth helps the owner do the work through governed automation, higher
+  allowances, more frequent monitoring, collaboration, and longer history. It
+  includes up to ten locations, but is valuable even when only one is active.
+- Enterprise adds organization-scale governance, customer-owned infrastructure,
+  customization, API access, white label, advanced roles, and contractual
+  operating support.
+
+Canonical feature gates:
+
+| Capability | Solo - `$299` | Growth - `$699` | Enterprise - `$1,999+` |
+| --- | --- | --- | --- |
+| Active locations | 1 | Up to 10 | 11-20 included; custom above 20 |
+| Connected Google, website-health, ranking, keyword, citation, review, and competitor intelligence | Included with standard allowances | Included with higher pooled allowances | Included with custom allowances and provider options |
+| Governed AI | Plain-language explanations, prioritized actions, and limited drafts | Higher credits, batch drafts, deeper action plans, and policy-controlled automation | Custom routing plus approved customer-owned or local-model connectivity |
+| Google Business Profile fleet actions | No bulk mutation; one-location recommendations and drafts remain available | G1.4B approved campaigns across locations inside the Growth active-location allowance, with preview, scheduling, receipts, and pooled credits | G1.4B high-volume fleets, including hundreds of contracted profiles, with custom Google quota, concurrency, approval roles, retention, support, and overage policy |
+| WordPress | No plugin execution; provide copy-ready drafts and manual instructions | WP1.1 connection, preview, approval, execution, verification, and rollback; WP1.2 bounded autopilot | Growth controls plus custom policy, bulk-site governance, audit, and support workflows |
+| Reviews | Monitor, analyze, and draft a response for owner approval | Higher volume plus policy-controlled automatic replies and request routines | Custom brand policies, approval roles, portfolio controls, and audit/export |
+| Listings and citations | Audit, prioritize, and guide manual corrections | Governed correction/sync workflows and higher submission allowances | Bulk/provider-specific workflows, custom limits, and portfolio governance |
+| Local rank grids | Smaller scheduled/on-demand allowance with useful history | Larger grids, more keywords, custom work areas, faster schedules, and longer history | Custom frequency, volume, providers, and retention |
+| Content and on-page work | Recommendations and limited copy-ready drafts | Full governed content workspace plus approved WordPress publishing | Multi-site policy, advanced approval, API, and custom workflow integration |
+| Alerts | Essential weekly digest and critical connection/security notices | Faster change alerts, action reminders, and configurable digests | Webhook/API delivery, routing rules, and custom escalation |
+| Reports and exports | Owner-ready monthly report and basic export | Scheduled weekly/monthly reports, comparison views, and advanced export | White label, client-safe distribution, API, durable custom reporting, and retention controls |
+| External automation | Native alerts and reports only; no external write automation | AUT1 approved recipes for supported platforms, signed outbound events, and bounded actions with standard allowances | AUT1 custom event/action scopes, location-group permissions, service accounts, customer-hosted automation clients, generic webhook/API access, larger allowances, and longer audit retention |
+| Users and workflow | Owner plus one collaborator | Team roles, delegated location access, approvals, and bulk work | Advanced/custom roles, client access, SSO when contracted, and organization audit views |
+| Competitor, backlink, AI-visibility, and historical depth | Useful baseline limits | Higher limits, deeper history, scheduled checks, and batch comparison | Custom limits, exports, provider ownership, and portfolio analysis |
+| Support and onboarding | Guided self-service | Assisted onboarding and priority product support | Managed onboarding, named escalation, and contracted support options |
+
+WordPress entitlement decision:
+
+- The WordPress plugin and every mutation-capable WordPress route require an
+  active Growth or Enterprise entitlement. Hiding the menu is not enforcement;
+  the backend, job dispatcher, credential provisioning, and plugin handshake
+  must all fail closed for Solo.
+- Solo customers still receive the same evidence-backed recommendation, draft,
+  expected metric, and verification plan. They implement it manually or upgrade
+  to have InsightOS execute it.
+- Growth WordPress execution remains approval-first, reversible, measured, and
+  bounded by credits. Autopilot is never an unrestricted site-writing agent.
+
+Upgrade experience:
+
+- Rename the public `$699` tier from **Multi-location** to **Growth** and describe
+  it as "automation and deeper monitoring for one to ten locations."
+- Show locked capabilities only when the customer can understand the value:
+  explain the saved work, included allowance, safety controls, and exact plan
+  required. Do not fill primary navigation with unusable locked pages.
+- Preserve previously created data on downgrade, stop new gated work, and keep
+  exports/recovery available for a documented grace period.
+- Enforce every gate server-side through versioned entitlements and record the
+  decision, plan version, organization, capability, allowance, and denial reason.
+- Measure upgrade-page views, gate encounters, upgrade starts, successful plan
+  changes, downgrades, and support contacts without exposing internal margin.
+
 Acceptance criteria:
 
 - A customer can subscribe, onboard, understand usage, recover access, change
@@ -2736,6 +3188,12 @@ Acceptance criteria:
 - Heavy-use simulations preserve at least the approved 85% software-usage
   margin floor.
 - Platform-paid provider calls stop before dispatch when allowance is exhausted.
+- Solo cannot connect the WordPress plugin or dispatch WordPress mutations,
+  Google Business Profile fleet mutations, automatic review replies, or
+  listing-sync work; Growth and Enterprise can do so only within their explicit
+  entitlement, approval, policy, target-set, and allowance.
+- A one-location customer can understand at least three concrete Growth benefits
+  without being told to add more locations.
 
 ### Operations OPS1 - Customer Support and Launch Operations
 
@@ -2771,6 +3229,135 @@ Acceptance criteria:
 - A paid launch cannot proceed while critical TR1, billing, provider,
   WordPress, data-integrity, or support-readiness gates are red.
 
+### Automation AUT1 - External Automation Gateway
+
+Goal: let multiple approved automation platforms coordinate InsightOS with a
+customer's other systems through one vendor-neutral contract without exposing
+the database, provider credentials, unrestricted AI prompts, or a way around
+product approvals.
+
+Placement and packaging:
+
+- This is a later integration sprint after DT1 connection truth, ALT1 event
+  delivery, COM1 entitlements, GOV1 privacy controls, and the governed action
+  execution contracts are stable.
+- **Growth / Tier 2** receives a limited catalog of approved workflow recipes
+  for supported platforms, signed outbound events, and bounded inbound actions
+  with standard event, execution, history, and concurrency allowances.
+- **Enterprise / Tier 3** receives custom scoped service accounts, larger
+  allowances, custom webhook destinations, organization and location-group
+  filters, advanced approval roles, longer audit retention, and support for
+  customer-hosted automation clients and custom integrations that use the same
+  governed contract.
+- Solo does not receive external write automation. Essential reports and alerts
+  remain available through native InsightOS features.
+
+Outbound event contract:
+
+- Publish versioned customer-authorized events for meaningful states such as
+  connection broken or restored, new review received, recommendation ready,
+  checklist action due, approval requested, action completed or failed,
+  measured result available, report ready, allowance warning, fleet campaign
+  exception, and location setup changed.
+- Every event includes a stable event ID, schema version, organization and
+  permitted location scope, occurred-at timestamp, resource reference, truth
+  state, and link back to the relevant InsightOS screen. Include the minimum
+  customer data needed for the selected recipe.
+- Sign each delivery, include a timestamp and replay window, and support secret
+  rotation without downtime. Persist attempts, response status, duration,
+  retry schedule, final delivery state, and redacted failure detail.
+- Deliver through durable jobs with idempotency, exponential backoff, bounded
+  retries, pause, disable, test event, replay by event ID, and dead-letter
+  recovery. One failing destination cannot block native product work.
+
+Inbound action contract:
+
+- Issue organization-scoped service accounts with named permissions,
+  environment, optional IP restrictions, expiration, rotation, last use, and
+  immediate revocation. Never reuse a human session cookie as an automation
+  credential.
+- Accept only documented typed commands, for example: request a saved-data
+  refresh, schedule an allowance-priced ranking check, create an approved
+  draft, add evidence to a checklist step, request an approval, schedule an
+  already-approved action, or retrieve a report/export the caller is allowed
+  to access.
+- Require an idempotency key, schema version, organization and location scope,
+  actor/service-account identity, reason, and correlation ID on every command.
+- Run the same entitlement, credit, evidence, freshness, approval, policy,
+  provider-health, and rate-limit gates used by the native UI. An automation
+  call cannot turn a draft into an approved mutation or convert a blocked
+  action into a successful one.
+- Return an accepted job ID and durable status rather than holding an HTTP
+  connection open for crawling, provider work, fleet actions, reporting, or
+  WordPress execution.
+
+Automation client experience:
+
+- Build the core integration as versioned signed webhooks plus a documented
+  OpenAPI action contract. No connector may require product logic that cannot
+  be used by another approved automation platform.
+- Maintain a versioned connector registry with platform, adapter version,
+  supported events, supported actions, authentication method, delivery mode,
+  health, last validation, and active/deprecated state.
+- Provide reviewed starter workflows for **n8n**, **Make**, **Zapier**, and
+  **Pipedream**, plus a generic webhook/API option. A connector may launch only
+  after its authentication, retry, data-retention, payload-size, pricing, and
+  failure behavior pass review.
+- Starter workflows cover common jobs such as sending a new-review alert,
+  creating an internal task from a priority action, routing approval requests,
+  delivering a completed report, recording a form-event handoff, and notifying
+  an operator about failed Google Profile fleet locations.
+- Support cloud automation services and customer-hosted clients through public
+  HTTPS endpoints and scoped API credentials. InsightOS never attempts to call
+  `localhost` on the customer's computer from Vercel.
+- Keep platform-specific setup instructions, templates, and credential helpers
+  at the edge. Events, commands, permissions, idempotency, approval, audit, and
+  truth-state behavior remain identical across all connectors.
+- Add an `Automations` settings workspace showing connected destinations,
+  permitted events and actions, affected locations, last success, failures,
+  secrets needing rotation, monthly usage, and one clear recovery action.
+- Provide a workflow test mode using synthetic, clearly labeled payloads that
+  cannot mutate a customer website, Google profile, listing, review, or live
+  action state.
+
+Safety boundaries:
+
+- No direct PostgreSQL or Supabase access, arbitrary SQL, internal queue access,
+  provider credential export, broad Google token access, or arbitrary URL fetch
+  is exposed to any automation client.
+- No natural-language or generic `run anything` endpoint is added. AI may help
+  explain or draft an approved recipe, but it cannot define a new action type,
+  permission, recipient, target location, or execution policy.
+- Outbound payload fields use an allow-list and privacy classification. Secrets,
+  raw OAuth tokens, internal prompts, unrelated tenant data, sensitive review
+  details, and full crawled page content are excluded by default.
+- Destinations pass HTTPS, DNS/IP, redirect, response-size, timeout, and
+  server-side request-forgery checks. Enterprise private networking requires a
+  separately reviewed architecture and contract.
+- Every workflow action and delivery remains attributable to the organization,
+  service account, automation connection, workflow correlation ID, original
+  customer or system event, and resulting native audit record.
+
+Acceptance criteria:
+
+- A Growth customer can enable a reviewed recipe for at least one supported
+  automation platform, receive a signed test event, and run one allowed command
+  without exposing a human password or API provider secret.
+- The same conformance suite proves signature handling, event schema,
+  idempotency, authorization, error handling, and truth states for n8n, Make,
+  Zapier, Pipedream, and the generic contract before each connector is enabled.
+- An Enterprise customer can restrict one service account to selected event
+  types, command types, and location groups and revoke it immediately.
+- Duplicate webhook deliveries or inbound command retries produce one durable
+  effect because event IDs and idempotency keys are enforced.
+- Invalid signatures, expired timestamps, revoked credentials, wrong-tenant
+  resources, missing entitlements, exhausted credits, stale evidence, and
+  unapproved mutations fail closed and leave native state truthful.
+- The customer can see every delivery, automation-triggered action, approval,
+  provider result, failure, retry, and final state inside InsightOS.
+- Disabling an automation stops new deliveries and commands without deleting
+  its historical audit trail or interrupting unrelated product work.
+
 ### Enterprise ENT1 - Agency, API, White Label, and Reporting
 
 Goal: justify the $1,499+ starting price after the core product is proven.
@@ -2801,6 +3388,7 @@ Acceptance criteria:
 | --- | --- |
 | Local rank tracker and neighborhood geo-grid | G1.2 |
 | GBP audit, profile history, competitor benchmarks, and approved management | G1.4 |
+| Multi-location Google Profile posts, photo uploads, scheduling, and fleet action audit | G1.4B and ML1 |
 | Citation audit, listing consistency, creation/correction workflow | G1.5 |
 | Review monitoring, inbox, response, generation, and showcase | G1.6 |
 | Multi-location reputation and local visibility overview | G1.6 and ML1 |
@@ -2819,9 +3407,9 @@ Acceptance criteria:
 
 | Public plan | Price | Minimum completed sprints before general sale |
 | --- | ---: | --- |
-| Solo | $299/month · 1 active location | R1, TR1, G1.2-G1.7, DT1, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1 and AUTH1, WP1.1-WP1.2, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
-| Multi-location | $699/month · up to 10 active locations | All Solo gates plus ML1 portfolio intelligence, pooled AI/provider allowances, team roles, delegated location access, and bulk workflows |
-| Enterprise | From $1,999/month · 11-20 active locations | All Multi-location gates plus ENT1 API/export, white label, advanced roles, custom limits and per-location pricing above 20, durable reporting, onboarding, priority-support workflows, and I1.5 customer-owned or local-model API access |
+| Solo | $299/month · 1 active location | R1, TR1, G1.2-G1.7, DT1, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1 and AUTH1, copy-ready WordPress drafts without plugin execution, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
+| Growth | $699/month · up to 10 active locations | All Solo gates plus WP1.1-WP1.2 governed WordPress execution, ML1 portfolio intelligence, G1.4B profile campaigns inside the active-location allowance, AUT1 approved multi-platform automation recipes and bounded events/actions, higher pooled AI/provider allowances, faster monitoring, longer history, team roles, delegated location access, approval workflows, and bulk work. The plan must provide clear automation value to a one-location customer. |
+| Enterprise | From $1,999/month · 11-20 active locations | All Growth gates plus G1.4B high-volume fleet operations with a contracted profile count and validated Google quota, AUT1 custom automation service accounts, generic webhook/API access, and customer-hosted client support, ENT1 API/export, white label, advanced roles, custom limits and per-location pricing above 20, durable reporting, managed onboarding, priority-support workflows, and I1.5 customer-owned or local-model API access |
 
 An invite-only paid beta may start earlier with explicit limits and known-feature
 disclosures. The public plans above must not be marketed as Semrush or

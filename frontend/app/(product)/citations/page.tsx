@@ -17,9 +17,6 @@ import {
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
-import {
-  buildRuntimeTruthSignal,
-} from "../truth/runtimeTruth.mjs";
 
 type Campaign = {
   id: string;
@@ -40,6 +37,63 @@ type StatusResult = {
   truth?: RuntimeTruth;
 };
 
+type ListingDifference = {
+  field: string;
+  expected: string;
+  found: string;
+};
+
+type DirectoryListingItem = {
+  id: string;
+  source_name: string;
+  listing_url?: string | null;
+  status: string;
+  business_name?: string | null;
+  address_line1?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  phone?: string | null;
+  website_url?: string | null;
+  primary_category?: string | null;
+  field_differences: ListingDifference[];
+  last_seen_at: string;
+};
+
+type ListingInventory = {
+  items: DirectoryListingItem[];
+  summary: {
+    total: number;
+    confirmed: number;
+    needs_attention: number;
+    newest_observation_at?: string | null;
+  };
+  truth: {
+    correction_available: boolean;
+    correction_reason?: string;
+  };
+};
+
+type DiscoveryPreview = {
+  location_name: string;
+  estimated_credits: number;
+  credits_remaining: number;
+  credits_after: number;
+  connected_account: boolean;
+  can_start: boolean;
+  message: string;
+};
+
+type DiscoveryRun = {
+  id: string;
+  status: string;
+  result_count: number;
+  estimated_credits: number;
+  correction_available: boolean;
+  error_message?: string | null;
+  completed_at?: string | null;
+};
+
 function toTitleCase(value?: string) {
   if (!value) return "Unknown";
   return value
@@ -48,6 +102,8 @@ function toTitleCase(value?: string) {
 }
 
 function getStatusLabel(status?: string) {
+  if (status === "completed") return "Completed";
+  if (status === "running" || status === "queued") return "In progress";
   if (status === "submitted") return "Submitted";
   if (status === "live") return "Live";
   if (status === "pending" || status === "draft") return "Pending";
@@ -57,8 +113,11 @@ function getStatusLabel(status?: string) {
 }
 
 function getStatusTone(status?: string) {
-  if (status === "live" || status === "verified") {
+  if (status === "live" || status === "verified" || status === "correct") {
     return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
+  }
+  if (status === "inconsistent" || status === "missing" || status === "duplicate") {
+    return "border-amber-500/20 bg-amber-500/10 text-amber-100";
   }
   if (status === "submitted") {
     return "border-accent-500/20 bg-accent-500/10 text-zinc-100";
@@ -91,6 +150,19 @@ function getStatusGuidance(citation: CitationItem) {
   return "Status is unclear. Use the refresh button to pull the latest update.";
 }
 
+function differenceLabel(field: string) {
+  const labels: Record<string, string> = {
+    business_name: "Business name",
+    address_line1: "Street address",
+    city: "City",
+    region: "State or region",
+    postal_code: "ZIP or postal code",
+    phone: "Phone number",
+    website_url: "Website",
+  };
+  return labels[field] || toTitleCase(field);
+}
+
 export default function CitationsPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -98,6 +170,9 @@ export default function CitationsPage() {
   const { selectedCampaignId, setSelectedCampaignId } = useLocationContext();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [statusResult, setStatusResult] = useState<StatusResult | null>(null);
+  const [inventory, setInventory] = useState<ListingInventory | null>(null);
+  const [discoveryPreview, setDiscoveryPreview] = useState<DiscoveryPreview | null>(null);
+  const [latestDiscoveryRun, setLatestDiscoveryRun] = useState<DiscoveryRun | null>(null);
   const [newDirectory, setNewDirectory] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
@@ -177,6 +252,60 @@ export default function CitationsPage() {
     });
   }
 
+  const loadListingInventory = useCallback(async (campaignId: string) => {
+    const [inventoryResponse, latestResponse] = await Promise.all([
+      platformApi(`/citations/inventory?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }),
+      platformApi(`/citations/discovery/latest?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }),
+    ]);
+    const saved = inventoryResponse as ListingInventory;
+    setInventory({
+      items: Array.isArray(saved?.items) ? saved.items : [],
+      summary: saved?.summary || { total: 0, confirmed: 0, needs_attention: 0 },
+      truth: saved?.truth || { correction_available: false },
+    });
+    setLatestDiscoveryRun((latestResponse?.run as DiscoveryRun | null) || null);
+  }, []);
+
+  async function previewListingCheck() {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+    await runAction("preview-discovery", async () => {
+      const response = await platformApi("/citations/discovery/preview", {
+        method: "POST",
+        body: JSON.stringify({ campaign_id: selectedCampaignId }),
+      });
+      setDiscoveryPreview(response as DiscoveryPreview);
+    });
+  }
+
+  async function startListingCheck() {
+    if (!selectedCampaignId || !discoveryPreview) return;
+    await runAction("start-discovery", async () => {
+      const response = await platformApi("/citations/discovery/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          idempotency_key: `listing-check-${selectedCampaignId}-${Date.now()}`,
+        }),
+      });
+      const run = response?.run as DiscoveryRun;
+      setLatestDiscoveryRun(run);
+      setDiscoveryPreview(null);
+      await loadListingInventory(selectedCampaignId);
+      setNotice(
+        run.status === "completed"
+          ? `Public listing check finished. ${run.result_count} matching ${run.result_count === 1 ? "listing was" : "listings were"} saved.`
+          : run.error_message || "The public listing check is still being processed.",
+      );
+    });
+  }
+
   useEffect(() => {
     async function loadPage() {
       setLoading(true);
@@ -196,13 +325,16 @@ export default function CitationsPage() {
   useEffect(() => {
     if (!selectedCampaignId || loading) return;
     setStatusResult(null);
-  }, [selectedCampaignId, loading]);
+    setDiscoveryPreview(null);
+    void loadListingInventory(selectedCampaignId).catch((err) => {
+      setError(err instanceof Error ? err.message : "Unable to load public listings.");
+    });
+  }, [selectedCampaignId, loading, loadListingInventory]);
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
 
   const citations = statusResult?.items ?? [];
-  const runtimeTruth = statusResult?.truth ?? null;
   const liveCount = citations.filter(
     (c) => c.submission_status === "live" || c.submission_status === "verified" || c.listing_url,
   ).length;
@@ -213,33 +345,30 @@ export default function CitationsPage() {
 
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
-      buildRuntimeTruthSignal(
-        "Listing status",
-        runtimeTruth,
-        "Citation statuses can reflect workflow progress before live directory publication is confirmed.",
-      ),
       {
-        label: "Directory listings",
-        value: citations.length > 0 ? `${citations.length} tracked` : "Not yet loaded",
-        tone: citations.length > 0 ? "success" : "warning",
+        label: "Public listing check",
+        value: latestDiscoveryRun
+          ? getStatusLabel(latestDiscoveryRun.status)
+          : "Not checked yet",
+        tone: latestDiscoveryRun?.status === "completed" ? "success" : "warning",
       },
       {
-        label: "Live listings",
-        value: liveCount > 0 ? `${liveCount} live` : "None confirmed",
-        tone: liveCount > 0 ? "success" : "warning",
+        label: "Listings found",
+        value: inventory ? String(inventory.summary.total) : "Loading",
+        tone: inventory && inventory.summary.total > 0 ? "success" : "warning",
       },
       {
-        label: "Pending",
-        value: pendingCount > 0 ? `${pendingCount} in progress` : "None pending",
-        tone: pendingCount > 0 ? "info" : "success",
+        label: "Details confirmed",
+        value: inventory ? String(inventory.summary.confirmed) : "Loading",
+        tone: inventory && inventory.summary.confirmed > 0 ? "success" : "warning",
       },
       {
-        label: "Failed",
-        value: failedCount > 0 ? `${failedCount} failed` : "None failed",
-        tone: failedCount > 0 ? "danger" : "success",
+        label: "Needs attention",
+        value: inventory ? String(inventory.summary.needs_attention) : "Loading",
+        tone: inventory && inventory.summary.needs_attention > 0 ? "danger" : "success",
       },
     ],
-    [citations.length, failedCount, liveCount, pendingCount, runtimeTruth],
+    [inventory, latestDiscoveryRun],
   );
 
   return (
@@ -266,14 +395,14 @@ export default function CitationsPage() {
       <section className="space-y-6">
         <ProductPageIntro
           eyebrow="Directory listings"
-          title="Keep your business listings accurate"
-          summary="Track where your business appears on sites such as Google and other directories. Start a listing request, check its progress, and open confirmed listings."
+          title="See where your business information is right or wrong"
+          summary="Check supported public listings for this location. InsightOS shows exactly which saved business details match and which ones need attention."
           compact
         />
 
-        <TruthNotice title="A submitted listing may not be live yet.">
-          A listing is confirmed only when its status is <strong>Live</strong> or{" "}
-          <strong>Verified</strong>, preferably with a link you can open.
+        <TruthNotice title="This check does not change a listing.">
+          InsightOS can find and compare supported public listings. Automatic corrections are not
+          available yet, so nothing will be edited without a separate approved correction feature.
         </TruthNotice>
 
         {loading ? (
@@ -306,6 +435,154 @@ export default function CitationsPage() {
 
         {!loading && campaigns.length > 0 ? (
           <>
+            <section className="rounded-md border border-[#26272c] bg-[#141518] p-5 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="max-w-3xl">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Found online
+                  </p>
+                  <h2 className="mt-1.5 text-2xl font-semibold tracking-[-0.03em] text-white">
+                    Public listing check
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">
+                    Start here to compare this location&apos;s saved business name, address, and
+                    website with supported public sources.
+                  </p>
+                </div>
+                <button
+                  onClick={() => void previewListingCheck()}
+                  disabled={busyAction !== ""}
+                  className="rounded-md bg-[#ff6b18] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busyAction === "preview-discovery" ? "Checking allowance..." : "Check listings online"}
+                </button>
+              </div>
+
+              {discoveryPreview ? (
+                <div className="mt-5 grid gap-4 rounded-md border border-[#35363c] bg-[#0f1012] p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      Ready to check {discoveryPreview.location_name}
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-zinc-400">
+                      {discoveryPreview.message}{" "}
+                      {discoveryPreview.connected_account
+                        ? "This uses the connected search-data account."
+                        : `This uses ${discoveryPreview.estimated_credits} Insight Credits, leaving about ${discoveryPreview.credits_after}.`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void startListingCheck()}
+                    disabled={busyAction !== "" || !discoveryPreview.can_start}
+                    className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "start-discovery" ? "Checking..." : "Start public listing check"}
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <KpiCard
+                  label="Listings found"
+                  value={inventory ? String(inventory.summary.total) : "—"}
+                  summary="Matching listings saved for this location."
+                />
+                <KpiCard
+                  label="Details confirmed"
+                  value={inventory ? String(inventory.summary.confirmed) : "—"}
+                  summary="Listings whose comparable business details match."
+                  tone={inventory && inventory.summary.confirmed > 0 ? "highlight" : undefined}
+                />
+                <KpiCard
+                  label="Needs attention"
+                  value={inventory ? String(inventory.summary.needs_attention) : "—"}
+                  summary="Listings with a saved detail that does not match."
+                />
+              </div>
+
+              {latestDiscoveryRun ? (
+                <p className="mt-4 text-xs text-zinc-500">
+                  Latest check: {getStatusLabel(latestDiscoveryRun.status)}
+                  {latestDiscoveryRun.completed_at
+                    ? ` on ${new Date(latestDiscoveryRun.completed_at).toLocaleDateString()}`
+                    : ""}
+                  . Corrections are not available in this version.
+                </p>
+              ) : null}
+
+              {inventory && inventory.items.length > 0 ? (
+                <div className="mt-5 space-y-3">
+                  {inventory.items.map((listing) => (
+                    <article
+                      key={listing.id}
+                      className="rounded-md border border-[#2a2b30] bg-[#101113] p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-base font-semibold text-white">{listing.source_name}</p>
+                          <p className="mt-1 text-sm text-zinc-400">
+                            {listing.business_name || "Business name not returned"}
+                            {listing.primary_category ? ` · ${listing.primary_category}` : ""}
+                          </p>
+                        </div>
+                        <span className={`rounded-md border px-2 py-1 text-xs font-medium ${getStatusTone(listing.status)}`}>
+                          {listing.field_differences.length > 0 ? "Needs attention" : "Details match"}
+                        </span>
+                      </div>
+
+                      {listing.field_differences.length > 0 ? (
+                        <div className="mt-4 space-y-2">
+                          {listing.field_differences.map((difference) => (
+                            <div
+                              key={`${listing.id}-${difference.field}`}
+                              className="grid gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-sm md:grid-cols-[150px_1fr_1fr]"
+                            >
+                              <p className="font-medium text-amber-100">
+                                {differenceLabel(difference.field)}
+                              </p>
+                              <p className="text-zinc-400">
+                                <span className="text-zinc-500">Saved:</span> {difference.expected}
+                              </p>
+                              <p className="text-zinc-300">
+                                <span className="text-zinc-500">Found online:</span> {difference.found}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-sm text-emerald-100">
+                          The comparable business details match this location&apos;s saved information.
+                        </p>
+                      )}
+
+                      {listing.listing_url ? (
+                        <a
+                          href={listing.listing_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-4 inline-flex text-sm font-medium text-[#ff8a4c] hover:text-[#ffa06f]"
+                        >
+                          Open public listing →
+                        </a>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              ) : inventory ? (
+                <div className="mt-5 rounded-md border border-[#2a2b30] bg-[#101113] p-4">
+                  <p className="text-sm font-medium text-white">
+                    {latestDiscoveryRun?.status === "completed"
+                      ? "No matching listing was found in the currently supported public sources."
+                      : "No public listing check has been completed for this location yet."}
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-zinc-400">
+                    This is not proof that the business is missing everywhere. It only describes the
+                    sources supported by this check.
+                  </p>
+                </div>
+              ) : null}
+            </section>
+
             <OwnerDecisionPanel
               title={
                 !statusResult

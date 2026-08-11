@@ -1,3 +1,4 @@
+import ast
 import os
 import shutil
 import tempfile
@@ -9,6 +10,27 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import NullPool
 
 from app.core.settings import get_settings
+
+
+def test_explicit_migration_identifiers_fit_postgres_limit():
+    """Keep named constraints and indexes valid on PostgreSQL, not only SQLite."""
+    versions_dir = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+    prefixes = ("pk_", "fk_", "uq_", "ck_", "ix_")
+    overlong: list[tuple[str, int, str]] = []
+
+    for migration_path in versions_dir.glob("*.py"):
+        tree = ast.parse(migration_path.read_text(encoding="utf-8"), filename=str(migration_path))
+        for node in ast.walk(tree):
+            value = node.value if isinstance(node, ast.Constant) else None
+            if (
+                isinstance(value, str)
+                and value.startswith(prefixes)
+                and value.replace("_", "").isalnum()
+                and len(value) > 63
+            ):
+                overlong.append((migration_path.name, node.lineno, value))
+
+    assert not overlong, f"PostgreSQL identifiers exceed 63 characters: {overlong}"
 
 
 def test_migration_upgrade_and_downgrade():
@@ -97,6 +119,15 @@ def test_migration_upgrade_and_downgrade():
         assert "backlink_opportunities" in inspector.get_table_names()
         assert "backlinks" in inspector.get_table_names()
         assert "citations" in inspector.get_table_names()
+        assert "directory_listings" in inspector.get_table_names()
+        assert "directory_listing_observations" in inspector.get_table_names()
+        assert "directory_listing_discovery_runs" in inspector.get_table_names()
+        assert "reputation_reviews" in inspector.get_table_names()
+        assert "reputation_review_observations" in inspector.get_table_names()
+        assert "reputation_response_policies" in inspector.get_table_names()
+        assert "reputation_response_drafts" in inspector.get_table_names()
+        assert "reputation_provider_capabilities" in inspector.get_table_names()
+        assert "reputation_response_executions" in inspector.get_table_names()
         assert "strategy_recommendations" in inspector.get_table_names()
         assert "intelligence_scores" in inspector.get_table_names()
         assert "campaign_milestones" in inspector.get_table_names()
@@ -110,6 +141,14 @@ def test_migration_upgrade_and_downgrade():
         assert "reference_library_artifacts" in inspector.get_table_names()
         assert "reference_library_validation_runs" in inspector.get_table_names()
         assert "reference_library_activations" in inspector.get_table_names()
+        assert "standards_source_registry" in inspector.get_table_names()
+        assert "standards_source_snapshots" in inspector.get_table_names()
+        assert "standards_change_candidates" in inspector.get_table_names()
+        assert "standards_impact_links" in inspector.get_table_names()
+        assert "provider_metric_contract_versions" in inspector.get_table_names()
+        assert "standards_replay_reports" in inspector.get_table_names()
+        assert "standards_approvals" in inspector.get_table_names()
+        assert "standards_rollouts" in inspector.get_table_names()
         assert "page_entities" in inspector.get_table_names()
         assert "competitor_entities" in inspector.get_table_names()
         assert "entity_analysis_runs" in inspector.get_table_names()
@@ -127,7 +166,9 @@ def test_migration_upgrade_and_downgrade():
         assert "momentum_metrics" in inspector.get_table_names()
         assert "strategy_phase_history" in inspector.get_table_names()
         assert "strategy_automation_events" in inspector.get_table_names()
-        automation_cols = {col["name"] for col in inspector.get_columns("strategy_automation_events")}
+        automation_cols = {
+            col["name"] for col in inspector.get_columns("strategy_automation_events")
+        }
         assert "decision_hash" in automation_cols
         assert "trace_payload" in automation_cols
         assert "organizations" in inspector.get_table_names()
@@ -141,9 +182,15 @@ def test_migration_upgrade_and_downgrade():
         assert "billing_mode" in org_cols
         policy_cols = {col["name"] for col in inspector.get_columns("provider_policies")}
         assert "credential_mode" in policy_cols
-        org_cred_cols = {col["name"] for col in inspector.get_columns("organization_provider_credentials")}
-        org_oauth_client_cols = {col["name"] for col in inspector.get_columns("organization_oauth_clients")}
-        platform_cred_cols = {col["name"] for col in inspector.get_columns("platform_provider_credentials")}
+        org_cred_cols = {
+            col["name"] for col in inspector.get_columns("organization_provider_credentials")
+        }
+        org_oauth_client_cols = {
+            col["name"] for col in inspector.get_columns("organization_oauth_clients")
+        }
+        platform_cred_cols = {
+            col["name"] for col in inspector.get_columns("platform_provider_credentials")
+        }
         assert "encrypted_secret_blob" in org_cred_cols
         assert "key_reference" in org_cred_cols
         assert "key_version" in org_cred_cols
@@ -167,15 +214,126 @@ def test_migration_upgrade_and_downgrade():
         campaign_indexes = {idx["name"] for idx in inspector.get_indexes("campaigns")}
         report_schedule_cols = {col["name"] for col in inspector.get_columns("report_schedules")}
         metric_cols = {col["name"] for col in inspector.get_columns("provider_execution_metrics")}
-        metric_indexes = {idx["name"] for idx in inspector.get_indexes("provider_execution_metrics")}
+        metric_indexes = {
+            idx["name"] for idx in inspector.get_indexes("provider_execution_metrics")
+        }
         platform_job_cols = {col["name"] for col in inspector.get_columns("platform_jobs")}
         platform_job_indexes = {idx["name"] for idx in inspector.get_indexes("platform_jobs")}
-        campaign_daily_metric_cols = {col["name"] for col in inspector.get_columns("campaign_daily_metrics")}
-        campaign_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("campaign_daily_metrics")}
-        search_console_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("search_console_daily_metrics")}
-        analytics_daily_metric_indexes = {idx["name"] for idx in inspector.get_indexes("analytics_daily_metrics")}
-        keyword_daily_economics_indexes = {idx["name"] for idx in inspector.get_indexes("keyword_daily_economics")}
-        keyword_market_snapshot_indexes = {idx["name"] for idx in inspector.get_indexes("keyword_market_snapshots")}
+        campaign_daily_metric_cols = {
+            col["name"] for col in inspector.get_columns("campaign_daily_metrics")
+        }
+        campaign_daily_metric_indexes = {
+            idx["name"] for idx in inspector.get_indexes("campaign_daily_metrics")
+        }
+        search_console_daily_metric_indexes = {
+            idx["name"] for idx in inspector.get_indexes("search_console_daily_metrics")
+        }
+        search_console_daily_metric_cols = {
+            col["name"] for col in inspector.get_columns("search_console_daily_metrics")
+        }
+        provider_metric_contract_cols = {
+            col["name"] for col in inspector.get_columns("provider_metric_contract_versions")
+        }
+        assert {
+            "lifecycle_status",
+            "supersedes_version_id",
+            "standards_change_candidate_id",
+            "proposed_by_user_id",
+            "proposed_at",
+        }.issubset(provider_metric_contract_cols)
+        analytics_daily_metric_indexes = {
+            idx["name"] for idx in inspector.get_indexes("analytics_daily_metrics")
+        }
+        keyword_daily_economics_indexes = {
+            idx["name"] for idx in inspector.get_indexes("keyword_daily_economics")
+        }
+        keyword_market_snapshot_indexes = {
+            idx["name"] for idx in inspector.get_indexes("keyword_market_snapshots")
+        }
+        listing_discovery_cols = {
+            col["name"] for col in inspector.get_columns("directory_listing_discovery_runs")
+        }
+        assert {
+            "tenant_id",
+            "organization_id",
+            "campaign_id",
+            "business_location_id",
+            "idempotency_key",
+            "reservation_id",
+            "estimated_credit_units",
+            "provider_reported_cost",
+            "result_count",
+        }.issubset(listing_discovery_cols)
+        reputation_review_cols = {
+            col["name"] for col in inspector.get_columns("reputation_reviews")
+        }
+        assert {
+            "tenant_id",
+            "organization_id",
+            "campaign_id",
+            "business_location_id",
+            "source_type",
+            "external_review_id",
+            "response_status",
+            "response_text",
+            "provider_updated_at",
+            "last_seen_at",
+        }.issubset(reputation_review_cols)
+        reputation_response_draft_cols = {
+            col["name"] for col in inspector.get_columns("reputation_response_drafts")
+        }
+        assert {
+            "tenant_id",
+            "organization_id",
+            "campaign_id",
+            "business_location_id",
+            "review_id",
+            "policy_id",
+            "governed_ai_run_id",
+            "idempotency_key",
+            "status",
+            "risk_class",
+            "sensitive_topics",
+            "policy_snapshot",
+            "review_snapshot",
+            "evidence_refs",
+            "draft_text",
+            "approved_text",
+            "reviewed_by_user_id",
+        }.issubset(reputation_response_draft_cols)
+        reputation_capability_cols = {
+            col["name"]
+            for col in inspector.get_columns("reputation_provider_capabilities")
+        }
+        assert {
+            "tenant_id",
+            "organization_id",
+            "connection_id",
+            "provider_method",
+            "status",
+            "proof_reference",
+            "verified_at",
+            "last_failure_code",
+        }.issubset(reputation_capability_cols)
+        reputation_execution_cols = {
+            col["name"] for col in inspector.get_columns("reputation_response_executions")
+        }
+        assert {
+            "tenant_id",
+            "organization_id",
+            "campaign_id",
+            "review_id",
+            "draft_id",
+            "connection_id",
+            "capability_id",
+            "platform_job_id",
+            "status",
+            "approved_text_hash",
+            "confirmation_hash",
+            "provider_receipt",
+            "attempt_count",
+            "posted_at",
+        }.issubset(reputation_execution_cols)
         assert "sub_account_id" in campaign_cols
         assert "business_location_id" in campaign_cols
         assert "sub_account_id" in business_location_cols
@@ -215,7 +373,19 @@ def test_migration_upgrade_and_downgrade():
         assert "metric_date" in campaign_daily_metric_cols
         assert "deterministic_hash" in campaign_daily_metric_cols
         assert "ix_campaign_daily_metrics_campaign_date" in campaign_daily_metric_indexes
-        assert "ix_search_console_daily_metrics_campaign_date" in search_console_daily_metric_indexes
+        assert (
+            "ix_search_console_daily_metrics_campaign_date" in search_console_daily_metric_indexes
+        )
+        assert {
+            "ctr",
+            "property_uri",
+            "search_type",
+            "dimensions",
+            "filters",
+            "metric_contract_versions",
+            "scope_key",
+            "captured_at",
+        }.issubset(search_console_daily_metric_cols)
         assert "ix_analytics_daily_metrics_campaign_date" in analytics_daily_metric_indexes
         assert "ix_keyword_daily_economics_keyword_date" in keyword_daily_economics_indexes
         assert "ix_keyword_market_snapshots_geo_device_date" in keyword_market_snapshot_indexes

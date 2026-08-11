@@ -117,6 +117,23 @@ class ProviderResponseFormatError(ProviderError):
         )
 
 
+class ProviderContractReviewError(ProviderError):
+    def __init__(
+        self,
+        message: str = "Provider contract requires platform review.",
+        *,
+        upstream_payload: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            error_code="provider_contract_blocked",
+            reason_code="provider_contract_review_required",
+            retryable=False,
+            severity="critical",
+            upstream_payload=upstream_payload,
+        )
+
+
 class ProviderDependencyError(ProviderError):
     def __init__(self, message: str = "Provider dependency unavailable.", *, upstream_payload: dict[str, Any] | None = None) -> None:
         super().__init__(

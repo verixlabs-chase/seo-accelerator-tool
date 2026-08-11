@@ -13,19 +13,38 @@ from app.models.action_plan import ActionPlanMeasurement, ActionPlanOccurrence, 
 from app.models.campaign import Campaign
 from app.models.content import ContentAsset
 from app.models.crawl import CrawlPageResult, CrawlRun, TechnicalIssue
+from app.models.google_business_profile import GoogleBusinessProfileDailyMetric
 from app.models.intelligence import StrategyRecommendation
 from app.models.local import ReviewVelocitySnapshot
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.website_performance import WebsitePerformanceMeasurement
-from app.services import action_plan_forecast_service
+from app.services import action_plan_forecast_service, metric_contract_service
 
 
 _DEFAULT_DIRECTIONS = {
     "organic.avg_position": "lower_is_better",
     "local.avg_rating": "higher_is_better",
+    "local.gbp.total_appearances": "higher_is_better",
+    "local.gbp.website_clicks": "higher_is_better",
+    "local.gbp.call_clicks": "higher_is_better",
+    "local.gbp.direction_requests": "higher_is_better",
+    "local.gbp.bookings": "higher_is_better",
     "technical.issue_density": "lower_is_better",
     "technical.crawl_health": "higher_is_better",
 }
+_GBP_METRIC_NAMES = {
+    "local.gbp.total_appearances": (
+        "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+        "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+        "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+        "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+    ),
+    "local.gbp.website_clicks": ("WEBSITE_CLICKS",),
+    "local.gbp.call_clicks": ("CALL_CLICKS",),
+    "local.gbp.direction_requests": ("BUSINESS_DIRECTION_REQUESTS",),
+    "local.gbp.bookings": ("BUSINESS_BOOKINGS",),
+}
+_MEASUREMENT_CONTRACT_VERSION = "2.0"
 _WEBSITE_COLUMNS = {
     "cwv.lcp": "lcp_ms",
     "cwv.inp": "inp_ms",
@@ -75,6 +94,7 @@ def _metric_shell(metric: Any) -> dict[str, Any]:
         if thresholds is not None
         else _DEFAULT_DIRECTIONS.get(metric.metric_id)
     )
+    contract = metric_contract_service.contract_for_lexicon_metric(metric.metric_id)
     return {
         "metric_id": metric.metric_id,
         "display_name": metric.display_name,
@@ -90,6 +110,109 @@ def _metric_shell(metric: Any) -> dict[str, Any]:
         "evidence_window_start": None,
         "evidence_window_end": None,
         "scope": str(metric.scope),
+        "source_provider": None,
+        "freshness_days": int(metric.freshness_days),
+        "metric_contract_id": contract.contract_id if contract is not None else None,
+        "metric_contract_version": contract.version if contract is not None else None,
+        "metric_contract_status": contract.collection_status if contract is not None else None,
+        "metric_contract_comparison_keys": (
+            list(contract.comparison_keys) if contract is not None else []
+        ),
+        "scope_key": None,
+        "entity_scope": {},
+        "measurement_window_days": None,
+        "insufficient_reason": "No matching measurement is available yet.",
+    }
+
+
+def _metric_target(metric: Any) -> dict[str, Any]:
+    thresholds = metric.thresholds
+    if thresholds is None:
+        return {
+            "direction": _DEFAULT_DIRECTIONS.get(metric.metric_id),
+            "target_value": None,
+            "target_range": None,
+        }
+    direction = str(thresholds.direction)
+    good_boundary = thresholds.good_boundary
+    return {
+        "direction": direction,
+        "target_value": float(good_boundary) if good_boundary is not None else None,
+        "target_range": {
+            "good_boundary": float(good_boundary) if good_boundary is not None else None,
+            "poor_boundary": (
+                float(thresholds.poor_boundary)
+                if thresholds.poor_boundary is not None
+                else None
+            ),
+            "semantics": thresholds.boundary_semantics,
+        },
+    }
+
+
+def _measurement_track(*, action_category: str, metric_id: str | None) -> str:
+    if action_category in {"local", "reputation", "google_business_profile"}:
+        return "google_business_profile"
+    if str(metric_id or "").startswith("local."):
+        return "google_business_profile"
+    return "website"
+
+
+def _build_measurement_contract(
+    *,
+    occurrence: ActionPlanOccurrence,
+    action: Any,
+    primary_metric_definition: Any | None,
+    metrics: list[dict[str, Any]],
+    captured_at: datetime,
+) -> dict[str, Any]:
+    primary_metric_id = str(action.success_metric_ids[0]) if action.success_metric_ids else None
+    primary_definition = (
+        next(
+            (item for item in metrics if item.get("metric_id") == primary_metric_id),
+            None,
+        )
+        or {}
+    )
+    return {
+        "version": _MEASUREMENT_CONTRACT_VERSION,
+        "track": _measurement_track(
+            action_category=str(action.category),
+            metric_id=primary_metric_id,
+        ),
+        "primary_metric_id": primary_metric_id,
+        "supporting_metric_ids": [str(item) for item in action.success_metric_ids[1:]],
+        "provider": primary_definition.get("source_provider"),
+        "entity_scope": dict(primary_definition.get("entity_scope") or {}),
+        "baseline": {
+            "captured_at": _iso(captured_at),
+            "metric": dict(primary_definition),
+        },
+        "intervention": {
+            "action_id": occurrence.action_id,
+            "completed_at": None,
+            "completion_proof_count": 0,
+        },
+        "observation": {
+            "window_days": int(action.observation_window_days),
+            "check_on_or_after": None,
+        },
+        "comparison": {
+            "requires_same_metric_contract": True,
+            "requires_same_provider": True,
+            "requires_same_entity_scope": True,
+            "requires_post_completion_data": True,
+        },
+        "target": (
+            _metric_target(primary_metric_definition)
+            if primary_metric_definition is not None
+            else {}
+        ),
+        "result": {
+            "classification": "waiting_for_results",
+            "measured_at": None,
+            "metric": None,
+        },
     }
 
 
@@ -97,7 +220,9 @@ def _website_metric(
     db: Session,
     *,
     tenant_id: str,
+    organization_id: str,
     campaign_id: str,
+    business_location_id: str | None,
     metric: Any,
     captured_at: datetime,
 ) -> dict[str, Any]:
@@ -108,6 +233,7 @@ def _website_metric(
         db.query(WebsitePerformanceMeasurement)
         .filter(
             WebsitePerformanceMeasurement.tenant_id == tenant_id,
+            WebsitePerformanceMeasurement.organization_id == organization_id,
             WebsitePerformanceMeasurement.campaign_id == campaign_id,
             WebsitePerformanceMeasurement.source == "crux_field",
             WebsitePerformanceMeasurement.status == "ready",
@@ -119,17 +245,45 @@ def _website_metric(
     )
     if row is None:
         return payload
+    contract = metric_contract_service.contract_for_lexicon_metric(metric.metric_id)
+    if (
+        row.scope_key == "legacy"
+        or contract is None
+        or dict(row.metric_contract_versions or {}).get(contract.contract_id) != contract.version
+    ):
+        payload["insufficient_reason"] = (
+            "Fresh real-user website data is needed before this exact measurement can be compared."
+        )
+        return payload
     payload.update(
         {
             "status": "available",
             "value": float(getattr(row, column_name)),
             "source": "Chrome UX Report field data",
             "source_record_id": row.id,
-            "measured_at": _iso(row.captured_at),
+            "measured_at": _iso(row.collection_end or row.captured_at),
             "evidence_window_start": _iso(row.collection_start),
             "evidence_window_end": _iso(row.collection_end),
             "scope": f"{row.scope}:{row.form_factor}",
+            "source_provider": "chrome_ux_report",
+            "entity_scope": {
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+                "business_location_id": business_location_id,
+                "measured_url": row.measured_url,
+                "scope": row.scope,
+                "form_factor": row.form_factor,
+            },
+            "measurement_window_days": (
+                (row.collection_end - row.collection_start).days + 1
+                if row.collection_start and row.collection_end
+                else None
+            ),
+            "insufficient_reason": None,
             "measured_url": row.measured_url,
+            "metric_contract_id": contract.contract_id,
+            "metric_contract_version": contract.version,
+            "scope_key": row.scope_key,
         }
     )
     return payload
@@ -138,40 +292,90 @@ def _website_metric(
 def _search_metric(
     db: Session,
     *,
+    organization_id: str,
     campaign_id: str,
+    business_location_id: str | None,
     metric: Any,
     captured_at: datetime,
+    observation_window_days: int,
 ) -> dict[str, Any]:
     payload = _metric_shell(metric)
-    row = (
+    window_start = captured_at.date() - timedelta(days=max(observation_window_days - 1, 0))
+    rows = (
         db.query(SearchConsoleDailyMetric)
         .filter(
+            SearchConsoleDailyMetric.organization_id == organization_id,
             SearchConsoleDailyMetric.campaign_id == campaign_id,
+            SearchConsoleDailyMetric.metric_date >= window_start,
             SearchConsoleDailyMetric.metric_date <= captured_at.date(),
         )
-        .order_by(SearchConsoleDailyMetric.metric_date.desc())
-        .first()
+        .order_by(SearchConsoleDailyMetric.metric_date.asc())
+        .all()
     )
-    if row is None:
+    if not rows:
         return payload
+    scope_keys = {str(row.scope_key or "") for row in rows}
+    contract = metric_contract_service.contract_for_lexicon_metric(metric.metric_id)
+    expected_version = contract.version if contract is not None else None
+    if (
+        len(scope_keys) != 1
+        or "legacy" in scope_keys
+        or any(
+            dict(row.metric_contract_versions or {}).get(contract.contract_id) != expected_version
+            for row in rows
+            if contract is not None
+        )
+    ):
+        payload["insufficient_reason"] = (
+            "Fresh Search Console data is needed before this exact measurement can be compared."
+        )
+        return payload
+    clicks = sum(int(row.clicks or 0) for row in rows)
+    impressions = sum(int(row.impressions or 0) for row in rows)
     value: float | None = None
-    if metric.metric_id == "organic.ctr" and row.impressions > 0:
-        value = float(row.clicks) / float(row.impressions)
+    if metric.metric_id == "organic.ctr" and impressions > 0:
+        value = float(clicks) / float(impressions)
     elif metric.metric_id == "organic.impressions":
-        value = float(row.impressions)
-    elif metric.metric_id == "organic.avg_position" and row.avg_position is not None:
-        value = float(row.avg_position)
+        value = float(impressions)
+    elif metric.metric_id == "organic.avg_position":
+        weighted_rows = [
+            row for row in rows if row.avg_position is not None and int(row.impressions or 0) > 0
+        ]
+        weighted_impressions = sum(int(row.impressions or 0) for row in weighted_rows)
+        if weighted_impressions > 0:
+            value = sum(
+                float(row.avg_position) * int(row.impressions or 0)
+                for row in weighted_rows
+            ) / float(weighted_impressions)
     if value is None:
         return payload
+    first_date = rows[0].metric_date
+    last_date = rows[-1].metric_date
     payload.update(
         {
             "status": "available",
             "value": value,
             "source": "Google Search Console",
-            "source_record_id": row.id,
-            "measured_at": _iso(row.metric_date),
-            "evidence_window_start": _iso(row.metric_date),
-            "evidence_window_end": _iso(row.metric_date),
+            "source_provider": "google_search_console",
+            "source_record_id": f"{rows[0].id}:{rows[-1].id}:{len(rows)}",
+            "measured_at": _iso(last_date),
+            "evidence_window_start": _iso(first_date),
+            "evidence_window_end": _iso(last_date),
+            "entity_scope": {
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+                "business_location_id": business_location_id,
+                "property_uri": rows[-1].property_uri,
+                "search_type": rows[-1].search_type,
+                "dimensions": list(rows[-1].dimensions or []),
+                "filters": dict(rows[-1].filters or {}),
+            },
+            "metric_contract_id": contract.contract_id if contract is not None else None,
+            "metric_contract_version": expected_version,
+            "scope_key": rows[-1].scope_key,
+            "measurement_window_days": observation_window_days,
+            "rows_measured": len(rows),
+            "insufficient_reason": None,
         }
     )
     return payload
@@ -182,6 +386,7 @@ def _review_metric(
     *,
     tenant_id: str,
     campaign_id: str,
+    business_location_id: str | None,
     metric: Any,
     captured_at: datetime,
 ) -> dict[str, Any]:
@@ -198,6 +403,16 @@ def _review_metric(
     )
     if row is None:
         return payload
+    contract = metric_contract_service.contract_for_lexicon_metric(metric.metric_id)
+    if (
+        row.scope_key == "legacy"
+        or contract is None
+        or dict(row.metric_contract_versions or {}).get(contract.contract_id) != contract.version
+    ):
+        payload["insufficient_reason"] = (
+            "Fresh review data is needed before this exact measurement can be compared."
+        )
+        return payload
     if metric.metric_id == "local.review_velocity_30d":
         value = float(row.reviews_last_30d)
     elif metric.metric_id == "local.avg_rating":
@@ -210,12 +425,95 @@ def _review_metric(
             "status": "available",
             "value": value,
             "source": "Stored Google review measurements",
+            "source_provider": "google_business_profile_reviews",
             "source_record_id": row.id,
             "measured_at": _iso(captured_at),
             "evidence_window_start": _iso(
                 captured_at - timedelta(days=30) if captured_at else None
             ),
             "evidence_window_end": _iso(captured_at),
+            "entity_scope": {
+                "campaign_id": campaign_id,
+                "business_location_id": business_location_id,
+                "profile_id": row.profile_id,
+            },
+            "measurement_window_days": 30,
+            "metric_contract_id": contract.contract_id,
+            "metric_contract_version": contract.version,
+            "scope_key": row.scope_key,
+            "insufficient_reason": None,
+        }
+    )
+    return payload
+
+
+def _google_business_profile_metric(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    campaign_id: str,
+    business_location_id: str | None,
+    metric: Any,
+    captured_at: datetime,
+    observation_window_days: int,
+) -> dict[str, Any]:
+    payload = _metric_shell(metric)
+    if not business_location_id:
+        payload["insufficient_reason"] = "Choose a business location before measuring this action."
+        return payload
+    metric_names = _GBP_METRIC_NAMES[metric.metric_id]
+    window_start = captured_at.date() - timedelta(days=max(observation_window_days - 1, 0))
+    rows = (
+        db.query(GoogleBusinessProfileDailyMetric)
+        .filter(
+            GoogleBusinessProfileDailyMetric.tenant_id == tenant_id,
+            GoogleBusinessProfileDailyMetric.organization_id == organization_id,
+            GoogleBusinessProfileDailyMetric.campaign_id == campaign_id,
+            GoogleBusinessProfileDailyMetric.business_location_id == business_location_id,
+            GoogleBusinessProfileDailyMetric.metric_name.in_(metric_names),
+            GoogleBusinessProfileDailyMetric.metric_date >= window_start,
+            GoogleBusinessProfileDailyMetric.metric_date <= captured_at.date(),
+            GoogleBusinessProfileDailyMetric.metric_value.isnot(None),
+        )
+        .order_by(GoogleBusinessProfileDailyMetric.metric_date.asc())
+        .all()
+    )
+    if not rows:
+        payload["insufficient_reason"] = "Google Business Profile results have not been collected for this location yet."
+        return payload
+    contract = metric_contract_service.contract_for_lexicon_metric(metric.metric_id)
+    scope_keys = {str(row.scope_key or "") for row in rows}
+    if len(scope_keys) != 1 or "legacy" in scope_keys or contract is None:
+        payload["insufficient_reason"] = (
+            "Fresh Google Business Profile data is needed before this exact measurement can be compared."
+        )
+        return payload
+    payload.update(
+        {
+            "status": "available",
+            "value": float(sum(int(row.metric_value or 0) for row in rows)),
+            "source": "Connected Google Business Profile",
+            "source_provider": "google_business_profile",
+            "source_record_id": f"{rows[0].id}:{rows[-1].id}:{len(rows)}",
+            "measured_at": _iso(rows[-1].metric_date),
+            "evidence_window_start": _iso(rows[0].metric_date),
+            "evidence_window_end": _iso(rows[-1].metric_date),
+            "entity_scope": {
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+                "business_location_id": business_location_id,
+                "connection_id": rows[-1].connection_id,
+                "metric_names": list(metric_names),
+                "external_resource_id": rows[-1].external_resource_id,
+                "source_account_id": rows[-1].source_account_id,
+            },
+            "metric_contract_id": contract.contract_id,
+            "metric_contract_version": contract.version,
+            "scope_key": rows[-1].scope_key,
+            "measurement_window_days": observation_window_days,
+            "rows_measured": len(rows),
+            "insufficient_reason": None,
         }
     )
     return payload
@@ -225,7 +523,9 @@ def _technical_issue_density(
     db: Session,
     *,
     tenant_id: str,
+    organization_id: str,
     campaign_id: str,
+    business_location_id: str | None,
     metric: Any,
     captured_at: datetime,
 ) -> dict[str, Any]:
@@ -263,12 +563,37 @@ def _technical_issue_density(
             "status": "available",
             "value": float(issue_count) / float(page_count),
             "source": "Stored website crawl",
+            "source_provider": "website_crawl",
             "source_record_id": crawl.id,
             "measured_at": _iso(measured_at),
             "evidence_window_start": _iso(_as_aware(crawl.started_at or crawl.created_at)),
             "evidence_window_end": _iso(measured_at),
             "pages_checked": int(page_count),
             "issues_found": int(issue_count),
+            "entity_scope": {
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+                "business_location_id": business_location_id,
+                "crawl_scope": "campaign",
+            },
+            "measurement_window_days": 1,
+            "metric_contract_id": "crawl.affected_page_ratio",
+            "metric_contract_version": metric_contract_service.contract_definition(
+                "crawl.affected_page_ratio", db=db
+            ).version,
+            "scope_key": metric_contract_service.scope_evidence(
+                "crawl.affected_page_ratio",
+                {
+                    "organization_id": organization_id,
+                    "campaign_id": campaign_id,
+                    "crawl_run_id": crawl.id,
+                    "crawl_scope": "campaign",
+                    "captured_at": measured_at,
+                    "pages_checked": int(page_count),
+                },
+                db=db,
+            )["scope_key"],
+            "insufficient_reason": None,
         }
     )
     return payload
@@ -278,7 +603,9 @@ def _content_growth(
     db: Session,
     *,
     tenant_id: str,
+    organization_id: str,
     campaign_id: str,
+    business_location_id: str | None,
     metric: Any,
     captured_at: datetime,
 ) -> dict[str, Any]:
@@ -317,12 +644,20 @@ def _content_growth(
             "status": "available",
             "value": (float(current_count) - float(previous_count)) / float(previous_count),
             "source": "Stored published content",
+            "source_provider": "content_inventory",
             "source_record_id": None,
             "measured_at": _iso(captured_at),
             "evidence_window_start": _iso(previous_start),
             "evidence_window_end": _iso(captured_at),
             "current_30_day_count": int(current_count),
             "previous_30_day_count": int(previous_count),
+            "entity_scope": {
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+                "business_location_id": business_location_id,
+            },
+            "measurement_window_days": 60,
+            "insufficient_reason": None,
         }
     )
     return payload
@@ -332,38 +667,60 @@ def _capture_metric(
     db: Session,
     *,
     tenant_id: str,
+    organization_id: str,
     campaign_id: str,
+    business_location_id: str | None,
     metric: Any,
     captured_at: datetime,
+    observation_window_days: int,
 ) -> dict[str, Any]:
     if metric.metric_id in _WEBSITE_COLUMNS:
         return _website_metric(
             db,
             tenant_id=tenant_id,
+            organization_id=organization_id,
             campaign_id=campaign_id,
+            business_location_id=business_location_id,
             metric=metric,
             captured_at=captured_at,
         )
     if metric.metric_id in {"organic.ctr", "organic.impressions", "organic.avg_position"}:
         return _search_metric(
             db,
+            organization_id=organization_id,
             campaign_id=campaign_id,
+            business_location_id=business_location_id,
             metric=metric,
             captured_at=captured_at,
+            observation_window_days=observation_window_days,
         )
     if metric.metric_id in {"local.review_velocity_30d", "local.avg_rating"}:
         return _review_metric(
             db,
             tenant_id=tenant_id,
             campaign_id=campaign_id,
+            business_location_id=business_location_id,
             metric=metric,
             captured_at=captured_at,
+        )
+    if metric.metric_id in _GBP_METRIC_NAMES:
+        return _google_business_profile_metric(
+            db,
+            tenant_id=tenant_id,
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            business_location_id=business_location_id,
+            metric=metric,
+            captured_at=captured_at,
+            observation_window_days=observation_window_days,
         )
     if metric.metric_id == "technical.issue_density":
         return _technical_issue_density(
             db,
             tenant_id=tenant_id,
+            organization_id=organization_id,
             campaign_id=campaign_id,
+            business_location_id=business_location_id,
             metric=metric,
             captured_at=captured_at,
         )
@@ -371,7 +728,9 @@ def _capture_metric(
         return _content_growth(
             db,
             tenant_id=tenant_id,
+            organization_id=organization_id,
             campaign_id=campaign_id,
+            business_location_id=business_location_id,
             metric=metric,
             captured_at=captured_at,
         )
@@ -426,9 +785,12 @@ def capture_action_plan_baseline(
         _capture_metric(
             db,
             tenant_id=occurrence.tenant_id,
+            organization_id=occurrence.organization_id,
             campaign_id=occurrence.campaign_id,
+            business_location_id=occurrence.business_location_id,
             metric=lexicon.metric_index[metric_id],
             captured_at=resolved_at,
+            observation_window_days=int(action.observation_window_days),
         )
         for metric_id in action.success_metric_ids
     ]
@@ -440,6 +802,18 @@ def capture_action_plan_baseline(
     ]
     window_start, window_end = _window_bounds(metrics)
     has_baseline = any(item.get("status") == "available" for item in metrics)
+    primary_metric_definition = (
+        lexicon.metric_index.get(str(action.success_metric_ids[0]))
+        if action.success_metric_ids
+        else None
+    )
+    measurement_contract = _build_measurement_contract(
+        occurrence=occurrence,
+        action=action,
+        primary_metric_definition=primary_metric_definition,
+        metrics=metrics,
+        captured_at=resolved_at,
+    )
     row = ActionPlanMeasurement(
         tenant_id=occurrence.tenant_id,
         organization_id=occurrence.organization_id,
@@ -450,6 +824,8 @@ def capture_action_plan_baseline(
         action_id=occurrence.action_id,
         measurement_status="baseline_ready" if has_baseline else "insufficient_baseline",
         outcome_status="pending",
+        result_classification="waiting_for_results",
+        measurement_contract=measurement_contract,
         success_metric_ids=list(action.success_metric_ids),
         baseline_metrics=metrics,
         baseline_evidence=evidence,
@@ -512,9 +888,26 @@ def mark_action_plan_work_completed(
     )
     measurement.measurement_status = "waiting_for_results"
     measurement.outcome_status = "pending"
+    measurement.result_classification = "waiting_for_results"
     measurement.outcome_metrics = []
     measurement.outcome_evidence = []
     measurement.outcome_measured_at = None
+    contract = dict(measurement.measurement_contract or {})
+    contract["intervention"] = {
+        "action_id": measurement.action_id,
+        "completed_at": _iso(completed_at),
+        "completion_proof_count": len(measurement.completion_proof),
+    }
+    observation = dict(contract.get("observation") or {})
+    observation["window_days"] = measurement.observation_window_days
+    observation["check_on_or_after"] = _iso(measurement.observation_due_at)
+    contract["observation"] = observation
+    contract["result"] = {
+        "classification": "waiting_for_results",
+        "measured_at": None,
+        "metric": None,
+    }
+    measurement.measurement_contract = contract
     measurement.updated_at = completed_at
     db.flush()
     return measurement
@@ -541,6 +934,22 @@ def mark_action_plan_work_reopened(
     measurement.work_completed_at = None
     measurement.observation_due_at = None
     measurement.completion_proof = []
+    measurement.result_classification = "waiting_for_results"
+    contract = dict(measurement.measurement_contract or {})
+    contract["intervention"] = {
+        "action_id": measurement.action_id,
+        "completed_at": None,
+        "completion_proof_count": 0,
+    }
+    observation = dict(contract.get("observation") or {})
+    observation["check_on_or_after"] = None
+    contract["observation"] = observation
+    contract["result"] = {
+        "classification": "waiting_for_results",
+        "measured_at": None,
+        "metric": None,
+    }
+    measurement.measurement_contract = contract
     measurement.updated_at = reopened_at
     db.flush()
 
@@ -571,14 +980,55 @@ def _comparison(
         and completed_at is not None
         and observed_at <= completed_at
     )
+    scope_fields = (
+        "metric_contract_id",
+        "metric_contract_version",
+        "scope_key",
+        "source_provider",
+        "aggregation",
+        "scope",
+        "measurement_window_days",
+        "entity_scope",
+    )
+    scope_mismatches = [
+        key
+        for key in scope_fields
+        if baseline.get(key) != observed.get(key)
+    ]
+    insufficient_reasons: list[str] = []
+    if before is None:
+        insufficient_reasons.append("The starting measurement was not available.")
+    if after is None:
+        insufficient_reasons.append(
+            str(observed.get("insufficient_reason") or "A follow-up measurement is not available yet.")
+        )
+    if direction not in {"higher_is_better", "lower_is_better"}:
+        insufficient_reasons.append("The measurement does not have a governed improvement direction.")
+    if same_source_record:
+        insufficient_reasons.append("The connected source has not published a newer measurement yet.")
+    if not_newer_than_work:
+        insufficient_reasons.append("The newest measurement predates the completed work.")
+    if scope_mismatches:
+        insufficient_reasons.append(
+            "The follow-up measurement does not match the starting provider, location, page, or date window."
+        )
     if (
         before is None
         or after is None
         or direction not in {"higher_is_better", "lower_is_better"}
         or same_source_record
         or not_newer_than_work
+        or scope_mismatches
     ):
-        result.update({"baseline_value": before, "change": None, "comparison": "insufficient_data"})
+        result.update(
+            {
+                "baseline_value": before,
+                "change": None,
+                "comparison": "insufficient_data",
+                "comparison_requirements_met": False,
+                "insufficient_reasons": insufficient_reasons,
+            }
+        )
         return result
     delta = float(after) - float(before)
     tolerance = max(abs(float(before)) * 0.005, 0.000001)
@@ -595,9 +1045,34 @@ def _comparison(
             "baseline_value": float(before),
             "change": delta,
             "comparison": comparison,
+            "comparison_requirements_met": True,
+            "insufficient_reasons": [],
         }
     )
     return result
+
+
+def _classify_primary_result(
+    outcome_metrics: list[dict[str, Any]],
+    success_metric_ids: list[str],
+) -> tuple[str, str, dict[str, Any] | None]:
+    primary_metric_id = str(success_metric_ids[0]) if success_metric_ids else None
+    primary_result = next(
+        (item for item in outcome_metrics if item.get("metric_id") == primary_metric_id),
+        None,
+    )
+    primary_comparison = (
+        str(primary_result.get("comparison"))
+        if primary_result is not None
+        else "insufficient_data"
+    )
+    if primary_comparison == "improved":
+        return "improved", "helped", primary_result
+    if primary_comparison == "unchanged":
+        return "about_the_same", "did_not_help", primary_result
+    if primary_comparison == "worse":
+        return "worse", "did_not_help", primary_result
+    return "not_enough_information", "insufficient_data", primary_result
 
 
 def evaluate_action_plan_outcome(
@@ -664,9 +1139,12 @@ def evaluate_action_plan_outcome(
         observed = _capture_metric(
             db,
             tenant_id=tenant_id,
+            organization_id=organization_id,
             campaign_id=campaign_id,
+            business_location_id=measurement.business_location_id,
             metric=metric,
             captured_at=resolved_at,
+            observation_window_days=measurement.observation_window_days,
         )
         outcome_metrics.append(
             _comparison(
@@ -676,20 +1154,14 @@ def evaluate_action_plan_outcome(
             )
         )
 
-    comparisons = {
-        str(item.get("comparison"))
-        for item in outcome_metrics
-        if item.get("comparison") not in {None, "insufficient_data"}
-    }
-    if not comparisons:
-        outcome_status = "insufficient_data"
-    elif "improved" in comparisons and "worse" not in comparisons:
-        outcome_status = "helped"
-    else:
-        outcome_status = "did_not_help"
+    result_classification, outcome_status, primary_result = _classify_primary_result(
+        outcome_metrics,
+        [str(item) for item in measurement.success_metric_ids or []],
+    )
 
     measurement.measurement_status = "measured"
     measurement.outcome_status = outcome_status
+    measurement.result_classification = result_classification
     measurement.outcome_metrics = outcome_metrics
     measurement.outcome_evidence = [
         {
@@ -702,6 +1174,13 @@ def evaluate_action_plan_outcome(
         if item.get("source")
     ]
     measurement.outcome_measured_at = resolved_at
+    contract = dict(measurement.measurement_contract or {})
+    contract["result"] = {
+        "classification": result_classification,
+        "measured_at": _iso(resolved_at),
+        "metric": dict(primary_result) if primary_result is not None else None,
+    }
+    measurement.measurement_contract = contract
     measurement.updated_at = resolved_at
     forecast = action_plan_forecast_service.get_action_plan_forecast(
         db,
@@ -758,6 +1237,10 @@ def serialize_action_plan_measurement(
         "measurement_status": measurement.measurement_status,
         "readiness": readiness,
         "outcome_status": measurement.outcome_status,
+        "result_classification": measurement.result_classification,
+        "measurement_contract": dict(measurement.measurement_contract or {}),
+        "measurement_track": (measurement.measurement_contract or {}).get("track", "website"),
+        "primary_metric_id": (measurement.measurement_contract or {}).get("primary_metric_id"),
         "success_metric_ids": list(measurement.success_metric_ids or []),
         "baseline_metrics": list(measurement.baseline_metrics or []),
         "baseline_available_count": available_count,

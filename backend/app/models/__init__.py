@@ -12,6 +12,9 @@ from app.models.authority import (
     Backlink,
     BacklinkOpportunity,
     Citation,
+    DirectoryListing,
+    DirectoryListingDiscoveryRun,
+    DirectoryListingObservation,
     OutreachCampaign,
     OutreachContact,
 )
@@ -80,6 +83,13 @@ from app.models.portfolio_usage_daily import PortfolioUsageDaily
 from app.models.portfolio_policy import PortfolioPolicy
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_metric import ProviderExecutionMetric
+from app.models.provider_metric_contract import ProviderMetricContractVersion
+from app.models.standards_replay import StandardsReplayReport
+from app.models.standards_governance import (
+    PerformanceDriftEvent,
+    StandardsApproval,
+    StandardsRollout,
+)
 from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
 from app.models.platform_provider_credential import PlatformProviderCredential
@@ -93,6 +103,10 @@ from app.models.reference_library import (
     ReferenceLibraryStandardsCheck,
     ReferenceLibraryValidationRun,
     ReferenceLibraryVersion,
+    StandardsChangeCandidate,  # noqa: F401
+    StandardsImpactLink,  # noqa: F401
+    StandardsSourceRegistry,  # noqa: F401
+    StandardsSourceSnapshot,  # noqa: F401
 )
 from app.models.reporting import (
     MonthlyReport,
@@ -100,6 +114,18 @@ from app.models.reporting import (
     ReportDeliveryEvent,
     ReportSchedule,
     ReportTemplateVersion,
+)
+from app.models.reputation import (
+    ReputationProviderCapability,
+    ReputationReviewRequestCampaign,
+    ReputationReviewRequestDelivery,
+    ReputationReviewRequestRecipient,
+    ReputationReviewRequestSuppression,
+    ReputationResponseExecution,
+    ReputationResponseDraft,
+    ReputationResponsePolicy,
+    ReputationReview,
+    ReputationReviewObservation,
 )
 from app.models.role import Role, UserRole
 from app.models.sub_account import SubAccount
@@ -169,6 +195,8 @@ __all__ = [
     "ReferenceLibraryValidationRun",
     "ReferenceLibraryActivation",
     "ReferenceLibraryStandardsCheck",
+    "StandardsChangeCandidate",
+    "StandardsImpactLink",
     "Competitor",
     "CompetitorRanking",
     "CompetitorPage",
@@ -185,6 +213,16 @@ __all__ = [
     "LocalHealthSnapshot",
     "Review",
     "ReviewVelocitySnapshot",
+    "ReputationReview",
+    "ReputationReviewObservation",
+    "ReputationProviderCapability",
+    "ReputationReviewRequestCampaign",
+    "ReputationReviewRequestRecipient",
+    "ReputationReviewRequestSuppression",
+    "ReputationReviewRequestDelivery",
+    "ReputationResponsePolicy",
+    "ReputationResponseDraft",
+    "ReputationResponseExecution",
     "LocalRankGridRun",
     "LocalRankGridPoint",
     "OnboardingState",
@@ -214,11 +252,19 @@ __all__ = [
     "ProviderPolicy",
     "ProviderQuotaState",
     "ProviderExecutionMetric",
+    "ProviderMetricContractVersion",
+    "StandardsReplayReport",
+    "StandardsApproval",
+    "StandardsRollout",
+    "PerformanceDriftEvent",
     "OutreachCampaign",
     "OutreachContact",
     "BacklinkOpportunity",
     "Backlink",
     "Citation",
+    "DirectoryListing",
+    "DirectoryListingDiscoveryRun",
+    "DirectoryListingObservation",
     "BusinessLocation",
     "BusinessService",
     "BusinessServiceArea",

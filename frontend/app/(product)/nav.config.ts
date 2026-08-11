@@ -13,6 +13,7 @@ const PRODUCT_NAV_ITEMS: NavItem[] = [
   { href: "/organic-value", label: "Search Value", icon: "search-value", section: "more" },
   { href: "/competitors", label: "Competitors", icon: "competitors", section: "more" },
   { href: "/citations", label: "Directory listings", icon: "listings", section: "more" },
+  { href: "/reviews", label: "Customer reviews", icon: "reviews", section: "more" },
 ];
 
 export function buildProductNav(pathname: string): NavItem[] {

@@ -14,6 +14,7 @@ const productRoutes = [
   "rankings",
   "keyword-research",
   "reports",
+  "reviews",
   "settings",
   "site-health",
 ];

@@ -31,6 +31,8 @@ import {
   pickPrimaryRuntimeTruth,
 } from "../truth/runtimeTruth.mjs";
 import {
+  getActionTrackGroups,
+  getPrimaryMeasurement,
   getRecommendationPortfolio,
   getRecommendationRoutines,
   getWorkProgress,
@@ -76,12 +78,32 @@ type ActionMeasurementMetric = {
   change?: number | null;
   comparison?: "improved" | "unchanged" | "worse" | "insufficient_data";
   source?: string | null;
+  source_provider?: string | null;
+  measured_at?: string | null;
+  evidence_window_start?: string | null;
+  evidence_window_end?: string | null;
+  insufficient_reason?: string | null;
+  insufficient_reasons?: string[];
 };
 
 type ActionMeasurement = {
   measurement_status: "baseline_ready" | "insufficient_baseline" | "waiting_for_results" | "measured";
   readiness: "work_in_progress" | "baseline_unavailable" | "waiting" | "ready_to_check" | "measured";
   outcome_status: "pending" | "helped" | "did_not_help" | "insufficient_data";
+  result_classification?: "waiting_for_results" | "improved" | "about_the_same" | "worse" | "not_enough_information";
+  measurement_track?: "website" | "google_business_profile";
+  primary_metric_id?: string | null;
+  measurement_contract?: {
+    version?: string;
+    track?: "website" | "google_business_profile";
+    primary_metric_id?: string | null;
+    target?: {
+      direction?: "higher_is_better" | "lower_is_better" | null;
+      target_value?: number | null;
+    };
+    observation?: { check_on_or_after?: string | null };
+    result?: { classification?: string; measured_at?: string | null };
+  };
   baseline_metrics: ActionMeasurementMetric[];
   baseline_available_count: number;
   outcome_metrics: ActionMeasurementMetric[];
@@ -173,6 +195,8 @@ type Recommendation = {
     owner_role: string;
     dependencies: string[];
     success_metric_ids: string[];
+    primary_metric_id?: string | null;
+    measurement_track?: "website" | "google_business_profile";
     observation_window_days: number;
     lexicon_id: string;
     lexicon_version: string;
@@ -1334,12 +1358,25 @@ function ActionResultStatus({
   const forecastComparisons = new Map(
     (forecast?.outcome_comparisons || []).map((item) => [item.metric_id, item]),
   );
+  const primaryMeasurement = getPrimaryMeasurement({
+    action_plan: { work_item: workItem },
+  }) as {
+    baseline: ActionMeasurementMetric | null;
+    outcome: ActionMeasurementMetric | null;
+    resultClassification: string;
+    checkOnOrAfter: string | null;
+    target: { target_value?: number | null } | null;
+  } | null;
+  const resultClassification =
+    measurement.result_classification || primaryMeasurement?.resultClassification;
   const statusCopy =
     measurement.readiness === "measured"
-      ? measurement.outcome_status === "helped"
+      ? resultClassification === "improved"
         ? { title: "The measurement improved", body: "The follow-up measurement moved in the right direction after the work was completed.", tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100" }
-        : measurement.outcome_status === "did_not_help"
-          ? { title: "The measurement did not improve yet", body: "The follow-up measurement did not move in the expected direction. Review the evidence before deciding what to try next.", tone: "border-amber-500/30 bg-amber-500/10 text-amber-100" }
+        : resultClassification === "about_the_same"
+          ? { title: "The result is about the same", body: "The main measurement has not changed enough to call it better or worse.", tone: "border-zinc-500/30 bg-zinc-500/10 text-zinc-100" }
+          : resultClassification === "worse"
+            ? { title: "The measurement got worse", body: "The main measurement moved in the wrong direction. Review what changed before choosing another step.", tone: "border-rose-500/30 bg-rose-500/10 text-rose-100" }
           : { title: "There is not enough follow-up data", body: "The work is recorded, but the connected sources do not have enough new information to judge the result.", tone: "border-sky-500/30 bg-sky-500/10 text-sky-100" }
       : measurement.readiness === "ready_to_check"
         ? { title: "Results are ready to check", body: "The waiting period is complete. Compare the latest connected measurement with the saved starting point.", tone: "border-accent-500/35 bg-accent-500/10 text-white" }
@@ -1371,6 +1408,54 @@ function ActionResultStatus({
           </button>
         ) : null}
       </div>
+
+      {primaryMeasurement ? (
+        <div className="mt-4 grid gap-3 rounded-md border border-white/10 bg-black/20 p-4 md:grid-cols-[1.3fr_0.8fr_0.8fr_1fr]">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] opacity-60">
+              How we&apos;ll know this helped
+            </p>
+            <p className="mt-1 text-sm font-semibold">
+              {simplifyCustomerCopy(primaryMeasurement.baseline?.display_name, {
+                fallback: "The main measurement for this action",
+              })}
+            </p>
+            <p className="mt-1 text-xs opacity-65">
+              {primaryMeasurement.baseline?.source || "A connected business source"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs opacity-60">Starting value</p>
+            <p className="mt-1 text-base font-semibold">
+              {primaryMeasurement.baseline?.status === "available"
+                ? formatMeasurementValue(
+                    primaryMeasurement.baseline,
+                    primaryMeasurement.baseline.value,
+                  )
+                : "Not available"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs opacity-60">Latest value</p>
+            <p className="mt-1 text-base font-semibold">
+              {primaryMeasurement.outcome?.status === "available"
+                ? formatMeasurementValue(
+                    primaryMeasurement.outcome,
+                    primaryMeasurement.outcome.value,
+                  )
+                : "Waiting"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs opacity-60">When to check</p>
+            <p className="mt-1 text-sm font-semibold">
+              {primaryMeasurement.checkOnOrAfter
+                ? formatMeasurementDate(primaryMeasurement.checkOnOrAfter)
+                : "After the checklist is finished"}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {forecast?.forecast_status === "available" ? (
         <div className="mt-5 rounded-md bg-black/20 p-4 text-zinc-200">
@@ -2076,6 +2161,10 @@ export default function OpportunitiesPage() {
     () => getRecommendationRoutines(recommendations) as Record<string, Recommendation[]>,
     [recommendations],
   );
+  const actionTrackGroups = useMemo(
+    () => getActionTrackGroups(recommendations) as Record<"website" | "google_business_profile", Recommendation[]>,
+    [recommendations],
+  );
 
   const selectedRecommendation =
     sortedRecommendations.find((item) => item.id === selectedRecommendationId) ??
@@ -2347,6 +2436,71 @@ export default function OpportunitiesPage() {
                   <span className="text-xs text-zinc-500">
                     {sortedRecommendations.length} active action{sortedRecommendations.length === 1 ? "" : "s"}
                   </span>
+                </div>
+
+                <div className="mt-5 grid gap-3 lg:grid-cols-2">
+                  {([
+                    {
+                      key: "website" as const,
+                      title: "Improve your website",
+                      summary: "Pages, search visibility, speed, and technical fixes.",
+                      icon: "website-health" as const,
+                    },
+                    {
+                      key: "google_business_profile" as const,
+                      title: "Improve your Google Business Profile",
+                      summary: "Reviews, profile activity, calls, clicks, and direction requests.",
+                      icon: "listings" as const,
+                    },
+                  ]).map((track) => {
+                    const trackItems = actionTrackGroups[track.key] || [];
+                    return (
+                      <section
+                        key={track.key}
+                        className="rounded-md border border-[#2a2b31] bg-[#111214] p-4"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-accent-500/20 bg-accent-500/10 text-accent-300">
+                              <ProductIcon name={track.icon} size={18} />
+                            </span>
+                            <div>
+                              <h3 className="text-base font-semibold text-white">{track.title}</h3>
+                              <p className="mt-1 text-xs leading-5 text-zinc-400">{track.summary}</p>
+                            </div>
+                          </div>
+                          <span className="rounded-full bg-[#202126] px-2 py-0.5 text-xs text-zinc-300">
+                            {trackItems.length}
+                          </span>
+                        </div>
+                        {trackItems.length > 0 ? (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {trackItems.slice(0, 3).map((recommendation) => (
+                              <button
+                                key={recommendation.id}
+                                type="button"
+                                onClick={() => setSelectedRecommendationId(recommendation.id)}
+                                className={`rounded-md border px-3 py-2 text-left text-xs font-medium transition ${
+                                  selectedRecommendation?.id === recommendation.id
+                                    ? "border-accent-500/40 bg-accent-500/10 text-white"
+                                    : "border-[#303137] bg-[#16171a] text-zinc-300 hover:border-accent-500/30"
+                                }`}
+                              >
+                                {getRecommendationTitle(recommendation)}
+                              </button>
+                            ))}
+                            {trackItems.length > 3 ? (
+                              <span className="self-center text-xs text-zinc-500">
+                                +{trackItems.length - 3} more
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <p className="mt-4 text-xs text-zinc-500">No active work in this area right now.</p>
+                        )}
+                      </section>
+                    );
+                  })}
                 </div>
 
                 <div className="mt-5 grid gap-3 xl:grid-cols-3">

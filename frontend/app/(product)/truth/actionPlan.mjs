@@ -80,6 +80,74 @@ export function getRecommendationRoutines(items) {
   return groups;
 }
 
+export function getActionTrack(item) {
+  const plan = item?.action_plan;
+  const explicitTrack =
+    plan?.measurement_track || plan?.work_item?.measurement?.measurement_track;
+  if (explicitTrack === "google_business_profile") {
+    return "google_business_profile";
+  }
+  if (explicitTrack === "website") {
+    return "website";
+  }
+
+  const category = String(plan?.category || "");
+  const primaryMetricId = String(
+    plan?.primary_metric_id || plan?.success_metric_ids?.[0] || "",
+  );
+  return ["local", "reputation", "google_business_profile"].includes(category) ||
+    primaryMetricId.startsWith("local.")
+    ? "google_business_profile"
+    : "website";
+}
+
+export function getActionTrackGroups(items) {
+  const groups = {
+    website: [],
+    google_business_profile: [],
+  };
+  for (const item of getRecommendationPortfolio(items, Number.MAX_SAFE_INTEGER).ordered) {
+    groups[getActionTrack(item)].push(item);
+  }
+  return groups;
+}
+
+export function getPrimaryMeasurement(item) {
+  const plan = item?.action_plan;
+  const measurement = plan?.work_item?.measurement;
+  if (!measurement) {
+    return null;
+  }
+  const metricId = String(
+    measurement?.primary_metric_id ||
+      plan?.primary_metric_id ||
+      measurement?.measurement_contract?.primary_metric_id ||
+      plan?.success_metric_ids?.[0] ||
+      measurement?.baseline_metrics?.[0]?.metric_id ||
+      "",
+  );
+  const baseline = (measurement?.baseline_metrics || []).find(
+    (metric) => String(metric?.metric_id) === metricId,
+  ) || null;
+  const outcome = (measurement?.outcome_metrics || []).find(
+    (metric) => String(metric?.metric_id) === metricId,
+  ) || null;
+  return {
+    metricId,
+    baseline,
+    outcome,
+    resultClassification:
+      measurement?.result_classification ||
+      measurement?.measurement_contract?.result?.classification ||
+      "waiting_for_results",
+    checkOnOrAfter:
+      measurement?.observation_due_at ||
+      measurement?.measurement_contract?.observation?.check_on_or_after ||
+      null,
+    target: measurement?.measurement_contract?.target || null,
+  };
+}
+
 export function getWorkProgress(item) {
   const progress = item?.action_plan?.work_item?.progress;
   const completed = Number(progress?.completed_required || 0);

@@ -14,6 +14,7 @@ from app.providers.google_analytics import GoogleAnalyticsProviderAdapter
 from app.providers.google_places import GooglePlacesProviderAdapter
 from app.providers.google_search_console import SearchConsoleProviderAdapter
 from app.providers.retry import RetryPolicy
+from app.services import standards_source_service
 from app.tasks.provider_task import CeleryProviderTask
 
 
@@ -114,6 +115,89 @@ def test_search_console_adapter_normalizes_rows(db_session, monkeypatch) -> None
     assert result.raw_payload["dataset"] == "search_metrics"
     assert result.raw_payload["rows"][0]["query"] == "best seo austin"
     assert calls[0]["method"] == "POST"
+
+
+def test_search_console_adapter_fails_closed_when_google_omits_a_metric(db_session, monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+    actions = [
+        _FakeResponse(
+            status_code=200,
+            payload={
+                "rows": [
+                    {
+                        "keys": ["best seo austin"],
+                        "clicks": 11,
+                        "impressions": 100,
+                        "position": 5.2,
+                    }
+                ]
+            },
+        )
+    ]
+    _patch_credentials(monkeypatch, "app.providers.google_search_console")
+    _patch_http_client(monkeypatch, "app.providers.google_search_console", actions, calls)
+
+    provider = SearchConsoleProviderAdapter(
+        db=db_session,
+        retry_policy=RetryPolicy(max_attempts=1, jitter_ratio=0.0),
+    )
+    result = provider.execute(
+        ProviderExecutionRequest(
+            operation="search_console_query",
+            payload={
+                "organization_id": "org-1",
+                "site_url": "sc-domain:example.com",
+                "start_date": "2026-01-01",
+                "end_date": "2026-01-31",
+            },
+        )
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.reason_code == "response_invalid"
+    assert "has not reviewed" in str(result.error)
+
+
+def test_search_console_adapter_does_not_retry_an_unreviewed_contract_change(
+    db_session,
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    _patch_credentials(monkeypatch, "app.providers.google_search_console")
+    _patch_http_client(monkeypatch, "app.providers.google_search_console", [], calls)
+    monkeypatch.setattr(
+        standards_source_service,
+        "assert_provider_contract_ready",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            standards_source_service.StandardsContractBlockedError(
+                "google_search_console",
+                "candidate-1",
+            )
+        ),
+    )
+
+    provider = SearchConsoleProviderAdapter(
+        db=db_session,
+        retry_policy=RetryPolicy(max_attempts=3, jitter_ratio=0.0),
+    )
+    result = provider.execute(
+        ProviderExecutionRequest(
+            operation="search_console_query",
+            payload={
+                "organization_id": "org-1",
+                "site_url": "sc-domain:example.com",
+                "start_date": "2026-01-01",
+                "end_date": "2026-01-31",
+            },
+        )
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.reason_code == "provider_contract_review_required"
+    assert result.error.retryable is False
+    assert calls == []
 
 
 def test_google_analytics_adapter_normalizes_dataset_and_enforces_timeout_budget(db_session, monkeypatch) -> None:
@@ -323,8 +407,6 @@ def test_google_provider_execution_persists_telemetry(db_session, monkeypatch, c
     assert metric.sub_account_id == sub_account.id
     assert metric.reason_code is None
     assert metric.campaign_id == campaign.id
-
-
 
 
 

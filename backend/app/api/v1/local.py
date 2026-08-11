@@ -8,8 +8,30 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
+from app.models.data_connection import DataConnection
 from app.schemas.local_rank_grid import LocalRankGridCreateRequest, LocalRankGridRequest
-from app.services import durable_job_service, local_rank_grid_service, local_service
+from app.schemas.reputation import (
+    ReputationResponseDraftCreate,
+    ReputationResponseDraftDecision,
+    ReputationResponseExecutionControl,
+    ReputationResponsePublishRequest,
+    ReputationReviewOut,
+    ReputationReviewRequestCampaignControl,
+    ReputationReviewRequestCampaignCreate,
+    ReputationReviewRequestRecipientCreate,
+    ReputationReviewRequestSuppressionCreate,
+)
+from app.services import (
+    data_connections_service,
+    durable_job_service,
+    local_rank_grid_service,
+    local_service,
+    reputation_intelligence_service,
+    reputation_inventory_service,
+    reputation_request_service,
+    reputation_response_execution_service,
+    reputation_response_service,
+)
 from app.services.cost_economics_service import CostEconomicsError
 from app.services.location_normalization_service import (
     LocationContextError,
@@ -17,7 +39,12 @@ from app.services.location_normalization_service import (
     normalize_campaign_location,
 )
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
-from app.tasks.tasks import local_collect_profile_snapshot, local_compute_health_score, reviews_compute_velocity, reviews_ingest
+from app.tasks.tasks import (
+    local_collect_profile_snapshot,
+    local_compute_health_score,
+    reviews_compute_velocity,
+    reviews_ingest,
+)
 
 local_router = APIRouter(prefix="/local", tags=["local"])
 reviews_router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -214,7 +241,9 @@ def refresh_local_rank_grid_run(
     return envelope(request, local_rank_grid_service.serialize_run(db, run))
 
 
-def _local_provider_truth(*, has_data: bool, job_queued: bool, captured_at: str | None = None) -> dict:
+def _local_provider_truth(
+    *, has_data: bool, job_queued: bool, captured_at: str | None = None
+) -> dict:
     settings = get_settings()
     backend = getattr(settings, "local_provider_backend", "synthetic").strip().lower()
     environment = getattr(settings, "app_env", "").strip().lower()
@@ -271,13 +300,19 @@ def get_local_health(
     db: Session = Depends(get_db),
 ) -> dict:
     try:
-        snapshot_task = local_collect_profile_snapshot.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
-        score_task = local_compute_health_score.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        snapshot_task = local_collect_profile_snapshot.delay(
+            tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
+        score_task = local_compute_health_score.delay(
+            tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except KombuError:
         snapshot_task = None
         score_task = None
     try:
-        latest_health = local_service.get_latest_health(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        latest_health = local_service.get_latest_health(
+            db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except ValueError:
         latest_health = {"campaign_id": campaign_id, "health_score": None, "captured_at": None}
     truth = _local_provider_truth(
@@ -304,7 +339,9 @@ def get_map_pack(
     db: Session = Depends(get_db),
 ) -> dict:
     try:
-        profile = local_service.collect_profile_snapshot(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        profile = local_service.collect_profile_snapshot(
+            db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
         payload = {
             "campaign_id": campaign_id,
             "provider": profile.provider,
@@ -346,7 +383,9 @@ def get_reviews(
     except KombuError:
         task = None
     try:
-        reviews = local_service.get_reviews(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        reviews = local_service.get_reviews(
+            db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except ValueError:
         reviews = []
     truth = _local_provider_truth(
@@ -365,6 +404,442 @@ def get_reviews(
     )
 
 
+@reviews_router.get("/inventory")
+def get_review_inventory(
+    request: Request,
+    campaign_id: str = Query(...),
+    source_type: str | None = Query(default=None),
+    response_status: str | None = Query(default=None),
+    rating_lte: float | None = Query(default=None, ge=1, le=5),
+    limit: int = Query(default=100, ge=1, le=250),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = reputation_inventory_service.list_reviews(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        source_type=source_type,
+        response_status=response_status,
+        rating_lte=rating_lte,
+        limit=limit,
+    )
+    posting = reputation_response_execution_service.posting_status(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(
+        request,
+        {
+            "items": [
+                ReputationReviewOut.model_validate(row).model_dump(mode="json") for row in rows
+            ],
+            "summary": reputation_inventory_service.inventory_summary(rows),
+            "truth": {
+                "classification": "provider_backed" if rows else "not_collected",
+                "summary": (
+                    "These reviews were saved from an authorized owned business profile."
+                    if rows
+                    else "No owned-profile review inventory has been collected for this location yet."
+                ),
+                "source_coverage": "owned_profiles",
+                "direct_reply_available": posting["available"],
+                "direct_reply_reason": posting["reason"],
+                "ai_reply_available": True,
+                "ai_reply_reason": "AI can prepare a draft when the review passes the safety check.",
+            },
+        },
+    )
+
+
+@reviews_router.get("/intelligence")
+def get_review_intelligence(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_intelligence_service.location_intelligence(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=campaign_id,
+        ),
+    )
+
+
+@reviews_router.get("/portfolio")
+def get_review_portfolio(
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_intelligence_service.portfolio_intelligence(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+        ),
+    )
+
+
+@reviews_router.get("/request-readiness")
+def get_review_request_readiness(
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+) -> dict:
+    del user
+    return envelope(request, reputation_request_service.delivery_readiness())
+
+
+@reviews_router.get("/request-campaigns")
+def get_review_request_campaigns(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        {
+            "items": reputation_request_service.list_campaigns(
+                db,
+                tenant_id=user["tenant_id"],
+                organization_id=user["organization_id"],
+                campaign_id=campaign_id,
+            )
+        },
+    )
+
+
+@reviews_router.post("/request-campaigns")
+def create_review_request_campaign(
+    payload: ReputationReviewRequestCampaignCreate,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_request_service.create_campaign(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=payload.campaign_id,
+            user_id=user["id"],
+            name=payload.name,
+            channel=payload.channel,
+            subject=payload.subject,
+            message_body=payload.message_body,
+            review_url=payload.review_url,
+        ),
+    )
+
+
+@reviews_router.post("/request-campaigns/{request_campaign_id}/recipients")
+def add_review_request_recipient(
+    request_campaign_id: str,
+    payload: ReputationReviewRequestRecipientCreate,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_request_service.add_recipient(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            request_campaign_id=request_campaign_id,
+            email_address=payload.email_address,
+            customer_name=payload.customer_name,
+            consent_basis=payload.consent_basis,
+            consent_source=payload.consent_source,
+            consent_confirmed=payload.consent_confirmed,
+            service_completed_at=payload.service_completed_at,
+        ),
+    )
+
+
+@reviews_router.post("/request-campaigns/{request_campaign_id}/control")
+def control_review_request_campaign(
+    request_campaign_id: str,
+    payload: ReputationReviewRequestCampaignControl,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_request_service.control_campaign(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            request_campaign_id=request_campaign_id,
+            action=payload.action,
+        ),
+    )
+
+
+@reviews_router.post("/request-recipients/{recipient_id}/suppress")
+def suppress_review_request_recipient(
+    recipient_id: str,
+    payload: ReputationReviewRequestSuppressionCreate,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_request_service.suppress_recipient(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            recipient_id=recipient_id,
+            reason=payload.reason,
+            source=payload.source,
+        ),
+    )
+
+
+@reviews_router.get("/response-policy")
+def get_review_response_policy(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = reputation_response_service.policy_status(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        requested_by_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@reviews_router.get("/posting-status")
+def get_review_posting_status(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        reputation_response_execution_service.posting_status(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            campaign_id=campaign_id,
+        ),
+    )
+
+
+@reviews_router.get("/executions")
+def get_review_response_executions(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        {
+            "items": reputation_response_execution_service.list_executions(
+                db,
+                tenant_id=user["tenant_id"],
+                organization_id=user["organization_id"],
+                campaign_id=campaign_id,
+            )
+        },
+    )
+
+
+@reviews_router.post("/drafts/{draft_id}/publish")
+def publish_review_response_draft(
+    draft_id: str,
+    payload: ReputationResponsePublishRequest,
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = reputation_response_execution_service.queue_execution(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        draft_id=draft_id,
+        requested_by_user_id=user["id"],
+        confirmation_version=payload.confirmation_version,
+        confirm_publish_to_google=payload.confirm_publish_to_google,
+    )
+    return envelope(request, reputation_response_execution_service.serialize_execution(row))
+
+
+@reviews_router.patch("/executions/{execution_id}")
+def control_review_response_execution(
+    execution_id: str,
+    payload: ReputationResponseExecutionControl,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = reputation_response_execution_service.control_execution(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        execution_id=execution_id,
+        action=payload.action,
+    )
+    return envelope(request, reputation_response_execution_service.serialize_execution(row))
+
+
+@reviews_router.get("/drafts")
+def get_review_response_drafts(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        {
+            "items": reputation_response_service.list_response_drafts(
+                db,
+                tenant_id=user["tenant_id"],
+                organization_id=user["organization_id"],
+                campaign_id=campaign_id,
+            )
+        },
+    )
+
+
+@reviews_router.post("/{review_id}/drafts")
+def create_review_response_draft(
+    review_id: str,
+    payload: ReputationResponseDraftCreate,
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = reputation_response_service.generate_response_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        review_id=review_id,
+        requested_by_user_id=user["id"],
+        refresh=payload.refresh,
+    )
+    return envelope(request, row)
+
+
+@reviews_router.patch("/drafts/{draft_id}")
+def decide_review_response_draft(
+    draft_id: str,
+    payload: ReputationResponseDraftDecision,
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = reputation_response_service.review_response_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        draft_id=draft_id,
+        user_id=user["id"],
+        decision=payload.decision,
+        approved_text=payload.approved_text,
+    )
+    return envelope(request, row)
+
+
+@reviews_router.post("/sync")
+def sync_review_inventory(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    connection = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.tenant_id == user["tenant_id"],
+            DataConnection.organization_id == user["organization_id"],
+            DataConnection.campaign_id == campaign_id,
+            DataConnection.provider_name == reputation_inventory_service.OWNED_PROFILE_PROVIDER,
+            DataConnection.status != data_connections_service.CONNECTION_STATUS_DISCONNECTED,
+        )
+        .first()
+    )
+    if connection is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Connect this location to its Google business listing before reviews can update.",
+                "reason_code": "owned_profile_connection_required",
+            },
+        )
+    try:
+        job = durable_job_service.run_owned_review_sync_now(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            connection_id=connection.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": str(exc),
+                "reason_code": "review_update_unavailable",
+            },
+        ) from exc
+
+    rows = reputation_inventory_service.list_reviews(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        source_type="owned_profile",
+        limit=250,
+    )
+    job_status = str(job.get("status") or "queued")
+    if job_status == "completed":
+        message = f"Review check finished. {len(rows)} reviews are saved for this location."
+    elif job_status == "running":
+        message = "Review check is still running. Saved reviews remain available below."
+    else:
+        message = (
+            "Reviews could not be updated yet. Check the business listing connection and try again."
+        )
+    return envelope(
+        request,
+        {
+            "job": {
+                "id": job.get("job_id"),
+                "status": job_status,
+                "message": message,
+            },
+            "items": [
+                ReputationReviewOut.model_validate(row).model_dump(mode="json") for row in rows
+            ],
+            "summary": reputation_inventory_service.inventory_summary(rows),
+            "reply_tools_available": True,
+        },
+    )
+
+
 @reviews_router.get("/velocity")
 def get_review_velocity(
     request: Request,
@@ -374,12 +849,16 @@ def get_review_velocity(
 ) -> dict:
     try:
         ingest_task = reviews_ingest.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
-        velocity_task = reviews_compute_velocity.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        velocity_task = reviews_compute_velocity.delay(
+            tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except KombuError:
         ingest_task = None
         velocity_task = None
     try:
-        velocity = local_service.get_velocity(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+        velocity = local_service.get_velocity(
+            db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+        )
     except ValueError:
         velocity = {
             "campaign_id": campaign_id,

@@ -17,6 +17,7 @@ from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
 from app.services.audit_service import write_audit_log
 from app.services.cost_economics_service import CostEconomicsError, resolve_plan_economics
+from app.services import reputation_response_execution_service
 
 ALLOWED_PLAN_TYPES = {
     "internal_anchor",
@@ -42,6 +43,16 @@ class BillingPatchIn(BaseModel):
 
 class StatusPatchIn(BaseModel):
     status: str = Field(...)
+
+
+class ReviewReplyCapabilityIn(BaseModel):
+    connection_id: str = Field(..., min_length=1, max_length=36)
+    proof_reference: str = Field(..., min_length=8, max_length=2000)
+
+
+class ReviewReplyCapabilityRevokeIn(BaseModel):
+    connection_id: str = Field(..., min_length=1, max_length=36)
+    reason: str = Field(default="manually_revoked", min_length=1, max_length=120)
 
 
 def _org_or_404(db: Session, organization_id: str) -> Organization:
@@ -92,13 +103,85 @@ def get_platform_org(
         {
             "organization": _serialize_org(org),
             "provider_policies": [
-                {"provider_name": row.provider_name, "credential_mode": row.credential_mode, "updated_at": row.updated_at.isoformat()}
+                {
+                    "provider_name": row.provider_name,
+                    "credential_mode": row.credential_mode,
+                    "updated_at": row.updated_at.isoformat(),
+                }
                 for row in policies
             ],
         },
     )
 
 
+@router.post("/platform/orgs/{organization_id}/review-reply-capability")
+def authorize_review_reply_capability(
+    request: Request,
+    organization_id: str,
+    body: ReviewReplyCapabilityIn,
+    user: dict = Depends(require_platform_owner()),
+    db: Session = Depends(get_db),
+) -> dict:
+    _org_or_404(db, organization_id)
+    row = reputation_response_execution_service.authorize_validation(
+        db,
+        organization_id=organization_id,
+        connection_id=body.connection_id,
+        authorized_by_user_id=user["id"],
+        proof_reference=body.proof_reference,
+    )
+    write_audit_log(
+        db,
+        tenant_id=row.tenant_id,
+        actor_user_id=user["id"],
+        event_type="platform.review_reply_capability.validation_authorized",
+        payload={
+            "organization_id": organization_id,
+            "connection_id": body.connection_id,
+            "capability": row.capability,
+            "status": row.status,
+        },
+    )
+    db.commit()
+    return envelope(
+        request,
+        {"capability": reputation_response_execution_service.serialize_capability(row)},
+    )
+
+
+@router.delete("/platform/orgs/{organization_id}/review-reply-capability")
+def revoke_review_reply_capability(
+    request: Request,
+    organization_id: str,
+    body: ReviewReplyCapabilityRevokeIn,
+    user: dict = Depends(require_platform_owner()),
+    db: Session = Depends(get_db),
+) -> dict:
+    _org_or_404(db, organization_id)
+    row = reputation_response_execution_service.revoke_capability(
+        db,
+        organization_id=organization_id,
+        connection_id=body.connection_id,
+        revoked_by_user_id=user["id"],
+        reason=body.reason,
+    )
+    write_audit_log(
+        db,
+        tenant_id=row.tenant_id,
+        actor_user_id=user["id"],
+        event_type="platform.review_reply_capability.revoked",
+        payload={
+            "organization_id": organization_id,
+            "connection_id": body.connection_id,
+            "capability": row.capability,
+            "reason": body.reason,
+        },
+    )
+    db.commit()
+    return envelope(
+        request,
+        {"capability": reputation_response_execution_service.serialize_capability(row)},
+    )
 @router.patch("/platform/orgs/{organization_id}/plan")
 def patch_org_plan(
     request: Request,

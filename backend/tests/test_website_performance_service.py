@@ -124,6 +124,11 @@ def test_collects_field_and_lab_measurements_with_origin_fallback(
     assert lab.performance_score == 91
     assert lab.source_version == "13.0.0"
     assert lab.diagnostics["opportunities"][0]["estimated_savings_ms"] == 450
+    assert field.metric_contract_versions["web.crux.lcp"] == "1.0"
+    assert field.metric_contract_versions["web.crux.inp"] == "1.0"
+    assert field.scope_key != "legacy"
+    assert lab.metric_contract_versions["web.pagespeed.performance_score"] == "1.0"
+    assert lab.scope_key != "legacy"
 
     replay = collect_campaign_performance(
         db_session,
