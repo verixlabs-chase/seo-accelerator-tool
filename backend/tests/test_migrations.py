@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import NullPool
 
 from app.core.settings import get_settings
+from app.db.base import Base
 
 
 def test_explicit_migration_identifiers_fit_postgres_limit():
@@ -31,6 +32,18 @@ def test_explicit_migration_identifiers_fit_postgres_limit():
                 overlong.append((migration_path.name, node.lineno, value))
 
     assert not overlong, f"PostgreSQL identifiers exceed 63 characters: {overlong}"
+
+
+def test_model_index_identifiers_fit_postgres_limit():
+    """Prevent ORM-created indexes from failing only when PostgreSQL creates metadata."""
+    overlong = sorted(
+        (table.name, index.name, len(index.name))
+        for table in Base.metadata.tables.values()
+        for index in table.indexes
+        if index.name and len(index.name) > 63
+    )
+
+    assert not overlong, f"ORM index identifiers exceed 63 characters: {overlong}"
 
 
 def test_migration_upgrade_and_downgrade():
@@ -128,6 +141,20 @@ def test_migration_upgrade_and_downgrade():
         assert "reputation_response_drafts" in inspector.get_table_names()
         assert "reputation_provider_capabilities" in inspector.get_table_names()
         assert "reputation_response_executions" in inspector.get_table_names()
+        assert "portfolio_location_groups" in inspector.get_table_names()
+        assert "portfolio_location_group_members" in inspector.get_table_names()
+        assert "portfolio_target_snapshots" in inspector.get_table_names()
+        target_snapshot_cols = {
+            col["name"] for col in inspector.get_columns("portfolio_target_snapshots")
+        }
+        assert {
+            "location_group_version",
+            "selection_json",
+            "targets_json",
+            "exceptions_json",
+            "target_hash",
+            "blocked_count",
+        }.issubset(target_snapshot_cols)
         assert "strategy_recommendations" in inspector.get_table_names()
         assert "intelligence_scores" in inspector.get_table_names()
         assert "campaign_milestones" in inspector.get_table_names()

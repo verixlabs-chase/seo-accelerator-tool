@@ -152,6 +152,28 @@ an old key until the new active key is ready to deploy, and remove transition
 keys after sessions or encrypted credential rows have been migrated. Follow
 [the TR1 security and recovery runbook](./platform/runbooks/tr1_security_recovery.md).
 
+## 6. Store report files privately in Supabase
+
+Create a private Supabase Storage bucket named `insightos-reports`, then create
+S3 access keys for the project. Copy the endpoint and region shown on the
+project's [S3 configuration page](https://supabase.com/docs/guides/storage/s3/authentication)
+into these server-only backend variables:
+
+```text
+OBJECT_STORAGE_ENDPOINT=https://PROJECT_REF.storage.supabase.co/storage/v1/s3
+OBJECT_STORAGE_BUCKET=insightos-reports
+OBJECT_STORAGE_ACCESS_KEY=<s3-access-key>
+OBJECT_STORAGE_SECRET_KEY=<s3-secret-key>
+OBJECT_STORAGE_REGION=<project-region>
+```
+
+Do not expose these values through `NEXT_PUBLIC_` variables and do not make the
+bucket public. Report downloads pass through authenticated API routes. Shared
+reports use random expiring tokens; only a SHA-256 token hash is stored, links
+can be revoked, and public responses disable browser caching and search-engine
+indexing. If these variables are absent, local development falls back to
+`generated_reports`; that fallback is not durable on Vercel.
+
 Save `CRON_SECRET` in the backend Vercel project for Production, Preview, and
 Development. Vercel automatically sends it to configured cron routes as:
 

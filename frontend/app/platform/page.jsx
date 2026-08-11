@@ -18,6 +18,9 @@ export default function PlatformHomePage() {
         <li>
           <Link href="/platform/audit">Audit Log</Link>
         </li>
+        <li>
+          <Link href="/platform/value">Activation &amp; Customer Value</Link>
+        </li>
       </ul>
     </main>
   );

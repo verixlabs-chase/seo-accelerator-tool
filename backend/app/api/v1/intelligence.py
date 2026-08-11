@@ -27,6 +27,7 @@ from app.services import (
     governed_ai_service,
     governed_ai_qa_service,
     intelligence_service,
+    product_analytics_service,
 )
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
 from app.services.recommendation_outcome_service import (
@@ -152,6 +153,17 @@ def get_intelligence_recommendations(
         item["action_plan"] = action_plans.get(item["id"])
         if item["action_plan"] is not None:
             item["action_plan"]["work_item"] = work_items.get(item["id"])
+    if any(item.get("evidence") for item in items):
+        product_analytics_service.record_server_event_safely(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            actor_user_id=user["user_id"],
+            event_name="value.first_verified_insight",
+            campaign_id=campaign_id,
+            properties={"value_kind": "recommendation_with_evidence"},
+            idempotency_key=f"value.first_verified_insight:{campaign_id}",
+        )
     engine = build_intelligence_engine_state(recs)
     has_orchestrator_guidance = engine["orchestrator_recommendation_count"] > 0
     truth = _intelligence_truth(
@@ -200,6 +212,22 @@ def update_action_plan_checklist_step(
         evidence=body.evidence,
         actor_user_id=user["user_id"],
     )
+    if body.status == "done":
+        completed_step = next(
+            (item for item in work_item.get("steps", []) if item.get("id") == step_id),
+            {},
+        )
+        completed_at = str(completed_step.get("completed_at") or "recorded")
+        product_analytics_service.record_server_event_safely(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            actor_user_id=user["user_id"],
+            event_name="action.step_completed",
+            campaign_id=campaign_id,
+            properties={"surface": "next_steps"},
+            idempotency_key=f"action.step_completed:{step_id}:{completed_at}",
+        )
     return envelope(request, {"work_item": work_item})
 
 
@@ -490,6 +518,23 @@ def measure_intelligence_outcome(
         (item for item in history["items"] if item["id"] == outcome.id),
         None,
     )
+    if created and item is not None:
+        raw_direction = str(item.get("direction") or "").lower()
+        result_direction = {
+            "improved": "improved",
+            "declined": "declined",
+            "no_material_change": "unchanged",
+        }.get(raw_direction, "inconclusive")
+        product_analytics_service.record_server_event_safely(
+            db,
+            tenant_id=user["tenant_id"],
+            organization_id=user["organization_id"],
+            actor_user_id=user["user_id"],
+            event_name="action.outcome_available",
+            campaign_id=campaign_id,
+            properties={"result_direction": result_direction},
+            idempotency_key=f"action.outcome_available:{outcome.id}",
+        )
     return envelope(
         request,
         {

@@ -8,6 +8,7 @@ from app.api.response import envelope
 from app.db.session import get_db
 from app.services.account_hierarchy_service import build_account_hierarchy
 from app.services.hierarchy_observability_service import get_location_linkage_stats
+from app.services.portfolio_intelligence_service import build_portfolio_overview
 
 
 router = APIRouter(tags=["hierarchy-observability"])
@@ -34,6 +35,18 @@ def get_hierarchy_health(
     _assert_org_scope(user, org_id)
     payload = get_location_linkage_stats(db, org_id)
     return envelope(request, {"hierarchy_health": payload})
+
+
+@router.get("/organizations/{org_id}/portfolio-overview")
+def get_portfolio_overview(
+    request: Request,
+    org_id: str,
+    user: dict = Depends(require_org_role({"org_owner", "org_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    _assert_org_scope(user, org_id)
+    payload = build_portfolio_overview(db, organization_id=org_id)
+    return envelope(request, {"portfolio": payload})
 
 
 def _assert_org_scope(user: dict, org_id: str) -> None:

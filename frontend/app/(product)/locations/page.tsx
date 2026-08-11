@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import {
   AppShell,
@@ -106,6 +114,263 @@ type Hierarchy = {
   }>;
 };
 
+type PortfolioReason = {
+  code: string;
+  severity: "urgent" | "needs_attention" | "watch" | "on_track";
+  title: string;
+  detail: string;
+  action_label: string;
+  action_href: string;
+  evidence?: { label: string; value: string | number } | null;
+};
+
+type PortfolioLocation = {
+  location_id: string;
+  location_name: string;
+  location_status: string;
+  city?: string | null;
+  region?: string | null;
+  account_group?: { id: string; name: string } | null;
+  campaign_id?: string | null;
+  campaign_ids: string[];
+  attention_state: "urgent" | "needs_attention" | "watch" | "on_track";
+  attention_label: string;
+  reason_count: number;
+  reasons: PortfolioReason[];
+  next_action: { label: string; href: string; campaign_id?: string | null };
+  connections: {
+    healthy: number;
+    updating: number;
+    needs_attention: number;
+    needs_setup: number;
+  };
+  open_actions: number;
+  performance: {
+    data_available: boolean;
+    as_of?: string | null;
+    clicks: number;
+    impressions: number;
+    avg_position?: number | null;
+    technical_issue_count: number;
+    reviews_last_30d: number;
+    avg_rating_last_30d?: number | null;
+  };
+};
+
+type SharedIssueLocation = {
+  location_id: string;
+  location_name: string;
+  city?: string | null;
+  region?: string | null;
+  campaign_id?: string | null;
+  detail: string;
+  evidence?: { label: string; value: string | number } | null;
+  action_label: string;
+  action_href: string;
+};
+
+type SharedIssue = {
+  code: string;
+  severity: PortfolioLocation["attention_state"];
+  attention_label: string;
+  title: string;
+  summary: string;
+  location_count: number;
+  locations: SharedIssueLocation[];
+};
+
+type RepeatableWin = {
+  code: string;
+  title: string;
+  summary: string;
+  source: {
+    location_id: string;
+    location_name: string;
+    campaign_id?: string | null;
+    metric: { label: string; value: string | number };
+  };
+  targets: Array<{
+    location_id: string;
+    location_name: string;
+    campaign_id?: string | null;
+    metric: { label: string; value: string | number };
+  }>;
+  action: { label: string; href: string; campaign_id?: string | null };
+  guardrail: string;
+};
+
+type PortfolioTrendMetric = {
+  code: "daily_clicks" | "daily_impressions" | "avg_position" | "website_issues";
+  label: string;
+  current?: number | null;
+  previous?: number | null;
+  change?: number | null;
+  change_percent?: number | null;
+  direction: "improved" | "declined" | "steady" | "not_measured";
+  tone: "positive" | "negative" | "neutral";
+  unit: string;
+};
+
+type PortfolioTrendPoint = {
+  date: string;
+  clicks: number;
+  impressions: number;
+  avg_position?: number | null;
+  website_issues: number;
+  locations_reporting: number;
+};
+
+type PortfolioChangeAlert = {
+  code: string;
+  tone: "positive" | "negative";
+  location_id: string;
+  location_name: string;
+  campaign_id?: string | null;
+  title: string;
+  detail: string;
+  evidence: { label: string; value: string | number };
+  action: { label: string; href: string };
+};
+
+type PortfolioTrends = {
+  data_state: "ready" | "collecting_history" | "no_history";
+  window_days: number;
+  minimum_reporting_days: number;
+  date_from?: string | null;
+  date_to?: string | null;
+  comparison_date_from?: string | null;
+  comparison_date_to?: string | null;
+  locations_compared: number;
+  locations_excluded: number;
+  coverage_note: string;
+  summary: PortfolioTrendMetric[];
+  points: PortfolioTrendPoint[];
+  alerts: PortfolioChangeAlert[];
+};
+
+type PortfolioOverview = {
+  generated_at: string;
+  summary: {
+    headline: string;
+    next_step?: string | null;
+    active_locations: number;
+    archived_locations: number;
+    locations_with_saved_performance: number;
+    locations_needing_attention: number;
+    urgent: number;
+    needs_attention: number;
+    watch: number;
+    on_track: number;
+  };
+  top_attention: PortfolioLocation[];
+  shared_issues: SharedIssue[];
+  repeatable_wins: RepeatableWin[];
+  trends: PortfolioTrends;
+  locations: PortfolioLocation[];
+};
+
+type LocationGroupMember = {
+  location_id: string;
+  name: string;
+  city?: string | null;
+  region?: string | null;
+  status: string;
+};
+
+type LocationGroup = {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: "active" | "archived";
+  version: number;
+  member_count: number;
+  members: LocationGroupMember[];
+};
+
+type TargetLocation = {
+  location_id: string;
+  location_name: string;
+  city?: string | null;
+  region?: string | null;
+  status: string;
+  campaign_id: string;
+  campaign_name: string;
+};
+
+type TargetException = {
+  location_id: string;
+  location_name: string;
+  city?: string | null;
+  region?: string | null;
+  status: string;
+  reason: string;
+  message: string;
+  blocked: boolean;
+};
+
+type TargetSnapshot = {
+  id: string;
+  location_group_id?: string | null;
+  location_group_version?: number | null;
+  action_key: string;
+  target_hash: string;
+  target_count: number;
+  blocked_count: number;
+  targets: TargetLocation[];
+  exceptions: TargetException[];
+  created_at: string;
+  immutable: boolean;
+};
+
+type PortfolioFleetRunItem = {
+  id: string;
+  business_location_id: string;
+  location_name: string;
+  campaign_id?: string | null;
+  status: "ready" | "blocked" | "queued" | "running" | "succeeded" | "failed";
+  status_label: string;
+  estimated_credits: number;
+  retries: number;
+  message: string;
+};
+
+type PortfolioFleetRun = {
+  id: string;
+  target_snapshot_id: string;
+  target_hash: string;
+  action_key: string;
+  status: "awaiting_approval" | "blocked" | "running" | "paused" | "succeeded" | "partial" | "failed" | "cancelled";
+  status_label: string;
+  counts: {
+    targeted: number;
+    ready: number;
+    blocked: number;
+    queued: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+  };
+  estimated_credits: number;
+  preflight: {
+    action: { label: string; description: string };
+    credits: { name: string; estimated: number; message: string };
+    approval: { required: boolean; message: string };
+    guardrails: string[];
+  };
+  approval: {
+    required: boolean;
+    approved: boolean;
+    approved_at?: string | null;
+  };
+  version: number;
+  items: PortfolioFleetRunItem[];
+  can_approve: boolean;
+  can_pause: boolean;
+  can_resume: boolean;
+  can_retry_failed: boolean;
+  provider_changes_enabled: boolean;
+};
+
 const EMPTY_TOTALS: Hierarchy["totals"] = {
   subaccounts: 0,
   business_locations: 0,
@@ -141,12 +406,63 @@ function statusClasses(status?: string) {
   return "border-amber-500/20 bg-amber-500/10 text-amber-100";
 }
 
+function attentionClasses(state: PortfolioLocation["attention_state"]) {
+  if (state === "urgent") return "border-rose-500/30 bg-rose-500/10 text-rose-100";
+  if (state === "needs_attention") return "border-amber-500/30 bg-amber-500/10 text-amber-100";
+  if (state === "watch") return "border-sky-500/25 bg-sky-500/10 text-sky-100";
+  return "border-emerald-500/25 bg-emerald-500/10 text-emerald-100";
+}
+
+function positionLabel(value?: number | null) {
+  return value == null ? "Not measured" : `#${Number(value).toFixed(1)}`;
+}
+
+function ratingLabel(value?: number | null) {
+  return value == null ? "Not measured" : `${Number(value).toFixed(1)} stars`;
+}
+
+function shortDate(value?: string | null) {
+  if (!value) return "Not available";
+  return new Date(`${value}T12:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function trendValue(item: PortfolioTrendMetric) {
+  if (item.current == null) return "Not measured";
+  if (item.code === "avg_position") return `#${item.current.toFixed(1)}`;
+  return Math.round(item.current).toLocaleString();
+}
+
+function trendChangeLabel(item: PortfolioTrendMetric) {
+  if (item.direction === "not_measured") return "Not enough information";
+  if (item.direction === "steady") return "→ No clear change";
+  const arrow = item.direction === "improved" ? "↑" : "↓";
+  const label = item.direction === "improved" ? "Improved" : "Needs attention";
+  if (item.code === "avg_position" && item.change != null) {
+    return `${arrow} ${label} by ${Math.abs(item.change).toFixed(1)} positions`;
+  }
+  if (item.code === "website_issues" && item.change != null) {
+    return `${arrow} ${label} by ${Math.abs(item.change).toFixed(0)} problems`;
+  }
+  if (item.change_percent != null) {
+    return `${arrow} ${label} ${Math.abs(item.change_percent).toFixed(0)}%`;
+  }
+  return `${arrow} ${label}`;
+}
+
 export default function LocationsPage() {
   const pathname = usePathname();
   const router = useRouter();
-  const { reloadLocations } = useLocationContext();
+  const { reloadLocations, setSelectedCampaignId } = useLocationContext();
   const [me, setMe] = useState<Me | null>(null);
   const [hierarchy, setHierarchy] = useState<Hierarchy | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioOverview | null>(null);
+  const [locationGroups, setLocationGroups] = useState<LocationGroup[]>([]);
+  const [targetSnapshots, setTargetSnapshots] = useState<TargetSnapshot[]>([]);
+  const [portfolioFleetRuns, setPortfolioFleetRuns] = useState<PortfolioFleetRun[]>([]);
+  const [portfolioSort, setPortfolioSort] = useState("attention");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -162,6 +478,12 @@ export default function LocationsPage() {
   const [campaignName, setCampaignName] = useState("");
   const [campaignDomain, setCampaignDomain] = useState("");
   const [campaignLocationId, setCampaignLocationId] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [groupLocationIds, setGroupLocationIds] = useState<string[]>([]);
+  const [selectedTargetGroupId, setSelectedTargetGroupId] = useState("");
+  const [targetLocationIds, setTargetLocationIds] = useState<string[]>([]);
+  const [groupMemberDraftIds, setGroupMemberDraftIds] = useState<string[]>([]);
+  const [lastTargetSnapshot, setLastTargetSnapshot] = useState<TargetSnapshot | null>(null);
   const [editingLocationId, setEditingLocationId] = useState("");
   const [geoDraft, setGeoDraft] = useState({
     city: "",
@@ -176,11 +498,21 @@ export default function LocationsPage() {
   const organizationId = me?.organization_id || "";
 
   const loadHierarchy = useCallback(async (orgId: string) => {
-    const response = await platformApi(`/organizations/${orgId}/hierarchy`, {
-      method: "GET",
-    });
-    const nextHierarchy = (response?.hierarchy || null) as Hierarchy | null;
+    const [hierarchyResponse, portfolioResponse, groupsResponse, snapshotsResponse, fleetRunsResponse] = await Promise.all([
+      platformApi(`/organizations/${orgId}/hierarchy`, { method: "GET" }),
+      platformApi(`/organizations/${orgId}/portfolio-overview`, { method: "GET" }),
+      platformApi(`/organizations/${orgId}/location-groups`, { method: "GET" }),
+      platformApi(`/organizations/${orgId}/target-snapshots?limit=5`, { method: "GET" }),
+      platformApi(`/organizations/${orgId}/portfolio-fleet-runs?limit=5`, { method: "GET" }),
+    ]);
+    const nextHierarchy = (hierarchyResponse?.hierarchy || null) as Hierarchy | null;
+    const nextSnapshots = (snapshotsResponse?.items || []) as TargetSnapshot[];
     setHierarchy(nextHierarchy);
+    setPortfolio((portfolioResponse?.portfolio || null) as PortfolioOverview | null);
+    setLocationGroups((groupsResponse?.items || []) as LocationGroup[]);
+    setTargetSnapshots(nextSnapshots);
+    setPortfolioFleetRuns((fleetRunsResponse?.items || []) as PortfolioFleetRun[]);
+    setLastTargetSnapshot(nextSnapshots[0] || null);
     return nextHierarchy;
   }, []);
 
@@ -216,6 +548,42 @@ export default function LocationsPage() {
     () => allBusinessLocations.filter((item) => item.status === "active" && item.sub_account_id),
     [allBusinessLocations],
   );
+  const groupEligibleLocations = useMemo(
+    () => allBusinessLocations.filter((item) => item.status === "active"),
+    [allBusinessLocations],
+  );
+  const activeLocationGroups = useMemo(
+    () => locationGroups.filter((item) => item.status === "active"),
+    [locationGroups],
+  );
+  const selectedTargetGroup = useMemo(
+    () => activeLocationGroups.find((item) => item.id === selectedTargetGroupId) || null,
+    [activeLocationGroups, selectedTargetGroupId],
+  );
+  const sortedPortfolioLocations = useMemo(() => {
+    const rows = [...(portfolio?.locations || [])].filter(
+      (item) => item.location_status === "active",
+    );
+    const attentionOrder = { urgent: 0, needs_attention: 1, watch: 2, on_track: 3 };
+    return rows.sort((left, right) => {
+      if (portfolioSort === "name") return left.location_name.localeCompare(right.location_name);
+      if (portfolioSort === "position") {
+        return (left.performance.avg_position ?? 9999) - (right.performance.avg_position ?? 9999);
+      }
+      if (portfolioSort === "rating") {
+        return (right.performance.avg_rating_last_30d ?? -1) -
+          (left.performance.avg_rating_last_30d ?? -1);
+      }
+      if (portfolioSort === "issues") {
+        return right.performance.technical_issue_count - left.performance.technical_issue_count;
+      }
+      return (
+        attentionOrder[left.attention_state] - attentionOrder[right.attention_state] ||
+        right.reason_count - left.reason_count ||
+        left.location_name.localeCompare(right.location_name)
+      );
+    });
+  }, [portfolio, portfolioSort]);
 
   useEffect(() => {
     if (!locationSubaccountId && activeSubaccounts.length > 0) {
@@ -228,6 +596,16 @@ export default function LocationsPage() {
       setCampaignLocationId(activeBusinessLocations[0].id);
     }
   }, [activeBusinessLocations, campaignLocationId]);
+
+  useEffect(() => {
+    if (!selectedTargetGroupId && activeLocationGroups.length > 0) {
+      const firstGroup = activeLocationGroups[0];
+      const memberIds = firstGroup.members.map((item) => item.location_id);
+      setSelectedTargetGroupId(firstGroup.id);
+      setTargetLocationIds(memberIds);
+      setGroupMemberDraftIds(memberIds);
+    }
+  }, [activeLocationGroups, selectedTargetGroupId]);
 
   async function runMutation(action: string, callback: () => Promise<string>) {
     setBusyAction(action);
@@ -313,6 +691,203 @@ export default function LocationsPage() {
     });
   }
 
+  function toggleId(values: string[], value: string) {
+    return values.includes(value)
+      ? values.filter((item) => item !== value)
+      : [...values, value];
+  }
+
+  function chooseTargetGroup(groupId: string) {
+    const group = activeLocationGroups.find((item) => item.id === groupId);
+    setSelectedTargetGroupId(groupId);
+    const memberIds = group?.members.map((item) => item.location_id) || [];
+    setTargetLocationIds(memberIds);
+    setGroupMemberDraftIds(memberIds);
+    setLastTargetSnapshot(null);
+  }
+
+  async function createSavedLocationGroup(event: FormEvent) {
+    event.preventDefault();
+    if (!organizationId || !groupName.trim() || groupLocationIds.length === 0) return;
+    await runMutation("location-group", async () => {
+      const response = await platformApi(`/organizations/${organizationId}/location-groups`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: groupName.trim(),
+          description: null,
+          location_ids: groupLocationIds,
+        }),
+      });
+      const created = response?.location_group as LocationGroup | undefined;
+      setGroupName("");
+      setGroupLocationIds([]);
+      if (created) {
+        const memberIds = created.members.map((item) => item.location_id);
+        setSelectedTargetGroupId(created.id);
+        setTargetLocationIds(memberIds);
+        setGroupMemberDraftIds(memberIds);
+      }
+      return "Location group saved. You can reuse it whenever you plan work across locations.";
+    });
+  }
+
+  async function saveSelectedGroupMembers() {
+    if (!organizationId || !selectedTargetGroup || groupMemberDraftIds.length === 0) return;
+    await runMutation("group-members", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/location-groups/${selectedTargetGroup.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            expected_version: selectedTargetGroup.version,
+            name: selectedTargetGroup.name,
+            description: selectedTargetGroup.description || null,
+            status: selectedTargetGroup.status,
+            location_ids: groupMemberDraftIds,
+          }),
+        },
+      );
+      const updated = response?.location_group as LocationGroup | undefined;
+      const memberIds = updated?.members.map((item) => item.location_id) || groupMemberDraftIds;
+      setTargetLocationIds(memberIds);
+      setGroupMemberDraftIds(memberIds);
+      setLastTargetSnapshot(null);
+      return "Group membership updated. Any older target previews remain unchanged.";
+    });
+  }
+
+  async function freezeTargetPreview() {
+    if (!organizationId || !selectedTargetGroup || targetLocationIds.length === 0) return;
+    const groupMemberIds = new Set(
+      selectedTargetGroup.members.map((item) => item.location_id),
+    );
+    const targetIds = new Set(targetLocationIds);
+    await runMutation("target-preview", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/target-snapshots`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action_key: "portfolio_review",
+            request_key: crypto.randomUUID(),
+            location_group_id: selectedTargetGroup.id,
+            select_all_active: false,
+            regions: [],
+            included_location_ids: targetLocationIds.filter((id) => !groupMemberIds.has(id)),
+            excluded_location_ids: selectedTargetGroup.members
+              .map((item) => item.location_id)
+              .filter((id) => !targetIds.has(id)),
+          }),
+        },
+      );
+      const snapshot = response?.target_snapshot as TargetSnapshot | undefined;
+      if (!snapshot) throw new Error("The exact target list could not be saved.");
+      setLastTargetSnapshot(snapshot);
+      return "Exact target list saved. No work was run.";
+    });
+  }
+
+  async function createFleetPreflight(snapshot: TargetSnapshot) {
+    if (!organizationId) return;
+    await runMutation("fleet-preflight", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            target_snapshot_id: snapshot.id,
+            request_key: crypto.randomUUID(),
+          }),
+        },
+      );
+      const run = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!run) throw new Error("The readiness check could not be prepared.");
+      return run.counts.ready > 0
+        ? `Readiness checked. ${run.counts.ready} ${run.counts.ready === 1 ? "location is" : "locations are"} ready for approval.`
+        : "No locations are ready yet. Review the setup items below.";
+    });
+  }
+
+  async function approveFleetRun(run: PortfolioFleetRun) {
+    if (!organizationId) return;
+    await runMutation("fleet-approve", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs/${run.id}/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify({ expected_version: run.version }),
+        },
+      );
+      const approved = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!approved) throw new Error("The location checks could not be started.");
+      return `Approved. ${approved.counts.queued} ${approved.counts.queued === 1 ? "location is" : "locations are"} waiting to run.`;
+    });
+  }
+
+  async function retryFailedFleetRun(run: PortfolioFleetRun) {
+    if (!organizationId) return;
+    await runMutation("fleet-retry", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs/${run.id}/retry-failed`,
+        {
+          method: "POST",
+          body: JSON.stringify({ expected_version: run.version }),
+        },
+      );
+      const retried = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!retried) throw new Error("The failed locations could not be retried.");
+      return "Only the failed locations were placed back in line.";
+    });
+  }
+
+  async function pauseFleetRun(run: PortfolioFleetRun) {
+    if (!organizationId) return;
+    await runMutation("fleet-pause", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs/${run.id}/pause`,
+        {
+          method: "POST",
+          body: JSON.stringify({ expected_version: run.version }),
+        },
+      );
+      const paused = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!paused) throw new Error("The remaining location checks could not be paused.");
+      return `${paused.counts.queued} waiting ${paused.counts.queued === 1 ? "location is" : "locations are"} paused. Completed results were kept.`;
+    });
+  }
+
+  async function resumeFleetRun(run: PortfolioFleetRun) {
+    if (!organizationId) return;
+    await runMutation("fleet-resume", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/portfolio-fleet-runs/${run.id}/resume`,
+        {
+          method: "POST",
+          body: JSON.stringify({ expected_version: run.version }),
+        },
+      );
+      const resumed = response?.portfolio_fleet_run as PortfolioFleetRun | undefined;
+      if (!resumed) throw new Error("The remaining location checks could not be resumed.");
+      return resumed.status === "running"
+        ? "The waiting locations are running again."
+        : "The run was refreshed and all finished results were kept.";
+    });
+  }
+
+  async function refreshFleetProgress() {
+    if (!organizationId) return;
+    setBusyAction("fleet-refresh");
+    setError("");
+    try {
+      await loadHierarchy(organizationId);
+      setNotice("Location progress refreshed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Progress could not be refreshed.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function archiveLocation(location: BusinessLocation) {
     if (!organizationId) return;
     await runMutation(`archive-${location.id}`, async () => {
@@ -369,8 +944,26 @@ export default function LocationsPage() {
     });
   }
 
+  function openPortfolioPath(campaignId: string | null | undefined, href: string) {
+    if (campaignId) setSelectedCampaignId(campaignId);
+    router.push(href || "/dashboard");
+  }
+
+  function openPortfolioAction(item: PortfolioLocation) {
+    openPortfolioPath(
+      item.next_action.campaign_id || item.campaign_id,
+      item.next_action.href,
+    );
+  }
+
   const totals = hierarchy?.totals || EMPTY_TOTALS;
   const hierarchyTruth = getHierarchyTruth(hierarchy);
+  const visibleTargetSnapshot = lastTargetSnapshot || targetSnapshots[0] || null;
+  const visibleFleetRun = visibleTargetSnapshot
+    ? portfolioFleetRuns.find(
+        (run) => run.target_snapshot_id === visibleTargetSnapshot.id,
+      ) || null
+    : null;
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
@@ -453,6 +1046,428 @@ export default function LocationsPage() {
           </div>
         ) : null}
 
+        {!loading && groupEligibleLocations.length > 0 ? (
+          <details
+            open={activeLocationGroups.length === 0 ? true : undefined}
+            className="rounded-md border border-[#2c2d32] bg-[#121316] p-4 shadow-[0_0_30px_rgba(0,0,0,0.28)]"
+          >
+            <summary className="flex cursor-pointer list-none flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Safe multi-location planning
+                </p>
+                <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                  Saved groups and exact target lists
+                </h2>
+              </div>
+              <p className="max-w-xl text-sm leading-5 text-zinc-400">
+                Reuse a group, choose the locations for a future action, and save the exact list for review.
+                Nothing runs from this screen.
+              </p>
+            </summary>
+
+            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
+              <form
+                onSubmit={createSavedLocationGroup}
+                className="border-t border-[#292a2f] pt-4 xl:border-r xl:border-t-0 xl:pr-5 xl:pt-0"
+              >
+                <p className="text-sm font-semibold text-white">Save a location group</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-500">
+                  Use a clear name such as “North Texas” or “Plumbing locations.”
+                </p>
+                <label className={`${labelClass} mt-4`}>
+                  Group name
+                  <input
+                    value={groupName}
+                    onChange={(event) => setGroupName(event.target.value)}
+                    className={inputClass}
+                    placeholder="North Texas"
+                  />
+                </label>
+                <div className="mt-4 space-y-2">
+                  {groupEligibleLocations.map((location) => (
+                    <label
+                      key={`new-group-${location.id}`}
+                      className="flex cursor-pointer items-start gap-3 border-b border-[#24252a] py-2.5 text-sm text-zinc-300 last:border-b-0"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={groupLocationIds.includes(location.id)}
+                        onChange={() => setGroupLocationIds((current) => toggleId(current, location.id))}
+                        className="mt-0.5 accent-orange-500"
+                      />
+                      <span>
+                        <span className="font-medium text-white">{location.name}</span>
+                        <span className="mt-0.5 block text-xs text-zinc-600">
+                          {[location.city || location.primary_city, location.region].filter(Boolean).join(", ") || "Area not added"}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="submit"
+                  disabled={!groupName.trim() || groupLocationIds.length === 0 || busyAction === "location-group"}
+                  className={`${primaryButtonClass} mt-4`}
+                >
+                  {busyAction === "location-group" ? "Saving…" : "Save group"}
+                </button>
+              </form>
+
+              <div>
+                {activeLocationGroups.length > 0 ? (
+                  <>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                      <label className={`${labelClass} min-w-64`}>
+                        Plan with saved group
+                        <select
+                          value={selectedTargetGroupId}
+                          onChange={(event) => chooseTargetGroup(event.target.value)}
+                          className={inputClass}
+                        >
+                          {activeLocationGroups.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.name} ({group.member_count})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {selectedTargetGroup ? (
+                        <p className="text-xs text-zinc-600">
+                          Saved version {selectedTargetGroup.version}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 grid gap-x-6 md:grid-cols-2">
+                      {groupEligibleLocations.map((location) => {
+                        const savedMember = selectedTargetGroup?.members.some(
+                          (member) => member.location_id === location.id,
+                        );
+                        return (
+                          <label
+                            key={`target-${location.id}`}
+                            className="flex cursor-pointer items-start gap-3 border-b border-[#24252a] py-3 text-sm text-zinc-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={targetLocationIds.includes(location.id)}
+                              onChange={() => setTargetLocationIds((current) => toggleId(current, location.id))}
+                              className="mt-0.5 accent-orange-500"
+                            />
+                            <span>
+                              <span className="font-medium text-white">{location.name}</span>
+                              <span className="mt-0.5 block text-xs text-zinc-600">
+                                {savedMember ? "In the saved group" : "Added only to this preview"}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void freezeTargetPreview()}
+                        disabled={!selectedTargetGroup || targetLocationIds.length === 0 || busyAction === "target-preview"}
+                        className={primaryButtonClass}
+                      >
+                        {busyAction === "target-preview" ? "Saving exact list…" : "Save exact target list"}
+                      </button>
+                      <span className="text-xs text-zinc-500">
+                        {targetLocationIds.length} selected · preview only
+                      </span>
+                    </div>
+
+                    <details className="mt-5 border-t border-[#292a2f] pt-4">
+                      <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-300">
+                        Edit which locations are permanently in this group
+                      </summary>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {groupEligibleLocations.map((location) => (
+                          <label
+                            key={`edit-group-${location.id}`}
+                            className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#303137] px-3 py-1.5 text-xs text-zinc-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={groupMemberDraftIds.includes(location.id)}
+                              onChange={() => setGroupMemberDraftIds((current) => toggleId(current, location.id))}
+                              className="accent-orange-500"
+                            />
+                            {location.name}
+                          </label>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void saveSelectedGroupMembers()}
+                        disabled={groupMemberDraftIds.length === 0 || busyAction === "group-members"}
+                        className={`${secondaryButtonClass} mt-3`}
+                      >
+                        {busyAction === "group-members" ? "Saving…" : "Update saved group"}
+                      </button>
+                    </details>
+                  </>
+                ) : (
+                  <div className="border-t border-[#292a2f] pt-4 xl:border-t-0 xl:pt-0">
+                    <p className="text-sm font-semibold text-white">Create the first reusable group</p>
+                    <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">
+                      Once a group is saved, this side will show a plain list of every location included in a future action.
+                    </p>
+                  </div>
+                )}
+
+                {visibleTargetSnapshot ? (
+                  <section className="mt-5 border-t border-[#303137] pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-white">Most recent frozen target list</p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {visibleTargetSnapshot.target_count} ready · {visibleTargetSnapshot.blocked_count} need setup
+                        </p>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-emerald-200">
+                        Locked record
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                          Included
+                        </p>
+                        {visibleTargetSnapshot.targets.length > 0 ? (
+                          <ul className="mt-2 space-y-1.5 text-sm text-zinc-300">
+                            {visibleTargetSnapshot.targets.map((target) => (
+                              <li key={target.location_id}>✓ {target.location_name}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-2 text-xs text-zinc-600">No locations are ready in this list.</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                          Left out or needs setup
+                        </p>
+                        {visibleTargetSnapshot.exceptions.length > 0 ? (
+                          <ul className="mt-2 space-y-2 text-sm text-zinc-300">
+                            {visibleTargetSnapshot.exceptions.map((item) => (
+                              <li key={`${item.location_id}-${item.reason}`}>
+                                <span className={item.blocked ? "text-amber-200" : "text-zinc-400"}>
+                                  {item.location_name}
+                                </span>
+                                <span className="ml-2 text-xs text-zinc-600">{item.message}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-2 text-xs text-zinc-600">Every selected location is ready.</p>
+                        )}
+                      </div>
+                    </div>
+                    <p className="mt-4 break-all text-[10px] text-zinc-700">
+                      Record {visibleTargetSnapshot.target_hash.slice(0, 16)} · saved {new Date(visibleTargetSnapshot.created_at).toLocaleString()}
+                    </p>
+
+                    {!visibleFleetRun ? (
+                      <div className="mt-4 border-t border-[#292a2f] pt-4">
+                        <p className="text-sm font-semibold text-white">
+                          Check every location before starting
+                        </p>
+                        <p className="mt-1 max-w-2xl text-xs leading-5 text-zinc-500">
+                          Confirm each location still has its own active workspace and see the
+                          exact credit use. This check does not edit Google or any website.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void createFleetPreflight(visibleTargetSnapshot)}
+                          disabled={
+                            visibleTargetSnapshot.target_count === 0 ||
+                            busyAction === "fleet-preflight"
+                          }
+                          className={`${primaryButtonClass} mt-3`}
+                        >
+                          {busyAction === "fleet-preflight"
+                            ? "Checking locations..."
+                            : "Check readiness and credits"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-5 border-t border-[#303137] pt-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
+                              Bulk-work review
+                            </p>
+                            <h3 className="mt-1 text-base font-semibold text-white">
+                              {visibleFleetRun.preflight.action.label}
+                            </h3>
+                            <p className="mt-1 max-w-2xl text-xs leading-5 text-zinc-500">
+                              {visibleFleetRun.preflight.action.description}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                              visibleFleetRun.status === "succeeded"
+                                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                                : visibleFleetRun.status === "failed" ||
+                                    visibleFleetRun.status === "partial" ||
+                                    visibleFleetRun.status === "blocked"
+                                  ? "border-amber-500/25 bg-amber-500/10 text-amber-100"
+                                  : "border-sky-500/25 bg-sky-500/10 text-sky-100"
+                            }`}
+                          >
+                            {visibleFleetRun.status_label}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 border-y border-[#292a2f] py-3 sm:grid-cols-4">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.13em] text-zinc-600">Targeted</p>
+                            <p className="mt-1 text-lg font-semibold text-white">
+                              {visibleFleetRun.counts.targeted}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.13em] text-zinc-600">Ready</p>
+                            <p className="mt-1 text-lg font-semibold text-emerald-100">
+                              {visibleFleetRun.counts.ready}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.13em] text-zinc-600">Needs setup</p>
+                            <p className="mt-1 text-lg font-semibold text-amber-100">
+                              {visibleFleetRun.counts.blocked}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.13em] text-zinc-600">Credits</p>
+                            <p className="mt-1 text-lg font-semibold text-white">
+                              {visibleFleetRun.estimated_credits}
+                            </p>
+                          </div>
+                        </div>
+
+                        <p className="mt-3 text-xs leading-5 text-zinc-500">
+                          {visibleFleetRun.preflight.credits.message} No Google profile or website
+                          changes are enabled in this run.
+                        </p>
+
+                        {visibleFleetRun.can_approve ? (
+                          <div className="mt-4 flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => void approveFleetRun(visibleFleetRun)}
+                              disabled={busyAction === "fleet-approve"}
+                              className={primaryButtonClass}
+                            >
+                              {busyAction === "fleet-approve"
+                                ? "Starting location checks..."
+                                : `Approve and start ${visibleFleetRun.counts.ready} ${visibleFleetRun.counts.ready === 1 ? "location" : "locations"}`}
+                            </button>
+                            <span className="text-xs text-zinc-600">
+                              The frozen list cannot grow after approval.
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {visibleFleetRun.approval.approved ? (
+                          <div className="mt-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-white">Progress by location</p>
+                              <div className="flex flex-wrap gap-2">
+                                {visibleFleetRun.can_pause ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void pauseFleetRun(visibleFleetRun)}
+                                    disabled={busyAction === "fleet-pause"}
+                                    className={secondaryButtonClass}
+                                  >
+                                    {busyAction === "fleet-pause" ? "Pausing..." : "Pause waiting locations"}
+                                  </button>
+                                ) : null}
+                                {visibleFleetRun.can_resume ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void resumeFleetRun(visibleFleetRun)}
+                                    disabled={busyAction === "fleet-resume"}
+                                    className={primaryButtonClass}
+                                  >
+                                    {busyAction === "fleet-resume" ? "Resuming..." : "Resume waiting locations"}
+                                  </button>
+                                ) : null}
+                                {visibleFleetRun.can_retry_failed ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void retryFailedFleetRun(visibleFleetRun)}
+                                    disabled={busyAction === "fleet-retry"}
+                                    className={primaryButtonClass}
+                                  >
+                                    {busyAction === "fleet-retry"
+                                      ? "Retrying..."
+                                      : "Retry failed locations"}
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => void refreshFleetProgress()}
+                                  disabled={busyAction === "fleet-refresh"}
+                                  className={secondaryButtonClass}
+                                >
+                                  {busyAction === "fleet-refresh" ? "Refreshing..." : "Refresh progress"}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="mt-3 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                              {visibleFleetRun.items.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                                >
+                                  <div>
+                                    <p className="text-sm font-medium text-zinc-100">
+                                      {item.location_name}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-zinc-600">{item.message}</p>
+                                  </div>
+                                  <span
+                                    className={`shrink-0 text-xs font-semibold ${
+                                      item.status === "succeeded"
+                                        ? "text-emerald-200"
+                                        : item.status === "failed" || item.status === "blocked"
+                                          ? "text-amber-200"
+                                          : "text-sky-200"
+                                    }`}
+                                  >
+                                    {item.status_label}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <details className="mt-4 border-t border-[#292a2f] pt-3">
+                          <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-400">
+                            Safety checks
+                          </summary>
+                          <ul className="mt-2 space-y-1.5 text-xs leading-5 text-zinc-600">
+                            {visibleFleetRun.preflight.guardrails.map((guardrail) => (
+                              <li key={guardrail}>- {guardrail}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+              </div>
+            </div>
+          </details>
+        ) : null}
+
         {!loading ? (
           <>
             <OwnerDecisionPanel
@@ -464,12 +1479,14 @@ export default function LocationsPage() {
                     ? `${totals.unassigned_business_locations} ${totals.unassigned_business_locations === 1 ? "location needs" : "locations need"} an account group`
                     : totals.campaigns < totals.business_locations
                       ? `${totals.business_locations - totals.campaigns} ${totals.business_locations - totals.campaigns === 1 ? "location needs" : "locations need"} search tracking`
-                      : "Every location is organized and being tracked"
+                      : portfolio?.summary.headline || "Every location is organized and being tracked"
               }
               summary={
                 totals.business_locations === 0
                   ? "Each physical branch needs its own location record before results and recommendations can stay separate."
-                  : hierarchyTruth.summary
+                  : totals.unassigned_business_locations > 0 || totals.campaigns < totals.business_locations
+                    ? hierarchyTruth.summary
+                    : "InsightOS compares saved results across your locations and puts the locations needing help first."
               }
               nextStep={
                 totals.business_locations === 0
@@ -478,12 +1495,13 @@ export default function LocationsPage() {
                     ? "Assign the unorganized location to the correct business group."
                     : totals.campaigns < totals.business_locations
                       ? "Connect the next location's website so it can receive its own results and actions."
-                      : "Choose a location below whenever you want to review its individual performance."
+                      : portfolio?.summary.next_step ||
+                        "Choose a location below whenever you want to review its individual performance."
               }
               actionLabel={
                 totals.campaigns < totals.business_locations || totals.unassigned_business_locations > 0
                   ? "Finish location setup"
-                  : undefined
+                  : portfolio?.top_attention[0]?.next_action.label
               }
               onAction={
                 totals.campaigns < totals.business_locations || totals.unassigned_business_locations > 0
@@ -491,14 +1509,18 @@ export default function LocationsPage() {
                       document
                         .getElementById("location-setup")
                         ?.scrollIntoView({ behavior: "smooth" })
-                  : undefined
+                  : portfolio?.top_attention[0]
+                    ? () => openPortfolioAction(portfolio.top_attention[0])
+                    : undefined
               }
               tone={
                 totals.unassigned_business_locations > 0
                   ? "urgent"
                   : totals.business_locations === 0 || totals.campaigns < totals.business_locations
                     ? "warning"
-                    : "positive"
+                    : portfolio && portfolio.summary.locations_needing_attention > 0
+                      ? "warning"
+                      : "positive"
               }
               progress={
                 totals.business_locations > 0
@@ -514,31 +1536,531 @@ export default function LocationsPage() {
 
             <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <KpiCard
-                label="Account groups"
-                value={String(totals.subaccounts)}
-                summary="Brands, clients, or divisions connected to the main account."
+                label="Needs attention"
+                value={String(portfolio?.summary.locations_needing_attention || 0)}
+                summary="Locations with a setup, connection, or measured performance problem."
+                tone={(portfolio?.summary.locations_needing_attention || 0) > 0 ? "highlight" : undefined}
               />
               <KpiCard
-                label="Business locations"
-                value={String(totals.business_locations)}
-                summary={`${totals.active_business_locations} currently active and available for campaign work.`}
-                tone={totals.business_locations > 0 ? "highlight" : undefined}
+                label="Keep an eye on"
+                value={String(portfolio?.summary.watch || 0)}
+                summary="Locations with a smaller issue or unfinished action worth watching."
               />
               <KpiCard
-                label="Locations being tracked"
-                value={String(totals.campaigns)}
-                summary="Locations with their own website and search tracking."
+                label="On track"
+                value={String(portfolio?.summary.on_track || 0)}
+                summary="Active locations without a current saved warning."
               />
               <KpiCard
-                label="Needs assignment"
-                value={String(totals.unassigned_business_locations)}
-                summary={
-                  totals.unassigned_business_locations > 0
-                    ? "Legacy locations still need an account group."
-                    : "Every business location belongs to an account group."
-                }
+                label="Ready to compare"
+                value={`${portfolio?.summary.locations_with_saved_performance || 0}/${portfolio?.summary.active_locations || totals.active_business_locations}`}
+                summary="Locations with saved performance data in this comparison."
               />
             </div>
+
+            {portfolio && portfolio.summary.active_locations > 0 ? (
+              <section className="mt-6 rounded-md border border-[#2c2d32] bg-[#121316] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
+                <div className="flex flex-col gap-3 border-b border-[#26272c] pb-4 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Multi-location performance
+                    </p>
+                    <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Start with these locations
+                    </h2>
+                    <p className="mt-1 max-w-2xl text-sm leading-5 text-zinc-400">
+                      These are ordered from real saved setup, connection, search, website, and review facts. There is no hidden portfolio score.
+                    </p>
+                  </div>
+                  <span className="text-xs text-zinc-500">
+                    Showing up to 3 locations needing attention
+                  </span>
+                </div>
+
+                {portfolio.top_attention.length > 0 ? (
+                  <div className="mt-4 grid gap-3 xl:grid-cols-3">
+                    {portfolio.top_attention.map((item, index) => {
+                      const reason = item.reasons[0];
+                      return (
+                        <article
+                          key={item.location_id}
+                          className="rounded-md border border-[#303137] bg-[#17181b] p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                                Priority {index + 1}
+                              </p>
+                              <h3 className="mt-1 text-base font-semibold text-white">
+                                {item.location_name}
+                              </h3>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                {[item.city, item.region, item.account_group?.name]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${attentionClasses(item.attention_state)}`}
+                            >
+                              {item.attention_label}
+                            </span>
+                          </div>
+                          <p className="mt-4 text-sm font-semibold text-white">{reason?.title}</p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-400">{reason?.detail}</p>
+                          <div className="mt-4 grid grid-cols-3 gap-2 border-y border-[#292a2f] py-3 text-xs">
+                            <div>
+                              <p className="text-zinc-600">Google position</p>
+                              <p className="mt-1 font-semibold text-zinc-200">
+                                {positionLabel(item.performance.avg_position)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-zinc-600">Recent rating</p>
+                              <p className="mt-1 font-semibold text-zinc-200">
+                                {ratingLabel(item.performance.avg_rating_last_30d)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-zinc-600">Website problems</p>
+                              <p className="mt-1 font-semibold text-zinc-200">
+                                {item.performance.technical_issue_count}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className={`${primaryButtonClass} mt-4 w-full`}
+                            onClick={() => openPortfolioAction(item)}
+                          >
+                            {item.next_action.label}
+                          </button>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4">
+                    <p className="text-sm font-semibold text-emerald-100">
+                      Every active location is on track.
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      No current setup, connection, website, ranking, or review warning was found in the saved comparison.
+                    </p>
+                  </div>
+                )}
+
+                {portfolio.trends.data_state === "ready" ? (
+                  <section className="mt-4 rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                    <div className="flex flex-col gap-3 border-b border-[#292a2f] pb-4 lg:flex-row lg:items-end lg:justify-between">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                          Recent movement
+                        </p>
+                        <h3 className="mt-1.5 text-base font-semibold text-white">
+                          What changed across your locations
+                        </h3>
+                        <p className="mt-1 text-xs leading-5 text-zinc-400">
+                          {shortDate(portfolio.trends.date_from)}–{shortDate(portfolio.trends.date_to)} compared with {shortDate(portfolio.trends.comparison_date_from)}–{shortDate(portfolio.trends.comparison_date_to)}.
+                        </p>
+                      </div>
+                      <p className="max-w-xl text-xs leading-5 text-zinc-500">
+                        {portfolio.trends.coverage_note}
+                      </p>
+                    </div>
+
+                    <div className="grid border-b border-[#292a2f] md:grid-cols-2 xl:grid-cols-4">
+                      {portfolio.trends.summary.map((item) => (
+                        <div
+                          key={item.code}
+                          className="border-b border-[#292a2f] px-3 py-4 last:border-b-0 md:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0 xl:border-r xl:last:border-r-0"
+                        >
+                          <p className="text-[11px] text-zinc-500">{item.label}</p>
+                          <div className="mt-1 flex flex-wrap items-baseline gap-2">
+                            <p className="text-xl font-semibold text-white">{trendValue(item)}</p>
+                            <p
+                              className={`text-xs font-semibold ${
+                                item.tone === "positive"
+                                  ? "text-emerald-300"
+                                  : item.tone === "negative"
+                                    ? "text-rose-300"
+                                    : "text-zinc-500"
+                              }`}
+                            >
+                              {trendChangeLabel(item)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
+                      <div className="rounded-md border border-[#292a2f] bg-[#111215] p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              Daily Google visits and average position
+                            </p>
+                            <p className="mt-1 text-[11px] text-zinc-500">
+                              Orange shows visits. Blue shows position; a smaller position number is better.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 text-[11px] text-zinc-400">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-[#ff6b18]" /> Visits
+                            </span>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-sky-400" /> Position
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-3 h-64 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart
+                              data={portfolio.trends.points}
+                              margin={{ top: 8, right: 8, left: -18, bottom: 0 }}
+                            >
+                              <XAxis
+                                dataKey="date"
+                                tickFormatter={(value) => shortDate(String(value))}
+                                minTickGap={28}
+                                tick={{ fill: "#71717a", fontSize: 10 }}
+                                axisLine={{ stroke: "#292a2f" }}
+                                tickLine={false}
+                              />
+                              <YAxis
+                                yAxisId="visits"
+                                tick={{ fill: "#71717a", fontSize: 10 }}
+                                axisLine={false}
+                                tickLine={false}
+                                allowDecimals={false}
+                              />
+                              <YAxis
+                                yAxisId="position"
+                                orientation="right"
+                                reversed
+                                tick={{ fill: "#71717a", fontSize: 10 }}
+                                axisLine={false}
+                                tickLine={false}
+                              />
+                              <Tooltip
+                                contentStyle={{
+                                  background: "#111215",
+                                  border: "1px solid #303137",
+                                  borderRadius: "6px",
+                                  color: "#fff",
+                                  fontSize: "12px",
+                                }}
+                                labelFormatter={(value) => shortDate(String(value))}
+                              />
+                              <Line
+                                yAxisId="visits"
+                                type="monotone"
+                                dataKey="clicks"
+                                name="Google visits"
+                                stroke="#ff6b18"
+                                strokeWidth={2}
+                                dot={false}
+                                connectNulls={false}
+                              />
+                              <Line
+                                yAxisId="position"
+                                type="monotone"
+                                dataKey="avg_position"
+                                name="Average position"
+                                stroke="#38bdf8"
+                                strokeWidth={2}
+                                dot={false}
+                                connectNulls={false}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <p className="mt-2 text-[11px] leading-4 text-zinc-600">
+                          The chart shows saved daily totals. The change cards only compare locations with enough information in both periods.
+                        </p>
+                      </div>
+
+                      <div className="rounded-md border border-[#292a2f] bg-[#111215] p-3">
+                        <p className="text-sm font-semibold text-white">Meaningful location changes</p>
+                        <p className="mt-1 text-[11px] leading-4 text-zinc-500">
+                          Only larger changes with enough history appear here. At most one change is shown for each location.
+                        </p>
+                        {portfolio.trends.alerts.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            {portfolio.trends.alerts.map((alert) => (
+                              <article
+                                key={`${alert.location_id}-${alert.code}`}
+                                className={`rounded-md border p-3 ${
+                                  alert.tone === "positive"
+                                    ? "border-emerald-500/20 bg-emerald-500/10"
+                                    : "border-rose-500/20 bg-rose-500/10"
+                                }`}
+                              >
+                                <p
+                                  className={`text-xs font-semibold ${
+                                    alert.tone === "positive"
+                                      ? "text-emerald-100"
+                                      : "text-rose-100"
+                                  }`}
+                                >
+                                  {alert.tone === "positive" ? "↑" : "↓"} {alert.title}
+                                </p>
+                                <p className="mt-1 text-[11px] leading-4 text-zinc-400">
+                                  {alert.detail}
+                                </p>
+                                <p className="mt-1 text-[11px] font-medium text-zinc-300">
+                                  {alert.evidence.label}: {String(alert.evidence.value)}
+                                </p>
+                                <button
+                                  type="button"
+                                  className={`${secondaryButtonClass} mt-2`}
+                                  onClick={() =>
+                                    openPortfolioPath(alert.campaign_id, alert.action.href)
+                                  }
+                                >
+                                  {alert.action.label}
+                                </button>
+                              </article>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-3 rounded-md border border-[#292a2f] bg-[#17181b] p-3 text-xs leading-5 text-zinc-500">
+                            No location crossed a meaningful change threshold in this comparison.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                ) : (
+                  <section className="mt-4 rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                    <p className="text-sm font-semibold text-white">Building location history</p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      {portfolio.trends.coverage_note}
+                    </p>
+                  </section>
+                )}
+
+                <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                  <section className="rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                      Shared work
+                    </p>
+                    <h3 className="mt-1.5 text-base font-semibold text-white">
+                      Problems affecting more than one location
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      Start here when the same problem appears across several locations. Each location keeps its own proof and next step.
+                    </p>
+
+                    {portfolio.shared_issues.length > 0 ? (
+                      <div className="mt-4 space-y-2">
+                        {portfolio.shared_issues.slice(0, 4).map((issue) => (
+                          <details
+                            key={issue.code}
+                            className="rounded-md border border-[#2d2e33] bg-[#111215] p-3"
+                          >
+                            <summary className="cursor-pointer list-none">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">{issue.title}</p>
+                                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                    {issue.location_count} locations · open to see each one
+                                  </p>
+                                </div>
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${attentionClasses(issue.severity)}`}
+                                >
+                                  {issue.attention_label}
+                                </span>
+                              </div>
+                            </summary>
+                            <p className="mt-3 border-t border-[#292a2f] pt-3 text-xs leading-5 text-zinc-400">
+                              {issue.summary}
+                            </p>
+                            <div className="mt-3 space-y-2">
+                              {issue.locations.map((location) => (
+                                <div
+                                  key={location.location_id}
+                                  className="flex flex-col gap-3 rounded-md border border-[#292a2f] bg-[#17181b] p-3 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                  <div>
+                                    <p className="text-xs font-semibold text-white">
+                                      {location.location_name}
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                      {location.detail}
+                                    </p>
+                                    {location.evidence ? (
+                                      <p className="mt-1 text-[11px] text-zinc-400">
+                                        {location.evidence.label}: {String(location.evidence.value)}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className={secondaryButtonClass}
+                                    onClick={() =>
+                                      openPortfolioPath(
+                                        location.campaign_id,
+                                        location.action_href,
+                                      )
+                                    }
+                                  >
+                                    {location.action_label}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs leading-5 text-emerald-100">
+                        No saved problem currently affects more than one active location.
+                      </p>
+                    )}
+                  </section>
+
+                  <section className="rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                      What is working
+                    </p>
+                    <h3 className="mt-1.5 text-base font-semibold text-white">
+                      Locations worth learning from
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      These are measured examples to inspect. InsightOS does not claim that one tactic caused the result.
+                    </p>
+
+                    {portfolio.repeatable_wins.length > 0 ? (
+                      <div className="mt-4 space-y-3">
+                        {portfolio.repeatable_wins.map((win) => (
+                          <article
+                            key={win.code}
+                            className="rounded-md border border-[#2d2e33] bg-[#111215] p-3"
+                          >
+                            <p className="text-sm font-semibold text-white">{win.title}</p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-400">{win.summary}</p>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                              <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-200">
+                                  Example to inspect
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-white">
+                                  {win.source.location_name}
+                                </p>
+                                <p className="mt-1 text-[11px] text-zinc-400">
+                                  {win.source.metric.label}: {String(win.source.metric.value)}
+                                </p>
+                              </div>
+                              <div className="rounded-md border border-[#2b2c31] bg-[#17181b] p-3">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                  Locations to compare
+                                </p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-300">
+                                  {win.targets.map((target) => target.location_name).join(", ")}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-col gap-2 border-t border-[#292a2f] pt-3 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="max-w-xl text-[11px] leading-4 text-zinc-600">
+                                {win.guardrail}
+                              </p>
+                              <button
+                                type="button"
+                                className={secondaryButtonClass}
+                                onClick={() =>
+                                  openPortfolioPath(win.action.campaign_id, win.action.href)
+                                }
+                              >
+                                {win.action.label}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-md border border-[#2d2e33] bg-[#111215] p-3 text-xs leading-5 text-zinc-500">
+                        More saved performance history is needed before one location can be used as a fair comparison.
+                      </p>
+                    )}
+                  </section>
+                </div>
+
+                <details className="mt-4 rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                  <summary className="cursor-pointer list-none text-sm font-semibold text-white">
+                    Compare all {portfolio.summary.active_locations} active locations
+                  </summary>
+                  <div className="mt-4 flex flex-col gap-3 border-b border-[#292a2f] pb-4 sm:flex-row sm:items-end sm:justify-between">
+                    <p className="max-w-2xl text-xs leading-5 text-zinc-500">
+                      Sort the same saved facts without changing any location or running a paid check.
+                    </p>
+                    <label className={labelClass}>
+                      Sort locations by
+                      <select
+                        value={portfolioSort}
+                        onChange={(event) => setPortfolioSort(event.target.value)}
+                        className={`${inputClass} min-w-52`}
+                      >
+                        <option value="attention">Needs attention first</option>
+                        <option value="name">Location name</option>
+                        <option value="position">Best Google position</option>
+                        <option value="rating">Best recent rating</option>
+                        <option value="issues">Most website problems</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="divide-y divide-[#292a2f]">
+                    {sortedPortfolioLocations.map((item) => (
+                      <div
+                        key={item.location_id}
+                        className="grid gap-3 py-4 md:grid-cols-[minmax(180px,1.4fr)_repeat(3,minmax(110px,0.7fr))_auto] md:items-center"
+                      >
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold text-white">{item.location_name}</p>
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${attentionClasses(item.attention_state)}`}
+                            >
+                              {item.attention_label}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {item.reasons[0]?.title || "No current warning"}
+                          </p>
+                        </div>
+                        <div className="text-xs">
+                          <p className="text-zinc-600">Google position</p>
+                          <p className="mt-1 font-semibold text-zinc-200">
+                            {positionLabel(item.performance.avg_position)}
+                          </p>
+                        </div>
+                        <div className="text-xs">
+                          <p className="text-zinc-600">Recent reviews</p>
+                          <p className="mt-1 font-semibold text-zinc-200">
+                            {item.performance.reviews_last_30d} · {ratingLabel(item.performance.avg_rating_last_30d)}
+                          </p>
+                        </div>
+                        <div className="text-xs">
+                          <p className="text-zinc-600">Work waiting</p>
+                          <p className="mt-1 font-semibold text-zinc-200">
+                            {item.performance.technical_issue_count} website · {item.open_actions} actions
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          onClick={() => openPortfolioAction(item)}
+                        >
+                          Open location
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </section>
+            ) : null}
           </>
         ) : null}
 

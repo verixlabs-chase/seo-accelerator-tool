@@ -73,7 +73,7 @@ test("each data-heavy route has a truthful decision visual", () => {
   assert.match(source("../app/(product)/organic-value/page.tsx"), /Estimated search value by scenario/);
   assert.match(source("../app/(product)/locations/page.tsx"), /Locations with individual search tracking/);
   assert.match(source("../app/(product)/reports/page.tsx"), /Reports confirmed as delivered/);
-  assert.match(source("../app/(product)/settings/page.tsx"), /Locations matched to a website/);
+  assert.match(source("../app/(product)/settings/page.tsx"), /Connected sources working normally/);
 });
 
 test("setup and duplicate console summaries no longer compete with priority data", () => {

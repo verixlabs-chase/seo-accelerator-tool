@@ -8,12 +8,13 @@ const PRODUCT_NAV_ITEMS: NavItem[] = [
   { href: "/site-health", label: "Website Health", icon: "website-health", section: "primary" },
   { href: "/opportunities", label: "Next Steps", icon: "next-steps", section: "primary" },
   { href: "/reports", label: "Reports", icon: "reports", section: "primary" },
-  { href: "/settings", label: "Data connections", icon: "connections", section: "more" },
+  { href: "/settings", label: "Connection health", icon: "connections", section: "more" },
   { href: "/locations", label: "Manage locations", icon: "locations", section: "more" },
   { href: "/organic-value", label: "Search Value", icon: "search-value", section: "more" },
   { href: "/competitors", label: "Competitors", icon: "competitors", section: "more" },
   { href: "/citations", label: "Directory listings", icon: "listings", section: "more" },
   { href: "/reviews", label: "Customer reviews", icon: "reviews", section: "more" },
+  { href: "/profile-campaigns", label: "Profile campaigns", icon: "profile-campaigns", section: "more" },
 ];
 
 export function buildProductNav(pathname: string): NavItem[] {

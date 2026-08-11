@@ -30,6 +30,10 @@ from app.models.google_business_profile import (
     GoogleBusinessProfileSearchKeyword,
     GoogleBusinessProfileSnapshot,
 )
+from app.models.google_business_profile_campaign import (  # noqa: F401
+    GoogleBusinessProfileCampaign,
+    GoogleBusinessProfileCampaignVariant,
+)
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap
@@ -79,6 +83,13 @@ from app.models.organization_membership import OrganizationMembership
 from app.models.organization_provider_credential import OrganizationProviderCredential
 from app.models.organic_value_baseline_setting import OrganicValueBaselineSetting
 from app.models.portfolio import Portfolio
+from app.models.portfolio_targeting import (
+    PortfolioLocationAccessGrant,
+    PortfolioLocationGroup,
+    PortfolioLocationGroupMember,
+    PortfolioTargetSnapshot,
+)
+from app.models.portfolio_fleet_run import PortfolioFleetRun, PortfolioFleetRunItem
 from app.models.portfolio_usage_daily import PortfolioUsageDaily
 from app.models.portfolio_policy import PortfolioPolicy
 from app.models.provider_health import ProviderHealthState
@@ -92,6 +103,7 @@ from app.models.standards_governance import (
 )
 from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
+from app.models.product_analytics import ProductAnalyticsEvent, ProductFeedback
 from app.models.platform_provider_credential import PlatformProviderCredential
 from app.models.platform_job import PlatformJob
 from app.models.policy_weights import PolicyWeight
@@ -112,7 +124,9 @@ from app.models.reporting import (
     MonthlyReport,
     ReportArtifact,
     ReportDeliveryEvent,
+    ReportRecipient,
     ReportSchedule,
+    ReportShareLink,
     ReportTemplateVersion,
 )
 from app.models.reputation import (
@@ -168,6 +182,8 @@ __all__ = [
     "ActionPlanForecast",
     "EventOutbox",
     "TaskExecution",
+    "ProductAnalyticsEvent",
+    "ProductFeedback",
     "Page",
     "CrawlRun",
     "CrawlPageResult",
@@ -234,6 +250,12 @@ __all__ = [
     "GoogleBusinessProfileSearchKeyword",
     "RuntimeVersionLock",
     "Portfolio",
+    "PortfolioLocationAccessGrant",
+    "PortfolioLocationGroup",
+    "PortfolioLocationGroupMember",
+    "PortfolioTargetSnapshot",
+    "PortfolioFleetRun",
+    "PortfolioFleetRunItem",
     "PortfolioUsageDaily",
     "Location",
     "PortfolioPolicy",
@@ -291,7 +313,9 @@ __all__ = [
     "MonthlyReport",
     "ReportArtifact",
     "ReportDeliveryEvent",
+    "ReportRecipient",
     "ReportSchedule",
+    "ReportShareLink",
     "ReportTemplateVersion",
     "UsageLedger",
     "WebsitePerformanceMeasurement",

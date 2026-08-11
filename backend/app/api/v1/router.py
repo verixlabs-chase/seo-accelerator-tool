@@ -18,6 +18,7 @@ from app.api.v1 import (
     entity,
     executions,
     google_oauth,
+    google_business_profile_campaigns,
     health,
     hierarchy_observability,
     intelligence,
@@ -29,6 +30,8 @@ from app.api.v1 import (
     locations,
     onboarding,
     platform_control,
+    portfolio_targeting,
+    product_analytics,
     provider_credentials,
     provider_health,
     provider_metrics,
@@ -57,6 +60,7 @@ if settings.app_env.lower() != 'production':
     tenant_api_router.include_router(debug_live_validation.router)
 tenant_api_router.include_router(entity.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
+tenant_api_router.include_router(google_business_profile_campaigns.router)
 tenant_api_router.include_router(rank.router)
 tenant_api_router.include_router(keyword_research.router)
 tenant_api_router.include_router(competitors.router)
@@ -86,6 +90,8 @@ tenant_api_router.include_router(business_services.router)
 tenant_api_router.include_router(business_service_areas.router)
 tenant_api_router.include_router(locations.router)
 tenant_api_router.include_router(hierarchy_observability.router)
+tenant_api_router.include_router(portfolio_targeting.router)
+tenant_api_router.include_router(product_analytics.tenant_router)
 tenant_api_router.include_router(usage_economics.tenant_router)
 tenant_api_router.include_router(website_performance.router)
 
@@ -95,3 +101,4 @@ control_plane_api_router.include_router(provider_credentials.control_plane_route
 control_plane_api_router.include_router(platform_control.router)
 control_plane_api_router.include_router(system_operational.router)
 control_plane_api_router.include_router(usage_economics.control_plane_router)
+control_plane_api_router.include_router(product_analytics.control_plane_router)

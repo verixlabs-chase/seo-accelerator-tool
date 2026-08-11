@@ -48,6 +48,10 @@ class ProviderMetricContractVersion(Base):
             "metric_family",
             "is_active",
         ),
+        Index(
+            "ix_metric_contract_versions_change_candidate_id",
+            "standards_change_candidate_id",
+        ),
     )
 
     id: Mapped[str] = mapped_column(
@@ -91,7 +95,6 @@ class ProviderMetricContractVersion(Base):
         String(36),
         ForeignKey("standards_change_candidates.id", ondelete="RESTRICT"),
         nullable=True,
-        index=True,
     )
     proposed_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     proposed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

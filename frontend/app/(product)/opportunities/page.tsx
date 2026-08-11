@@ -22,6 +22,12 @@ import {
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
 import {
+  analyticsDayKey,
+  submitProductFeedback,
+  trackProductEvent,
+  type ProductFeedbackInput,
+} from "../../lib/productAnalytics";
+import {
   getExecutionStateSummary,
   getRecommendationStateSummary,
   getSetupBlockerSummary,
@@ -1521,6 +1527,73 @@ function ActionResultStatus({
   );
 }
 
+type FeedbackChoice = {
+  label: string;
+  rating: number;
+  reasonCode: ProductFeedbackInput["reasonCode"];
+};
+
+function ProductFeedbackPrompt({
+  question,
+  context,
+  subjectType,
+  subjectId,
+  campaignId,
+  choices,
+}: {
+  question: string;
+  context: ProductFeedbackInput["context"];
+  subjectType: ProductFeedbackInput["subjectType"];
+  subjectId: string;
+  campaignId: string;
+  choices: FeedbackChoice[];
+}) {
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  async function choose(choice: FeedbackChoice) {
+    setStatus("saving");
+    try {
+      await submitProductFeedback({
+        context,
+        subjectType,
+        subjectId,
+        campaignId,
+        rating: choice.rating,
+        reasonCode: choice.reasonCode,
+      });
+      setStatus("saved");
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-[#303137] bg-[#111214] p-3">
+      <p className="text-sm font-medium text-white">{question}</p>
+      {status === "saved" ? (
+        <p className="mt-2 text-xs text-emerald-300">Thanks. Your answer was saved.</p>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {choices.map((choice) => (
+            <button
+              key={choice.label}
+              type="button"
+              disabled={status === "saving"}
+              onClick={() => void choose(choice)}
+              className="rounded-md border border-[#3a3b42] bg-[#18191c] px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-accent-500/40 disabled:opacity-50"
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {status === "error" ? (
+        <p className="mt-2 text-xs text-rose-300">That answer could not be saved. Try again.</p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function OpportunitiesPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -2191,6 +2264,30 @@ export default function OpportunitiesPage() {
   const selectedExecution =
     executions.find((item) => item.id === selectedExecutionId) ?? executions[0] ?? null;
 
+  useEffect(() => {
+    if (!selectedCampaignId || !selectedRecommendation?.id) {
+      return;
+    }
+    const dayKey = analyticsDayKey();
+    void trackProductEvent({
+      eventName: "recommendation.viewed",
+      campaignId: selectedCampaignId,
+      properties: { surface: "next_steps" },
+      idempotencyKey: `recommendation.viewed:${selectedRecommendation.id}:${dayKey}`,
+    });
+    const forecast = selectedRecommendation.action_plan?.work_item?.forecast;
+    if (forecast?.forecast_status === "available") {
+      void trackProductEvent({
+        eventName: "forecast.viewed",
+        campaignId: selectedCampaignId,
+        properties: {
+          data_quality: forecast.data_quality === "strong" ? "strong" : "partial",
+        },
+        idempotencyKey: `forecast.viewed:${selectedRecommendation.id}:${dayKey}`,
+      });
+    }
+  }, [selectedCampaignId, selectedRecommendation]);
+
   const highPriorityCount = sortedRecommendations.filter((item) => (item.risk_tier ?? 0) >= 3).length;
   const readyCount = sortedRecommendations.filter((item) =>
     ["VALIDATED", "APPROVED"].includes(item.status || ""),
@@ -2663,16 +2760,45 @@ export default function OpportunitiesPage() {
                       </p>
                     )}
                     {selectedRecommendation.action_plan?.work_item ? (
-                      <ActionResultStatus
-                        workItem={selectedRecommendation.action_plan.work_item}
-                        busy={busyAction === `${selectedRecommendation.action_plan.work_item.id}:measure`}
-                        onMeasure={() =>
-                          void measureActionPlanResult(
-                            selectedRecommendation.id,
-                            selectedRecommendation.action_plan!.work_item!.id,
-                          )
-                        }
-                      />
+                      <>
+                        <ActionResultStatus
+                          workItem={selectedRecommendation.action_plan.work_item}
+                          busy={busyAction === `${selectedRecommendation.action_plan.work_item.id}:measure`}
+                          onMeasure={() =>
+                            void measureActionPlanResult(
+                              selectedRecommendation.id,
+                              selectedRecommendation.action_plan!.work_item!.id,
+                            )
+                          }
+                        />
+                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                          <ProductFeedbackPrompt
+                            question="Is this recommended action useful?"
+                            context="recommendation_usefulness"
+                            subjectType="recommendation"
+                            subjectId={selectedRecommendation.id}
+                            campaignId={selectedCampaignId}
+                            choices={[
+                              { label: "Yes", rating: 5, reasonCode: "useful" },
+                              { label: "Not yet", rating: 2, reasonCode: "not_useful_yet" },
+                            ]}
+                          />
+                          {selectedRecommendation.action_plan.work_item.forecast?.forecast_status === "available" ? (
+                            <ProductFeedbackPrompt
+                              question="Does this possible result feel believable?"
+                              context="forecast_trust"
+                              subjectType="forecast"
+                              subjectId={selectedRecommendation.id}
+                              campaignId={selectedCampaignId}
+                              choices={[
+                                { label: "Yes", rating: 5, reasonCode: "believable" },
+                                { label: "Not sure", rating: 3, reasonCode: "missing_context" },
+                                { label: "No", rating: 1, reasonCode: "not_believable" },
+                              ]}
+                            />
+                          ) : null}
+                        </div>
+                      </>
                     ) : null}
                   </section>
                 ) : null}

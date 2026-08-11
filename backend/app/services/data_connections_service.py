@@ -5,12 +5,14 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
+from app.models.google_business_profile import GoogleBusinessProfileDailyMetric
 from app.models.organization_provider_credential import OrganizationProviderCredential
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.services.provider_credentials_service import (
@@ -93,6 +95,242 @@ def list_connections(db: Session, organization_id: str) -> list[dict[str, Any]]:
         serialize_connection(connection, campaign=campaign, location=location, now=now)
         for connection, campaign, location in rows
     ]
+
+
+def get_connection_health(db: Session, organization_id: str) -> dict[str, Any]:
+    """Build the owner-facing connection inventory from saved, scoped facts."""
+
+    campaign_rows = (
+        db.query(Campaign, BusinessLocation)
+        .join(BusinessLocation, BusinessLocation.id == Campaign.business_location_id)
+        .filter(
+            Campaign.organization_id == organization_id,
+            BusinessLocation.organization_id == organization_id,
+        )
+        .order_by(BusinessLocation.name.asc(), Campaign.name.asc())
+        .all()
+    )
+    connections = (
+        db.query(DataConnection)
+        .filter(DataConnection.organization_id == organization_id)
+        .all()
+    )
+    connection_by_scope = {
+        (row.campaign_id, row.provider_name): row
+        for row in connections
+    }
+    search_console_dates = dict(
+        db.query(
+            SearchConsoleDailyMetric.campaign_id,
+            func.max(SearchConsoleDailyMetric.metric_date),
+        )
+        .filter(SearchConsoleDailyMetric.organization_id == organization_id)
+        .group_by(SearchConsoleDailyMetric.campaign_id)
+        .all()
+    )
+    business_profile_dates = dict(
+        db.query(
+            GoogleBusinessProfileDailyMetric.campaign_id,
+            func.max(GoogleBusinessProfileDailyMetric.metric_date),
+        )
+        .filter(GoogleBusinessProfileDailyMetric.organization_id == organization_id)
+        .group_by(GoogleBusinessProfileDailyMetric.campaign_id)
+        .all()
+    )
+    oauth = google_oauth_connection_summary(db, organization_id)
+    approved_access = oauth.get("approved_access") or {}
+    now = datetime.now(UTC)
+    items: list[dict[str, Any]] = []
+
+    providers = (
+        {
+            "provider_name": GOOGLE_SEARCH_CONSOLE_PROVIDER,
+            "label": "Website search data",
+            "mapping_anchor": "website-mappings",
+            "features": ["Overview", "Search Rankings", "Search Value", "Reports", "Next Steps"],
+            "approved": bool(approved_access.get("search_console")),
+            "newest_dates": search_console_dates,
+        },
+        {
+            "provider_name": "google_business_profile",
+            "label": "Google business listing",
+            "mapping_anchor": "profile-mappings",
+            "features": ["Local Search", "Customer reviews", "Reports", "Next Steps"],
+            "approved": bool(approved_access.get("business_profile")),
+            "newest_dates": business_profile_dates,
+        },
+    )
+
+    for campaign, location in campaign_rows:
+        for provider in providers:
+            connection = connection_by_scope.get((campaign.id, provider["provider_name"]))
+            status = (
+                effective_connection_status(connection, now=now)
+                if connection is not None
+                else "not_connected"
+            )
+            newest_date = provider["newest_dates"].get(campaign.id)
+            items.append(
+                _serialize_connection_health_item(
+                    connection=connection,
+                    campaign=campaign,
+                    location=location,
+                    provider_name=str(provider["provider_name"]),
+                    label=str(provider["label"]),
+                    status=status,
+                    oauth_connected=bool(oauth.get("connected")),
+                    approved=bool(provider["approved"]),
+                    mapping_anchor=str(provider["mapping_anchor"]),
+                    affected_features=list(provider["features"]),
+                    newest_usable_data_date=(
+                        newest_date.isoformat() if newest_date is not None else None
+                    ),
+                )
+            )
+
+    attention_states = {"failed", "reconnect_required", "stale", "disconnected"}
+    setup_states = {"not_connected", "connected"}
+    counts = {
+        "healthy": sum(item["status"] == "current" for item in items),
+        "updating": sum(item["status"] == "syncing" for item in items),
+        "needs_attention": sum(item["status"] in attention_states for item in items),
+        "needs_setup": sum(item["status"] in setup_states for item in items),
+    }
+    if counts["needs_attention"]:
+        headline = "Some business data needs attention"
+        next_step = "Start with the first red or yellow connection below."
+    elif counts["needs_setup"]:
+        headline = "Finish connecting your business data"
+        next_step = "Start with the first connection marked Finish setup."
+    elif items:
+        headline = "Your connected business data is healthy"
+        next_step = "No action is needed right now."
+    else:
+        headline = "Add a business location to connect its data"
+        next_step = "Create the first location, then return here to connect it."
+
+    return {
+        "organization_id": organization_id,
+        "checked_at": now.isoformat(),
+        "summary": {
+            "headline": headline,
+            "next_step": next_step,
+            "locations": len(campaign_rows),
+            "sources": len(items),
+            **counts,
+        },
+        "items": sorted(
+            items,
+            key=lambda item: (
+                {"needs_attention": 0, "needs_setup": 1, "updating": 2, "healthy": 3}[
+                    item["display_state"]
+                ],
+                str(item["location_name"]).lower(),
+                str(item["label"]).lower(),
+            ),
+        ),
+    }
+
+
+def _serialize_connection_health_item(
+    *,
+    connection: DataConnection | None,
+    campaign: Campaign,
+    location: BusinessLocation,
+    provider_name: str,
+    label: str,
+    status: str,
+    oauth_connected: bool,
+    approved: bool,
+    mapping_anchor: str,
+    affected_features: list[str],
+    newest_usable_data_date: str | None,
+) -> dict[str, Any]:
+    action = _connection_recovery_action(
+        connection=connection,
+        status=status,
+        oauth_connected=oauth_connected,
+        approved=approved,
+        mapping_anchor=mapping_anchor,
+    )
+    display_state = (
+        "healthy"
+        if status == "current"
+        else "updating"
+        if status == "syncing"
+        else "needs_attention"
+        if status in {"failed", "reconnect_required", "stale", "disconnected"}
+        else "needs_setup"
+    )
+    summary_by_status = {
+        "current": "The latest automatic update finished and usable data is available.",
+        "syncing": "InsightOS is checking for newer information now.",
+        "stale": "The saved information is older than expected.",
+        "failed": "The last automatic update did not finish. Previously saved data is still available.",
+        "reconnect_required": "Google access expired or was removed.",
+        "connected": "This location is matched and ready for its first update.",
+        "not_connected": "This location has not been matched to this source yet.",
+        "disconnected": "Automatic updates are turned off for this location.",
+    }
+    current_failure = {
+        "failed": "The last update did not finish.",
+        "reconnect_required": "Google access needs to be renewed.",
+        "stale": "A newer successful update is needed.",
+        "disconnected": "Automatic updates are off.",
+    }.get(status)
+    return {
+        "id": connection.id if connection is not None else f"{provider_name}:{campaign.id}",
+        "connection_id": connection.id if connection is not None else None,
+        "provider_name": provider_name,
+        "label": label,
+        "status": status,
+        "display_state": display_state,
+        "summary": summary_by_status.get(status, "Connection status is not available yet."),
+        "location_id": location.id,
+        "location_name": location.name,
+        "campaign_id": campaign.id,
+        "campaign_name": campaign.name,
+        "last_success_at": _iso(connection.last_success_at) if connection is not None else None,
+        "newest_usable_data_date": newest_usable_data_date,
+        "current_failure": current_failure,
+        "affected_features": affected_features if display_state != "healthy" else [],
+        "recovery_action": action,
+    }
+
+
+def _connection_recovery_action(
+    *,
+    connection: DataConnection | None,
+    status: str,
+    oauth_connected: bool,
+    approved: bool,
+    mapping_anchor: str,
+) -> dict[str, Any]:
+    if status == "current":
+        return {"kind": "none", "label": "No action needed", "href": None}
+    if status == "syncing":
+        return {"kind": "wait", "label": "Update in progress", "href": None}
+    if status == "reconnect_required" or not oauth_connected or not approved:
+        return {"kind": "reconnect", "label": "Reconnect Google", "href": "/settings"}
+    if connection is None:
+        return {
+            "kind": "map",
+            "label": "Match this location",
+            "href": f"/settings#{mapping_anchor}",
+        }
+    if status == "disconnected":
+        return {
+            "kind": "sync",
+            "label": "Turn updates back on",
+            "href": None,
+            "connection_id": connection.id,
+        }
+    return {
+        "kind": "sync",
+        "label": "Try update again" if status == "failed" else "Check for updates",
+        "href": None,
+        "connection_id": connection.id,
+    }
 
 
 def serialize_connection(

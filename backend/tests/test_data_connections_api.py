@@ -100,6 +100,105 @@ def test_data_connections_list_is_tenant_scoped(client, db_session) -> None:
     assert cross_scope.status_code == 403
 
 
+def test_connection_health_uses_saved_freshness_and_plain_recovery_actions(
+    client,
+    db_session,
+) -> None:
+    token, organization_id = _login(client)
+    _location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="health-center",
+    )
+    mapped = _map_connection(
+        client,
+        token,
+        organization_id,
+        campaign_id,
+        domain="health-center.example.com",
+    )
+    connection = db_session.get(DataConnection, mapped["id"])
+    assert connection is not None
+    connection.last_success_at = datetime.now(UTC)
+    connection.status = data_connections_service.CONNECTION_STATUS_CONNECTED
+    db_session.add(
+        SearchConsoleDailyMetric(
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            metric_date=date(2026, 8, 8),
+            clicks=4,
+            impressions=120,
+            avg_position=8.5,
+            deterministic_hash="9" * 64,
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/api/v1/organizations/{organization_id}/data-connections",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    health = response.json()["data"]["health"]
+    website_item = next(
+        item
+        for item in health["items"]
+        if item["campaign_id"] == campaign_id
+        and item["provider_name"] == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER
+    )
+    assert website_item["display_state"] == "healthy"
+    assert website_item["newest_usable_data_date"] == "2026-08-08"
+    assert website_item["recovery_action"]["label"] == "No action needed"
+    assert website_item["affected_features"] == []
+
+    listing_item = next(
+        item
+        for item in health["items"]
+        if item["campaign_id"] == campaign_id
+        and item["provider_name"] == "google_business_profile"
+    )
+    assert listing_item["display_state"] == "needs_setup"
+    assert listing_item["recovery_action"]["label"] == "Reconnect Google"
+
+    connection.status = data_connections_service.CONNECTION_STATUS_FAILED
+    connection.last_error_message = "refresh_token=do-not-show-this"
+    db_session.commit()
+    failed_response = client.get(
+        f"/api/v1/organizations/{organization_id}/data-connections",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    failed_item = next(
+        item
+        for item in failed_response.json()["data"]["health"]["items"]
+        if item["campaign_id"] == campaign_id
+        and item["provider_name"] == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER
+    )
+    assert failed_item["display_state"] == "needs_attention"
+    assert failed_item["current_failure"] == "The last update did not finish."
+    assert "do-not-show-this" not in str(failed_item)
+    assert failed_item["recovery_action"] == {
+        "kind": "reconnect",
+        "label": "Reconnect Google",
+        "href": "/settings",
+    }
+
+    connection.status = data_connections_service.CONNECTION_STATUS_DISCONNECTED
+    db_session.commit()
+    disconnected_response = client.get(
+        f"/api/v1/organizations/{organization_id}/data-connections",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    disconnected_item = next(
+        item
+        for item in disconnected_response.json()["data"]["health"]["items"]
+        if item["campaign_id"] == campaign_id
+        and item["provider_name"] == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER
+    )
+    assert disconnected_item["display_state"] == "needs_attention"
+    assert disconnected_item["recovery_action"]["label"] == "Reconnect Google"
+
+
 def test_search_console_resource_discovery_uses_owner_connection_flow(client, monkeypatch) -> None:
     token, organization_id = _login(client)
     monkeypatch.setattr(

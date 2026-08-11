@@ -1,22 +1,33 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.api.response import envelope
-from app.db.session import get_db
+from app.core.config import get_settings
+from app.db.session import get_db, set_session_security_context
 from app.providers import get_email_adapter
-from app.schemas.reporting import ReportArtifactOut, ReportDeliverIn, ReportDeliveryEventOut, ReportGenerateIn, ReportOut, ReportScheduleOut, ReportScheduleUpsertIn
-from app.services import reporting_service
+from app.schemas.reporting import (
+    ReportArtifactOut,
+    ReportDeliverIn,
+    ReportDeliveryEventOut,
+    ReportGenerateIn,
+    ReportOut,
+    ReportRecipientOut,
+    ReportRecipientUpsertIn,
+    ReportScheduleOut,
+    ReportScheduleUpsertIn,
+    ReportShareLinkCreateIn,
+    ReportShareLinkOut,
+)
+from app.services import report_delivery_service, reporting_service
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     reporting_aggregate_kpis,
-    reporting_freeze_window,
     reporting_process_schedule,
     reporting_render_html,
     reporting_render_pdf,
-    reporting_send_email,
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -55,7 +66,8 @@ def _report_truth(
     if normalized_report_status in {"queued", "pending", "running", "in_progress", "scheduled", "processing"}:
         states.append("in_progress")
         reasons.append("report_record_exists_but_generation_is_not_complete")
-    if artifacts:
+    durable_artifacts = [artifact for artifact in artifacts if artifact.get("durable")]
+    if artifacts and len(durable_artifacts) != len(artifacts):
         states.append("minimal_artifact")
         states.append("non_durable")
         states.append("operator_assisted")
@@ -89,9 +101,10 @@ def _report_truth(
     summary_parts = ["Reports are generated from stored campaign data, not from a premium reporting pipeline."]
     if report_count > 0:
         summary_parts.append("A generated report record only confirms that a summary was assembled.")
-    if artifacts:
-        summary_parts.append("Artifacts are minimal local HTML/PDF files stored on local disk.")
-        summary_parts.append("These files are not durable or remotely retrievable.")
+    if artifacts and len(durable_artifacts) != len(artifacts):
+        summary_parts.append("Some report files use local storage and are not durable across deployments.")
+    elif artifacts:
+        summary_parts.append("The report files are stored privately in durable object storage and can be retrieved through authenticated or expiring links.")
     if has_synthetic_delivery:
         summary_parts.append("Delivery confirmation is synthetic in this runtime, so 'sent' does not prove external email delivery.")
     elif normalized_report_status == "delivered" or "sent" in event_statuses or normalized_delivery_status == "sent":
@@ -102,7 +115,7 @@ def _report_truth(
     return build_truth(
         states=states or ["operator_assisted"],
         summary=" ".join(summary_parts),
-        provider_state="local_disk_artifacts",
+        provider_state="private_object_storage" if artifacts and len(durable_artifacts) == len(artifacts) else "local_disk_artifacts",
         setup_state="configured",
         operator_state="operator_review_required",
         freshness_state=freshness_state,
@@ -178,17 +191,9 @@ def _schedule_truth(schedule: dict | None) -> dict:
 
 def _dispatch_report_generate(tenant_id: str, campaign_id: str, month_number: int, report_id: str) -> None:
     try:
-        reporting_freeze_window.delay(tenant_id=tenant_id, campaign_id=campaign_id, month_number=month_number)
         reporting_aggregate_kpis.delay(tenant_id=tenant_id, campaign_id=campaign_id, month_number=month_number)
         reporting_render_html.delay(tenant_id=tenant_id, report_id=report_id)
         reporting_render_pdf.delay(tenant_id=tenant_id, report_id=report_id)
-    except Exception:
-        return
-
-
-def _dispatch_report_delivery(tenant_id: str, report_id: str, recipient: str) -> None:
-    try:
-        reporting_send_email.delay(tenant_id=tenant_id, report_id=report_id, recipient=recipient)
     except Exception:
         return
 
@@ -297,6 +302,116 @@ def put_report_schedule(
     return envelope(request, {**payload, "truth": _schedule_truth(payload)})
 
 
+def _share_link_payload(row, *, share_url: str | None = None) -> dict:  # noqa: ANN001
+    return ReportShareLinkOut(
+        id=row.id,
+        report_id=row.report_id,
+        expires_at=row.expires_at,
+        revoked_at=row.revoked_at,
+        last_opened_at=row.last_opened_at,
+        open_count=row.open_count,
+        created_at=row.created_at,
+        status=report_delivery_service.share_link_status(row),
+        share_url=share_url,
+    ).model_dump(mode="json")
+
+
+@router.get("/recipients")
+def list_report_recipients(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = report_delivery_service.list_recipients(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(
+        request,
+        {"items": [ReportRecipientOut.model_validate(row).model_dump(mode="json") for row in rows]},
+    )
+
+
+@router.put("/recipients")
+def put_report_recipient(
+    request: Request,
+    body: ReportRecipientUpsertIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = report_delivery_service.upsert_recipient(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=body.campaign_id,
+        email=body.email,
+        display_name=body.display_name,
+        recipient_role=body.recipient_role,
+        enabled=body.enabled,
+    )
+    return envelope(request, ReportRecipientOut.model_validate(row).model_dump(mode="json"))
+
+
+@router.patch("/recipients/{recipient_id}")
+def patch_report_recipient(
+    request: Request,
+    recipient_id: str,
+    enabled: bool = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = report_delivery_service.set_recipient_enabled(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        recipient_id=recipient_id,
+        enabled=enabled,
+    )
+    return envelope(request, ReportRecipientOut.model_validate(row).model_dump(mode="json"))
+
+
+@router.get("/shared/{token}", name="open_shared_report")
+def open_shared_report(token: str, db: Session = Depends(get_db)) -> Response:
+    set_session_security_context(
+        db,
+        tenant_id=None,
+        organization_id=None,
+        user_id="public-report-share",
+        platform_access=True,
+    )
+    _, content = report_delivery_service.open_share_link(db, token=token)
+    return Response(
+        content=content,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-Robots-Tag": "noindex, nofollow",
+        },
+    )
+
+
+@router.delete("/share-links/{link_id}")
+def delete_report_share_link(
+    request: Request,
+    link_id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = report_delivery_service.revoke_share_link(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        link_id=link_id,
+    )
+    return envelope(request, _share_link_payload(row))
+
+
 @router.get("/{report_id}")
 def get_report(
     request: Request,
@@ -322,6 +437,12 @@ def get_report(
         report_id=report_id,
         organization_id=user["organization_id"],
     )
+    snapshot = reporting_service.get_report_snapshot(
+        db,
+        tenant_id=user["tenant_id"],
+        report_id=report_id,
+        organization_id=user["organization_id"],
+    )
     return envelope(
         request,
         {
@@ -331,6 +452,7 @@ def get_report(
                 for a in artifacts
             ],
             "delivery_events": [ReportDeliveryEventOut.model_validate(e).model_dump(mode="json") for e in delivery_events],
+            "snapshot": snapshot,
             "truth": _report_truth(
                 report_count=1,
                 report_status=row.report_status,
@@ -345,10 +467,93 @@ def get_report(
     )
 
 
+@router.get("/{report_id}/artifacts/{artifact_id}")
+def download_report_artifact(
+    report_id: str,
+    artifact_id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> Response:
+    artifact, content = reporting_service.read_report_artifact(
+        db,
+        tenant_id=user["tenant_id"],
+        report_id=report_id,
+        artifact_id=artifact_id,
+        organization_id=user["organization_id"],
+    )
+    extension = "pdf" if artifact.artifact_type == "pdf" else "html"
+    disposition = "attachment" if extension == "pdf" else "inline"
+    return Response(
+        content=content,
+        media_type=artifact.content_type or "application/octet-stream",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'{disposition}; filename="insightos-report.{extension}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post("/{report_id}/share-links")
+def create_report_share_link(
+    request: Request,
+    report_id: str,
+    body: ReportShareLinkCreateIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    row, token = report_delivery_service.create_share_link(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        report_id=report_id,
+        actor_user_id=user["id"],
+        expires_in_hours=body.expires_in_hours,
+    )
+    customer_base_url = get_settings().customer_app_base_url.strip().rstrip("/")
+    share_url = (
+        f"{customer_base_url}/api/v1/reports/shared/{token}"
+        if customer_base_url
+        else str(request.url_for("open_shared_report", token=token))
+    )
+    return envelope(request, _share_link_payload(row, share_url=share_url))
+
+
+@router.get("/{report_id}/share-links")
+def list_report_share_links(
+    request: Request,
+    report_id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    rows = report_delivery_service.list_share_links(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        report_id=report_id,
+    )
+    return envelope(request, {"items": [_share_link_payload(row) for row in rows]})
+
+
+@router.post("/{report_id}/regenerate")
+def regenerate_report(
+    request: Request,
+    report_id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = reporting_service.regenerate_report_artifacts(
+        db,
+        tenant_id=user["tenant_id"],
+        report_id=report_id,
+        organization_id=user["organization_id"],
+    )
+    return envelope(request, payload)
+
+
 @router.post("/{report_id}/deliver")
 def deliver_report(
     request: Request,
-    background_tasks: BackgroundTasks,
     report_id: str,
     body: ReportDeliverIn,
     user: dict = Depends(require_roles({"tenant_admin"})),
@@ -361,7 +566,6 @@ def deliver_report(
         recipient=body.recipient,
         organization_id=user["organization_id"],
     )
-    background_tasks.add_task(_dispatch_report_delivery, user["tenant_id"], report_id, body.recipient)
     return envelope(
         request,
         {
