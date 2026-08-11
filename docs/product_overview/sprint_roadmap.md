@@ -317,6 +317,10 @@ Current status (August 2026):
   metric provenance and coverage, current/comparison charts, crawl-accurate site
   issue totals, business-profile snapshot handling, detailed descriptions, and a
   deduplicated measurable next-action plan.
+- The current data-readiness slice makes direct Search Console facts the report
+  source of truth, keeps legacy rollups as a compatibility fallback, and shows a
+  plain-language readiness check before generation so missing or stale sections
+  are visible before a report is shared.
 
 Deliverables:
 - KPI aggregation across all modules.
@@ -341,6 +345,7 @@ Database changes:
 API endpoints added:
 - `POST /api/v1/reports/generate`
 - `GET /api/v1/reports`
+- `GET /api/v1/reports/readiness`
 - `GET /api/v1/reports/{id}`
 - `POST /api/v1/reports/{id}/deliver`
 

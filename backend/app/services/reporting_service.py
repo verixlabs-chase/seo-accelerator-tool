@@ -350,6 +350,21 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
         raise
 
 
+def get_report_readiness(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    organization_id: str | None = None,
+) -> dict:
+    campaign = _campaign_or_404(db, tenant_id, campaign_id, organization_id)
+    return premium_report_service.build_report_readiness(
+        db,
+        tenant_id=tenant_id,
+        campaign=campaign,
+    )
+
+
 def get_report_snapshot(
     db: Session,
     tenant_id: str,

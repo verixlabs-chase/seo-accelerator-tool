@@ -260,6 +260,22 @@ def list_reports(
     )
 
 
+@router.get("/readiness")
+def get_report_readiness(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = reporting_service.get_report_readiness(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+        organization_id=user["organization_id"],
+    )
+    return envelope(request, payload)
+
+
 @router.get("/schedule")
 def get_report_schedule(
     request: Request,

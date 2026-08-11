@@ -96,6 +96,28 @@ type ReportDetail = {
   truth?: RuntimeTruth;
 };
 
+type ReportReadinessSource = {
+  key: string;
+  label: string;
+  state: "ready" | "partial" | "stale" | "missing" | "optional" | string;
+  detail: string;
+  last_updated?: string | null;
+  optional?: boolean;
+  action_label?: string;
+  action_href?: string;
+};
+
+type ReportReadiness = {
+  campaign_id: string;
+  checked_at: string;
+  status: "ready" | "limited" | "needs_setup" | string;
+  title: string;
+  summary: string;
+  can_generate: boolean;
+  warning_count: number;
+  sources: ReportReadinessSource[];
+};
+
 type ReportMetric = {
   key: string;
   label: string;
@@ -690,6 +712,7 @@ export default function ReportsPage() {
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [selectedReportId, setSelectedReportId] = useState("");
   const [selectedReportDetail, setSelectedReportDetail] = useState<ReportDetail | null>(null);
+  const [reportReadiness, setReportReadiness] = useState<ReportReadiness | null>(null);
   const [reportsTruth, setReportsTruth] = useState<RuntimeTruth | null>(null);
   const [monthNumber, setMonthNumber] = useState("1");
   const [recipientEmail, setRecipientEmail] = useState("");
@@ -773,6 +796,18 @@ export default function ReportsPage() {
     }
   }, [loadReportDetail]);
 
+  const loadReportReadiness = useCallback(async (campaignId: string) => {
+    if (!campaignId) {
+      setReportReadiness(null);
+      return;
+    }
+    const response = (await platformApi(
+      `/reports/readiness?campaign_id=${encodeURIComponent(campaignId)}`,
+      { method: "GET" },
+    )) as ReportReadiness;
+    setReportReadiness(response);
+  }, []);
+
   const loadSchedule = useCallback(async (campaignId: string) => {
     if (!campaignId) {
       setSchedule(null);
@@ -836,6 +871,7 @@ export default function ReportsPage() {
       });
 
       await loadReports(selectedCampaignId);
+      await loadReportReadiness(selectedCampaignId);
       setNotice(
         `Report request completed for month ${safeMonth}. Confirm below whether it is ready to send, still processing, or needs attention.`,
       );
@@ -1053,6 +1089,7 @@ export default function ReportsPage() {
             loadReports(items[0].id),
             loadSchedule(items[0].id),
             loadRecipients(items[0].id),
+            loadReportReadiness(items[0].id),
           ]);
           if (reportResult.status === "rejected") {
             throw reportResult.reason;
@@ -1071,7 +1108,7 @@ export default function ReportsPage() {
     }
 
     void loadPage();
-  }, [loadCampaigns, loadRecipients, loadReports, loadSchedule]);
+  }, [loadCampaigns, loadRecipients, loadReportReadiness, loadReports, loadSchedule]);
 
   useEffect(() => {
     if (!selectedCampaignId || loading) {
@@ -1082,6 +1119,7 @@ export default function ReportsPage() {
       loadReports(selectedCampaignId),
       loadSchedule(selectedCampaignId),
       loadRecipients(selectedCampaignId),
+      loadReportReadiness(selectedCampaignId),
     ]).then(([reportResult]) => {
       if (reportResult.status === "rejected") {
         setError(
@@ -1092,13 +1130,16 @@ export default function ReportsPage() {
         );
       }
     });
-  }, [loadRecipients, loadReports, loadSchedule, selectedCampaignId, loading]);
+  }, [loadRecipients, loadReportReadiness, loadReports, loadSchedule, selectedCampaignId, loading]);
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
   const latestReport = reports[0] ?? null;
   const deliveredCount = reports.filter((item) => item.report_status === "delivered").length;
   const generatedCount = reports.filter((item) => item.report_status === "generated").length;
+  const readinessSources = (reportReadiness?.sources || []).filter(
+    (item) => item.state !== "ready" || reportReadiness?.status === "ready",
+  );
   const previewSections = useMemo(
     () => buildReportSections(selectedReportDetail?.report || latestReport || undefined, selectedReportDetail?.snapshot),
     [latestReport, selectedReportDetail],
@@ -1322,6 +1363,76 @@ export default function ReportsPage() {
               }
             />
 
+            {reportReadiness ? (
+              <section
+                className={`rounded-md border p-4 shadow-[0_0_30px_rgba(0,0,0,0.25)] ${
+                  reportReadiness.status === "ready"
+                    ? "border-emerald-500/30 bg-emerald-500/5"
+                    : reportReadiness.status === "limited"
+                      ? "border-amber-500/30 bg-amber-500/5"
+                      : "border-rose-500/30 bg-rose-500/5"
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Before you create the next report
+                    </p>
+                    <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                      {reportReadiness.title}
+                    </h2>
+                    <p className="mt-1.5 max-w-3xl text-sm leading-6 text-zinc-300">
+                      {reportReadiness.summary}
+                    </p>
+                  </div>
+                  <span className="rounded-md border border-white/10 bg-black/20 px-2.5 py-1 text-xs font-semibold text-zinc-100">
+                    {reportReadiness.status === "ready"
+                      ? "Ready"
+                      : `${reportReadiness.warning_count} item${reportReadiness.warning_count === 1 ? "" : "s"} to improve`}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
+                  {readinessSources.map((source) => (
+                    <div key={source.key} className="rounded-md border border-white/10 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-white">{source.label}</h3>
+                        <span
+                          className={`text-xs font-semibold ${
+                            source.state === "ready"
+                              ? "text-emerald-300"
+                              : source.state === "optional"
+                                ? "text-zinc-400"
+                                : "text-amber-300"
+                          }`}
+                        >
+                          {source.state === "ready"
+                            ? "Ready"
+                            : source.state === "optional"
+                              ? "Optional"
+                              : source.state === "stale"
+                                ? "Needs refresh"
+                                : source.state === "partial"
+                                  ? "Limited"
+                                  : "Not ready"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-zinc-300">{source.detail}</p>
+                      {source.state !== "ready" && source.state !== "optional" && source.action_href ? (
+                        <button
+                          type="button"
+                          onClick={() => router.push(source.action_href || "/settings")}
+                          className="mt-3 text-xs font-semibold text-accent-300 hover:text-accent-200"
+                        >
+                          {source.action_label || "Fix this"} →
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
             <details className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
               <summary className="cursor-pointer list-none">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
@@ -1435,7 +1546,11 @@ export default function ReportsPage() {
                       disabled={busyAction !== "" || !selectedCampaignId}
                       className="mt-4 rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {busyAction === "generate" ? "Generating..." : "Generate report"}
+                      {busyAction === "generate"
+                        ? "Generating..."
+                        : reportReadiness?.status === "ready"
+                          ? "Generate detailed report"
+                          : "Generate report with available data"}
                     </button>
                     {selectedReportDetail?.snapshot?.snapshot_hash ? (
                       <div className="mt-4 border-t border-[#26272c] pt-4">
