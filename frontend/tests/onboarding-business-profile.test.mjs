@@ -28,3 +28,12 @@ test("guided setup saves confirmed services and markets before starting checks",
   assert.match(wizardSource, /Cities, counties, or ZIP codes you serve/);
   assert.match(wizardSource, /review them before they affect your search ideas/i);
 });
+
+test("guided setup explains and retries blocked first checks", () => {
+  assert.match(wizardSource, /What is missing:/);
+  assert.match(wizardSource, /Who acts:/);
+  assert.match(wizardSource, /How to recover:/);
+  assert.match(wizardSource, /Retry unfinished checks/);
+  assert.match(wizardSource, /support@verixlabs\.com/);
+  assert.match(wizardSource, /Never send a password or API key/);
+});

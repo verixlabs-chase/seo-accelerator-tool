@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { platformApi } from "../../platform/api";
 import { trackProductEvent } from "../../lib/productAnalytics";
 import {
   getStepThreeSummary,
+  getTaskRecoveryGuidance,
   getTaskStatusMeaning,
   parseOwnerServiceAreas,
   parseOwnerServices,
@@ -79,10 +80,13 @@ type SetupTask = {
   status: "pending" | "running" | "done" | "error";
 };
 
+type BackgroundSetupTaskId = "crawl" | "keyword" | "ranking";
+
 function SetupTaskList({ tasks }: { tasks: SetupTask[] }) {
   return (
     <div className="space-y-3">
       {tasks.map((task) => {
+        const guidance = getTaskRecoveryGuidance(task);
         const tone =
           task.status === "done"
             ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100"
@@ -110,6 +114,16 @@ function SetupTaskList({ tasks }: { tasks: SetupTask[] }) {
                 <p className="mt-2 text-xs uppercase tracking-[0.14em] opacity-70">
                   {getTaskStatusMeaning(task.status)}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs opacity-80">
+                  <span>Who acts: {guidance.owner}</span>
+                  <span>Timing: {guidance.timing}</span>
+                </div>
+                {task.status === "error" && (
+                  <div className="mt-3 border-t border-current/15 pt-3 text-sm leading-6">
+                    <p><span className="font-semibold">What is missing:</span> {guidance.missing}</p>
+                    <p><span className="font-semibold">How to recover:</span> {guidance.recovery}</p>
+                  </div>
+                )}
               </div>
               <span className="shrink-0 rounded-full border border-current/20 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
                 {label}
@@ -184,11 +198,11 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     },
   ]);
 
-  function updateTask(taskId: string, status: SetupTask["status"]) {
+  const updateTask = useCallback((taskId: string, status: SetupTask["status"]) => {
     setSetupTasks((current) =>
       current.map((task) => (task.id === taskId ? { ...task, status } : task)),
     );
-  }
+  }, []);
 
   const {
     completedTasks,
@@ -324,76 +338,81 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     }
   }
 
-  // Step 3: fire scans on mount
-  useEffect(() => {
-    if (step !== 3 || scanStarted) return;
-    setScanStarted(true);
-
-    async function runScans() {
+  const runFirstChecks = useCallback(
+    async (taskIds: BackgroundSetupTaskId[]) => {
       setBusy(true);
       setError("");
+      setScanDone(false);
 
-      try {
-        const seedUrl = campaignDomain.startsWith("http")
-          ? campaignDomain
-          : `https://${campaignDomain}`;
-
-        const keyword = `${primaryService.toLowerCase()} near me`;
-        const locationCode = rankingArea || "US";
-
-        updateTask("crawl", "running");
-        await platformApi("/crawl/schedule", {
+      const seedUrl = campaignDomain.startsWith("http")
+        ? campaignDomain
+        : `https://${campaignDomain}`;
+      const keyword = `${primaryService.toLowerCase()} near me`;
+      const locationCode = rankingArea || "US";
+      const requests: Record<BackgroundSetupTaskId, () => Promise<unknown>> = {
+        crawl: () => platformApi("/crawl/schedule", {
           method: "POST",
           body: JSON.stringify({
             campaign_id: campaignId,
             crawl_type: "deep",
             seed_url: seedUrl,
           }),
-        });
-        updateTask("crawl", "done");
-
-        updateTask("keyword", "running");
-        await platformApi("/rank/keywords", {
+        }),
+        keyword: () => platformApi("/rank/keywords", {
           method: "POST",
           body: JSON.stringify({
             campaign_id: campaignId,
             cluster_name: primaryService || "Core Services",
-            keyword: keyword,
+            keyword,
             location_code: locationCode,
           }),
-        });
-        updateTask("keyword", "done");
-
-        updateTask("ranking", "running");
-        await platformApi("/rank/schedule", {
+        }),
+        ranking: () => platformApi("/rank/schedule", {
           method: "POST",
           body: JSON.stringify({
             campaign_id: campaignId,
             location_code: locationCode,
           }),
-        });
-        updateTask("ranking", "done");
+        }),
+      };
+      const failedTaskIds: BackgroundSetupTaskId[] = [];
 
-        setScanDone(true);
-      } catch (err) {
-        setSetupTasks((current) =>
-          current.map((task) =>
-            task.status === "running" ? { ...task, status: "error" } : task,
-          ),
-        );
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Something went wrong starting your first results. You can retry from the dashboard."
-        );
-        setScanDone(true);
-      } finally {
-        setBusy(false);
+      for (const taskId of taskIds) {
+        updateTask(taskId, "running");
+        try {
+          await requests[taskId]();
+          updateTask(taskId, "done");
+        } catch {
+          failedTaskIds.push(taskId);
+          updateTask(taskId, "error");
+        }
       }
-    }
 
-    void runScans();
-  }, [step, scanStarted, campaignId, campaignDomain, primaryService, rankingArea]);
+      if (failedTaskIds.length > 0) {
+        setError(
+          `${failedTaskIds.length} first check${failedTaskIds.length === 1 ? "" : "s"} did not start. Review the marked step${failedTaskIds.length === 1 ? "" : "s"}, then use Retry unfinished checks.`,
+        );
+      }
+      setScanDone(true);
+      setBusy(false);
+    },
+    [campaignDomain, campaignId, primaryService, rankingArea, updateTask],
+  );
+
+  // Step 3: fire scans on mount
+  useEffect(() => {
+    if (step !== 3 || scanStarted) return;
+    setScanStarted(true);
+    void runFirstChecks(["crawl", "keyword", "ranking"]);
+  }, [step, scanStarted, runFirstChecks]);
+
+  const retryableTaskIds = setupTasks
+    .filter(
+      (task): task is SetupTask & { id: BackgroundSetupTaskId } =>
+        (["crawl", "keyword", "ranking"] as string[]).includes(task.id) &&
+        (task.status === "error" || task.status === "pending"),
+    )
+    .map((task) => task.id);
 
   return (
     <div className="mx-auto max-w-2xl py-8">
@@ -624,6 +643,16 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
                     ? "Your business was created, but one or more first checks did not finish cleanly. The dashboard will show exactly what needs attention and what to retry."
                     : "Your business, services, and service areas were saved, and your first checks were queued. The dashboard will show progress as scan and ranking data arrive."}
                 </p>
+                {hasSetupIssues && retryableTaskIds.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runFirstChecks(retryableTaskIds)}
+                    className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busy ? "Retrying unfinished checks..." : "Retry unfinished checks"}
+                  </button>
+                )}
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
                   <p className="font-medium text-white">What happens next</p>
                   <p className="mt-2">
@@ -632,6 +661,14 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
                       : "Go to the dashboard now. Your confirmed services and areas will keep Find Searches focused, and any ideas found on your website will wait for your approval."}
                   </p>
                 </div>
+                {hasSetupIssues && (
+                  <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
+                    <p className="font-medium text-white">Still stuck?</p>
+                    <p className="mt-2">
+                      Email <a className="text-accent-400 underline underline-offset-4" href="mailto:support@verixlabs.com?subject=InsightOS%20setup%20help">support@verixlabs.com</a> with your business name and the step marked Needs attention. Never send a password or API key.
+                    </p>
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     void trackProductEvent({
