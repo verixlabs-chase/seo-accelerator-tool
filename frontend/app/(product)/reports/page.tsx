@@ -18,7 +18,7 @@ import {
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
-import { platformApi } from "../../platform/api";
+import { platformApi, platformApiFile } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
 } from "../truth/runtimeTruth.mjs";
@@ -737,6 +737,66 @@ export default function ReportsPage() {
     });
   }
 
+  async function openReportArtifact(artifact: ReportArtifact) {
+    const reportId = selectedReportDetail?.report.id || selectedReportId;
+    if (!reportId) {
+      setError("Select a report first.");
+      return;
+    }
+
+    const opensInBrowser = artifact.artifact_type !== "pdf";
+    const reportWindow = opensInBrowser ? window.open("about:blank", "_blank") : null;
+    if (reportWindow) {
+      reportWindow.opener = null;
+      reportWindow.document.title = "Opening your report";
+      reportWindow.document.body.textContent = "Opening your report...";
+    }
+
+    let fileOpened = false;
+    await runAction(
+      `artifact-${artifact.id}`,
+      async () => {
+        try {
+          const file = await platformApiFile(
+            `/reports/${reportId}/artifacts/${artifact.id}`,
+            { method: "GET" },
+          );
+          const fileUrl = URL.createObjectURL(file.blob);
+          const extension = artifact.artifact_type === "pdf" ? "pdf" : "html";
+          const filename = `insightos-report-month-${coerceNumber(selectedReportDetail?.report.month_number, 1)}.${extension}`;
+
+          if (opensInBrowser) {
+            if (reportWindow) {
+              reportWindow.location.replace(fileUrl);
+            } else {
+              window.location.assign(fileUrl);
+            }
+          } else {
+            const link = document.createElement("a");
+            link.href = fileUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+          }
+
+          fileOpened = true;
+          window.setTimeout(() => URL.revokeObjectURL(fileUrl), 60_000);
+          setNotice(
+            opensInBrowser
+              ? "The report opened in a new tab."
+              : "The PDF report was downloaded.",
+          );
+        } finally {
+          if (!fileOpened) {
+            reportWindow?.close();
+          }
+        }
+      },
+      "We could not open this report file. Your saved report is still safe. Please try again.",
+    );
+  }
+
   async function saveSchedule() {
     if (!selectedCampaignId) {
       setError("Select a business first.");
@@ -1405,14 +1465,18 @@ export default function ReportsPage() {
                             {formatRelativeTime(artifact.created_at)}
                           </span>
                           {artifact.retrievable ? (
-                            <a
-                              href={`/api/v1/reports/${selectedReportDetail.report.id}/artifacts/${artifact.id}`}
-                              target="_blank"
-                              rel="noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => openReportArtifact(artifact)}
+                              disabled={busyAction !== ""}
                               className="rounded-md border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-xs font-medium text-zinc-100"
                             >
-                              {artifact.artifact_type === "pdf" ? "Download" : "Open"}
-                            </a>
+                              {busyAction === `artifact-${artifact.id}`
+                                ? "Opening..."
+                                : artifact.artifact_type === "pdf"
+                                  ? "Download"
+                                  : "Open"}
+                            </button>
                           ) : null}
                         </div>
                       </div>

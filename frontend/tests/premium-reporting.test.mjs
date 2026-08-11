@@ -8,6 +8,7 @@ function read(relativePath) {
 }
 
 const reportsPage = read("../app/(product)/reports/page.tsx");
+const platformApi = read("../app/platform/api.js");
 
 test("premium reports lead with a plain-language progress story and visual comparisons", () => {
   assert.match(reportsPage, /Your results at a glance/);
@@ -39,6 +40,18 @@ test("reports expose durable files, saved recipients, and expiring private links
   assert.match(reportsPage, /Create 7-day link/);
   assert.match(reportsPage, /Turn off link/);
   assert.match(reportsPage, /\/artifacts\/\$\{artifact\.id\}/);
+});
+
+test("report files use the authenticated request flow instead of raw links", () => {
+  assert.match(reportsPage, /platformApiFile/);
+  assert.match(reportsPage, /openReportArtifact\(artifact\)/);
+  assert.match(reportsPage, /URL\.createObjectURL/);
+  assert.match(reportsPage, /The report opened in a new tab/);
+  assert.doesNotMatch(reportsPage, /href=\{`\/api\/v1\/reports/);
+  assert.match(platformApi, /export async function platformApiFile/);
+  assert.match(platformApi, /authenticatedRequest\(path, options\)/);
+  assert.match(platformApi, /credentials: "include"/);
+  assert.match(platformApi, /response\.blob\(\)/);
 });
 
 test("reports replace raw network failures and keep optional tools from blocking the page", () => {
