@@ -18,7 +18,7 @@ from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.crawl import CrawlRun, TechnicalIssue
 from app.models.intelligence import StrategyRecommendation
 from app.models.local import ReviewVelocitySnapshot
-from app.models.rank import RankingSnapshot
+from app.models.rank import CampaignKeyword, RankingSnapshot
 from app.services import intelligence_service
 from app.services.strategy_engine.thresholds import version_id as strategy_threshold_version
 
@@ -152,13 +152,16 @@ def _coverage(
 
 
 def _record_coverage(observed: int, expected: int = 1) -> dict[str, Any]:
-    if observed <= 0:
+    resolved_expected = max(int(expected), 0)
+    resolved_observed = max(int(observed), 0)
+    displayed_observed = min(resolved_observed, resolved_expected) if resolved_expected else resolved_observed
+    if displayed_observed <= 0:
         state = "unavailable"
-    elif observed >= expected:
+    elif resolved_expected == 0 or displayed_observed >= resolved_expected:
         state = "complete"
     else:
         state = "partial"
-    return {"state": state, "observed": observed, "expected": expected}
+    return {"state": state, "observed": displayed_observed, "expected": resolved_expected}
 
 
 def _canonical_text(value: str | None) -> str:
@@ -169,10 +172,24 @@ def _dedupe_story_items(items: Iterable[dict[str, Any]], *, limit: int = 6) -> l
     unique: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in items:
-        key = _canonical_text(str(item.get("canonical_action_id") or item.get("title") or item.get("id") or ""))
-        if not key or key in seen:
+        identity = _canonical_text(str(item.get("canonical_action_id") or item.get("id") or ""))
+        title = _canonical_text(str(item.get("title") or ""))
+        measurement = item.get("measurement") if isinstance(item.get("measurement"), dict) else {}
+        measurement_target = _canonical_text(
+            str(measurement.get("metric_id") or measurement.get("label") or "")
+        )
+        keys = {
+            key
+            for key in (
+                f"action:{identity}" if identity else "",
+                f"title:{title}" if title else "",
+                f"measurement:{measurement_target}" if measurement_target else "",
+            )
+            if key
+        }
+        if not keys or seen.intersection(keys):
             continue
-        seen.add(key)
+        seen.update(keys)
         unique.append(item)
         if len(unique) >= limit:
             break
@@ -413,6 +430,20 @@ def build_report_snapshot(
     previous_rank_rows = [
         row for row in rank_rows if previous_start_dt <= (_aware(row.captured_at) or previous_start_dt - timedelta(days=1)) < previous_end_dt
     ]
+    tracked_keyword_count = int(
+        db.query(func.count(CampaignKeyword.id))
+        .filter(
+            CampaignKeyword.tenant_id == tenant_id,
+            CampaignKeyword.campaign_id == campaign.id,
+        )
+        .scalar()
+        or 0
+    )
+    rank_scope_count = max(
+        tracked_keyword_count,
+        len({row.keyword_id for row in current_rank_rows}),
+        len({row.keyword_id for row in previous_rank_rows}),
+    )
 
     search_last_updated = max(
         (row.metric_date for row in current_rows if row.clicks is not None or row.impressions is not None),
@@ -514,8 +545,14 @@ def build_report_snapshot(
             explanation="The latest saved map or organic position for each tracked search in this period.",
             source_label="InsightOS rank tracking",
             source_system="rank_tracking",
-            current_coverage=_record_coverage(len(_latest_rank_values(current_rank_rows))),
-            comparison_coverage=_record_coverage(len(_latest_rank_values(previous_rank_rows))),
+            current_coverage=_record_coverage(
+                len(_latest_rank_values(current_rank_rows)),
+                expected=rank_scope_count,
+            ),
+            comparison_coverage=_record_coverage(
+                len(_latest_rank_values(previous_rank_rows)),
+                expected=rank_scope_count,
+            ),
             last_updated=max((row.captured_at for row in current_rank_rows), default=None),
         ),
         _metric(
@@ -528,8 +565,14 @@ def build_report_snapshot(
             explanation="How many tracked searches were in positions 1 through 10 on their latest check.",
             source_label="InsightOS rank tracking",
             source_system="rank_tracking",
-            current_coverage=_record_coverage(len(_latest_rank_values(current_rank_rows))),
-            comparison_coverage=_record_coverage(len(_latest_rank_values(previous_rank_rows))),
+            current_coverage=_record_coverage(
+                len(_latest_rank_values(current_rank_rows)),
+                expected=rank_scope_count,
+            ),
+            comparison_coverage=_record_coverage(
+                len(_latest_rank_values(previous_rank_rows)),
+                expected=rank_scope_count,
+            ),
             last_updated=max((row.captured_at for row in current_rank_rows), default=None),
         ),
         _metric(

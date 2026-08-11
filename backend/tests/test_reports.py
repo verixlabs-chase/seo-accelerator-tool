@@ -403,10 +403,11 @@ def test_reports_persist_recipients_and_protect_shared_files(client, db_session)
 
 
 def test_rpt1_report_freezes_location_story_and_regenerates_same_snapshot(client, db_session):
-    from datetime import date, timedelta
+    from datetime import UTC, date, datetime, timedelta
 
     from app.models.campaign import Campaign
     from app.models.campaign_daily_metric import CampaignDailyMetric
+    from app.models.rank import CampaignKeyword, KeywordCluster, RankingSnapshot
 
     token = _login(client, "a@example.com", "pass-a")
     campaign_data = client.post(
@@ -442,6 +443,34 @@ def test_rpt1_report_freezes_location_story_and_regenerates_same_snapshot(client
                 deterministic_hash=f"{'a' * 60}{index:04d}",
             )
         )
+    cluster = KeywordCluster(
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        name="Tracked services",
+    )
+    db_session.add(cluster)
+    db_session.flush()
+    for index, keyword_text in enumerate(("reno junk removal", "appliance removal reno"), start=1):
+        keyword = CampaignKeyword(
+            tenant_id=campaign.tenant_id,
+            campaign_id=campaign.id,
+            cluster_id=cluster.id,
+            keyword=keyword_text,
+            location_code="US",
+        )
+        db_session.add(keyword)
+        db_session.flush()
+        db_session.add(
+            RankingSnapshot(
+                tenant_id=campaign.tenant_id,
+                campaign_id=campaign.id,
+                keyword_id=keyword.id,
+                position=10 + index,
+                confidence=0.9,
+                captured_at=datetime(2026, 8, 10, 12, 0, tzinfo=UTC),
+                month_partition="2026-08",
+            )
+        )
     db_session.commit()
 
     generated = client.post(
@@ -471,6 +500,12 @@ def test_rpt1_report_freezes_location_story_and_regenerates_same_snapshot(client
     website_issues = next(metric for metric in snapshot["metrics"] if metric["key"] == "website_issues")
     assert website_issues["current"] is None
     assert website_issues["coverage"]["current"]["state"] == "unavailable"
+    tracked_position = next(metric for metric in snapshot["metrics"] if metric["key"] == "tracked_keyword_position")
+    assert tracked_position["coverage"]["current"] == {
+        "state": "complete",
+        "observed": 2,
+        "expected": 2,
+    }
     google_trend = next(item for item in snapshot["trend_series"] if item["key"] == "google_discovery")
     assert len(google_trend["points"]) == 2
     assert google_trend["points"][-1]["visits"] == 100
@@ -587,8 +622,8 @@ def test_report_next_actions_are_unique_detailed_and_measurable(client, db_sessi
     snapshot = detail_payload["snapshot"]
 
     priorities = snapshot["next_priorities"]
-    assert len(priorities) == 2
-    assert len({item["canonical_action_id"] for item in priorities}) == 2
+    assert len(priorities) == 1
+    assert len({item["measurement"]["metric_id"] for item in priorities}) == 1
     assert all(item["steps"] for item in priorities)
     assert all(item["why_it_matters"] for item in priorities)
     assert all(item["measurement"]["label"] for item in priorities)
