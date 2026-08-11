@@ -89,8 +89,8 @@ def render_html(kpis: dict, campaign_name: str) -> str:
 
 
 def render_html_report(kpis: dict, report_id: str, campaign_name: str) -> str:
-    out_dir = Path("generated_reports")
-    out_dir.mkdir(exist_ok=True)
+    out_dir = report_artifact_storage_service.local_report_artifact_root()
+    out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{report_id}.html"
     path.write_text(render_html(kpis, campaign_name), encoding="utf-8")
     return str(path)
@@ -135,8 +135,8 @@ def _build_simple_pdf(lines: list[str]) -> bytes:
 
 
 def render_pdf_report(kpis: dict, report_id: str, campaign_name: str) -> str:
-    out_dir = Path("generated_reports")
-    out_dir.mkdir(exist_ok=True)
+    out_dir = report_artifact_storage_service.local_report_artifact_root()
+    out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{report_id}.pdf"
     snapshot = premium_report_service.normalize_snapshot(kpis, campaign_name)
     lines = premium_report_service.report_pdf_lines(snapshot)

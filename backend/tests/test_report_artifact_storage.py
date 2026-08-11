@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import tempfile
+from pathlib import Path
 from types import ModuleType
 
 from app.services.report_artifact_storage_service import (
@@ -24,6 +26,14 @@ def test_local_report_storage_round_trips_bytes(tmp_path):
     assert stored.byte_size == 25
     assert storage.exists(stored.storage_key, stored.storage_path) is True
     assert storage.read_bytes(stored.storage_key, stored.storage_path) == b"<html>owner report</html>"
+
+
+def test_local_report_storage_uses_writable_temp_directory_on_vercel(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+
+    storage = LocalReportArtifactStorage()
+
+    assert storage.root == Path(tempfile.gettempdir()) / "insightos-generated-reports"
 
 
 def test_private_s3_report_storage_uses_tenant_scoped_keys(monkeypatch):

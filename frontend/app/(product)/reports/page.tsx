@@ -441,6 +441,19 @@ function hasTruthState(truth: RuntimeTruth | null | undefined, state: string) {
   return Array.isArray(truth?.states) && truth.states.includes(state);
 }
 
+function friendlyReportError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (
+    !message ||
+    /failed to fetch|networkerror|network request failed|internal server error|unexpected error/i.test(
+      message,
+    )
+  ) {
+    return fallback;
+  }
+  return message;
+}
+
 
 const SCHEDULE_TIMEZONES = [
   "America/New_York",
@@ -500,12 +513,14 @@ export default function ReportsPage() {
       return;
     }
 
-    const [detail, linkResponse] = await Promise.all([
-      platformApi(`/reports/${reportId}`, { method: "GET" }),
-      platformApi(`/reports/${reportId}/share-links`, { method: "GET" }),
-    ]);
+    const detail = await platformApi(`/reports/${reportId}`, { method: "GET" });
     setSelectedReportDetail(detail);
-    setShareLinks(Array.isArray(linkResponse?.items) ? (linkResponse.items as ReportShareLink[]) : []);
+    try {
+      const linkResponse = await platformApi(`/reports/${reportId}/share-links`, { method: "GET" });
+      setShareLinks(Array.isArray(linkResponse?.items) ? (linkResponse.items as ReportShareLink[]) : []);
+    } catch {
+      setShareLinks([]);
+    }
   }, []);
 
   const loadRecipients = useCallback(async (campaignId: string) => {
@@ -571,7 +586,11 @@ export default function ReportsPage() {
     }
   }, []);
 
-  async function runAction(action: string, fn: () => Promise<void>) {
+  async function runAction(
+    action: string,
+    fn: () => Promise<void>,
+    failureMessage = "We could not complete that step right now. Please try again.",
+  ) {
     setBusyAction(action);
     setError("");
     setNotice("");
@@ -579,7 +598,7 @@ export default function ReportsPage() {
     try {
       await fn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(friendlyReportError(err, failureMessage));
     } finally {
       setBusyAction("");
     }
@@ -607,7 +626,7 @@ export default function ReportsPage() {
       setNotice(
         `Report request completed for month ${safeMonth}. Confirm below whether it is ready to send, still processing, or needs attention.`,
       );
-    });
+    }, "We could not create the report right now. Your saved business data is safe. Please try again.");
   }
 
   async function deliverReport() {
@@ -757,12 +776,22 @@ export default function ReportsPage() {
         await platformApi("/auth/me", { method: "GET" });
         const items = await loadCampaigns();
         if (items[0]?.id) {
-          await loadReports(items[0].id);
-          await loadSchedule(items[0].id);
-          await loadRecipients(items[0].id);
+          const [reportResult] = await Promise.allSettled([
+            loadReports(items[0].id),
+            loadSchedule(items[0].id),
+            loadRecipients(items[0].id),
+          ]);
+          if (reportResult.status === "rejected") {
+            throw reportResult.reason;
+          }
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to load reports.");
+        setError(
+          friendlyReportError(
+            err,
+            "Reports could not be loaded right now. Your other business data is still available.",
+          ),
+        );
       } finally {
         setLoading(false);
       }
@@ -776,14 +805,19 @@ export default function ReportsPage() {
       return;
     }
 
-    void loadReports(selectedCampaignId).catch((err) => {
-      setError(err instanceof Error ? err.message : "Unable to load reports.");
-    });
-    void loadSchedule(selectedCampaignId).catch((err) => {
-      setError(err instanceof Error ? err.message : "Unable to load schedule.");
-    });
-    void loadRecipients(selectedCampaignId).catch((err) => {
-      setError(err instanceof Error ? err.message : "Unable to load saved recipients.");
+    void Promise.allSettled([
+      loadReports(selectedCampaignId),
+      loadSchedule(selectedCampaignId),
+      loadRecipients(selectedCampaignId),
+    ]).then(([reportResult]) => {
+      if (reportResult.status === "rejected") {
+        setError(
+          friendlyReportError(
+            reportResult.reason,
+            "Reports could not be loaded right now. Your other business data is still available.",
+          ),
+        );
+      }
     });
   }, [loadRecipients, loadReports, loadSchedule, selectedCampaignId, loading]);
 
@@ -956,8 +990,15 @@ export default function ReportsPage() {
         ) : null}
 
         {error ? (
-          <section className="rounded-md border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
-            {error}
+          <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="rounded-md border border-rose-200/20 bg-black/20 px-3 py-1.5 font-semibold text-white"
+            >
+              Try again
+            </button>
           </section>
         ) : null}
 

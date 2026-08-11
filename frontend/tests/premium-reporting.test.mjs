@@ -40,3 +40,11 @@ test("reports expose durable files, saved recipients, and expiring private links
   assert.match(reportsPage, /Turn off link/);
   assert.match(reportsPage, /\/artifacts\/\$\{artifact\.id\}/);
 });
+
+test("reports replace raw network failures and keep optional tools from blocking the page", () => {
+  assert.match(reportsPage, /We could not create the report right now/);
+  assert.match(reportsPage, /Reports could not be loaded right now/);
+  assert.match(reportsPage, /Promise\.allSettled/);
+  assert.match(reportsPage, /Try again/);
+  assert.doesNotMatch(reportsPage, /setError\(err instanceof Error \? err\.message/);
+});

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -39,12 +41,23 @@ class ReportArtifactStorage(Protocol):
     def read_bytes(self, storage_key: str, storage_path: str) -> bytes: ...
 
 
+def local_report_artifact_root() -> Path:
+    settings = get_settings()
+    if settings.hosted_serverless or os.getenv("VERCEL") == "1":
+        return Path(tempfile.gettempdir()) / "insightos-generated-reports"
+    return Path("generated_reports")
+
+
 class LocalReportArtifactStorage:
     storage_mode = "local_disk"
     durable = False
 
     def __init__(self, root: Path | None = None) -> None:
-        self.root = root or Path("generated_reports")
+        if root is not None:
+            self.root = root
+            return
+
+        self.root = local_report_artifact_root()
 
     def put_bytes(
         self,
