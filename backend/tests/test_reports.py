@@ -1,3 +1,23 @@
+from app.services import reporting_service
+
+
+class _WrappedDatabaseError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.orig = RuntimeError(message)
+
+
+def test_report_failure_metadata_identifies_database_object_without_logging_values():
+    metadata = reporting_service._report_failure_metadata(
+        _WrappedDatabaseError('permission denied for table audit_logs'),
+        stage="emit_report_event",
+    )
+
+    assert metadata["database_object"] == "audit_logs"
+    assert metadata["failure_category"] == "table_privilege"
+    assert "permission denied" not in str(metadata)
+
+
 def _login(client, email, password):
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200

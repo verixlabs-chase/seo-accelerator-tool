@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from hashlib import sha256
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -28,6 +29,19 @@ logger = logging.getLogger("lsos.reporting")
 def _report_failure_metadata(exc: Exception, *, stage: str) -> dict[str, str | None]:
     original = getattr(exc, "orig", None)
     diagnostic = getattr(original, "diag", None)
+    database_message = str(original or exc)
+    database_object_match = re.search(
+        r'(?:table|relation)\s+"?([A-Za-z_][A-Za-z0-9_]*)"?',
+        database_message,
+        flags=re.IGNORECASE,
+    )
+    normalized_message = database_message.lower()
+    if "row-level security" in normalized_message:
+        failure_category = "row_level_security"
+    elif "permission denied" in normalized_message or "insufficient privilege" in normalized_message:
+        failure_category = "table_privilege"
+    else:
+        failure_category = None
     return {
         "event": "report_generation_failed",
         "stage": stage,
@@ -38,6 +52,8 @@ def _report_failure_metadata(exc: Exception, *, stage: str) -> dict[str, str | N
         "database_constraint": getattr(diagnostic, "constraint_name", None),
         "database_column": getattr(diagnostic, "column_name", None),
         "database_table": getattr(diagnostic, "table_name", None),
+        "database_object": database_object_match.group(1) if database_object_match else None,
+        "failure_category": failure_category,
     }
 
 
@@ -299,6 +315,7 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
             )
             _apply_stored_artifact(artifact, stored)
             db.add(artifact)
+        db.flush()
         stage = "emit_report_event"
         emit_event(
             db,
@@ -312,6 +329,7 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
                 "snapshot_version": snapshot["schema_version"],
             },
         )
+        db.flush()
         stage = "commit_report"
         db.commit()
         db.refresh(report)
