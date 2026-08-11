@@ -2280,13 +2280,21 @@ Implementation status (2026-08-11):
   least two matching report periods. Missing, legacy, mismatched, and invalid
   reports remain visible with recovery guidance; location totals are never
   blended.
+- RPT1F's downloadable portfolio artifact and branding foundation are
+  implemented locally. An authenticated all-location PDF uses the exact saved
+  report IDs and integrity hashes already shown in the comparison, requires at
+  least two matching report periods, keeps every metric location-specific, and
+  includes side-by-side tables, bounded visual comparisons, per-location wins,
+  risks, next actions, and a source-record appendix. The document identifies
+  InsightOS, VerixLabs, and the customer organization it was prepared for;
+  custom logos, colors, and brand removal remain later Enterprise controls.
 - Automated report email and provider webhooks are explicitly deferred to
   ALT1 in sprint 38. They are not a release gate for the current reporting
   work because an owner can securely open, download, and share a report now.
-- The remaining RPT1 work is customer-tested report branding and extending
-  the same frozen-snapshot comparison contract into a downloadable portfolio
-  artifact. Those capabilities must preserve the RPT1A snapshot contract
-  rather than recomputing facts at delivery time.
+- RPT1's coded scope is complete. The bounded report brand is ready for paid
+  beta customer testing; findings should refine copy and visual hierarchy
+  without changing the RPT1A facts contract. Full white-label controls remain
+  in Enterprise scope, and automated email remains in ALT1.
 
 Scope:
 

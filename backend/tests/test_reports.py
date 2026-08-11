@@ -292,6 +292,34 @@ def test_portfolio_report_comparison_keeps_location_snapshots_separate(client, d
     assert rows[campaigns[0]["id"]]["report"]["snapshot_hash"]
     assert any("needs a report" in warning for warning in payload["warnings"])
 
+    portfolio_pdf = client.get("/api/v1/reports/portfolio-artifact", headers=headers)
+    assert portfolio_pdf.status_code == 200
+    assert portfolio_pdf.headers["content-type"] == "application/pdf"
+    assert "insightos-all-location-report.pdf" in portfolio_pdf.headers["content-disposition"]
+    assert portfolio_pdf.headers["etag"]
+    portfolio_reader = PdfReader(BytesIO(portfolio_pdf.content))
+    assert len(portfolio_reader.pages) >= 5
+    portfolio_text = "\n".join(page.extract_text() or "" for page in portfolio_reader.pages)
+    assert "INSIGHTOS ALL-LOCATION REPORT" in portfolio_text
+    assert "Prepared for" in portfolio_text
+    assert "North Service Area" in portfolio_text
+    assert "South Service Area" in portfolio_text
+    assert "2 of 3" in portfolio_text
+    assert "East Service Area" in portfolio_text
+    assert "Create a report for this location before comparing it" in portfolio_text
+    assert "exact saved report for each location" in portfolio_text
+    assert "Custom logos, colors" in portfolio_text
+    assert "white-label removal remain separate Enterprise controls" in portfolio_text
+    assert portfolio_reader.metadata.author == "VerixLabs"
+    outline_titles = [item.title for item in portfolio_reader.outline if hasattr(item, "title")]
+    assert "Portfolio summary" in outline_titles
+    assert "Location comparison" in outline_titles
+    assert "Saved report record" in outline_titles
+
+    repeated_pdf = client.get("/api/v1/reports/portfolio-artifact", headers=headers)
+    assert repeated_pdf.status_code == 200
+    assert repeated_pdf.headers["etag"] == portfolio_pdf.headers["etag"]
+
     tampered = db_session.get(MonthlyReport, generated_report_ids[1])
     assert tampered is not None
     tampered_snapshot = json.loads(tampered.summary_json)
@@ -307,6 +335,9 @@ def test_portfolio_report_comparison_keeps_location_snapshots_separate(client, d
     assert tampered_payload["comparable_location_count"] == 1
     assert tampered_rows[campaigns[1]["id"]]["comparison_state"] == "invalid_snapshot"
     assert tampered_rows[campaigns[1]["id"]]["metrics"] == []
+    rejected_pdf = client.get("/api/v1/reports/portfolio-artifact", headers=headers)
+    assert rejected_pdf.status_code == 409
+    assert "matching reports for at least two locations" in rejected_pdf.json()["errors"][0]["message"]
 
 
 def test_report_prefers_direct_search_console_facts_and_explains_readiness(client, db_session):

@@ -21,7 +21,7 @@ from app.schemas.reporting import (
     ReportShareLinkCreateIn,
     ReportShareLinkOut,
 )
-from app.services import report_delivery_service, reporting_service
+from app.services import report_delivery_service, report_pdf_service, reporting_service
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     reporting_aggregate_kpis,
@@ -288,6 +288,28 @@ def get_portfolio_report_comparison(
         organization_id=user["organization_id"],
     )
     return envelope(request, payload)
+
+
+@router.get("/portfolio-artifact")
+def download_portfolio_report(
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> Response:
+    snapshot = reporting_service.build_portfolio_report_snapshot(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+    )
+    content = report_pdf_service.build_portfolio_report_pdf(snapshot)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="insightos-all-location-report.pdf"',
+            "Cache-Control": "private, no-store",
+            "ETag": f'"{snapshot["snapshot_hash"]}"',
+        },
+    )
 
 
 @router.get("/schedule")
