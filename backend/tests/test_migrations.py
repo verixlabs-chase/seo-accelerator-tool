@@ -128,6 +128,20 @@ def test_migration_upgrade_and_downgrade():
         assert "reputation_response_drafts" in inspector.get_table_names()
         assert "reputation_provider_capabilities" in inspector.get_table_names()
         assert "reputation_response_executions" in inspector.get_table_names()
+        assert "portfolio_location_groups" in inspector.get_table_names()
+        assert "portfolio_location_group_members" in inspector.get_table_names()
+        assert "portfolio_target_snapshots" in inspector.get_table_names()
+        target_snapshot_cols = {
+            col["name"] for col in inspector.get_columns("portfolio_target_snapshots")
+        }
+        assert {
+            "location_group_version",
+            "selection_json",
+            "targets_json",
+            "exceptions_json",
+            "target_hash",
+            "blocked_count",
+        }.issubset(target_snapshot_cols)
         assert "strategy_recommendations" in inspector.get_table_names()
         assert "intelligence_scores" in inspector.get_table_names()
         assert "campaign_milestones" in inspector.get_table_names()

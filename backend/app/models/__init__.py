@@ -79,6 +79,11 @@ from app.models.organization_membership import OrganizationMembership
 from app.models.organization_provider_credential import OrganizationProviderCredential
 from app.models.organic_value_baseline_setting import OrganicValueBaselineSetting
 from app.models.portfolio import Portfolio
+from app.models.portfolio_targeting import (
+    PortfolioLocationGroup,
+    PortfolioLocationGroupMember,
+    PortfolioTargetSnapshot,
+)
 from app.models.portfolio_usage_daily import PortfolioUsageDaily
 from app.models.portfolio_policy import PortfolioPolicy
 from app.models.provider_health import ProviderHealthState
@@ -234,6 +239,9 @@ __all__ = [
     "GoogleBusinessProfileSearchKeyword",
     "RuntimeVersionLock",
     "Portfolio",
+    "PortfolioLocationGroup",
+    "PortfolioLocationGroupMember",
+    "PortfolioTargetSnapshot",
     "PortfolioUsageDaily",
     "Location",
     "PortfolioPolicy",

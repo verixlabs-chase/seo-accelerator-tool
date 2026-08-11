@@ -269,6 +269,59 @@ type PortfolioOverview = {
   locations: PortfolioLocation[];
 };
 
+type LocationGroupMember = {
+  location_id: string;
+  name: string;
+  city?: string | null;
+  region?: string | null;
+  status: string;
+};
+
+type LocationGroup = {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: "active" | "archived";
+  version: number;
+  member_count: number;
+  members: LocationGroupMember[];
+};
+
+type TargetLocation = {
+  location_id: string;
+  location_name: string;
+  city?: string | null;
+  region?: string | null;
+  status: string;
+  campaign_id: string;
+  campaign_name: string;
+};
+
+type TargetException = {
+  location_id: string;
+  location_name: string;
+  city?: string | null;
+  region?: string | null;
+  status: string;
+  reason: string;
+  message: string;
+  blocked: boolean;
+};
+
+type TargetSnapshot = {
+  id: string;
+  location_group_id?: string | null;
+  location_group_version?: number | null;
+  action_key: string;
+  target_hash: string;
+  target_count: number;
+  blocked_count: number;
+  targets: TargetLocation[];
+  exceptions: TargetException[];
+  created_at: string;
+  immutable: boolean;
+};
+
 const EMPTY_TOTALS: Hierarchy["totals"] = {
   subaccounts: 0,
   business_locations: 0,
@@ -357,6 +410,8 @@ export default function LocationsPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [hierarchy, setHierarchy] = useState<Hierarchy | null>(null);
   const [portfolio, setPortfolio] = useState<PortfolioOverview | null>(null);
+  const [locationGroups, setLocationGroups] = useState<LocationGroup[]>([]);
+  const [targetSnapshots, setTargetSnapshots] = useState<TargetSnapshot[]>([]);
   const [portfolioSort, setPortfolioSort] = useState("attention");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
@@ -373,6 +428,12 @@ export default function LocationsPage() {
   const [campaignName, setCampaignName] = useState("");
   const [campaignDomain, setCampaignDomain] = useState("");
   const [campaignLocationId, setCampaignLocationId] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [groupLocationIds, setGroupLocationIds] = useState<string[]>([]);
+  const [selectedTargetGroupId, setSelectedTargetGroupId] = useState("");
+  const [targetLocationIds, setTargetLocationIds] = useState<string[]>([]);
+  const [groupMemberDraftIds, setGroupMemberDraftIds] = useState<string[]>([]);
+  const [lastTargetSnapshot, setLastTargetSnapshot] = useState<TargetSnapshot | null>(null);
   const [editingLocationId, setEditingLocationId] = useState("");
   const [geoDraft, setGeoDraft] = useState({
     city: "",
@@ -387,13 +448,19 @@ export default function LocationsPage() {
   const organizationId = me?.organization_id || "";
 
   const loadHierarchy = useCallback(async (orgId: string) => {
-    const [hierarchyResponse, portfolioResponse] = await Promise.all([
+    const [hierarchyResponse, portfolioResponse, groupsResponse, snapshotsResponse] = await Promise.all([
       platformApi(`/organizations/${orgId}/hierarchy`, { method: "GET" }),
       platformApi(`/organizations/${orgId}/portfolio-overview`, { method: "GET" }),
+      platformApi(`/organizations/${orgId}/location-groups`, { method: "GET" }),
+      platformApi(`/organizations/${orgId}/target-snapshots?limit=5`, { method: "GET" }),
     ]);
     const nextHierarchy = (hierarchyResponse?.hierarchy || null) as Hierarchy | null;
+    const nextSnapshots = (snapshotsResponse?.items || []) as TargetSnapshot[];
     setHierarchy(nextHierarchy);
     setPortfolio((portfolioResponse?.portfolio || null) as PortfolioOverview | null);
+    setLocationGroups((groupsResponse?.items || []) as LocationGroup[]);
+    setTargetSnapshots(nextSnapshots);
+    setLastTargetSnapshot(nextSnapshots[0] || null);
     return nextHierarchy;
   }, []);
 
@@ -428,6 +495,18 @@ export default function LocationsPage() {
   const activeBusinessLocations = useMemo(
     () => allBusinessLocations.filter((item) => item.status === "active" && item.sub_account_id),
     [allBusinessLocations],
+  );
+  const groupEligibleLocations = useMemo(
+    () => allBusinessLocations.filter((item) => item.status === "active"),
+    [allBusinessLocations],
+  );
+  const activeLocationGroups = useMemo(
+    () => locationGroups.filter((item) => item.status === "active"),
+    [locationGroups],
+  );
+  const selectedTargetGroup = useMemo(
+    () => activeLocationGroups.find((item) => item.id === selectedTargetGroupId) || null,
+    [activeLocationGroups, selectedTargetGroupId],
   );
   const sortedPortfolioLocations = useMemo(() => {
     const rows = [...(portfolio?.locations || [])].filter(
@@ -465,6 +544,16 @@ export default function LocationsPage() {
       setCampaignLocationId(activeBusinessLocations[0].id);
     }
   }, [activeBusinessLocations, campaignLocationId]);
+
+  useEffect(() => {
+    if (!selectedTargetGroupId && activeLocationGroups.length > 0) {
+      const firstGroup = activeLocationGroups[0];
+      const memberIds = firstGroup.members.map((item) => item.location_id);
+      setSelectedTargetGroupId(firstGroup.id);
+      setTargetLocationIds(memberIds);
+      setGroupMemberDraftIds(memberIds);
+    }
+  }, [activeLocationGroups, selectedTargetGroupId]);
 
   async function runMutation(action: string, callback: () => Promise<string>) {
     setBusyAction(action);
@@ -550,6 +639,102 @@ export default function LocationsPage() {
     });
   }
 
+  function toggleId(values: string[], value: string) {
+    return values.includes(value)
+      ? values.filter((item) => item !== value)
+      : [...values, value];
+  }
+
+  function chooseTargetGroup(groupId: string) {
+    const group = activeLocationGroups.find((item) => item.id === groupId);
+    setSelectedTargetGroupId(groupId);
+    const memberIds = group?.members.map((item) => item.location_id) || [];
+    setTargetLocationIds(memberIds);
+    setGroupMemberDraftIds(memberIds);
+    setLastTargetSnapshot(null);
+  }
+
+  async function createSavedLocationGroup(event: FormEvent) {
+    event.preventDefault();
+    if (!organizationId || !groupName.trim() || groupLocationIds.length === 0) return;
+    await runMutation("location-group", async () => {
+      const response = await platformApi(`/organizations/${organizationId}/location-groups`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: groupName.trim(),
+          description: null,
+          location_ids: groupLocationIds,
+        }),
+      });
+      const created = response?.location_group as LocationGroup | undefined;
+      setGroupName("");
+      setGroupLocationIds([]);
+      if (created) {
+        const memberIds = created.members.map((item) => item.location_id);
+        setSelectedTargetGroupId(created.id);
+        setTargetLocationIds(memberIds);
+        setGroupMemberDraftIds(memberIds);
+      }
+      return "Location group saved. You can reuse it whenever you plan work across locations.";
+    });
+  }
+
+  async function saveSelectedGroupMembers() {
+    if (!organizationId || !selectedTargetGroup || groupMemberDraftIds.length === 0) return;
+    await runMutation("group-members", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/location-groups/${selectedTargetGroup.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            expected_version: selectedTargetGroup.version,
+            name: selectedTargetGroup.name,
+            description: selectedTargetGroup.description || null,
+            status: selectedTargetGroup.status,
+            location_ids: groupMemberDraftIds,
+          }),
+        },
+      );
+      const updated = response?.location_group as LocationGroup | undefined;
+      const memberIds = updated?.members.map((item) => item.location_id) || groupMemberDraftIds;
+      setTargetLocationIds(memberIds);
+      setGroupMemberDraftIds(memberIds);
+      setLastTargetSnapshot(null);
+      return "Group membership updated. Any older target previews remain unchanged.";
+    });
+  }
+
+  async function freezeTargetPreview() {
+    if (!organizationId || !selectedTargetGroup || targetLocationIds.length === 0) return;
+    const groupMemberIds = new Set(
+      selectedTargetGroup.members.map((item) => item.location_id),
+    );
+    const targetIds = new Set(targetLocationIds);
+    await runMutation("target-preview", async () => {
+      const response = await platformApi(
+        `/organizations/${organizationId}/target-snapshots`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action_key: "portfolio_review",
+            request_key: crypto.randomUUID(),
+            location_group_id: selectedTargetGroup.id,
+            select_all_active: false,
+            regions: [],
+            included_location_ids: targetLocationIds.filter((id) => !groupMemberIds.has(id)),
+            excluded_location_ids: selectedTargetGroup.members
+              .map((item) => item.location_id)
+              .filter((id) => !targetIds.has(id)),
+          }),
+        },
+      );
+      const snapshot = response?.target_snapshot as TargetSnapshot | undefined;
+      if (!snapshot) throw new Error("The exact target list could not be saved.");
+      setLastTargetSnapshot(snapshot);
+      return "Exact target list saved. No work was run.";
+    });
+  }
+
   async function archiveLocation(location: BusinessLocation) {
     if (!organizationId) return;
     await runMutation(`archive-${location.id}`, async () => {
@@ -620,6 +805,7 @@ export default function LocationsPage() {
 
   const totals = hierarchy?.totals || EMPTY_TOTALS;
   const hierarchyTruth = getHierarchyTruth(hierarchy);
+  const visibleTargetSnapshot = lastTargetSnapshot || targetSnapshots[0] || null;
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
@@ -700,6 +886,237 @@ export default function LocationsPage() {
           <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
             {notice}
           </div>
+        ) : null}
+
+        {!loading && groupEligibleLocations.length > 0 ? (
+          <details
+            open={activeLocationGroups.length === 0 ? true : undefined}
+            className="rounded-md border border-[#2c2d32] bg-[#121316] p-4 shadow-[0_0_30px_rgba(0,0,0,0.28)]"
+          >
+            <summary className="flex cursor-pointer list-none flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Safe multi-location planning
+                </p>
+                <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                  Saved groups and exact target lists
+                </h2>
+              </div>
+              <p className="max-w-xl text-sm leading-5 text-zinc-400">
+                Reuse a group, choose the locations for a future action, and save the exact list for review.
+                Nothing runs from this screen.
+              </p>
+            </summary>
+
+            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
+              <form
+                onSubmit={createSavedLocationGroup}
+                className="border-t border-[#292a2f] pt-4 xl:border-r xl:border-t-0 xl:pr-5 xl:pt-0"
+              >
+                <p className="text-sm font-semibold text-white">Save a location group</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-500">
+                  Use a clear name such as “North Texas” or “Plumbing locations.”
+                </p>
+                <label className={`${labelClass} mt-4`}>
+                  Group name
+                  <input
+                    value={groupName}
+                    onChange={(event) => setGroupName(event.target.value)}
+                    className={inputClass}
+                    placeholder="North Texas"
+                  />
+                </label>
+                <div className="mt-4 space-y-2">
+                  {groupEligibleLocations.map((location) => (
+                    <label
+                      key={`new-group-${location.id}`}
+                      className="flex cursor-pointer items-start gap-3 border-b border-[#24252a] py-2.5 text-sm text-zinc-300 last:border-b-0"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={groupLocationIds.includes(location.id)}
+                        onChange={() => setGroupLocationIds((current) => toggleId(current, location.id))}
+                        className="mt-0.5 accent-orange-500"
+                      />
+                      <span>
+                        <span className="font-medium text-white">{location.name}</span>
+                        <span className="mt-0.5 block text-xs text-zinc-600">
+                          {[location.city || location.primary_city, location.region].filter(Boolean).join(", ") || "Area not added"}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="submit"
+                  disabled={!groupName.trim() || groupLocationIds.length === 0 || busyAction === "location-group"}
+                  className={`${primaryButtonClass} mt-4`}
+                >
+                  {busyAction === "location-group" ? "Saving…" : "Save group"}
+                </button>
+              </form>
+
+              <div>
+                {activeLocationGroups.length > 0 ? (
+                  <>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                      <label className={`${labelClass} min-w-64`}>
+                        Plan with saved group
+                        <select
+                          value={selectedTargetGroupId}
+                          onChange={(event) => chooseTargetGroup(event.target.value)}
+                          className={inputClass}
+                        >
+                          {activeLocationGroups.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.name} ({group.member_count})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {selectedTargetGroup ? (
+                        <p className="text-xs text-zinc-600">
+                          Saved version {selectedTargetGroup.version}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 grid gap-x-6 md:grid-cols-2">
+                      {groupEligibleLocations.map((location) => {
+                        const savedMember = selectedTargetGroup?.members.some(
+                          (member) => member.location_id === location.id,
+                        );
+                        return (
+                          <label
+                            key={`target-${location.id}`}
+                            className="flex cursor-pointer items-start gap-3 border-b border-[#24252a] py-3 text-sm text-zinc-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={targetLocationIds.includes(location.id)}
+                              onChange={() => setTargetLocationIds((current) => toggleId(current, location.id))}
+                              className="mt-0.5 accent-orange-500"
+                            />
+                            <span>
+                              <span className="font-medium text-white">{location.name}</span>
+                              <span className="mt-0.5 block text-xs text-zinc-600">
+                                {savedMember ? "In the saved group" : "Added only to this preview"}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void freezeTargetPreview()}
+                        disabled={!selectedTargetGroup || targetLocationIds.length === 0 || busyAction === "target-preview"}
+                        className={primaryButtonClass}
+                      >
+                        {busyAction === "target-preview" ? "Saving exact list…" : "Save exact target list"}
+                      </button>
+                      <span className="text-xs text-zinc-500">
+                        {targetLocationIds.length} selected · preview only
+                      </span>
+                    </div>
+
+                    <details className="mt-5 border-t border-[#292a2f] pt-4">
+                      <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-300">
+                        Edit which locations are permanently in this group
+                      </summary>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {groupEligibleLocations.map((location) => (
+                          <label
+                            key={`edit-group-${location.id}`}
+                            className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#303137] px-3 py-1.5 text-xs text-zinc-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={groupMemberDraftIds.includes(location.id)}
+                              onChange={() => setGroupMemberDraftIds((current) => toggleId(current, location.id))}
+                              className="accent-orange-500"
+                            />
+                            {location.name}
+                          </label>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void saveSelectedGroupMembers()}
+                        disabled={groupMemberDraftIds.length === 0 || busyAction === "group-members"}
+                        className={`${secondaryButtonClass} mt-3`}
+                      >
+                        {busyAction === "group-members" ? "Saving…" : "Update saved group"}
+                      </button>
+                    </details>
+                  </>
+                ) : (
+                  <div className="border-t border-[#292a2f] pt-4 xl:border-t-0 xl:pt-0">
+                    <p className="text-sm font-semibold text-white">Create the first reusable group</p>
+                    <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">
+                      Once a group is saved, this side will show a plain list of every location included in a future action.
+                    </p>
+                  </div>
+                )}
+
+                {visibleTargetSnapshot ? (
+                  <section className="mt-5 border-t border-[#303137] pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-white">Most recent frozen target list</p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {visibleTargetSnapshot.target_count} ready · {visibleTargetSnapshot.blocked_count} need setup
+                        </p>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-emerald-200">
+                        Locked record
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                          Included
+                        </p>
+                        {visibleTargetSnapshot.targets.length > 0 ? (
+                          <ul className="mt-2 space-y-1.5 text-sm text-zinc-300">
+                            {visibleTargetSnapshot.targets.map((target) => (
+                              <li key={target.location_id}>✓ {target.location_name}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-2 text-xs text-zinc-600">No locations are ready in this list.</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                          Left out or needs setup
+                        </p>
+                        {visibleTargetSnapshot.exceptions.length > 0 ? (
+                          <ul className="mt-2 space-y-2 text-sm text-zinc-300">
+                            {visibleTargetSnapshot.exceptions.map((item) => (
+                              <li key={`${item.location_id}-${item.reason}`}>
+                                <span className={item.blocked ? "text-amber-200" : "text-zinc-400"}>
+                                  {item.location_name}
+                                </span>
+                                <span className="ml-2 text-xs text-zinc-600">{item.message}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-2 text-xs text-zinc-600">Every selected location is ready.</p>
+                        )}
+                      </div>
+                    </div>
+                    <p className="mt-4 break-all text-[10px] text-zinc-700">
+                      Record {visibleTargetSnapshot.target_hash.slice(0, 16)} · saved {new Date(visibleTargetSnapshot.created_at).toLocaleString()}
+                    </p>
+                  </section>
+                ) : null}
+              </div>
+            </div>
+          </details>
         ) : null}
 
         {!loading ? (

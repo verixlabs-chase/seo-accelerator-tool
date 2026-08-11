@@ -29,6 +29,7 @@ from app.api.v1 import (
     locations,
     onboarding,
     platform_control,
+    portfolio_targeting,
     provider_credentials,
     provider_health,
     provider_metrics,
@@ -86,6 +87,7 @@ tenant_api_router.include_router(business_services.router)
 tenant_api_router.include_router(business_service_areas.router)
 tenant_api_router.include_router(locations.router)
 tenant_api_router.include_router(hierarchy_observability.router)
+tenant_api_router.include_router(portfolio_targeting.router)
 tenant_api_router.include_router(usage_economics.tenant_router)
 tenant_api_router.include_router(website_performance.router)
 
