@@ -106,6 +106,66 @@ type Hierarchy = {
   }>;
 };
 
+type PortfolioReason = {
+  code: string;
+  severity: "urgent" | "needs_attention" | "watch" | "on_track";
+  title: string;
+  detail: string;
+  action_label: string;
+  action_href: string;
+  evidence?: { label: string; value: string | number } | null;
+};
+
+type PortfolioLocation = {
+  location_id: string;
+  location_name: string;
+  location_status: string;
+  city?: string | null;
+  region?: string | null;
+  account_group?: { id: string; name: string } | null;
+  campaign_id?: string | null;
+  attention_state: "urgent" | "needs_attention" | "watch" | "on_track";
+  attention_label: string;
+  reason_count: number;
+  reasons: PortfolioReason[];
+  next_action: { label: string; href: string; campaign_id?: string | null };
+  connections: {
+    healthy: number;
+    updating: number;
+    needs_attention: number;
+    needs_setup: number;
+  };
+  open_actions: number;
+  performance: {
+    data_available: boolean;
+    as_of?: string | null;
+    clicks: number;
+    impressions: number;
+    avg_position?: number | null;
+    technical_issue_count: number;
+    reviews_last_30d: number;
+    avg_rating_last_30d?: number | null;
+  };
+};
+
+type PortfolioOverview = {
+  generated_at: string;
+  summary: {
+    headline: string;
+    next_step?: string | null;
+    active_locations: number;
+    archived_locations: number;
+    locations_with_saved_performance: number;
+    locations_needing_attention: number;
+    urgent: number;
+    needs_attention: number;
+    watch: number;
+    on_track: number;
+  };
+  top_attention: PortfolioLocation[];
+  locations: PortfolioLocation[];
+};
+
 const EMPTY_TOTALS: Hierarchy["totals"] = {
   subaccounts: 0,
   business_locations: 0,
@@ -141,12 +201,29 @@ function statusClasses(status?: string) {
   return "border-amber-500/20 bg-amber-500/10 text-amber-100";
 }
 
+function attentionClasses(state: PortfolioLocation["attention_state"]) {
+  if (state === "urgent") return "border-rose-500/30 bg-rose-500/10 text-rose-100";
+  if (state === "needs_attention") return "border-amber-500/30 bg-amber-500/10 text-amber-100";
+  if (state === "watch") return "border-sky-500/25 bg-sky-500/10 text-sky-100";
+  return "border-emerald-500/25 bg-emerald-500/10 text-emerald-100";
+}
+
+function positionLabel(value?: number | null) {
+  return value == null ? "Not measured" : `#${Number(value).toFixed(1)}`;
+}
+
+function ratingLabel(value?: number | null) {
+  return value == null ? "Not measured" : `${Number(value).toFixed(1)} stars`;
+}
+
 export default function LocationsPage() {
   const pathname = usePathname();
   const router = useRouter();
-  const { reloadLocations } = useLocationContext();
+  const { reloadLocations, setSelectedCampaignId } = useLocationContext();
   const [me, setMe] = useState<Me | null>(null);
   const [hierarchy, setHierarchy] = useState<Hierarchy | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioOverview | null>(null);
+  const [portfolioSort, setPortfolioSort] = useState("attention");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -176,11 +253,13 @@ export default function LocationsPage() {
   const organizationId = me?.organization_id || "";
 
   const loadHierarchy = useCallback(async (orgId: string) => {
-    const response = await platformApi(`/organizations/${orgId}/hierarchy`, {
-      method: "GET",
-    });
-    const nextHierarchy = (response?.hierarchy || null) as Hierarchy | null;
+    const [hierarchyResponse, portfolioResponse] = await Promise.all([
+      platformApi(`/organizations/${orgId}/hierarchy`, { method: "GET" }),
+      platformApi(`/organizations/${orgId}/portfolio-overview`, { method: "GET" }),
+    ]);
+    const nextHierarchy = (hierarchyResponse?.hierarchy || null) as Hierarchy | null;
     setHierarchy(nextHierarchy);
+    setPortfolio((portfolioResponse?.portfolio || null) as PortfolioOverview | null);
     return nextHierarchy;
   }, []);
 
@@ -216,6 +295,30 @@ export default function LocationsPage() {
     () => allBusinessLocations.filter((item) => item.status === "active" && item.sub_account_id),
     [allBusinessLocations],
   );
+  const sortedPortfolioLocations = useMemo(() => {
+    const rows = [...(portfolio?.locations || [])].filter(
+      (item) => item.location_status === "active",
+    );
+    const attentionOrder = { urgent: 0, needs_attention: 1, watch: 2, on_track: 3 };
+    return rows.sort((left, right) => {
+      if (portfolioSort === "name") return left.location_name.localeCompare(right.location_name);
+      if (portfolioSort === "position") {
+        return (left.performance.avg_position ?? 9999) - (right.performance.avg_position ?? 9999);
+      }
+      if (portfolioSort === "rating") {
+        return (right.performance.avg_rating_last_30d ?? -1) -
+          (left.performance.avg_rating_last_30d ?? -1);
+      }
+      if (portfolioSort === "issues") {
+        return right.performance.technical_issue_count - left.performance.technical_issue_count;
+      }
+      return (
+        attentionOrder[left.attention_state] - attentionOrder[right.attention_state] ||
+        right.reason_count - left.reason_count ||
+        left.location_name.localeCompare(right.location_name)
+      );
+    });
+  }, [portfolio, portfolioSort]);
 
   useEffect(() => {
     if (!locationSubaccountId && activeSubaccounts.length > 0) {
@@ -369,6 +472,12 @@ export default function LocationsPage() {
     });
   }
 
+  function openPortfolioAction(item: PortfolioLocation) {
+    const campaignId = item.next_action.campaign_id || item.campaign_id;
+    if (campaignId) setSelectedCampaignId(campaignId);
+    router.push(item.next_action.href || "/dashboard");
+  }
+
   const totals = hierarchy?.totals || EMPTY_TOTALS;
   const hierarchyTruth = getHierarchyTruth(hierarchy);
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
@@ -464,12 +573,14 @@ export default function LocationsPage() {
                     ? `${totals.unassigned_business_locations} ${totals.unassigned_business_locations === 1 ? "location needs" : "locations need"} an account group`
                     : totals.campaigns < totals.business_locations
                       ? `${totals.business_locations - totals.campaigns} ${totals.business_locations - totals.campaigns === 1 ? "location needs" : "locations need"} search tracking`
-                      : "Every location is organized and being tracked"
+                      : portfolio?.summary.headline || "Every location is organized and being tracked"
               }
               summary={
                 totals.business_locations === 0
                   ? "Each physical branch needs its own location record before results and recommendations can stay separate."
-                  : hierarchyTruth.summary
+                  : totals.unassigned_business_locations > 0 || totals.campaigns < totals.business_locations
+                    ? hierarchyTruth.summary
+                    : "InsightOS compares saved results across your locations and puts the locations needing help first."
               }
               nextStep={
                 totals.business_locations === 0
@@ -478,12 +589,13 @@ export default function LocationsPage() {
                     ? "Assign the unorganized location to the correct business group."
                     : totals.campaigns < totals.business_locations
                       ? "Connect the next location's website so it can receive its own results and actions."
-                      : "Choose a location below whenever you want to review its individual performance."
+                      : portfolio?.summary.next_step ||
+                        "Choose a location below whenever you want to review its individual performance."
               }
               actionLabel={
                 totals.campaigns < totals.business_locations || totals.unassigned_business_locations > 0
                   ? "Finish location setup"
-                  : undefined
+                  : portfolio?.top_attention[0]?.next_action.label
               }
               onAction={
                 totals.campaigns < totals.business_locations || totals.unassigned_business_locations > 0
@@ -491,14 +603,18 @@ export default function LocationsPage() {
                       document
                         .getElementById("location-setup")
                         ?.scrollIntoView({ behavior: "smooth" })
-                  : undefined
+                  : portfolio?.top_attention[0]
+                    ? () => openPortfolioAction(portfolio.top_attention[0])
+                    : undefined
               }
               tone={
                 totals.unassigned_business_locations > 0
                   ? "urgent"
                   : totals.business_locations === 0 || totals.campaigns < totals.business_locations
                     ? "warning"
-                    : "positive"
+                    : portfolio && portfolio.summary.locations_needing_attention > 0
+                      ? "warning"
+                      : "positive"
               }
               progress={
                 totals.business_locations > 0
@@ -514,31 +630,193 @@ export default function LocationsPage() {
 
             <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <KpiCard
-                label="Account groups"
-                value={String(totals.subaccounts)}
-                summary="Brands, clients, or divisions connected to the main account."
+                label="Needs attention"
+                value={String(portfolio?.summary.locations_needing_attention || 0)}
+                summary="Locations with a setup, connection, or measured performance problem."
+                tone={(portfolio?.summary.locations_needing_attention || 0) > 0 ? "highlight" : undefined}
               />
               <KpiCard
-                label="Business locations"
-                value={String(totals.business_locations)}
-                summary={`${totals.active_business_locations} currently active and available for campaign work.`}
-                tone={totals.business_locations > 0 ? "highlight" : undefined}
+                label="Keep an eye on"
+                value={String(portfolio?.summary.watch || 0)}
+                summary="Locations with a smaller issue or unfinished action worth watching."
               />
               <KpiCard
-                label="Locations being tracked"
-                value={String(totals.campaigns)}
-                summary="Locations with their own website and search tracking."
+                label="On track"
+                value={String(portfolio?.summary.on_track || 0)}
+                summary="Active locations without a current saved warning."
               />
               <KpiCard
-                label="Needs assignment"
-                value={String(totals.unassigned_business_locations)}
-                summary={
-                  totals.unassigned_business_locations > 0
-                    ? "Legacy locations still need an account group."
-                    : "Every business location belongs to an account group."
-                }
+                label="Ready to compare"
+                value={`${portfolio?.summary.locations_with_saved_performance || 0}/${portfolio?.summary.active_locations || totals.active_business_locations}`}
+                summary="Locations with saved performance data in this comparison."
               />
             </div>
+
+            {portfolio && portfolio.summary.active_locations > 0 ? (
+              <section className="mt-6 rounded-md border border-[#2c2d32] bg-[#121316] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
+                <div className="flex flex-col gap-3 border-b border-[#26272c] pb-4 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Multi-location performance
+                    </p>
+                    <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Start with these locations
+                    </h2>
+                    <p className="mt-1 max-w-2xl text-sm leading-5 text-zinc-400">
+                      These are ordered from real saved setup, connection, search, website, and review facts. There is no hidden portfolio score.
+                    </p>
+                  </div>
+                  <span className="text-xs text-zinc-500">
+                    Showing up to 3 locations needing attention
+                  </span>
+                </div>
+
+                {portfolio.top_attention.length > 0 ? (
+                  <div className="mt-4 grid gap-3 xl:grid-cols-3">
+                    {portfolio.top_attention.map((item, index) => {
+                      const reason = item.reasons[0];
+                      return (
+                        <article
+                          key={item.location_id}
+                          className="rounded-md border border-[#303137] bg-[#17181b] p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                                Priority {index + 1}
+                              </p>
+                              <h3 className="mt-1 text-base font-semibold text-white">
+                                {item.location_name}
+                              </h3>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                {[item.city, item.region, item.account_group?.name]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${attentionClasses(item.attention_state)}`}
+                            >
+                              {item.attention_label}
+                            </span>
+                          </div>
+                          <p className="mt-4 text-sm font-semibold text-white">{reason?.title}</p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-400">{reason?.detail}</p>
+                          <div className="mt-4 grid grid-cols-3 gap-2 border-y border-[#292a2f] py-3 text-xs">
+                            <div>
+                              <p className="text-zinc-600">Google position</p>
+                              <p className="mt-1 font-semibold text-zinc-200">
+                                {positionLabel(item.performance.avg_position)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-zinc-600">Recent rating</p>
+                              <p className="mt-1 font-semibold text-zinc-200">
+                                {ratingLabel(item.performance.avg_rating_last_30d)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-zinc-600">Website problems</p>
+                              <p className="mt-1 font-semibold text-zinc-200">
+                                {item.performance.technical_issue_count}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className={`${primaryButtonClass} mt-4 w-full`}
+                            onClick={() => openPortfolioAction(item)}
+                          >
+                            {item.next_action.label}
+                          </button>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4">
+                    <p className="text-sm font-semibold text-emerald-100">
+                      Every active location is on track.
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      No current setup, connection, website, ranking, or review warning was found in the saved comparison.
+                    </p>
+                  </div>
+                )}
+
+                <details className="mt-4 rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                  <summary className="cursor-pointer list-none text-sm font-semibold text-white">
+                    Compare all {portfolio.summary.active_locations} active locations
+                  </summary>
+                  <div className="mt-4 flex flex-col gap-3 border-b border-[#292a2f] pb-4 sm:flex-row sm:items-end sm:justify-between">
+                    <p className="max-w-2xl text-xs leading-5 text-zinc-500">
+                      Sort the same saved facts without changing any location or running a paid check.
+                    </p>
+                    <label className={labelClass}>
+                      Sort locations by
+                      <select
+                        value={portfolioSort}
+                        onChange={(event) => setPortfolioSort(event.target.value)}
+                        className={`${inputClass} min-w-52`}
+                      >
+                        <option value="attention">Needs attention first</option>
+                        <option value="name">Location name</option>
+                        <option value="position">Best Google position</option>
+                        <option value="rating">Best recent rating</option>
+                        <option value="issues">Most website problems</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="divide-y divide-[#292a2f]">
+                    {sortedPortfolioLocations.map((item) => (
+                      <div
+                        key={item.location_id}
+                        className="grid gap-3 py-4 md:grid-cols-[minmax(180px,1.4fr)_repeat(3,minmax(110px,0.7fr))_auto] md:items-center"
+                      >
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold text-white">{item.location_name}</p>
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${attentionClasses(item.attention_state)}`}
+                            >
+                              {item.attention_label}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {item.reasons[0]?.title || "No current warning"}
+                          </p>
+                        </div>
+                        <div className="text-xs">
+                          <p className="text-zinc-600">Google position</p>
+                          <p className="mt-1 font-semibold text-zinc-200">
+                            {positionLabel(item.performance.avg_position)}
+                          </p>
+                        </div>
+                        <div className="text-xs">
+                          <p className="text-zinc-600">Recent reviews</p>
+                          <p className="mt-1 font-semibold text-zinc-200">
+                            {item.performance.reviews_last_30d} · {ratingLabel(item.performance.avg_rating_last_30d)}
+                          </p>
+                        </div>
+                        <div className="text-xs">
+                          <p className="text-zinc-600">Work waiting</p>
+                          <p className="mt-1 font-semibold text-zinc-200">
+                            {item.performance.technical_issue_count} website · {item.open_actions} actions
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          onClick={() => openPortfolioAction(item)}
+                        >
+                          Open location
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </section>
+            ) : null}
           </>
         ) : null}
 
