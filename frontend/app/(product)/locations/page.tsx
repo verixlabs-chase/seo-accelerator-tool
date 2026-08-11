@@ -148,6 +148,48 @@ type PortfolioLocation = {
   };
 };
 
+type SharedIssueLocation = {
+  location_id: string;
+  location_name: string;
+  city?: string | null;
+  region?: string | null;
+  campaign_id?: string | null;
+  detail: string;
+  evidence?: { label: string; value: string | number } | null;
+  action_label: string;
+  action_href: string;
+};
+
+type SharedIssue = {
+  code: string;
+  severity: PortfolioLocation["attention_state"];
+  attention_label: string;
+  title: string;
+  summary: string;
+  location_count: number;
+  locations: SharedIssueLocation[];
+};
+
+type RepeatableWin = {
+  code: string;
+  title: string;
+  summary: string;
+  source: {
+    location_id: string;
+    location_name: string;
+    campaign_id?: string | null;
+    metric: { label: string; value: string | number };
+  };
+  targets: Array<{
+    location_id: string;
+    location_name: string;
+    campaign_id?: string | null;
+    metric: { label: string; value: string | number };
+  }>;
+  action: { label: string; href: string; campaign_id?: string | null };
+  guardrail: string;
+};
+
 type PortfolioOverview = {
   generated_at: string;
   summary: {
@@ -163,6 +205,8 @@ type PortfolioOverview = {
     on_track: number;
   };
   top_attention: PortfolioLocation[];
+  shared_issues: SharedIssue[];
+  repeatable_wins: RepeatableWin[];
   locations: PortfolioLocation[];
 };
 
@@ -472,10 +516,16 @@ export default function LocationsPage() {
     });
   }
 
-  function openPortfolioAction(item: PortfolioLocation) {
-    const campaignId = item.next_action.campaign_id || item.campaign_id;
+  function openPortfolioPath(campaignId: string | null | undefined, href: string) {
     if (campaignId) setSelectedCampaignId(campaignId);
-    router.push(item.next_action.href || "/dashboard");
+    router.push(href || "/dashboard");
+  }
+
+  function openPortfolioAction(item: PortfolioLocation) {
+    openPortfolioPath(
+      item.next_action.campaign_id || item.campaign_id,
+      item.next_action.href,
+    );
   }
 
   const totals = hierarchy?.totals || EMPTY_TOTALS;
@@ -743,6 +793,153 @@ export default function LocationsPage() {
                     </p>
                   </div>
                 )}
+
+                <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                  <section className="rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                      Shared work
+                    </p>
+                    <h3 className="mt-1.5 text-base font-semibold text-white">
+                      Problems affecting more than one location
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      Start here when the same problem appears across several locations. Each location keeps its own proof and next step.
+                    </p>
+
+                    {portfolio.shared_issues.length > 0 ? (
+                      <div className="mt-4 space-y-2">
+                        {portfolio.shared_issues.slice(0, 4).map((issue) => (
+                          <details
+                            key={issue.code}
+                            className="rounded-md border border-[#2d2e33] bg-[#111215] p-3"
+                          >
+                            <summary className="cursor-pointer list-none">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">{issue.title}</p>
+                                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                    {issue.location_count} locations · open to see each one
+                                  </p>
+                                </div>
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${attentionClasses(issue.severity)}`}
+                                >
+                                  {issue.attention_label}
+                                </span>
+                              </div>
+                            </summary>
+                            <p className="mt-3 border-t border-[#292a2f] pt-3 text-xs leading-5 text-zinc-400">
+                              {issue.summary}
+                            </p>
+                            <div className="mt-3 space-y-2">
+                              {issue.locations.map((location) => (
+                                <div
+                                  key={location.location_id}
+                                  className="flex flex-col gap-3 rounded-md border border-[#292a2f] bg-[#17181b] p-3 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                  <div>
+                                    <p className="text-xs font-semibold text-white">
+                                      {location.location_name}
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                      {location.detail}
+                                    </p>
+                                    {location.evidence ? (
+                                      <p className="mt-1 text-[11px] text-zinc-400">
+                                        {location.evidence.label}: {String(location.evidence.value)}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className={secondaryButtonClass}
+                                    onClick={() =>
+                                      openPortfolioPath(
+                                        location.campaign_id,
+                                        location.action_href,
+                                      )
+                                    }
+                                  >
+                                    {location.action_label}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs leading-5 text-emerald-100">
+                        No saved problem currently affects more than one active location.
+                      </p>
+                    )}
+                  </section>
+
+                  <section className="rounded-md border border-[#2b2c31] bg-[#151619] p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                      What is working
+                    </p>
+                    <h3 className="mt-1.5 text-base font-semibold text-white">
+                      Locations worth learning from
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                      These are measured examples to inspect. InsightOS does not claim that one tactic caused the result.
+                    </p>
+
+                    {portfolio.repeatable_wins.length > 0 ? (
+                      <div className="mt-4 space-y-3">
+                        {portfolio.repeatable_wins.map((win) => (
+                          <article
+                            key={win.code}
+                            className="rounded-md border border-[#2d2e33] bg-[#111215] p-3"
+                          >
+                            <p className="text-sm font-semibold text-white">{win.title}</p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-400">{win.summary}</p>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                              <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-200">
+                                  Example to inspect
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-white">
+                                  {win.source.location_name}
+                                </p>
+                                <p className="mt-1 text-[11px] text-zinc-400">
+                                  {win.source.metric.label}: {String(win.source.metric.value)}
+                                </p>
+                              </div>
+                              <div className="rounded-md border border-[#2b2c31] bg-[#17181b] p-3">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                  Locations to compare
+                                </p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-300">
+                                  {win.targets.map((target) => target.location_name).join(", ")}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-col gap-2 border-t border-[#292a2f] pt-3 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="max-w-xl text-[11px] leading-4 text-zinc-600">
+                                {win.guardrail}
+                              </p>
+                              <button
+                                type="button"
+                                className={secondaryButtonClass}
+                                onClick={() =>
+                                  openPortfolioPath(win.action.campaign_id, win.action.href)
+                                }
+                              >
+                                {win.action.label}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-md border border-[#2d2e33] bg-[#111215] p-3 text-xs leading-5 text-zinc-500">
+                        More saved performance history is needed before one location can be used as a fair comparison.
+                      </p>
+                    )}
+                  </section>
+                </div>
 
                 <details className="mt-4 rounded-md border border-[#2b2c31] bg-[#151619] p-4">
                   <summary className="cursor-pointer list-none text-sm font-semibold text-white">

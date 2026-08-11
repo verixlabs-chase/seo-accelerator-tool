@@ -70,6 +70,13 @@ def test_portfolio_overview_ranks_locations_with_explainable_saved_evidence(clie
         subaccount_id=subaccount_id,
         name="Austin",
     )
+    second_weak_location_id, second_weak_campaign = _create_location_with_campaign(
+        client,
+        token,
+        org_id,
+        subaccount_id=subaccount_id,
+        name="Houston",
+    )
 
     today = datetime.now(UTC).date()
     db_session.add_all(
@@ -102,6 +109,20 @@ def test_portfolio_overview_ranks_locations_with_explainable_saved_evidence(clie
                 avg_rating_last_30d=4.8,
                 deterministic_hash="s" * 64,
             ),
+            CampaignDailyMetric(
+                organization_id=org_id,
+                portfolio_id=second_weak_campaign["portfolio_id"],
+                sub_account_id=subaccount_id,
+                campaign_id=second_weak_campaign["id"],
+                metric_date=today,
+                clicks=8,
+                impressions=220,
+                avg_position=18.0,
+                technical_issue_count=4,
+                reviews_last_30d=1,
+                avg_rating_last_30d=4.1,
+                deterministic_hash="h" * 64,
+            ),
         ]
     )
     db_session.add_all(
@@ -120,6 +141,7 @@ def test_portfolio_overview_ranks_locations_with_explainable_saved_evidence(clie
             for location_id, campaign in (
                 (weak_location_id, weak_campaign),
                 (strong_location_id, strong_campaign),
+                (second_weak_location_id, second_weak_campaign),
             )
             for provider in ("google_search_console", "google_business_profile")
         ]
@@ -133,8 +155,8 @@ def test_portfolio_overview_ranks_locations_with_explainable_saved_evidence(clie
 
     assert response.status_code == 200
     portfolio = response.json()["data"]["portfolio"]
-    assert portfolio["summary"]["active_locations"] == 2
-    assert portfolio["summary"]["locations_with_saved_performance"] == 2
+    assert portfolio["summary"]["active_locations"] == 3
+    assert portfolio["summary"]["locations_with_saved_performance"] == 3
     assert portfolio["top_attention"][0]["location_name"] == "Dallas"
     assert portfolio["top_attention"][0]["attention_state"] == "needs_attention"
     assert {
@@ -144,6 +166,28 @@ def test_portfolio_overview_ranks_locations_with_explainable_saved_evidence(clie
     assert strong["attention_state"] == "on_track"
     assert strong["reasons"] == []
     assert strong["performance"]["avg_position"] == 4.2
+
+    shared_search_issue = next(
+        item for item in portfolio["shared_issues"] if item["code"] == "search_position"
+    )
+    assert shared_search_issue["location_count"] == 2
+    assert {item["location_name"] for item in shared_search_issue["locations"]} == {
+        "Dallas",
+        "Houston",
+    }
+    assert all(item["detail"] for item in shared_search_issue["locations"])
+
+    search_example = next(
+        item
+        for item in portfolio["repeatable_wins"]
+        if item["code"] == "search_visibility_example"
+    )
+    assert search_example["source"]["location_name"] == "Austin"
+    assert {item["location_name"] for item in search_example["targets"]} == {
+        "Dallas",
+        "Houston",
+    }
+    assert "not proof" in search_example["guardrail"]
 
 
 def test_portfolio_overview_blocks_cross_organization_access(client) -> None:
