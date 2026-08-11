@@ -7,7 +7,7 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   (process.env.NODE_ENV === "production" ? "/api/v1" : "http://localhost:8000/api/v1");
 
-export async function platformApi(path, options = {}) {
+async function authenticatedRequest(path, options = {}) {
   async function runRequest() {
     return fetch(`${API_BASE}${path}`, {
       ...options,
@@ -35,10 +35,35 @@ export async function platformApi(path, options = {}) {
     response = await runRequest();
   }
 
+  return response;
+}
+
+async function throwApiError(response) {
+  const json = await response.json().catch(() => ({}));
+  const detail = getApiErrorDetail(json, response.status);
+  throw new Error(detail);
+}
+
+export async function platformApi(path, options = {}) {
+  const response = await authenticatedRequest(path, options);
+
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = getApiErrorDetail(json, response.status);
     throw new Error(detail);
   }
   return json.data;
+}
+
+export async function platformApiFile(path, options = {}) {
+  const response = await authenticatedRequest(path, options);
+  if (!response.ok) {
+    await throwApiError(response);
+  }
+
+  return {
+    blob: await response.blob(),
+    contentType: response.headers.get("Content-Type") || "application/octet-stream",
+    contentDisposition: response.headers.get("Content-Disposition") || "",
+  };
 }
