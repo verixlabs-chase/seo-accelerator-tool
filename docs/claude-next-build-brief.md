@@ -3099,9 +3099,10 @@ Implementation status (2026-08-10):
   learning from across search visibility, review momentum, and website health.
   These comparisons carry an explicit non-causal guardrail and never claim a
   stronger location's tactic produced the result.
-- **ML1C is implemented locally.** The portfolio now compares matching 14-day
-  windows from saved daily facts, requires at least seven reporting days in
-  both periods for every included location, and shows average daily Google
+- **ML1C is implemented and published in draft PR #29.** The portfolio now
+  compares matching 14-day windows from saved daily facts, requires at least
+  seven reporting days in both periods for every included location, and shows
+  average daily Google
   visits, appearances, average position, and current website-problem movement.
   The Locations page includes a visual daily trend and a bounded change feed:
   only material threshold crossings appear and no more than one change is
