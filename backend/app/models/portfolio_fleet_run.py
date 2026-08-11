@@ -41,7 +41,7 @@ class PortfolioFleetRun(Base):
             "status",
         ),
         CheckConstraint(
-            "status in ('awaiting_approval','blocked','running','succeeded','partial','failed','cancelled')",
+            "status in ('awaiting_approval','blocked','running','paused','succeeded','partial','failed','cancelled')",
             name="ck_portfolio_fleet_runs_status",
         ),
         CheckConstraint("version >= 1", name="ck_portfolio_fleet_runs_version"),

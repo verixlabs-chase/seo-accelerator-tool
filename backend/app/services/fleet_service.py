@@ -36,7 +36,7 @@ from uuid import UUID
 
 from celery import current_app
 from fastapi import HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.exc import StaleDataError
@@ -47,6 +47,7 @@ from app.db.session import SessionLocal
 from app.models.fleet_job import FleetJob, FleetJobStatus, FleetJobType
 from app.models.fleet_job_item import FleetJobItem, FleetJobItemStatus
 from app.models.portfolio import Portfolio
+from app.models.portfolio_fleet_run import PortfolioFleetRun, PortfolioFleetRunItem
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_search_console import SearchConsoleProviderAdapter
 from app.providers.retry import RetryPolicy
@@ -314,11 +315,20 @@ def enqueue_pending_items_for_portfolio(*, db: Session, organization_id: str, po
         db.query(FleetJobItem)
         .options(joinedload(FleetJobItem.fleet_job))
         .join(FleetJob, FleetJob.id == FleetJobItem.fleet_job_id)
+        .outerjoin(
+            PortfolioFleetRunItem,
+            PortfolioFleetRunItem.fleet_job_id == FleetJob.id,
+        )
+        .outerjoin(
+            PortfolioFleetRun,
+            PortfolioFleetRun.id == PortfolioFleetRunItem.portfolio_fleet_run_id,
+        )
         .filter(
             FleetJob.portfolio_id == portfolio_id,
             FleetJob.organization_id == organization_id,
             FleetJob.status.in_([FleetJobStatus.QUEUED, FleetJobStatus.RUNNING]),
             FleetJobItem.status == FleetJobItemStatus.QUEUED,
+            or_(PortfolioFleetRun.id.is_(None), PortfolioFleetRun.status != "paused"),
         )
         .order_by(FleetJob.created_at.asc(), FleetJobItem.created_at.asc())
         .limit(available_slots)
@@ -407,6 +417,23 @@ def process_fleet_job_item(*, db: Session, fleet_job_item_id: str) -> dict:
         if db.in_transaction():
             db.rollback()
         return {"status": "ignored", "fleet_job_item_id": fleet_job_item_id, "reason": "job_cancelled"}
+
+    paused_parent = (
+        db.query(PortfolioFleetRun.id)
+        .join(
+            PortfolioFleetRunItem,
+            PortfolioFleetRunItem.portfolio_fleet_run_id == PortfolioFleetRun.id,
+        )
+        .filter(
+            PortfolioFleetRunItem.fleet_job_id == job.id,
+            PortfolioFleetRun.status == "paused",
+        )
+        .first()
+    )
+    if paused_parent is not None:
+        if db.in_transaction():
+            db.rollback()
+        return {"status": "ignored", "fleet_job_item_id": fleet_job_item_id, "reason": "run_paused"}
 
     _transition_item(item=item, next_status=FleetJobItemStatus.RUNNING.value)
     if _normalize_job_status(job.status) == FleetJobStatus.QUEUED.value:

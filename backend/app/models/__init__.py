@@ -80,6 +80,7 @@ from app.models.organization_provider_credential import OrganizationProviderCred
 from app.models.organic_value_baseline_setting import OrganicValueBaselineSetting
 from app.models.portfolio import Portfolio
 from app.models.portfolio_targeting import (
+    PortfolioLocationAccessGrant,
     PortfolioLocationGroup,
     PortfolioLocationGroupMember,
     PortfolioTargetSnapshot,
@@ -240,6 +241,7 @@ __all__ = [
     "GoogleBusinessProfileSearchKeyword",
     "RuntimeVersionLock",
     "Portfolio",
+    "PortfolioLocationAccessGrant",
     "PortfolioLocationGroup",
     "PortfolioLocationGroupMember",
     "PortfolioTargetSnapshot",

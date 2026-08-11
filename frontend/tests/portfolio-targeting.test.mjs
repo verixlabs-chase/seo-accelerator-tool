@@ -46,3 +46,11 @@ test("bulk location work requires readiness review and explicit approval", () =>
   assert.match(source, /The frozen list cannot grow after approval/);
   assert.doesNotMatch(source, /provider mutation/i);
 });
+
+test("bulk location work can pause undispatched locations and safely resume", () => {
+  assert.match(source, /portfolio-fleet-runs\/\$\{run\.id\}\/pause/);
+  assert.match(source, /portfolio-fleet-runs\/\$\{run\.id\}\/resume/);
+  assert.match(source, /Pause waiting locations/);
+  assert.match(source, /Resume waiting locations/);
+  assert.match(source, /Completed results were kept/);
+});

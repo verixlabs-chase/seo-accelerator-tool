@@ -133,6 +133,85 @@ class PortfolioLocationGroupMember(Base):
     )
 
 
+class PortfolioLocationAccessGrant(Base):
+    """Delegated portfolio authority limited to one saved location group."""
+
+    __tablename__ = "portfolio_location_access_grants"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "user_id",
+            "location_group_id",
+            name="uq_portfolio_access_grants_org_user_group",
+        ),
+        Index(
+            "ix_portfolio_access_grants_org_status",
+            "organization_id",
+            "status",
+        ),
+        Index(
+            "ix_portfolio_access_grants_user_status",
+            "user_id",
+            "status",
+        ),
+        ForeignKeyConstraint(
+            ["location_group_id", "organization_id"],
+            ["portfolio_location_groups.id", "portfolio_location_groups.organization_id"],
+            ondelete="CASCADE",
+            name="fk_portfolio_access_grants_group_org",
+        ),
+        ForeignKeyConstraint(
+            ["user_id", "organization_id"],
+            ["organization_memberships.user_id", "organization_memberships.organization_id"],
+            ondelete="CASCADE",
+            name="fk_portfolio_access_grants_membership",
+        ),
+        CheckConstraint(
+            "access_role in ('viewer','operator','approver')",
+            name="ck_portfolio_access_grants_role",
+        ),
+        CheckConstraint(
+            "status in ('active','revoked')",
+            name="ck_portfolio_access_grants_status",
+        ),
+        CheckConstraint("version >= 1", name="ck_portfolio_access_grants_version"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    location_group_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    access_role: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    revoked_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class PortfolioTargetSnapshot(Base):
     __tablename__ = "portfolio_target_snapshots"
     __table_args__ = (

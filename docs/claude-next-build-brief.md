@@ -605,7 +605,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 20 | **G1.5 - Listings and Citation Intelligence** | Missing and inconsistent listings become a verified correction workflow rather than a static score. |
 | 21 | **G1.6 - Reputation Management** | Review monitoring, response work, request routines, policy-controlled AI replies, and multi-location comparisons replace the core BrightLocal reputation workflow. |
 | 22 | **DT1 - Data Trust and Connection Health Center - PR #26 open** | Every provider connection exposes freshness, last success, failures, affected locations, and a plain recovery action in one place. |
-| 23 | **ML1 - Portfolio Intelligence - ML1A active** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, and bulk work before that plan is sold broadly. |
+| 23 | **ML1 - Portfolio Intelligence - ML1F active** | The $699 multi-location experience identifies outliers, shared problems, reusable wins, delegated location-group work, and recoverable bulk runs before that plan is sold broadly. |
 | 24 | **G1.4B - Google Business Profile Fleet Operations** | Growth and Enterprise operators can preview, approve, schedule, and safely fan out supported posts, photo uploads, and later typed profile actions across location groups, including Enterprise fleets with hundreds of authorized profiles. |
 | 25 | **PA1 first slice - Activation and Value Measurement** | The team measures onboarding, first verified value, action completion, AI usefulness, and forecast trust before expanding further. |
 | 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
@@ -3116,7 +3116,7 @@ Implementation status (2026-08-10):
   records are tenant-scoped, idempotent, audit logged, hash-addressed, and
   database-immutable to the application role. The customer UI makes clear that
   this is a preview and does not run work.
-- **ML1E is implemented locally.** Growth and Enterprise owners can turn a frozen
+- **ML1E is implemented and published in draft PR #31.** Growth and Enterprise owners can turn a frozen
   target list into a capability and Insight Credit preflight, approve that exact
   hash once, and follow independently scoped location jobs through queued,
   running, complete, and needs-attention states. The run uses the existing
@@ -3124,8 +3124,15 @@ Implementation status (2026-08-10):
   locations, and records the requester, approver, target hash, and retry in the
   audit log. This first action is an internal readiness check: it consumes zero
   credits and cannot call a provider or mutate Google or a website.
-- Maps, live profile-action campaigns, delegation, and pooled paid-action reservation controls remain later ML1
-  slices. Alert delivery and configurable digests remain part of the packaged
+- **ML1F is implemented locally.** Owners and administrators can delegate a saved
+  location group to a viewer, operator, or approver without exposing the rest of
+  the organization. Operators can prepare and recover work but cannot approve it;
+  revoked grants stop access immediately. Active runs can be paused before
+  undispatched locations start and resumed from durable per-location state. The
+  pooled Insight Credit estimate is rechecked at approval time and fails closed
+  if the organization no longer has enough allowance.
+- Maps, live profile-action campaigns, and paid provider-cost reservation,
+  reconciliation, and release remain G1.4B work. Alert delivery and configurable digests remain part of the packaged
   notification work rather than this in-product comparison slice.
 
 Scope:
