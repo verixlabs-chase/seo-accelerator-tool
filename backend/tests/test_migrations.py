@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import NullPool
 
 from app.core.settings import get_settings
+from app.db.base import Base
 
 
 def test_explicit_migration_identifiers_fit_postgres_limit():
@@ -31,6 +32,18 @@ def test_explicit_migration_identifiers_fit_postgres_limit():
                 overlong.append((migration_path.name, node.lineno, value))
 
     assert not overlong, f"PostgreSQL identifiers exceed 63 characters: {overlong}"
+
+
+def test_model_index_identifiers_fit_postgres_limit():
+    """Prevent ORM-created indexes from failing only when PostgreSQL creates metadata."""
+    overlong = sorted(
+        (table.name, index.name, len(index.name))
+        for table in Base.metadata.tables.values()
+        for index in table.indexes
+        if index.name and len(index.name) > 63
+    )
+
+    assert not overlong, f"ORM index identifiers exceed 63 characters: {overlong}"
 
 
 def test_migration_upgrade_and_downgrade():

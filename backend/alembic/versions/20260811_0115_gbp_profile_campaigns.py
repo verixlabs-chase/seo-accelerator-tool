@@ -128,9 +128,20 @@ def upgrade() -> None:
             "payload_hash",
         ),
     }
+    index_name_overrides = {
+        (
+            "google_business_profile_campaign_variants",
+            "profile_campaign_id",
+        ): "ix_gbp_campaign_variants_profile_campaign",
+        (
+            "google_business_profile_campaign_variants",
+            "business_location_id",
+        ): "ix_gbp_campaign_variants_business_location",
+    }
     for table, columns in indexes.items():
         for column in columns:
-            op.create_index(f"ix_{table}_{column}", table, [column])
+            index_name = index_name_overrides.get((table, column), f"ix_{table}_{column}")
+            op.create_index(index_name, table, [column])
     op.create_index(
         "ix_gbp_campaigns_org_created",
         "google_business_profile_campaigns",

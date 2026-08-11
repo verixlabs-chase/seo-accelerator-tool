@@ -123,6 +123,14 @@ class GoogleBusinessProfileCampaignVariant(Base):
             "profile_campaign_id",
             "status",
         ),
+        Index(
+            "ix_gbp_campaign_variants_profile_campaign",
+            "profile_campaign_id",
+        ),
+        Index(
+            "ix_gbp_campaign_variants_business_location",
+            "business_location_id",
+        ),
         CheckConstraint(
             "status in ('ready','blocked')",
             name="ck_gbp_campaign_variants_status",
@@ -145,13 +153,11 @@ class GoogleBusinessProfileCampaignVariant(Base):
         String(36),
         ForeignKey("google_business_profile_campaigns.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     business_location_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("business_locations.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
     campaign_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True, index=True
