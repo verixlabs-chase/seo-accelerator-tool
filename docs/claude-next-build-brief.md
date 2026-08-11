@@ -3109,7 +3109,7 @@ Implementation status (2026-08-10):
   shown per location. Positive and negative changes retain their exact metric,
   direct workflow, comparison dates, and coverage explanation. No paid refresh
   is triggered by opening the view.
-- **ML1D is implemented locally.** Organization owners and admins can save
+- **ML1D is implemented and published in draft PR #30.** Organization owners and admins can save
   reusable location groups, update membership with stale-version protection,
   temporarily include or exclude locations for one planned action, and freeze
   the exact ready and blocked target list for later review. Frozen target
