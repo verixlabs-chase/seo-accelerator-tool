@@ -26,6 +26,18 @@ from app.services import report_pdf_service
 REPORT_SCHEDULE_MAX_RETRIES = 3
 logger = logging.getLogger("lsos.reporting")
 
+PORTFOLIO_REPORT_METRIC_KEYS = (
+    "google_visits",
+    "google_appearances",
+    "average_google_position",
+    "tracked_keyword_position",
+    "tracked_keywords_top_10",
+    "website_issues",
+    "reviews_last_30d",
+    "average_rating",
+    "visibility_health",
+)
+
 
 def _report_failure_metadata(exc: Exception, *, stage: str) -> dict[str, str | None]:
     original = getattr(exc, "orig", None)
@@ -343,6 +355,211 @@ def get_report_snapshot(
             detail="The saved report snapshot cannot be read",
         ) from exc
     return premium_report_service.normalize_snapshot(payload, campaign.name)
+
+
+def get_portfolio_report_comparison(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+) -> dict:
+    campaigns = (
+        db.query(Campaign)
+        .filter(
+            Campaign.tenant_id == tenant_id,
+            Campaign.organization_id == organization_id,
+        )
+        .order_by(Campaign.name.asc(), Campaign.id.asc())
+        .all()
+    )
+    campaign_ids = [campaign.id for campaign in campaigns]
+    reports = (
+        _report_query(db, tenant_id, organization_id)
+        .filter(MonthlyReport.campaign_id.in_(campaign_ids))
+        .order_by(MonthlyReport.generated_at.desc(), MonthlyReport.id.desc())
+        .all()
+        if campaign_ids
+        else []
+    )
+    latest_by_campaign: dict[str, MonthlyReport] = {}
+    for report in reports:
+        latest_by_campaign.setdefault(report.campaign_id, report)
+
+    locations: list[dict] = []
+    period_keys: set[tuple[str, str, str, str]] = set()
+    comparable_count = 0
+    legacy_count = 0
+    invalid_count = 0
+
+    for campaign in campaigns:
+        report = latest_by_campaign.get(campaign.id)
+        if report is None:
+            locations.append(
+                {
+                    "campaign_id": campaign.id,
+                    "business_location_id": campaign.business_location_id,
+                    "location_name": campaign.name,
+                    "domain": campaign.domain,
+                    "comparison_state": "missing_report",
+                    "comparison_message": "Create a report for this location before comparing it.",
+                    "report": None,
+                    "period": None,
+                    "metrics": [],
+                    "wins_count": 0,
+                    "risks_count": 0,
+                    "next_action": None,
+                    "source_freshness": "unknown",
+                }
+            )
+            continue
+
+        try:
+            raw_snapshot = json.loads(report.summary_json or "{}")
+        except json.JSONDecodeError:
+            raw_snapshot = {}
+        snapshot = premium_report_service.normalize_snapshot(raw_snapshot, campaign.name)
+        schema_version = str(snapshot.get("schema_version") or "")
+        is_rpt1_snapshot = schema_version in {"rpt1-owner-v1", premium_report_service.REPORT_SNAPSHOT_VERSION}
+        snapshot_valid = is_rpt1_snapshot and premium_report_service.validate_snapshot(snapshot)
+        if not is_rpt1_snapshot:
+            comparison_state = "legacy_report"
+            comparison_message = "Create a new report to include this location in a trustworthy comparison."
+            legacy_count += 1
+        elif not snapshot_valid:
+            comparison_state = "invalid_snapshot"
+            comparison_message = "This saved report did not pass its integrity check and is excluded."
+            invalid_count += 1
+        else:
+            comparison_state = "ready"
+            comparison_message = "This location can be compared using its saved report facts."
+            comparable_count += 1
+
+        period = snapshot.get("period") if isinstance(snapshot.get("period"), dict) else {}
+        if comparison_state == "ready":
+            period_keys.add(
+                (
+                    str(period.get("start") or ""),
+                    str(period.get("end") or ""),
+                    str(period.get("comparison_start") or ""),
+                    str(period.get("comparison_end") or ""),
+                )
+            )
+
+        metric_items = snapshot.get("metrics") if isinstance(snapshot.get("metrics"), list) else []
+        metric_lookup = {
+            str(metric.get("key")): metric
+            for metric in metric_items
+            if isinstance(metric, dict) and metric.get("key")
+        }
+        metrics = [
+            metric_lookup[key]
+            for key in PORTFOLIO_REPORT_METRIC_KEYS
+            if key in metric_lookup
+        ] if comparison_state == "ready" else []
+        risks = snapshot.get("risks") if isinstance(snapshot.get("risks"), list) else []
+        wins = snapshot.get("wins") if isinstance(snapshot.get("wins"), list) else []
+        priorities = snapshot.get("next_priorities") if isinstance(snapshot.get("next_priorities"), list) else []
+        first_priority = priorities[0] if priorities and isinstance(priorities[0], dict) else None
+        snapshot_campaign = snapshot.get("campaign") if isinstance(snapshot.get("campaign"), dict) else {}
+        source = snapshot.get("source") if isinstance(snapshot.get("source"), dict) else {}
+        locations.append(
+            {
+                "campaign_id": campaign.id,
+                "business_location_id": campaign.business_location_id,
+                "location_name": snapshot_campaign.get("location_name") or campaign.name,
+                "domain": snapshot_campaign.get("domain") or campaign.domain,
+                "comparison_state": comparison_state,
+                "comparison_message": comparison_message,
+                "report": {
+                    "id": report.id,
+                    "month_number": report.month_number,
+                    "status": report.report_status,
+                    "generated_at": report.generated_at.isoformat(),
+                    "snapshot_hash": snapshot.get("snapshot_hash") or None,
+                    "snapshot_version": schema_version,
+                },
+                "period": period or None,
+                "metrics": metrics,
+                "wins_count": len(wins) if comparison_state == "ready" else 0,
+                "risks_count": len(risks) if comparison_state == "ready" else 0,
+                "next_action": (
+                    {
+                        "title": first_priority.get("title"),
+                        "why_it_matters": first_priority.get("why_it_matters"),
+                    }
+                    if first_priority and comparison_state == "ready"
+                    else None
+                ),
+                "source_freshness": source.get("freshness_state") or "unknown",
+            }
+        )
+
+    periods_aligned = comparable_count >= 2 and len(period_keys) == 1
+    warnings: list[str] = []
+    missing_count = len(campaigns) - comparable_count - legacy_count - invalid_count
+    if missing_count:
+        warnings.append(
+            f"{missing_count} location{'s' if missing_count != 1 else ''} "
+            f"{'need' if missing_count != 1 else 'needs'} a report before "
+            f"{'they' if missing_count != 1 else 'it'} can be compared."
+        )
+    if legacy_count:
+        warnings.append(
+            f"{legacy_count} location{'s have' if legacy_count != 1 else ' has'} an older report format and "
+            f"{'need' if legacy_count != 1 else 'needs'} a new report."
+        )
+    if invalid_count:
+        warnings.append(
+            f"{invalid_count} location{'s are' if invalid_count != 1 else ' is'} excluded because the saved report did not pass its integrity check."
+        )
+    if comparable_count >= 2 and not periods_aligned:
+        warnings.append(
+            "The saved report dates do not match, so the locations are shown separately without naming a leader."
+        )
+
+    ready_locations = [item for item in locations if item["comparison_state"] == "ready"]
+    ready_locations.sort(
+        key=lambda item: (
+            -int(item["risks_count"]),
+            str(item["location_name"]).lower(),
+        )
+    )
+    focus_location = ready_locations[0] if ready_locations else None
+    if periods_aligned and focus_location and focus_location["risks_count"]:
+        focus = {
+            "campaign_id": focus_location["campaign_id"],
+            "location_name": focus_location["location_name"],
+            "reason": (
+                f"Start here because its saved report has {focus_location['risks_count']} "
+                f"item{'s' if focus_location['risks_count'] != 1 else ''} needing attention."
+            ),
+        }
+    else:
+        focus = None
+
+    return {
+        "organization_id": organization_id,
+        "checked_at": datetime.now(UTC).isoformat(),
+        "source_contract": "latest_frozen_report_snapshot_per_location",
+        "totals_are_combined": False,
+        "location_count": len(campaigns),
+        "comparable_location_count": comparable_count,
+        "periods_aligned": periods_aligned,
+        "comparison_ready": periods_aligned,
+        "common_period": (
+            {
+                "start": next(iter(period_keys))[0],
+                "end": next(iter(period_keys))[1],
+                "comparison_start": next(iter(period_keys))[2],
+                "comparison_end": next(iter(period_keys))[3],
+            }
+            if periods_aligned
+            else None
+        ),
+        "warnings": warnings,
+        "focus": focus,
+        "locations": locations,
+    }
 
 
 def regenerate_report_artifacts(

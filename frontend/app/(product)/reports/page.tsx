@@ -118,6 +118,61 @@ type ReportReadiness = {
   sources: ReportReadinessSource[];
 };
 
+type PortfolioReportLocation = {
+  campaign_id: string;
+  business_location_id?: string | null;
+  location_name: string;
+  domain?: string;
+  comparison_state: "ready" | "missing_report" | "legacy_report" | "invalid_snapshot" | string;
+  comparison_message: string;
+  report?: {
+    id: string;
+    month_number: number;
+    status: string;
+    generated_at: string;
+    snapshot_hash?: string | null;
+    snapshot_version?: string;
+  } | null;
+  period?: {
+    start?: string;
+    end?: string;
+    comparison_start?: string;
+    comparison_end?: string;
+  } | null;
+  metrics: ReportMetric[];
+  wins_count: number;
+  risks_count: number;
+  next_action?: {
+    title?: string;
+    why_it_matters?: string;
+  } | null;
+  source_freshness: string;
+};
+
+type PortfolioReportComparison = {
+  organization_id: string;
+  checked_at: string;
+  source_contract: string;
+  totals_are_combined: false;
+  location_count: number;
+  comparable_location_count: number;
+  periods_aligned: boolean;
+  comparison_ready: boolean;
+  common_period?: {
+    start?: string;
+    end?: string;
+    comparison_start?: string;
+    comparison_end?: string;
+  } | null;
+  warnings: string[];
+  focus?: {
+    campaign_id: string;
+    location_name: string;
+    reason: string;
+  } | null;
+  locations: PortfolioReportLocation[];
+};
+
 type ReportMetric = {
   key: string;
   label: string;
@@ -342,6 +397,47 @@ function formatMetricValue(metric: ReportMetric) {
     return `#${metric.current.toFixed(1)}`;
   }
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(metric.current);
+}
+
+const PORTFOLIO_VISIBLE_METRIC_KEYS = new Set([
+  "google_visits",
+  "google_appearances",
+  "average_google_position",
+  "tracked_keyword_position",
+]);
+
+function portfolioStateLabel(state: string) {
+  if (state === "ready") return "Ready to compare";
+  if (state === "missing_report") return "Needs a report";
+  if (state === "legacy_report") return "Needs a fresh report";
+  if (state === "invalid_snapshot") return "Report needs attention";
+  return "Not ready";
+}
+
+function portfolioPeriodLabel(location: PortfolioReportLocation) {
+  if (!location.period?.start || !location.period?.end) {
+    return "No comparable date range yet";
+  }
+  return `${location.period.start} through ${location.period.end}`;
+}
+
+function portfolioMetricChangeLabel(metric: ReportMetric) {
+  if (metric.change_percent === null || metric.result === "not_enough_information") {
+    return "No full comparison";
+  }
+  if (metric.result === "improved") {
+    return `Improved ${Math.abs(metric.change_percent).toFixed(1)}%`;
+  }
+  if (metric.result === "declined") {
+    return `Needs attention ${Math.abs(metric.change_percent).toFixed(1)}%`;
+  }
+  return "About the same";
+}
+
+function portfolioMetricTone(metric: ReportMetric) {
+  if (metric.result === "improved") return "text-emerald-300";
+  if (metric.result === "declined") return "text-rose-300";
+  return "text-zinc-500";
 }
 
 function metricTrendLabel(metric: ReportMetric) {
@@ -713,6 +809,7 @@ export default function ReportsPage() {
   const [selectedReportId, setSelectedReportId] = useState("");
   const [selectedReportDetail, setSelectedReportDetail] = useState<ReportDetail | null>(null);
   const [reportReadiness, setReportReadiness] = useState<ReportReadiness | null>(null);
+  const [portfolioComparison, setPortfolioComparison] = useState<PortfolioReportComparison | null>(null);
   const [reportsTruth, setReportsTruth] = useState<RuntimeTruth | null>(null);
   const [monthNumber, setMonthNumber] = useState("1");
   const [recipientEmail, setRecipientEmail] = useState("");
@@ -808,6 +905,14 @@ export default function ReportsPage() {
     setReportReadiness(response);
   }, []);
 
+  const loadPortfolioComparison = useCallback(async () => {
+    const response = (await platformApi(
+      "/reports/portfolio-comparison",
+      { method: "GET" },
+    )) as PortfolioReportComparison;
+    setPortfolioComparison(response);
+  }, []);
+
   const loadSchedule = useCallback(async (campaignId: string) => {
     if (!campaignId) {
       setSchedule(null);
@@ -872,6 +977,7 @@ export default function ReportsPage() {
 
       await loadReports(selectedCampaignId);
       await loadReportReadiness(selectedCampaignId);
+      await loadPortfolioComparison();
       setNotice(
         `Report request completed for month ${safeMonth}. Confirm below whether it is ready to send, still processing, or needs attention.`,
       );
@@ -1090,6 +1196,7 @@ export default function ReportsPage() {
             loadSchedule(items[0].id),
             loadRecipients(items[0].id),
             loadReportReadiness(items[0].id),
+            loadPortfolioComparison(),
           ]);
           if (reportResult.status === "rejected") {
             throw reportResult.reason;
@@ -1108,7 +1215,7 @@ export default function ReportsPage() {
     }
 
     void loadPage();
-  }, [loadCampaigns, loadRecipients, loadReportReadiness, loadReports, loadSchedule]);
+  }, [loadCampaigns, loadPortfolioComparison, loadRecipients, loadReportReadiness, loadReports, loadSchedule]);
 
   useEffect(() => {
     if (!selectedCampaignId || loading) {
@@ -1362,6 +1469,131 @@ export default function ReportsPage() {
                   : undefined
               }
             />
+
+            {campaigns.length > 1 && portfolioComparison ? (
+              <section className="overflow-hidden rounded-md border border-[#2c2d32] bg-[#121316] shadow-[0_0_30px_rgba(0,0,0,0.28)]">
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#2c2d32] p-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      All locations
+                    </p>
+                    <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Compare location reports
+                    </h2>
+                    <p className="mt-1.5 max-w-3xl text-sm leading-6 text-zinc-300">
+                      See each location side by side using the facts saved in its latest report. Numbers are never blended across locations.
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-semibold text-white">
+                      {portfolioComparison.comparable_location_count} of {portfolioComparison.location_count}
+                    </p>
+                    <p className="text-xs text-zinc-400">locations ready to compare</p>
+                  </div>
+                </div>
+
+                {portfolioComparison.warnings.length ? (
+                  <div className="border-b border-amber-500/20 bg-amber-500/5 px-4 py-3">
+                    {portfolioComparison.warnings.map((warning) => (
+                      <p key={warning} className="text-sm leading-6 text-amber-100">
+                        {warning}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+
+                {portfolioComparison.focus ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#2c2d32] bg-accent-500/5 px-4 py-3">
+                    <p className="text-sm text-zinc-200">
+                      <span className="font-semibold text-white">Start with {portfolioComparison.focus.location_name}.</span>{" "}
+                      {portfolioComparison.focus.reason}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCampaignId(portfolioComparison.focus?.campaign_id || "")}
+                      className="text-sm font-semibold text-accent-300 hover:text-accent-200"
+                    >
+                      Open this location
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[940px] border-collapse text-left">
+                    <thead className="bg-black/20 text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Location</th>
+                        <th className="px-4 py-3 font-semibold">Visits from Google</th>
+                        <th className="px-4 py-3 font-semibold">Times shown</th>
+                        <th className="px-4 py-3 font-semibold">Google position</th>
+                        <th className="px-4 py-3 font-semibold">Tracked position</th>
+                        <th className="px-4 py-3 font-semibold">Latest report</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portfolioComparison.locations.map((location) => {
+                        const visibleMetrics = new Map<string, ReportMetric>(
+                          location.metrics
+                            .filter((metric) => PORTFOLIO_VISIBLE_METRIC_KEYS.has(metric.key))
+                            .map((metric) => [metric.key, metric] as const),
+                        );
+                        const metricKeys = [
+                          "google_visits",
+                          "google_appearances",
+                          "average_google_position",
+                          "tracked_keyword_position",
+                        ];
+                        return (
+                          <tr key={location.campaign_id} className="border-t border-[#26272c] align-top first:border-t-0">
+                            <td className="px-4 py-4">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCampaignId(location.campaign_id)}
+                                className="text-left text-sm font-semibold text-white hover:text-accent-200"
+                              >
+                                {location.location_name}
+                              </button>
+                              <p className="mt-1 max-w-[220px] truncate text-xs text-zinc-500">{location.domain || "No website saved"}</p>
+                              <p className="mt-2 text-xs text-zinc-400">{portfolioPeriodLabel(location)}</p>
+                            </td>
+                            {metricKeys.map((metricKey) => {
+                              const metric = visibleMetrics.get(metricKey);
+                              return (
+                                <td key={metricKey} className="px-4 py-4">
+                                  <p className="text-base font-semibold text-white">
+                                    {metric ? formatMetricValue(metric) : "Not measured"}
+                                  </p>
+                                  <p className={`mt-1 text-xs ${metric ? portfolioMetricTone(metric) : "text-zinc-500"}`}>
+                                    {metric ? portfolioMetricChangeLabel(metric) : "No saved value"}
+                                  </p>
+                                </td>
+                              );
+                            })}
+                            <td className="px-4 py-4">
+                              <p className={`text-sm font-semibold ${location.comparison_state === "ready" ? "text-emerald-300" : "text-amber-300"}`}>
+                                {portfolioStateLabel(location.comparison_state)}
+                              </p>
+                              {location.report ? (
+                                <p className="mt-1 text-xs text-zinc-400">
+                                  Month {location.report.month_number} · {location.wins_count} wins · {location.risks_count} to watch
+                                </p>
+                              ) : null}
+                              <p className="mt-2 max-w-[220px] text-xs leading-5 text-zinc-500">
+                                {location.comparison_message}
+                              </p>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="border-t border-[#2c2d32] px-4 py-3 text-xs leading-5 text-zinc-500">
+                  A direct comparison is only made when at least two locations use the same report dates. Open a location to review its full evidence and next steps.
+                </p>
+              </section>
+            ) : null}
 
             {reportReadiness ? (
               <section

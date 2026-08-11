@@ -276,6 +276,20 @@ def get_report_readiness(
     return envelope(request, payload)
 
 
+@router.get("/portfolio-comparison")
+def get_portfolio_report_comparison(
+    request: Request,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = reporting_service.get_portfolio_report_comparison(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+    )
+    return envelope(request, payload)
+
+
 @router.get("/schedule")
 def get_report_schedule(
     request: Request,
