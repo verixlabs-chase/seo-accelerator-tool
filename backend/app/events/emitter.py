@@ -59,6 +59,7 @@ def emit_event(db: Session, tenant_id: str, event_type: str, payload: dict[str, 
     db.add(
         EventOutbox(
             id=event.event_id,
+            tenant_id=tenant_id,
             event_type=event.event_type,
             payload_json=event.model_dump_json(),
             payload_hash=payload_hash,

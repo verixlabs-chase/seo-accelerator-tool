@@ -45,6 +45,7 @@ def test_outbox_worker_publishes_only_committed_events(db_session) -> None:
     assert result['processed'] == 1
     assert result['failed'] == 0
     row = db_session.query(EventOutbox).one()
+    assert row.tenant_id == 'tenant-outbox-test'
     assert row.status == 'processed'
     assert row.processed_at is not None
     assert len(handled) == 1
