@@ -1243,7 +1243,9 @@ def reporting_render_html(self, tenant_id: str, report_id: str) -> dict:
     try:
         report = reporting_service.get_report(db, tenant_id=tenant_id, report_id=report_id)
         kpis = json.loads(report.summary_json or "{}")
-        html = reporting_service.render_html(kpis, campaign_name="Campaign")
+        campaign = db.get(Campaign, report.campaign_id) if report.campaign_id else None
+        campaign_name = campaign.name if campaign is not None else "Campaign"
+        html = reporting_service.render_html(kpis, campaign_name=campaign_name)
         result = {"report_id": report_id, "html_length": len(html)}
         _finish_task_execution(db, execution, "success", result)
         return result
@@ -1512,7 +1514,6 @@ def run_strategy_automation_for_all_campaigns(self, evaluation_date_iso: str | N
         raise
     finally:
         db.close()
-
 
 
 

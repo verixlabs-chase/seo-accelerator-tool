@@ -12,11 +12,9 @@ from app.services import reporting_service
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     reporting_aggregate_kpis,
-    reporting_freeze_window,
     reporting_process_schedule,
     reporting_render_html,
     reporting_render_pdf,
-    reporting_send_email,
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -178,17 +176,9 @@ def _schedule_truth(schedule: dict | None) -> dict:
 
 def _dispatch_report_generate(tenant_id: str, campaign_id: str, month_number: int, report_id: str) -> None:
     try:
-        reporting_freeze_window.delay(tenant_id=tenant_id, campaign_id=campaign_id, month_number=month_number)
         reporting_aggregate_kpis.delay(tenant_id=tenant_id, campaign_id=campaign_id, month_number=month_number)
         reporting_render_html.delay(tenant_id=tenant_id, report_id=report_id)
         reporting_render_pdf.delay(tenant_id=tenant_id, report_id=report_id)
-    except Exception:
-        return
-
-
-def _dispatch_report_delivery(tenant_id: str, report_id: str, recipient: str) -> None:
-    try:
-        reporting_send_email.delay(tenant_id=tenant_id, report_id=report_id, recipient=recipient)
     except Exception:
         return
 
@@ -322,6 +312,12 @@ def get_report(
         report_id=report_id,
         organization_id=user["organization_id"],
     )
+    snapshot = reporting_service.get_report_snapshot(
+        db,
+        tenant_id=user["tenant_id"],
+        report_id=report_id,
+        organization_id=user["organization_id"],
+    )
     return envelope(
         request,
         {
@@ -331,6 +327,7 @@ def get_report(
                 for a in artifacts
             ],
             "delivery_events": [ReportDeliveryEventOut.model_validate(e).model_dump(mode="json") for e in delivery_events],
+            "snapshot": snapshot,
             "truth": _report_truth(
                 report_count=1,
                 report_status=row.report_status,
@@ -345,10 +342,25 @@ def get_report(
     )
 
 
+@router.post("/{report_id}/regenerate")
+def regenerate_report(
+    request: Request,
+    report_id: str,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = reporting_service.regenerate_report_artifacts(
+        db,
+        tenant_id=user["tenant_id"],
+        report_id=report_id,
+        organization_id=user["organization_id"],
+    )
+    return envelope(request, payload)
+
+
 @router.post("/{report_id}/deliver")
 def deliver_report(
     request: Request,
-    background_tasks: BackgroundTasks,
     report_id: str,
     body: ReportDeliverIn,
     user: dict = Depends(require_roles({"tenant_admin"})),
@@ -361,7 +373,6 @@ def deliver_report(
         recipient=body.recipient,
         organization_id=user["organization_id"],
     )
-    background_tasks.add_task(_dispatch_report_delivery, user["tenant_id"], report_id, body.recipient)
     return envelope(
         request,
         {

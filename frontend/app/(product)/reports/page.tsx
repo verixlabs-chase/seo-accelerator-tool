@@ -65,7 +65,64 @@ type ReportDetail = {
   report: ReportItem;
   artifacts: ReportArtifact[];
   delivery_events?: ReportDeliveryEvent[];
+  snapshot?: ReportSnapshot;
   truth?: RuntimeTruth;
+};
+
+type ReportMetric = {
+  key: string;
+  label: string;
+  current: number | null;
+  previous: number | null;
+  change_percent: number | null;
+  direction: "up" | "down" | "steady" | "not_enough_information";
+  result: "improved" | "declined" | "about_the_same" | "not_enough_information";
+  unit: string;
+  explanation?: string;
+};
+
+type ReportStoryItem = {
+  id?: string;
+  title: string;
+  detail?: string;
+  result?: string;
+  status?: string;
+  completed_at?: string | null;
+};
+
+type ReportSnapshot = {
+  schema_version?: string;
+  snapshot_hash?: string;
+  audience?: string;
+  campaign?: {
+    location_name?: string;
+    name?: string;
+  };
+  period?: {
+    start?: string;
+    end?: string;
+    comparison_start?: string;
+    comparison_end?: string;
+  };
+  executive_summary?: {
+    headline?: string;
+    summary?: string;
+  };
+  metrics?: ReportMetric[];
+  wins?: ReportStoryItem[];
+  risks?: ReportStoryItem[];
+  completed_actions?: ReportStoryItem[];
+  measured_outcomes?: ReportStoryItem[];
+  next_priorities?: ReportStoryItem[];
+  source?: {
+    freshness_state?: string;
+    latest_metric_at?: string | null;
+  };
+  rank_snapshots?: number;
+  technical_issues?: number;
+  intelligence_score?: number | null;
+  reviews_last_30d?: number;
+  avg_rating_last_30d?: number | null;
 };
 
 type ReportSchedule = {
@@ -127,14 +184,7 @@ function parseSummary(summaryJson?: string) {
   }
 
   try {
-    return JSON.parse(summaryJson) as {
-      month_number?: number;
-      rank_snapshots?: number;
-      technical_issues?: number;
-      intelligence_score?: number | null;
-      reviews_last_30d?: number;
-      avg_rating_last_30d?: number | null;
-    };
+    return JSON.parse(summaryJson) as ReportSnapshot;
   } catch {
     return null;
   }
@@ -188,14 +238,106 @@ function reportPurpose(report: ReportItem) {
   return "Use this report to package the latest scan, rankings, and visibility signals into one summary.";
 }
 
-function buildReportSections(report?: ReportItem): ReportSection[] {
-  const summary = parseSummary(report?.summary_json);
+function formatMetricValue(metric: ReportMetric) {
+  if (metric.current === null || metric.current === undefined) {
+    return "Not measured";
+  }
+  if (metric.unit === "rating") {
+    return `${metric.current.toFixed(1)} / 5`;
+  }
+  if (metric.unit === "position") {
+    return `#${metric.current.toFixed(1)}`;
+  }
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(metric.current);
+}
+
+function metricTrendLabel(metric: ReportMetric) {
+  if (metric.change_percent === null || metric.direction === "not_enough_information") {
+    return "Waiting for a full comparison";
+  }
+  if (metric.direction === "steady") {
+    return "No clear change";
+  }
+  return `${metric.direction === "up" ? "↑" : "↓"} ${Math.abs(metric.change_percent).toFixed(1)}% from the earlier period`;
+}
+
+function storyList(items: ReportStoryItem[], empty: string) {
+  return (
+    <div className="space-y-2">
+      {items.length ? items.map((item, index) => (
+        <div key={item.id || `${item.title}-${index}`} className="flex items-start gap-3 border-t border-[#26272c] pt-3 first:border-0 first:pt-0">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-500/15 text-xs font-semibold text-accent-300">
+            {index + 1}
+          </span>
+          <div>
+            <p className="text-sm font-medium text-white">{item.title}</p>
+            {item.detail || item.result || item.status ? (
+              <p className="mt-1 text-xs leading-5 text-zinc-400">{item.detail || toTitleCase(item.result || item.status)}</p>
+            ) : null}
+          </div>
+        </div>
+      )) : <p className="text-sm leading-6 text-zinc-400">{empty}</p>}
+    </div>
+  );
+}
+
+function buildReportSections(report?: ReportItem, providedSnapshot?: ReportSnapshot): ReportSection[] {
+  const summary = providedSnapshot || parseSummary(report?.summary_json);
 
   if (!report || !summary) {
     return [
       {
         title: "No report preview yet",
         summary: "Generate a report to package your latest visibility data into a client-ready summary.",
+      },
+    ];
+  }
+
+  if (summary.metrics?.length) {
+    const metrics = summary.metrics;
+    return [
+      {
+        title: "Your results at a glance",
+        summary: `These numbers cover ${summary.period?.start || "the current period"} through ${summary.period?.end || "the latest saved date"}. Each one is compared with the period immediately before it.`,
+        visual: (
+          <div className="grid gap-px overflow-hidden rounded-md border border-[#26272c] bg-[#26272c] sm:grid-cols-2 xl:grid-cols-3">
+            {metrics.map((metric) => (
+              <div key={metric.key} className="bg-[#0f1012] p-4">
+                <p className="text-xs font-medium text-zinc-400">{metric.label}</p>
+                <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">{formatMetricValue(metric)}</p>
+                <p className={`mt-1 text-xs font-medium ${metric.result === "improved" ? "text-emerald-400" : metric.result === "declined" ? "text-rose-400" : "text-zinc-500"}`}>
+                  {metricTrendLabel(metric)}
+                </p>
+              </div>
+            ))}
+          </div>
+        ),
+      },
+      {
+        title: "What improved",
+        summary: "Only changes supported by the saved comparison are shown as wins.",
+        metric: `${summary.wins?.length || 0} wins`,
+        visual: storyList(summary.wins || [], "No clear improvement was measured in this report window."),
+      },
+      {
+        title: "What needs attention",
+        summary: "These are measured declines or saved problems that still need work.",
+        metric: `${summary.risks?.length || 0} items`,
+        visual: storyList(summary.risks || [], "No measured risk was found in the available information."),
+      },
+      {
+        title: "Work completed and results",
+        summary: "Completed work stays separate from measured results, so the report never claims that an action helped before the follow-up data exists.",
+        metric: `${summary.completed_actions?.length || 0} completed`,
+        visual: storyList(
+          summary.measured_outcomes?.length ? summary.measured_outcomes : summary.completed_actions || [],
+          "No completed action or measured result was recorded for this period.",
+        ),
+      },
+      {
+        title: "What to do next",
+        summary: "Start with the first item. These priorities belong only to the business named in this report.",
+        visual: storyList(summary.next_priorities || [], "No next action is ready yet."),
       },
     ];
   }
@@ -450,6 +592,20 @@ export default function ReportsPage() {
     });
   }
 
+  async function regenerateReportFiles() {
+    const reportId = selectedReportDetail?.report.id || selectedReportId;
+    if (!reportId) {
+      setError("Select a report first.");
+      return;
+    }
+
+    await runAction("regenerate", async () => {
+      await platformApi(`/reports/${reportId}/regenerate`, { method: "POST" });
+      await loadReportDetail(reportId);
+      setNotice("The report files were rebuilt from the same saved facts. The numbers and location were not changed.");
+    });
+  }
+
   async function saveSchedule() {
     if (!selectedCampaignId) {
       setError("Select a business first.");
@@ -521,7 +677,7 @@ export default function ReportsPage() {
   const deliveredCount = reports.filter((item) => item.report_status === "delivered").length;
   const generatedCount = reports.filter((item) => item.report_status === "generated").length;
   const previewSections = useMemo(
-    () => buildReportSections(selectedReportDetail?.report || latestReport || undefined),
+    () => buildReportSections(selectedReportDetail?.report || latestReport || undefined, selectedReportDetail?.snapshot),
     [latestReport, selectedReportDetail],
   );
   const reportWorkflow = useMemo(
@@ -851,6 +1007,20 @@ export default function ReportsPage() {
                     >
                       {busyAction === "generate" ? "Generating..." : "Generate report"}
                     </button>
+                    {selectedReportDetail?.snapshot?.snapshot_hash ? (
+                      <div className="mt-4 border-t border-[#26272c] pt-4">
+                        <p className="text-xs leading-5 text-zinc-400">
+                          Need a fresh copy of the selected files? Rebuild them from the same saved facts without changing the report numbers.
+                        </p>
+                        <button
+                          onClick={regenerateReportFiles}
+                          disabled={busyAction !== ""}
+                          className="mt-3 rounded-md border border-[#26272c] bg-[#0b0b0c] px-4 py-2 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "regenerate" ? "Rebuilding..." : "Rebuild selected report files"}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
@@ -879,17 +1049,23 @@ export default function ReportsPage() {
 
               <ReportPreview
                 title={
-                  selectedReportDetail?.report
+                  selectedReportDetail?.snapshot?.executive_summary?.headline
+                    ? selectedReportDetail.snapshot.executive_summary.headline
+                    : selectedReportDetail?.report
                     ? `Month ${selectedReportDetail.report.month_number} report`
                     : "Report preview"
                 }
                 audienceLabel={
-                  selectedReportDetail?.report
+                  selectedReportDetail?.snapshot
+                    ? `${toTitleCase(selectedReportDetail.snapshot.audience || "owner")} report · ${toTitleCase(selectedReportDetail.snapshot.source?.freshness_state || "unknown data")}`
+                    : selectedReportDetail?.report
                     ? toTitleCase(selectedReportDetail.report.report_status)
                     : "Awaiting report"
                 }
                 summary={
-                  selectedReportDetail?.report
+                  selectedReportDetail?.snapshot?.executive_summary?.summary
+                    ? selectedReportDetail.snapshot.executive_summary.summary
+                    : selectedReportDetail?.report
                     ? reportPurpose(selectedReportDetail.report)
                     : "Generate a report to see a preview of what will be packaged and sent."
                 }

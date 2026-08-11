@@ -2236,6 +2236,25 @@ Acceptance criteria:
 Goal: give every paid customer a polished, trustworthy progress story instead
 of a metric export; Enterprise later adds deeper white-label and API controls.
 
+Implementation status (2026-08-11):
+
+- RPT1A is implemented locally. Each newly generated owner report freezes one
+  campaign/location, a 30-day measurement window, the equal prior comparison
+  window, normalization and lexicon versions, source freshness, completed
+  actions, measured outcomes, risks, and next priorities into a versioned,
+  integrity-hashed snapshot.
+- The customer preview and the generated HTML/PDF artifacts now render from
+  that same stored snapshot. Positive and negative changes use consistent
+  visual direction, completed work remains separate from verified outcomes,
+  and the report can rebuild its files without silently changing its facts.
+- Existing legacy report summaries remain readable, but they are identified as
+  legacy and cannot claim RPT1 snapshot reproducibility.
+- RPT1B remains open for durable object storage, expiring share links,
+  recipient management, real transactional-email delivery evidence and retry,
+  accessible production-grade PDF rendering, scheduled owner delivery, and
+  multi-location comparison. Those capabilities must preserve the RPT1A
+  snapshot contract rather than recomputing facts at delivery time.
+
 Scope:
 
 - Create audience-aware owner, multi-location, and client-safe report

@@ -1,5 +1,4 @@
 import json
-from hashlib import sha256
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -17,7 +16,7 @@ from app.models.rank import RankingSnapshot
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent, ReportSchedule
 from app.providers import get_email_adapter
 from app.services import analytics_service
-from app.services.strategy_engine.thresholds import version_id as strategy_threshold_version
+from app.services import premium_report_service
 
 REPORT_SCHEDULE_MAX_RETRIES = 3
 
@@ -83,20 +82,8 @@ def aggregate_kpis(db: Session, tenant_id: str, campaign_id: str, month_number: 
 
 
 def render_html(kpis: dict, campaign_name: str) -> str:
-    return f"""
-<html>
-  <body>
-    <h1>{campaign_name} - Month {kpis['month_number']} Report</h1>
-    <ul>
-      <li>Rank Snapshots: {kpis['rank_snapshots']}</li>
-      <li>Technical Issues: {kpis['technical_issues']}</li>
-      <li>Intelligence Score: {kpis['intelligence_score']}</li>
-      <li>Reviews (30d): {kpis['reviews_last_30d']}</li>
-      <li>Avg Rating (30d): {kpis['avg_rating_last_30d']}</li>
-    </ul>
-  </body>
-</html>
-""".strip()
+    snapshot = premium_report_service.normalize_snapshot(kpis, campaign_name)
+    return premium_report_service.render_report_html(snapshot)
 
 
 def render_html_report(kpis: dict, report_id: str, campaign_name: str) -> str:
@@ -149,21 +136,8 @@ def render_pdf_report(kpis: dict, report_id: str, campaign_name: str) -> str:
     out_dir = Path("generated_reports")
     out_dir.mkdir(exist_ok=True)
     path = out_dir / f"{report_id}.pdf"
-    metadata = {
-        "report_id": report_id,
-        "strategy_profile_version": strategy_threshold_version,
-        "version_hash": sha256(f"{strategy_threshold_version}:{json.dumps(kpis, sort_keys=True)}".encode("utf-8")).hexdigest(),
-    }
-    lines = [
-        f"{campaign_name} - Month {kpis['month_number']} Report",
-        f"Rank Snapshots: {kpis['rank_snapshots']}",
-        f"Technical Issues: {kpis['technical_issues']}",
-        f"Intelligence Score: {kpis['intelligence_score']}",
-        f"Reviews (30d): {kpis['reviews_last_30d']}",
-        f"Avg Rating (30d): {kpis['avg_rating_last_30d']}",
-        f"Strategy Version: {metadata['strategy_profile_version']}",
-        f"Version Hash: {metadata['version_hash']}",
-    ]
+    snapshot = premium_report_service.normalize_snapshot(kpis, campaign_name)
+    lines = premium_report_service.report_pdf_lines(snapshot)
     path.write_bytes(_build_simple_pdf(lines))
     return str(path)
 
@@ -217,13 +191,18 @@ def _report_delivery_readiness(artifacts: list[ReportArtifact]) -> dict:
 
 def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number: int, organization_id: str | None = None) -> MonthlyReport:
     campaign = _campaign_or_404(db, tenant_id, campaign_id, organization_id)
-    kpis = aggregate_kpis(db, tenant_id, campaign_id, month_number, organization_id)
+    snapshot = premium_report_service.build_report_snapshot(
+        db,
+        tenant_id=tenant_id,
+        campaign=campaign,
+        month_number=month_number,
+    )
     report = MonthlyReport(
         tenant_id=tenant_id,
         campaign_id=campaign_id,
         month_number=month_number,
         report_status="generated",
-        summary_json=json.dumps(kpis),
+        summary_json=json.dumps(snapshot, sort_keys=True),
     )
     db.add(report)
     db.flush()
@@ -233,9 +212,9 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
         campaign_id=campaign_id,
         report_id=report.id,
         artifact_type="html",
-        storage_path=render_html_report(kpis, report.id, campaign.name),
+        storage_path=render_html_report(snapshot, report.id, campaign.name),
     )
-    pdf_path = render_pdf_report(kpis, report.id, campaign.name)
+    pdf_path = render_pdf_report(snapshot, report.id, campaign.name)
     pdf_artifact = ReportArtifact(
         tenant_id=tenant_id,
         campaign_id=campaign_id,
@@ -249,11 +228,91 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
         db,
         tenant_id=tenant_id,
         event_type="report.generated",
-        payload={"campaign_id": campaign_id, "report_id": report.id, "month_number": month_number},
+        payload={
+            "campaign_id": campaign_id,
+            "report_id": report.id,
+            "month_number": month_number,
+            "snapshot_hash": snapshot["snapshot_hash"],
+            "snapshot_version": snapshot["schema_version"],
+        },
     )
     db.commit()
     db.refresh(report)
     return report
+
+
+def get_report_snapshot(
+    db: Session,
+    tenant_id: str,
+    report_id: str,
+    organization_id: str | None = None,
+) -> dict:
+    report = get_report(db, tenant_id, report_id, organization_id)
+    campaign = _campaign_or_404(db, tenant_id, report.campaign_id, organization_id)
+    try:
+        payload = json.loads(report.summary_json or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The saved report snapshot cannot be read",
+        ) from exc
+    return premium_report_service.normalize_snapshot(payload, campaign.name)
+
+
+def regenerate_report_artifacts(
+    db: Session,
+    tenant_id: str,
+    report_id: str,
+    organization_id: str | None = None,
+) -> dict:
+    report = get_report(db, tenant_id, report_id, organization_id)
+    campaign = _campaign_or_404(db, tenant_id, report.campaign_id, organization_id)
+    snapshot = get_report_snapshot(db, tenant_id, report_id, organization_id)
+    if snapshot.get("schema_version") == premium_report_service.REPORT_SNAPSHOT_VERSION and not premium_report_service.validate_snapshot(snapshot):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The saved report snapshot failed its integrity check",
+        )
+
+    expected_paths = {
+        "html": render_html_report(snapshot, report.id, campaign.name),
+        "pdf": render_pdf_report(snapshot, report.id, campaign.name),
+    }
+    artifacts = get_report_artifacts(db, tenant_id, report_id, organization_id)
+    by_type = {artifact.artifact_type: artifact for artifact in artifacts}
+    for artifact_type, storage_path in expected_paths.items():
+        artifact = by_type.get(artifact_type)
+        if artifact is None:
+            artifact = ReportArtifact(
+                tenant_id=tenant_id,
+                campaign_id=report.campaign_id,
+                report_id=report.id,
+                artifact_type=artifact_type,
+                storage_path=storage_path,
+            )
+            db.add(artifact)
+        else:
+            artifact.storage_path = storage_path
+    report.report_status = "generated"
+    emit_event(
+        db,
+        tenant_id=tenant_id,
+        event_type="report.regenerated",
+        payload={
+            "campaign_id": report.campaign_id,
+            "report_id": report.id,
+            "snapshot_hash": snapshot.get("snapshot_hash"),
+            "snapshot_version": snapshot.get("schema_version"),
+        },
+    )
+    db.commit()
+    return {
+        "report_id": report.id,
+        "snapshot_hash": snapshot.get("snapshot_hash"),
+        "snapshot_version": snapshot.get("schema_version"),
+        "snapshot_valid": premium_report_service.validate_snapshot(snapshot),
+        "artifacts": [artifact_contract(item) for item in get_report_artifacts(db, tenant_id, report_id, organization_id)],
+    }
 
 
 def list_reports(db: Session, tenant_id: str, campaign_id: str | None = None, organization_id: str | None = None) -> list[MonthlyReport]:
