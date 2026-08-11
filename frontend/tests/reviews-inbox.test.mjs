@@ -44,6 +44,10 @@ test("customer review inbox is location scoped, filterable, and governed", () =>
   assert.match(page, /Ask every eligible customer the same way/);
   assert.match(page, /No review gating/);
   assert.match(page, /Create review link/);
+  assert.match(page, /QRCode\.toDataURL/);
+  assert.match(page, /Generate QR code/);
+  assert.match(page, /Download PNG/);
+  assert.match(page, /Test the downloaded image with/);
   assert.match(page, /result_summary\.note/);
   assert.doesNotMatch(page, /sentiment|velocity|taxonomy|deterministic summary/i);
   assert.doesNotMatch(page, /only happy customers|only satisfied customers|positive customers/i);

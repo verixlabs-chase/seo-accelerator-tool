@@ -244,8 +244,8 @@ def delivery_readiness() -> dict[str, Any]:
             },
             "qr": {
                 "available": True,
-                "label": "Use the review link in a QR code",
-                "reason": "The saved link is ready for a QR code. Image export is not included yet.",
+                "label": "Download a review QR code",
+                "reason": "Create and download a QR image for this location's saved review link.",
             },
             "kiosk": {
                 "available": True,

@@ -34,7 +34,8 @@ does not merge their request records.
 The Reviews page supports three passive sharing modes:
 
 1. Copyable review link.
-2. Review link ready to place in a QR code.
+2. Downloadable, high-resolution PNG QR code generated in the customer's
+   browser from the saved review link.
 3. Checkout or kiosk link.
 
 Each mode saves the request wording, immutable policy versions, audience rule,
@@ -42,9 +43,10 @@ review link source, starting review count, and lifecycle timestamps. The page
 shows which channels are ready and explains unavailable channels in ordinary
 language.
 
-The QR mode currently supplies the governed destination link. Downloadable QR
-image generation belongs to G1.6D2B so the product does not imply an artifact
-exists before it is generated and verified.
+The QR mode generates the image locally in the customer's browser. The review
+URL is not sent to a separate QR service, and the image is not presented as a
+durable platform artifact. The owner is told to test the downloaded code with
+a phone before printing it.
 
 ## Delivery boundary
 

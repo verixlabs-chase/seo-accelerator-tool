@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import QRCode from "qrcode";
 import {
   Bar,
   BarChart,
@@ -552,6 +553,40 @@ function ReviewGrowthTools({
     "Thank you for choosing us. Would you share an honest review? Your feedback helps us improve.",
   );
   const [reviewUrl, setReviewUrl] = useState("");
+  const [qrImages, setQrImages] = useState<Record<string, string>>({});
+  const [qrWorkingId, setQrWorkingId] = useState("");
+  const [qrErrorId, setQrErrorId] = useState("");
+
+  async function prepareQrImage(campaign: ReviewRequestCampaign) {
+    setQrWorkingId(campaign.id);
+    setQrErrorId("");
+    try {
+      const image = await QRCode.toDataURL(campaign.share_url, {
+        type: "image/png",
+        errorCorrectionLevel: "H",
+        width: 720,
+        margin: 4,
+        color: { dark: "#111827", light: "#ffffff" },
+      });
+      setQrImages((current) => ({ ...current, [campaign.id]: image }));
+    } catch {
+      setQrErrorId(campaign.id);
+    } finally {
+      setQrWorkingId("");
+    }
+  }
+
+  function downloadQrImage(campaign: ReviewRequestCampaign) {
+    const image = qrImages[campaign.id];
+    if (!image) return;
+    const safeName = campaign.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const link = document.createElement("a");
+    link.href = image;
+    link.download = `${safeName || "customer-review"}-qr-code.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
 
   return (
     <section className="rounded-md border border-[#26272c] bg-[#141518] p-5">
@@ -602,7 +637,7 @@ function ReviewGrowthTools({
               className="mt-2 w-full rounded-md border border-[#34353c] bg-[#0e0f11] px-3 py-2.5 text-sm text-white outline-none focus:border-[#ff6b18]/60"
             >
               <option value="link">Copyable link</option>
-              <option value="qr">Link for a QR code</option>
+              <option value="qr">Downloadable QR code</option>
               <option value="kiosk">Checkout or kiosk link</option>
             </select>
           </div>
@@ -670,6 +705,60 @@ function ReviewGrowthTools({
                     </button>
                   </div>
                   <p className="mt-3 text-sm leading-6 text-zinc-300">{campaign.message_body}</p>
+                  {campaign.channel === "qr" ? (
+                    <div className="mt-4 rounded-md border border-[#303138] bg-white p-4 text-zinc-900">
+                      <div className="flex flex-wrap items-center gap-4">
+                        {qrImages[campaign.id] ? (
+                          <img
+                            src={qrImages[campaign.id]}
+                            alt={`QR code for ${campaign.name}`}
+                            width={168}
+                            height={168}
+                            className="h-[168px] w-[168px] rounded-sm border border-zinc-200"
+                          />
+                        ) : (
+                          <div className="flex h-[168px] w-[168px] items-center justify-center rounded-sm border border-dashed border-zinc-300 bg-zinc-50 px-5 text-center text-xs leading-5 text-zinc-500">
+                            Generate the QR image when you are ready to download it.
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold">Customer review QR code</p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-600">
+                            This code opens this location&apos;s saved Google review link. Test the downloaded image with
+                            your phone before printing it.
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={qrWorkingId === campaign.id}
+                              onClick={() => void prepareQrImage(campaign)}
+                              className="rounded-md bg-[#111827] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                            >
+                              {qrWorkingId === campaign.id
+                                ? "Generating..."
+                                : qrImages[campaign.id]
+                                  ? "Regenerate QR code"
+                                  : "Generate QR code"}
+                            </button>
+                            {qrImages[campaign.id] ? (
+                              <button
+                                type="button"
+                                onClick={() => downloadQrImage(campaign)}
+                                className="rounded-md border border-zinc-300 px-3 py-2 text-xs font-semibold text-zinc-900"
+                              >
+                                Download PNG
+                              </button>
+                            ) : null}
+                          </div>
+                          {qrErrorId === campaign.id ? (
+                            <p className="mt-2 text-xs font-semibold text-rose-700">
+                              The QR image could not be generated. The saved review link is still available.
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="mt-3 border-l-2 border-[#34353b] pl-3 text-xs leading-5 text-zinc-400">
                     <span className="font-semibold text-white">{campaign.result_summary.new_reviews_since_start}</span> new
                     reviews since this link was created. {campaign.result_summary.note}

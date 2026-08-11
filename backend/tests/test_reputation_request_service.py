@@ -252,6 +252,8 @@ def test_review_request_api_lists_plain_language_channel_truth(client, db_sessio
     assert listed.status_code == 200
     assert len(listed.json()["data"]["items"]) == 1
     assert readiness.json()["data"]["channels"]["link"]["available"] is True
+    assert readiness.json()["data"]["channels"]["qr"]["available"] is True
+    assert "download" in readiness.json()["data"]["channels"]["qr"]["reason"].lower()
     assert readiness.json()["data"]["channels"]["email"]["available"] is False
     serialized = str(created.json()).lower()
     assert "dataforseo" not in serialized

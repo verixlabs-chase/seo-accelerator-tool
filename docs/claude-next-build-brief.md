@@ -1513,9 +1513,10 @@ Acceptance criteria:
 > location-scoped request campaigns, service-completion and consent records,
 > organization-wide suppression, delivery-receipt and cost-reference storage,
 > a fixed all-eligible-customer audience rule, review-gating rejection, passive
-> link/QR-ready/kiosk workflows, and honest time-window reporting that never
-> claims causation. Live email, SMS, provider receipts, price reconciliation,
-> and generated QR image downloads remain gated for G1.6D2B.
+> link/downloadable-QR/kiosk workflows, and honest time-window reporting that never
+> claims causation. Live email, SMS, provider receipts, and price reconciliation
+> remain gated for G1.6D2B. Downloadable QR generation is implemented in the
+> browser without sending the review link to a separate QR service.
 
 Goal: replace BrightLocal-style review monitoring, response, generation, and
 multi-location reputation reporting while adding an intelligence layer.
@@ -1597,11 +1598,14 @@ Implementation slices:
      customer receives the same request; rating and satisfaction filters are
      absent and review-gating wording is rejected. Results report only reviews
      observed after the start time and explicitly do not claim causation.
-   - **G1.6D2B - Governed delivery: pending.** Connect a real transactional
+   - **G1.6D2B - Governed delivery: QR slice implemented; live delivery pending.**
+     Generate a high-resolution downloadable QR image in the browser from the
+     saved location review link, with a visible preview and owner testing
+     instruction. Next, connect a real transactional
      email provider and verified sender, reserve and reconcile credits against
      a versioned price card, process signed delivery/bounce/complaint/
-     unsubscribe webhooks, generate downloadable QR artwork, and prove one
-     end-to-end receipt. SMS remains unavailable until it has a separate
+     unsubscribe webhooks, and prove one end-to-end receipt. SMS remains
+     unavailable until it has a separate
      provider, consent rule set, price card, allowance, receipts, and launch
      approval.
 
