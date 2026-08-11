@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.data_connection import DataConnection
@@ -125,6 +125,56 @@ def test_portfolio_overview_ranks_locations_with_explainable_saved_evidence(clie
             ),
         ]
     )
+    historical_rows: list[CampaignDailyMetric] = []
+    for days_ago in range(1, 28):
+        current_period = days_ago <= 13
+        historical_rows.extend(
+            [
+                CampaignDailyMetric(
+                    organization_id=org_id,
+                    portfolio_id=weak_campaign["portfolio_id"],
+                    sub_account_id=subaccount_id,
+                    campaign_id=weak_campaign["id"],
+                    metric_date=today - timedelta(days=days_ago),
+                    clicks=6 if current_period else 10,
+                    impressions=140,
+                    avg_position=24.5 if current_period else 15.0,
+                    technical_issue_count=8 if current_period else 2,
+                    reviews_last_30d=0,
+                    avg_rating_last_30d=3.8,
+                    deterministic_hash=f"dallas-{days_ago}".ljust(64, "d")[:64],
+                ),
+                CampaignDailyMetric(
+                    organization_id=org_id,
+                    portfolio_id=strong_campaign["portfolio_id"],
+                    sub_account_id=subaccount_id,
+                    campaign_id=strong_campaign["id"],
+                    metric_date=today - timedelta(days=days_ago),
+                    clicks=30 if current_period else 20,
+                    impressions=900,
+                    avg_position=4.2 if current_period else 8.0,
+                    technical_issue_count=0,
+                    reviews_last_30d=14,
+                    avg_rating_last_30d=4.8,
+                    deterministic_hash=f"austin-{days_ago}".ljust(64, "a")[:64],
+                ),
+                CampaignDailyMetric(
+                    organization_id=org_id,
+                    portfolio_id=second_weak_campaign["portfolio_id"],
+                    sub_account_id=subaccount_id,
+                    campaign_id=second_weak_campaign["id"],
+                    metric_date=today - timedelta(days=days_ago),
+                    clicks=8,
+                    impressions=220,
+                    avg_position=18.0,
+                    technical_issue_count=4,
+                    reviews_last_30d=1,
+                    avg_rating_last_30d=4.1,
+                    deterministic_hash=f"houston-{days_ago}".ljust(64, "h")[:64],
+                ),
+            ]
+        )
+    db_session.add_all(historical_rows)
     db_session.add_all(
         [
             DataConnection(
@@ -189,6 +239,22 @@ def test_portfolio_overview_ranks_locations_with_explainable_saved_evidence(clie
     }
     assert "not proof" in search_example["guardrail"]
 
+    trends = portfolio["trends"]
+    assert trends["data_state"] == "ready"
+    assert trends["locations_compared"] == 3
+    assert len(trends["points"]) == 28
+    assert {item["code"] for item in trends["summary"]} == {
+        "daily_clicks",
+        "daily_impressions",
+        "avg_position",
+        "website_issues",
+    }
+    alert_by_location = {item["location_name"]: item for item in trends["alerts"]}
+    assert alert_by_location["Dallas"]["code"] == "website_issues_increased"
+    assert alert_by_location["Dallas"]["tone"] == "negative"
+    assert alert_by_location["Austin"]["code"] == "search_position_improved"
+    assert alert_by_location["Austin"]["tone"] == "positive"
+
 
 def test_portfolio_overview_blocks_cross_organization_access(client) -> None:
     token, org_id = _login(client)
@@ -201,3 +267,51 @@ def test_portfolio_overview_blocks_cross_organization_access(client) -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_portfolio_trends_wait_for_comparable_history(client, db_session) -> None:
+    token, org_id = _login(client, "b@example.com", "pass-b")
+    headers = {"Authorization": f"Bearer {token}"}
+    subaccount_response = client.post(
+        f"/api/v1/organizations/{org_id}/subaccounts",
+        headers=headers,
+        json={"name": "New Region"},
+    )
+    subaccount_id = subaccount_response.json()["data"]["subaccount"]["id"]
+    _location_id, campaign = _create_location_with_campaign(
+        client,
+        token,
+        org_id,
+        subaccount_id=subaccount_id,
+        name="Newbranch",
+    )
+    db_session.add(
+        CampaignDailyMetric(
+            organization_id=org_id,
+            portfolio_id=campaign["portfolio_id"],
+            sub_account_id=subaccount_id,
+            campaign_id=campaign["id"],
+            metric_date=datetime.now(UTC).date(),
+            clicks=5,
+            impressions=100,
+            avg_position=12.0,
+            technical_issue_count=1,
+            reviews_last_30d=2,
+            avg_rating_last_30d=4.5,
+            deterministic_hash="n" * 64,
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/api/v1/organizations/{org_id}/portfolio-overview",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    trends = response.json()["data"]["portfolio"]["trends"]
+    assert trends["data_state"] == "collecting_history"
+    assert trends["locations_compared"] == 0
+    assert trends["summary"] == []
+    assert trends["alerts"] == []
+    assert "At least 7 saved days" in trends["coverage_note"]

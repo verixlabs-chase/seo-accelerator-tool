@@ -3099,9 +3099,20 @@ Implementation status (2026-08-10):
   learning from across search visibility, review momentum, and website health.
   These comparisons carry an explicit non-causal guardrail and never claim a
   stronger location's tactic produced the result.
-- Trends, maps, alerts, governed saved groups, immutable bulk target snapshots,
-  fan-out execution, delegation, and pooled allowance controls remain later
-  ML1 slices.
+- **ML1C is implemented and published in draft PR #29.** The portfolio now
+  compares matching 14-day windows from saved daily facts, requires at least
+  seven reporting days in both periods for every included location, and shows
+  average daily Google
+  visits, appearances, average position, and current website-problem movement.
+  The Locations page includes a visual daily trend and a bounded change feed:
+  only material threshold crossings appear and no more than one change is
+  shown per location. Positive and negative changes retain their exact metric,
+  direct workflow, comparison dates, and coverage explanation. No paid refresh
+  is triggered by opening the view.
+- Maps, governed saved groups, immutable bulk target snapshots, fan-out
+  execution, delegation, and pooled allowance controls remain later ML1
+  slices. Alert delivery and configurable digests remain part of the packaged
+  notification work rather than this in-product comparison slice.
 
 Scope:
 

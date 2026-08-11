@@ -40,3 +40,21 @@ test("portfolio suggests measured examples without claiming causation", () => {
   assert.match(source, /does not claim that one tactic caused the result/);
   assert.match(source, /win\.guardrail/);
 });
+
+test("portfolio trends compare equal saved windows and limit noisy alerts", () => {
+  assert.match(source, /What changed across your locations/);
+  assert.match(source, /portfolio\.trends\.summary/);
+  assert.match(source, /Daily Google visits and average position/);
+  assert.match(source, /The change cards only compare locations with enough information/);
+  assert.match(source, /Meaningful location changes/);
+  assert.match(source, /At most one change is shown for each location/);
+  assert.match(source, /portfolio\.trends\.alerts/);
+});
+
+test("portfolio trends use owner-friendly positive and negative direction cues", () => {
+  assert.match(source, /item\.tone === "positive"/);
+  assert.match(source, /text-emerald-300/);
+  assert.match(source, /text-rose-300/);
+  assert.match(source, /alert\.tone === "positive" \? "↑" : "↓"/);
+  assert.doesNotMatch(source, /statistical significance/);
+});
