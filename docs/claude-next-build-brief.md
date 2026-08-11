@@ -1659,6 +1659,20 @@ Acceptance criteria:
 Goal: make source freshness and connection recovery obvious without filling
 every customer page with provider and runtime badges.
 
+Implementation status (2026-08-10):
+
+- **DT1A is implemented locally for the two live Google connection families.**
+  The existing Data connections screen is now a plain-language Connection
+  Health center. It orders broken and unfinished connections first, keeps
+  healthy connections collapsed, separates the last successful update from the
+  newest usable data date, lists affected customer features, and exposes one
+  safe recovery action without showing raw provider errors.
+- The tenant-scoped health contract currently covers Search Console and Google
+  Business Profile for every mapped business location. Website performance,
+  rankings, local grid, listings, reviews, forms, WordPress, and approved AI
+  providers remain the next DT1 inventory slices; they must reuse their saved
+  source facts rather than create duplicate status records.
+
 Scope:
 
 - Add one tenant- and location-scoped connection inventory for Search Console,

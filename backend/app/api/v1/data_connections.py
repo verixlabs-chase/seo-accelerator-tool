@@ -55,6 +55,7 @@ def get_data_connections(
                 organization_id,
             ),
             "connections": data_connections_service.list_connections(db, organization_id),
+            "health": data_connections_service.get_connection_health(db, organization_id),
             "supported_connections": [
                 {
                     "provider_name": data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER,
@@ -294,6 +295,11 @@ def sync_data_connection(
         google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER,
     }:
         raise HTTPException(status_code=400, detail="This connection cannot be synchronized yet.")
+    if connection.status == data_connections_service.CONNECTION_STATUS_DISCONNECTED:
+        connection.status = data_connections_service.CONNECTION_STATUS_CONNECTED
+        connection.last_error_code = None
+        connection.last_error_message = None
+        db.flush()
     try:
         if connection.provider_name == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER:
             job = durable_job_service.run_search_console_sync_now(

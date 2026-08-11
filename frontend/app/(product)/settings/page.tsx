@@ -14,10 +14,7 @@ import {
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
-import {
-  getConnectionPortfolioSummary,
-  getConnectionStatusView,
-} from "../truth/dataConnectionsTruth.mjs";
+import { getConnectionStatusView } from "../truth/dataConnectionsTruth.mjs";
 
 type Me = {
   organization_id?: string;
@@ -80,6 +77,46 @@ type ConnectionsPayload = {
     updated_at?: string | null;
   };
   connections: DataConnection[];
+  health: ConnectionHealth;
+};
+
+type ConnectionHealthItem = {
+  id: string;
+  connection_id?: string | null;
+  provider_name: string;
+  label: string;
+  status: string;
+  display_state: "healthy" | "updating" | "needs_attention" | "needs_setup";
+  summary: string;
+  location_id: string;
+  location_name: string;
+  campaign_id: string;
+  campaign_name: string;
+  last_success_at?: string | null;
+  newest_usable_data_date?: string | null;
+  current_failure?: string | null;
+  affected_features: string[];
+  recovery_action: {
+    kind: "none" | "wait" | "reconnect" | "map" | "sync";
+    label: string;
+    href?: string | null;
+    connection_id?: string;
+  };
+};
+
+type ConnectionHealth = {
+  checked_at: string;
+  summary: {
+    headline: string;
+    next_step: string;
+    locations: number;
+    sources: number;
+    healthy: number;
+    updating: number;
+    needs_attention: number;
+    needs_setup: number;
+  };
+  items: ConnectionHealthItem[];
 };
 
 type UsageAllowance = {
@@ -141,6 +178,31 @@ function formatTimestamp(value?: string | null) {
   }).format(parsed);
 }
 
+function formatDataDate(value?: string | null) {
+  if (!value) return "No usable data saved yet";
+  const parsed = new Date(`${value}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return "Date unavailable";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+function healthStatusLabel(item: ConnectionHealthItem) {
+  if (item.display_state === "healthy") return "Healthy";
+  if (item.display_state === "updating") return "Updating";
+  if (item.display_state === "needs_attention") return "Needs attention";
+  return "Finish setup";
+}
+
+function healthTone(item: ConnectionHealthItem) {
+  if (item.display_state === "healthy") return "success";
+  if (item.display_state === "needs_attention") return "danger";
+  return item.display_state === "needs_setup" ? "warning" : "info";
+}
+
 function formatResetDate(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "next month";
@@ -175,7 +237,16 @@ export default function SettingsPage() {
     () => campaigns.filter((campaign) => Boolean(campaign.business_location_id)),
     [campaigns],
   );
-  const connections = payload?.connections || [];
+  const connections = useMemo(() => payload?.connections || [], [payload?.connections]);
+  const connectionHealth = payload?.health || null;
+  const connectionItemsNeedingWork = useMemo(
+    () => (connectionHealth?.items || []).filter((item) => item.display_state !== "healthy"),
+    [connectionHealth],
+  );
+  const healthyConnectionItems = useMemo(
+    () => (connectionHealth?.items || []).filter((item) => item.display_state === "healthy"),
+    [connectionHealth],
+  );
   const searchConsoleConnections = useMemo(
     () => connections.filter((connection) => connection.provider_name === "google_search_console"),
     [connections],
@@ -191,10 +262,6 @@ export default function SettingsPage() {
   const profileConnectionByCampaign = useMemo(
     () => new Map(profileConnections.map((connection) => [connection.campaign_id, connection])),
     [profileConnections],
-  );
-  const portfolioSummary = useMemo(
-    () => getConnectionPortfolioSummary(searchConsoleConnections, manageableCampaigns.length),
-    [searchConsoleConnections, manageableCampaigns.length],
   );
 
   const loadConnections = useCallback(async (orgId: string) => {
@@ -448,6 +515,27 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleHealthAction(item: ConnectionHealthItem) {
+    if (item.recovery_action.kind === "none" || item.recovery_action.kind === "wait") return;
+    if (item.recovery_action.kind === "sync" && item.connection_id) {
+      const connection = connections.find((row) => row.id === item.connection_id);
+      if (connection) await syncConnection(connection);
+      return;
+    }
+    const href = item.recovery_action.href;
+    if (!href) return;
+    if (href.startsWith("/settings#")) {
+      const anchor = href.split("#")[1];
+      document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+    if (item.provider_name === "google_business_profile") {
+      await connectGoogle("gbp");
+      return;
+    }
+    await connectGoogle("gsc");
+  }
+
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
@@ -457,16 +545,26 @@ export default function SettingsPage() {
         tone: payload?.google_oauth.connected ? "success" : "warning",
       },
       {
-        label: "Locations mapped",
-        value: `${searchConsoleConnections.length}/${manageableCampaigns.length}`,
-        tone: searchConsoleConnections.length === manageableCampaigns.length && searchConsoleConnections.length > 0
-          ? "success"
-          : "warning",
+        label: "Healthy sources",
+        value: connectionHealth
+          ? `${connectionHealth.summary.healthy}/${connectionHealth.summary.sources}`
+          : "Checking",
+        tone:
+          connectionHealth && connectionHealth.summary.healthy === connectionHealth.summary.sources
+            ? "success"
+            : "warning",
       },
       {
-        label: "Automatic data",
-        value: portfolioSummary.label,
-        tone: portfolioSummary.tone as TrustSignal["tone"],
+        label: "Needs action",
+        value: connectionHealth
+          ? String(connectionHealth.summary.needs_attention + connectionHealth.summary.needs_setup)
+          : "Checking",
+        tone:
+          connectionHealth && connectionHealth.summary.needs_attention > 0
+            ? "danger"
+            : connectionHealth && connectionHealth.summary.needs_setup > 0
+              ? "warning"
+              : "success",
       },
       {
         label: "Insight Credits",
@@ -480,14 +578,14 @@ export default function SettingsPage() {
             : "info",
       },
     ],
-    [manageableCampaigns.length, payload, portfolioSummary, searchConsoleConnections.length, usageAllowance],
+    [connectionHealth, payload, usageAllowance],
   );
 
   return (
     <AppShell
       navItems={navItems}
       trustSignals={trustSignals}
-      accountLabel="Data connections"
+      accountLabel="Connection health"
       dateRangeLabel="Automatic updates"
       topBarActions={
         <button
@@ -502,14 +600,14 @@ export default function SettingsPage() {
       <section className="space-y-6">
         <ProductPageIntro
           compact
-          eyebrow="Data connections"
-          title="Keep your search data updated automatically"
-          summary="Connect Google once, match each business location to its website, and let InsightOS collect the latest Search Console results on schedule."
+          eyebrow="Connection health"
+          title="Keep your business data flowing"
+          summary="See what is working, what stopped updating, and the one step needed to fix each location."
         />
 
-        <TruthNotice title="This phase does not connect sales systems." tone="info">
-          Search Console is the first automatic source. Call tracking, CRM, job-management,
-          booked-job, payment, and revenue connections are intentionally not included.
+        <TruthNotice title="Use this page when your data stops updating" tone="info">
+          InsightOS puts broken and unfinished connections first. Healthy connections stay out of
+          the way because there is nothing you need to do with them.
         </TruthNotice>
 
         {error ? (
@@ -532,72 +630,110 @@ export default function SettingsPage() {
           <>
             <OwnerDecisionPanel
               eyebrow="Connection status"
-              title={
-                !payload?.google_oauth.connected
-                  ? "Connect Google to start automatic updates"
-                  : manageableCampaigns.length === 0
-                    ? "Add a business location before matching a website"
-                    : portfolioSummary.label
-              }
+              title={connectionHealth?.summary.headline || "Checking your connections"}
               summary={
-                !payload?.google_oauth.connected
-                  ? "InsightOS cannot collect Search Console visits, appearances, and search positions until read-only Google access is approved."
-                  : manageableCampaigns.length === 0
-                    ? "Automatic data must belong to a real location so results never get mixed between businesses."
-                    : portfolioSummary.summary
+                connectionHealth
+                  ? `${connectionHealth.summary.healthy} of ${connectionHealth.summary.sources} connected sources are healthy across ${connectionHealth.summary.locations} ${connectionHealth.summary.locations === 1 ? "location" : "locations"}.`
+                  : "InsightOS is checking the latest saved connection history."
               }
-              nextStep={
-                !payload?.google_oauth.connected
-                  ? "Connect Google, then choose the Search Console website that belongs to each location."
-                  : manageableCampaigns.length === 0
-                    ? "Add the first physical business location and its website."
-                    : portfolioSummary.needsAttention > 0
-                      ? "Open the location marked as needing attention and try its update again."
-                      : portfolioSummary.unmapped > 0
-                        ? "Match the next unmapped location to its Search Console website."
-                        : "Connections are healthy. Leave them alone unless a location stops updating."
-              }
+              nextStep={connectionHealth?.summary.next_step || "Wait for the connection check to finish."}
               actionLabel={
-                !payload?.google_oauth.connected
-                  ? "Connect Google"
-                  : manageableCampaigns.length === 0
-                    ? "Add a location"
-                    : portfolioSummary.needsAttention > 0 || portfolioSummary.unmapped > 0
-                      ? "Review location connections"
-                      : undefined
+                manageableCampaigns.length === 0
+                  ? "Add a location"
+                  : connectionItemsNeedingWork[0]?.recovery_action.label
               }
               onAction={
-                !payload?.google_oauth.connected
-                  ? () => void connectGoogle()
-                  : manageableCampaigns.length === 0
-                    ? () => window.location.assign("/locations")
-                    : portfolioSummary.needsAttention > 0 || portfolioSummary.unmapped > 0
-                      ? () =>
-                          document
-                            .getElementById("website-mappings")
-                            ?.scrollIntoView({ behavior: "smooth" })
-                      : undefined
+                manageableCampaigns.length === 0
+                  ? () => window.location.assign("/locations")
+                  : connectionItemsNeedingWork[0]
+                    ? () => void handleHealthAction(connectionItemsNeedingWork[0])
+                    : undefined
               }
               tone={
-                portfolioSummary.needsAttention > 0
+                (connectionHealth?.summary.needs_attention || 0) > 0
                   ? "urgent"
-                  : portfolioSummary.unmapped > 0 || !payload?.google_oauth.connected
+                  : (connectionHealth?.summary.needs_setup || 0) > 0
                     ? "warning"
-                    : portfolioSummary.tone === "success"
+                    : (connectionHealth?.summary.sources || 0) > 0
                       ? "positive"
                       : "neutral"
               }
               progress={
-                manageableCampaigns.length > 0
+                connectionHealth && connectionHealth.summary.sources > 0
                   ? {
-                      label: "Locations matched to a website",
-                      value: searchConsoleConnections.length,
-                      total: manageableCampaigns.length,
-                      summary: "Each location keeps its own mapping and update history.",
+                      label: "Connected sources working normally",
+                      value: connectionHealth.summary.healthy,
+                      total: connectionHealth.summary.sources,
+                      summary: "A source only counts as healthy after a successful update.",
                     }
                   : undefined
               }
             />
+
+            {connectionItemsNeedingWork.length > 0 ? (
+              <section aria-labelledby="connections-needing-work" className="space-y-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    Do this next
+                  </p>
+                  <h2 id="connections-needing-work" className="mt-1 text-xl font-semibold text-white">
+                    Fix these connections
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    Work from the top. Each row shows what is affected and the next safe step.
+                  </p>
+                </div>
+                <div className="divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                  {connectionItemsNeedingWork.map((item) => (
+                    <article key={item.id} className="grid gap-4 py-4 lg:grid-cols-[1fr_auto] lg:items-center">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-white">{item.location_name} · {item.label}</h3>
+                          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClasses(healthTone(item))}`}>
+                            {healthStatusLabel(item)}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-zinc-300">{item.summary}</p>
+                        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500">
+                          <span>Last successful update: {formatTimestamp(item.last_success_at)}</span>
+                          <span>Newest usable data: {formatDataDate(item.newest_usable_data_date)}</span>
+                        </div>
+                        {item.affected_features.length > 0 ? (
+                          <p className="mt-2 text-xs text-amber-100/80">
+                            May affect: {item.affected_features.join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className={primaryButtonClass}
+                        disabled={item.recovery_action.kind === "wait" || busyAction === `sync-${item.connection_id}`}
+                        onClick={() => void handleHealthAction(item)}
+                      >
+                        {busyAction === `sync-${item.connection_id}` ? "Checking..." : item.recovery_action.label}
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {healthyConnectionItems.length > 0 ? (
+              <details className="border-y border-[#292a2f] py-4">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white">
+                  <span>{healthyConnectionItems.length} healthy {healthyConnectionItems.length === 1 ? "connection" : "connections"}</span>
+                  <span className="text-xs font-medium text-emerald-300">No action needed</span>
+                </summary>
+                <div className="mt-3 divide-y divide-[#292a2f]">
+                  {healthyConnectionItems.map((item) => (
+                    <div key={item.id} className="flex flex-col gap-1 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                      <span className="font-medium text-zinc-200">{item.location_name} · {item.label}</span>
+                      <span className="text-xs text-zinc-500">Usable data through {formatDataDate(item.newest_usable_data_date)}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
 
             {usageAllowance ? (
               <details className="rounded-md border border-[#292a2f] bg-[#141518] p-4">
