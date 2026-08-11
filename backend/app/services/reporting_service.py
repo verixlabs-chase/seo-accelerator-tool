@@ -1,4 +1,5 @@
 import json
+import logging
 from hashlib import sha256
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,6 +22,23 @@ from app.services import premium_report_service
 from app.services import report_artifact_storage_service
 
 REPORT_SCHEDULE_MAX_RETRIES = 3
+logger = logging.getLogger("lsos.reporting")
+
+
+def _report_failure_metadata(exc: Exception, *, stage: str) -> dict[str, str | None]:
+    original = getattr(exc, "orig", None)
+    diagnostic = getattr(original, "diag", None)
+    return {
+        "event": "report_generation_failed",
+        "stage": stage,
+        "error_type": type(exc).__name__,
+        "error_module": type(exc).__module__,
+        "database_error_type": type(original).__name__ if original is not None else None,
+        "database_sqlstate": getattr(original, "sqlstate", None),
+        "database_constraint": getattr(diagnostic, "constraint_name", None),
+        "database_column": getattr(diagnostic, "column_name", None),
+        "database_table": getattr(diagnostic, "table_name", None),
+    }
 
 
 def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str, organization_id: str | None = None) -> Campaign:
@@ -245,51 +263,70 @@ def _report_delivery_readiness(artifacts: list[ReportArtifact]) -> dict:
 
 def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number: int, organization_id: str | None = None) -> MonthlyReport:
     campaign = _campaign_or_404(db, tenant_id, campaign_id, organization_id)
-    snapshot = premium_report_service.build_report_snapshot(
-        db,
-        tenant_id=tenant_id,
-        campaign=campaign,
-        month_number=month_number,
-    )
-    report = MonthlyReport(
-        tenant_id=tenant_id,
-        campaign_id=campaign_id,
-        month_number=month_number,
-        report_status="generated",
-        summary_json=json.dumps(snapshot, sort_keys=True),
-    )
-    db.add(report)
-    db.flush()
-    stored_artifacts = _store_snapshot_artifacts(
-        tenant_id=tenant_id,
-        report_id=report.id,
-        snapshot=snapshot,
-    )
-    for artifact_type, stored in stored_artifacts.items():
-        artifact = ReportArtifact(
+    stage = "build_snapshot"
+    try:
+        snapshot = premium_report_service.build_report_snapshot(
+            db,
+            tenant_id=tenant_id,
+            campaign=campaign,
+            month_number=month_number,
+        )
+        stage = "create_report_record"
+        report = MonthlyReport(
             tenant_id=tenant_id,
             campaign_id=campaign_id,
-            report_id=report.id,
-            artifact_type=artifact_type,
-            storage_path=stored.storage_path,
+            month_number=month_number,
+            report_status="generated",
+            summary_json=json.dumps(snapshot, sort_keys=True),
         )
-        _apply_stored_artifact(artifact, stored)
-        db.add(artifact)
-    emit_event(
-        db,
-        tenant_id=tenant_id,
-        event_type="report.generated",
-        payload={
-            "campaign_id": campaign_id,
-            "report_id": report.id,
-            "month_number": month_number,
-            "snapshot_hash": snapshot["snapshot_hash"],
-            "snapshot_version": snapshot["schema_version"],
-        },
-    )
-    db.commit()
-    db.refresh(report)
-    return report
+        db.add(report)
+        db.flush()
+        storage = report_artifact_storage_service.get_report_artifact_storage()
+        stage = f"store_artifacts_{storage.storage_mode}"
+        stored_artifacts = _store_snapshot_artifacts(
+            tenant_id=tenant_id,
+            report_id=report.id,
+            snapshot=snapshot,
+        )
+        stage = "create_artifact_records"
+        for artifact_type, stored in stored_artifacts.items():
+            artifact = ReportArtifact(
+                tenant_id=tenant_id,
+                campaign_id=campaign_id,
+                report_id=report.id,
+                artifact_type=artifact_type,
+                storage_path=stored.storage_path,
+            )
+            _apply_stored_artifact(artifact, stored)
+            db.add(artifact)
+        stage = "emit_report_event"
+        emit_event(
+            db,
+            tenant_id=tenant_id,
+            event_type="report.generated",
+            payload={
+                "campaign_id": campaign_id,
+                "report_id": report.id,
+                "month_number": month_number,
+                "snapshot_hash": snapshot["snapshot_hash"],
+                "snapshot_version": snapshot["schema_version"],
+            },
+        )
+        stage = "commit_report"
+        db.commit()
+        db.refresh(report)
+        return report
+    except Exception as exc:
+        db.rollback()
+        logger.error(
+            "report_generation_failed",
+            extra={
+                **_report_failure_metadata(exc, stage=stage),
+                "campaign_id": campaign_id,
+                "month_number": month_number,
+            },
+        )
+        raise
 
 
 def get_report_snapshot(
