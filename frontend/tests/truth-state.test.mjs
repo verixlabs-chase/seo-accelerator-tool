@@ -28,6 +28,7 @@ import {
 } from "../app/(product)/truth/runtimeTruth.mjs";
 import {
   getStepThreeSummary,
+  getTaskRecoveryGuidance,
   getTaskStatusMeaning,
   parseOwnerServiceAreas,
   parseOwnerServices,
@@ -460,6 +461,14 @@ test("onboarding truth state summarizes successful setup without false completio
 test("onboarding task meaning keeps queued and failed states distinct", () => {
   assert.match(getTaskStatusMeaning("pending"), /queued/i);
   assert.match(getTaskStatusMeaning("error"), /needs attention/i);
+});
+
+test("onboarding recovery guidance names the blocker, owner, and recovery", () => {
+  const guidance = getTaskRecoveryGuidance({ id: "ranking", status: "error" });
+
+  assert.equal(guidance.owner, "You");
+  assert.match(guidance.missing, /position check did not start/i);
+  assert.match(guidance.recovery, /retry the unfinished checks/i);
 });
 
 test("onboarding services keep distinct owner-entered lines and remove duplicates", () => {

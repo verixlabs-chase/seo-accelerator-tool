@@ -76,6 +76,73 @@ function getTaskStatusMeaning(status) {
   return "Queued. This step will start automatically during setup.";
 }
 
+function getTaskRecoveryGuidance(task) {
+  const taskId = String(task?.id || "");
+  const status = String(task?.status || "pending");
+
+  if (status === "done") {
+    return {
+      owner: "No action needed",
+      timing: "Finished",
+      missing: null,
+      recovery: "This step is complete.",
+    };
+  }
+  if (status === "running") {
+    return {
+      owner: "InsightOS",
+      timing: "Usually under 2 minutes to start",
+      missing: null,
+      recovery: "Keep this page open while the request finishes.",
+    };
+  }
+  if (status === "pending") {
+    return {
+      owner: "InsightOS",
+      timing: "Starts after the step above",
+      missing: null,
+      recovery: "Nothing is required from you yet.",
+    };
+  }
+
+  const failures = {
+    location: {
+      missing: "Your business location was not saved.",
+      recovery: "Check the business name and home market, then save again.",
+    },
+    campaign: {
+      missing: "Your business workspace was not created.",
+      recovery: "Check the website address, then save again.",
+    },
+    "business-profile": {
+      missing: "Your services or work areas were not fully saved.",
+      recovery: "Check the service and area lists, then save again.",
+    },
+    crawl: {
+      missing: "The website scan did not start.",
+      recovery: "Check the website address, then retry the unfinished checks.",
+    },
+    keyword: {
+      missing: "The first search phrase was not saved.",
+      recovery: "Confirm the main service and work area, then retry the unfinished checks.",
+    },
+    ranking: {
+      missing: "The first Google position check did not start.",
+      recovery: "Retry the unfinished checks. If it fails again, contact support.",
+    },
+  };
+  const failure = failures[taskId] || {
+    missing: "This setup step did not finish.",
+    recovery: "Try this step again. If it still fails, contact support.",
+  };
+
+  return {
+    owner: "You",
+    timing: "About 2 minutes after retrying",
+    ...failure,
+  };
+}
+
 function getStepThreeSummary(tasks, scanDone) {
   const counts = summarizeTaskCounts(tasks);
 
@@ -109,6 +176,7 @@ function getStepThreeSummary(tasks, scanDone) {
 
 export {
   getStepThreeSummary,
+  getTaskRecoveryGuidance,
   getTaskStatusMeaning,
   parseOwnerServiceAreas,
   parseOwnerServices,

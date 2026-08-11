@@ -2363,6 +2363,23 @@ Scope:
 - Create persona-aware guidance for a solo owner, multi-location manager, and
   agency operator without creating separate products.
 
+Implementation status (2026-08-11):
+
+- The first CX1 recovery slice is implemented in guided setup. Every setup
+  task now identifies who acts next and the expected timing. A failed step
+  also explains what is missing and how the owner can recover in plain
+  language.
+- Website scan, starter phrase, and first ranking requests now finish
+  independently, so one provider failure does not prevent the other first
+  checks from starting. Owners can retry only unfinished checks without
+  recreating the business or duplicating completed setup.
+- A blocked owner can contact `support@verixlabs.com` from setup and is told
+  exactly which non-sensitive context to include and never to send passwords
+  or API keys.
+- Remaining CX1 slices include the unified connection path, persistent setup
+  progress after navigation, searchable help and glossary content, consented
+  diagnostic bundles, response/escalation states, and persona-aware tours.
+
 Acceptance criteria:
 
 - A new owner can create a location, connect supported data, run the first
