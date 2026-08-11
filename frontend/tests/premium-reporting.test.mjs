@@ -86,6 +86,7 @@ test("report files use the authenticated request flow instead of raw links", () 
 
 test("reports replace raw network failures and keep optional tools from blocking the page", () => {
   assert.match(reportsPage, /We could not create the report right now/);
+  assert.match(reportsPage, /was created successfully, but some details did not refresh/);
   assert.match(reportsPage, /Reports could not be loaded right now/);
   assert.match(reportsPage, /Promise\.allSettled/);
   assert.match(reportsPage, /Try again/);
