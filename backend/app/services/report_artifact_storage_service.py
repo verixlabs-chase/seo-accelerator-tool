@@ -20,6 +20,7 @@ class StoredReportArtifact:
     checksum_sha256: str
     durable: bool
     ready: bool
+    content: bytes | None = None
 
 
 class ReportArtifactStorage(Protocol):
@@ -88,6 +89,44 @@ class LocalReportArtifactStorage:
 
     def read_bytes(self, storage_key: str, storage_path: str) -> bytes:
         return Path(storage_path or storage_key).read_bytes()
+
+
+class DatabaseReportArtifactStorage:
+    """Prepare small private report files for storage on the artifact row itself."""
+
+    storage_mode = "database_private"
+    durable = True
+
+    def put_bytes(
+        self,
+        *,
+        tenant_id: str,
+        report_id: str,
+        filename: str,
+        content_type: str,
+        content: bytes,
+    ) -> StoredReportArtifact:
+        del tenant_id
+        key = f"database://reports/{report_id}/{filename}"
+        return StoredReportArtifact(
+            storage_mode=self.storage_mode,
+            storage_path=key,
+            storage_key=key,
+            content_type=content_type,
+            byte_size=len(content),
+            checksum_sha256=sha256(content).hexdigest(),
+            durable=self.durable,
+            ready=True,
+            content=content,
+        )
+
+    def exists(self, storage_key: str, storage_path: str) -> bool:
+        del storage_key, storage_path
+        return False
+
+    def read_bytes(self, storage_key: str, storage_path: str) -> bytes:
+        del storage_key, storage_path
+        raise RuntimeError("Database report bytes are read from the artifact record")
 
 
 class S3ReportArtifactStorage:
@@ -183,4 +222,6 @@ def get_report_artifact_storage() -> ReportArtifactStorage:
             secret_key=settings.object_storage_secret_key,
             region=settings.object_storage_region,
         )
+    if settings.hosted_serverless or os.getenv("VERCEL") == "1":
+        return DatabaseReportArtifactStorage()
     return LocalReportArtifactStorage()

@@ -161,6 +161,10 @@ def test_migration_upgrade_and_downgrade():
         assert "anomaly_events" in inspector.get_table_names()
         assert "monthly_reports" in inspector.get_table_names()
         assert "report_artifacts" in inspector.get_table_names()
+        report_artifact_cols = {
+            col["name"] for col in inspector.get_columns("report_artifacts")
+        }
+        assert "content_blob" in report_artifact_cols
         assert "report_delivery_events" in inspector.get_table_names()
         assert "report_template_versions" in inspector.get_table_names()
         assert "report_schedules" in inspector.get_table_names()
