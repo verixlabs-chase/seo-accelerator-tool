@@ -414,11 +414,13 @@ function reportTrendChart({
   field,
   label,
   unit,
+  lowerIsBetter = false,
 }: {
   series: ReportTrendSeries;
   field: string;
   label: string;
   unit: string;
+  lowerIsBetter?: boolean;
 }) {
   const current = (series.points || []).filter((point) => typeof point[field] === "number");
   const comparison = (series.comparison_points || []).filter((point) => typeof point[field] === "number");
@@ -435,7 +437,11 @@ function reportTrendChart({
   }
   const coordinates = (points: ReportTrendPoint[]) => points.map((point, index) => {
     const x = 38 + (index / Math.max(points.length - 1, 1)) * 562;
-    const y = 15 + ((maximum - Number(point[field])) / (maximum - minimum)) * 125;
+    const value = Number(point[field]);
+    const verticalRatio = lowerIsBetter
+      ? (value - minimum) / (maximum - minimum)
+      : (maximum - value) / (maximum - minimum);
+    const y = 15 + verticalRatio * 125;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
   return (
@@ -448,14 +454,14 @@ function reportTrendChart({
         <line x1="38" y1="15" x2="38" y2="140" stroke="#3f3f46" />
         <line x1="38" y1="140" x2="600" y2="140" stroke="#3f3f46" />
         <line x1="38" y1="77.5" x2="600" y2="77.5" stroke="#27272a" />
-        <text x="0" y="20" fontSize="10" fill="#71717a">{maximum.toLocaleString(undefined, { maximumFractionDigits: 1 })}</text>
-        <text x="0" y="143" fontSize="10" fill="#71717a">{minimum.toLocaleString(undefined, { maximumFractionDigits: 1 })}</text>
+        <text x="0" y="20" fontSize="10" fill="#71717a">{(lowerIsBetter ? minimum : maximum).toLocaleString(undefined, { maximumFractionDigits: 1 })}</text>
+        <text x="0" y="143" fontSize="10" fill="#71717a">{(lowerIsBetter ? maximum : minimum).toLocaleString(undefined, { maximumFractionDigits: 1 })}</text>
         {comparison.length ? <polyline points={coordinates(comparison)} fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="7 6" /> : null}
         {current.length ? <polyline points={coordinates(current)} fill="none" stroke="#ff5c1a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
         <text x="38" y="165" fontSize="10" fill="#71717a">{String(current[0]?.date || "")}</text>
         <text x="600" y="165" textAnchor="end" fontSize="10" fill="#71717a">{String(current[current.length - 1]?.date || "")}</text>
       </svg>
-      <p className="mt-1 text-xs leading-5 text-zinc-400">{series.description} Values shown in {unit}.</p>
+      <p className="mt-1 text-xs leading-5 text-zinc-400">{series.description} Values shown in {unit}.{lowerIsBetter ? " Higher on the chart is better." : ""}</p>
     </article>
   );
 }
@@ -463,15 +469,15 @@ function reportTrendChart({
 function trendVisualizations(series: ReportTrendSeries[]) {
   const byKey = new Map(series.map((item) => [item.key, item]));
   const definitions = [
-    ["google_discovery", "visits", "Visits from Google", "visits"],
-    ["google_discovery", "appearances", "Times shown on Google", "appearances"],
-    ["tracked_rankings", "average_position", "Average tracked keyword position", "position number"],
-    ["website_scans", "issues", "Issues found in website scans", "issues"],
-    ["review_growth", "reviews", "Recent review pace", "reviews"],
+    ["google_discovery", "visits", "Visits from Google", "visits", false],
+    ["google_discovery", "appearances", "Times shown on Google", "appearances", false],
+    ["tracked_rankings", "average_position", "Average tracked keyword position", "position number", true],
+    ["website_scans", "issues", "Issues found in website scans", "issues", true],
+    ["review_growth", "reviews", "Recent review pace", "reviews", false],
   ];
-  const charts = definitions.map(([key, field, label, unit]) => {
-    const item = byKey.get(key);
-    return item ? reportTrendChart({ series: item, field, label, unit }) : null;
+  const charts = definitions.map(([key, field, label, unit, lowerIsBetter]) => {
+    const item = byKey.get(String(key));
+    return item ? reportTrendChart({ series: item, field: String(field), label: String(label), unit: String(unit), lowerIsBetter: Boolean(lowerIsBetter) }) : null;
   }).filter(Boolean);
   if (!charts.length) {
     return <p className="text-sm leading-6 text-zinc-400">No dated trend values are available yet. Charts will appear as connected data is saved.</p>;

@@ -1033,6 +1033,7 @@ def _chart_svg(
     field: str,
     label: str,
     unit: str,
+    lower_is_better: bool = False,
 ) -> str:
     width, height = 720, 210
     left, right, top, bottom = 48, 18, 24, 42
@@ -1057,10 +1058,18 @@ def _chart_svg(
         if not points:
             return ""
         denominator = max(len(points) - 1, 1)
-        return " ".join(
-            f"{left + (index / denominator) * plot_width:.1f},{top + ((maximum - float(point[field])) / (maximum - minimum)) * plot_height:.1f}"
-            for index, point in enumerate(points)
-        )
+        coordinates: list[str] = []
+        for index, point in enumerate(points):
+            value = float(point[field])
+            vertical_ratio = (
+                (value - minimum) / (maximum - minimum)
+                if lower_is_better
+                else (maximum - value) / (maximum - minimum)
+            )
+            coordinates.append(
+                f"{left + (index / denominator) * plot_width:.1f},{top + vertical_ratio * plot_height:.1f}"
+            )
+        return " ".join(coordinates)
 
     current_coords = coords(current)
     comparison_coords = coords(comparison)
@@ -1077,32 +1086,36 @@ def _chart_svg(
         if current_coords
         else ""
     )
+    top_value = minimum if lower_is_better else maximum
+    bottom_value = maximum if lower_is_better else minimum
+    better_note = " Higher on the chart is better." if lower_is_better else ""
     return f"""
       <div class='chart-heading'><strong>{escape(label)}</strong><span>Orange: current period · Dashed: earlier period</span></div>
       <svg class='trend-chart' viewBox='0 0 {width} {height}' role='img' aria-label='{escape(label)} trend'>
         <line x1='{left}' y1='{top}' x2='{left}' y2='{top + plot_height}' stroke='#d7d7d2'/>
         <line x1='{left}' y1='{top + plot_height}' x2='{left + plot_width}' y2='{top + plot_height}' stroke='#d7d7d2'/>
         <line x1='{left}' y1='{top + plot_height / 2:.1f}' x2='{left + plot_width}' y2='{top + plot_height / 2:.1f}' stroke='#ecece8'/>
-        <text x='4' y='{top + 5}' font-size='11' fill='#666'>{maximum:,.1f}{escape(unit_label)}</text>
-        <text x='4' y='{top + plot_height + 4}' font-size='11' fill='#666'>{minimum:,.1f}{escape(unit_label)}</text>
+        <text x='4' y='{top + 5}' font-size='11' fill='#666'>{top_value:,.1f}{escape(unit_label)}</text>
+        <text x='4' y='{top + plot_height + 4}' font-size='11' fill='#666'>{bottom_value:,.1f}{escape(unit_label)}</text>
         {comparison_line}{current_line}
         <text x='{left}' y='{height - 12}' font-size='11' fill='#666'>{escape(current_start)}</text>
         <text x='{left + plot_width}' y='{height - 12}' text-anchor='end' font-size='11' fill='#666'>{escape(current_end)}</text>
       </svg>
+      <p class='chart-note'>{escape(better_note.strip())}</p>
     """
 
 
 def _report_charts(snapshot: dict[str, Any]) -> str:
     series_by_key = {str(item.get("key")): item for item in snapshot.get("trend_series") or []}
     definitions = (
-        ("google_discovery", "visits", "Visits from Google", "visits"),
-        ("google_discovery", "appearances", "Times shown on Google", "appearances"),
-        ("tracked_rankings", "average_position", "Average tracked keyword position", "position"),
-        ("website_scans", "issues", "Issues found in website scans", "issues"),
-        ("review_growth", "reviews", "Reviews received in the last 30 days", "reviews"),
+        ("google_discovery", "visits", "Visits from Google", "visits", False),
+        ("google_discovery", "appearances", "Times shown on Google", "appearances", False),
+        ("tracked_rankings", "average_position", "Average tracked keyword position", "position", True),
+        ("website_scans", "issues", "Issues found in website scans", "issues", True),
+        ("review_growth", "reviews", "Reviews received in the last 30 days", "reviews", False),
     )
     cards: list[str] = []
-    for series_key, field, label, unit in definitions:
+    for series_key, field, label, unit, lower_is_better in definitions:
         series = series_by_key.get(series_key) or {}
         current = list(series.get("points") or [])
         comparison = list(series.get("comparison_points") or [])
@@ -1110,7 +1123,14 @@ def _report_charts(snapshot: dict[str, Any]) -> str:
             continue
         cards.append(
             "<article class='chart-card'>"
-            + _chart_svg(current, comparison, field=field, label=label, unit=unit)
+            + _chart_svg(
+                current,
+                comparison,
+                field=field,
+                label=label,
+                unit=unit,
+                lower_is_better=lower_is_better,
+            )
             + f"<p>{escape(str(series.get('description') or ''))}</p></article>"
         )
     if not cards:
