@@ -36,6 +36,10 @@ test("multi-location reports compare frozen location facts without blending tota
   assert.match(reportsPage, /Numbers are never blended across locations/);
   assert.match(reportsPage, /only made when at least two locations use the same report dates/);
   assert.match(reportsPage, /portfolioComparison\.locations\.map/);
+  assert.match(reportsPage, /Download all-location PDF/);
+  assert.match(reportsPage, /\/reports\/portfolio-artifact/);
+  assert.match(reportsPage, /portfolioComparison\.comparison_ready/);
+  assert.match(reportsPage, /same saved reports shown here/);
 });
 
 test("premium reports deduplicate and fully explain next actions", () => {

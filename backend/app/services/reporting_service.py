@@ -15,6 +15,7 @@ from app.models.campaign import Campaign
 from app.models.crawl import TechnicalIssue
 from app.models.intelligence import IntelligenceScore
 from app.models.local import ReviewVelocitySnapshot
+from app.models.organization import Organization
 from app.models.rank import RankingSnapshot
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent, ReportSchedule
 from app.providers import get_email_adapter
@@ -560,6 +561,106 @@ def get_portfolio_report_comparison(
         "focus": focus,
         "locations": locations,
     }
+
+
+def build_portfolio_report_snapshot(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+) -> dict:
+    """Assemble a reproducible portfolio document from frozen location reports."""
+    comparison = get_portfolio_report_comparison(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+    )
+    if not comparison["comparison_ready"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Create matching reports for at least two locations before downloading "
+                "an all-location report."
+            ),
+        )
+
+    organization = (
+        db.query(Organization)
+        .filter(Organization.id == organization_id)
+        .one_or_none()
+    )
+    if organization is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    locations: list[dict] = []
+    assembled_at = ""
+    for item in comparison["locations"]:
+        if item["comparison_state"] != "ready" or not item.get("report"):
+            continue
+        report_id = str(item["report"]["id"])
+        snapshot = get_report_snapshot(
+            db,
+            tenant_id=tenant_id,
+            report_id=report_id,
+            organization_id=organization_id,
+        )
+        if not premium_report_service.validate_snapshot(snapshot):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A saved location report did not pass its integrity check.",
+            )
+        assembled_at = max(assembled_at, str(item["report"].get("generated_at") or ""))
+        locations.append(
+            {
+                "campaign_id": item["campaign_id"],
+                "business_location_id": item.get("business_location_id"),
+                "location_name": item["location_name"],
+                "domain": item.get("domain"),
+                "report": item["report"],
+                "period": snapshot.get("period") or {},
+                "metrics": snapshot.get("metrics") or [],
+                "wins": snapshot.get("wins") or [],
+                "risks": snapshot.get("risks") or [],
+                "next_priorities": snapshot.get("next_priorities") or [],
+                "source": snapshot.get("source") or {},
+            }
+        )
+
+    payload = {
+        "schema_version": "rpt1-portfolio-v1",
+        "source_contract": "exact_frozen_report_snapshots_per_location",
+        "totals_are_combined": False,
+        "assembled_at": assembled_at,
+        "organization": {
+            "id": organization.id,
+            "name": organization.name,
+        },
+        "brand": {
+            "product_name": "InsightOS",
+            "publisher": "VerixLabs",
+            "prepared_for": organization.name,
+        },
+        "period": comparison["common_period"],
+        "focus": comparison["focus"],
+        "location_count": len(locations),
+        "organization_location_count": comparison["location_count"],
+        "warnings": comparison["warnings"],
+        "excluded_locations": [
+            {
+                "campaign_id": item["campaign_id"],
+                "location_name": item["location_name"],
+                "domain": item.get("domain"),
+                "state": item["comparison_state"],
+                "reason": item["comparison_message"],
+            }
+            for item in comparison["locations"]
+            if item["comparison_state"] != "ready"
+        ],
+        "locations": locations,
+    }
+    packed = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    payload["snapshot_hash"] = sha256(packed.encode("utf-8")).hexdigest()
+    return payload
 
 
 def regenerate_report_artifacts(

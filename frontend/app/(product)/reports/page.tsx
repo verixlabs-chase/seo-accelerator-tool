@@ -1152,6 +1152,30 @@ export default function ReportsPage() {
     );
   }
 
+  async function downloadPortfolioReport() {
+    if (!portfolioComparison?.comparison_ready) {
+      setError("Create reports with matching dates for at least two locations first.");
+      return;
+    }
+
+    await runAction(
+      "portfolio-pdf",
+      async () => {
+        const file = await platformApiFile("/reports/portfolio-artifact", { method: "GET" });
+        const fileUrl = URL.createObjectURL(file.blob);
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.download = "insightos-all-location-report.pdf";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(fileUrl), 60_000);
+        setNotice("The all-location PDF was downloaded from the same saved reports shown here.");
+      },
+      "We could not download the all-location report right now. Your saved reports are still safe.",
+    );
+  }
+
   async function saveSchedule() {
     if (!selectedCampaignId) {
       setError("Select a business first.");
@@ -1484,11 +1508,26 @@ export default function ReportsPage() {
                       See each location side by side using the facts saved in its latest report. Numbers are never blended across locations.
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-semibold text-white">
-                      {portfolioComparison.comparable_location_count} of {portfolioComparison.location_count}
-                    </p>
-                    <p className="text-xs text-zinc-400">locations ready to compare</p>
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    <div className="text-right">
+                      <p className="text-2xl font-semibold text-white">
+                        {portfolioComparison.comparable_location_count} of {portfolioComparison.location_count}
+                      </p>
+                      <p className="text-xs text-zinc-400">locations ready to compare</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void downloadPortfolioReport()}
+                      disabled={busyAction !== "" || !portfolioComparison.comparison_ready}
+                      title={
+                        portfolioComparison.comparison_ready
+                          ? "Download one PDF using the saved reports shown below"
+                          : "Create reports with matching dates for at least two locations first"
+                      }
+                      className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-semibold text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busyAction === "portfolio-pdf" ? "Preparing PDF..." : "Download all-location PDF"}
+                    </button>
                   </div>
                 </div>
 

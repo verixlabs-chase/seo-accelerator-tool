@@ -356,6 +356,57 @@ class TrendChart(Flowable):
             canvas.drawRightString(left + plot_width, 10, end)
 
 
+class PortfolioBarChart(Flowable):
+    def __init__(self, rows: list[tuple[str, float]], *, width: float, value_kind: str) -> None:
+        super().__init__()
+        self.width = width
+        self.rows = rows[:12]
+        self.value_kind = value_kind
+        self.height = max(82, 30 + (len(self.rows) * 20))
+
+    def wrap(self, available_width: float, available_height: float) -> tuple[float, float]:
+        return min(self.width, available_width), self.height
+
+    def draw(self) -> None:
+        canvas = self.canv
+        if not self.rows:
+            canvas.setFillColor(MUTED)
+            canvas.setFont("Helvetica", 8)
+            canvas.drawString(0, self.height / 2, "No saved values are available for this chart.")
+            return
+
+        label_width = 132
+        value_width = 52
+        bar_width = max(40, self.width - label_width - value_width)
+        maximum = max(value for _, value in self.rows) or 1
+        canvas.setFont("Helvetica", 7.5)
+        for index, (label, value) in enumerate(self.rows):
+            y = self.height - 20 - (index * 20)
+            display_label = _ascii(label)
+            if len(display_label) > 27:
+                display_label = f"{display_label[:24]}..."
+            canvas.setFillColor(INK)
+            canvas.drawString(0, y + 2, display_label)
+            canvas.setFillColor(SOFT)
+            canvas.roundRect(label_width, y, bar_width, 10, 3, stroke=0, fill=1)
+            canvas.setFillColor(ACCENT)
+            canvas.roundRect(
+                label_width,
+                y,
+                max(3, (float(value) / maximum) * bar_width),
+                10,
+                3,
+                stroke=0,
+                fill=1,
+            )
+            canvas.setFillColor(INK)
+            if self.value_kind == "position":
+                value_label = f"#{value:,.1f}"
+            else:
+                value_label = f"{value:,.0f}"
+            canvas.drawRightString(self.width, y + 2, value_label)
+
+
 class SectionBookmark(Flowable):
     def __init__(self, title: str, key: str) -> None:
         super().__init__()
@@ -373,7 +424,8 @@ class SectionBookmark(Flowable):
 
 
 def _metric_grid(metrics: list[dict[str, Any]], styles: dict[str, ParagraphStyle], width: float) -> Table:
-    columns = 3
+    metric_count = len(metrics)
+    columns = 2 if metric_count == 4 else min(3, max(1, metric_count))
     gap = 8
     cell_width = (width - gap * (columns - 1)) / columns
     cells: list[list[Any]] = []
@@ -624,6 +676,125 @@ def _sources_table(metrics: list[dict[str, Any]], styles: dict[str, ParagraphSty
     return table
 
 
+def _metric_lookup(location: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(metric.get("key")): metric
+        for metric in location.get("metrics") or []
+        if isinstance(metric, dict) and metric.get("key")
+    }
+
+
+def _portfolio_comparison_table(
+    locations: list[dict[str, Any]],
+    styles: dict[str, ParagraphStyle],
+    width: float,
+) -> Table:
+    keys = (
+        "google_visits",
+        "google_appearances",
+        "average_google_position",
+        "tracked_keyword_position",
+    )
+    data: list[list[Any]] = [
+        [
+            Paragraph("Location", styles["table_head"]),
+            Paragraph("Visits", styles["table_head"]),
+            Paragraph("Times shown", styles["table_head"]),
+            Paragraph("Google position", styles["table_head"]),
+            Paragraph("Tracked position", styles["table_head"]),
+            Paragraph("Needs attention", styles["table_head"]),
+        ]
+    ]
+    for location in locations:
+        lookup = _metric_lookup(location)
+        metric_cells = [
+            Paragraph(
+                _safe(_display_value(lookup[key])) if key in lookup else "Not measured",
+                styles["table_body"],
+            )
+            for key in keys
+        ]
+        data.append(
+            [
+                Paragraph(
+                    f"<b>{_safe(location.get('location_name') or 'Location')}</b><br/>"
+                    f"<font color='#626262'>{_safe(location.get('domain') or 'No website saved')}</font>",
+                    styles["table_body"],
+                ),
+                *metric_cells,
+                Paragraph(str(len(location.get("risks") or [])), styles["table_body"]),
+            ]
+        )
+    table = Table(
+        data,
+        colWidths=[width * 0.28, width * 0.12, width * 0.15, width * 0.15, width * 0.15, width * 0.15],
+        repeatRows=1,
+        hAlign="LEFT",
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), SOFT),
+                ("BOX", (0, 0), (-1, -1), 0.6, LINE),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, LINE),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ]
+        )
+    )
+    return table
+
+
+def _portfolio_chart_rows(locations: list[dict[str, Any]], metric_key: str) -> list[tuple[str, float]]:
+    rows: list[tuple[str, float]] = []
+    for location in locations:
+        metric = _metric_lookup(location).get(metric_key)
+        if metric and metric.get("current") is not None:
+            rows.append((str(location.get("location_name") or "Location"), float(metric["current"])))
+    return sorted(rows, key=lambda row: (-row[1], row[0].lower()))
+
+
+def _portfolio_story_items(
+    title: str,
+    items: list[dict[str, Any]],
+    empty: str,
+    styles: dict[str, ParagraphStyle],
+) -> list[Any]:
+    blocks: list[Any] = [Paragraph(title, styles["h2"])]
+    if not items:
+        return blocks + [Paragraph(empty, styles["small"])]
+    for item in items[:3]:
+        blocks.append(
+            Paragraph(
+                f"<b>{_safe(item.get('title') or 'Saved item')}</b><br/>"
+                f"{_safe(item.get('detail') or item.get('why_it_matters') or '')}",
+                styles["small"],
+            )
+        )
+    return blocks
+
+
+def _portfolio_page(canvas: Any, document: SimpleDocTemplate, *, title: str, prepared_for: str) -> None:
+    canvas.saveState()
+    canvas.setTitle(_ascii(title))
+    canvas.setAuthor("VerixLabs")
+    canvas.setSubject("InsightOS multi-location business progress report")
+    canvas.setKeywords("InsightOS, VerixLabs, multi-location progress report")
+    canvas._doc.Catalog.Lang = PDFString("en-US")
+    canvas.setFillColor(ACCENT)
+    canvas.rect(0, PAGE_HEIGHT - 7, PAGE_WIDTH, 7, stroke=0, fill=1)
+    canvas.setStrokeColor(LINE)
+    canvas.line(document.leftMargin, 34, PAGE_WIDTH - document.rightMargin, 34)
+    canvas.setFillColor(MUTED)
+    canvas.setFont("Helvetica", 7)
+    canvas.drawString(document.leftMargin, 22, _ascii(f"Prepared for {prepared_for} | InsightOS by VerixLabs"))
+    canvas.drawRightString(PAGE_WIDTH - document.rightMargin, 22, f"Page {document.page}")
+    canvas.restoreState()
+
+
 def _page(canvas: Any, document: SimpleDocTemplate, *, title: str) -> None:
     canvas.saveState()
     canvas.setTitle(_ascii(title))
@@ -780,5 +951,423 @@ def build_report_pdf(snapshot: dict[str, Any]) -> bytes:
         story,
         onFirstPage=lambda canvas, doc: _page(canvas, doc, title=title),
         onLaterPages=lambda canvas, doc: _page(canvas, doc, title=title),
+    )
+    return buffer.getvalue()
+
+
+def build_portfolio_report_pdf(snapshot: dict[str, Any]) -> bytes:
+    styles = _styles()
+    organization = snapshot.get("organization") or {}
+    brand = snapshot.get("brand") or {}
+    period = snapshot.get("period") or {}
+    locations = list(snapshot.get("locations") or [])
+    excluded_locations = list(snapshot.get("excluded_locations") or [])
+    organization_location_count = int(snapshot.get("organization_location_count") or len(locations))
+    prepared_for = str(brand.get("prepared_for") or organization.get("name") or "Organization")
+    title = f"{prepared_for} all-location progress report"
+    focus = snapshot.get("focus") or {}
+
+    buffer = BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=LETTER,
+        leftMargin=0.58 * inch,
+        rightMargin=0.58 * inch,
+        topMargin=0.55 * inch,
+        bottomMargin=0.62 * inch,
+        title=_ascii(title),
+        author="VerixLabs",
+        subject="InsightOS multi-location business progress report",
+        pageCompression=1,
+    )
+    usable_width = PAGE_WIDTH - document.leftMargin - document.rightMargin
+    period_label = (
+        f"{period.get('start') or 'Unknown'} to {period.get('end') or 'Unknown'}"
+    )
+    comparison_label = (
+        f"Earlier period: {period.get('comparison_start') or 'Unknown'} to "
+        f"{period.get('comparison_end') or 'Unknown'}"
+    )
+
+    summary_cards = Table(
+        [
+            [
+                [
+                    Paragraph("LOCATIONS INCLUDED", styles["metric_label"]),
+                    Paragraph(f"{len(locations)} of {organization_location_count}", styles["metric_value"]),
+                    Paragraph(
+                        "Each ready location stays separate"
+                        if excluded_locations
+                        else "Every location is included and stays separate",
+                        styles["metric_change"],
+                    ),
+                ],
+                [
+                    Paragraph("REPORT DATES", styles["metric_label"]),
+                    Paragraph(_safe(period_label), styles["h2"]),
+                    Paragraph("The same dates are used for every location", styles["metric_change"]),
+                ],
+                [
+                    Paragraph("START HERE", styles["metric_label"]),
+                    Paragraph(_safe(focus.get("location_name") or "Review the comparison"), styles["h2"]),
+                    Paragraph("Chosen from saved items needing attention", styles["metric_change"]),
+                ],
+            ]
+        ],
+        colWidths=[usable_width / 3] * 3,
+    )
+    summary_cards.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), SOFT),
+                ("BOX", (0, 0), (-1, -1), 0.6, LINE),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, LINE),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 11),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 11),
+                ("TOPPADDING", (0, 0), (-1, -1), 11),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 11),
+            ]
+        )
+    )
+
+    story: list[Any] = [
+        SectionBookmark("Portfolio summary", "portfolio-summary"),
+        Paragraph("INSIGHTOS ALL-LOCATION REPORT", styles["eyebrow"]),
+        Paragraph(_safe(f"A clear progress view for {prepared_for}"), styles["title"]),
+        Paragraph(
+            "Compare locations, see where attention is needed, and open the saved work plan without combining business results into a misleading total.",
+            styles["lede"],
+        ),
+        Paragraph(_safe(f"Current period: {period_label} | {comparison_label}"), styles["meta"]),
+        Spacer(1, 16),
+        summary_cards,
+        Spacer(1, 16),
+        Paragraph("Where to start", styles["h1"]),
+        Table(
+            [[Paragraph(
+                _safe(
+                    (
+                        f"Start with {focus.get('location_name')}. {focus.get('reason')}"
+                        if focus
+                        else "Review the side-by-side results, then open the location with the clearest measured need."
+                    )
+                ),
+                styles["body"],
+            )]],
+            colWidths=[usable_width],
+            style=TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), ACCENT_SOFT),
+                    ("BOX", (0, 0), (-1, -1), 0.7, ACCENT),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                    ("TOPPADDING", (0, 0), (-1, -1), 11),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 11),
+                ]
+            ),
+        ),
+        Spacer(1, 14),
+        Paragraph("What this report does", styles["h1"]),
+        Paragraph(
+            "It compares the exact saved report for each location. It does not add visits, appearances, positions, or other results together. Missing data stays visible as not measured.",
+            styles["body"],
+        ),
+    ]
+    if excluded_locations:
+        preview_names = ", ".join(
+            str(item.get("location_name") or "Location")
+            for item in excluded_locations[:4]
+        )
+        if len(excluded_locations) > 4:
+            preview_names += f", and {len(excluded_locations) - 4} more"
+        excluded_sentence = (
+            "This location is named with a recovery step in the appendix and is not treated as zero."
+            if len(excluded_locations) == 1
+            else "These locations are named with recovery steps in the appendix and are not treated as zero."
+        )
+        story.extend(
+            [
+                Spacer(1, 8),
+                Paragraph("Locations not included yet", styles["h2"]),
+                Paragraph(
+                    _safe(
+                        f"{preview_names}. {excluded_sentence}"
+                    ),
+                    styles["body"],
+                ),
+            ]
+        )
+    story.extend(
+        [
+            PageBreak(),
+            SectionBookmark("Location comparison", "location-comparison"),
+            Paragraph("SIDE-BY-SIDE VIEW", styles["eyebrow"]),
+            Paragraph("How the locations compare", styles["title"]),
+            Paragraph(
+                "Use this table to spot differences. Position numbers work like a race: a smaller number is better.",
+                styles["body"],
+            ),
+            _portfolio_comparison_table(locations, styles, usable_width),
+            Spacer(1, 16),
+        ]
+    )
+
+    chart_specs = (
+        ("google_visits", "Visits from Google", "Website visits saved for the report period."),
+        ("google_appearances", "Times shown on Google", "How often the business appeared in saved Google search data."),
+    )
+    for metric_key, heading, detail in chart_specs:
+        rows = _portfolio_chart_rows(locations, metric_key)
+        if not rows:
+            continue
+        story.extend(
+            [
+                CondPageBreak(230),
+                Paragraph(heading, styles["h1"]),
+                Paragraph(
+                    _safe(
+                        detail
+                        + (" The 12 highest saved values are shown." if len(rows) > 12 else " Every measured location is shown.")
+                    ),
+                    styles["small"],
+                ),
+                PortfolioBarChart(rows, width=usable_width, value_kind="count"),
+                Spacer(1, 12),
+            ]
+        )
+
+    for index, location in enumerate(locations, start=1):
+        lookup = _metric_lookup(location)
+        visible_metrics = [
+            lookup[key]
+            for key in (
+                "google_visits",
+                "google_appearances",
+                "average_google_position",
+                "tracked_keyword_position",
+            )
+            if key in lookup
+        ]
+        report = location.get("report") or {}
+        source = location.get("source") or {}
+        priorities = list(location.get("next_priorities") or [])
+        first_priority = priorities[0] if priorities else {}
+        action_steps = list(first_priority.get("steps") or [])[:4]
+        action_blocks: list[Any] = [
+            Paragraph(_safe(first_priority.get("title") or "No verified next action is ready"), styles["h2"]),
+            Paragraph(
+                _safe(first_priority.get("why_it_matters") or first_priority.get("detail") or "Keep collecting enough information to choose a useful next step."),
+                styles["body"],
+            ),
+        ]
+        for step_number, step in enumerate(action_steps, start=1):
+            action_blocks.append(Paragraph(f"<b>{step_number}.</b> {_safe(step)}", styles["small"]))
+
+        story.extend(
+            [
+                PageBreak(),
+                SectionBookmark(
+                    str(location.get("location_name") or f"Location {index}"),
+                    f"location-{index}",
+                ),
+                Paragraph(f"LOCATION {index} OF {len(locations)}", styles["eyebrow"]),
+                Paragraph(_safe(location.get("location_name") or "Location"), styles["title"]),
+                Paragraph(
+                    _safe(
+                        f"{location.get('domain') or 'No website saved'} | Month {report.get('month_number') or 'unknown'} | "
+                        f"Data freshness: {source.get('freshness_state') or 'unknown'}"
+                    ),
+                    styles["meta"],
+                ),
+                Spacer(1, 10),
+                Paragraph("Saved results", styles["h1"]),
+                Paragraph(
+                    "These numbers belong only to this location and use the same dates as the other locations in this report.",
+                    styles["body"],
+                ),
+                _metric_grid(visible_metrics, styles, usable_width),
+                Spacer(1, 10),
+                Table(
+                    [[
+                        _portfolio_story_items(
+                            "What improved",
+                            list(location.get("wins") or []),
+                            "No clear improvement was measured.",
+                            styles,
+                        ),
+                        _portfolio_story_items(
+                            "What needs attention",
+                            list(location.get("risks") or []),
+                            "No measured risk was found.",
+                            styles,
+                        ),
+                    ]],
+                    colWidths=[usable_width / 2] * 2,
+                    style=TableStyle(
+                        [
+                            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                            ("BOX", (0, 0), (-1, -1), 0.6, LINE),
+                            ("INNERGRID", (0, 0), (-1, -1), 0.35, LINE),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                            ("TOPPADDING", (0, 0), (-1, -1), 8),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                        ]
+                    ),
+                ),
+                Spacer(1, 12),
+                Paragraph("What to do next", styles["h1"]),
+                Table(
+                    [[action_blocks]],
+                    colWidths=[usable_width],
+                    style=TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, -1), ACCENT_SOFT),
+                            ("BOX", (0, 0), (-1, -1), 0.7, ACCENT),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                            ("TOPPADDING", (0, 0), (-1, -1), 10),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                        ]
+                    ),
+                ),
+            ]
+        )
+
+    appendix_rows: list[list[Any]] = [
+        [
+            Paragraph("Location", styles["table_head"]),
+            Paragraph("Report", styles["table_head"]),
+            Paragraph("Saved", styles["table_head"]),
+            Paragraph("Snapshot ID", styles["table_head"]),
+        ]
+    ]
+    for location in locations:
+        report = location.get("report") or {}
+        snapshot_id = str(report.get("snapshot_hash") or "Not available")
+        wrapped_snapshot_id = "<br/>".join(
+            snapshot_id[offset : offset + 16]
+            for offset in range(0, len(snapshot_id), 16)
+        )
+        appendix_rows.append(
+            [
+                Paragraph(_safe(location.get("location_name") or "Location"), styles["table_body"]),
+                Paragraph(_safe(report.get("id") or "Unknown"), styles["table_body"]),
+                Paragraph(_safe(report.get("generated_at") or "Unknown"), styles["table_body"]),
+                Paragraph(wrapped_snapshot_id, styles["table_body"]),
+            ]
+        )
+
+    appendix_table = Table(
+        appendix_rows,
+        colWidths=[usable_width * 0.22, usable_width * 0.26, usable_width * 0.22, usable_width * 0.30],
+        repeatRows=1,
+        hAlign="LEFT",
+    )
+    appendix_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), SOFT),
+                ("BOX", (0, 0), (-1, -1), 0.6, LINE),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, LINE),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ]
+        )
+    )
+    excluded_table: Table | None = None
+    if excluded_locations:
+        excluded_rows: list[list[Any]] = [
+            [
+                Paragraph("Location", styles["table_head"]),
+                Paragraph("Why it is not included", styles["table_head"]),
+            ]
+        ]
+        for item in excluded_locations:
+            excluded_rows.append(
+                [
+                    Paragraph(_safe(item.get("location_name") or "Location"), styles["table_body"]),
+                    Paragraph(_safe(item.get("reason") or "Create a matching saved report."), styles["table_body"]),
+                ]
+            )
+        excluded_table = Table(
+            excluded_rows,
+            colWidths=[usable_width * 0.30, usable_width * 0.70],
+            repeatRows=1,
+            hAlign="LEFT",
+            style=TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), ACCENT_SOFT),
+                    ("BOX", (0, 0), (-1, -1), 0.6, LINE),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.35, LINE),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                    ("TOPPADDING", (0, 0), (-1, -1), 7),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                ]
+            ),
+        )
+    portfolio_hash = str(snapshot.get("snapshot_hash") or "Not available")
+    story.extend(
+        [
+            PageBreak(),
+            SectionBookmark("Saved report record", "portfolio-record"),
+            Paragraph("REPORT DETAILS", styles["eyebrow"]),
+            Paragraph("The saved reports used", styles["title"]),
+            Paragraph(
+                "This appendix identifies every frozen location report used to build the document. The all-location report does not query live data or replace missing values with zero.",
+                styles["body"],
+            ),
+            appendix_table,
+        ]
+    )
+    if excluded_table is not None:
+        story.extend(
+            [
+                Spacer(1, 14),
+                Paragraph("Locations not included", styles["h1"]),
+                Paragraph(
+                    (
+                        "This location remains visible so a missing or invalid report cannot be mistaken for zero performance."
+                        if len(excluded_locations) == 1
+                        else "These locations remain visible so a missing or invalid report cannot be mistaken for zero performance."
+                    ),
+                    styles["body"],
+                ),
+                excluded_table,
+            ]
+        )
+    story.extend(
+        [
+            Spacer(1, 14),
+            Paragraph("All-location document ID", styles["h1"]),
+            Paragraph(_safe(portfolio_hash), styles["small"]),
+            Spacer(1, 10),
+            Paragraph(
+                "Branding in this report identifies InsightOS, VerixLabs, and the organization it was prepared for. Custom logos, colors, and white-label removal remain separate Enterprise controls.",
+                styles["body"],
+            ),
+        ]
+    )
+
+    document.build(
+        story,
+        onFirstPage=lambda canvas, doc: _portfolio_page(
+            canvas,
+            doc,
+            title=title,
+            prepared_for=prepared_for,
+        ),
+        onLaterPages=lambda canvas, doc: _portfolio_page(
+            canvas,
+            doc,
+            title=title,
+            prepared_for=prepared_for,
+        ),
     )
     return buffer.getvalue()
