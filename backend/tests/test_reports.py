@@ -1,3 +1,7 @@
+from io import BytesIO
+
+from pypdf import PdfReader
+
 from app.services import report_artifact_storage_service, reporting_service
 
 
@@ -739,5 +743,19 @@ def test_report_next_actions_are_unique_detailed_and_measurable(client, db_sessi
         headers={"Authorization": f"Bearer {token}"},
     )
     assert pdf_response.status_code == 200
-    assert b"What to do next" in pdf_response.content
-    assert b"Measure:" in pdf_response.content
+    reader = PdfReader(BytesIO(pdf_response.content))
+    assert len(reader.pages) >= 3
+    assert reader.metadata.title == "Detailed Report Campaign progress report"
+    assert reader.metadata.author == "VerixLabs"
+    assert reader.trailer["/Root"]["/Lang"] == "en-US"
+    assert len(reader.outline) >= 4
+    page_text = [page.extract_text() or "" for page in reader.pages]
+    assert all(text.strip() for text in page_text)
+    pdf_text = "\n".join(page_text)
+    assert "Your results at a glance" in pdf_text
+    assert "Performance over time" in pdf_text
+    assert "What to do next" in pdf_text
+    assert "How results will be checked" in pdf_text
+    assert "Where the numbers came from" in pdf_text
+    assert "InsightOS by VerixLabs" in pdf_text
+    assert pdf_text.count("Ask completed customers for reviews consistently") == 1

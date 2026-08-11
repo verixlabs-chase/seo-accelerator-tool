@@ -321,6 +321,11 @@ Current status (August 2026):
   source of truth, keeps legacy rollups as a compatibility fallback, and shows a
   plain-language readiness check before generation so missing or stale sections
   are visible before a report is shared.
+- Client-ready PDF artifacts now render the same frozen facts as the web report
+  with vector charts, plain-language descriptions, numbered measurable action
+  steps, source coverage, page numbers, English-language metadata, and outline
+  bookmarks. Blank pages and orphaned headings are covered by regression tests;
+  formal PDF/UA certification is not claimed.
 
 Deliverables:
 - KPI aggregation across all modules.
