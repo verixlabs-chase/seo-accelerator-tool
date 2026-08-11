@@ -1,4 +1,8 @@
-from app.tasks import intelligence_tasks as intelligence_tasks
-from app.tasks import tasks as tasks
+"""Celery task package.
 
-__all__ = ['tasks', 'intelligence_tasks']
+Task modules are loaded explicitly by the Celery application.  Keeping package
+initialization side-effect free is important because API startup imports the
+Celery application while the intelligence orchestrator is still being built.
+Eagerly importing every task module here creates a circular import and prevents
+the production ASGI application from starting.
+"""
