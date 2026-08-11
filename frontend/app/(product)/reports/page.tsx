@@ -975,11 +975,19 @@ export default function ReportsPage() {
         }),
       });
 
-      await loadReports(selectedCampaignId);
-      await loadReportReadiness(selectedCampaignId);
-      await loadPortfolioComparison();
+      const refreshResults = await Promise.allSettled([
+        loadReports(selectedCampaignId),
+        loadReportReadiness(selectedCampaignId),
+        loadPortfolioComparison(),
+      ]);
+      const refreshFailed = refreshResults.some(
+        (result) => result.status === "rejected",
+      );
+
       setNotice(
-        `Report request completed for month ${safeMonth}. Confirm below whether it is ready to send, still processing, or needs attention.`,
+        refreshFailed
+          ? `Month ${safeMonth} was created successfully, but some details did not refresh. Reload this page to see the saved report.`
+          : `Report request completed for month ${safeMonth}. Confirm below whether it is ready to send, still processing, or needs attention.`,
       );
     }, "We could not create the report right now. Your saved business data is safe. Please try again.");
   }
