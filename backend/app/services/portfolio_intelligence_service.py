@@ -64,6 +64,8 @@ def build_portfolio_overview(db: Session, *, organization_id: str) -> dict[str, 
     archived_items = [item for item in location_items if item["location_status"] != "active"]
     archived_items.sort(key=lambda item: str(item["location_name"]).lower())
     ordered_items = [*active_items, *archived_items]
+    shared_issues = _shared_issue_groups(active_items)
+    repeatable_wins = _repeatable_win_candidates(active_items)
 
     counts = {
         "urgent": sum(item["attention_state"] == "urgent" for item in active_items),
@@ -111,7 +113,253 @@ def build_portfolio_overview(db: Session, *, organization_id: str) -> dict[str, 
             **counts,
         },
         "top_attention": top_attention,
+        "shared_issues": shared_issues,
+        "repeatable_wins": repeatable_wins,
         "locations": ordered_items,
+    }
+
+
+def _shared_issue_groups(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group matching reasons while preserving every location's evidence."""
+
+    grouped: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
+    for item in items:
+        for reason in item["reasons"]:
+            grouped[str(reason["code"])].append((item, reason))
+
+    results: list[dict[str, Any]] = []
+    for code, entries in grouped.items():
+        if len(entries) < 2:
+            continue
+        entries.sort(key=lambda entry: str(entry[0]["location_name"]).lower())
+        severity = min(
+            (str(reason["severity"]) for _, reason in entries),
+            key=lambda value: _STATE_ORDER[value],
+        )
+        first_reason = entries[0][1]
+        results.append(
+            {
+                "code": code,
+                "severity": severity,
+                "attention_label": _attention_label(severity),
+                "title": first_reason["title"],
+                "summary": (
+                    f"{len(entries)} locations show this same problem. "
+                    "Review the saved evidence for each one before assigning shared work."
+                ),
+                "location_count": len(entries),
+                "locations": [
+                    {
+                        "location_id": item["location_id"],
+                        "location_name": item["location_name"],
+                        "city": item.get("city"),
+                        "region": item.get("region"),
+                        "campaign_id": item.get("campaign_id"),
+                        "detail": reason["detail"],
+                        "evidence": reason.get("evidence"),
+                        "action_label": reason["action_label"],
+                        "action_href": reason["action_href"],
+                    }
+                    for item, reason in entries
+                ],
+            }
+        )
+    results.sort(
+        key=lambda item: (
+            _STATE_ORDER[str(item["severity"])],
+            -int(item["location_count"]),
+            str(item["title"]).lower(),
+        )
+    )
+    return results
+
+
+def _repeatable_win_candidates(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Surface evidence-backed examples to inspect, never unproven causal claims."""
+
+    measured = [item for item in items if item["performance"]["data_available"]]
+    candidates: list[dict[str, Any]] = []
+    search_candidate = _search_visibility_candidate(measured)
+    if search_candidate:
+        candidates.append(search_candidate)
+    review_candidate = _review_momentum_candidate(measured)
+    if review_candidate:
+        candidates.append(review_candidate)
+    website_candidate = _website_health_candidate(measured)
+    if website_candidate:
+        candidates.append(website_candidate)
+    return candidates
+
+
+def _search_visibility_candidate(items: list[dict[str, Any]]) -> dict[str, Any] | None:
+    ranked = [item for item in items if item["performance"]["avg_position"] is not None]
+    if len(ranked) < 2:
+        return None
+    source = min(ranked, key=lambda item: float(item["performance"]["avg_position"]))
+    source_position = float(source["performance"]["avg_position"])
+    if source_position > 10:
+        return None
+    targets = [
+        item
+        for item in ranked
+        if item["location_id"] != source["location_id"]
+        and float(item["performance"]["avg_position"]) >= max(10.0, source_position + 4.0)
+    ]
+    if not targets:
+        return None
+    targets.sort(key=lambda item: float(item["performance"]["avg_position"]), reverse=True)
+    return _win_candidate(
+        code="search_visibility_example",
+        title=f"Learn from {source['location_name']}'s stronger search visibility",
+        summary=(
+            f"{source['location_name']} is averaging about #{source_position:.1f}, while "
+            f"{len(targets)} other location{'s are' if len(targets) != 1 else ' is'} further down. "
+            "Compare its leading pages and searches before reusing any approach."
+        ),
+        source=source,
+        source_metric={"label": "Average Google position", "value": round(source_position, 1)},
+        targets=targets,
+        target_metric=lambda item: {
+            "label": "Average Google position",
+            "value": round(float(item["performance"]["avg_position"]), 1),
+        },
+        action_label="Compare search rankings",
+        action_href="/rankings",
+    )
+
+
+def _review_momentum_candidate(items: list[dict[str, Any]]) -> dict[str, Any] | None:
+    reviewed = [
+        item
+        for item in items
+        if item["performance"]["avg_rating_last_30d"] is not None
+    ]
+    if len(reviewed) < 2:
+        return None
+    source = max(
+        reviewed,
+        key=lambda item: (
+            int(item["performance"]["reviews_last_30d"]),
+            float(item["performance"]["avg_rating_last_30d"]),
+        ),
+    )
+    source_reviews = int(source["performance"]["reviews_last_30d"])
+    source_rating = float(source["performance"]["avg_rating_last_30d"])
+    if source_reviews < 3 or source_rating < 4.5:
+        return None
+    targets = [
+        item
+        for item in reviewed
+        if item["location_id"] != source["location_id"]
+        and (
+            int(item["performance"]["reviews_last_30d"]) <= max(1, source_reviews // 2)
+            or float(item["performance"]["avg_rating_last_30d"]) < 4.5
+        )
+    ]
+    if not targets:
+        return None
+    targets.sort(key=lambda item: int(item["performance"]["reviews_last_30d"]))
+    return _win_candidate(
+        code="review_momentum_example",
+        title=f"Learn from {source['location_name']}'s recent review momentum",
+        summary=(
+            f"{source['location_name']} recorded {source_reviews} recent reviews at "
+            f"{source_rating:.1f} stars. Compare its approved review routine with "
+            f"{len(targets)} location{'s' if len(targets) != 1 else ''} that may need help."
+        ),
+        source=source,
+        source_metric={
+            "label": "Recent reviews and rating",
+            "value": f"{source_reviews} reviews at {source_rating:.1f} stars",
+        },
+        targets=targets,
+        target_metric=lambda item: {
+            "label": "Recent reviews and rating",
+            "value": (
+                f"{int(item['performance']['reviews_last_30d'])} reviews at "
+                f"{float(item['performance']['avg_rating_last_30d']):.1f} stars"
+            ),
+        },
+        action_label="Compare customer reviews",
+        action_href="/reviews",
+    )
+
+
+def _website_health_candidate(items: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if len(items) < 2:
+        return None
+    source = min(items, key=lambda item: int(item["performance"]["technical_issue_count"]))
+    if int(source["performance"]["technical_issue_count"]) != 0:
+        return None
+    targets = [
+        item
+        for item in items
+        if item["location_id"] != source["location_id"]
+        and int(item["performance"]["technical_issue_count"]) > 0
+    ]
+    if not targets:
+        return None
+    targets.sort(key=lambda item: int(item["performance"]["technical_issue_count"]), reverse=True)
+    return _win_candidate(
+        code="website_health_example",
+        title=f"Use {source['location_name']}'s healthy website as a comparison",
+        summary=(
+            f"The latest saved check found no website problems for {source['location_name']}, "
+            f"while {len(targets)} other location{'s have' if len(targets) != 1 else ' has'} issues. "
+            "Compare the setup before turning it into a shared checklist."
+        ),
+        source=source,
+        source_metric={"label": "Website problems", "value": 0},
+        targets=targets,
+        target_metric=lambda item: {
+            "label": "Website problems",
+            "value": int(item["performance"]["technical_issue_count"]),
+        },
+        action_label="Compare website health",
+        action_href="/site-health",
+    )
+
+
+def _win_candidate(
+    *,
+    code: str,
+    title: str,
+    summary: str,
+    source: dict[str, Any],
+    source_metric: dict[str, Any],
+    targets: list[dict[str, Any]],
+    target_metric: Any,
+    action_label: str,
+    action_href: str,
+) -> dict[str, Any]:
+    return {
+        "code": code,
+        "title": title,
+        "summary": summary,
+        "source": {
+            "location_id": source["location_id"],
+            "location_name": source["location_name"],
+            "campaign_id": source.get("campaign_id"),
+            "metric": source_metric,
+        },
+        "targets": [
+            {
+                "location_id": item["location_id"],
+                "location_name": item["location_name"],
+                "campaign_id": item.get("campaign_id"),
+                "metric": target_metric(item),
+            }
+            for item in targets
+        ],
+        "action": {
+            "label": action_label,
+            "href": action_href,
+            "campaign_id": source.get("campaign_id"),
+        },
+        "guardrail": (
+            "This is a comparison clue, not proof that one tactic caused the result. "
+            "Review the evidence before copying anything."
+        ),
     }
 
 

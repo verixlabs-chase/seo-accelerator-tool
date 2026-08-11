@@ -3081,7 +3081,8 @@ dashboard ten times.
 
 Implementation status (2026-08-10):
 
-- **ML1A is implemented locally.** The Locations page now leads with a
+- **ML1A is implemented and published in draft PR #27**, stacked on the DT1
+  connection-health PR. The Locations page now leads with a
   tenant-scoped portfolio overview that ranks up to three active locations
   needing attention from saved hierarchy, connection, search-position,
   website-issue, review, and open-action facts. Every priority includes its
@@ -3091,9 +3092,16 @@ Implementation status (2026-08-10):
   position, recent rating, or website issues without running another paid
   provider check. Choosing a row carries that location into its relevant
   customer workflow.
-- Shared-problem grouping, trends, repeatable-win detection, maps, alerts,
-  governed saved groups, immutable bulk target snapshots, fan-out execution,
-  delegation, and pooled allowance controls remain later ML1 slices.
+- **ML1B is implemented locally.** Matching evidence codes are grouped into
+  shared problems only when at least two active locations are affected, while
+  every location keeps its own supporting value and direct action. The same
+  portfolio response also surfaces up to three measured locations worth
+  learning from across search visibility, review momentum, and website health.
+  These comparisons carry an explicit non-causal guardrail and never claim a
+  stronger location's tactic produced the result.
+- Trends, maps, alerts, governed saved groups, immutable bulk target snapshots,
+  fan-out execution, delegation, and pooled allowance controls remain later
+  ML1 slices.
 
 Scope:
 

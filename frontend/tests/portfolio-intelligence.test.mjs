@@ -24,3 +24,19 @@ test("portfolio comparison is sortable and opens the chosen location", () => {
   assert.match(source, /Most website problems/);
   assert.match(source, /setSelectedCampaignId\(campaignId\)/);
 });
+
+test("portfolio groups shared problems without hiding location evidence", () => {
+  assert.match(source, /Problems affecting more than one location/);
+  assert.match(source, /portfolio\.shared_issues/);
+  assert.match(source, /issue\.locations\.map/);
+  assert.match(source, /location\.evidence\.label/);
+  assert.match(source, /location\.action_label/);
+});
+
+test("portfolio suggests measured examples without claiming causation", () => {
+  assert.match(source, /Locations worth learning from/);
+  assert.match(source, /portfolio\.repeatable_wins/);
+  assert.match(source, /Example to inspect/);
+  assert.match(source, /does not claim that one tactic caused the result/);
+  assert.match(source, /win\.guardrail/);
+});
