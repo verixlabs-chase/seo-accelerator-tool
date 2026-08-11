@@ -106,6 +106,42 @@ type ReportMetric = {
   result: "improved" | "declined" | "about_the_same" | "not_enough_information";
   unit: string;
   explanation?: string;
+  source?: {
+    label?: string;
+    system?: string;
+    last_updated?: string | null;
+  };
+  coverage?: {
+    current?: ReportCoverage;
+    comparison?: ReportCoverage;
+  };
+};
+
+type ReportCoverage = {
+  state?: "complete" | "partial" | "unavailable" | string;
+  observed?: number;
+  expected?: number;
+};
+
+type ReportTrendPoint = {
+  date?: string;
+  [key: string]: string | number | null | undefined;
+};
+
+type ReportTrendSeries = {
+  key: string;
+  title?: string;
+  description?: string;
+  source_label?: string;
+  points?: ReportTrendPoint[];
+  comparison_points?: ReportTrendPoint[];
+};
+
+type ReportActionMeasurement = {
+  label?: string;
+  explanation?: string;
+  status?: string;
+  check_after_days?: number | null;
 };
 
 type ReportStoryItem = {
@@ -115,6 +151,13 @@ type ReportStoryItem = {
   result?: string;
   status?: string;
   completed_at?: string | null;
+  canonical_action_id?: string;
+  why_it_matters?: string;
+  steps?: string[];
+  owner_role?: string;
+  effort?: string;
+  evidence?: string[];
+  measurement?: ReportActionMeasurement;
 };
 
 type ReportSnapshot = {
@@ -136,6 +179,7 @@ type ReportSnapshot = {
     summary?: string;
   };
   metrics?: ReportMetric[];
+  trend_series?: ReportTrendSeries[];
   wins?: ReportStoryItem[];
   risks?: ReportStoryItem[];
   completed_actions?: ReportStoryItem[];
@@ -308,6 +352,158 @@ function storyList(items: ReportStoryItem[], empty: string) {
   );
 }
 
+function canonicalStoryKey(item: ReportStoryItem) {
+  return (item.canonical_action_id || item.title || item.id || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function uniqueStories(items: ReportStoryItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = canonicalStoryKey(item);
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function nextActionList(items: ReportStoryItem[]) {
+  const uniqueItems = uniqueStories(items);
+  if (!uniqueItems.length) {
+    return <p className="text-sm leading-6 text-zinc-400">No verified next action is ready yet.</p>;
+  }
+  return (
+    <div className="space-y-3">
+      {uniqueItems.map((item, index) => {
+        const measurement = item.measurement;
+        const checkLabel = measurement?.check_after_days
+          ? `Check ${measurement.label || "the saved measurement"} again after ${measurement.check_after_days} days.`
+          : `Measure ${measurement?.label || "the saved result"} before and after the work.`;
+        return (
+          <article key={item.id || canonicalStoryKey(item)} className="grid gap-3 rounded-md border border-[#26272c] bg-[#0f1012] p-4 sm:grid-cols-[2rem_1fr]">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-500 text-sm font-bold text-white">
+              {index + 1}
+            </span>
+            <div>
+              <h5 className="font-semibold text-white">{item.title}</h5>
+              <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+                {item.why_it_matters || item.detail || "This action is tied to the saved evidence for this location."}
+              </p>
+              {item.steps?.length ? (
+                <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-zinc-200">
+                  {item.steps.map((step) => <li key={step}>{step}</li>)}
+                </ol>
+              ) : null}
+              <div className="mt-3 border-l-2 border-emerald-500 bg-emerald-500/5 px-3 py-2 text-xs leading-5 text-emerald-100">
+                <span className="font-semibold">How we will check it:</span> {checkLabel} {measurement?.explanation || ""}
+              </div>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function reportTrendChart({
+  series,
+  field,
+  label,
+  unit,
+}: {
+  series: ReportTrendSeries;
+  field: string;
+  label: string;
+  unit: string;
+}) {
+  const current = (series.points || []).filter((point) => typeof point[field] === "number");
+  const comparison = (series.comparison_points || []).filter((point) => typeof point[field] === "number");
+  const values = [...current, ...comparison].map((point) => Number(point[field]));
+  if (!values.length) {
+    return null;
+  }
+  let minimum = Math.min(...values);
+  let maximum = Math.max(...values);
+  if (Math.abs(maximum - minimum) < 0.0001) {
+    const padding = Math.max(Math.abs(maximum) * 0.1, 1);
+    minimum -= padding;
+    maximum += padding;
+  }
+  const coordinates = (points: ReportTrendPoint[]) => points.map((point, index) => {
+    const x = 38 + (index / Math.max(points.length - 1, 1)) * 562;
+    const y = 15 + ((maximum - Number(point[field])) / (maximum - minimum)) * 125;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <article className="rounded-md border border-[#26272c] bg-[#0f1012] p-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-sm font-semibold text-white">{label}</p>
+        <p className="text-[10px] text-zinc-500">Orange: current · Blue: earlier</p>
+      </div>
+      <svg viewBox="0 0 620 175" role="img" aria-label={`${label} trend`} className="mt-2 w-full">
+        <line x1="38" y1="15" x2="38" y2="140" stroke="#3f3f46" />
+        <line x1="38" y1="140" x2="600" y2="140" stroke="#3f3f46" />
+        <line x1="38" y1="77.5" x2="600" y2="77.5" stroke="#27272a" />
+        <text x="0" y="20" fontSize="10" fill="#71717a">{maximum.toLocaleString(undefined, { maximumFractionDigits: 1 })}</text>
+        <text x="0" y="143" fontSize="10" fill="#71717a">{minimum.toLocaleString(undefined, { maximumFractionDigits: 1 })}</text>
+        {comparison.length ? <polyline points={coordinates(comparison)} fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="7 6" /> : null}
+        {current.length ? <polyline points={coordinates(current)} fill="none" stroke="#ff5c1a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
+        <text x="38" y="165" fontSize="10" fill="#71717a">{String(current[0]?.date || "")}</text>
+        <text x="600" y="165" textAnchor="end" fontSize="10" fill="#71717a">{String(current[current.length - 1]?.date || "")}</text>
+      </svg>
+      <p className="mt-1 text-xs leading-5 text-zinc-400">{series.description} Values shown in {unit}.</p>
+    </article>
+  );
+}
+
+function trendVisualizations(series: ReportTrendSeries[]) {
+  const byKey = new Map(series.map((item) => [item.key, item]));
+  const definitions = [
+    ["google_discovery", "visits", "Visits from Google", "visits"],
+    ["google_discovery", "appearances", "Times shown on Google", "appearances"],
+    ["tracked_rankings", "average_position", "Average tracked keyword position", "position number"],
+    ["website_scans", "issues", "Issues found in website scans", "issues"],
+    ["review_growth", "reviews", "Recent review pace", "reviews"],
+  ];
+  const charts = definitions.map(([key, field, label, unit]) => {
+    const item = byKey.get(key);
+    return item ? reportTrendChart({ series: item, field, label, unit }) : null;
+  }).filter(Boolean);
+  if (!charts.length) {
+    return <p className="text-sm leading-6 text-zinc-400">No dated trend values are available yet. Charts will appear as connected data is saved.</p>;
+  }
+  return <div className="grid gap-3 xl:grid-cols-2">{charts}</div>;
+}
+
+function dataSourceList(metrics: ReportMetric[]) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-left text-xs">
+        <thead className="text-zinc-500">
+          <tr><th className="pb-2 pr-4">Measurement</th><th className="pb-2 pr-4">Source</th><th className="pb-2 pr-4">Last updated</th><th className="pb-2">Coverage</th></tr>
+        </thead>
+        <tbody className="divide-y divide-[#26272c] text-zinc-300">
+          {metrics.map((metric) => {
+            const coverage = metric.coverage?.current;
+            return (
+              <tr key={metric.key}>
+                <td className="py-2.5 pr-4 font-medium text-white">{metric.label}</td>
+                <td className="py-2.5 pr-4">{metric.source?.label || "Saved InsightOS data"}</td>
+                <td className="py-2.5 pr-4">{metric.source?.last_updated || "Not available"}</td>
+                <td className="py-2.5">{toTitleCase(coverage?.state)} ({coverage?.observed || 0} of {coverage?.expected || 0})</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function buildReportSections(report?: ReportItem, providedSnapshot?: ReportSnapshot): ReportSection[] {
   const summary = providedSnapshot || parseSummary(report?.summary_json);
 
@@ -341,6 +537,11 @@ function buildReportSections(report?: ReportItem, providedSnapshot?: ReportSnaps
         ),
       },
       {
+        title: "Performance over time",
+        summary: "The solid orange lines show this report period. Dashed blue lines show the earlier period when a valid comparison is available.",
+        visual: trendVisualizations(summary.trend_series || []),
+      },
+      {
         title: "What improved",
         summary: "Only changes supported by the saved comparison are shown as wins.",
         metric: `${summary.wins?.length || 0} wins`,
@@ -363,8 +564,14 @@ function buildReportSections(report?: ReportItem, providedSnapshot?: ReportSnaps
       },
       {
         title: "What to do next",
-        summary: "Start with the first item. These priorities belong only to the business named in this report.",
-        visual: storyList(summary.next_priorities || [], "No next action is ready yet."),
+        summary: "Start with the first item. Every action appears once, includes the practical steps, and names the measurement used to check whether it helped.",
+        metric: `${uniqueStories(summary.next_priorities || []).length} actions`,
+        visual: nextActionList(summary.next_priorities || []),
+      },
+      {
+        title: "Where the numbers came from",
+        summary: "Missing or partial data is shown plainly instead of being treated as zero.",
+        visual: dataSourceList(metrics),
       },
     ];
   }

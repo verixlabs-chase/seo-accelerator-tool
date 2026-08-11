@@ -18,6 +18,24 @@ test("premium reports lead with a plain-language progress story and visual compa
   assert.match(reportsPage, /from the earlier period/);
   assert.match(reportsPage, /text-emerald-400/);
   assert.match(reportsPage, /text-rose-400/);
+  assert.match(reportsPage, /Performance over time/);
+  assert.match(reportsPage, /reportTrendChart/);
+  assert.match(reportsPage, /Orange: current/);
+});
+
+test("premium reports expose metric provenance and do not hide missing coverage", () => {
+  assert.match(reportsPage, /Where the numbers came from/);
+  assert.match(reportsPage, /Missing or partial data is shown plainly instead of being treated as zero/);
+  assert.match(reportsPage, /metric\.source\?\.label/);
+  assert.match(reportsPage, /coverage\?\.observed/);
+});
+
+test("premium reports deduplicate and fully explain next actions", () => {
+  assert.match(reportsPage, /uniqueStories/);
+  assert.match(reportsPage, /canonical_action_id/);
+  assert.match(reportsPage, /How we will check it/);
+  assert.match(reportsPage, /item\.steps/);
+  assert.match(reportsPage, /measurement\?\.check_after_days/);
 });
 
 test("premium reports keep completed work separate from measured results", () => {

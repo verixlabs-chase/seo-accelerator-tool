@@ -456,7 +456,7 @@ def test_rpt1_report_freezes_location_story_and_regenerates_same_snapshot(client
     assert detail.status_code == 200
     payload = detail.json()["data"]
     snapshot = payload["snapshot"]
-    assert snapshot["schema_version"] == "rpt1-owner-v1"
+    assert snapshot["schema_version"] == "rpt1-owner-v2"
     assert len(snapshot["snapshot_hash"]) == 64
     assert snapshot["campaign"]["id"] == campaign.id
     assert snapshot["campaign"]["location_name"] == "Reno Service Team"
@@ -466,6 +466,15 @@ def test_rpt1_report_freezes_location_story_and_regenerates_same_snapshot(client
     assert visits["previous"] == 100
     assert visits["change_percent"] == 50.0
     assert visits["result"] == "improved"
+    assert visits["source"]["label"] == "Google Search Console"
+    assert visits["coverage"]["current"]["state"] == "partial"
+    website_issues = next(metric for metric in snapshot["metrics"] if metric["key"] == "website_issues")
+    assert website_issues["current"] is None
+    assert website_issues["coverage"]["current"]["state"] == "unavailable"
+    google_trend = next(item for item in snapshot["trend_series"] if item["key"] == "google_discovery")
+    assert len(google_trend["points"]) == 2
+    assert google_trend["points"][-1]["visits"] == 100
+    assert any(item["metric_key"] == "google_visits" for item in snapshot["source"]["metric_inventory"])
     assert "Reno Service Team" in snapshot["executive_summary"]["headline"]
 
     original_summary = payload["report"]["summary_json"]
@@ -483,3 +492,125 @@ def test_rpt1_report_freezes_location_story_and_regenerates_same_snapshot(client
     assert refreshed.status_code == 200
     assert refreshed.json()["data"]["report"]["summary_json"] == original_summary
     assert refreshed.json()["data"]["snapshot"]["snapshot_hash"] == snapshot["snapshot_hash"]
+
+
+def test_report_next_actions_are_unique_detailed_and_measurable(client, db_session):
+    from datetime import UTC, date, datetime, timedelta
+
+    from app.models.action_plan import ActionPlanOccurrence
+    from app.models.campaign import Campaign
+    from app.models.campaign_daily_metric import CampaignDailyMetric
+    from app.models.intelligence import StrategyRecommendation
+
+    token = _login(client, "a@example.com", "pass-a")
+    campaign_data = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Detailed Report Campaign", "domain": "detailed-report.example"},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+    campaign = db_session.get(Campaign, campaign_data["id"])
+    assert campaign is not None
+    observed_end = date(2026, 8, 10)
+    db_session.add(
+        CampaignDailyMetric(
+            organization_id=campaign.organization_id,
+            portfolio_id=campaign.portfolio_id,
+            sub_account_id=campaign.sub_account_id,
+            campaign_id=campaign.id,
+            metric_date=observed_end,
+            clicks=10,
+            impressions=100,
+            avg_position=8.0,
+            technical_issue_count=0,
+            intelligence_score=70,
+            reviews_last_30d=0,
+            avg_rating_last_30d=None,
+            normalization_version="analytics-v1",
+            deterministic_hash="d" * 64,
+        )
+    )
+    action_ids = [
+        "reputation.launch_review_request_workflow",
+        "reputation.launch_review_request_workflow",
+        "reputation.launch_review_request_workflow",
+        "reputation.restore_review_momentum",
+    ]
+    due_base = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
+    for index, action_id in enumerate(action_ids):
+        recommendation = StrategyRecommendation(
+            tenant_id=campaign.tenant_id,
+            campaign_id=campaign.id,
+            recommendation_type=action_id,
+            rationale="The saved review pace needs attention.",
+            confidence=0.82,
+            confidence_score=0.82,
+            evidence_json='{"evidence":["The recent review pace is below the saved goal."]}',
+            risk_tier=2,
+            rollback_plan_json='{"steps":[]}',
+            status="GENERATED",
+            idempotency_key=f"report-action-rec-{index}",
+        )
+        db_session.add(recommendation)
+        db_session.flush()
+        db_session.add(
+            ActionPlanOccurrence(
+                tenant_id=campaign.tenant_id,
+                organization_id=campaign.organization_id,
+                campaign_id=campaign.id,
+                business_location_id=campaign.business_location_id,
+                recommendation_id=recommendation.id,
+                action_id=action_id,
+                cadence="weekly",
+                period_key=f"2026-W{32 + index}",
+                timezone="UTC",
+                due_at=due_base + timedelta(days=index),
+                status="ready",
+                lexicon_id="seo-intelligence-core",
+                lexicon_version="1.0.0",
+                content_hash=f"{index + 1}" * 64,
+                idempotency_key=f"report-action-occurrence-{index}",
+            )
+        )
+    db_session.commit()
+
+    generated = client.post(
+        "/api/v1/reports/generate",
+        json={"campaign_id": campaign.id, "month_number": 9},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert generated.status_code == 200
+    report_id = generated.json()["data"]["id"]
+    detail_payload = client.get(
+        f"/api/v1/reports/{report_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+    snapshot = detail_payload["snapshot"]
+
+    priorities = snapshot["next_priorities"]
+    assert len(priorities) == 2
+    assert len({item["canonical_action_id"] for item in priorities}) == 2
+    assert all(item["steps"] for item in priorities)
+    assert all(item["why_it_matters"] for item in priorities)
+    assert all(item["measurement"]["label"] for item in priorities)
+    assert all(item["measurement"]["check_after_days"] for item in priorities)
+
+    html_artifact = next(item for item in detail_payload["artifacts"] if item["artifact_type"] == "html")
+    html_response = client.get(
+        f"/api/v1/reports/{report_id}/artifacts/{html_artifact['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert html_response.status_code == 200
+    html = html_response.text
+    assert "Performance over time" in html
+    assert "Where the numbers came from" in html
+    assert "How results will be checked" in html
+    assert html.count("Ask completed customers for reviews consistently</h3>") == 1
+
+    pdf_artifact = next(item for item in detail_payload["artifacts"] if item["artifact_type"] == "pdf")
+    pdf_response = client.get(
+        f"/api/v1/reports/{report_id}/artifacts/{pdf_artifact['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert pdf_response.status_code == 200
+    assert b"What to do next" in pdf_response.content
+    assert b"Measure:" in pdf_response.content
