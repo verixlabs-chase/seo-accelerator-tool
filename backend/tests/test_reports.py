@@ -1,8 +1,21 @@
+import tomllib
 from io import BytesIO
+from pathlib import Path
 
 from pypdf import PdfReader
 
 from app.services import report_artifact_storage_service, reporting_service
+
+
+def test_report_pdf_dependency_is_declared_for_vercel_runtime():
+    backend_root = Path(__file__).resolve().parents[1]
+    with (backend_root / "pyproject.toml").open("rb") as project_file:
+        project_dependencies = tomllib.load(project_file)["project"]["dependencies"]
+
+    runtime_requirements = (backend_root / "requirements.txt").read_text(encoding="utf-8").splitlines()
+
+    assert any(dependency.lower().startswith("reportlab==") for dependency in project_dependencies)
+    assert any(requirement.lower().startswith("reportlab==") for requirement in runtime_requirements)
 
 
 class _WrappedDatabaseError(Exception):
