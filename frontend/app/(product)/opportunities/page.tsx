@@ -44,6 +44,7 @@ import {
   getWorkProgress,
 } from "../truth/actionPlan.mjs";
 import { simplifyCustomerCopy } from "../truth/customerLanguage.mjs";
+import { ProgressMilestones } from "./ProgressMilestones";
 
 const EXECUTION_CONSOLE_ENABLED =
   process.env.NEXT_PUBLIC_EXECUTION_CONSOLE_ENABLED !== "false";
@@ -2803,6 +2804,10 @@ export default function OpportunitiesPage() {
                   </section>
                 ) : null}
               </section>
+            ) : null}
+
+            {selectedCampaignId ? (
+              <ProgressMilestones campaignId={selectedCampaignId} />
             ) : null}
 
             <details className="rounded-md border border-violet-500/20 bg-[linear-gradient(135deg,rgba(139,92,246,0.07),rgba(20,21,24,0.96)_52%)] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">

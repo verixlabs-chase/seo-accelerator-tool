@@ -43,6 +43,7 @@ from app.models.governed_ai import GovernedAIRun
 from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
+from app.models.engagement import AchievementGrant, AchievementPreference
 from app.models.intelligence import (
     AnomalyEvent,
     CampaignMilestone,
@@ -196,6 +197,8 @@ __all__ = [
     "CompetitorEntity",
     "EntityAnalysisRun",
     "Entitlement",
+    "AchievementGrant",
+    "AchievementPreference",
     "KeywordCluster",
     "CampaignKeyword",
     "KeywordDailyEconomics",

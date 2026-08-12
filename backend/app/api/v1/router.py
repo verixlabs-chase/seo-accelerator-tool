@@ -17,6 +17,7 @@ from app.api.v1 import (
     debug_live_validation,
     dashboard,
     entity,
+    engagement,
     executions,
     google_oauth,
     google_business_profile_campaigns,
@@ -62,6 +63,7 @@ tenant_api_router.include_router(data_connections.router)
 if settings.app_env.lower() != 'production':
     tenant_api_router.include_router(debug_live_validation.router)
 tenant_api_router.include_router(entity.router)
+tenant_api_router.include_router(engagement.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
 tenant_api_router.include_router(google_business_profile_campaigns.router)
 tenant_api_router.include_router(rank.router)

@@ -221,6 +221,24 @@ EVENT_SPECS: dict[str, ProductEventSpec] = {
             "active",
         ),
         ProductEventSpec(
+            "achievement.earned",
+            "engagement",
+            "customer-experience",
+            "Measure evidence-backed milestone grants without counting clicks or page views.",
+            "1.0",
+            730,
+            {
+                "category": _values("foundation", "habit", "verified_result", "multi_location"),
+                "rule_key": _values(
+                    "foundation.location_ready",
+                    "foundation.first_live_sync",
+                    "foundation.first_trustworthy_baseline",
+                ),
+            },
+            frozenset({"category", "rule_key"}),
+            "active",
+        ),
+        ProductEventSpec(
             "forecast.viewed",
             "forecasting",
             "measurement",
