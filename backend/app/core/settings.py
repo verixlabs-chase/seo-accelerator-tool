@@ -119,6 +119,13 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_from_email: str = ""
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_solo: str = ""
+    stripe_price_growth: str = ""
+    stripe_api_base_url: str = "https://api.stripe.com/v1"
+    stripe_http_timeout_seconds: float = 15.0
+    stripe_webhook_tolerance_seconds: int = 300
     proxy_provider_config_json: str = ""
     log_level: str = "INFO"
     metrics_enabled: bool = False

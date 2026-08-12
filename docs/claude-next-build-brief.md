@@ -3385,9 +3385,37 @@ Implementation status (August 11, 2026):
   and execution-dispatch layers. Growth and Enterprise remain eligible; saved
   data and rollback recovery are not removed by this gate.
 - Focused backend enforcement tests, customer plan UI tests, and the production
-  frontend build pass. Stripe Checkout, signed/idempotent webhooks, subscription
-  recovery, plan changes, the remaining allowance gates, and entitlement-ledger
-  materialization remain in the next COM1 slice.
+  frontend build pass.
+
+#### COM1.2 - Subscription Lifecycle and Payment Recovery
+
+Implementation status (August 12, 2026):
+
+- The first billing-lifecycle slice is implemented locally. Organization-scoped
+  subscription state now records the billing customer, subscription, configured
+  price, current period, cancellation timing, last provider-event time, and a
+  customer-safe payment recovery code.
+- Organization owners can start a hosted subscription checkout or open the
+  customer billing portal. Return URLs are constructed from the configured
+  customer-app origin rather than accepted from the browser, and Enterprise
+  remains a custom-terms path.
+- The webhook endpoint verifies the signed raw request within a bounded replay
+  window. A durable receipt ledger hashes but does not retain raw provider
+  payloads, rejects conflicting organization/customer identifiers, processes an
+  event ID once, and ignores older state changes that arrive late.
+- Active or trialing subscriptions update the internal commercial plan only
+  when the configured Price ID and plan metadata agree. Payment failure keeps
+  the current plan and saved data while prompting recovery; a completed
+  cancellation returns authorization to Solo without deleting customer work.
+- Settings now shows billing health, secure upgrade and management actions, and
+  a plain-language payment recovery path. The application never returns secret
+  keys or raw billing-provider errors to the customer.
+- Focused lifecycle tests cover owner-only checkout, signature rejection,
+  replay rejection, duplicate delivery, plan activation, payment failure, and
+  cancellation. Remaining COM1 work includes Stripe environment provisioning,
+  live test-mode checkout/webhook evidence, portal policy configuration,
+  allowance materialization across every governed capability, invitations,
+  password recovery, session revocation, and downgrade grace/export rules.
 
 Packaging principle:
 

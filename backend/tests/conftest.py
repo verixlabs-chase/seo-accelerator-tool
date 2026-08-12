@@ -29,6 +29,7 @@ from app.core.passwords import hash_password
 from app.services.operational_telemetry_service import reset_operational_telemetry
 
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
+from app.models.billing import BillingWebhookEvent  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
 from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard  # noqa: F401
@@ -217,6 +218,7 @@ def _verify_required_tables(database_url: str) -> None:
             "product_analytics_events",
             "product_feedback",
             "support_requests",
+            "billing_webhook_events",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:

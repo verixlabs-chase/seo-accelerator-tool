@@ -152,6 +152,11 @@ an old key until the new active key is ready to deploy, and remove transition
 keys after sessions or encrypted credential rows have been migrated. Follow
 [the TR1 security and recovery runbook](./platform/runbooks/tr1_security_recovery.md).
 
+Subscription billing is optional until COM1 is activated. When it is ready,
+follow the [Stripe billing runbook](./operations/stripe-billing-runbook.md) and
+store all `STRIPE_*` variables only on the backend Vercel project. The frontend
+does not receive a secret or call Stripe directly.
+
 ## 6. Store report files privately in Supabase
 
 Create a private Supabase Storage bucket named `insightos-reports`, then create

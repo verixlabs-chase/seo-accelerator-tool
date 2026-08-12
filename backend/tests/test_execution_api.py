@@ -44,6 +44,8 @@ def test_execution_api_run_retry_cancel_flow(client, db_session, create_test_org
     tenant_id = acting_user.tenant_id
 
     org = create_test_org(tenant_id=tenant_id, name='API Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
     campaign = create_test_campaign(
         db_session,
         org.id,

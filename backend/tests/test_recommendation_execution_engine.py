@@ -12,6 +12,8 @@ from tests.conftest import create_test_campaign
 def test_schedule_and_execute_recommendation_idempotently(db_session, create_test_tenant, create_test_org) -> None:
     tenant = create_test_tenant(name='Exec Tenant')
     org = create_test_org(tenant_id=tenant.id, name='Exec Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
     campaign = create_test_campaign(
         db_session,
         org.id,

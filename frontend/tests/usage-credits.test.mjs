@@ -27,7 +27,9 @@ test("settings explains the current plan and the practical reason to upgrade", (
 
   assert.match(settings, /Your plan/);
   assert.match(settings, /included \{usageAllowance\.plan\.included_locations === 1/);
-  assert.match(settings, /Ask about upgrading/);
+  assert.match(settings, /Upgrade securely/);
+  assert.match(settings, /Manage billing/);
+  assert.match(settings, /Payment needs attention/);
   assert.match(settings, /usageAllowance\.upgrade\.reasons/);
 });
 

@@ -5,6 +5,7 @@ from app.api.v1 import (
     auth,
     automation,
     authority,
+    billing,
     business_locations,
     business_services,
     business_service_areas,
@@ -53,6 +54,7 @@ settings = get_settings()
 tenant_api_router.include_router(health.router)
 tenant_api_router.include_router(tenants.router)
 tenant_api_router.include_router(auth.router)
+tenant_api_router.include_router(billing.router)
 tenant_api_router.include_router(automation.router)
 tenant_api_router.include_router(campaigns.router)
 tenant_api_router.include_router(crawl.router)

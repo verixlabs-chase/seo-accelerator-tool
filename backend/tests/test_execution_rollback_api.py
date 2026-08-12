@@ -19,6 +19,8 @@ def test_execution_rollback_api(client, db_session, create_test_org) -> None:
     acting_user = db_session.query(User).filter(User.email == 'org-admin@example.com').first()
     assert acting_user is not None
     org = create_test_org(tenant_id=acting_user.tenant_id, name='Rollback API Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
     campaign = create_test_campaign(db_session, org.id, tenant_id=acting_user.tenant_id, name='Rollback API Campaign', domain='rollback-api.example')
     recommendation = StrategyRecommendation(
         tenant_id=acting_user.tenant_id,

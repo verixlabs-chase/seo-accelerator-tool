@@ -181,6 +181,20 @@ type UsageAllowance = {
   } | null;
 };
 
+type BillingSummary = {
+  provider_configured: boolean;
+  plan_code: string;
+  plan_name: string;
+  status: string;
+  status_label: string;
+  portal_available: boolean;
+  checkout_available: boolean;
+  available_checkout_plans: string[];
+  current_period_end?: string | null;
+  cancel_at_period_end: boolean;
+  recovery_message?: string | null;
+};
+
 const primaryButtonClass =
   "inline-flex items-center justify-center rounded-md border border-accent-500/40 bg-accent-500/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-accent-500/70 hover:bg-accent-500/25 disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryButtonClass =
@@ -244,6 +258,7 @@ export default function SettingsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [payload, setPayload] = useState<ConnectionsPayload | null>(null);
   const [usageAllowance, setUsageAllowance] = useState<UsageAllowance | null>(null);
+  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
   const [resources, setResources] = useState<SearchConsoleResource[]>([]);
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
   const [profileResources, setProfileResources] = useState<BusinessProfileResource[]>([]);
@@ -391,17 +406,27 @@ export default function SettingsPage() {
           throw new Error("An organization is required to manage data connections.");
         }
         setMe(currentUser);
-        const [campaignResponse, connectionResponse, allowanceResponse] = await Promise.all([
+        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
           platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
+          (platformApi("/billing/summary", { method: "GET" }) as Promise<BillingSummary>)
+            .catch(() => null),
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
+        setBillingSummary(billingResponse);
         const returnParams = new URLSearchParams(window.location.search);
+        const billingReturned = returnParams.get("billing");
         const googleReturned = returnParams.get("google");
         const returnSource = returnParams.get("source");
-        if (googleReturned === "connected") {
+        if (billingReturned === "success") {
+          setNotice("Checkout finished. We are confirming your plan now; access changes only after confirmation.");
+          window.history.replaceState({}, "", "/settings");
+        } else if (billingReturned === "cancelled") {
+          setNotice("Checkout was closed. Your current plan and saved work were not changed.");
+          window.history.replaceState({}, "", "/settings");
+        } else if (googleReturned === "connected") {
           setNotice(
             returnSource === "business-profile"
               ? "Google business listings are connected. Match each location to its listing next."
@@ -424,6 +449,39 @@ export default function SettingsPage() {
     }
     void loadPage();
   }, [loadConnections, loadProfileResources, loadResources]);
+
+  async function startCheckout(planCode: string) {
+    setBusyAction("billing-checkout");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi("/billing/checkout", {
+        method: "POST",
+        body: JSON.stringify({ plan_code: planCode }),
+      })) as { url?: string };
+      if (!response.url) throw new Error("The secure checkout link was not created.");
+      window.location.assign(response.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to open secure checkout.");
+      setBusyAction("");
+    }
+  }
+
+  async function manageBilling() {
+    setBusyAction("billing-portal");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi("/billing/portal", {
+        method: "POST",
+      })) as { url?: string };
+      if (!response.url) throw new Error("The secure billing link was not created.");
+      window.location.assign(response.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to open billing settings.");
+      setBusyAction("");
+    }
+  }
 
   async function connectGoogle(scopeTarget: "gsc" | "gbp" = "gsc") {
     if (!organizationId) return;
@@ -877,6 +935,22 @@ export default function SettingsPage() {
 
             {usageAllowance ? (
               <section aria-labelledby="current-plan-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                {billingSummary?.recovery_message ? (
+                  <div className="mb-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-50">
+                    <p className="font-semibold">Payment needs attention</p>
+                    <p className="mt-1 leading-6 text-amber-100/80">{billingSummary.recovery_message}</p>
+                    {billingSummary.portal_available ? (
+                      <button
+                        type="button"
+                        className={`${primaryButtonClass} mt-3`}
+                        disabled={busyAction === "billing-portal"}
+                        onClick={() => void manageBilling()}
+                      >
+                        {busyAction === "billing-portal" ? "Opening..." : "Update payment method"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
@@ -888,6 +962,12 @@ export default function SettingsPage() {
                     <p className="mt-2 text-sm text-zinc-300">
                       {usageAllowance.plan.active_locations} of {usageAllowance.plan.included_locations} included {usageAllowance.plan.included_locations === 1 ? "location" : "locations"} in use
                     </p>
+                    {billingSummary ? (
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Billing: {billingSummary.status_label}
+                        {billingSummary.cancel_at_period_end ? " · Ends after the current billing period" : ""}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="grid gap-2 text-sm sm:grid-cols-2 lg:max-w-2xl">
                     {usageAllowance.capabilities.filter((item) => item.available).slice(0, 4).map((item) => (
@@ -912,8 +992,43 @@ export default function SettingsPage() {
                           ))}
                         </ul>
                       </div>
-                      <button type="button" className={secondaryButtonClass} onClick={() => window.location.assign("/help")}>Ask about upgrading</button>
+                      <div className="flex flex-wrap gap-2">
+                        {billingSummary?.provider_configured &&
+                        billingSummary.available_checkout_plans.includes(usageAllowance.upgrade.plan_code) ? (
+                          <button
+                            type="button"
+                            className={primaryButtonClass}
+                            disabled={busyAction === "billing-checkout"}
+                            onClick={() => void startCheckout(usageAllowance.upgrade!.plan_code)}
+                          >
+                            {busyAction === "billing-checkout" ? "Opening checkout..." : "Upgrade securely"}
+                          </button>
+                        ) : (
+                          <button type="button" className={secondaryButtonClass} onClick={() => window.location.assign("/help")}>Ask about upgrading</button>
+                        )}
+                        {billingSummary?.portal_available ? (
+                          <button
+                            type="button"
+                            className={secondaryButtonClass}
+                            disabled={busyAction === "billing-portal"}
+                            onClick={() => void manageBilling()}
+                          >
+                            {busyAction === "billing-portal" ? "Opening..." : "Manage billing"}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
+                  </div>
+                ) : billingSummary?.portal_available ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-4">
+                    <button
+                      type="button"
+                      className={secondaryButtonClass}
+                      disabled={busyAction === "billing-portal"}
+                      onClick={() => void manageBilling()}
+                    >
+                      {busyAction === "billing-portal" ? "Opening..." : "Manage billing"}
+                    </button>
                   </div>
                 ) : null}
               </section>
