@@ -18,8 +18,11 @@ type Preview = {
   connected_account: boolean;
   completion_message: string;
   source_label: string;
+  competitors_included: GridCompetitor[];
+  competitor_limit: number;
   can_start: boolean;
 };
+type GridCompetitor = { id: string; domain: string; label?: string | null };
 type GridPoint = {
   id: string;
   keyword_id: string;
@@ -41,6 +44,7 @@ type GridRun = {
   radius_miles: number;
   center: { latitude: number; longitude: number };
   keywords: TrackedKeyword[];
+  competitors: GridCompetitor[];
   total_checks: number;
   completed_checks: number;
   failed_checks: number;
@@ -51,6 +55,34 @@ type GridRun = {
   created_at: string;
   completed_at?: string | null;
   points: GridPoint[];
+  competitor_points: CompetitorGridPoint[];
+  competitor_overlap_summary: CompetitorOverlapSummary[];
+};
+type CompetitorGridPoint = {
+  id: string;
+  point_id: string;
+  competitor_id: string;
+  competitor_domain: string;
+  competitor_label?: string | null;
+  keyword_id: string;
+  keyword: string;
+  grid_index: number;
+  status: "ranked" | "not_found";
+  rank?: number | null;
+  matched_business_name?: string | null;
+  captured_at?: string | null;
+};
+type CompetitorOverlapSummary = {
+  keyword_id: string;
+  keyword: string;
+  competitor_id: string;
+  competitor_domain: string;
+  competitor_label?: string | null;
+  comparable_points: number;
+  owner_ahead: number;
+  competitor_ahead: number;
+  tied: number;
+  competitor_found: number;
 };
 
 function markerStyle(point: GridPoint) {
@@ -103,6 +135,7 @@ export function LocalRankGridPanel({ campaignId }: { campaignId: string }) {
   const [runs, setRuns] = useState<GridRun[]>([]);
   const [activeRun, setActiveRun] = useState<GridRun | null>(null);
   const [activeKeywordId, setActiveKeywordId] = useState("");
+  const [activeBusinessId, setActiveBusinessId] = useState("owner");
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
@@ -114,6 +147,9 @@ export function LocalRankGridPanel({ campaignId }: { campaignId: string }) {
     setActiveRun(run);
     setActiveKeywordId((current) =>
       run.keywords.some((item) => item.id === current) ? current : run.keywords[0]?.id || "",
+    );
+    setActiveBusinessId((current) =>
+      current === "owner" || run.competitors.some((item) => item.id === current) ? current : "owner",
     );
     return run;
   }, []);
@@ -155,11 +191,30 @@ export function LocalRankGridPanel({ campaignId }: { campaignId: string }) {
     () => activeRun?.points.filter((point) => point.keyword_id === activeKeywordId) || [],
     [activeKeywordId, activeRun],
   );
+  const shownCompetitorPoints = useMemo(
+    () =>
+      activeRun?.competitor_points.filter(
+        (point) => point.keyword_id === activeKeywordId && point.competitor_id === activeBusinessId,
+      ) || [],
+    [activeBusinessId, activeKeywordId, activeRun],
+  );
   const mapCells = useMemo(() => {
     if (!activeRun) return [];
-    const byIndex = new Map(shownPoints.map((point) => [point.grid_index, point]));
+    const ownerByIndex = new Map(shownPoints.map((point) => [point.grid_index, point]));
+    const competitorByIndex = new Map(shownCompetitorPoints.map((point) => [point.grid_index, point]));
     return Array.from({ length: activeRun.grid_size * activeRun.grid_size }, (_, index) =>
-      byIndex.get(index) || {
+      activeBusinessId === "owner" && ownerByIndex.get(index)
+        ? ownerByIndex.get(index)!
+        : activeBusinessId !== "owner" && competitorByIndex.get(index)
+          ? {
+              ...ownerByIndex.get(index),
+              ...competitorByIndex.get(index),
+              row_index: ownerByIndex.get(index)?.row_index ?? Math.floor(index / activeRun.grid_size),
+              column_index: ownerByIndex.get(index)?.column_index ?? index % activeRun.grid_size,
+              latitude: ownerByIndex.get(index)?.latitude ?? activeRun.center.latitude,
+              longitude: ownerByIndex.get(index)?.longitude ?? activeRun.center.longitude,
+            }
+          : {
         id: `sparse-${activeKeywordId}-${index}`,
         keyword_id: activeKeywordId,
         keyword: activeRun.keywords.find((item) => item.id === activeKeywordId)?.keyword || "Search",
@@ -171,7 +226,18 @@ export function LocalRankGridPanel({ campaignId }: { campaignId: string }) {
         status: "sparse" as const,
       },
     );
-  }, [activeKeywordId, activeRun, shownPoints]);
+  }, [activeBusinessId, activeKeywordId, activeRun, shownCompetitorPoints, shownPoints]);
+  const activeCompetitor = useMemo(
+    () => activeRun?.competitors.find((item) => item.id === activeBusinessId) || null,
+    [activeBusinessId, activeRun],
+  );
+  const overlapSummary = useMemo(
+    () =>
+      activeRun?.competitor_overlap_summary.find(
+        (item) => item.keyword_id === activeKeywordId && item.competitor_id === activeBusinessId,
+      ) || null,
+    [activeBusinessId, activeKeywordId, activeRun],
+  );
   const isStale = useMemo(() => {
     if (!activeRun) return false;
     const timestamp = new Date(activeRun.completed_at || activeRun.created_at).getTime();
@@ -238,6 +304,7 @@ export function LocalRankGridPanel({ campaignId }: { campaignId: string }) {
       })) as { run: GridRun };
       setActiveRun(result.run);
       setActiveKeywordId(result.run.keywords[0]?.id || "");
+      setActiveBusinessId("owner");
       setRuns((current) => [result.run, ...current.filter((item) => item.id !== result.run.id)]);
       setPreview(null);
       setConfirmed(false);
@@ -365,11 +432,21 @@ export function LocalRankGridPanel({ campaignId }: { campaignId: string }) {
                 <div className="flex justify-between gap-4"><dt className="text-zinc-400">Search phrases</dt><dd className="text-zinc-100">{preview.keywords.length}</dd></div>
                 <div className="flex justify-between gap-4"><dt className="text-zinc-400">Map spots per phrase</dt><dd className="text-zinc-100">{preview.points_per_phrase}</dd></div>
                 <div className="flex justify-between gap-4"><dt className="text-zinc-400">Total checks</dt><dd className="text-zinc-100">{preview.total_checks}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-zinc-400">Competitors compared</dt><dd className="text-zinc-100">{preview.competitors_included.length}</dd></div>
                 <div className="flex justify-between gap-4"><dt className="text-zinc-400">Insight Credits</dt><dd className="font-semibold text-amber-100">{preview.estimated_credits}</dd></div>
                 {!preview.connected_account ? <div className="flex justify-between gap-4"><dt className="text-zinc-400">Credits available now</dt><dd className="text-zinc-100">{preview.credits_remaining}</dd></div> : null}
                 {!preview.connected_account ? <div className="flex justify-between gap-4"><dt className="text-zinc-400">Credits left afterward</dt><dd className="text-zinc-100">{preview.credits_after}</dd></div> : <div className="flex justify-between gap-4"><dt className="text-zinc-400">Usage</dt><dd className="text-zinc-100">Connected account · 0 credits</dd></div>}
               </dl>
               <p className="mt-3 text-xs leading-5 text-zinc-400">{preview.completion_message}</p>
+              {preview.competitors_included.length ? (
+                <p className="mt-2 text-xs leading-5 text-zinc-400">
+                  This same check will also save positions for {preview.competitors_included.map((item) => item.label || item.domain).join(", ")}. It does not add more map checks.
+                </p>
+              ) : (
+                <p className="mt-2 text-xs leading-5 text-zinc-400">
+                  Confirm competitors on the Competitors page before starting if you want a side-by-side map comparison.
+                </p>
+              )}
               <label className="mt-3 flex items-start gap-2 text-sm leading-5 text-zinc-200">
                 <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-1 accent-orange-500" />
                 I approve {preview.total_checks} Google Maps checks{preview.estimated_credits ? ` using ${preview.estimated_credits} Insight Credits` : " through my connected account"}.
@@ -420,6 +497,36 @@ export function LocalRankGridPanel({ campaignId }: { campaignId: string }) {
                   </button>
                 ))}
               </div>
+              <div className="border-b border-[#26272c] p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Show on the map</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setActiveBusinessId("owner")}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${activeBusinessId === "owner" ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-100" : "border-[#34353b] bg-[#141518] text-zinc-400"}`}
+                  >
+                    Your business
+                  </button>
+                  {activeRun.competitors.map((competitor) => (
+                    <button
+                      key={competitor.id}
+                      onClick={() => setActiveBusinessId(competitor.id)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${activeBusinessId === competitor.id ? "border-orange-500/40 bg-orange-500/15 text-orange-100" : "border-[#34353b] bg-[#141518] text-zinc-400"}`}
+                    >
+                      {competitor.label || competitor.domain}
+                    </button>
+                  ))}
+                </div>
+                {!activeRun.competitors.length ? (
+                  <p className="mt-2 text-xs text-zinc-500">This saved check did not include a confirmed competitor. Confirm one, then run a new area check.</p>
+                ) : null}
+              </div>
+              {activeCompetitor && overlapSummary ? (
+                <div className="grid grid-cols-3 border-b border-[#26272c] bg-[#121315] text-center text-xs">
+                  <div className="border-r border-[#26272c] p-3"><span className="block text-lg font-semibold text-emerald-300">{overlapSummary.owner_ahead}</span><span className="text-zinc-400">Spots where you lead</span></div>
+                  <div className="border-r border-[#26272c] p-3"><span className="block text-lg font-semibold text-orange-200">{overlapSummary.competitor_ahead}</span><span className="text-zinc-400">Spots where they lead</span></div>
+                  <div className="p-3"><span className="block text-lg font-semibold text-zinc-200">{overlapSummary.tied}</span><span className="text-zinc-400">Tied spots</span></div>
+                </div>
+              ) : null}
               <div className="relative h-[430px] overflow-hidden bg-[#0c0d0f]">
                 {mapUrl ? <iframe src={mapUrl} title="Reference map under local search results" className="h-full w-full border-0 opacity-70" loading="lazy" /> : null}
                 <div
@@ -429,7 +536,7 @@ export function LocalRankGridPanel({ campaignId }: { campaignId: string }) {
                   {mapCells.map((point) => (
                     <div
                       key={point.id}
-                      title={`${point.keyword}: ${point.rank ? `position ${point.rank}` : point.status.replace("_", " ")}`}
+                      title={`${activeCompetitor ? activeCompetitor.label || activeCompetitor.domain : "Your business"} · ${point.keyword}: ${point.rank ? `position ${point.rank}` : point.status.replace("_", " ")}`}
                       className={`grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold shadow-[0_3px_12px_rgba(0,0,0,0.75)] ${markerStyle(point)}`}
                       style={{ gridRow: point.row_index + 1, gridColumn: point.column_index + 1 }}
                     >
@@ -449,7 +556,9 @@ export function LocalRankGridPanel({ campaignId }: { campaignId: string }) {
                   <span><i className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full border border-dashed border-violet-200 bg-violet-950" />No point returned</span>
                   {isStale ? <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-100">Older saved result</span> : null}
                 </div>
-                <p className="mt-3 text-xs leading-5 text-zinc-500">Search positions come from Google Maps results. The street map underneath is only a geographic reference.</p>
+                <p className="mt-3 text-xs leading-5 text-zinc-500">
+                  The dots show {activeCompetitor ? activeCompetitor.label || activeCompetitor.domain : "your business"} for the selected search. Search positions come from Google Maps results. The street map underneath is only a geographic reference.
+                </p>
               </div>
             </div>
           )}

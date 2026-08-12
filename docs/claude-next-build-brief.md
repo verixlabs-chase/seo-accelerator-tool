@@ -2784,8 +2784,9 @@ Goal: add the deeper competitive research needed to replace the local-service
 parts of Semrush without delaying automated keyword discovery.
 
 Status (2026-08-12): organic competitor discovery, exact keyword/page-gap
-comparison, and comparable-period movement alerts are locally complete. Map,
-profile, authority, and expanded direct-action promotion slices remain.
+comparison, comparable-period movement alerts, and confirmed-competitor local
+grid overlap are locally complete. Profile, authority, and expanded
+direct-action promotion slices remain.
 
 Implementation record:
 
@@ -2816,11 +2817,17 @@ Implementation record:
   research runs. The page shows the prior and current saved positions and only
   raises a movement alert at three or more places. Missing prior evidence stays
   unavailable instead of being inferred as a new, lost, or improved result.
+- Each new local area-search run freezes a plan-limited list of confirmed
+  competitors and reuses the already returned Google Maps result set to save
+  their point-level positions. This creates no second map request and no extra
+  map-check charge. The owner can switch the same tracked phrase between their
+  business and each captured competitor, then see exact points where either
+  side leads or ties. Every row remains tied to one campaign, business location,
+  phrase, grid definition, run, and observation time; locations are never
+  blended.
 
 Remaining delivery slices:
 
-- Compare confirmed competitors across saved local-rank grid points and show
-  geographic overlap without blending locations.
 - Add Google Business Profile attribute and activity comparisons after the
   required production API access is available.
 - Add authority/referring-domain gaps through AUTH1.

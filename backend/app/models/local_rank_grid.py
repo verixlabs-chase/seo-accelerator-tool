@@ -48,9 +48,7 @@ class LocalRankGridRun(Base):
         ),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -79,6 +77,7 @@ class LocalRankGridRun(Base):
     provider_location_name: Mapped[str] = mapped_column(String(255), nullable=False)
     provider_location_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     keyword_snapshot: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    competitor_snapshot: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
     keyword_count: Mapped[int] = mapped_column(Integer, nullable=False)
     total_checks: Mapped[int] = mapped_column(Integer, nullable=False)
     completed_checks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -94,9 +93,7 @@ class LocalRankGridRun(Base):
     estimated_cost: Mapped[Decimal] = mapped_column(
         Numeric(18, 8), nullable=False, default=Decimal("0")
     )
-    provider_reported_cost: Mapped[Decimal | None] = mapped_column(
-        Numeric(18, 8), nullable=True
-    )
+    provider_reported_cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     estimated_credit_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     target_business_name: Mapped[str] = mapped_column(String(255), nullable=False)
     target_domain: Mapped[str | None] = mapped_column(String(320), nullable=True)
@@ -109,7 +106,9 @@ class LocalRankGridRun(Base):
     metric_contract_version: Mapped[str] = mapped_column(String(40), nullable=False, default="1.0")
     grid_definition_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="legacy")
     language_code: Mapped[str] = mapped_column(String(16), nullable=False, default="en")
-    device_class: Mapped[str] = mapped_column(String(20), nullable=False, default="provider_default")
+    device_class: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="provider_default"
+    )
     provider_method: Mapped[str] = mapped_column(String(80), nullable=False, default="maps_search")
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -151,9 +150,7 @@ class LocalRankGridPoint(Base):
         ),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     run_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("local_rank_grid_runs.id", ondelete="CASCADE"),
@@ -211,5 +208,85 @@ class LocalRankGridPoint(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class LocalRankGridCompetitorPoint(Base):
+    __tablename__ = "local_rank_grid_competitor_points"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "competitor_id",
+            "keyword_id",
+            "grid_index",
+            name="uq_local_rank_grid_competitor_points_scope",
+        ),
+        CheckConstraint(
+            "status in ('ranked','not_found')",
+            name="ck_local_rank_grid_competitor_points_status",
+        ),
+        CheckConstraint(
+            "rank is null or rank >= 1",
+            name="ck_local_rank_grid_competitor_points_rank",
+        ),
+        Index(
+            "ix_local_rank_grid_competitor_points_run_keyword",
+            "run_id",
+            "keyword_id",
+            "competitor_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("local_rank_grid_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    point_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("local_rank_grid_points.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    business_location_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("business_locations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    competitor_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("competitors.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    competitor_domain: Mapped[str] = mapped_column(String(320), nullable=False)
+    competitor_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    keyword_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("campaign_keywords.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    keyword: Mapped[str] = mapped_column(String(255), nullable=False)
+    grid_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    matched_business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    matched_business_domain: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
