@@ -19,6 +19,7 @@ from app.models.organization_oauth_client import OrganizationOAuthClient
 GOOGLE_PROVIDER_NAME = "google"
 GOOGLE_OAUTH_SCOPE_TARGET_GSC = "gsc"
 GOOGLE_OAUTH_SCOPE_TARGET_GBP = "gbp"
+GOOGLE_OAUTH_SCOPE_TARGET_ANALYTICS = "analytics"
 
 
 class GoogleOAuthError(RuntimeError):
@@ -388,6 +389,8 @@ def _resolve_google_oauth_scope(scope_target: str) -> str:
         return settings.google_oauth_scope_gsc
     if normalized_target == GOOGLE_OAUTH_SCOPE_TARGET_GBP:
         return settings.google_oauth_scope_gbp
+    if normalized_target == GOOGLE_OAUTH_SCOPE_TARGET_ANALYTICS:
+        return settings.google_oauth_scope_analytics
     # Backward-compatible fallback for callers that still rely on the legacy single scope setting.
     return settings.google_oauth_scope
 

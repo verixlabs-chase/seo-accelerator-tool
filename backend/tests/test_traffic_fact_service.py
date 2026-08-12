@@ -180,3 +180,49 @@ def test_analytics_sync_replay_mode_skips_provider_calls(db_session, monkeypatch
     assert result.replay_skipped is True
     assert result.provider_calls == 0
     assert db_session.query(AnalyticsDailyMetric).filter(AnalyticsDailyMetric.campaign_id == campaign.id).count() == 0
+
+
+def test_analytics_sync_uses_mapped_property_and_current_engagement_metrics(
+    db_session,
+    monkeypatch,
+) -> None:
+    organization_id = _organization_id(db_session)
+    campaign = _campaign(db_session, organization_id)
+    calls: list[dict] = []
+
+    class _AnalyticsAdapter:
+        def __init__(self, **_kwargs):
+            pass
+
+        def execute(self, request):
+            calls.append(dict(request.payload))
+            return SimpleNamespace(
+                success=True,
+                raw_payload={
+                    "rows": [
+                        {
+                            "dimension_values": {"date": "20260810"},
+                            "metric_values": {
+                                "sessions": 12,
+                                "engagedSessions": 9,
+                                "keyEvents": 2,
+                            },
+                        }
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(traffic_fact_service, "GoogleAnalyticsProviderAdapter", _AnalyticsAdapter)
+    result = traffic_fact_service.sync_analytics_daily_metrics_for_campaign(
+        db=db_session,
+        campaign=campaign,
+        start_date="2026-08-10",
+        end_date="2026-08-10",
+        property_id="properties/123456789",
+    )
+
+    row = db_session.query(AnalyticsDailyMetric).filter_by(campaign_id=campaign.id).one()
+    assert result.inserted_rows == 1
+    assert calls[0]["property_id"] == "123456789"
+    assert calls[0]["metrics"] == ["sessions", "engagedSessions", "keyEvents"]
+    assert (row.sessions, row.engaged_sessions, row.conversions) == (12, 9, 2)

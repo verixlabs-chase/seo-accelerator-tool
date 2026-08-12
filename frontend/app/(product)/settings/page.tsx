@@ -51,6 +51,15 @@ type BusinessProfileResource = {
   primary_category: string;
 };
 
+type AnalyticsResource = {
+  id: string;
+  name: string;
+  account_name: string;
+  property_type: string;
+  can_edit: boolean;
+  resource_scope: string;
+};
+
 type DataConnection = {
   id: string;
   provider_name: string;
@@ -75,6 +84,7 @@ type ConnectionsPayload = {
     approved_access?: {
       search_console: boolean;
       business_profile: boolean;
+      website_analytics: boolean;
     };
     updated_at?: string | null;
   };
@@ -263,6 +273,8 @@ export default function SettingsPage() {
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
   const [profileResources, setProfileResources] = useState<BusinessProfileResource[]>([]);
   const [profileDrafts, setProfileDrafts] = useState<Record<string, string>>({});
+  const [analyticsResources, setAnalyticsResources] = useState<AnalyticsResource[]>([]);
+  const [analyticsDrafts, setAnalyticsDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadingResources, setLoadingResources] = useState(false);
   const [busyAction, setBusyAction] = useState("");
@@ -299,6 +311,10 @@ export default function SettingsPage() {
     () => connections.filter((connection) => connection.provider_name === "google_business_profile"),
     [connections],
   );
+  const analyticsConnections = useMemo(
+    () => connections.filter((connection) => connection.provider_name === "google_analytics"),
+    [connections],
+  );
   const connectionByCampaign = useMemo(
     () => new Map(searchConsoleConnections.map((connection) => [connection.campaign_id, connection])),
     [searchConsoleConnections],
@@ -306,6 +322,10 @@ export default function SettingsPage() {
   const profileConnectionByCampaign = useMemo(
     () => new Map(profileConnections.map((connection) => [connection.campaign_id, connection])),
     [profileConnections],
+  );
+  const analyticsConnectionByCampaign = useMemo(
+    () => new Map(analyticsConnections.map((connection) => [connection.campaign_id, connection])),
+    [analyticsConnections],
   );
   const websiteMappingsComplete =
     manageableCampaigns.length > 0 &&
@@ -344,6 +364,17 @@ export default function SettingsPage() {
       const seeded = { ...current };
       for (const connection of (next.connections || []).filter(
         (item) => item.provider_name === "google_business_profile",
+      )) {
+        if (!seeded[connection.campaign_id]) {
+          seeded[connection.campaign_id] = connection.external_resource_id;
+        }
+      }
+      return seeded;
+    });
+    setAnalyticsDrafts((current) => {
+      const seeded = { ...current };
+      for (const connection of (next.connections || []).filter(
+        (item) => item.provider_name === "google_analytics",
       )) {
         if (!seeded[connection.campaign_id]) {
           seeded[connection.campaign_id] = connection.external_resource_id;
@@ -396,6 +427,27 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadAnalyticsResources = useCallback(async (orgId: string) => {
+    setLoadingResources(true);
+    setError("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${orgId}/data-connections/google-analytics/resources`,
+        { method: "GET" },
+      )) as { resources?: AnalyticsResource[] };
+      setAnalyticsResources(response.resources || []);
+      if ((response.resources || []).length === 0) {
+        setNotice(
+          "Google is connected, but no website analytics properties were returned. Confirm that this Google account can view the correct property.",
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load website analytics properties.");
+    } finally {
+      setLoadingResources(false);
+    }
+  }, []);
+
   useEffect(() => {
     async function loadPage() {
       setLoading(true);
@@ -430,11 +482,15 @@ export default function SettingsPage() {
           setNotice(
             returnSource === "business-profile"
               ? "Google business listings are connected. Match each location to its listing next."
+              : returnSource === "analytics"
+                ? "Website analytics is connected. Match each location to its analytics property next."
               : "Google Search Console is connected. Match each location to its website next.",
           );
           window.history.replaceState({}, "", "/settings");
           if (returnSource === "business-profile") {
             await loadProfileResources(currentUser.organization_id);
+          } else if (returnSource === "analytics") {
+            await loadAnalyticsResources(currentUser.organization_id);
           } else {
             await loadResources(currentUser.organization_id);
           }
@@ -448,7 +504,7 @@ export default function SettingsPage() {
       }
     }
     void loadPage();
-  }, [loadConnections, loadProfileResources, loadResources]);
+  }, [loadAnalyticsResources, loadConnections, loadProfileResources, loadResources]);
 
   async function startCheckout(planCode: string) {
     setBusyAction("billing-checkout");
@@ -483,7 +539,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function connectGoogle(scopeTarget: "gsc" | "gbp" = "gsc") {
+  async function connectGoogle(scopeTarget: "gsc" | "gbp" | "analytics" = "gsc") {
     if (!organizationId) return;
     setBusyAction(`oauth-${scopeTarget}`);
     setError("");
@@ -492,9 +548,13 @@ export default function SettingsPage() {
       const returnPath = guidedConnectionSetup
         ? scopeTarget === "gbp"
           ? "/settings?setup=connections&source=business-profile"
+          : scopeTarget === "analytics"
+            ? "/settings?setup=connections&source=analytics"
           : "/settings?setup=connections"
         : scopeTarget === "gbp"
           ? "/settings?source=business-profile"
+          : scopeTarget === "analytics"
+            ? "/settings?source=analytics"
           : "/settings";
       const response = (await platformApi(
         `/organizations/${organizationId}/providers/google/oauth/start?scope_target=${scopeTarget}&return_path=${encodeURIComponent(returnPath)}`,
@@ -591,11 +651,57 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveAnalyticsMapping(campaign: Campaign) {
+    if (!organizationId) return;
+    const resourceId = analyticsDrafts[campaign.id] || "";
+    const resource = analyticsResources.find((item) => item.id === resourceId);
+    if (!resourceId || !resource) {
+      setError("Choose the website analytics property for this location.");
+      return;
+    }
+    setBusyAction(`analytics-mapping-${campaign.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const mappingResponse = (await platformApi(
+        `/organizations/${organizationId}/data-connections/google-analytics/mappings/${campaign.id}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            external_resource_id: resource.id,
+            external_resource_name: resource.name,
+          }),
+        },
+      )) as { connection?: DataConnection };
+      const connectionId = mappingResponse.connection?.id;
+      if (!connectionId) throw new Error("The website analytics match was not saved.");
+      const syncResponse = (await platformApi(
+        `/organizations/${organizationId}/data-connections/${connectionId}/sync`,
+        { method: "POST" },
+      )) as { job?: { status?: string } };
+      await loadConnections(organizationId);
+      setNotice(
+        syncResponse.job?.status === "completed"
+          ? `${campaign.name} is matched and its first website visit history is ready.`
+          : `${campaign.name} is matched. Its first website visit update is queued.`,
+      );
+    } catch (err) {
+      await loadConnections(organizationId).catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Unable to save this analytics match.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function syncConnection(connection: DataConnection) {
     if (!organizationId) return;
     if (connection.status === "reconnect_required") {
       await connectGoogle(
-        connection.provider_name === "google_business_profile" ? "gbp" : "gsc",
+        connection.provider_name === "google_business_profile"
+          ? "gbp"
+          : connection.provider_name === "google_analytics"
+            ? "analytics"
+            : "gsc",
       );
       return;
     }
@@ -639,6 +745,10 @@ export default function SettingsPage() {
     }
     if (item.provider_name === "google_business_profile") {
       await connectGoogle("gbp");
+      return;
+    }
+    if (item.provider_name === "google_analytics") {
+      await connectGoogle("analytics");
       return;
     }
     await connectGoogle("gsc");
@@ -1495,20 +1605,173 @@ export default function SettingsPage() {
               </section>
             ) : null}
 
-            <section>
-              <article className="rounded-md border border-[#292a2f] bg-[#141518] p-5 opacity-80">
-                <span className="rounded-full border border-zinc-500/25 bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-300">
-                  Planned later
-                </span>
-                <h2 className="mt-3 text-lg font-semibold text-white">
-                  Website analytics and forms
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-zinc-400">
-                  Visits and website form events will be added after Search Console synchronization
-                  is proven reliable. No CRM or call-tracking dependency is planned.
-                </p>
-              </article>
+            <section id="google-analytics-connection" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">
+                      Website visits and inquiries
+                    </h2>
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        payload?.google_oauth.approved_access?.website_analytics
+                          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                          : "border-amber-500/25 bg-amber-500/10 text-amber-100"
+                      }`}
+                    >
+                      {payload?.google_oauth.approved_access?.website_analytics
+                        ? "Access approved"
+                        : "Connection required"}
+                    </span>
+                  </div>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
+                    See how many people visit the website, how many stay and engage, and how many
+                    complete an approved inquiry action. Each location keeps its own history.
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                    This is read-only. CRM, call tracking, sales, and payment data are not included.
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    className={secondaryButtonClass}
+                    disabled={
+                      !payload?.google_oauth.approved_access?.website_analytics || loadingResources
+                    }
+                    onClick={() => void loadAnalyticsResources(organizationId)}
+                  >
+                    {loadingResources ? "Loading properties..." : "Load analytics properties"}
+                  </button>
+                  <button
+                    className={primaryButtonClass}
+                    disabled={busyAction === "oauth-analytics"}
+                    onClick={() => void connectGoogle("analytics")}
+                  >
+                    {payload?.google_oauth.approved_access?.website_analytics
+                      ? "Reconnect website analytics"
+                      : "Connect website analytics"}
+                  </button>
+                </div>
+              </div>
             </section>
+
+            {payload?.google_oauth.approved_access?.website_analytics && manageableCampaigns.length > 0 ? (
+              <section id="analytics-mappings" className="space-y-3">
+                <div>
+                  <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">
+                    Match analytics to locations
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    Choose the property that measures each location&apos;s website. This keeps results
+                    from separate businesses from being mixed together.
+                  </p>
+                </div>
+                {manageableCampaigns.map((campaign) => {
+                  const connection = analyticsConnectionByCampaign.get(campaign.id);
+                  const statusView = connection ? getConnectionStatusView(connection) : null;
+                  const selectedResource =
+                    analyticsDrafts[campaign.id] || connection?.external_resource_id || "";
+                  return (
+                    <article
+                      key={`analytics-${campaign.id}`}
+                      className="rounded-md border border-[#292a2f] bg-[#141518] p-5"
+                    >
+                      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)_auto] lg:items-center">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold text-white">{campaign.name}</h3>
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                                statusView
+                                  ? toneClasses(statusView.tone)
+                                  : "border-zinc-500/25 bg-zinc-500/10 text-zinc-300"
+                              }`}
+                            >
+                              {statusView?.label || "Analytics not matched"}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-zinc-500">
+                            {connection
+                              ? `${statusView?.summary} Last successful update: ${formatTimestamp(connection.last_success_at)}.`
+                              : "Choose the website analytics property for this business location."}
+                          </p>
+                        </div>
+                        <div>
+                          <label
+                            htmlFor={`analytics-resource-${campaign.id}`}
+                            className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500"
+                          >
+                            Website analytics property
+                          </label>
+                          <select
+                            id={`analytics-resource-${campaign.id}`}
+                            className={selectClass}
+                            value={selectedResource}
+                            disabled={
+                              analyticsResources.length === 0 || Boolean(connection?.last_success_at)
+                            }
+                            onChange={(event) =>
+                              setAnalyticsDrafts((current) => ({
+                                ...current,
+                                [campaign.id]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">
+                              {analyticsResources.length === 0
+                                ? "Load available properties first"
+                                : "Choose a property"}
+                            </option>
+                            {analyticsResources.map((resource) => (
+                              <option key={resource.id} value={resource.id}>
+                                {resource.name} · {resource.account_name}
+                              </option>
+                            ))}
+                            {connection &&
+                            !analyticsResources.some(
+                              (resource) => resource.id === connection.external_resource_id,
+                            ) ? (
+                              <option value={connection.external_resource_id}>
+                                {connection.external_resource_name || connection.external_resource_id}
+                              </option>
+                            ) : null}
+                          </select>
+                        </div>
+                        <div className="flex lg:justify-end">
+                          {connection ? (
+                            <button
+                              className={secondaryButtonClass}
+                              disabled={
+                                busyAction === `sync-${connection.id}` ||
+                                connection.status === "syncing"
+                              }
+                              onClick={() => void syncConnection(connection)}
+                            >
+                              {busyAction === `sync-${connection.id}`
+                                ? "Updating..."
+                                : statusView?.action || "Check now"}
+                            </button>
+                          ) : (
+                            <button
+                              className={primaryButtonClass}
+                              disabled={
+                                busyAction === `analytics-mapping-${campaign.id}` ||
+                                !selectedResource
+                              }
+                              onClick={() => void saveAnalyticsMapping(campaign)}
+                            >
+                              {busyAction === `analytics-mapping-${campaign.id}`
+                                ? "Connecting..."
+                                : "Match and start first update"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            ) : null}
           </>
         )}
       </section>

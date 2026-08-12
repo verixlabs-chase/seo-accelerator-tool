@@ -101,13 +101,14 @@ https://your-api-project.vercel.app/api/v1/providers/google/oauth/callback
 ```
 
 Create a Google Cloud OAuth web client, enable the Google Search Console API,
-and register that exact authorized redirect URI. Then set these backend
-variables:
+Google Analytics Data API, and Google Analytics Admin API, and register that
+exact authorized redirect URI. Then set these backend variables:
 
 ```text
 GOOGLE_OAUTH_CLIENT_ID=<web-client-id>
 GOOGLE_OAUTH_CLIENT_SECRET=<web-client-secret>
 GOOGLE_OAUTH_SCOPE_GSC=https://www.googleapis.com/auth/webmasters.readonly
+GOOGLE_OAUTH_SCOPE_ANALYTICS=https://www.googleapis.com/auth/analytics.readonly
 CUSTOMER_APP_BASE_URL=https://your-frontend-project.vercel.app
 DATA_CONNECTION_INITIAL_BACKFILL_DAYS=480
 DATA_CONNECTION_SYNC_DELAY_DAYS=2
@@ -120,10 +121,12 @@ frontend destination after OAuth completes. Add the frontend production URL to
 `CORS_ORIGINS` for direct API use. Preview deployments normally use the
 same-origin proxy and do not need wildcard CORS.
 
-The Search Console authorization is read-only. OAuth access and refresh tokens
-are encrypted through the existing organization credential store. Website
-property identifiers and per-location mappings are stored separately in
-`data_connections`; raw tokens are never exposed to the frontend.
+The Search Console and Analytics authorizations are read-only. OAuth access and
+refresh tokens are encrypted through the existing organization credential
+store. Website property identifiers and per-location mappings are stored
+separately in `data_connections`; raw tokens are never exposed to the frontend.
+Adding the Analytics scope to a production OAuth consent screen may require a
+new Google verification review before customers can approve it.
 
 Generate secrets locally:
 

@@ -31,6 +31,11 @@ class BusinessProfileMappingIn(BaseModel):
     external_resource_id: str = Field(..., min_length=1, max_length=120)
 
 
+class AnalyticsMappingIn(BaseModel):
+    external_resource_id: str = Field(..., min_length=1, max_length=120)
+    external_resource_name: str | None = Field(default=None, max_length=500)
+
+
 def _raise_connection_error(exc: data_connections_service.DataConnectionError) -> None:
     raise HTTPException(
         status_code=exc.status_code,
@@ -70,10 +75,10 @@ def get_data_connections(
                     "purpose": "Business profile, reviews, and local search activity.",
                 },
                 {
-                    "provider_name": "website_analytics",
+                    "provider_name": data_connections_service.GOOGLE_ANALYTICS_PROVIDER,
                     "label": "Website analytics and forms",
-                    "status": "planned",
-                    "purpose": "Website visits and form-conversion events.",
+                    "status": "available",
+                    "purpose": "Website visits, engaged visits, and approved inquiry events.",
                 },
             ],
         },
@@ -195,6 +200,57 @@ def get_search_console_resources(
 
 
 @router.get(
+    "/organizations/{organization_id}/data-connections/google-analytics/resources"
+)
+def get_google_analytics_resources(
+    request: Request,
+    organization_id: str,
+    user: dict = Depends(require_org_role({"org_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    enforce_organization_scope(user=user, organization_id=organization_id, allow_platform=False)
+    try:
+        resources = data_connections_service.discover_google_analytics_resources(
+            db,
+            organization_id,
+        )
+    except data_connections_service.DataConnectionError as exc:
+        _raise_connection_error(exc)
+    return envelope(
+        request,
+        {
+            "organization_id": organization_id,
+            "provider_name": data_connections_service.GOOGLE_ANALYTICS_PROVIDER,
+            "resources": resources,
+        },
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/data-connections/google-analytics/metrics/{campaign_id}"
+)
+def get_google_analytics_metrics(
+    request: Request,
+    organization_id: str,
+    campaign_id: str,
+    days: int = Query(default=90, ge=7, le=480),
+    user: dict = Depends(require_org_role({"org_user"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    enforce_organization_scope(user=user, organization_id=organization_id, allow_platform=False)
+    try:
+        payload = data_connections_service.get_google_analytics_metrics(
+            db,
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            days=days,
+        )
+    except data_connections_service.DataConnectionError as exc:
+        _raise_connection_error(exc)
+    return envelope(request, payload)
+
+
+@router.get(
     "/organizations/{organization_id}/data-connections/"
     "google-search-console/metrics/{campaign_id}"
 )
@@ -269,6 +325,43 @@ def map_search_console_resource(
     )
 
 
+@router.put(
+    "/organizations/{organization_id}/data-connections/google-analytics/mappings/{campaign_id}"
+)
+def map_google_analytics_resource(
+    request: Request,
+    organization_id: str,
+    campaign_id: str,
+    body: AnalyticsMappingIn,
+    user: dict = Depends(require_org_role({"org_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    enforce_organization_scope(user=user, organization_id=organization_id, allow_platform=False)
+    try:
+        connection = data_connections_service.upsert_google_analytics_mapping(
+            db,
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            external_resource_id=body.external_resource_id,
+            external_resource_name=body.external_resource_name,
+            actor_user_id=user["id"],
+        )
+    except data_connections_service.DataConnectionError as exc:
+        _raise_connection_error(exc)
+    campaign = db.get(Campaign, connection.campaign_id)
+    location = db.get(BusinessLocation, connection.business_location_id)
+    return envelope(
+        request,
+        {
+            "connection": data_connections_service.serialize_connection(
+                connection,
+                campaign=campaign,
+                location=location,
+            )
+        },
+    )
+
+
 @router.post(
     "/organizations/{organization_id}/data-connections/{connection_id}/sync"
 )
@@ -292,6 +385,7 @@ def sync_data_connection(
         raise HTTPException(status_code=404, detail="Data connection not found.")
     if connection.provider_name not in {
         data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER,
+        data_connections_service.GOOGLE_ANALYTICS_PROVIDER,
         google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER,
     }:
         raise HTTPException(status_code=400, detail="This connection cannot be synchronized yet.")
@@ -303,6 +397,13 @@ def sync_data_connection(
     try:
         if connection.provider_name == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER:
             job = durable_job_service.run_search_console_sync_now(
+                db,
+                tenant_id=connection.tenant_id,
+                organization_id=organization_id,
+                connection_id=connection.id,
+            )
+        elif connection.provider_name == data_connections_service.GOOGLE_ANALYTICS_PROVIDER:
+            job = durable_job_service.run_google_analytics_sync_now(
                 db,
                 tenant_id=connection.tenant_id,
                 organization_id=organization_id,

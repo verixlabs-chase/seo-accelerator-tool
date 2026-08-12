@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     google_oauth_scope: str = "https://www.googleapis.com/auth/business.manage"
     google_oauth_scope_gbp: str = "https://www.googleapis.com/auth/business.manage"
     google_oauth_scope_gsc: str = "https://www.googleapis.com/auth/webmasters.readonly"
+    google_oauth_scope_analytics: str = "https://www.googleapis.com/auth/analytics.readonly"
     google_oauth_auth_endpoint: str = "https://accounts.google.com/o/oauth2/v2/auth"
     google_oauth_token_endpoint: str = "https://oauth2.googleapis.com/token"
     google_oauth_state_ttl_seconds: int = 600

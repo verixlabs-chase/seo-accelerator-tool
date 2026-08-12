@@ -643,8 +643,8 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 27 | **CX1 - Guided Onboarding, Education, and Support — completed locally** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
 | 28 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
 | 29 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
-| 30 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
-| 31 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
+| 30 | **ENG1 - Verified Progress Rewards and Healthy Habits - published in PR #50** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
+| 31 | **G1.7 - Website Analytics and Form Events - G1.7A implemented** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
 | 32 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
 | 33 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
 | 34 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
@@ -1675,6 +1675,18 @@ Acceptance criteria:
 
 Goal: connect website behavior to search visibility without introducing the
 deferred CRM, call-tracking, job-management, payment, or revenue scope.
+
+Implementation status (2026-08-12):
+
+- **G1.7A is implemented.** An organization can request Google's
+  read-only Analytics scope, discover its GA4 properties, map one property to
+  each business location, run idempotent durable backfills, and retrieve daily
+  visits, engaged visits, and approved key-event totals in plain language.
+  Connection Health now tracks this third Google source per location.
+- **G1.7B remains next.** It will add landing-page and source/medium facts, a
+  privacy-minimized first-party website-form event contract with deduplication,
+  search-to-visit and visit-to-inquiry visualizations, and broken-tracking
+  alerts. It will not add CRM, call tracking, job, payment, or revenue data.
 
 Scope:
 

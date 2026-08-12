@@ -42,6 +42,7 @@ class AnalyticsDailyMetricInput:
     metric_date: date
     sessions: int
     conversions: int
+    engaged_sessions: int = 0
 
 
 @dataclass(frozen=True)
@@ -243,6 +244,7 @@ def sync_analytics_daily_metrics_for_campaign(
     campaign: Campaign,
     start_date: date | str,
     end_date: date | str,
+    property_id: str | None = None,
 ) -> TrafficFactSyncResult:
     resolved_start = _coerce_date(start_date)
     resolved_end = _coerce_date(end_date)
@@ -280,9 +282,11 @@ def sync_analytics_daily_metrics_for_campaign(
             replay_skipped=True,
         )
 
-    credentials = resolve_provider_credentials(db, organization_id, 'google')
-    property_id = _resolve_property_id(credentials=credentials)
-    if not property_id:
+    resolved_property_id = str(property_id or "").removeprefix("properties/").strip()
+    if not resolved_property_id:
+        credentials = resolve_provider_credentials(db, organization_id, 'google')
+        resolved_property_id = _resolve_property_id(credentials=credentials)
+    if not resolved_property_id:
         raise ValueError('Google Analytics property id missing for campaign traffic fact sync.')
     adapter = GoogleAnalyticsProviderAdapter(db=db)
 
@@ -296,11 +300,11 @@ def sync_analytics_daily_metrics_for_campaign(
                 payload={
                     'organization_id': organization_id,
                     'campaign_id': campaign.id,
-                    'property_id': property_id,
+                    'property_id': resolved_property_id,
                     'start_date': range_start.isoformat(),
                     'end_date': range_end.isoformat(),
                     'dimensions': ['date'],
-                    'metrics': ['sessions', 'conversions'],
+                    'metrics': ['sessions', 'engagedSessions', 'keyEvents'],
                     'limit': 1000,
                 },
             )
@@ -311,15 +315,22 @@ def sync_analytics_daily_metrics_for_campaign(
             row_date = _extract_row_date(row)
             if row_date is None or row_date not in missing_dates:
                 continue
-            entry = metrics_by_day.setdefault(row_date, {'sessions': 0.0, 'conversions': 0.0})
+            entry = metrics_by_day.setdefault(
+                row_date,
+                {'sessions': 0.0, 'engaged_sessions': 0.0, 'conversions': 0.0},
+            )
             entry['sessions'] += _safe_float(_metric_value(row, 'sessions'))
-            entry['conversions'] += _safe_float(_metric_value(row, 'conversions'))
+            entry['engaged_sessions'] += _safe_float(_metric_value(row, 'engagedSessions'))
+            entry['conversions'] += _safe_float(_metric_value(row, 'keyEvents'))
 
     inserted_rows = 0
     updated_rows = 0
     skipped_rows = 0
     for metric_day in missing_dates:
-        values = metrics_by_day.get(metric_day, {'sessions': 0.0, 'conversions': 0.0})
+        values = metrics_by_day.get(
+            metric_day,
+            {'sessions': 0.0, 'engaged_sessions': 0.0, 'conversions': 0.0},
+        )
         outcome = upsert_analytics_daily_metric(
             db=db,
             metric_input=AnalyticsDailyMetricInput(
@@ -328,6 +339,7 @@ def sync_analytics_daily_metrics_for_campaign(
                 metric_date=metric_day,
                 sessions=int(round(float(values['sessions']))),
                 conversions=int(round(float(values['conversions']))),
+                engaged_sessions=int(round(float(values['engaged_sessions']))),
             ),
         )
         inserted_rows += int(outcome.inserted)
@@ -434,6 +446,7 @@ def _normalize_analytics_daily_metric(metric_input: AnalyticsDailyMetricInput) -
         'campaign_id': metric_input.campaign_id,
         'metric_date': metric_input.metric_date,
         'sessions': int(metric_input.sessions),
+        'engaged_sessions': int(metric_input.engaged_sessions),
         'conversions': int(metric_input.conversions),
     }
     payload['deterministic_hash'] = _stable_hash(payload)

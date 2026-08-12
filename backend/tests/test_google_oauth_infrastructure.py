@@ -87,6 +87,21 @@ def test_google_oauth_start_returns_org_scoped_state(client) -> None:
     assert state_payload["user_id"] == user["id"]
 
 
+def test_google_oauth_start_supports_read_only_analytics_scope(client) -> None:
+    token, organization_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    response = client.post(
+        f"/api/v1/organizations/{organization_id}/providers/google/oauth/start",
+        params={"scope_target": "analytics", "return_path": "/settings?source=analytics"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    query = parse_qs(urlparse(data["authorization_url"]).query)
+    assert query["scope"] == ["https://www.googleapis.com/auth/analytics.readonly"]
+    assert validate_google_oauth_state(data["state"])["scope_target"] == "analytics"
+
+
 def test_google_oauth_callback_can_return_to_customer_settings(client, monkeypatch) -> None:
     token, organization_id = _login(client, "org-admin@example.com", "pass-org-admin")
     start = client.post(
