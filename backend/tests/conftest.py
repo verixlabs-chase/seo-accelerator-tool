@@ -31,7 +31,7 @@ from app.services.operational_telemetry_service import reset_operational_telemet
 from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
 from app.models.billing import BillingWebhookEvent  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
-from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
+from app.models.content import ContentAsset, ContentBrief, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard  # noqa: F401
 from app.models.crawl import CrawlRun, Page, TechnicalIssue  # noqa: F401
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity  # noqa: F401
@@ -187,6 +187,7 @@ def _verify_required_tables(database_url: str) -> None:
             "local_rank_grid_runs",
             "local_rank_grid_points",
             "local_rank_grid_competitor_points",
+            "content_briefs",
             "google_business_profile_snapshots",
             "google_business_profile_daily_metrics",
             "google_business_profile_search_keywords",

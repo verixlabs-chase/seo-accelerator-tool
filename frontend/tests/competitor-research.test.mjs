@@ -32,6 +32,15 @@ test("a reviewed gap can move into rankings or governed next steps", () => {
   assert.match(page, /Add to Next Steps/);
 });
 
+test("an exact competitor gap can become a review-only content brief", () => {
+  assert.match(page, /\/competitors\/content-brief/);
+  assert.match(page, /Create content brief/);
+  assert.match(page, /Draft content brief/);
+  assert.match(page, /Nothing published/);
+  assert.match(page, /Review the outline/);
+  assert.match(page, /content_brief/);
+});
+
 test("competitor movement uses comparable saved positions", () => {
   assert.match(page, /previous_competitor_position/);
   assert.match(page, /movement_direction/);

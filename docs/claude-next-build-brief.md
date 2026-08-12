@@ -2785,8 +2785,8 @@ parts of Semrush without delaying automated keyword discovery.
 
 Status (2026-08-12): organic competitor discovery, exact keyword/page-gap
 comparison, comparable-period movement alerts, and confirmed-competitor local
-grid overlap are locally complete. Profile, authority, and expanded
-direct-action promotion slices remain.
+grid overlap are locally complete. Exact gaps now also promote into review-only
+content briefs. Profile, authority, and local-profile action slices remain.
 
 Implementation record:
 
@@ -2825,6 +2825,12 @@ Implementation record:
   side leads or ties. Every row remains tied to one campaign, business location,
   phrase, grid definition, run, and observation time; locations are never
   blended.
+- An exact competitor gap can now create one idempotent, review-only content
+  brief. The saved draft preserves the exact phrase, owner and competitor
+  positions and pages, measured demand when present, service/location context,
+  research run, freshness, recommended existing-page or new-page path, and a
+  deterministic five-part outline. It cannot publish or copy competitor wording,
+  and replaying the action returns the existing draft instead of creating noise.
 
 Remaining delivery slices:
 
@@ -2832,8 +2838,8 @@ Remaining delivery slices:
   required production API access is available.
 - Add authority/referring-domain gaps through AUTH1.
 - Extend direct promotion from the completed tracked-phrase and governed Next
-  Steps paths into a governed content brief and local profile action while
-  preserving the same evidence packet and duplicate controls.
+  Steps and content-brief paths into a local profile action while preserving the
+  same evidence packet and duplicate controls.
 
 Scope:
 

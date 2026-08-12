@@ -20,6 +20,12 @@ class CompetitorReviewIn(BaseModel):
     decision: str
 
 
+class CompetitorContentBriefIn(BaseModel):
+    campaign_id: str
+    suggestion_id: str
+    competitor_id: str
+
+
 class CompetitorOut(BaseModel):
     id: str
     tenant_id: str

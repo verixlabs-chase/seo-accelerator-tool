@@ -34,6 +34,21 @@ type Competitor = {
   created_at: string;
 };
 
+type ContentBrief = {
+  id: string;
+  status: "draft" | string;
+  title: string;
+  primary_keyword: string;
+  recommended_page_action: "improve_existing_page" | "create_service_page" | string;
+  target_url?: string | null;
+  competitor_domain: string;
+  competitor_url?: string | null;
+  service_name?: string | null;
+  service_area_name?: string | null;
+  outline: Array<{ order: number; heading: string; guidance: string }>;
+  created_at: string;
+};
+
 type GapItem = {
   id: string;
   suggestion_id: string;
@@ -49,6 +64,7 @@ type GapItem = {
   movement_label?: string | null;
   movement_alert?: boolean;
   previous_source_updated_at?: string | null;
+  content_brief?: ContentBrief | null;
   competitor_url?: string | null;
   owner_position?: number | null;
   owner_url?: string | null;
@@ -271,6 +287,22 @@ export default function CompetitorsPage() {
         }),
       });
       setNotice(response?.message || `“${item.keyword}” is ready to review in Next Steps.`);
+    });
+  }
+
+  async function createContentBrief(item: GapItem) {
+    if (!selectedCampaignId) return;
+    await runAction(`brief:${item.id}`, async () => {
+      const response = await platformApi("/competitors/content-brief", {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_id: selectedCampaignId,
+          suggestion_id: item.suggestion_id,
+          competitor_id: item.competitor_id,
+        }),
+      });
+      await loadLocation(selectedCampaignId);
+      setNotice(response?.message || `Draft brief saved for “${item.keyword}.” Nothing was published.`);
     });
   }
 
@@ -636,7 +668,42 @@ export default function CompetitorsPage() {
                           >
                             {busyAction === `action:${item.id}` ? "Adding…" : "Add to Next Steps"}
                           </button>
+                          <button
+                            onClick={() => void createContentBrief(item)}
+                            disabled={busyAction !== "" || Boolean(item.content_brief)}
+                            className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-100 disabled:opacity-50"
+                          >
+                            {busyAction === `brief:${item.id}`
+                              ? "Saving…"
+                              : item.content_brief
+                                ? "Brief saved"
+                                : "Create content brief"}
+                          </button>
                         </div>
+                        {item.content_brief ? (
+                          <div className="mt-3 rounded-md border border-orange-500/20 bg-orange-500/5 p-3">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-orange-200">Draft content brief</p>
+                                <p className="mt-1 text-sm font-semibold text-white">{item.content_brief.title}</p>
+                              </div>
+                              <span className="rounded-full border border-[#34353a] px-2 py-1 text-[11px] text-zinc-300">Nothing published</span>
+                            </div>
+                            <DetailsDisclosure
+                              label="Review the outline"
+                              summary={`${item.content_brief.outline.length} plain-language sections based on this exact search gap.`}
+                            >
+                              <ol className="space-y-3">
+                                {item.content_brief.outline.map((section) => (
+                                  <li key={`${item.content_brief?.id}-${section.order}`} className="text-sm leading-6 text-zinc-300">
+                                    <span className="font-semibold text-white">{section.order}. {section.heading}</span>
+                                    <span className="block text-zinc-400">{section.guidance}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </DetailsDisclosure>
+                          </div>
+                        ) : null}
                       </div>
                     </article>
                   ))}

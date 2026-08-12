@@ -248,3 +248,44 @@ def test_research_compares_exact_owner_and_competitor_positions(client, db_sessi
     assert gap["owner_url"] == "https://ownsite.com/junk-removal"
     assert gap["page_status"] == "existing"
     assert "gap_score" not in gap
+
+    brief_response = client.post(
+        "/api/v1/competitors/content-brief",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "campaign_id": campaign.id,
+            "suggestion_id": gap["suggestion_id"],
+            "competitor_id": gap["competitor_id"],
+        },
+    )
+    assert brief_response.status_code == 200
+    brief_payload = brief_response.json()["data"]
+    assert brief_payload["created"] is True
+    brief = brief_payload["item"]
+    assert brief["status"] == "draft"
+    assert brief["primary_keyword"] == "junk removal reno"
+    assert brief["recommended_page_action"] == "improve_existing_page"
+    assert brief["target_url"] == "https://ownsite.com/junk-removal"
+    assert brief["competitor_url"] == "https://rival.com/junk-removal-reno"
+    assert brief["evidence"]["owner_position"] == 11
+    assert brief["evidence"]["competitor_position"] == 3
+    assert len(brief["outline"]) == 5
+    assert "Nothing was published" in brief_payload["message"]
+
+    replay = client.post(
+        "/api/v1/competitors/content-brief",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "campaign_id": campaign.id,
+            "suggestion_id": gap["suggestion_id"],
+            "competitor_id": gap["competitor_id"],
+        },
+    ).json()["data"]
+    assert replay["created"] is False
+    assert replay["item"]["id"] == brief["id"]
+
+    refreshed = client.get(
+        f"/api/v1/competitors/research?campaign_id={campaign.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+    assert refreshed["items"][0]["content_brief"]["id"] == brief["id"]

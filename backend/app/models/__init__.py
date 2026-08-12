@@ -37,7 +37,13 @@ from app.models.google_business_profile_campaign import (  # noqa: F401
 )
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
-from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap
+from app.models.content import (
+    ContentAsset,
+    ContentBrief,
+    ContentQcEvent,
+    EditorialCalendar,
+    InternalLinkMap,
+)
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard
 from app.models.governed_ai import GovernedAIRun
 from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
@@ -233,6 +239,7 @@ __all__ = [
     "CompetitorPage",
     "CompetitorSignal",
     "ContentAsset",
+    "ContentBrief",
     "EditorialCalendar",
     "InternalLinkMap",
     "ContentQcEvent",
