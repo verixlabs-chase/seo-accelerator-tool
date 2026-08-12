@@ -8,7 +8,12 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.schemas.competitor import CompetitorCreateIn, CompetitorOut
+from app.schemas.competitor import (
+    CompetitorCreateIn,
+    CompetitorDiscoverIn,
+    CompetitorOut,
+    CompetitorReviewIn,
+)
 from app.services import competitor_service
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import competitor_collect_snapshot
@@ -77,6 +82,54 @@ def create_competitor(
         campaign_id=body.campaign_id,
         domain=body.domain,
         label=body.label,
+    )
+    return envelope(request, CompetitorOut.model_validate(item).model_dump(mode="json"))
+
+
+@router.post("/discover")
+def discover_competitors(
+    request: Request,
+    body: CompetitorDiscoverIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = competitor_service.discover_competitors(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        limit=body.limit,
+    )
+    return envelope(request, payload)
+
+
+@router.get("/research")
+def get_competitor_research(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = competitor_service.competitor_research(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@router.post("/review")
+def review_competitor(
+    request: Request,
+    body: CompetitorReviewIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    item = competitor_service.review_competitor(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        competitor_id=body.competitor_id,
+        decision=body.decision,
     )
     return envelope(request, CompetitorOut.model_validate(item).model_dump(mode="json"))
 

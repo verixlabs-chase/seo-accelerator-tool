@@ -2067,6 +2067,26 @@ def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
     }
 
 
+def planning_context_by_suggestion(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    suggestions: list[KeywordResearchSuggestion],
+) -> dict[str, dict[str, Any]]:
+    """Return the saved-page decision for already scoped research rows."""
+    target_pages = _load_target_pages(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
+    return {
+        item.id: _add_planning_context(_serialize_suggestion(item), target_pages=target_pages)
+        for item in suggestions
+        if item.tenant_id == tenant_id and item.campaign_id == campaign_id
+    }
+
+
 def _customer_source_keys(values: list[str] | None) -> list[str]:
     customer_keys = {
         "dataforseo_ranked": "live_rankings",

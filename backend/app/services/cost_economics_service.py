@@ -45,6 +45,10 @@ CREDIT_ACTION_CATALOG: dict[tuple[str, str], tuple[str, str]] = {
         "Measure local search demand",
         "Checks how often the shortlisted searches are used nearby.",
     ),
+    ("competitor_research", "competitors_domain_live"): (
+        "Find competing websites",
+        "Finds websites that repeatedly appear for the same customer searches.",
+    ),
     ("governed_ai", "keyword_relevance_review"): (
         "Sort unclear searches",
         "Reviews a small saved batch against confirmed services and service areas.",
@@ -1090,6 +1094,36 @@ def _customer_action_prices(db: Session, *, now: datetime) -> list[dict[str, Any
                 ),
                 "credits": _credits_for_cost(research_cost),
                 "price_type": "up_to",
+            }
+        )
+
+    try:
+        competitor_card = _find_price_card(
+            db,
+            provider_name="dataforseo",
+            capability="competitor_research",
+            operation="competitors_domain_live",
+            model_name=None,
+            now=now,
+        )
+    except CostEconomicsError:
+        competitor_card = None
+    if competitor_card is not None:
+        items.append(
+            {
+                "code": "competitor_discovery",
+                "label": "Find competing websites",
+                "result": "Finds websites that repeatedly appear for the same customer searches.",
+                "credits": _credits_for_cost(
+                    _estimate_cost(
+                        competitor_card,
+                        quantity=Decimal("1"),
+                        input_tokens=None,
+                        cached_input_tokens=None,
+                        output_tokens=None,
+                    )
+                ),
+                "price_type": "fixed_ceiling",
             }
         )
 

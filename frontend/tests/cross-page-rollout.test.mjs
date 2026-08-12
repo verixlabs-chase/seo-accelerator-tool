@@ -71,7 +71,8 @@ test("each data-heavy route has a truthful decision visual", () => {
   assert.match(source("../app/(product)/site-health/page.tsx"), /Core Web Vital/);
   assert.match(source("../app/(product)/site-health/page.tsx"), /Fix this first/);
   assert.match(source("../app/(product)/citations/page.tsx"), /Confirmed listing progress/);
-  assert.match(source("../app/(product)/competitors/page.tsx"), /largest visibility gap/);
+  assert.match(source("../app/(product)/competitors/page.tsx"), /Exact searches and competing pages/);
+  assert.match(source("../app/(product)/competitors/page.tsx"), /No made-up gap score/);
   assert.match(source("../app/(product)/organic-value/page.tsx"), /Estimated search value by scenario/);
   assert.match(source("../app/(product)/locations/page.tsx"), /Locations with individual search tracking/);
   assert.match(source("../app/(product)/reports/page.tsx"), /Reports confirmed as delivered/);

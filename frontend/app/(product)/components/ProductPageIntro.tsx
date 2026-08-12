@@ -29,7 +29,7 @@ const START_HERE_BY_PATH: Record<string, string> = {
   "/organic-value":
     "Start with current value and upside. Treat every dollar amount as an estimate.",
   "/competitors":
-    "Start with the largest gap, then decide whether a fresh comparison is needed.",
+    "Confirm the real local competitors first, then review the exact searches where they are ahead.",
   "/citations":
     "Fix failed or missing listings first; confirmed live listings need no action.",
   "/reviews":

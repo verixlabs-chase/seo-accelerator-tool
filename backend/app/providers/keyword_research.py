@@ -60,6 +60,36 @@ class DataForSeoKeywordResearchProvider:
             "cost": _task_cost(body),
         }
 
+    def competitor_domains(
+        self,
+        *,
+        target: str,
+        location_name: str,
+        language_code: str,
+        limit: int,
+    ) -> dict[str, Any]:
+        """Find domains that repeatedly appear for the same organic searches."""
+        body = self._post(
+            "/dataforseo_labs/google/competitors_domain/live",
+            [
+                {
+                    "target": target,
+                    "location_name": _country_location_name(location_name),
+                    "language_code": language_code,
+                    "item_types": ["organic"],
+                    "limit": max(1, min(limit, 100)),
+                    "max_rank_group": 30,
+                    "exclude_top_domains": True,
+                    "ignore_synonyms": True,
+                    "order_by": ["intersections,desc"],
+                }
+            ],
+        )
+        return {
+            "items": _extract_labs_items(body),
+            "cost": _task_cost(body),
+        }
+
     def keyword_ideas(
         self,
         *,

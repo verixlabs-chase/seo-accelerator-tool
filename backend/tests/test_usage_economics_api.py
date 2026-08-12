@@ -44,6 +44,7 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert data["catalog_version"] == "insight-credits-2026-08-v1"
     assert {item["code"] for item in data["action_prices"]} >= {
         "keyword_research_refresh",
+        "competitor_discovery",
         "ranking_check",
         "keyword_relevance_review",
     }

@@ -2783,6 +2783,47 @@ Implementation record (2026-08-04):
 Goal: add the deeper competitive research needed to replace the local-service
 parts of Semrush without delaying automated keyword discovery.
 
+Status (2026-08-12): organic competitor discovery and exact keyword/page-gap
+comparison are locally complete. Map, profile, authority, alerting, and direct
+action-promotion slices remain.
+
+Implementation record:
+
+- A location owner can run one explicit, credit-metered competitor search. The
+  provider boundary excludes large general sites where supported and stores the
+  exact shared-search count, average position, estimated traffic, location,
+  rules version, and observation time without exposing the internal supplier in
+  customer copy.
+- Discovered domains enter a `suggested` state. The owner must confirm a real
+  same-service competitor or dismiss it before that domain can influence
+  comparison research. Manual competitors use the same confirmed path.
+- The competitor page now derives its comparison from the latest immutable
+  MKT1.1 research run. Every visible gap names the exact relevant phrase,
+  competitor domain and URL, owner URL when known, both saved positions, service,
+  service area, demand when measured, and freshness.
+- One reviewed gap can be added directly to Search Rankings or converted into
+  the existing idempotent, review-only Next Steps recommendation. Both paths
+  reuse the saved suggestion and preserve its evidence instead of asking the
+  owner to copy a phrase between pages.
+- The former `100 - competitor position` gap score has been removed because it
+  did not compare the owner's website. A result appears only when the owner is
+  absent or trails the confirmed competitor by at least two positions.
+- Discovery and comparison remain location- and tenant-scoped. Refreshing a
+  comparison reuses the governed keyword research, relevance, allowance, and
+  freshness controls rather than building a separate unbounded data path.
+
+Remaining delivery slices:
+
+- Compare confirmed competitors across saved local-rank grid points and show
+  geographic overlap without blending locations.
+- Add Google Business Profile attribute and activity comparisons after the
+  required production API access is available.
+- Add authority/referring-domain gaps through AUTH1 and competitor movement
+  alerts from comparable frozen periods.
+- Extend direct promotion from the completed tracked-phrase and governed Next
+  Steps paths into a governed content brief and local profile action while
+  preserving the same evidence packet and duplicate controls.
+
 Scope:
 
 - Discover real organic and map competitors automatically rather than requiring
