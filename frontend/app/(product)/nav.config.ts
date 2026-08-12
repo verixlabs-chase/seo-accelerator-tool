@@ -15,6 +15,7 @@ const PRODUCT_NAV_ITEMS: NavItem[] = [
   { href: "/citations", label: "Directory listings", icon: "listings", section: "more" },
   { href: "/reviews", label: "Customer reviews", icon: "reviews", section: "more" },
   { href: "/profile-campaigns", label: "Profile campaigns", icon: "profile-campaigns", section: "more" },
+  { href: "/help", label: "Help Center", icon: "help", section: "more" },
 ];
 
 export function buildProductNav(pathname: string): NavItem[] {
