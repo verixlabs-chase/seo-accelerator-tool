@@ -2406,9 +2406,16 @@ Implementation status (2026-08-11):
 - A blocked owner can contact `support@verixlabs.com` from setup and is told
   exactly which non-sensitive context to include and never to send passwords
   or API keys.
+- The CX1 searchable-help slice is implemented locally. The customer product
+  now includes a Help Center with task-based search, step-by-step guides,
+  plain-language definitions, direct links to the correct product page, and
+  separate guide views for a one-business owner, multi-location manager, or
+  team/agency operator. The support handoff tells the customer which four
+  non-sensitive details to include and explicitly prohibits passwords,
+  sign-in codes, payment numbers, and private access keys.
 - Remaining CX1 slices include the unified connection path, persistent setup
-  progress after navigation, searchable help and glossary content, consented
-  diagnostic bundles, response/escalation states, and persona-aware tours.
+  progress after navigation, consented diagnostic bundles,
+  response/escalation states, and short persona-aware product tours.
 
 Acceptance criteria:
 
