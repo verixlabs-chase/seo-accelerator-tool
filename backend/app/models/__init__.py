@@ -158,6 +158,11 @@ from app.models.tier_profile import TierProfile
 from app.models.usage_ledger import UsageLedger
 from app.models.user import User
 from app.models.website_performance import WebsitePerformanceMeasurement
+from app.models.website_analytics import (
+    AnalyticsLandingPageDailyMetric,
+    AnalyticsTrafficSourceDailyMetric,
+    WebsiteFormEvent,
+)
 
 __all__ = [
     "Tenant",
@@ -326,4 +331,7 @@ __all__ = [
     "ReportTemplateVersion",
     "UsageLedger",
     "WebsitePerformanceMeasurement",
+    "AnalyticsLandingPageDailyMetric",
+    "AnalyticsTrafficSourceDailyMetric",
+    "WebsiteFormEvent",
 ]

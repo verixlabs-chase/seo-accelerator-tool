@@ -1683,10 +1683,15 @@ Implementation status (2026-08-12):
   each business location, run idempotent durable backfills, and retrieve daily
   visits, engaged visits, and approved key-event totals in plain language.
   Connection Health now tracks this third Google source per location.
-- **G1.7B remains next.** It will add landing-page and source/medium facts, a
-  privacy-minimized first-party website-form event contract with deduplication,
-  search-to-visit and visit-to-inquiry visualizations, and broken-tracking
-  alerts. It will not add CRM, call tracking, job, payment, or revenue data.
+- **G1.7B is implemented locally.** Per-location updates now save landing-page
+  and source/medium facts, strip landing-page query strings, and backfill
+  detail history without repeating completed dates. A first-party website-form
+  endpoint accepts only approved event identifiers, names, page URLs, form
+  identifiers, and event times; rejects unknown fields; hashes its rotatable
+  connection key; and deduplicates retries. The dashboard shows visits,
+  engaged visits, verified inquiries, entry pages, traffic sources, and
+  conservative tracking health. It does not collect names, emails, phone
+  numbers, form contents, CRM records, calls, jobs, payments, or revenue.
 
 Scope:
 

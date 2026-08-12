@@ -2,9 +2,14 @@ from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
+from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+from app.models.website_analytics import (
+    AnalyticsLandingPageDailyMetric,
+    AnalyticsTrafficSourceDailyMetric,
+)
 from app.services import traffic_fact_service
 
 
@@ -21,6 +26,23 @@ def _campaign(db_session, organization_id: str) -> Campaign:
         created_at=datetime(2026, 3, 1, 9, 0, tzinfo=UTC),
     )
     db_session.add(campaign)
+    db_session.flush()
+    return campaign
+
+
+def _campaign_with_location(db_session, organization_id: str) -> Campaign:
+    location = BusinessLocation(
+        organization_id=organization_id,
+        name="Fact Location",
+        domain="facts.example",
+        city="Reno",
+        region="Nevada",
+        country_code="US",
+    )
+    db_session.add(location)
+    db_session.flush()
+    campaign = _campaign(db_session, organization_id)
+    campaign.business_location_id = location.id
     db_session.flush()
     return campaign
 
@@ -226,3 +248,65 @@ def test_analytics_sync_uses_mapped_property_and_current_engagement_metrics(
     assert calls[0]["property_id"] == "123456789"
     assert calls[0]["metrics"] == ["sessions", "engagedSessions", "keyEvents"]
     assert (row.sessions, row.engaged_sessions, row.conversions) == (12, 9, 2)
+
+
+def test_analytics_sync_saves_private_landing_page_and_source_details(
+    db_session,
+    monkeypatch,
+) -> None:
+    organization_id = _organization_id(db_session)
+    campaign = _campaign_with_location(db_session, organization_id)
+    calls: list[dict] = []
+
+    class _AnalyticsAdapter:
+        def __init__(self, **_kwargs):
+            pass
+
+        def execute(self, request):
+            payload = dict(request.payload)
+            calls.append(payload)
+            dimensions = payload["dimensions"]
+            if dimensions == ["date"]:
+                row = {
+                    "dimension_values": {"date": "20260810"},
+                    "metric_values": {"sessions": 12, "engagedSessions": 9, "keyEvents": 2},
+                }
+            elif dimensions == ["date", "landingPagePlusQueryString"]:
+                row = {
+                    "dimension_values": {
+                        "date": "20260810",
+                        "landingPagePlusQueryString": "/contact?email=private@example.com#form",
+                    },
+                    "metric_values": {"sessions": 7, "engagedSessions": 6, "keyEvents": 2},
+                }
+            else:
+                row = {
+                    "dimension_values": {
+                        "date": "20260810",
+                        "sessionSourceMedium": "google / organic",
+                    },
+                    "metric_values": {"sessions": 8, "engagedSessions": 7, "keyEvents": 1},
+                }
+            return SimpleNamespace(success=True, raw_payload={"rows": [row]})
+
+    monkeypatch.setattr(traffic_fact_service, "GoogleAnalyticsProviderAdapter", _AnalyticsAdapter)
+    result = traffic_fact_service.sync_analytics_daily_metrics_for_campaign(
+        db=db_session,
+        campaign=campaign,
+        start_date="2026-08-10",
+        end_date="2026-08-10",
+        property_id="properties/123456789",
+    )
+
+    landing = db_session.query(AnalyticsLandingPageDailyMetric).filter_by(
+        campaign_id=campaign.id
+    ).one()
+    source = db_session.query(AnalyticsTrafficSourceDailyMetric).filter_by(
+        campaign_id=campaign.id
+    ).one()
+    assert result.provider_calls == 3
+    assert landing.landing_page == "/contact"
+    assert "private@example.com" not in landing.landing_page
+    assert (landing.sessions, landing.engaged_sessions, landing.key_events) == (7, 6, 2)
+    assert source.source_medium == "google / organic"
+    assert (source.sessions, source.engaged_sessions, source.key_events) == (8, 7, 1)

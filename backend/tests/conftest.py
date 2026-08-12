@@ -222,6 +222,9 @@ def _verify_required_tables(database_url: str) -> None:
             "billing_webhook_events",
             "achievement_grants",
             "achievement_preferences",
+            "analytics_landing_page_daily_metrics",
+            "analytics_traffic_source_daily_metrics",
+            "website_form_events",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:

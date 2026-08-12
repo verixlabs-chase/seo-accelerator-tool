@@ -76,6 +76,14 @@ type DataConnection = {
   next_sync_at?: string | null;
   last_error_message?: string | null;
   source_truth: string;
+  website_event_key_configured?: boolean;
+  website_event_key_created_at?: string | null;
+};
+
+type WebsiteEventKey = {
+  token: string;
+  event_path: string;
+  created_at: string;
 };
 
 type ConnectionsPayload = {
@@ -275,6 +283,7 @@ export default function SettingsPage() {
   const [profileDrafts, setProfileDrafts] = useState<Record<string, string>>({});
   const [analyticsResources, setAnalyticsResources] = useState<AnalyticsResource[]>([]);
   const [analyticsDrafts, setAnalyticsDrafts] = useState<Record<string, string>>({});
+  const [websiteEventKeys, setWebsiteEventKeys] = useState<Record<string, WebsiteEventKey>>({});
   const [loading, setLoading] = useState(true);
   const [loadingResources, setLoadingResources] = useState(false);
   const [busyAction, setBusyAction] = useState("");
@@ -688,6 +697,31 @@ export default function SettingsPage() {
     } catch (err) {
       await loadConnections(organizationId).catch(() => undefined);
       setError(err instanceof Error ? err.message : "Unable to save this analytics match.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function createWebsiteEventKey(connection: DataConnection) {
+    if (!organizationId) return;
+    setBusyAction(`website-event-key-${connection.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-connections/${connection.id}/website-events/key`,
+        { method: "POST" },
+      )) as WebsiteEventKey;
+      if (!response.token || !response.event_path) {
+        throw new Error("The secure form connection was not created.");
+      }
+      setWebsiteEventKeys((current) => ({ ...current, [connection.id]: response }));
+      await loadConnections(organizationId);
+      setNotice(
+        "The secure form connection is ready. Copy it now; the private key will not be shown again.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create the form connection.");
     } finally {
       setBusyAction("");
     }
@@ -1695,6 +1729,24 @@ export default function SettingsPage() {
                               ? `${statusView?.summary} Last successful update: ${formatTimestamp(connection.last_success_at)}.`
                               : "Choose the website analytics property for this business location."}
                           </p>
+                          {connection?.website_event_key_configured ? (
+                            <p className="mt-2 text-xs font-medium text-emerald-200">
+                              Secure website inquiry connection created
+                            </p>
+                          ) : null}
+                          {connection && websiteEventKeys[connection.id] ? (
+                            <div className="mt-3 rounded-md border border-amber-500/25 bg-amber-500/10 p-3">
+                              <p className="text-xs font-semibold text-amber-100">
+                                Copy this private form key now
+                              </p>
+                              <code className="mt-2 block break-all text-xs leading-5 text-amber-50">
+                                {websiteEventKeys[connection.id].token}
+                              </code>
+                              <p className="mt-2 text-xs leading-5 text-amber-100/75">
+                                Event address: {websiteEventKeys[connection.id].event_path}
+                              </p>
+                            </div>
+                          ) : null}
                         </div>
                         <div>
                           <label
@@ -1737,20 +1789,33 @@ export default function SettingsPage() {
                             ) : null}
                           </select>
                         </div>
-                        <div className="flex lg:justify-end">
+                        <div className="flex flex-wrap gap-2 lg:justify-end">
                           {connection ? (
-                            <button
-                              className={secondaryButtonClass}
-                              disabled={
-                                busyAction === `sync-${connection.id}` ||
-                                connection.status === "syncing"
-                              }
-                              onClick={() => void syncConnection(connection)}
-                            >
-                              {busyAction === `sync-${connection.id}`
-                                ? "Updating..."
-                                : statusView?.action || "Check now"}
-                            </button>
+                            <>
+                              <button
+                                className={secondaryButtonClass}
+                                disabled={busyAction === `website-event-key-${connection.id}`}
+                                onClick={() => void createWebsiteEventKey(connection)}
+                              >
+                                {busyAction === `website-event-key-${connection.id}`
+                                  ? "Creating..."
+                                  : connection.website_event_key_configured
+                                    ? "Replace form key"
+                                    : "Create form connection"}
+                              </button>
+                              <button
+                                className={secondaryButtonClass}
+                                disabled={
+                                  busyAction === `sync-${connection.id}` ||
+                                  connection.status === "syncing"
+                                }
+                                onClick={() => void syncConnection(connection)}
+                              >
+                                {busyAction === `sync-${connection.id}`
+                                  ? "Updating..."
+                                  : statusView?.action || "Check now"}
+                              </button>
+                            </>
                           ) : (
                             <button
                               className={primaryButtonClass}

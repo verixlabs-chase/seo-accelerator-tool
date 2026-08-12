@@ -6,6 +6,11 @@ from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.data_connection import DataConnection
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.platform_job import PlatformJob
+from app.models.website_analytics import (
+    AnalyticsLandingPageDailyMetric,
+    AnalyticsTrafficSourceDailyMetric,
+    WebsiteFormEvent,
+)
 from app.services import data_connections_service, traffic_fact_service
 
 
@@ -253,6 +258,51 @@ def test_google_analytics_mapping_and_metrics_stay_location_scoped(client, db_se
     assert connection["business_location_id"] == location_id
     assert "read-only website visit" in connection["source_truth"].lower()
 
+    db_session.add_all(
+        [
+            AnalyticsLandingPageDailyMetric(
+                tenant_id=organization_id,
+                organization_id=organization_id,
+                business_location_id=location_id,
+                campaign_id=campaign_id,
+                metric_date=date(2026, 8, 9),
+                landing_page="/services/junk-removal",
+                dimension_hash="1" * 64,
+                sessions=12,
+                engaged_sessions=9,
+                key_events=2,
+                deterministic_hash="2" * 64,
+            ),
+            AnalyticsTrafficSourceDailyMetric(
+                tenant_id=organization_id,
+                organization_id=organization_id,
+                business_location_id=location_id,
+                campaign_id=campaign_id,
+                metric_date=date(2026, 8, 9),
+                source_medium="google / organic",
+                dimension_hash="3" * 64,
+                sessions=12,
+                engaged_sessions=9,
+                key_events=2,
+                deterministic_hash="4" * 64,
+            ),
+            WebsiteFormEvent(
+                tenant_id=organization_id,
+                organization_id=organization_id,
+                business_location_id=location_id,
+                campaign_id=campaign_id,
+                data_connection_id=connection["id"],
+                event_id="evt-dashboard-001",
+                event_name="inquiry_confirmed",
+                website="https://analytics-location.example.com",
+                page_url="https://analytics-location.example.com/contact",
+                form_id="contact-main",
+                occurred_at=datetime(2026, 8, 9, 15, 0, tzinfo=UTC),
+                received_at=datetime(2026, 8, 9, 15, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+
     for index in range(2):
         db_session.add(
             AnalyticsDailyMetric(
@@ -280,10 +330,15 @@ def test_google_analytics_mapping_and_metrics_stay_location_scoped(client, db_se
     assert payload["summary"] == {
         "visits": 21,
         "engaged_visits": 15,
-        "inquiries": 3,
+        "important_actions": 3,
+        "inquiries": 1,
         "engagement_rate_percent": 71.4,
     }
     assert [point["date"] for point in payload["points"]] == ["2026-08-08", "2026-08-09"]
+    assert payload["points"][1]["important_actions"] == 2
+    assert payload["points"][1]["verified_inquiries"] == 1
+    assert payload["top_landing_pages"][0]["name"] == "/services/junk-removal"
+    assert payload["top_sources"][0]["name"] == "google / organic"
 
 
 def test_search_console_mapping_requires_business_location(client) -> None:

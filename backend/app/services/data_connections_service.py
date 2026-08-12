@@ -16,6 +16,11 @@ from app.models.data_connection import DataConnection
 from app.models.google_business_profile import GoogleBusinessProfileDailyMetric
 from app.models.organization_provider_credential import OrganizationProviderCredential
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+from app.models.website_analytics import (
+    AnalyticsLandingPageDailyMetric,
+    AnalyticsTrafficSourceDailyMetric,
+    WebsiteFormEvent,
+)
 from app.services.provider_credentials_service import (
     ProviderCredentialConfigurationError,
     get_organization_provider_credentials,
@@ -392,6 +397,15 @@ def serialize_connection(
         "last_error_message": connection.last_error_message,
         "sync_cursor": dict(connection.sync_cursor or {}),
         "source_truth": _connection_source_truth(connection.provider_name),
+        "website_event_key_configured": bool(
+            connection.provider_name == GOOGLE_ANALYTICS_PROVIDER
+            and (connection.connection_metadata or {}).get("website_event_token_hash")
+        ),
+        "website_event_key_created_at": (
+            (connection.connection_metadata or {}).get("website_event_token_created_at")
+            if connection.provider_name == GOOGLE_ANALYTICS_PROVIDER
+            else None
+        ),
         "updated_at": _iso(connection.updated_at),
     }
 
@@ -445,6 +459,11 @@ def get_google_analytics_metrics(
         .scalar()
     )
     location = db.get(BusinessLocation, connection.business_location_id)
+    latest_website_event_at = _latest_website_form_event_at(
+        db,
+        organization_id=organization_id,
+        campaign_id=campaign_id,
+    )
     if latest_date is None:
         return {
             "organization_id": organization_id,
@@ -458,6 +477,13 @@ def get_google_analytics_metrics(
             ),
             "summary": None,
             "points": [],
+            "top_landing_pages": [],
+            "top_sources": [],
+            "tracking_health": _website_event_tracking_health(
+                connection=connection,
+                last_event_at=latest_website_event_at,
+                visits=0,
+            ),
         }
     normalized_days = max(7, min(int(days), MAX_SEARCH_CONSOLE_RANGE_DAYS))
     start_date = latest_date - timedelta(days=normalized_days - 1)
@@ -475,6 +501,51 @@ def get_google_analytics_metrics(
     sessions = sum(int(row.sessions or 0) for row in rows)
     engaged_sessions = sum(int(row.engaged_sessions or 0) for row in rows)
     inquiries = sum(int(row.conversions or 0) for row in rows)
+    form_events = (
+        db.query(WebsiteFormEvent)
+        .filter(
+            WebsiteFormEvent.organization_id == organization_id,
+            WebsiteFormEvent.campaign_id == campaign_id,
+            WebsiteFormEvent.occurred_at >= datetime.combine(start_date, datetime.min.time(), UTC),
+            WebsiteFormEvent.occurred_at
+            < datetime.combine(latest_date + timedelta(days=1), datetime.min.time(), UTC),
+        )
+        .order_by(WebsiteFormEvent.occurred_at.asc())
+        .all()
+    )
+    form_events_by_date: dict[date, int] = {}
+    for event in form_events:
+        event_date = _as_aware(event.occurred_at).date()
+        form_events_by_date[event_date] = form_events_by_date.get(event_date, 0) + 1
+    landing_rows = (
+        db.query(AnalyticsLandingPageDailyMetric)
+        .filter(
+            AnalyticsLandingPageDailyMetric.organization_id == organization_id,
+            AnalyticsLandingPageDailyMetric.campaign_id == campaign_id,
+            AnalyticsLandingPageDailyMetric.metric_date >= start_date,
+            AnalyticsLandingPageDailyMetric.metric_date <= latest_date,
+        )
+        .all()
+    )
+    source_rows = (
+        db.query(AnalyticsTrafficSourceDailyMetric)
+        .filter(
+            AnalyticsTrafficSourceDailyMetric.organization_id == organization_id,
+            AnalyticsTrafficSourceDailyMetric.campaign_id == campaign_id,
+            AnalyticsTrafficSourceDailyMetric.metric_date >= start_date,
+            AnalyticsTrafficSourceDailyMetric.metric_date <= latest_date,
+        )
+        .all()
+    )
+    top_landing_pages = _summarize_analytics_dimensions(
+        landing_rows,
+        dimension_name="landing_page",
+    )
+    top_sources = _summarize_analytics_dimensions(
+        source_rows,
+        dimension_name="source_medium",
+    )
+    verified_inquiries = len(form_events)
     return {
         "organization_id": organization_id,
         "campaign_id": campaign_id,
@@ -491,7 +562,8 @@ def get_google_analytics_metrics(
         "summary": {
             "visits": sessions,
             "engaged_visits": engaged_sessions,
-            "inquiries": inquiries,
+            "important_actions": inquiries,
+            "inquiries": verified_inquiries,
             "engagement_rate_percent": (
                 round((engaged_sessions / sessions) * 100, 1) if sessions else 0.0
             ),
@@ -501,10 +573,18 @@ def get_google_analytics_metrics(
                 "date": row.metric_date.isoformat(),
                 "visits": int(row.sessions or 0),
                 "engaged_visits": int(row.engaged_sessions or 0),
-                "inquiries": int(row.conversions or 0),
+                "important_actions": int(row.conversions or 0),
+                "verified_inquiries": form_events_by_date.get(row.metric_date, 0),
             }
             for row in rows
         ],
+        "top_landing_pages": top_landing_pages,
+        "top_sources": top_sources,
+        "tracking_health": _website_event_tracking_health(
+            connection=connection,
+            last_event_at=latest_website_event_at,
+            visits=sessions,
+        ),
     }
 
 
@@ -1461,3 +1541,84 @@ def _connection_source_truth(provider_name: str) -> str:
         "Website-property data from Google Search Console. If multiple locations share "
         "one property, the metrics describe that shared website property."
     )
+
+
+def _summarize_analytics_dimensions(
+    rows: list[AnalyticsLandingPageDailyMetric] | list[AnalyticsTrafficSourceDailyMetric],
+    *,
+    dimension_name: str,
+) -> list[dict[str, Any]]:
+    totals: dict[str, dict[str, int]] = {}
+    for row in rows:
+        dimension = str(getattr(row, dimension_name) or "").strip()
+        if not dimension or dimension in {"/__no_activity__", "__no_activity__"}:
+            continue
+        values = totals.setdefault(
+            dimension,
+            {"visits": 0, "engaged_visits": 0, "important_actions": 0},
+        )
+        values["visits"] += int(row.sessions or 0)
+        values["engaged_visits"] += int(row.engaged_sessions or 0)
+        values["important_actions"] += int(row.key_events or 0)
+    return [
+        {"name": name, **values}
+        for name, values in sorted(
+            totals.items(),
+            key=lambda item: (-item[1]["visits"], item[0].lower()),
+        )[:5]
+    ]
+
+
+def _latest_website_form_event_at(
+    db: Session,
+    *,
+    organization_id: str,
+    campaign_id: str,
+) -> datetime | None:
+    return (
+        db.query(WebsiteFormEvent.occurred_at)
+        .filter(
+            WebsiteFormEvent.organization_id == organization_id,
+            WebsiteFormEvent.campaign_id == campaign_id,
+        )
+        .order_by(WebsiteFormEvent.occurred_at.desc())
+        .limit(1)
+        .scalar()
+    )
+
+
+def _website_event_tracking_health(
+    *,
+    connection: DataConnection,
+    last_event_at: datetime | None,
+    visits: int,
+) -> dict[str, Any]:
+    metadata = dict(connection.connection_metadata or {})
+    key_configured = bool(metadata.get("website_event_token_hash"))
+    normalized_last_event_at = _as_aware(last_event_at) if last_event_at is not None else None
+    now = datetime.now(UTC)
+    if not key_configured:
+        status = "setup_required"
+        message = "Connect the website form before inquiry tracking can begin."
+    elif normalized_last_event_at is None:
+        status = "waiting_for_first_event"
+        message = "The secure form connection is ready and waiting for its first inquiry."
+    elif now - normalized_last_event_at <= timedelta(days=14):
+        status = "active"
+        message = "Website inquiry tracking has received recent activity."
+    elif now - normalized_last_event_at > timedelta(days=30) and visits >= 100:
+        status = "check_tracking"
+        message = "Website visits continued, but no inquiry event arrived recently. Check the form connection."
+    else:
+        status = "quiet"
+        message = "No recent inquiry was recorded. This does not prove the form is broken."
+    return {
+        "status": status,
+        "message": message,
+        "key_configured": key_configured,
+        "last_event_at": (
+            normalized_last_event_at.isoformat()
+            if normalized_last_event_at is not None
+            else None
+        ),
+    }
