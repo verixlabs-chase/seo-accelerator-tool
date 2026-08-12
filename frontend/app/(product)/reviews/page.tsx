@@ -992,7 +992,7 @@ export default function ReviewsPage() {
         [draft.id]: draft.approved_text || draft.draft_text || "",
       }));
       if (draft.status === "human_required") {
-        setNotice("This review needs a person to write the reply. No AI action or credit was used.");
+        setNotice("This review needs a personal reply. No response credit was used.");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "A reply draft could not be prepared.");
@@ -1162,14 +1162,14 @@ export default function ReviewsPage() {
           compact
         />
 
-        <TruthNotice title="AI can prepare wording, but you stay in control.">
+        <TruthNotice title="Prepare a reply, then review every word before posting.">
           Every suggested reply must be checked and approved by a person. Posting is a separate step
           with its own confirmation. Automatic replies are off.
         </TruthNotice>
 
         {responsePolicy && !responsePolicy.ai_configured ? (
           <section className="rounded-md border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-            AI reply drafting is not connected yet. Your reviews remain available and no credits will be used.
+            Reply drafting is not connected yet. Your reviews remain available and no credits will be used.
           </section>
         ) : null}
 

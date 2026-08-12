@@ -29,6 +29,8 @@ def _recommendation(db_session, *, tenant_id: str, campaign_id: str, recommendat
 def test_execution_persists_mutation_audit_rows(db_session, create_test_tenant, create_test_org) -> None:
     tenant = create_test_tenant(name='Mutation Tenant')
     org = create_test_org(tenant_id=tenant.id, name='Mutation Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
     campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Mutation Campaign', domain='mutation.example')
     recommendation = _recommendation(db_session, tenant_id=tenant.id, campaign_id=campaign.id, recommendation_type='fix_missing_title')
     execution = schedule_execution(recommendation.id, db=db_session)
@@ -49,6 +51,8 @@ def test_execution_persists_mutation_audit_rows(db_session, create_test_tenant, 
 def test_execution_can_be_rolled_back(db_session, create_test_tenant, create_test_org) -> None:
     tenant = create_test_tenant(name='Rollback Tenant')
     org = create_test_org(tenant_id=tenant.id, name='Rollback Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
     campaign = create_test_campaign(db_session, org.id, tenant_id=tenant.id, name='Rollback Campaign', domain='rollback.example')
     recommendation = _recommendation(db_session, tenant_id=tenant.id, campaign_id=campaign.id, recommendation_type='publish_schema_markup')
     execution = schedule_execution(recommendation.id, db=db_session)
@@ -64,3 +68,37 @@ def test_execution_can_be_rolled_back(db_session, create_test_tenant, create_tes
     assert rows
     assert all(row.status == 'rolled_back' for row in rows)
     assert all(row.rolled_back_at is not None for row in rows)
+
+
+def test_solo_plan_cannot_deliver_wordpress_mutations(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+) -> None:
+    tenant = create_test_tenant(name='Solo Mutation Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Solo Mutation Org')
+    campaign = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=tenant.id,
+        name='Solo Mutation Campaign',
+        domain='solo-mutation.example',
+    )
+    recommendation = _recommendation(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_type='fix_missing_title',
+    )
+    execution = schedule_execution(recommendation.id, db=db_session)
+    assert isinstance(execution, RecommendationExecution)
+
+    blocked = execute_recommendation(execution.id, db=db_session)
+
+    assert isinstance(blocked, RecommendationExecution)
+    assert blocked.status == 'failed'
+    assert blocked.result_summary is not None
+    assert 'wordpress_execution_upgrade_required' in blocked.result_summary
+    assert db_session.query(ExecutionMutation).filter(
+        ExecutionMutation.execution_id == execution.id,
+    ).count() == 0

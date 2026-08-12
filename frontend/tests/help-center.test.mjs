@@ -74,3 +74,15 @@ test("help center is discoverable and gives a safe support handoff", () => {
     [],
   );
 });
+
+test("support requests require consent for safe diagnostics and show tracked status", () => {
+  const pageSource = source("../app/(product)/help/page.tsx");
+  assert.match(pageSource, /platformApi\("\/support\/requests"/);
+  assert.match(pageSource, /Attach a safe system summary/);
+  assert.match(pageSource, /Allow support to inspect this location for 72 hours/);
+  assert.match(pageSource, /It does not allow website or listing changes/);
+  assert.match(pageSource, /See what happens next/);
+  assert.match(pageSource, /response_expectation/);
+  assert.match(pageSource, /request priority review/);
+  assert.match(pageSource, /never includes these items or website page content/i);
+});

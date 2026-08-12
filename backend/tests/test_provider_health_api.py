@@ -4,6 +4,7 @@ from tests.conftest import create_test_campaign
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_quota import ProviderQuotaState
 from app.models.tenant import Tenant
+from app.models.organization import Organization
 
 
 def test_provider_health_summary_aggregation(client, db_session) -> None:
@@ -91,3 +92,41 @@ def test_wordpress_execution_setup_rejects_cross_org_campaign_mismatch(client, d
         headers={"Authorization": f"Bearer {token_a}"},
     )
     assert response.status_code == 404
+
+
+def test_wordpress_execution_setup_requires_growth_plan(client, db_session) -> None:
+    login = client.post("/api/v1/auth/login", json={"email": "a@example.com", "password": "pass-a"})
+    assert login.status_code == 200
+    payload = login.json()["data"]
+    token = payload["access_token"]
+    tenant_id = payload["user"]["tenant_id"]
+    organization = db_session.get(Organization, tenant_id)
+    assert organization is not None
+    campaign = create_test_campaign(
+        db_session,
+        organization.id,
+        tenant_id=tenant_id,
+        name="WordPress Plan Campaign",
+        domain="wordpress-plan.example",
+    )
+
+    response = client.get(
+        "/api/v1/provider-health/wordpress-execution-setup",
+        params={"campaign_id": campaign.id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    detail = response.json()["errors"][0]["details"]
+    assert detail["reason_code"] == "wordpress_execution_upgrade_required"
+    assert "Growth plan" in detail["message"]
+
+    organization.plan_type = "multi_location"
+    db_session.commit()
+    allowed = client.get(
+        "/api/v1/provider-health/wordpress-execution-setup",
+        params={"campaign_id": campaign.id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert allowed.status_code == 200
+    assert allowed.json()["data"]["execution_ready"] is True

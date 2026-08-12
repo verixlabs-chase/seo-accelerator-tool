@@ -1,5 +1,6 @@
 export * from "./ActionDrawer";
 export * from "./ExecutionTimeline";
+export * from "./GuidedProductTour";
 export * from "./AppShell";
 export * from "./ChartCard";
 export * from "./ChartEmptyState";

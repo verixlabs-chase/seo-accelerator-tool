@@ -197,25 +197,35 @@ function buildNextStep({
   reviewsLast30d,
   avgRatingLast30d,
   healthScore,
+  hasMapResult,
+  hasReviewResult,
+  hasHealthResult,
 }: {
   mapPackPosition?: number | null;
   reviewsLast30d: number;
   avgRatingLast30d: number;
   healthScore: number;
+  hasMapResult: boolean;
+  hasReviewResult: boolean;
+  hasHealthResult: boolean;
 }) {
+  if (!hasMapResult) {
+    return "Choose a tracked search below and run the first map check. This will show where the business appears across nearby areas.";
+  }
+
   if ((mapPackPosition || 99) > 3) {
     return "Improve the local business listing first. This location is not yet in the top three local map results.";
   }
 
-  if (reviewsLast30d < 3) {
+  if (hasReviewResult && reviewsLast30d < 3) {
     return "Ask more recent customers for reviews. Fresh reviews help the business stay competitive locally.";
   }
 
-  if (avgRatingLast30d > 0 && avgRatingLast30d < 4.2) {
+  if (hasReviewResult && avgRatingLast30d > 0 && avgRatingLast30d < 4.2) {
     return "Focus on review quality next. The business is getting reviews, but the average rating needs improvement.";
   }
 
-  if (healthScore < 70) {
+  if (hasHealthResult && healthScore < 70) {
     return "Check that the business name, address, phone number, and services are consistent everywhere customers may find them.";
   }
 
@@ -417,7 +427,7 @@ export default function LocalVisibilityPage() {
         setOrganizationId(currentUser.organization_id || "");
         await loadCampaigns();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to load local SEO data.");
+        setError(err instanceof Error ? err.message : "Unable to load local search results.");
       } finally {
         setLoading(false);
       }
@@ -446,7 +456,7 @@ export default function LocalVisibilityPage() {
     setReviewsTruth(null);
     void loadLocalData(selectedCampaignId)
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Unable to load local SEO data.");
+        setError(err instanceof Error ? err.message : "Unable to load local search results.");
       })
       .finally(() => setLoadingLocalData(false));
   }, [selectedCampaignId, loadLocalData]);
@@ -457,11 +467,17 @@ export default function LocalVisibilityPage() {
   const mapPackPosition = mapPack?.map_pack_position;
   const reviewsLast30d = velocity?.reviews_last_30d || 0;
   const avgRatingLast30d = velocity?.avg_rating_last_30d || 0;
+  const hasMapResult = typeof mapPackPosition === "number";
+  const hasHealthResult = typeof health?.health_score === "number";
+  const hasReviewResult = Boolean(velocity?.profile_id || velocity?.captured_at);
   const nextStep = buildNextStep({
     mapPackPosition,
     reviewsLast30d,
     avgRatingLast30d,
     healthScore,
+    hasMapResult,
+    hasReviewResult,
+    hasHealthResult,
   });
   const runtimeTruth = useMemo(
     () => pickPrimaryRuntimeTruth([mapPackTruth, healthTruth, velocityTruth, reviewsTruth]),
@@ -492,21 +508,21 @@ export default function LocalVisibilityPage() {
       },
       {
         label: "Local strength",
-        value: healthScore ? `${healthScore}/100` : "No health score",
+        value: hasHealthResult ? `${healthScore}/100` : "Not checked yet",
         tone: healthScore >= 70 ? "success" : healthScore >= 50 ? "info" : "warning",
       },
       {
         label: "Reviews (30d)",
-        value: reviewsLast30d ? `${reviewsLast30d} captured` : "No recent reviews",
+        value: hasReviewResult ? `${reviewsLast30d} found` : "Not checked yet",
         tone: reviewsLast30d >= 3 ? "success" : "warning",
       },
       {
         label: "Average rating",
-        value: avgRatingLast30d ? avgRatingLast30d.toFixed(1) : "No rating yet",
+        value: hasReviewResult ? avgRatingLast30d.toFixed(1) : "Not checked yet",
         tone: avgRatingLast30d >= 4.5 ? "success" : avgRatingLast30d >= 4 ? "info" : "warning",
       },
     ],
-    [avgRatingLast30d, healthScore, locationContext?.base_map.status, mapPackPosition, reviewsLast30d, runtimeTruth],
+    [avgRatingLast30d, hasHealthResult, hasReviewResult, healthScore, locationContext?.base_map.status, mapPackPosition, reviewsLast30d, runtimeTruth],
   );
 
   return (
@@ -574,8 +590,8 @@ export default function LocalVisibilityPage() {
 
         {!loading && campaigns.length === 0 ? (
           <EmptyState
-            title="No business is ready for local SEO yet"
-            summary="Set up a business first so InsightOS can collect local visibility and review data."
+            title="Add a location before checking nearby searches"
+            summary="InsightOS needs a business name, website, city, and state before it can check nearby search results."
             actionLabel="Go to dashboard setup"
             onAction={() => router.push("/dashboard")}
           />
@@ -590,10 +606,15 @@ export default function LocalVisibilityPage() {
               <div className="mt-3 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
                 <div>
                   <h2 className="text-2xl font-semibold tracking-[-0.03em] text-white">
-                    {getHealthLabel(healthScore)}
+                    {hasHealthResult ? getHealthLabel(healthScore) : "Run the first local search check"}
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-zinc-300">
-                    {getMapPackSummary(mapPackPosition)} {getReviewsSummary(reviewsLast30d, avgRatingLast30d)}
+                    {hasMapResult
+                      ? getMapPackSummary(mapPackPosition)
+                      : "A map position has not been checked yet."}{" "}
+                    {hasReviewResult
+                      ? getReviewsSummary(reviewsLast30d, avgRatingLast30d)
+                      : "Recent reviews have not been checked yet."}
                   </p>
                 </div>
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
@@ -607,24 +628,24 @@ export default function LocalVisibilityPage() {
 
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
-                label="Local search position"
-                value={mapPackPosition ? `#${mapPackPosition}` : "N/A"}
+                label="Where you appear on Maps"
+                value={mapPackPosition ? `#${mapPackPosition}` : "Not checked"}
                 summary="Lower is better. Positions 1–3 are the businesses customers see most prominently on the map."
                 tone="highlight"
               />
               <KpiCard
-                label="Local visibility"
-                value={healthScore ? `${healthScore}` : "0"}
-                summary="A quick summary of how strong this location looks across saved local-search information."
+                label="Overall local strength"
+                value={hasHealthResult ? `${healthScore}/100` : "Not checked"}
+                summary="A quick view of this location's saved map position, reviews, and business information."
               />
               <KpiCard
                 label="Reviews in 30 days"
-                value={String(reviewsLast30d)}
+                value={hasReviewResult ? String(reviewsLast30d) : "Not checked"}
                 summary="Fresh reviews help keep local visibility and trust moving in the right direction."
               />
               <KpiCard
                 label="Average rating"
-                value={avgRatingLast30d ? avgRatingLast30d.toFixed(1) : "0.0"}
+                value={hasReviewResult ? avgRatingLast30d.toFixed(1) : "Not checked"}
                 summary="This is the average rating captured from recent review activity."
               />
             </div>
@@ -643,7 +664,7 @@ export default function LocalVisibilityPage() {
                       Business location map
                     </span>
                     <span className="rounded-md border border-[#3a2a20] bg-amber-500/5 px-3 py-1.5 text-sm text-amber-100">
-                      Map only — not search positions
+                      Location map — rankings appear after a map check
                     </span>
                     {locationContext?.base_map.status !== "ready" ||
                     locationContext?.provider_location.status !== "ready" ? (
@@ -706,19 +727,19 @@ export default function LocalVisibilityPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <section className="rounded-md border border-[#26272c] bg-[#141518] p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Search-area setup
+                  Area being checked
                 </p>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="text-base font-semibold text-white">
                       {locationContext?.provider_location.status === "ready"
                         ? locationContext.provider_location.name
-                        : "Search area needs setup"}
+                        : "Choose the correct search area"}
                     </h2>
                     <p className="mt-1 text-sm leading-6 text-zinc-400">
                       {locationContext?.provider_location.status === "ready"
-                        ? "This location is ready for live search checks."
-                        : "Add complete city and state details so InsightOS can match the correct search area."}
+                        ? "This location is ready for map ranking checks."
+                        : "Add the city and state so InsightOS can check the right area."}
                     </p>
                   </div>
                   <span
@@ -735,11 +756,11 @@ export default function LocalVisibilityPage() {
 
               <section className="rounded-md border border-[#3a2a20] bg-[#171518] p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Neighborhood search coverage
+                  Map ranking coverage
                 </p>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-base font-semibold text-white">Area-by-area tracking is ready below</h2>
+                    <h2 className="text-base font-semibold text-white">Check rankings across nearby areas</h2>
                     <p className="mt-1 text-sm leading-6 text-zinc-400">
                       Choose customer searches and an area to see how this business appears from
                       different nearby spots. The business map above remains a separate reference.

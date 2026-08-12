@@ -21,6 +21,11 @@ from app.models.execution_mutation import ExecutionMutation
 from app.models.intelligence import StrategyRecommendation
 from app.models.intelligence_governance_policy import IntelligenceGovernancePolicy
 from app.models.recommendation_execution import RecommendationExecution
+from app.services.commercial_plan_service import (
+    FEATURE_WORDPRESS_EXECUTION,
+    require_commercial_feature,
+)
+from app.services.cost_economics_service import CostEconomicsError
 
 MAX_EXECUTIONS_PER_CAMPAIGN_PER_DAY = 20
 RETRY_LIMIT = 3
@@ -537,6 +542,18 @@ def _deliver_mutations(session: Session, *, execution: RecommendationExecution, 
     mutations = result.get('mutations', [])
     if not mutations:
         return result
+    campaign = session.get(Campaign, execution.campaign_id)
+    try:
+        require_commercial_feature(
+            session,
+            organization_id=campaign.organization_id if campaign is not None else None,
+            feature_code=FEATURE_WORDPRESS_EXECUTION,
+        )
+    except CostEconomicsError as exc:
+        failed = _failed_result(execution.execution_type, str(exc))
+        failed['reason_code'] = exc.reason_code
+        failed['mutations'] = mutations
+        return failed
     try:
         delivery = apply_mutations(session, execution=execution, mutations=mutations)
     except WordPressExecutionError as exc:

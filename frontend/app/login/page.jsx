@@ -53,8 +53,7 @@ export default function LoginPage() {
           Sign in to your workspace
         </h1>
         <p className="mt-3 text-sm leading-6 text-zinc-300">
-          Open your dashboard to review visibility changes, recommended actions,
-          and report delivery status.
+          See what changed on Google, what needs attention, and what to work on next.
         </p>
 
         <form onSubmit={submit} className="mt-8 space-y-4">
@@ -98,9 +97,8 @@ export default function LoginPage() {
           </p>
         ) : null}
 
-        <p className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm leading-6 text-amber-50">
-          This workspace now uses a server-backed httpOnly session cookie. The browser no longer
-          keeps your auth tokens in JS-accessible storage.
+        <p className="mt-4 text-xs leading-5 text-zinc-500">
+          Your sign-in stays protected in a secure browser session.
         </p>
 
         <div className="mt-6 flex items-center justify-between gap-3 text-sm text-zinc-400">

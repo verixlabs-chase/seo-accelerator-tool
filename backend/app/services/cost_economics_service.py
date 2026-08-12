@@ -80,7 +80,7 @@ PLAN_ECONOMICS: dict[str, PlanEconomics] = {
     "solo": PlanEconomics(code="solo", name="Solo", monthly_revenue=Decimal("299.00")),
     "multi_location": PlanEconomics(
         code="multi_location",
-        name="Multi-location",
+        name="Growth",
         monthly_revenue=Decimal("699.00"),
     ),
     "enterprise": PlanEconomics(
@@ -94,6 +94,7 @@ PLAN_ALIASES = {
     "standard": "solo",
     "solo": "solo",
     "pro": "multi_location",
+    "growth": "multi_location",
     "multi-location": "multi_location",
     "multi_location": "multi_location",
     "enterprise": "enterprise",
@@ -548,8 +549,11 @@ def get_customer_credit_summary(
         if row.credential_owner == "organization" and row.event_type == "reservation"
     )
 
+    from app.services.commercial_plan_service import get_commercial_plan_summary
+
+    commercial = get_commercial_plan_summary(db, organization=org)
     return {
-        "plan": {"code": plan.code, "name": plan.name},
+        "plan": commercial["plan"],
         "period": {
             "start": period_start.isoformat(),
             "end": period_end.isoformat(),
@@ -574,6 +578,9 @@ def get_customer_credit_summary(
             "Insight Credits measure optional paid checks inside InsightOS. "
             "They are not cash and do not change your subscription price."
         ),
+        "commercial_catalog_version": commercial["catalog_version"],
+        "capabilities": commercial["capabilities"],
+        "upgrade": commercial["upgrade"],
     }
 
 

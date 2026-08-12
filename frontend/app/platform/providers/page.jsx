@@ -38,7 +38,7 @@ export default function PlatformProvidersPage() {
         <thead>
           <tr>
             <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Organization</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Provider</th>
+            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Data Source</th>
             <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Capability</th>
             <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Breaker</th>
             <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Failures</th>
@@ -49,7 +49,7 @@ export default function PlatformProvidersPage() {
           {items.map((row, idx) => (
             <tr key={`${row.organization_id}-${row.provider_name}-${row.capability}-${idx}`}>
               <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.organization_name || row.organization_id}</td>
-              <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.provider_name}</td>
+              <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.data_source_name || "Configured data source"}</td>
               <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.capability}</td>
               <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.breaker_state}</td>
               <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.consecutive_failures}</td>

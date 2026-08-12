@@ -29,6 +29,7 @@ class ProviderPolicyUpsertIn(BaseModel):
 
 tenant_router = APIRouter(tags=["provider-credentials"])
 control_plane_router = APIRouter(tags=["provider-credentials"])
+SEARCH_MARKET_DATA_PROVIDER = "dataforseo"
 
 
 @control_plane_router.put("/platform/provider-credentials/{provider_name}")
@@ -138,6 +139,91 @@ def upsert_policy(
         {
             "organization_id": row.organization_id,
             "provider_name": row.provider_name,
+            "credential_mode": row.credential_mode,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@tenant_router.put("/organizations/{organization_id}/search-data-credentials")
+def upsert_search_data_credentials(
+    request: Request,
+    organization_id: str,
+    body: ProviderCredentialUpsertIn,
+    user: dict = Depends(require_org_role({"org_owner", "org_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    if user.get("organization_id") != organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "Organization context does not match request scope.",
+                "reason_code": "organization_scope_mismatch",
+            },
+        )
+    try:
+        row = upsert_organization_provider_credentials(
+            db,
+            organization_id=organization_id,
+            provider_name=SEARCH_MARKET_DATA_PROVIDER,
+            auth_mode=body.auth_mode,
+            credentials=body.credentials,
+        )
+    except ProviderCredentialConfigurationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
+    return envelope(
+        request,
+        {
+            "organization_id": row.organization_id,
+            "data_source": "search_market_data",
+            "auth_mode": row.auth_mode,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@control_plane_router.put(
+    "/platform/organizations/{organization_id}/data-source-policies/search_market_data"
+)
+def upsert_search_market_data_policy(
+    request: Request,
+    organization_id: str,
+    body: ProviderPolicyUpsertIn,
+    user: dict = Depends(require_platform_owner()),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        row = upsert_provider_policy(
+            db,
+            organization_id=organization_id,
+            provider_name=SEARCH_MARKET_DATA_PROVIDER,
+            credential_mode=body.credential_mode,
+        )
+    except ProviderCredentialConfigurationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
+    write_audit_log(
+        db,
+        tenant_id=organization_id,
+        actor_user_id=user["id"],
+        event_type="platform.data_source.policy.upserted",
+        payload={
+            "organization_id": organization_id,
+            "data_source": "search_market_data",
+            "credential_mode": body.credential_mode,
+        },
+    )
+    db.commit()
+    return envelope(
+        request,
+        {
+            "organization_id": row.organization_id,
+            "data_source": "search_market_data",
             "credential_mode": row.credential_mode,
             "updated_at": row.updated_at.isoformat() if row.updated_at else datetime.now(UTC).isoformat(),
         },

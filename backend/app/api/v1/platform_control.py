@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_platform_owner, require_platform_role
-from app.api.response import envelope
+from app.api.response import envelope, public_data_source_label
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.organization import Organization
@@ -105,6 +105,7 @@ def get_platform_org(
             "provider_policies": [
                 {
                     "provider_name": row.provider_name,
+                    "data_source_name": public_data_source_label(row.provider_name),
                     "credential_mode": row.credential_mode,
                     "updated_at": row.updated_at.isoformat(),
                 }
@@ -297,6 +298,7 @@ def platform_provider_health_summary(
                 "organization_id": row.tenant_id,
                 "organization_name": org.name if org else None,
                 "provider_name": row.provider_name,
+                "data_source_name": public_data_source_label(row.provider_name),
                 "capability": row.capability,
                 "breaker_state": row.breaker_state,
                 "consecutive_failures": row.consecutive_failures,

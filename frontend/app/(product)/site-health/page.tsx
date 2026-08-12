@@ -1184,7 +1184,7 @@ export default function SiteHealthPage() {
               <ChartCard
                 eyebrow="Current priorities"
                 title="What needs attention first"
-                summary="Problems are grouped into a simple order: urgent fixes, important follow-up work, and lower-risk cleanup."
+                summary="Problems are ordered by urgency: fix the red items first, then work through the amber items and lower-risk cleanup."
                 chart={
                   latestRunIssues.length > 0 ? (
                     <div className="h-72">

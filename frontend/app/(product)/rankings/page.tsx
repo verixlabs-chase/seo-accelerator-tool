@@ -399,7 +399,7 @@ export default function RankingsPage() {
       setNotice(
         created > 0
           ? `Live ranking check complete. ${created} fresh position${created === 1 ? "" : "s"} stored.`
-          : "No ranking snapshots were created. Check the provider setup and location keywords below.",
+          : "No ranking snapshots were created. Check the search data connection and location searches below.",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to run the live ranking check.");
@@ -408,7 +408,7 @@ export default function RankingsPage() {
     }
   }
 
-  async function connectDataForSeo(event: FormEvent) {
+  async function connectSearchData(event: FormEvent) {
     event.preventDefault();
     if (!me?.organization_id || !providerLogin.trim() || !providerPassword) {
       setError("The search data login and password are required.");
@@ -419,7 +419,7 @@ export default function RankingsPage() {
     setNotice("");
     try {
       await platformApi(
-        `/organizations/${me.organization_id}/provider-credentials/dataforseo`,
+        `/organizations/${me.organization_id}/search-data-credentials`,
         {
           method: "PUT",
           body: JSON.stringify({
@@ -1254,7 +1254,7 @@ export default function RankingsPage() {
               </form>
 
               <form
-                onSubmit={connectDataForSeo}
+                onSubmit={connectSearchData}
                 className="rounded-md border border-[#3a2a20] bg-[#171518] p-5"
               >
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">

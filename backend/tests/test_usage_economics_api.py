@@ -28,6 +28,16 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["plan"]["name"] == "Solo"
+    assert data["plan"]["monthly_price"] == 299.0
+    assert data["plan"]["included_locations"] == 1
+    assert data["commercial_catalog_version"] == "commercial-plans-2026-08-v1"
+    assert data["upgrade"]["plan_name"] == "Growth"
+    assert data["upgrade"]["monthly_price"] == 699.0
+    wordpress = next(
+        item for item in data["capabilities"] if item["code"] == "wordpress_execution"
+    )
+    assert wordpress["available"] is False
+    assert wordpress["required_plan"] == "Growth"
     assert data["credits"]["monthly"] == 1495
     assert data["credits"]["remaining"] == 1495
     assert data["credits"]["name"] == "Insight Credits"

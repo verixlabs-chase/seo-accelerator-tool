@@ -1,8 +1,8 @@
 # CX1 Help Center Contract
 
-Status: first customer-help slice implemented locally  
+Status: CX1 customer education and support implemented locally
 Route: `/help`  
-Language version: `service-business-plain-language-v2`
+Language version: `service-business-natural-voice-v3`
 
 ## Purpose
 
@@ -54,10 +54,31 @@ The customer is asked for only:
 4. the exact on-screen message.
 
 The page explicitly tells the customer never to send a password, sign-in code,
-payment number, or private access key. The current slice opens the customer's
-email application; it does not send automatically or collect a diagnostic
-bundle. Consented diagnostic bundles and tracked escalation states remain a
-later CX1 slice.
+payment number, API key, or private access key. It saves a durable,
+tenant-scoped request and keeps email as a fallback. Customers explicitly
+choose whether to attach a safe
+system summary and whether support may inspect the selected location for 72
+hours. The summary is restricted to identifiers, setup state, connection
+status/timestamps/error codes, and latest scan/report status. Passwords,
+tokens, credentials, page content, review text, prompts, payment information,
+and provider payloads are prohibited. Customers receive a reference number,
+response expectation, visible status, and an explicit priority-review path.
+Platform support receives a filterable queue so requests can be found by
+organization or status and handled against their response target.
+
+## Quick product tours
+
+- The Help Center can start a four-step tour for a one-business owner,
+  multi-location manager, or team/agency operator.
+- A successful first setup starts the same tour once. Customers can close it,
+  resume it across pages, or restart it from the Help Center.
+- The tour is a small non-modal guide. It does not block the page or leave a
+  permanent message behind after the customer finishes or closes it.
+- Tour state contains only the persona, step number, completion state, and
+  timestamps. It is tenant-scoped in browser storage and expires after 90 days.
+- Governed events measure started, viewed-step, and completed states using only
+  the persona and step number. No search terms, page content, or contact data
+  are recorded.
 
 ## Acceptance checks
 

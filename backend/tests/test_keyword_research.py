@@ -194,6 +194,30 @@ def test_provider_warning_is_customer_safe() -> None:
     )
 
 
+def test_keyword_research_serializers_hide_internal_source_identifiers() -> None:
+    run = type(
+        "Run",
+        (),
+        {
+            "id": "run-1",
+            "campaign_id": "campaign-1",
+            "business_location_id": "location-1",
+            "status": "complete",
+            "location_name": "Reno",
+            "language_code": "en",
+            "sources": ["dataforseo_ranked", "dataforseo_ideas", "dataforseo_volume"],
+            "warnings": [],
+            "suggestion_count": 1,
+            "completed_at": None,
+        },
+    )()
+
+    payload = keyword_research_service._serialize_run(run)
+
+    assert payload["sources"] == ["live_rankings", "related_searches", "local_demand"]
+    assert "dataforseo" not in str(payload).lower()
+
+
 def test_confirmed_service_uses_bounded_versioned_synonyms() -> None:
     service = type(
         "ConfirmedService",
@@ -454,10 +478,11 @@ def test_discovery_scores_real_sources_and_promotes_selected_searches(
 
     assert payload["run"]["status"] == "complete"
     assert payload["run"]["sources"] == [
-        "dataforseo_ideas",
-        "dataforseo_ranked",
-        "dataforseo_volume",
+        "related_searches",
+        "live_rankings",
+        "local_demand",
     ]
+    assert "dataforseo" not in str(payload).lower()
     assert payload["summary"]["total"] == 3
     emergency = next(item for item in payload["items"] if item["keyword"] == "emergency plumber")
     assert emergency["search_volume"] == 320

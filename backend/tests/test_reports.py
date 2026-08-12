@@ -5,7 +5,48 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-from app.services import report_artifact_storage_service, reporting_service
+from app.services import premium_report_service, report_artifact_storage_service, reporting_service
+
+
+def test_report_files_sanitize_saved_system_wording() -> None:
+    supplier = "".join(("Data", "For", "SEO"))
+    snapshot = {
+        "campaign": {"name": "Reno Service Team", "location_name": "Reno Service Team"},
+        "period": {"start": "2026-07-01", "end": "2026-07-31"},
+        "executive_summary": {
+            "headline": f"{supplier} technical report",
+            "summary": "Review the deterministic summary before deciding what to do.",
+        },
+        "metrics": [
+            {
+                "key": "google_visits",
+                "label": "Visits from Google",
+                "current": 12,
+                "unit": "visits",
+                "result": "steady",
+                "change_percent": 0,
+                "direction": "steady",
+                "source": {"label": supplier, "last_updated": "2026-07-31"},
+                "coverage": {"current": {"state": "complete", "observed": 31, "expected": 31}},
+            }
+        ],
+        "trend_series": [],
+        "wins": [],
+        "risks": [],
+        "completed_actions": [],
+        "measured_outcomes": [],
+        "next_priorities": [],
+        "source": {"freshness_state": "current"},
+    }
+
+    html = premium_report_service.render_report_html(snapshot)
+    pdf_text = "\n".join(premium_report_service.report_pdf_lines(snapshot))
+
+    assert supplier.lower() not in html.lower()
+    assert supplier.lower() not in pdf_text.lower()
+    assert "deterministic summary" not in html.lower()
+    assert "technical evidence" not in html.lower()
+    assert "search data service" in html.lower()
 
 
 def test_report_pdf_dependency_is_declared_for_vercel_runtime():
@@ -844,7 +885,7 @@ def test_report_next_actions_are_unique_detailed_and_measurable(client, db_sessi
     assert "Performance over time" in html
     assert "Where the numbers came from" in html
     assert "How results will be checked" in html
-    assert html.count("Ask completed customers for reviews consistently</h3>") == 1
+    assert html.count("Ask recent customers for reviews consistently</h3>") == 1
 
     pdf_artifact = next(item for item in detail_payload["artifacts"] if item["artifact_type"] == "pdf")
     pdf_response = client.get(

@@ -43,6 +43,7 @@ import {
   isFailedStatus,
   isPendingStatus,
 } from "../truth/dashboardTruth.mjs";
+import { hasOnboardingProgress } from "../truth/onboardingProgress.mjs";
 import {
   buildRuntimeTruthSignal,
   getRuntimeTruthSummary,
@@ -1348,6 +1349,12 @@ export default function DashboardPage() {
       try {
         const user = (await api("/auth/me", { method: "GET" })) as Me;
         setMe(user);
+        if (
+          user.organization_id &&
+          hasOnboardingProgress(window.localStorage, user.organization_id)
+        ) {
+          setShowWizard(true);
+        }
         await loadCampaigns();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Session invalid");
@@ -1569,7 +1576,7 @@ export default function DashboardPage() {
         impactTitle: "Why it matters",
         impactBody: "Until your business is set up, the dashboard cannot show ranking changes, reports, or recommended actions.",
         nextStepTitle: "Set up your business",
-        nextStepBody: "Complete the guided setup to run your first check and unlock your first visibility summary.",
+        nextStepBody: "Complete setup to run the first website and search checks for this business.",
         primaryActionLabel: "Set up your business",
         primaryAction: () => setShowWizard(true),
         secondaryActionLabel: "Add business manually",

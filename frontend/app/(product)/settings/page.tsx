@@ -14,7 +14,9 @@ import {
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import { getTenantId } from "../../lib/authStorage";
 import { getConnectionStatusView } from "../truth/dataConnectionsTruth.mjs";
+import { requestProductTour } from "../truth/productTour.mjs";
 
 type Me = {
   organization_id?: string;
@@ -123,6 +125,11 @@ type UsageAllowance = {
   plan: {
     code: string;
     name: string;
+    monthly_price: number;
+    included_locations: number;
+    active_locations: number;
+    remaining_locations: number;
+    additional_locations_require_custom_terms: boolean;
   };
   period: {
     start: string;
@@ -157,6 +164,21 @@ type UsageAllowance = {
     price_type: "up_to" | "per_item" | "fixed_ceiling";
   }>;
   important_note: string;
+  commercial_catalog_version: string;
+  capabilities: Array<{
+    code: string;
+    label: string;
+    summary: string;
+    available: boolean;
+    required_plan: string;
+  }>;
+  upgrade?: {
+    plan_code: string;
+    plan_name: string;
+    monthly_price: number;
+    headline: string;
+    reasons: string[];
+  } | null;
 };
 
 const primaryButtonClass =
@@ -231,6 +253,13 @@ export default function SettingsPage() {
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [guidedConnectionSetup, setGuidedConnectionSetup] = useState(false);
+
+  useEffect(() => {
+    setGuidedConnectionSetup(
+      new URLSearchParams(window.location.search).get("setup") === "connections",
+    );
+  }, []);
 
   const organizationId = me?.organization_id || "";
   const manageableCampaigns = useMemo(
@@ -263,6 +292,21 @@ export default function SettingsPage() {
     () => new Map(profileConnections.map((connection) => [connection.campaign_id, connection])),
     [profileConnections],
   );
+  const websiteMappingsComplete =
+    manageableCampaigns.length > 0 &&
+    manageableCampaigns.every((campaign) => connectionByCampaign.has(campaign.id));
+  const profileMappingsComplete =
+    manageableCampaigns.length > 0 &&
+    manageableCampaigns.every((campaign) => profileConnectionByCampaign.has(campaign.id));
+  const guidedStepsComplete = [
+    Boolean(payload?.google_oauth.connected),
+    websiteMappingsComplete,
+    Boolean(payload?.google_oauth.approved_access?.business_profile) && profileMappingsComplete,
+  ].filter(Boolean).length;
+
+  function scrollToConnectionStep(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   const loadConnections = useCallback(async (orgId: string) => {
     const next = (await platformApi(
@@ -387,7 +431,13 @@ export default function SettingsPage() {
     setError("");
     setNotice("");
     try {
-      const returnPath = scopeTarget === "gbp" ? "/settings?source=business-profile" : "/settings";
+      const returnPath = guidedConnectionSetup
+        ? scopeTarget === "gbp"
+          ? "/settings?setup=connections&source=business-profile"
+          : "/settings?setup=connections"
+        : scopeTarget === "gbp"
+          ? "/settings?source=business-profile"
+          : "/settings";
       const response = (await platformApi(
         `/organizations/${organizationId}/providers/google/oauth/start?scope_target=${scopeTarget}&return_path=${encodeURIComponent(returnPath)}`,
         { method: "POST" },
@@ -621,6 +671,96 @@ export default function SettingsPage() {
           </div>
         ) : null}
 
+        {guidedConnectionSetup && !loading ? (
+          <section className="rounded-md border border-accent-500/30 bg-accent-500/5 p-5" aria-labelledby="guided-connections-title">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-200">
+                  Finish setup
+                </p>
+                <h2 id="guided-connections-title" className="mt-1 text-xl font-semibold text-white">
+                  Connect the information that keeps your results current
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                  Work from top to bottom. InsightOS will show the websites and listings your Google account can access, then keep every location&apos;s results separate.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-accent-500/25 bg-accent-500/10 px-3 py-1.5 text-xs font-semibold text-accent-100">
+                {guidedStepsComplete} of 3 complete
+              </span>
+            </div>
+
+            <ol className="mt-5 divide-y divide-[#303137] border-y border-[#303137]">
+              <li className="grid gap-3 py-4 md:grid-cols-[auto_1fr_auto] md:items-center">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#303137] bg-[#111214] text-sm font-semibold text-white">1</span>
+                <div>
+                  <p className="font-semibold text-white">Approve Google access</p>
+                  <p className="mt-1 text-sm text-zinc-400">This securely connects your account. InsightOS never receives your Google password.</p>
+                </div>
+                {payload?.google_oauth.connected ? (
+                  <span className="text-sm font-semibold text-emerald-300">Complete</span>
+                ) : (
+                  <button type="button" className={primaryButtonClass} onClick={() => void connectGoogle()}>
+                    Connect Google
+                  </button>
+                )}
+              </li>
+              <li className="grid gap-3 py-4 md:grid-cols-[auto_1fr_auto] md:items-center">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#303137] bg-[#111214] text-sm font-semibold text-white">2</span>
+                <div>
+                  <p className="font-semibold text-white">Match each website to its location</p>
+                  <p className="mt-1 text-sm text-zinc-400">This brings in Google appearances, website visits, and average position without mixing locations.</p>
+                </div>
+                {websiteMappingsComplete ? (
+                  <span className="text-sm font-semibold text-emerald-300">Complete</span>
+                ) : payload?.google_oauth.connected ? (
+                  <button type="button" className={primaryButtonClass} onClick={() => scrollToConnectionStep("website-mappings")}>
+                    Match websites
+                  </button>
+                ) : (
+                  <span className="text-sm text-zinc-500">Finish step 1 first</span>
+                )}
+              </li>
+              <li className="grid gap-3 py-4 md:grid-cols-[auto_1fr_auto] md:items-center">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#303137] bg-[#111214] text-sm font-semibold text-white">3</span>
+                <div>
+                  <p className="font-semibold text-white">Match each Google business listing</p>
+                  <p className="mt-1 text-sm text-zinc-400">This connects listing details and customer actions. No listing changes are made automatically.</p>
+                </div>
+                {profileMappingsComplete && payload?.google_oauth.approved_access?.business_profile ? (
+                  <span className="text-sm font-semibold text-emerald-300">Complete</span>
+                ) : payload?.google_oauth.approved_access?.business_profile ? (
+                  <button type="button" className={primaryButtonClass} onClick={() => scrollToConnectionStep("profile-mappings")}>
+                    Match listings
+                  </button>
+                ) : payload?.google_oauth.connected ? (
+                  <button type="button" className={primaryButtonClass} onClick={() => void connectGoogle("gbp")}>
+                    Approve listing access
+                  </button>
+                ) : (
+                  <span className="text-sm text-zinc-500">Finish step 1 first</span>
+                )}
+              </li>
+            </ol>
+
+            {guidedStepsComplete === 3 ? (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4">
+                <p className="text-sm font-medium text-emerald-100">Setup is complete. Your connected information will now update automatically.</p>
+                <button
+                  type="button"
+                  className={primaryButtonClass}
+                  onClick={() => {
+                    requestProductTour(window.localStorage, getTenantId() || organizationId);
+                    window.location.assign("/dashboard");
+                  }}
+                >
+                  Open your dashboard
+                </button>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         {loading ? (
           <LoadingCard
             title="Loading data connections"
@@ -736,6 +876,50 @@ export default function SettingsPage() {
             ) : null}
 
             {usageAllowance ? (
+              <section aria-labelledby="current-plan-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Your plan
+                    </p>
+                    <h2 id="current-plan-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                      {usageAllowance.plan.name} · ${usageAllowance.plan.monthly_price.toLocaleString()}/month
+                    </h2>
+                    <p className="mt-2 text-sm text-zinc-300">
+                      {usageAllowance.plan.active_locations} of {usageAllowance.plan.included_locations} included {usageAllowance.plan.included_locations === 1 ? "location" : "locations"} in use
+                    </p>
+                  </div>
+                  <div className="grid gap-2 text-sm sm:grid-cols-2 lg:max-w-2xl">
+                    {usageAllowance.capabilities.filter((item) => item.available).slice(0, 4).map((item) => (
+                      <div key={item.code} className="border-l-2 border-emerald-500/40 pl-3">
+                        <p className="font-semibold text-white">{item.label}</p>
+                        <p className="mt-1 text-xs leading-5 text-zinc-400">{item.summary}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {usageAllowance.upgrade ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-4">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-accent-200">
+                          {usageAllowance.upgrade.plan_name} · ${usageAllowance.upgrade.monthly_price.toLocaleString()}/month
+                        </p>
+                        <h3 className="mt-1 font-semibold text-white">{usageAllowance.upgrade.headline}</h3>
+                        <ul className="mt-2 space-y-1 text-sm leading-6 text-zinc-300">
+                          {usageAllowance.upgrade.reasons.map((reason) => (
+                            <li key={reason}>✓ {reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <button type="button" className={secondaryButtonClass} onClick={() => window.location.assign("/help")}>Ask about upgrading</button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {usageAllowance ? (
               <details className="rounded-md border border-[#292a2f] bg-[#141518] p-4">
                 <summary className="cursor-pointer list-none">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
@@ -808,7 +992,7 @@ export default function SettingsPage() {
               </details>
             ) : null}
 
-            <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+            <section id="google-search-console-connection" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -996,7 +1180,7 @@ export default function SettingsPage() {
               </section>
             )}
 
-            <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+            <section id="google-business-profile-connection" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">

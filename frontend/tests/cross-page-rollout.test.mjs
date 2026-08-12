@@ -65,7 +65,9 @@ test("each data-heavy route has a truthful decision visual", () => {
   assert.match(source("../app/(product)/rankings/page.tsx"), /Location comparison/);
   assert.match(source("../app/(product)/keyword-research/page.tsx"), /What customers search most/);
   assert.match(source("../app/(product)/local-visibility/page.tsx"), /<MapCard/);
-  assert.match(source("../app/(product)/local-visibility/page.tsx"), /Map only/);
+  assert.match(source("../app/(product)/local-visibility/page.tsx"), /rankings appear after a map check/);
+  assert.match(source("../app/(product)/local-visibility/page.tsx"), /typeof mapPackPosition === "number"/);
+  assert.match(source("../app/(product)/local-visibility/page.tsx"), /value=\{hasHealthResult \? `\$\{healthScore\}\/100` : "Not checked"\}/);
   assert.match(source("../app/(product)/site-health/page.tsx"), /Core Web Vital/);
   assert.match(source("../app/(product)/site-health/page.tsx"), /Fix this first/);
   assert.match(source("../app/(product)/citations/page.tsx"), /Confirmed listing progress/);

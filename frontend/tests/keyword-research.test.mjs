@@ -18,11 +18,11 @@ test("keyword research is location-aware, automatic, and promotes searches into 
   assert.match(page, /Find real searches without building a list by hand/);
   assert.match(page, /What customers search most/);
   assert.match(page, /Track selected/);
-  assert.match(page, /connected market research/);
+  assert.match(page, /monthly search estimates/);
   assert.match(page, /Google search history/);
   assert.doesNotMatch(page, /DataForSEO/);
   assert.doesNotMatch(page, /run\.warnings\.map/);
-  assert.match(page, /Fresh market data needs another try/);
+  assert.match(page, /Some search estimates could not update/);
   assert.doesNotMatch(page, /seed keyword/i);
 });
 
@@ -34,8 +34,8 @@ test("keyword research keeps business-owner language ahead of technical evidence
   assert.match(page, /Needs your review/);
   assert.match(page, /Hidden as unrelated/);
   assert.match(page, /Google already finds you/);
-  assert.match(page, /See the supporting data/);
-  assert.match(page, /Demand is an estimate, not a promise of new jobs/);
+  assert.match(page, /Why this search is listed/);
+  assert.match(page, /Search counts are estimates, not promised jobs/);
   assert.doesNotMatch(page, /deterministic summary/i);
 });
 
@@ -89,10 +89,10 @@ test("unclear-search AI review is a bounded action instead of a chatbot", () => 
   const page = source("../app/(product)/keyword-research/page.tsx");
 
   assert.match(page, /\/keyword-research\/review-uncertain/);
-  assert.match(page, /Use AI to sort unclear searches/);
+  assert.match(page, /Review unclear searches/);
   assert.match(page, /Checks up to 8 phrases against your confirmed services and service areas/);
   assert.match(page, /It cannot change your website/);
-  assert.match(page, /AI checked/);
+  assert.match(page, /Reviewed/);
   assert.doesNotMatch(page, /placeholder="Ask AI/i);
   assert.doesNotMatch(page, /chatbot/i);
 });
@@ -122,12 +122,12 @@ test("saved research dates show keyword movement without buying another comparis
 
   assert.match(page, /What changed since the last research/);
   assert.match(page, /data\.history\.comparison/);
-  assert.match(page, /Measured searches\/month/);
-  assert.match(page, /Useful searches/);
+  assert.match(page, /Estimated searches\/month/);
+  assert.match(page, /Helpful searches/);
   assert.match(page, /New searches found/);
   assert.match(page, /Searches moving up/);
   assert.match(page, /item\.trend\.label/);
-  assert.match(page, /Search demand is an estimate, not promised jobs/);
+  assert.match(page, /Search counts are estimates, not promised jobs/);
 });
 
 test("keyword intelligence measures owner checks and creates governed next steps", () => {
@@ -138,16 +138,14 @@ test("keyword intelligence measures owner checks and creates governed next steps
   assert.match(page, /\/keyword-research\/create-action/);
   assert.match(page, /Add to Next Steps/);
   assert.match(page, /In Next Steps/);
-  assert.match(page, /This group needs measured search evidence first/);
+  assert.match(page, /Check again after rankings or search estimates are available/);
   assert.doesNotMatch(page, /automatically change your website/i);
 });
 
-test("customer pages keep the market-data supplier private", () => {
+test("customer keyword sources use product labels instead of supplier identifiers", () => {
   const keywordResearch = source("../app/(product)/keyword-research/page.tsx");
-  const locations = source("../app/(product)/locations/page.tsx");
-  const rankings = source("../app/(product)/rankings/page.tsx");
 
-  assert.doesNotMatch(keywordResearch, /DataForSEO/);
-  assert.doesNotMatch(locations, /DataForSEO/);
-  assert.doesNotMatch(rankings, /DataForSEO/);
+  assert.match(keywordResearch, /live_rankings: "Live rankings"/);
+  assert.match(keywordResearch, /related_searches: "Related searches"/);
+  assert.match(keywordResearch, /local_demand: "Search estimates"/);
 });

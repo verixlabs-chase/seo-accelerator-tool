@@ -15,6 +15,9 @@ const PLAN_OPTIONS = [
 const BILLING_OPTIONS = ["platform_sponsored", "subscription", "custom_contract"];
 const STATUS_OPTIONS = ["active", "suspended", "archived"];
 const CREDENTIAL_MODE_OPTIONS = ["platform", "byo_optional", "byo_required"];
+const DATA_SOURCE_OPTIONS = [
+  { value: "search_market_data", label: "Search market data" },
+];
 
 export default function PlatformOrgDetailPage({ params }) {
   const { id } = params;
@@ -23,7 +26,7 @@ export default function PlatformOrgDetailPage({ params }) {
   const [planType, setPlanType] = useState("standard");
   const [billingMode, setBillingMode] = useState("subscription");
   const [status, setStatus] = useState("active");
-  const [providerName, setProviderName] = useState("dataforseo");
+  const [dataSource, setDataSource] = useState("search_market_data");
   const [credentialMode, setCredentialMode] = useState("byo_optional");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -79,7 +82,7 @@ export default function PlatformOrgDetailPage({ params }) {
     setError("");
     setNotice("");
     try {
-      await platformApi(`/platform/organizations/${id}/provider-policies/${encodeURIComponent(providerName)}`, {
+      await platformApi(`/platform/organizations/${id}/data-source-policies/${encodeURIComponent(dataSource)}`, {
         method: "PUT",
         body: JSON.stringify({ credential_mode: credentialMode })
       });
@@ -192,8 +195,12 @@ export default function PlatformOrgDetailPage({ params }) {
             <form onSubmit={saveProviderPolicy}>
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 12, alignItems: "end" }}>
                 <div>
-                  <label>Provider Name</label>
-                  <input value={providerName} onChange={(event) => setProviderName(event.target.value)} style={{ display: "block", width: "100%", marginTop: 6 }} />
+                  <label>Data Source</label>
+                  <select value={dataSource} onChange={(event) => setDataSource(event.target.value)} style={{ display: "block", width: "100%", marginTop: 6 }}>
+                    {DATA_SOURCE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label>Credential Mode</label>
@@ -211,7 +218,7 @@ export default function PlatformOrgDetailPage({ params }) {
             <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Provider</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Data Source</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Credential Mode</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Updated</th>
                 </tr>
@@ -219,7 +226,7 @@ export default function PlatformOrgDetailPage({ params }) {
               <tbody>
                 {policies.map((row) => (
                   <tr key={row.provider_name}>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.provider_name}</td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.data_source_name || "Configured data source"}</td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.credential_mode}</td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{row.updated_at || "-"}</td>
                   </tr>

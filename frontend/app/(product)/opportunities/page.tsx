@@ -605,11 +605,11 @@ function getPriorityTone(riskTier = 0) {
 
 function getImpactLabel(confidenceScore = 0) {
   if (confidenceScore >= 0.8) {
-    return "Likely benefit: strong";
+    return "The saved information strongly supports doing this";
   }
 
   if (confidenceScore >= 0.6) {
-    return "Likely benefit: moderate";
+    return "The saved information supports doing this";
   }
 
   return "We need more information before estimating the result";
@@ -726,7 +726,7 @@ function getOwnerLabel(ownerRole?: string) {
     return "Content help";
   }
   if (ownerRole === "seo_operator") {
-    return "SEO help";
+    return "Search marketing help";
   }
   if (ownerRole === "developer") {
     return "Website help";
@@ -1517,7 +1517,7 @@ function ActionResultStatus({
                     <span className="text-xs opacity-75">to {formatMeasurementValue(outcome, outcome.value)}</span>
                   ) : null}
                 </div>
-                <p className="mt-1 text-xs opacity-60">Starting point · {metric.source || "stored evidence"}</p>
+                <p className="mt-1 text-xs opacity-60">Based on saved information</p>
               </div>
             );
           })}
@@ -2035,7 +2035,7 @@ export default function OpportunitiesPage() {
         );
       } else {
         setNotice(
-          "AI wording was not available, so InsightOS kept the saved action plan. Your checklist still works.",
+          "Fresh wording was not available, so InsightOS kept the saved action plan. Your checklist still works.",
         );
       }
     });
@@ -2540,7 +2540,7 @@ export default function OpportunitiesPage() {
                     {
                       key: "website" as const,
                       title: "Improve your website",
-                      summary: "Pages, search visibility, speed, and technical fixes.",
+                      summary: "Pages, search visibility, speed, and website fixes.",
                       icon: "website-health" as const,
                     },
                     {
@@ -2808,19 +2808,19 @@ export default function OpportunitiesPage() {
             <details className="rounded-md border border-violet-500/20 bg-[linear-gradient(135deg,rgba(139,92,246,0.07),rgba(20,21,24,0.96)_52%)] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
               <summary className="cursor-pointer list-none">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/70">
-                  Today&apos;s AI-assisted plan
+                  Today&apos;s plan
                 </p>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <h2 className="text-base font-semibold text-white">
-                    Open today&apos;s plain-language plan
+                    Open today&apos;s action list
                   </h2>
                   <span className="text-xs text-violet-200">Show</span>
                 </div>
               </summary>
               <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-t border-violet-500/15 pt-4">
                 <p className="max-w-3xl text-sm leading-6 text-zinc-300">
-                  InsightOS chooses the facts and saved actions. AI only turns that plan
-                  into easier language and cannot change your website.
+                  InsightOS uses the saved facts and approved actions to prepare this wording.
+                  It cannot change your website.
                 </p>
                 <button
                   onClick={() => void explainIntelligenceBrief()}
@@ -3284,11 +3284,11 @@ export default function OpportunitiesPage() {
                 {intelligenceRuntime?.configured &&
                 intelligenceAllowance?.remaining !== undefined ? (
                   <span>
-                    {intelligenceAllowance.remaining} AI-assisted actions remaining this month
+                    {intelligenceAllowance.remaining} refreshed plans remaining this month
                   </span>
                 ) : (
                   <span>
-                    The plain-language service is unavailable; saved guidance remains available
+                    Fresh wording is unavailable; the saved action plan remains available
                   </span>
                 )}
               </div>
@@ -3453,7 +3453,7 @@ export default function OpportunitiesPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                            Why this matters
+                            Action details
                           </p>
                           <h2 className="mt-1.5 text-2xl font-semibold tracking-[-0.03em] text-white">
                             {getRecommendationTitle(selectedRecommendation)}
@@ -3489,7 +3489,7 @@ export default function OpportunitiesPage() {
                         </div>
                         <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                            Why it matters
+                            Why this is prioritized
                           </p>
                           <p className="mt-2 text-sm leading-6 text-zinc-300">
                             {getImpactLabel(
@@ -3619,7 +3619,7 @@ export default function OpportunitiesPage() {
                             </div>
                           )}
                           <p className="mt-3 text-xs text-zinc-500">
-                            These steps come from the action library. Your saved progress follows you across devices.
+                            Your progress is saved and follows you across devices.
                           </p>
                         </section>
                       ) : null}
@@ -3636,16 +3636,21 @@ export default function OpportunitiesPage() {
                           </ul>
                         ) : (
                           <p className="mt-3 text-sm leading-6 text-zinc-300">
-                            We do not have supporting information for this action yet.
+                            InsightOS needs more information before it can explain why this action belongs here.
                           </p>
                         )}
                       </div>
 
                       <div className="mt-5 rounded-md border border-[#26272c] bg-[#111214] p-4">
-                        <div className="grid gap-4 md:grid-cols-4">
+                        <details>
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-zinc-200">
+                            <span>More about this action</span>
+                            <span className="text-xs font-normal text-zinc-500">Show</span>
+                          </summary>
+                          <div className="mt-4 grid gap-4 border-t border-[#26272c] pt-4 md:grid-cols-4">
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                              Likely benefit
+                              Support for this action
                             </p>
                             <p className="mt-2 text-sm text-zinc-200">
                               {getImpactLabel(
@@ -3657,7 +3662,7 @@ export default function OpportunitiesPage() {
                           </div>
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                              How this was found
+                              Information checked
                             </p>
                             <p className="mt-2 text-sm text-zinc-200">
                               {getEngineSourceLabel(selectedRecommendation.engine_source)}
@@ -3685,7 +3690,8 @@ export default function OpportunitiesPage() {
                               {formatRelativeTime(selectedRecommendation.created_at)}
                             </p>
                           </div>
-                        </div>
+                          </div>
+                        </details>
 
                         <div className="mt-4 flex flex-wrap gap-3">
                           {primaryAction ? (
@@ -3716,7 +3722,7 @@ export default function OpportunitiesPage() {
                             >
                               {busyAction === `${selectedRecommendation.id}:measure-outcome`
                                 ? "Measuring..."
-                                : "Measure saved-data progress"}
+                                : "Check progress"}
                             </button>
                           ) : null}
 

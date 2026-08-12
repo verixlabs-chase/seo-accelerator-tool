@@ -50,8 +50,8 @@ function getReportWorkflowState(report, campaign, truth) {
       label: "Report generation",
       status: "Delivery unverified",
       tone: "warning",
-      detail: `Month ${report.month_number} is marked delivered, but this runtime does not verify external inbox delivery.`,
-      nextStep: "Confirm delivery separately before treating this report as a completed client send.",
+      detail: `Month ${report.month_number} is marked sent, but receipt in the other person's inbox has not been confirmed.`,
+      nextStep: "Confirm that the recipient received it before treating the send as complete.",
     };
   }
 
@@ -72,11 +72,11 @@ function getReportWorkflowState(report, campaign, truth) {
       tone: "warning",
       detail:
         hasTruthState(truth, "minimal_artifact") || hasTruthState(truth, "non_durable")
-          ? `Month ${report.month_number} was generated as a minimal local artifact and still needs review before any send.`
+          ? `Month ${report.month_number} is ready for an early review, but long-term file storage is not ready yet.`
           : `Month ${report.month_number} is built and ready for review, but it has not been delivered yet.`,
       nextStep:
         hasTruthState(truth, "minimal_artifact") || hasTruthState(truth, "non_durable")
-          ? "Review the local preview, confirm it is good enough to share, then send it when ready."
+          ? "Review the report, download a copy, then send it when it is ready."
           : "Review the preview, confirm the recipient, and send it when ready.",
     };
   }
@@ -144,8 +144,8 @@ function getDeliveryWorkflowState(detail, report, truth) {
       label: "Delivery",
       status: "Unverified",
       tone: "warning",
-      detail: `The latest delivery to ${latestEvent.recipient} was marked sent, but this runtime does not verify external inbox delivery.`,
-      nextStep: "Confirm receipt outside the product before treating this report as delivered.",
+      detail: `The latest delivery to ${latestEvent.recipient} was marked sent, but receipt in that inbox has not been confirmed.`,
+      nextStep: "Confirm that the recipient received it before treating the send as complete.",
     };
   }
 
@@ -216,7 +216,7 @@ function getScheduleWorkflowState(schedule, campaign, formatRelativeTime, truth)
       label: "Schedule",
       status: "Overdue",
       tone: "warning",
-      detail: "The scheduler has a past-due next run and should not be treated as dependable until it catches up.",
+      detail: "The next report is overdue and the schedule needs attention.",
       nextStep: "Review the next run time and re-save the schedule if it is stuck.",
     };
   }
@@ -226,8 +226,8 @@ function getScheduleWorkflowState(schedule, campaign, formatRelativeTime, truth)
       label: "Schedule",
       status: "Active",
       tone: "success",
-      detail: `Recurring reports are enabled and the next run is planned for ${schedule.next_run_at ? formatRelativeTime(schedule.next_run_at) : "the configured schedule"}, but schedule status alone does not prove a report was generated or delivered successfully.`,
-      nextStep: "Review the next run time below and confirm later that a real report record was generated.",
+      detail: `Recurring reports are on. The next report is planned for ${schedule.next_run_at ? formatRelativeTime(schedule.next_run_at) : "the saved time"}.`,
+      nextStep: "Review the next run time below, then confirm that the report appears afterward.",
     };
   }
 
@@ -246,7 +246,7 @@ function getScheduleWorkflowState(schedule, campaign, formatRelativeTime, truth)
       label: "Schedule",
       status: "Retrying",
       tone: "info",
-      detail: "The scheduler is retrying a recent run and should not be treated as stable yet.",
+      detail: "InsightOS is trying the recent report again after a problem.",
       nextStep: "Wait for the retry to finish, then confirm whether the schedule returns to Active.",
     };
   }
@@ -256,7 +256,7 @@ function getScheduleWorkflowState(schedule, campaign, formatRelativeTime, truth)
       label: "Schedule",
       status: "Needs attention",
       tone: "danger",
-      detail: "The scheduler exhausted its retries and is not currently dependable.",
+      detail: "InsightOS tried several times but could not create the scheduled report.",
       nextStep: "Review the schedule settings below and re-save them after resolving the issue.",
     };
   }

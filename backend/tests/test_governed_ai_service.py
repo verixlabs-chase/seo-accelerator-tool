@@ -556,6 +556,8 @@ def test_service_business_language_guide_is_the_runtime_writing_standard() -> No
     assert "Customer interface dictionary" in guide
     assert "Get more reviews from recent customers" in guide
     assert "Count how many recent customers were asked for a review" in guide
+    assert "Know how your business is showing up on Google" in guide
+    assert "Would this sound natural" in guide
 
 
 def test_customer_language_contract_rewrites_internal_product_labels() -> None:
@@ -570,6 +572,32 @@ def test_customer_language_contract_rewrites_internal_product_labels() -> None:
         "deterministic",
         "deterministic summary",
     ]
+    assert find_disallowed_customer_terms(
+        "Unlock actionable insights with an AI-powered workflow."
+    ) == ["unlock", "actionable insights", "AI-powered"]
+    supplier = "".join(("Data", "For", "SEO"))
+    assert find_disallowed_customer_terms(f"Refresh {supplier} now.") == [
+        "internal search supplier"
+    ]
+    assert simplify_internal_language(f"Check the {supplier} provider.", max_words=32) == (
+        "Check the search data service data source."
+    )
+    search_estimate = simplify_internal_language(
+        "Review the supporting data for measured demand.",
+        max_words=32,
+    )
+    assert search_estimate == (
+        "Review the details behind this result for estimated monthly searches."
+    )
+    assert find_disallowed_customer_terms(search_estimate) == []
+
+    action_support = simplify_internal_language(
+        "Likely benefit: strong",
+        max_words=32,
+        action_first=False,
+    )
+    assert action_support == "the saved information strongly supports this action"
+    assert find_disallowed_customer_terms(action_support) == []
 
     checklist_step = simplify_internal_language(
         "Measure the share of eligible customers receiving a request.",
@@ -688,7 +716,7 @@ def test_mistral_adapter_uses_strict_schema_and_records_usage() -> None:
     assert captured["response_format"]["type"] == "json_schema"
     assert captured["response_format"]["json_schema"]["strict"] is True
     system_prompt = captured["messages"][0]["content"]
-    assert "InsightOS Service-Business Plain-Language Guide" in system_prompt
+    assert "InsightOS Service-Business Voice Guide" in system_prompt
     assert SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION in system_prompt
     assert "Start with the action" in system_prompt
     assert "Make the main part of this page load faster" in system_prompt

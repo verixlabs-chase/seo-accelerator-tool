@@ -11,6 +11,11 @@ from app.intelligence.executors.plugin_telemetry import WORDPRESS_CAPABILITY, WO
 from app.models.campaign import Campaign
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_policy import ProviderPolicy
+from app.services.commercial_plan_service import (
+    FEATURE_WORDPRESS_EXECUTION,
+    require_commercial_feature,
+)
+from app.services.cost_economics_service import CostEconomicsError
 from app.services.provider_credentials_service import get_organization_provider_credentials, get_platform_provider_credentials
 from app.services.provider_telemetry_service import ProviderTelemetryService
 
@@ -55,6 +60,17 @@ def wordpress_execution_setup(
     db: Session = Depends(get_db),
 ) -> dict:
     campaign = _campaign_or_404(db, user["tenant_id"], user.get("organization_id"), campaign_id)
+    try:
+        require_commercial_feature(
+            db,
+            organization_id=campaign.organization_id,
+            feature_code=FEATURE_WORDPRESS_EXECUTION,
+        )
+    except CostEconomicsError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
 
     settings = get_settings()
     environment = settings.app_env.lower()

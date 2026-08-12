@@ -22,6 +22,15 @@ test("settings presents Insight Credits without exposing the internal dollar bud
   );
 });
 
+test("settings explains the current plan and the practical reason to upgrade", () => {
+  const settings = source("../app/(product)/settings/page.tsx");
+
+  assert.match(settings, /Your plan/);
+  assert.match(settings, /included \{usageAllowance\.plan\.included_locations === 1/);
+  assert.match(settings, /Ask about upgrading/);
+  assert.match(settings, /usageAllowance\.upgrade\.reasons/);
+});
+
 test("keyword research shows the paid refresh price before it runs", () => {
   const research = source("../app/(product)/keyword-research/page.tsx");
 

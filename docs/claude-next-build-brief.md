@@ -504,6 +504,37 @@ Goal: make every customer-facing sentence sound like it was written by a
 knowledgeable, straightforward business advisor rather than by an SEO tool or
 an AI system.
 
+Implementation status (2026-08-11):
+
+- The UX13 foundation slice is implemented locally. Browser copy and generated
+  guidance now share `service-business-natural-voice-v3`, including reviewed
+  examples, read-aloud and five-second checks, and new prohibited wording for
+  self-conscious product narration and common marketing/AI filler.
+- The public home page now leads with `Know how your business is showing up on
+  Google`, and the sign-in screen states the work the owner will do after sign
+  in. Internal browser-session terminology was removed from the customer view.
+- High-visibility `unlock`, `plain-language plan`, and unnecessary AI labels
+  were replaced with specific customer outcomes or actions.
+- Customer pages, search-source identifiers, API errors, and generated guidance
+  now use product-owned search-data wording instead of naming the internal paid
+  market-data supplier. Internal adapters and operator logs retain the identifier
+  required to run and support the integration.
+- Keyword Research and Local Search now replace system-facing phrases such as
+  `local demand`, `measured demand`, `supporting data`, and missing-value zeroes
+  with estimated-search, customer-position, optional-explanation, and honest
+  `Not checked` wording.
+- The coded route audit is now complete locally. Reports sanitize saved
+  headlines, summaries, source labels, readiness messages, portfolio notes,
+  actions, steps, and downloaded report copy before a customer sees them. Next
+  Steps leads with the issue, reason, and first action; support, source, status,
+  and timing are available under optional detail instead of competing with the
+  checklist.
+- InsightOS does not yet ship a customer notification center. Notification and
+  digest wording belongs to ALT1 and must use this same contract when that
+  surface is implemented; UX13 does not claim a notification experience exists.
+- Remaining UX13 acceptance work is representative owner comprehension testing
+  and any revisions found during that test. It is not another route rewrite.
+
 Placement:
 - Run after the active MKT1.1 research and onboarding slices have stabilized
   their customer concepts and before broad paid-beta onboarding.
@@ -609,7 +640,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 24 | **G1.4B - Google Business Profile Fleet Operations - G1.4B-A implemented locally** | Growth and Enterprise operators can preview, approve, schedule, and safely fan out supported posts, photo uploads, and later typed profile actions across location groups, including Enterprise fleets with hundreds of authorized profiles. |
 | 25 | **PA1 first slice - Activation and Value Measurement - implemented locally** | A privacy-minimized governed event contract now measures setup, first evidence-backed value, location switching, recommendation and forecast use, completed action steps, measured outcomes, and structured usefulness/trust feedback. Platform owners receive aggregate plan-level funnels, time-to-value, return-value, churn-risk, feedback, and instrumentation coverage without session replay or sensitive business content. |
 | 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
-| 27 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 27 | **CX1 - Guided Onboarding, Education, and Support — completed locally** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
 | 28 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
 | 29 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
 | 30 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
@@ -2413,9 +2444,41 @@ Implementation status (2026-08-11):
   team/agency operator. The support handoff tells the customer which four
   non-sensitive details to include and explicitly prohibits passwords,
   sign-in codes, payment numbers, and private access keys.
-- Remaining CX1 slices include the unified connection path, persistent setup
-  progress after navigation, consented diagnostic bundles,
-  response/escalation states, and short persona-aware product tours.
+- The CX1 persistent-progress slice is implemented locally. Guided setup saves
+  only non-sensitive business answers, durable record identifiers, and step
+  outcomes in organization-scoped browser storage for 30 days. Returning to
+  the dashboard automatically resumes the wizard, preserves completed work,
+  turns an interrupted request into an honest retry state, and clears the
+  saved draft when setup is completed. Authentication tokens, passwords, API
+  keys, and provider credentials are never included.
+- The CX1 unified-connection slice is implemented locally. A successful first
+  setup now continues directly into one ordered Google path: approve account
+  access, match each Search Console website, then match each authorized
+  business listing. The path preserves its place across Google OAuth returns,
+  shows one three-step completion count, explains what each connection provides,
+  and takes the owner back to the dashboard when all three steps are complete.
+  Failed first checks still lead to dashboard recovery instead of hiding the
+  problem behind connection setup.
+- The CX1 support-recovery slice is implemented locally. The Help Center now
+  creates durable tenant-scoped support requests with a reference number,
+  plan-aware response target, visible received/investigating/waiting/resolved/
+  escalated state, and a customer-controlled priority-review action. A safe
+  diagnostic summary is attached only after explicit consent and is limited to
+  identifiers, setup state, connection status/timestamps/error codes, and the
+  latest scan/report status. Passwords, tokens, credentials, page content,
+  review text, prompts, payment information, provider payloads, and raw error
+  messages are prohibited. Separate operator-inspection consent expires after
+  72 hours and cannot authorize website or listing changes. Platform support
+  can update the visible state through an audited authenticated boundary.
+- The CX1 product-tour slice is implemented locally. A customer can start a
+  four-step tour for one-business, multi-location, or team/agency work. A
+  successful setup opens it once, and Help Center can restart it at any time.
+  The non-modal guide remains usable while moving between product pages,
+  remembers only tenant-scoped persona/progress timestamps for 90 days, and
+  can be closed without blocking any work. Governed, bounded events measure
+  tour starts, viewed steps, and completion without recording customer content.
+- CX1 is feature-complete locally. Production QA and release remain before it
+  can be marked released.
 
 Acceptance criteria:
 
@@ -3310,6 +3373,21 @@ Scope:
 Goal: make each plan complete at its promised job while giving a one-location
 business a clear reason to upgrade for automation, speed, depth, and control.
 Do not make location count the only reason to buy the `$699/month` plan.
+
+Implementation status (August 11, 2026):
+
+- The first COM1 slice is implemented locally. A versioned commercial catalog
+  now resolves legacy `standard` and `pro` records to the public Solo and Growth
+  plans, exposes the current monthly price and active-location allowance, and
+  provides customer-facing capability and upgrade explanations in Settings.
+- The `$699` public plan is now named Growth in customer allowance responses.
+- WordPress setup and mutation delivery now fail closed on Solo at the backend
+  and execution-dispatch layers. Growth and Enterprise remain eligible; saved
+  data and rollback recovery are not removed by this gate.
+- Focused backend enforcement tests, customer plan UI tests, and the production
+  frontend build pass. Stripe Checkout, signed/idempotent webhooks, subscription
+  recovery, plan changes, the remaining allowance gates, and entitlement-ledger
+  materialization remain in the next COM1 slice.
 
 Packaging principle:
 
