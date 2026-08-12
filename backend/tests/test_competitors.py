@@ -125,6 +125,19 @@ def test_research_compares_exact_owner_and_competitor_positions(client, db_sessi
         discovery_source="manual",
         review_status="confirmed",
     )
+    previous_run = KeywordResearchRun(
+        tenant_id=campaign.tenant_id,
+        organization_id=campaign.organization_id,
+        campaign_id=campaign.id,
+        business_location_id=campaign.business_location_id,
+        status="complete",
+        location_name="Reno, Nevada, United States",
+        sources=["competitor_rankings"],
+        warnings=[],
+        suggestion_count=1,
+        completed_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC),
+        created_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC),
+    )
     run = KeywordResearchRun(
         tenant_id=campaign.tenant_id,
         organization_id=campaign.organization_id,
@@ -136,44 +149,81 @@ def test_research_compares_exact_owner_and_competitor_positions(client, db_sessi
         warnings=[],
         suggestion_count=1,
         completed_at=datetime(2026, 8, 12, 12, 0, tzinfo=UTC),
+        created_at=datetime(2026, 8, 12, 12, 0, tzinfo=UTC),
     )
-    db_session.add_all([competitor, run])
+    db_session.add_all([competitor, previous_run, run])
     db_session.flush()
-    db_session.add(
-        KeywordResearchSuggestion(
-            run_id=run.id,
-            tenant_id=campaign.tenant_id,
-            organization_id=campaign.organization_id,
-            campaign_id=campaign.id,
-            business_location_id=campaign.business_location_id,
-            keyword="junk removal reno",
-            normalized_keyword="junk removal reno",
-            source_types=["competitor_rankings"],
-            evidence={
-                "ranked_url": "https://ownsite.com/junk-removal",
-                "competitors": [
-                    {
-                        "competitor_id": competitor.id,
-                        "domain": "rival.com",
-                        "label": "Local Rival",
-                        "position": 3,
-                        "url": "https://rival.com/junk-removal-reno",
-                    }
-                ],
-            },
-            search_volume=120,
-            current_position=11,
-            intent="Ready to hire",
-            opportunity_group="new_opportunity",
-            relevance_score=95,
-            relevance_status="relevant",
-            matched_service_name="Junk removal",
-            matched_service_area_name="Reno",
-            opportunity_score=88,
-            recommended_action="Improve this page",
-            recommendation_reason="A competitor is ahead.",
-            source_updated_at=datetime(2026, 8, 12, 12, 0, tzinfo=UTC),
-        )
+    db_session.add_all(
+        [
+            KeywordResearchSuggestion(
+                run_id=previous_run.id,
+                tenant_id=campaign.tenant_id,
+                organization_id=campaign.organization_id,
+                campaign_id=campaign.id,
+                business_location_id=campaign.business_location_id,
+                keyword="junk removal reno",
+                normalized_keyword="junk removal reno",
+                source_types=["competitor_rankings"],
+                evidence={
+                    "ranked_url": "https://ownsite.com/junk-removal",
+                    "competitors": [
+                        {
+                            "competitor_id": competitor.id,
+                            "domain": "rival.com",
+                            "label": "Local Rival",
+                            "position": 8,
+                            "url": "https://rival.com/junk-removal-reno",
+                        }
+                    ],
+                },
+                search_volume=120,
+                current_position=12,
+                intent="Ready to hire",
+                opportunity_group="new_opportunity",
+                relevance_score=95,
+                relevance_status="relevant",
+                matched_service_name="Junk removal",
+                matched_service_area_name="Reno",
+                opportunity_score=88,
+                recommended_action="Improve this page",
+                recommendation_reason="A competitor is ahead.",
+                source_updated_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC),
+            ),
+            KeywordResearchSuggestion(
+                run_id=run.id,
+                tenant_id=campaign.tenant_id,
+                organization_id=campaign.organization_id,
+                campaign_id=campaign.id,
+                business_location_id=campaign.business_location_id,
+                keyword="junk removal reno",
+                normalized_keyword="junk removal reno",
+                source_types=["competitor_rankings"],
+                evidence={
+                    "ranked_url": "https://ownsite.com/junk-removal",
+                    "competitors": [
+                        {
+                            "competitor_id": competitor.id,
+                            "domain": "rival.com",
+                            "label": "Local Rival",
+                            "position": 3,
+                            "url": "https://rival.com/junk-removal-reno",
+                        }
+                    ],
+                },
+                search_volume=120,
+                current_position=11,
+                intent="Ready to hire",
+                opportunity_group="new_opportunity",
+                relevance_score=95,
+                relevance_status="relevant",
+                matched_service_name="Junk removal",
+                matched_service_area_name="Reno",
+                opportunity_score=88,
+                recommended_action="Improve this page",
+                recommendation_reason="A competitor is ahead.",
+                source_updated_at=datetime(2026, 8, 12, 12, 0, tzinfo=UTC),
+            ),
+        ]
     )
     db_session.commit()
 
@@ -184,10 +234,16 @@ def test_research_compares_exact_owner_and_competitor_positions(client, db_sessi
     assert response.status_code == 200
     payload = response.json()["data"]
     assert payload["summary"]["exact_gaps"] == 1
+    assert payload["summary"]["movement_alerts"] == 1
     gap = payload["items"][0]
     assert gap["keyword"] == "junk removal reno"
     assert gap["owner_position"] == 11
     assert gap["competitor_position"] == 3
+    assert gap["previous_competitor_position"] == 8
+    assert gap["competitor_position_change"] == 5
+    assert gap["movement_direction"] == "up"
+    assert gap["movement_alert"] is True
+    assert gap["movement_label"] == "Moved up 5 places since the earlier check."
     assert gap["competitor_url"] == "https://rival.com/junk-removal-reno"
     assert gap["owner_url"] == "https://ownsite.com/junk-removal"
     assert gap["page_status"] == "existing"

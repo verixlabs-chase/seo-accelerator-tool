@@ -40,7 +40,9 @@ def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
     return campaign
 
 
-def create_competitor(db: Session, tenant_id: str, campaign_id: str, domain: str, label: str | None) -> Competitor:
+def create_competitor(
+    db: Session, tenant_id: str, campaign_id: str, domain: str, label: str | None
+) -> Competitor:
     _campaign_or_404(db, tenant_id, campaign_id)
     normalized = _domain(domain)
     if not normalized:
@@ -272,7 +274,9 @@ def discover_competitors(
         "status": "complete",
         "suggestions_found": suggested_count,
         "domains_observed": observed_count,
-        "items": [_serialize_competitor(row) for row in list_competitors(db, tenant_id, campaign_id)],
+        "items": [
+            _serialize_competitor(row) for row in list_competitors(db, tenant_id, campaign_id)
+        ],
         "source_updated_at": observed_at.isoformat(),
     }
 
@@ -287,12 +291,24 @@ def competitor_research(db: Session, *, tenant_id: str, campaign_id: str) -> dic
         .filter(
             KeywordResearchRun.tenant_id == tenant_id,
             KeywordResearchRun.campaign_id == campaign_id,
+            KeywordResearchRun.status.in_(("complete", "partial")),
         )
         .order_by(KeywordResearchRun.created_at.desc(), KeywordResearchRun.id.desc())
         .first()
     )
     if run is None:
         return _empty_research(campaign=campaign, competitors=competitors)
+    previous_run = (
+        db.query(KeywordResearchRun)
+        .filter(
+            KeywordResearchRun.tenant_id == tenant_id,
+            KeywordResearchRun.campaign_id == campaign_id,
+            KeywordResearchRun.status.in_(("complete", "partial")),
+            KeywordResearchRun.id != run.id,
+        )
+        .order_by(KeywordResearchRun.created_at.desc(), KeywordResearchRun.id.desc())
+        .first()
+    )
     suggestions = (
         db.query(KeywordResearchSuggestion)
         .filter(
@@ -307,6 +323,13 @@ def competitor_research(db: Session, *, tenant_id: str, campaign_id: str) -> dic
             KeywordResearchSuggestion.keyword.asc(),
         )
         .all()
+    )
+    previous_suggestions = _previous_suggestions_by_keyword(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        previous_run=previous_run,
+        normalized_keywords=[row.normalized_keyword for row in suggestions],
     )
     planning = keyword_research_service.planning_context_by_suggestion(
         db,
@@ -335,6 +358,12 @@ def competitor_research(db: Session, *, tenant_id: str, campaign_id: str) -> dic
             competitor_position = _safe_float(competitor_evidence.get("position"))
             if competitor_position is None:
                 continue
+            movement = _competitor_movement(
+                current_position=competitor_position,
+                competitor_domain=competitor.domain,
+                previous_suggestion=previous_suggestions.get(suggestion.normalized_keyword),
+                previous_run=previous_run,
+            )
             if owner_position is None:
                 gap_type = "not_showing"
                 next_step = (
@@ -357,6 +386,7 @@ def competitor_research(db: Session, *, tenant_id: str, campaign_id: str) -> dic
                     "keyword": suggestion.keyword,
                     "gap_type": gap_type,
                     "competitor_position": competitor_position,
+                    **movement,
                     "competitor_url": _text(competitor_evidence.get("url")),
                     "owner_position": owner_position,
                     "owner_url": owner_url,
@@ -370,7 +400,9 @@ def competitor_research(db: Session, *, tenant_id: str, campaign_id: str) -> dic
                     "source_updated_at": (
                         suggestion.source_updated_at.isoformat()
                         if suggestion.source_updated_at
-                        else run.completed_at.isoformat() if run.completed_at else None
+                        else run.completed_at.isoformat()
+                        if run.completed_at
+                        else None
                     ),
                 }
             )
@@ -395,6 +427,12 @@ def competitor_research(db: Session, *, tenant_id: str, campaign_id: str) -> dic
             "status": run.status,
             "location_name": run.location_name,
             "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "previous_run_id": previous_run.id if previous_run else None,
+            "previous_completed_at": (
+                previous_run.completed_at.isoformat()
+                if previous_run and previous_run.completed_at
+                else None
+            ),
         },
         "summary": {
             "confirmed_competitors": len(confirmed),
@@ -403,6 +441,7 @@ def competitor_research(db: Session, *, tenant_id: str, campaign_id: str) -> dic
             "exact_gaps": len(items),
             "not_showing": sum(row["gap_type"] == "not_showing" for row in items),
             "competitor_ahead": sum(row["gap_type"] == "competitor_ahead" for row in items),
+            "movement_alerts": sum(bool(row["movement_alert"]) for row in items),
         },
         "items": items,
     }
@@ -424,8 +463,93 @@ def _empty_research(*, campaign: Campaign, competitors: list[Competitor]) -> dic
             "exact_gaps": 0,
             "not_showing": 0,
             "competitor_ahead": 0,
+            "movement_alerts": 0,
         },
         "items": [],
+    }
+
+
+def _previous_suggestions_by_keyword(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    previous_run: KeywordResearchRun | None,
+    normalized_keywords: list[str],
+) -> dict[str, KeywordResearchSuggestion]:
+    if previous_run is None or not normalized_keywords:
+        return {}
+    rows = (
+        db.query(KeywordResearchSuggestion)
+        .filter(
+            KeywordResearchSuggestion.tenant_id == tenant_id,
+            KeywordResearchSuggestion.campaign_id == campaign_id,
+            KeywordResearchSuggestion.run_id == previous_run.id,
+            KeywordResearchSuggestion.normalized_keyword.in_(tuple(set(normalized_keywords))),
+        )
+        .all()
+    )
+    return {row.normalized_keyword: row for row in rows}
+
+
+def _competitor_movement(
+    *,
+    current_position: float,
+    competitor_domain: str,
+    previous_suggestion: KeywordResearchSuggestion | None,
+    previous_run: KeywordResearchRun | None,
+) -> dict[str, Any]:
+    previous_position: float | None = None
+    if previous_suggestion is not None:
+        evidence = (
+            previous_suggestion.evidence if isinstance(previous_suggestion.evidence, dict) else {}
+        )
+        competitor_rows = evidence.get("competitors")
+        if isinstance(competitor_rows, list):
+            for row in competitor_rows:
+                if not isinstance(row, dict):
+                    continue
+                if _domain(str(row.get("domain") or "")) != competitor_domain:
+                    continue
+                previous_position = _safe_float(row.get("position"))
+                break
+
+    previous_updated_at = None
+    if previous_suggestion and previous_suggestion.source_updated_at:
+        previous_updated_at = previous_suggestion.source_updated_at.isoformat()
+    elif previous_run and previous_run.completed_at:
+        previous_updated_at = previous_run.completed_at.isoformat()
+
+    if previous_position is None:
+        return {
+            "previous_competitor_position": None,
+            "competitor_position_change": None,
+            "movement_direction": "unavailable",
+            "movement_label": "No earlier matching result is available yet.",
+            "movement_alert": False,
+            "previous_source_updated_at": previous_updated_at,
+        }
+
+    change = round(previous_position - current_position, 1)
+    places = f"{abs(change):g}"
+    if change >= 1:
+        direction = "up"
+        label = f"Moved up {places} place{'s' if abs(change) != 1 else ''} since the earlier check."
+    elif change <= -1:
+        direction = "down"
+        label = (
+            f"Moved down {places} place{'s' if abs(change) != 1 else ''} since the earlier check."
+        )
+    else:
+        direction = "steady"
+        label = "Stayed about the same since the earlier check."
+    return {
+        "previous_competitor_position": previous_position,
+        "competitor_position_change": change,
+        "movement_direction": direction,
+        "movement_label": label,
+        "movement_alert": abs(change) >= 3,
+        "previous_source_updated_at": previous_updated_at,
     }
 
 
@@ -488,7 +612,12 @@ def collect_snapshot(db: Session, tenant_id: str, campaign_id: str) -> dict:
         if item.review_status == "confirmed"
     ]
     if not competitors:
-        return {"campaign_id": campaign_id, "status": "no_data", "reason_code": "no_competitors", "snapshots_collected": 0}
+        return {
+            "campaign_id": campaign_id,
+            "status": "no_data",
+            "reason_code": "no_competitors",
+            "snapshots_collected": 0,
+        }
     try:
         provider = get_competitor_provider_for_organization(db, tenant_id)
     except ValueError:

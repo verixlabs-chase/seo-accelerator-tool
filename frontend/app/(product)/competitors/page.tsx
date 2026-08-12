@@ -43,6 +43,12 @@ type GapItem = {
   keyword: string;
   gap_type: "not_showing" | "competitor_ahead";
   competitor_position: number;
+  previous_competitor_position?: number | null;
+  competitor_position_change?: number | null;
+  movement_direction?: "up" | "down" | "steady" | "unavailable";
+  movement_label?: string | null;
+  movement_alert?: boolean;
+  previous_source_updated_at?: string | null;
   competitor_url?: string | null;
   owner_position?: number | null;
   owner_url?: string | null;
@@ -57,7 +63,14 @@ type GapItem = {
 };
 
 type ResearchResult = {
-  run: { id: string; status: string; location_name: string; completed_at?: string | null } | null;
+  run: {
+    id: string;
+    status: string;
+    location_name: string;
+    completed_at?: string | null;
+    previous_run_id?: string | null;
+    previous_completed_at?: string | null;
+  } | null;
   summary: {
     confirmed_competitors: number;
     suggested_competitors: number;
@@ -65,6 +78,7 @@ type ResearchResult = {
     exact_gaps: number;
     not_showing: number;
     competitor_ahead: number;
+    movement_alerts: number;
   };
   items: GapItem[];
 };
@@ -87,6 +101,7 @@ const EMPTY_RESEARCH: ResearchResult = {
     exact_gaps: 0,
     not_showing: 0,
     competitor_ahead: 0,
+    movement_alerts: 0,
   },
   items: [],
 };
@@ -428,7 +443,7 @@ export default function CompetitorsPage() {
               tone={topGap ? "warning" : "neutral"}
             />
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <KpiCard
                 label="Real competitors confirmed"
                 value={String(research.summary.confirmed_competitors)}
@@ -444,6 +459,12 @@ export default function CompetitorsPage() {
                 label="Searches where you are absent"
                 value={String(research.summary.not_showing)}
                 summary="Confirmed competitor searches where your website was not found."
+              />
+              <KpiCard
+                label="Competitor movement alerts"
+                value={String(research.summary.movement_alerts)}
+                summary="Competitors that moved by at least three places since the earlier matching check."
+                tone={research.summary.movement_alerts ? "highlight" : undefined}
               />
             </div>
 
@@ -563,6 +584,19 @@ export default function CompetitorsPage() {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-white">{item.competitor_label || item.competitor_domain}</p>
+                        {item.previous_competitor_position != null && item.movement_label ? (
+                          <p
+                            className={`mt-1 text-sm font-medium ${
+                              item.movement_direction === "up"
+                                ? "text-orange-200"
+                                : item.movement_direction === "down"
+                                  ? "text-emerald-300"
+                                  : "text-zinc-400"
+                            }`}
+                          >
+                            {item.movement_label} Earlier: {formatPosition(item.previous_competitor_position)}.
+                          </p>
+                        ) : null}
                         <p className="mt-1 text-sm leading-6 text-zinc-300">{item.next_step}</p>
                         <p className="mt-1 text-xs leading-5 text-zinc-500">
                           {item.page_status === "existing"
@@ -583,6 +617,9 @@ export default function CompetitorsPage() {
                             </a>
                           ) : null}
                           <span className="text-zinc-500">Checked {formatDate(item.source_updated_at)}</span>
+                          {item.previous_source_updated_at && item.previous_competitor_position != null ? (
+                            <span className="text-zinc-500">Earlier check {formatDate(item.previous_source_updated_at)}</span>
+                          ) : null}
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button

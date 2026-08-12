@@ -32,6 +32,14 @@ test("a reviewed gap can move into rankings or governed next steps", () => {
   assert.match(page, /Add to Next Steps/);
 });
 
+test("competitor movement uses comparable saved positions", () => {
+  assert.match(page, /previous_competitor_position/);
+  assert.match(page, /movement_direction/);
+  assert.match(page, /Competitor movement alerts/);
+  assert.match(page, /Earlier check/);
+  assert.match(page, /at least three places/);
+});
+
 test("competitor customer copy does not expose the internal market supplier", () => {
   assert.doesNotMatch(page, /dataforseo/i);
 });
