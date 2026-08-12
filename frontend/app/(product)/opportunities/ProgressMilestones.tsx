@@ -13,6 +13,12 @@ type AchievementEvidence = {
   metric_unit?: string | null;
   successful_at?: string | null;
   captured_at?: string | null;
+  completed_at?: string | null;
+  cadence?: "daily" | "weekly" | "monthly" | "later";
+  period_key?: string;
+  required_steps_completed?: number;
+  active_location_count?: number;
+  freshness_window_days?: number;
 };
 
 type Achievement = {
@@ -29,6 +35,7 @@ type Achievement = {
 
 type NextMilestone = {
   rule_key: string;
+  category: "foundation" | "habit" | "multi_location";
   title: string;
   description: string;
   position: number;
@@ -44,6 +51,12 @@ type AchievementSummary = {
   earned_count: number;
   foundation_earned_count: number;
   foundation_total: number;
+  habit_earned_count: number;
+  habit_total: number;
+  multi_location_earned_count: number;
+  multi_location_total: number;
+  progress_earned_count: number;
+  progress_total: number;
   newly_earned: Achievement[];
   achievements: Achievement[];
   next_milestone: NextMilestone | null;
@@ -79,6 +92,19 @@ function evidenceLabel(item: AchievementEvidence): string {
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
     const value = item.metric_value ?? "saved";
     return `${readableMetric}: ${value}${item.metric_unit ? ` ${item.metric_unit}` : ""}`;
+  }
+  if (item.evidence_type === "checklist_completion") {
+    const cadence = item.cadence === "monthly" ? "Monthly" : "Weekly";
+    const steps = item.required_steps_completed || 0;
+    return `${cadence} checklist finished with ${steps} required ${steps === 1 ? "step" : "steps"}`;
+  }
+  if (item.evidence_type === "portfolio_location_setup") {
+    const count = item.active_location_count || 0;
+    return `${count} active ${count === 1 ? "location is" : "locations are"} ready to measure`;
+  }
+  if (item.evidence_type === "portfolio_data_current") {
+    const count = item.active_location_count || 0;
+    return `${count} active ${count === 1 ? "location has" : "locations have"} a recent successful update`;
   }
   return "Saved business evidence";
 }
@@ -173,7 +199,7 @@ export function ProgressMilestones({ campaignId }: ProgressMilestonesProps) {
 
   const percent = Math.min(
     100,
-    Math.round((summary.foundation_earned_count / Math.max(summary.foundation_total, 1)) * 100),
+    Math.round((summary.progress_earned_count / Math.max(summary.progress_total, 1)) * 100),
   );
 
   return (
@@ -218,8 +244,19 @@ export function ProgressMilestones({ campaignId }: ProgressMilestonesProps) {
                   Progress you earned
                 </p>
                 <h2 id="progress-milestones-title" className="mt-1 text-base font-semibold text-white">
-                  {summary.foundation_earned_count} of {summary.foundation_total} setup milestones complete
+                  {summary.progress_earned_count} of {summary.progress_total} milestones earned
                 </h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Setup {summary.foundation_earned_count}/{summary.foundation_total}
+                  <span aria-hidden="true"> · </span>
+                  Healthy habits {summary.habit_earned_count}/{summary.habit_total}
+                  {summary.multi_location_total > 0 ? (
+                    <>
+                      <span aria-hidden="true"> · </span>
+                      All-location progress {summary.multi_location_earned_count}/{summary.multi_location_total}
+                    </>
+                  ) : null}
+                </p>
               </div>
             </div>
             <div className="min-w-52 flex-1 sm:max-w-sm">
@@ -231,7 +268,7 @@ export function ProgressMilestones({ campaignId }: ProgressMilestonesProps) {
                 />
               </div>
               <p className="mt-2 text-right text-xs text-zinc-400">
-                {summary.next_milestone ? `Next: ${summary.next_milestone.title}` : "Setup foundation complete"}
+                {summary.next_milestone ? `Next: ${summary.next_milestone.title}` : "Current milestones complete"}
               </p>
             </div>
           </div>
@@ -241,14 +278,18 @@ export function ProgressMilestones({ campaignId }: ProgressMilestonesProps) {
           {summary.next_milestone ? (
             <div className="rounded-md border border-accent-500/20 bg-accent-500/5 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-accent-300">
-                Your next milestone
+                {summary.next_milestone.category === "multi_location"
+                  ? "Next all-location milestone"
+                  : summary.next_milestone.category === "habit"
+                    ? "Next healthy habit"
+                    : "Your next milestone"}
               </p>
               <h3 className="mt-2 font-semibold text-white">{summary.next_milestone.title}</h3>
               <p className="mt-1 text-sm leading-6 text-zinc-300">{summary.next_milestone.description}</p>
             </div>
           ) : (
             <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm leading-6 text-emerald-50/85">
-              Your foundation is complete. Improvement milestones will appear only after a fresh measurement proves the result.
+              Your current milestones are complete. Improvement milestones will appear only after a fresh measurement proves the result.
             </div>
           )}
 

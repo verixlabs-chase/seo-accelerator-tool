@@ -2998,13 +2998,17 @@ Acceptance criteria:
 
 ### Engagement ENG1 - Verified Progress Rewards and Healthy Habits
 
-Implementation status (2026-08-12): the first foundation release is built.
-It adds versioned, replay-safe location setup, first successful live update,
-and first trustworthy baseline milestones; a compact evidence-backed history
-and next-goal view on Next Steps; and optional milestone-message and reminder
-preferences. Verified-result rewards remain disabled until fresh same-scope
-post-action measurements are production-proven. Consistency and multi-location
-milestones remain the next ENG1 stages. The rule and correction contract is in
+Implementation status (2026-08-12): the foundation, healthy-habit, and first
+multi-location releases are built. Versioned, replay-safe rules now cover
+location setup, the first successful live update, the first trustworthy
+baseline, completed weekly and monthly plans, three distinct weekly work
+periods, every active location being ready, and every active location receiving
+a recent successful update. Next Steps shows one combined progress path while
+keeping setup, habit, and all-location counts distinct. Organization grants
+preserve evidence for every qualifying location and cannot be earned from one
+good location hiding an incomplete one. Verified-result rewards remain disabled
+until fresh same-scope post-action measurements are production-proven. The rule
+and correction contract is in
 `backend/docs/architecture/verified-progress-achievements.md`.
 
 Goal: reinforce the repeatable work that improves a location's organic

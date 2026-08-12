@@ -29,6 +29,35 @@ views do not qualify for these rules. Verified-result achievements remain
 disabled until a fresh post-action measurement can prove the result in the
 same scope.
 
+The second release adds three location-scoped healthy-habit rules:
+
+1. `habit.first_weekly_plan@1.0` requires a completed weekly occurrence with at
+   least one required checklist step and every required step saved as `done`.
+2. `habit.three_weekly_plans@1.0` requires qualifying weekly plans in three
+   different governed period keys. The periods do not have to form a brittle
+   streak, so a quiet week, vacation, or provider delay does not erase useful
+   work.
+3. `habit.first_monthly_plan@1.0` applies the same required-step rule to one
+   completed monthly occurrence.
+
+These are work badges, not improvement claims. Each grant saves the occurrence,
+period, action, completion time, and required-step count. A status flag without
+the completed required steps is insufficient.
+
+Two organization-scoped multi-location rules are also active when an
+organization has at least two active locations:
+
+1. `multi_location.all_locations_ready@1.0` requires every active location to
+   have a business name, website, and service area.
+2. `multi_location.all_locations_current@1.0` requires every active location to
+   have a successful supported connection update within a 21-day freshness
+   window. The grant saves every qualifying location and connection. One fresh
+   location cannot hide an outdated or disconnected location.
+
+Organization grants appear beside the selected location's history with the
+scope label `All active locations`; they are stored separately from location
+grants and remain tenant isolated.
+
 ## Correction policy
 
 Grants are append-only history. A governed correction sets `corrected_at` and a
@@ -56,7 +85,6 @@ counter so rollout analysis does not manufacture engagement.
 
 ## Future governed stages
 
-Consistency rules will use weekly or monthly periods with provider-outage grace
-instead of fragile daily streaks. Verified-result rules will require a new
-same-scope observation after completed work. Multi-location rules will use
-organization scope and preserve the evidence for every qualifying location.
+Verified-result rules will require a new same-scope observation after completed
+work. They remain disabled until the production measurement contract proves the
+result and cannot be inferred from a habit or multi-location grant.

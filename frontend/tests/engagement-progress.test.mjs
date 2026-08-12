@@ -20,6 +20,9 @@ test("next steps shows compact evidence-backed progress beside the action plan",
   assert.match(progressSource, /Proof:/);
   assert.match(progressSource, /scope\.label/);
   assert.match(progressSource, /earned_at/);
+  assert.match(progressSource, /Healthy habits/);
+  assert.match(progressSource, /All-location progress/);
+  assert.match(progressSource, /progress_earned_count/);
 });
 
 
@@ -29,6 +32,8 @@ test("milestones evaluate deterministically and preferences preserve history", (
   assert.match(progressSource, /Dismiss milestone message/);
   assert.match(progressSource, /Show milestone messages/);
   assert.match(progressSource, /Allow progress reminders/);
+  assert.match(progressSource, /checklist_completion/);
+  assert.match(progressSource, /portfolio_data_current/);
 });
 
 
