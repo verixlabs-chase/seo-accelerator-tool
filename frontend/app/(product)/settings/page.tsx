@@ -14,7 +14,9 @@ import {
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import { getTenantId } from "../../lib/authStorage";
 import { getConnectionStatusView } from "../truth/dataConnectionsTruth.mjs";
+import { requestProductTour } from "../truth/productTour.mjs";
 
 type Me = {
   organization_id?: string;
@@ -49,6 +51,15 @@ type BusinessProfileResource = {
   primary_category: string;
 };
 
+type AnalyticsResource = {
+  id: string;
+  name: string;
+  account_name: string;
+  property_type: string;
+  can_edit: boolean;
+  resource_scope: string;
+};
+
 type DataConnection = {
   id: string;
   provider_name: string;
@@ -65,6 +76,14 @@ type DataConnection = {
   next_sync_at?: string | null;
   last_error_message?: string | null;
   source_truth: string;
+  website_event_key_configured?: boolean;
+  website_event_key_created_at?: string | null;
+};
+
+type WebsiteEventKey = {
+  token: string;
+  event_path: string;
+  created_at: string;
 };
 
 type ConnectionsPayload = {
@@ -73,6 +92,7 @@ type ConnectionsPayload = {
     approved_access?: {
       search_console: boolean;
       business_profile: boolean;
+      website_analytics: boolean;
     };
     updated_at?: string | null;
   };
@@ -123,6 +143,11 @@ type UsageAllowance = {
   plan: {
     code: string;
     name: string;
+    monthly_price: number;
+    included_locations: number;
+    active_locations: number;
+    remaining_locations: number;
+    additional_locations_require_custom_terms: boolean;
   };
   period: {
     start: string;
@@ -157,6 +182,35 @@ type UsageAllowance = {
     price_type: "up_to" | "per_item" | "fixed_ceiling";
   }>;
   important_note: string;
+  commercial_catalog_version: string;
+  capabilities: Array<{
+    code: string;
+    label: string;
+    summary: string;
+    available: boolean;
+    required_plan: string;
+  }>;
+  upgrade?: {
+    plan_code: string;
+    plan_name: string;
+    monthly_price: number;
+    headline: string;
+    reasons: string[];
+  } | null;
+};
+
+type BillingSummary = {
+  provider_configured: boolean;
+  plan_code: string;
+  plan_name: string;
+  status: string;
+  status_label: string;
+  portal_available: boolean;
+  checkout_available: boolean;
+  available_checkout_plans: string[];
+  current_period_end?: string | null;
+  cancel_at_period_end: boolean;
+  recovery_message?: string | null;
 };
 
 const primaryButtonClass =
@@ -222,15 +276,26 @@ export default function SettingsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [payload, setPayload] = useState<ConnectionsPayload | null>(null);
   const [usageAllowance, setUsageAllowance] = useState<UsageAllowance | null>(null);
+  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
   const [resources, setResources] = useState<SearchConsoleResource[]>([]);
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
   const [profileResources, setProfileResources] = useState<BusinessProfileResource[]>([]);
   const [profileDrafts, setProfileDrafts] = useState<Record<string, string>>({});
+  const [analyticsResources, setAnalyticsResources] = useState<AnalyticsResource[]>([]);
+  const [analyticsDrafts, setAnalyticsDrafts] = useState<Record<string, string>>({});
+  const [websiteEventKeys, setWebsiteEventKeys] = useState<Record<string, WebsiteEventKey>>({});
   const [loading, setLoading] = useState(true);
   const [loadingResources, setLoadingResources] = useState(false);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [guidedConnectionSetup, setGuidedConnectionSetup] = useState(false);
+
+  useEffect(() => {
+    setGuidedConnectionSetup(
+      new URLSearchParams(window.location.search).get("setup") === "connections",
+    );
+  }, []);
 
   const organizationId = me?.organization_id || "";
   const manageableCampaigns = useMemo(
@@ -255,6 +320,10 @@ export default function SettingsPage() {
     () => connections.filter((connection) => connection.provider_name === "google_business_profile"),
     [connections],
   );
+  const analyticsConnections = useMemo(
+    () => connections.filter((connection) => connection.provider_name === "google_analytics"),
+    [connections],
+  );
   const connectionByCampaign = useMemo(
     () => new Map(searchConsoleConnections.map((connection) => [connection.campaign_id, connection])),
     [searchConsoleConnections],
@@ -263,6 +332,25 @@ export default function SettingsPage() {
     () => new Map(profileConnections.map((connection) => [connection.campaign_id, connection])),
     [profileConnections],
   );
+  const analyticsConnectionByCampaign = useMemo(
+    () => new Map(analyticsConnections.map((connection) => [connection.campaign_id, connection])),
+    [analyticsConnections],
+  );
+  const websiteMappingsComplete =
+    manageableCampaigns.length > 0 &&
+    manageableCampaigns.every((campaign) => connectionByCampaign.has(campaign.id));
+  const profileMappingsComplete =
+    manageableCampaigns.length > 0 &&
+    manageableCampaigns.every((campaign) => profileConnectionByCampaign.has(campaign.id));
+  const guidedStepsComplete = [
+    Boolean(payload?.google_oauth.connected),
+    websiteMappingsComplete,
+    Boolean(payload?.google_oauth.approved_access?.business_profile) && profileMappingsComplete,
+  ].filter(Boolean).length;
+
+  function scrollToConnectionStep(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   const loadConnections = useCallback(async (orgId: string) => {
     const next = (await platformApi(
@@ -285,6 +373,17 @@ export default function SettingsPage() {
       const seeded = { ...current };
       for (const connection of (next.connections || []).filter(
         (item) => item.provider_name === "google_business_profile",
+      )) {
+        if (!seeded[connection.campaign_id]) {
+          seeded[connection.campaign_id] = connection.external_resource_id;
+        }
+      }
+      return seeded;
+    });
+    setAnalyticsDrafts((current) => {
+      const seeded = { ...current };
+      for (const connection of (next.connections || []).filter(
+        (item) => item.provider_name === "google_analytics",
       )) {
         if (!seeded[connection.campaign_id]) {
           seeded[connection.campaign_id] = connection.external_resource_id;
@@ -337,6 +436,27 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadAnalyticsResources = useCallback(async (orgId: string) => {
+    setLoadingResources(true);
+    setError("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${orgId}/data-connections/google-analytics/resources`,
+        { method: "GET" },
+      )) as { resources?: AnalyticsResource[] };
+      setAnalyticsResources(response.resources || []);
+      if ((response.resources || []).length === 0) {
+        setNotice(
+          "Google is connected, but no website analytics properties were returned. Confirm that this Google account can view the correct property.",
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load website analytics properties.");
+    } finally {
+      setLoadingResources(false);
+    }
+  }, []);
+
   useEffect(() => {
     async function loadPage() {
       setLoading(true);
@@ -347,25 +467,39 @@ export default function SettingsPage() {
           throw new Error("An organization is required to manage data connections.");
         }
         setMe(currentUser);
-        const [campaignResponse, connectionResponse, allowanceResponse] = await Promise.all([
+        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
           platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
+          (platformApi("/billing/summary", { method: "GET" }) as Promise<BillingSummary>)
+            .catch(() => null),
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
+        setBillingSummary(billingResponse);
         const returnParams = new URLSearchParams(window.location.search);
+        const billingReturned = returnParams.get("billing");
         const googleReturned = returnParams.get("google");
         const returnSource = returnParams.get("source");
-        if (googleReturned === "connected") {
+        if (billingReturned === "success") {
+          setNotice("Checkout finished. We are confirming your plan now; access changes only after confirmation.");
+          window.history.replaceState({}, "", "/settings");
+        } else if (billingReturned === "cancelled") {
+          setNotice("Checkout was closed. Your current plan and saved work were not changed.");
+          window.history.replaceState({}, "", "/settings");
+        } else if (googleReturned === "connected") {
           setNotice(
             returnSource === "business-profile"
               ? "Google business listings are connected. Match each location to its listing next."
+              : returnSource === "analytics"
+                ? "Website analytics is connected. Match each location to its analytics property next."
               : "Google Search Console is connected. Match each location to its website next.",
           );
           window.history.replaceState({}, "", "/settings");
           if (returnSource === "business-profile") {
             await loadProfileResources(currentUser.organization_id);
+          } else if (returnSource === "analytics") {
+            await loadAnalyticsResources(currentUser.organization_id);
           } else {
             await loadResources(currentUser.organization_id);
           }
@@ -379,15 +513,58 @@ export default function SettingsPage() {
       }
     }
     void loadPage();
-  }, [loadConnections, loadProfileResources, loadResources]);
+  }, [loadAnalyticsResources, loadConnections, loadProfileResources, loadResources]);
 
-  async function connectGoogle(scopeTarget: "gsc" | "gbp" = "gsc") {
+  async function startCheckout(planCode: string) {
+    setBusyAction("billing-checkout");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi("/billing/checkout", {
+        method: "POST",
+        body: JSON.stringify({ plan_code: planCode }),
+      })) as { url?: string };
+      if (!response.url) throw new Error("The secure checkout link was not created.");
+      window.location.assign(response.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to open secure checkout.");
+      setBusyAction("");
+    }
+  }
+
+  async function manageBilling() {
+    setBusyAction("billing-portal");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi("/billing/portal", {
+        method: "POST",
+      })) as { url?: string };
+      if (!response.url) throw new Error("The secure billing link was not created.");
+      window.location.assign(response.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to open billing settings.");
+      setBusyAction("");
+    }
+  }
+
+  async function connectGoogle(scopeTarget: "gsc" | "gbp" | "analytics" = "gsc") {
     if (!organizationId) return;
     setBusyAction(`oauth-${scopeTarget}`);
     setError("");
     setNotice("");
     try {
-      const returnPath = scopeTarget === "gbp" ? "/settings?source=business-profile" : "/settings";
+      const returnPath = guidedConnectionSetup
+        ? scopeTarget === "gbp"
+          ? "/settings?setup=connections&source=business-profile"
+          : scopeTarget === "analytics"
+            ? "/settings?setup=connections&source=analytics"
+          : "/settings?setup=connections"
+        : scopeTarget === "gbp"
+          ? "/settings?source=business-profile"
+          : scopeTarget === "analytics"
+            ? "/settings?source=analytics"
+          : "/settings";
       const response = (await platformApi(
         `/organizations/${organizationId}/providers/google/oauth/start?scope_target=${scopeTarget}&return_path=${encodeURIComponent(returnPath)}`,
         { method: "POST" },
@@ -483,11 +660,82 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveAnalyticsMapping(campaign: Campaign) {
+    if (!organizationId) return;
+    const resourceId = analyticsDrafts[campaign.id] || "";
+    const resource = analyticsResources.find((item) => item.id === resourceId);
+    if (!resourceId || !resource) {
+      setError("Choose the website analytics property for this location.");
+      return;
+    }
+    setBusyAction(`analytics-mapping-${campaign.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const mappingResponse = (await platformApi(
+        `/organizations/${organizationId}/data-connections/google-analytics/mappings/${campaign.id}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            external_resource_id: resource.id,
+            external_resource_name: resource.name,
+          }),
+        },
+      )) as { connection?: DataConnection };
+      const connectionId = mappingResponse.connection?.id;
+      if (!connectionId) throw new Error("The website analytics match was not saved.");
+      const syncResponse = (await platformApi(
+        `/organizations/${organizationId}/data-connections/${connectionId}/sync`,
+        { method: "POST" },
+      )) as { job?: { status?: string } };
+      await loadConnections(organizationId);
+      setNotice(
+        syncResponse.job?.status === "completed"
+          ? `${campaign.name} is matched and its first website visit history is ready.`
+          : `${campaign.name} is matched. Its first website visit update is queued.`,
+      );
+    } catch (err) {
+      await loadConnections(organizationId).catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Unable to save this analytics match.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function createWebsiteEventKey(connection: DataConnection) {
+    if (!organizationId) return;
+    setBusyAction(`website-event-key-${connection.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-connections/${connection.id}/website-events/key`,
+        { method: "POST" },
+      )) as WebsiteEventKey;
+      if (!response.token || !response.event_path) {
+        throw new Error("The secure form connection was not created.");
+      }
+      setWebsiteEventKeys((current) => ({ ...current, [connection.id]: response }));
+      await loadConnections(organizationId);
+      setNotice(
+        "The secure form connection is ready. Copy it now; the private key will not be shown again.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create the form connection.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function syncConnection(connection: DataConnection) {
     if (!organizationId) return;
     if (connection.status === "reconnect_required") {
       await connectGoogle(
-        connection.provider_name === "google_business_profile" ? "gbp" : "gsc",
+        connection.provider_name === "google_business_profile"
+          ? "gbp"
+          : connection.provider_name === "google_analytics"
+            ? "analytics"
+            : "gsc",
       );
       return;
     }
@@ -531,6 +779,10 @@ export default function SettingsPage() {
     }
     if (item.provider_name === "google_business_profile") {
       await connectGoogle("gbp");
+      return;
+    }
+    if (item.provider_name === "google_analytics") {
+      await connectGoogle("analytics");
       return;
     }
     await connectGoogle("gsc");
@@ -619,6 +871,96 @@ export default function SettingsPage() {
           <div className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
             {notice}
           </div>
+        ) : null}
+
+        {guidedConnectionSetup && !loading ? (
+          <section className="rounded-md border border-accent-500/30 bg-accent-500/5 p-5" aria-labelledby="guided-connections-title">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-200">
+                  Finish setup
+                </p>
+                <h2 id="guided-connections-title" className="mt-1 text-xl font-semibold text-white">
+                  Connect the information that keeps your results current
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                  Work from top to bottom. InsightOS will show the websites and listings your Google account can access, then keep every location&apos;s results separate.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-accent-500/25 bg-accent-500/10 px-3 py-1.5 text-xs font-semibold text-accent-100">
+                {guidedStepsComplete} of 3 complete
+              </span>
+            </div>
+
+            <ol className="mt-5 divide-y divide-[#303137] border-y border-[#303137]">
+              <li className="grid gap-3 py-4 md:grid-cols-[auto_1fr_auto] md:items-center">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#303137] bg-[#111214] text-sm font-semibold text-white">1</span>
+                <div>
+                  <p className="font-semibold text-white">Approve Google access</p>
+                  <p className="mt-1 text-sm text-zinc-400">This securely connects your account. InsightOS never receives your Google password.</p>
+                </div>
+                {payload?.google_oauth.connected ? (
+                  <span className="text-sm font-semibold text-emerald-300">Complete</span>
+                ) : (
+                  <button type="button" className={primaryButtonClass} onClick={() => void connectGoogle()}>
+                    Connect Google
+                  </button>
+                )}
+              </li>
+              <li className="grid gap-3 py-4 md:grid-cols-[auto_1fr_auto] md:items-center">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#303137] bg-[#111214] text-sm font-semibold text-white">2</span>
+                <div>
+                  <p className="font-semibold text-white">Match each website to its location</p>
+                  <p className="mt-1 text-sm text-zinc-400">This brings in Google appearances, website visits, and average position without mixing locations.</p>
+                </div>
+                {websiteMappingsComplete ? (
+                  <span className="text-sm font-semibold text-emerald-300">Complete</span>
+                ) : payload?.google_oauth.connected ? (
+                  <button type="button" className={primaryButtonClass} onClick={() => scrollToConnectionStep("website-mappings")}>
+                    Match websites
+                  </button>
+                ) : (
+                  <span className="text-sm text-zinc-500">Finish step 1 first</span>
+                )}
+              </li>
+              <li className="grid gap-3 py-4 md:grid-cols-[auto_1fr_auto] md:items-center">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#303137] bg-[#111214] text-sm font-semibold text-white">3</span>
+                <div>
+                  <p className="font-semibold text-white">Match each Google business listing</p>
+                  <p className="mt-1 text-sm text-zinc-400">This connects listing details and customer actions. No listing changes are made automatically.</p>
+                </div>
+                {profileMappingsComplete && payload?.google_oauth.approved_access?.business_profile ? (
+                  <span className="text-sm font-semibold text-emerald-300">Complete</span>
+                ) : payload?.google_oauth.approved_access?.business_profile ? (
+                  <button type="button" className={primaryButtonClass} onClick={() => scrollToConnectionStep("profile-mappings")}>
+                    Match listings
+                  </button>
+                ) : payload?.google_oauth.connected ? (
+                  <button type="button" className={primaryButtonClass} onClick={() => void connectGoogle("gbp")}>
+                    Approve listing access
+                  </button>
+                ) : (
+                  <span className="text-sm text-zinc-500">Finish step 1 first</span>
+                )}
+              </li>
+            </ol>
+
+            {guidedStepsComplete === 3 ? (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4">
+                <p className="text-sm font-medium text-emerald-100">Setup is complete. Your connected information will now update automatically.</p>
+                <button
+                  type="button"
+                  className={primaryButtonClass}
+                  onClick={() => {
+                    requestProductTour(window.localStorage, getTenantId() || organizationId);
+                    window.location.assign("/dashboard");
+                  }}
+                >
+                  Open your dashboard
+                </button>
+              </div>
+            ) : null}
+          </section>
         ) : null}
 
         {loading ? (
@@ -736,6 +1078,107 @@ export default function SettingsPage() {
             ) : null}
 
             {usageAllowance ? (
+              <section aria-labelledby="current-plan-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                {billingSummary?.recovery_message ? (
+                  <div className="mb-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-50">
+                    <p className="font-semibold">Payment needs attention</p>
+                    <p className="mt-1 leading-6 text-amber-100/80">{billingSummary.recovery_message}</p>
+                    {billingSummary.portal_available ? (
+                      <button
+                        type="button"
+                        className={`${primaryButtonClass} mt-3`}
+                        disabled={busyAction === "billing-portal"}
+                        onClick={() => void manageBilling()}
+                      >
+                        {busyAction === "billing-portal" ? "Opening..." : "Update payment method"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Your plan
+                    </p>
+                    <h2 id="current-plan-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                      {usageAllowance.plan.name} · ${usageAllowance.plan.monthly_price.toLocaleString()}/month
+                    </h2>
+                    <p className="mt-2 text-sm text-zinc-300">
+                      {usageAllowance.plan.active_locations} of {usageAllowance.plan.included_locations} included {usageAllowance.plan.included_locations === 1 ? "location" : "locations"} in use
+                    </p>
+                    {billingSummary ? (
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Billing: {billingSummary.status_label}
+                        {billingSummary.cancel_at_period_end ? " · Ends after the current billing period" : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2 text-sm sm:grid-cols-2 lg:max-w-2xl">
+                    {usageAllowance.capabilities.filter((item) => item.available).slice(0, 4).map((item) => (
+                      <div key={item.code} className="border-l-2 border-emerald-500/40 pl-3">
+                        <p className="font-semibold text-white">{item.label}</p>
+                        <p className="mt-1 text-xs leading-5 text-zinc-400">{item.summary}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {usageAllowance.upgrade ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-4">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-accent-200">
+                          {usageAllowance.upgrade.plan_name} · ${usageAllowance.upgrade.monthly_price.toLocaleString()}/month
+                        </p>
+                        <h3 className="mt-1 font-semibold text-white">{usageAllowance.upgrade.headline}</h3>
+                        <ul className="mt-2 space-y-1 text-sm leading-6 text-zinc-300">
+                          {usageAllowance.upgrade.reasons.map((reason) => (
+                            <li key={reason}>✓ {reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {billingSummary?.provider_configured &&
+                        billingSummary.available_checkout_plans.includes(usageAllowance.upgrade.plan_code) ? (
+                          <button
+                            type="button"
+                            className={primaryButtonClass}
+                            disabled={busyAction === "billing-checkout"}
+                            onClick={() => void startCheckout(usageAllowance.upgrade!.plan_code)}
+                          >
+                            {busyAction === "billing-checkout" ? "Opening checkout..." : "Upgrade securely"}
+                          </button>
+                        ) : (
+                          <button type="button" className={secondaryButtonClass} onClick={() => window.location.assign("/help")}>Ask about upgrading</button>
+                        )}
+                        {billingSummary?.portal_available ? (
+                          <button
+                            type="button"
+                            className={secondaryButtonClass}
+                            disabled={busyAction === "billing-portal"}
+                            onClick={() => void manageBilling()}
+                          >
+                            {busyAction === "billing-portal" ? "Opening..." : "Manage billing"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : billingSummary?.portal_available ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-4">
+                    <button
+                      type="button"
+                      className={secondaryButtonClass}
+                      disabled={busyAction === "billing-portal"}
+                      onClick={() => void manageBilling()}
+                    >
+                      {busyAction === "billing-portal" ? "Opening..." : "Manage billing"}
+                    </button>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {usageAllowance ? (
               <details className="rounded-md border border-[#292a2f] bg-[#141518] p-4">
                 <summary className="cursor-pointer list-none">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
@@ -808,7 +1251,7 @@ export default function SettingsPage() {
               </details>
             ) : null}
 
-            <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+            <section id="google-search-console-connection" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -996,7 +1439,7 @@ export default function SettingsPage() {
               </section>
             )}
 
-            <section className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+            <section id="google-business-profile-connection" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1196,20 +1639,204 @@ export default function SettingsPage() {
               </section>
             ) : null}
 
-            <section>
-              <article className="rounded-md border border-[#292a2f] bg-[#141518] p-5 opacity-80">
-                <span className="rounded-full border border-zinc-500/25 bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-300">
-                  Planned later
-                </span>
-                <h2 className="mt-3 text-lg font-semibold text-white">
-                  Website analytics and forms
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-zinc-400">
-                  Visits and website form events will be added after Search Console synchronization
-                  is proven reliable. No CRM or call-tracking dependency is planned.
-                </p>
-              </article>
+            <section id="google-analytics-connection" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">
+                      Website visits and inquiries
+                    </h2>
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        payload?.google_oauth.approved_access?.website_analytics
+                          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                          : "border-amber-500/25 bg-amber-500/10 text-amber-100"
+                      }`}
+                    >
+                      {payload?.google_oauth.approved_access?.website_analytics
+                        ? "Access approved"
+                        : "Connection required"}
+                    </span>
+                  </div>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
+                    See how many people visit the website, how many stay and engage, and how many
+                    complete an approved inquiry action. Each location keeps its own history.
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                    This is read-only. CRM, call tracking, sales, and payment data are not included.
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    className={secondaryButtonClass}
+                    disabled={
+                      !payload?.google_oauth.approved_access?.website_analytics || loadingResources
+                    }
+                    onClick={() => void loadAnalyticsResources(organizationId)}
+                  >
+                    {loadingResources ? "Loading properties..." : "Load analytics properties"}
+                  </button>
+                  <button
+                    className={primaryButtonClass}
+                    disabled={busyAction === "oauth-analytics"}
+                    onClick={() => void connectGoogle("analytics")}
+                  >
+                    {payload?.google_oauth.approved_access?.website_analytics
+                      ? "Reconnect website analytics"
+                      : "Connect website analytics"}
+                  </button>
+                </div>
+              </div>
             </section>
+
+            {payload?.google_oauth.approved_access?.website_analytics && manageableCampaigns.length > 0 ? (
+              <section id="analytics-mappings" className="space-y-3">
+                <div>
+                  <h2 className="text-xl font-semibold tracking-[-0.03em] text-white">
+                    Match analytics to locations
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    Choose the property that measures each location&apos;s website. This keeps results
+                    from separate businesses from being mixed together.
+                  </p>
+                </div>
+                {manageableCampaigns.map((campaign) => {
+                  const connection = analyticsConnectionByCampaign.get(campaign.id);
+                  const statusView = connection ? getConnectionStatusView(connection) : null;
+                  const selectedResource =
+                    analyticsDrafts[campaign.id] || connection?.external_resource_id || "";
+                  return (
+                    <article
+                      key={`analytics-${campaign.id}`}
+                      className="rounded-md border border-[#292a2f] bg-[#141518] p-5"
+                    >
+                      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)_auto] lg:items-center">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold text-white">{campaign.name}</h3>
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                                statusView
+                                  ? toneClasses(statusView.tone)
+                                  : "border-zinc-500/25 bg-zinc-500/10 text-zinc-300"
+                              }`}
+                            >
+                              {statusView?.label || "Analytics not matched"}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-zinc-500">
+                            {connection
+                              ? `${statusView?.summary} Last successful update: ${formatTimestamp(connection.last_success_at)}.`
+                              : "Choose the website analytics property for this business location."}
+                          </p>
+                          {connection?.website_event_key_configured ? (
+                            <p className="mt-2 text-xs font-medium text-emerald-200">
+                              Secure website inquiry connection created
+                            </p>
+                          ) : null}
+                          {connection && websiteEventKeys[connection.id] ? (
+                            <div className="mt-3 rounded-md border border-amber-500/25 bg-amber-500/10 p-3">
+                              <p className="text-xs font-semibold text-amber-100">
+                                Copy this private form key now
+                              </p>
+                              <code className="mt-2 block break-all text-xs leading-5 text-amber-50">
+                                {websiteEventKeys[connection.id].token}
+                              </code>
+                              <p className="mt-2 text-xs leading-5 text-amber-100/75">
+                                Event address: {websiteEventKeys[connection.id].event_path}
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div>
+                          <label
+                            htmlFor={`analytics-resource-${campaign.id}`}
+                            className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500"
+                          >
+                            Website analytics property
+                          </label>
+                          <select
+                            id={`analytics-resource-${campaign.id}`}
+                            className={selectClass}
+                            value={selectedResource}
+                            disabled={
+                              analyticsResources.length === 0 || Boolean(connection?.last_success_at)
+                            }
+                            onChange={(event) =>
+                              setAnalyticsDrafts((current) => ({
+                                ...current,
+                                [campaign.id]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">
+                              {analyticsResources.length === 0
+                                ? "Load available properties first"
+                                : "Choose a property"}
+                            </option>
+                            {analyticsResources.map((resource) => (
+                              <option key={resource.id} value={resource.id}>
+                                {resource.name} · {resource.account_name}
+                              </option>
+                            ))}
+                            {connection &&
+                            !analyticsResources.some(
+                              (resource) => resource.id === connection.external_resource_id,
+                            ) ? (
+                              <option value={connection.external_resource_id}>
+                                {connection.external_resource_name || connection.external_resource_id}
+                              </option>
+                            ) : null}
+                          </select>
+                        </div>
+                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                          {connection ? (
+                            <>
+                              <button
+                                className={secondaryButtonClass}
+                                disabled={busyAction === `website-event-key-${connection.id}`}
+                                onClick={() => void createWebsiteEventKey(connection)}
+                              >
+                                {busyAction === `website-event-key-${connection.id}`
+                                  ? "Creating..."
+                                  : connection.website_event_key_configured
+                                    ? "Replace form key"
+                                    : "Create form connection"}
+                              </button>
+                              <button
+                                className={secondaryButtonClass}
+                                disabled={
+                                  busyAction === `sync-${connection.id}` ||
+                                  connection.status === "syncing"
+                                }
+                                onClick={() => void syncConnection(connection)}
+                              >
+                                {busyAction === `sync-${connection.id}`
+                                  ? "Updating..."
+                                  : statusView?.action || "Check now"}
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className={primaryButtonClass}
+                              disabled={
+                                busyAction === `analytics-mapping-${campaign.id}` ||
+                                !selectedResource
+                              }
+                              onClick={() => void saveAnalyticsMapping(campaign)}
+                            >
+                              {busyAction === `analytics-mapping-${campaign.id}`
+                                ? "Connecting..."
+                                : "Match and start first update"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            ) : null}
           </>
         )}
       </section>

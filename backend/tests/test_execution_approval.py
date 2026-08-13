@@ -54,7 +54,14 @@ def test_manual_approval_required_before_execution(db_session, create_test_tenan
     assert blocked.status == 'pending'
     assert blocked.last_error == 'manual_approval_required'
 
-    approved = approve_execution(execution.id, approved_by='qa-user', db=db_session)
+    planned = execute_recommendation(execution.id, db=db_session, dry_run=True)
+    assert isinstance(planned, dict)
+    approved = approve_execution(
+        execution.id,
+        approved_by='qa-user',
+        preview_hash=planned['preview']['preview_hash'],
+        db=db_session,
+    )
     assert approved is not None
     assert approved.approved_by == 'qa-user'
     assert approved.approved_at is not None
@@ -79,9 +86,17 @@ def test_approve_and_reject_endpoints(client, db_session, create_test_org) -> No
     execution = schedule_execution(recommendation.id, db=db_session)
     assert isinstance(execution, RecommendationExecution)
 
+    preview_resp = client.post(
+        f'/api/v1/executions/{execution.id}/run',
+        json={'dry_run': True},
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    assert preview_resp.status_code == 200
+    preview_hash = preview_resp.json()['data']['result']['preview']['preview_hash']
+
     approve_resp = client.post(
         f'/api/v1/executions/{execution.id}/approve',
-        json={'approved_by': 'api-approver'},
+        json={'approved_by': 'api-approver', 'preview_hash': preview_hash},
         headers={'Authorization': f'Bearer {token}'},
     )
     assert approve_resp.status_code == 200

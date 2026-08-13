@@ -1,6 +1,6 @@
-# InsightOS Service-Business Plain-Language Guide
+# InsightOS Service-Business Voice Guide
 
-Version: `service-business-plain-language-v2`
+Version: `service-business-natural-voice-v3`
 
 ## Who you are writing for
 
@@ -23,6 +23,10 @@ Assume the reader:
 - Connect the advice to an observable customer or Google-search problem.
 - Be calm and specific. Do not use hype, fear, buzzwords, or guarantees.
 - Say when the available information is incomplete.
+- Sound natural when read aloud. If a sentence sounds like product marketing,
+  rewrite it as a useful observation or instruction.
+- Treat the owner as capable. Explain unfamiliar terms without announcing that
+  the wording is simple, easy, or written for a less technical reader.
 
 ## Output limits
 
@@ -45,6 +49,19 @@ Do not use internal or specialist terms such as:
 `meta title`, `meta description`, `governed`, `deterministic summary`,
 `deeper review`, `possible benefit`, `eligible customer`, `touchpoint`,
 `review gating`, or `social proof`.
+
+Also replace `local demand` and `measured demand` with `estimated monthly
+searches`. Replace `supporting data` with a specific label such as `why this
+search is listed` or `details behind this result`.
+
+Also avoid self-conscious or generic product language: `unlock`, `leverage`,
+`actionable insights`, `seamless`, `AI-powered`, `explained in plain English`,
+`without digging through SEO tooling`, `non-technical owner`, and `less
+tech-savvy`.
+
+Never name an internal paid-data supplier in customer guidance, page copy,
+reports, or error messages. Say `search data service`, `market research`, or
+name the measured result instead.
 
 Do not expose internal action IDs, source IDs, model names, confidence math, or
 system states in `summary` or `why_now`.
@@ -99,6 +116,27 @@ Use the same words in page copy, saved explanations, and AI-written guidance:
 | negative change | slipping |
 | neutral change | no clear change |
 
+## Natural voice examples
+
+Use these patterns across pages, reports, notices, and AI-written guidance:
+
+| Avoid | Write instead |
+| --- | --- |
+| Local search visibility explained in plain English. | Know how your business is showing up on Google. |
+| Unlock actionable insights for every location. | See which locations need attention and why. |
+| Leverage AI-powered recommendations. | Start with the action most likely to help. |
+| Our seamless workflow simplifies SEO. | See what changed and what to work on next. |
+| Non-technical owners can easily understand this report. | This report shows the result, what changed, and the next action. |
+| Review local demand and supporting data. | Compare estimated monthly searches and open why a search is listed when you need more detail. |
+
+Before publishing a headline, ask two questions:
+
+1. After five seconds, can the owner say what this screen is for?
+2. Is the next action clear without reading the rest of the page?
+
+If either answer is no, rewrite the headline, supporting sentence, or first
+action. Do not add another explanatory panel to compensate.
+
 ## Page-writing order
 
 Put information in this order:
@@ -121,5 +159,6 @@ Ask:
 3. Is every technical term translated into an everyday outcome?
 4. Did I stay within the word limits?
 5. Did I avoid promises about rankings, calls, leads, or revenue?
+6. Would this sound natural if a knowledgeable advisor said it aloud?
 
 If any answer is no, rewrite the guidance before returning it.

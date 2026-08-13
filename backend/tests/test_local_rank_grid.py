@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.models.business_location import BusinessLocation
+from app.models.competitor import Competitor
 from app.models.cost_economics import CostLedgerEntry
-from app.models.local_rank_grid import LocalRankGridPoint
+from app.models.local_rank_grid import LocalRankGridCompetitorPoint, LocalRankGridPoint
 from app.models.organization import Organization
 from app.models.rank import CampaignKeyword, KeywordCluster
 from app.services import local_rank_grid_service
@@ -179,7 +180,9 @@ def test_failed_tasks_are_not_charged_and_reserved_credits_return(
                 for item in requests
             ]
 
-    monkeypatch.setattr(local_rank_grid_service, "_provider_for_run", lambda *_args: FailedProvider())
+    monkeypatch.setattr(
+        local_rank_grid_service, "_provider_for_run", lambda *_args: FailedProvider()
+    )
     local_rank_grid_service.dispatch_run(db_session, run_id=run.id, tenant_id=organization.id)
     db_session.refresh(run)
 
@@ -195,6 +198,103 @@ def test_failed_tasks_are_not_charged_and_reserved_credits_return(
         .one()
     )
     assert release.customer_credit_units == -1
+
+
+def test_grid_reuses_each_result_to_compare_confirmed_competitors(
+    db_session, create_test_org, monkeypatch
+) -> None:
+    organization = create_test_org(name="Rank grid competitor org")
+    campaign, _location, keywords = _location_campaign(
+        db_session, organization, name="Reno Owner", city="Reno"
+    )
+    competitor = Competitor(
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        domain="reno-rival.example",
+        label="Reno Rival",
+        discovery_source="manual",
+        review_status="confirmed",
+    )
+    db_session.add(competitor)
+    db_session.commit()
+    monkeypatch.setattr(local_rank_grid_service, "_credential_owner", lambda *_args: "platform")
+
+    run, _created = local_rank_grid_service.create_run(
+        db_session,
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        created_by_user_id=None,
+        campaign_id=campaign.id,
+        keyword_ids=[keywords[0].id],
+        grid_size=3,
+        radius_miles=2,
+        idempotency_key="competitor-grid-001",
+    )
+
+    class ReadyProvider:
+        def submit(self, requests):
+            return [
+                {
+                    "point_id": item.point_id,
+                    "task_id": f"ready-{item.point_id}",
+                    "status": "pending",
+                    "status_code": 20100,
+                    "status_message": "queued",
+                    "cost": Decimal("0"),
+                }
+                for item in requests
+            ]
+
+        def fetch(self, task_id):
+            return {
+                "task_id": task_id,
+                "status": "ready",
+                "status_code": 20000,
+                "status_message": "complete",
+                "cost": Decimal("0"),
+                "items": [
+                    {
+                        "type": "maps_search",
+                        "title": "Reno Rival",
+                        "domain": "reno-rival.example",
+                        "rank_absolute": 2,
+                    },
+                    {
+                        "type": "maps_search",
+                        "title": "Reno Owner",
+                        "domain": campaign.domain,
+                        "rank_absolute": 5,
+                    },
+                ],
+            }
+
+    provider = ReadyProvider()
+    monkeypatch.setattr(local_rank_grid_service, "_provider_for_run", lambda *_args: provider)
+    local_rank_grid_service.dispatch_run(db_session, run_id=run.id, tenant_id=organization.id)
+    local_rank_grid_service.refresh_run(
+        db_session,
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        run_id=run.id,
+    )
+
+    saved = (
+        db_session.query(LocalRankGridCompetitorPoint)
+        .filter(LocalRankGridCompetitorPoint.run_id == run.id)
+        .all()
+    )
+    assert len(saved) == 9
+    assert all(row.rank == 2 and row.status == "ranked" for row in saved)
+    payload = local_rank_grid_service.serialize_run(db_session, run)
+    assert payload["competitors"] == [
+        {"id": competitor.id, "domain": "reno-rival.example", "label": "Reno Rival"}
+    ]
+    assert len(payload["competitor_points"]) == 9
+    summary = payload["competitor_overlap_summary"][0]
+    assert summary["comparable_points"] == 9
+    assert summary["owner_ahead"] == 0
+    assert summary["competitor_ahead"] == 9
+    assert summary["tied"] == 0
 
 
 def test_rank_grid_api_requires_confirmation_contract_and_returns_location_run(
@@ -261,8 +361,6 @@ def test_rank_grid_api_requires_confirmation_contract_and_returns_location_run(
     assert replayed.json()["data"]["run"]["id"] == run["id"]
     assert replayed.json()["data"]["run"]["status"] == "completed"
 
-    history = client.get(
-        f"/api/v1/local/rank-grid/runs?campaign_id={campaign.id}", headers=headers
-    )
+    history = client.get(f"/api/v1/local/rank-grid/runs?campaign_id={campaign.id}", headers=headers)
     assert history.status_code == 200
     assert history.json()["data"]["items"][0]["id"] == run["id"]

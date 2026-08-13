@@ -15,8 +15,8 @@ function source(relativePath) {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
 }
 
-test("the browser and AI language contracts share the v2 owner standard", () => {
-  assert.equal(CUSTOMER_LANGUAGE_VERSION, "service-business-plain-language-v2");
+test("the browser and generated language contracts share the v3 natural voice standard", () => {
+  assert.equal(CUSTOMER_LANGUAGE_VERSION, "service-business-natural-voice-v3");
   assert.equal(
     simplifyCustomerCopy("Reach more eligible completed customers"),
     "Get more reviews from recent customers",
@@ -24,6 +24,10 @@ test("the browser and AI language contracts share the v2 owner standard", () => 
   assert.equal(
     simplifyCustomerCopy("Possible benefit — more evidence needed"),
     "we need more information before estimating the result",
+  );
+  assert.equal(
+    simplifyCustomerCopy("Likely benefit: strong"),
+    "the saved information strongly supports this action",
   );
   assert.deepEqual(findProhibitedPrimaryPhrases("Open the deterministic summary"), [
     "deterministic summary",
@@ -48,6 +52,26 @@ test("the browser and AI language contracts share the v2 owner standard", () => 
     simplifyCustomerCopy("Add approved requests without incentives or review gating."),
     "Ask recent customers for reviews without rewards or filtering who gets asked.",
   );
+  assert.deepEqual(
+    findProhibitedPrimaryPhrases("Unlock actionable insights with an AI-powered workflow"),
+    ["actionable insights", "ai-powered", "unlock"],
+  );
+  assert.equal(
+    simplifyCustomerCopy("Open the supporting data for measured demand"),
+    "Open the details behind this result for estimated monthly searches",
+  );
+});
+
+test("first impressions state the business outcome without self-conscious product language", () => {
+  const homeSource = source("../app/page.jsx");
+  const loginSource = source("../app/login/page.jsx");
+
+  assert.match(homeSource, /Know how your business is showing up on Google/);
+  assert.match(homeSource, /See which searches help people find you/);
+  assert.match(loginSource, /See what changed on Google, what needs attention, and what to work on next/);
+  assert.doesNotMatch(loginSource, /httpOnly|JS-accessible|auth tokens/);
+  assert.deepEqual(findProhibitedPrimaryPhrases(homeSource), []);
+  assert.deepEqual(findProhibitedPrimaryPhrases(loginSource), []);
 });
 
 test("change language combines words, direction, and consistent meaning", () => {

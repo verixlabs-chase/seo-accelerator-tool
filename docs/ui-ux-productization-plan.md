@@ -580,6 +580,9 @@ product narration, filler, stacked abstractions, and familiar AI phrasing.
 64. Add approved examples, counterexamples, prohibited phrases, and
 read-aloud/five-second comprehension checks to the shared language guide and
 automated copy contracts.
+64A. Keep the internal market-data supplier private on every page, report,
+generated message, and error. Enforce neutral source labels at both API and
+browser boundaries so upstream failures cannot reveal the supplier name.
 65. Use the public home-page direction `Know how your business is showing up on
 Google` and `See which searches help customers find you, how each location is
 doing, and what to work on next` as a reference, subject to data-truth review.

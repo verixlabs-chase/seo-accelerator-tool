@@ -32,6 +32,7 @@ class AnalyticsDailyMetric(Base):
     )
     metric_date: Mapped[date] = mapped_column(Date, nullable=False)
     sessions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    engaged_sessions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     conversions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     deterministic_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))

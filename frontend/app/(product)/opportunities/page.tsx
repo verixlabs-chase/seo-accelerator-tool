@@ -20,7 +20,7 @@ import {
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
-import { platformApi } from "../../platform/api";
+import { platformApi, platformApiFile } from "../../platform/api";
 import {
   analyticsDayKey,
   submitProductFeedback,
@@ -44,6 +44,7 @@ import {
   getWorkProgress,
 } from "../truth/actionPlan.mjs";
 import { simplifyCustomerCopy } from "../truth/customerLanguage.mjs";
+import { ProgressMilestones } from "./ProgressMilestones";
 
 const EXECUTION_CONSOLE_ENABLED =
   process.env.NEXT_PUBLIC_EXECUTION_CONSOLE_ENABLED !== "false";
@@ -457,6 +458,56 @@ type ExecutionResult = {
   reason_code?: string;
   mutations?: unknown[];
   rolled_back_mutations?: unknown[];
+  preview?: WordPressChangePreview;
+  rollback_available?: boolean;
+  recovery_action?: string;
+  public_verification?: {
+    passed: boolean;
+    verified_at?: string;
+    pages_checked: number;
+    checks_total: number;
+    checks_passed: number;
+    checks_failed: number;
+    rollback_available: boolean;
+    results: Array<{
+      mutation_id?: string;
+      mutation_type?: string;
+      target_url?: string;
+      status?: string;
+      passed: boolean;
+      message: string;
+    }>;
+  };
+};
+
+type WordPressChangeVersion = {
+  revision_id?: string;
+  content_hash?: string;
+};
+
+type WordPressChangePreviewItem = {
+  mutation_id?: string;
+  mutation_type?: string;
+  target_url?: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  expected_version?: WordPressChangeVersion;
+  validation_checks?: Array<{ code?: string; passed?: boolean; message?: string }>;
+  conflicts?: Array<{ code?: string; message?: string; recovery?: string }>;
+  rollback_plan?: { available?: boolean; summary?: string };
+};
+
+type WordPressChangePreview = {
+  id?: string;
+  preview_hash: string;
+  status: "ready" | "blocked" | "approved" | "superseded";
+  affected_urls?: string[];
+  mutation_count?: number;
+  conflict_count?: number;
+  changes?: WordPressChangePreviewItem[];
+  conflicts?: Array<{ code?: string; message?: string; recovery?: string }>;
+  rollback_summary?: string;
+  created_at?: string;
 };
 
 type Execution = {
@@ -504,12 +555,73 @@ type WordPressExecutionSetup = {
   missing_fields: string[];
   missing_requirements: string[];
   plugin_version?: string | null;
+  plugin_package?: {
+    filename: string;
+    version: string;
+    sha256: string;
+    size_bytes: number;
+    file_count: number;
+  };
   breaker_state?: string;
   last_error_code?: string | null;
   last_error_at?: string | null;
   last_success_at?: string | null;
   status_summary: string;
   disabled_reason?: string | null;
+  pairing_pending?: boolean;
+  pairing_expires_at?: string | null;
+  content_item_count?: number;
+  content_source_total_count?: number;
+  content_inventory_truncated?: boolean;
+  last_content_sync_at?: string | null;
+};
+
+type WordPressPairingDetails = {
+  campaign_id: string;
+  site_url: string;
+  pairing_code: string;
+  expires_at: string;
+  replaces_existing_connection: boolean;
+  instructions: string[];
+};
+
+type WordPressContentItem = {
+  id: string;
+  wp_post_id: number;
+  post_type: string;
+  publication_status: string;
+  url: string;
+  title: string;
+  meta_title?: string | null;
+  meta_description?: string | null;
+  canonical_url?: string | null;
+  headings: Array<{ level?: number; text?: string }>;
+  internal_links: string[];
+  schema_types: string[];
+  schema_present: boolean;
+  word_count: number;
+  revision_id: string;
+  modified_at?: string | null;
+};
+
+type WordPressContentInventory = {
+  campaign_id: string;
+  has_inventory: boolean;
+  last_synced_at?: string | null;
+  wordpress_version?: string | null;
+  seo_plugins?: Array<{ name?: string; version?: string }>;
+  truncated?: boolean;
+  source_total_count?: number;
+  summary: {
+    pages_found: number;
+    published: number;
+    drafts: number;
+    missing_description: number;
+    with_schema: number;
+    without_internal_links: number;
+  };
+  items: WordPressContentItem[];
+  message?: string;
 };
 
 function toTitleCase(value?: string) {
@@ -605,11 +717,11 @@ function getPriorityTone(riskTier = 0) {
 
 function getImpactLabel(confidenceScore = 0) {
   if (confidenceScore >= 0.8) {
-    return "Likely benefit: strong";
+    return "The saved information strongly supports doing this";
   }
 
   if (confidenceScore >= 0.6) {
-    return "Likely benefit: moderate";
+    return "The saved information supports doing this";
   }
 
   return "We need more information before estimating the result";
@@ -726,7 +838,7 @@ function getOwnerLabel(ownerRole?: string) {
     return "Content help";
   }
   if (ownerRole === "seo_operator") {
-    return "SEO help";
+    return "Search marketing help";
   }
   if (ownerRole === "developer") {
     return "Website help";
@@ -993,16 +1105,54 @@ function canApproveExecution(execution: Execution) {
   return execution.status === "pending" || execution.status === "scheduled";
 }
 
+function canApprovePreview(execution: Execution, preview?: WordPressChangePreview | null) {
+  if (!requiresWordPressSetup(execution.execution_type)) {
+    return canApproveExecution(execution);
+  }
+  return (
+    (canApproveExecution(execution) ||
+      (execution.status === "failed" && !execution.result?.rollback_available)) &&
+    preview?.status === "ready" &&
+    !preview.conflict_count
+  );
+}
+
+function describeMutationType(type?: string) {
+  if (type === "update_meta_title") return "Change the search title";
+  if (type === "update_meta_description") return "Change the search description";
+  if (type === "insert_internal_link") return "Add a helpful page link";
+  if (type === "create_internal_anchor") return "Add a page section marker";
+  if (type === "add_schema_markup") return "Add structured business information";
+  if (type === "publish_content_page") return "Create a new draft page";
+  return toTitleCase(type || "Website change");
+}
+
+function formatPreviewValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "Nothing is set yet";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  return JSON.stringify(value, null, 2);
+}
+
 function canRejectExecution(execution: Execution) {
   return execution.status === "pending" || execution.status === "scheduled";
 }
 
 function canRunExecution(execution: Execution) {
-  return execution.status === "pending" || execution.status === "scheduled" || execution.status === "failed";
+  return (
+    execution.status === "pending" ||
+    execution.status === "scheduled" ||
+    (execution.status === "failed" && !execution.result?.rollback_available)
+  );
+}
+
+function canRunLiveExecution(execution: Execution) {
+  return canRunExecution(execution) && (
+    !requiresWordPressSetup(execution.execution_type) || Boolean(execution.approved_by && execution.approved_at)
+  );
 }
 
 function canRetryExecution(execution: Execution) {
-  return execution.status === "failed";
+  return execution.status === "failed" && !execution.result?.rollback_available;
 }
 
 function canCancelExecution(execution: Execution) {
@@ -1010,7 +1160,11 @@ function canCancelExecution(execution: Execution) {
 }
 
 function canRollbackExecution(execution: Execution) {
-  return execution.status === "completed" && getMutationCount(execution) > 0;
+  return (
+    (execution.status === "completed" ||
+      (execution.status === "failed" && execution.result?.rollback_available)) &&
+    getMutationCount(execution) > 0
+  );
 }
 
 function requiresWordPressSetup(executionType?: string) {
@@ -1517,7 +1671,7 @@ function ActionResultStatus({
                     <span className="text-xs opacity-75">to {formatMeasurementValue(outcome, outcome.value)}</span>
                   ) : null}
                 </div>
-                <p className="mt-1 text-xs opacity-60">Starting point · {metric.source || "stored evidence"}</p>
+                <p className="mt-1 text-xs opacity-60">Based on saved information</p>
               </div>
             );
           })}
@@ -1623,6 +1777,9 @@ export default function OpportunitiesPage() {
   const [selectedDraftType, setSelectedDraftType] = useState<GovernedDraftType | "">("");
   const [wordpressSetup, setWordpressSetup] = useState<WordPressExecutionSetup | null>(null);
   const [wordpressSetupError, setWordpressSetupError] = useState("");
+  const [wordpressPairing, setWordpressPairing] = useState<WordPressPairingDetails | null>(null);
+  const [wordpressInventory, setWordpressInventory] = useState<WordPressContentInventory | null>(null);
+  const [wordpressInventoryError, setWordpressInventoryError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -1813,15 +1970,115 @@ export default function OpportunitiesPage() {
     }
   }, []);
 
+  const loadWordPressInventory = useCallback(async (campaignId: string) => {
+    if (!WORDPRESS_EXECUTION_SETUP_UI_ENABLED || !campaignId) {
+      setWordpressInventory(null);
+      setWordpressInventoryError("");
+      return;
+    }
+    try {
+      const response = await platformApi(
+        `/provider-health/wordpress-content-inventory?campaign_id=${encodeURIComponent(campaignId)}&limit=100`,
+        { method: "GET" },
+      );
+      setWordpressInventory((response as WordPressContentInventory) || null);
+      setWordpressInventoryError("");
+    } catch (err) {
+      setWordpressInventory(null);
+      setWordpressInventoryError(
+        err instanceof Error ? err.message : "Unable to load the WordPress page list.",
+      );
+    }
+  }, []);
+
+  async function testWordPressConnection() {
+    if (!selectedCampaignId) return;
+    await runAction("wordpress-connection-check", async () => {
+      const response = await platformApi(
+        `/provider-health/wordpress-execution-check?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadWordPressExecutionSetup(selectedCampaignId);
+      setNotice(
+        response?.message ||
+          "Connection confirmed. WordPress changes still require review and approval.",
+      );
+    });
+  }
+
+  async function createWordPressPairingCode() {
+    if (!selectedCampaignId) return;
+    await runAction("wordpress-pairing", async () => {
+      const response = await platformApi(
+        `/provider-health/wordpress-pairing/start?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      setWordpressPairing((response as WordPressPairingDetails) || null);
+      await loadWordPressExecutionSetup(selectedCampaignId);
+      setNotice("Pairing code created. Enter it in the InsightOS WordPress plugin within 10 minutes.");
+    });
+  }
+
+  async function downloadWordPressPlugin() {
+    if (!selectedCampaignId) return;
+    await runAction("wordpress-plugin-download", async () => {
+      const file = await platformApiFile(
+        `/provider-health/wordpress-plugin-download?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "GET" },
+      );
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download =
+        wordpressSetup?.plugin_package?.filename || "insightos-wordpress-plugin.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(fileUrl), 60_000);
+      setNotice("The WordPress plugin was downloaded. Keep the ZIP file intact for upload.");
+    });
+  }
+
+  async function disconnectWordPress() {
+    if (!selectedCampaignId) return;
+    if (!window.confirm("Disconnect this website from InsightOS? No website content will be removed.")) {
+      return;
+    }
+    await runAction("wordpress-disconnect", async () => {
+      const response = await platformApi(
+        `/provider-health/wordpress-connection?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "DELETE" },
+      );
+      setWordpressPairing(null);
+      setWordpressInventory(null);
+      await loadWordPressExecutionSetup(selectedCampaignId);
+      setNotice(response?.message || "WordPress is disconnected.");
+    });
+  }
+
+  async function syncWordPressContent() {
+    if (!selectedCampaignId) return;
+    await runAction("wordpress-content-sync", async () => {
+      const response = await platformApi(
+        `/provider-health/wordpress-content-sync?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      setWordpressInventory((response as WordPressContentInventory) || null);
+      await loadWordPressExecutionSetup(selectedCampaignId);
+      setNotice(response?.message || "Website pages are up to date. Nothing was changed.");
+    });
+  }
+
   const refreshCampaignData = useCallback(
     async (campaignId: string) => {
       await Promise.all([
         loadOpportunities(campaignId),
         loadExecutions(campaignId),
         loadWordPressExecutionSetup(campaignId),
+        loadWordPressInventory(campaignId),
       ]);
     },
-    [loadExecutions, loadOpportunities, loadWordPressExecutionSetup],
+    [loadExecutions, loadOpportunities, loadWordPressExecutionSetup, loadWordPressInventory],
   );
 
   async function runAction(action: string, fn: () => Promise<void>) {
@@ -2035,7 +2292,7 @@ export default function OpportunitiesPage() {
         );
       } else {
         setNotice(
-          "AI wording was not available, so InsightOS kept the saved action plan. Your checklist still works.",
+          "Fresh wording was not available, so InsightOS kept the saved action plan. Your checklist still works.",
         );
       }
     });
@@ -2540,7 +2797,7 @@ export default function OpportunitiesPage() {
                     {
                       key: "website" as const,
                       title: "Improve your website",
-                      summary: "Pages, search visibility, speed, and technical fixes.",
+                      summary: "Pages, search visibility, speed, and website fixes.",
                       icon: "website-health" as const,
                     },
                     {
@@ -2805,22 +3062,26 @@ export default function OpportunitiesPage() {
               </section>
             ) : null}
 
+            {selectedCampaignId ? (
+              <ProgressMilestones campaignId={selectedCampaignId} />
+            ) : null}
+
             <details className="rounded-md border border-violet-500/20 bg-[linear-gradient(135deg,rgba(139,92,246,0.07),rgba(20,21,24,0.96)_52%)] p-4 shadow-[0_0_30px_rgba(0,0,0,0.3)]">
               <summary className="cursor-pointer list-none">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/70">
-                  Today&apos;s AI-assisted plan
+                  Today&apos;s plan
                 </p>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <h2 className="text-base font-semibold text-white">
-                    Open today&apos;s plain-language plan
+                    Open today&apos;s action list
                   </h2>
                   <span className="text-xs text-violet-200">Show</span>
                 </div>
               </summary>
               <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-t border-violet-500/15 pt-4">
                 <p className="max-w-3xl text-sm leading-6 text-zinc-300">
-                  InsightOS chooses the facts and saved actions. AI only turns that plan
-                  into easier language and cannot change your website.
+                  InsightOS uses the saved facts and approved actions to prepare this wording.
+                  It cannot change your website.
                 </p>
                 <button
                   onClick={() => void explainIntelligenceBrief()}
@@ -3284,11 +3545,11 @@ export default function OpportunitiesPage() {
                 {intelligenceRuntime?.configured &&
                 intelligenceAllowance?.remaining !== undefined ? (
                   <span>
-                    {intelligenceAllowance.remaining} AI-assisted actions remaining this month
+                    {intelligenceAllowance.remaining} refreshed plans remaining this month
                   </span>
                 ) : (
                   <span>
-                    The plain-language service is unavailable; saved guidance remains available
+                    Fresh wording is unavailable; the saved action plan remains available
                   </span>
                 )}
               </div>
@@ -3453,7 +3714,7 @@ export default function OpportunitiesPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                            Why this matters
+                            Action details
                           </p>
                           <h2 className="mt-1.5 text-2xl font-semibold tracking-[-0.03em] text-white">
                             {getRecommendationTitle(selectedRecommendation)}
@@ -3489,7 +3750,7 @@ export default function OpportunitiesPage() {
                         </div>
                         <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                            Why it matters
+                            Why this is prioritized
                           </p>
                           <p className="mt-2 text-sm leading-6 text-zinc-300">
                             {getImpactLabel(
@@ -3619,7 +3880,7 @@ export default function OpportunitiesPage() {
                             </div>
                           )}
                           <p className="mt-3 text-xs text-zinc-500">
-                            These steps come from the action library. Your saved progress follows you across devices.
+                            Your progress is saved and follows you across devices.
                           </p>
                         </section>
                       ) : null}
@@ -3636,16 +3897,21 @@ export default function OpportunitiesPage() {
                           </ul>
                         ) : (
                           <p className="mt-3 text-sm leading-6 text-zinc-300">
-                            We do not have supporting information for this action yet.
+                            InsightOS needs more information before it can explain why this action belongs here.
                           </p>
                         )}
                       </div>
 
                       <div className="mt-5 rounded-md border border-[#26272c] bg-[#111214] p-4">
-                        <div className="grid gap-4 md:grid-cols-4">
+                        <details>
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-zinc-200">
+                            <span>More about this action</span>
+                            <span className="text-xs font-normal text-zinc-500">Show</span>
+                          </summary>
+                          <div className="mt-4 grid gap-4 border-t border-[#26272c] pt-4 md:grid-cols-4">
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                              Likely benefit
+                              Support for this action
                             </p>
                             <p className="mt-2 text-sm text-zinc-200">
                               {getImpactLabel(
@@ -3657,7 +3923,7 @@ export default function OpportunitiesPage() {
                           </div>
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                              How this was found
+                              Information checked
                             </p>
                             <p className="mt-2 text-sm text-zinc-200">
                               {getEngineSourceLabel(selectedRecommendation.engine_source)}
@@ -3685,7 +3951,8 @@ export default function OpportunitiesPage() {
                               {formatRelativeTime(selectedRecommendation.created_at)}
                             </p>
                           </div>
-                        </div>
+                          </div>
+                        </details>
 
                         <div className="mt-4 flex flex-wrap gap-3">
                           {primaryAction ? (
@@ -3716,7 +3983,7 @@ export default function OpportunitiesPage() {
                             >
                               {busyAction === `${selectedRecommendation.id}:measure-outcome`
                                 ? "Measuring..."
-                                : "Measure saved-data progress"}
+                                : "Check progress"}
                             </button>
                           ) : null}
 
@@ -3868,17 +4135,72 @@ export default function OpportunitiesPage() {
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                        WordPress execution setup
+                        Connect WordPress
                       </p>
                       <h3 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                        Provisioning and safety status
+                        Let InsightOS make approved website updates
                       </h3>
                       <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
                         {wordpressSetup?.status_summary ||
-                          "WordPress execution status will appear here for the selected business."}
+                          "Connect the website once, then review every suggested change before it runs."}
+                      </p>
+                      <p className="mt-2 text-sm text-zinc-400">
+                        Your WordPress administrator password is never shared with InsightOS.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      {wordpressSetup ? (
+                        <button
+                          type="button"
+                          onClick={() => void downloadWordPressPlugin()}
+                          disabled={busyAction !== ""}
+                          className="rounded-md border border-accent-500/40 bg-accent-500/10 px-3 py-1.5 text-xs font-medium text-accent-100 disabled:opacity-50"
+                        >
+                          {busyAction === "wordpress-plugin-download"
+                            ? "Preparing download..."
+                            : wordpressSetup.configured
+                              ? "Download latest plugin"
+                              : "Download WordPress plugin"}
+                        </button>
+                      ) : null}
+                      {wordpressSetup?.configured && wordpressSetup.mode !== "test" ? (
+                        <button
+                          type="button"
+                          onClick={() => void testWordPressConnection()}
+                          disabled={busyAction !== ""}
+                          className="rounded-md border border-sky-500/40 px-3 py-1.5 text-xs font-medium text-sky-100 disabled:opacity-50"
+                        >
+                          {busyAction === "wordpress-connection-check"
+                            ? "Testing connection…"
+                            : wordpressSetup.execution_ready
+                              ? "Test connection again"
+                              : "Test connection"}
+                        </button>
+                      ) : null}
+                      {wordpressSetup?.mode !== "test" ? (
+                        <button
+                          type="button"
+                          onClick={() => void createWordPressPairingCode()}
+                          disabled={busyAction !== ""}
+                          className="rounded-md border border-accent-500/40 bg-accent-500/10 px-3 py-1.5 text-xs font-medium text-accent-100 disabled:opacity-50"
+                        >
+                          {busyAction === "wordpress-pairing"
+                            ? "Creating code…"
+                            : wordpressSetup?.credential_source === "site"
+                              ? "Replace connection key"
+                              : "Create pairing code"}
+                        </button>
+                      ) : null}
+                      {wordpressSetup?.credential_source === "site" ? (
+                        <button
+                          type="button"
+                          onClick={() => void disconnectWordPress()}
+                          disabled={busyAction !== ""}
+                          className="rounded-md border border-rose-500/30 px-3 py-1.5 text-xs font-medium text-rose-100 disabled:opacity-50"
+                        >
+                          {busyAction === "wordpress-disconnect" ? "Disconnecting…" : "Disconnect"}
+                        </button>
+                      ) : null}
                       <span
                         className={`rounded-md border px-2 py-1 text-xs font-medium ${
                           wordpressSetup?.configured
@@ -3901,20 +4223,166 @@ export default function OpportunitiesPage() {
                     </div>
                   </div>
 
+                  {wordpressSetup?.mode !== "test" ? (
+                    <details
+                      className="mt-4 rounded-md border border-[#26272c] bg-[#141518] p-4"
+                      open={!wordpressSetup?.configured}
+                    >
+                      <summary className="cursor-pointer text-sm font-semibold text-white">
+                        How to install and connect WordPress
+                      </summary>
+                      <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-zinc-300">
+                        <li>Download the plugin ZIP above. Do not unzip it.</li>
+                        <li>
+                          Sign in to WordPress, open Plugins, choose Add Plugin, then Upload Plugin.
+                        </li>
+                        <li>Choose the ZIP file, install it, and select Activate Plugin.</li>
+                        <li>Return here and choose Create pairing code.</li>
+                        <li>
+                          In WordPress, open Settings, choose InsightOS, paste the code, and connect the
+                          website.
+                        </li>
+                        <li>Return here and choose Test connection.</li>
+                      </ol>
+                      <p className="mt-4 text-xs leading-5 text-zinc-500">
+                        {wordpressSetup.plugin_package
+                          ? `Download version ${wordpressSetup.plugin_package.version}. Package check: ${wordpressSetup.plugin_package.sha256.slice(0, 12)}...`
+                          : "The download contains only the InsightOS plugin. It never contains your website password or pairing code."}
+                      </p>
+                    </details>
+                  ) : null}
+
+                  {wordpressPairing?.campaign_id === selectedCampaignId ? (
+                    <div className="mt-4 rounded-md border border-accent-500/30 bg-accent-500/10 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-200">
+                        One-time pairing code
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <code className="rounded-md border border-accent-500/30 bg-[#111214] px-4 py-3 text-lg font-semibold tracking-[0.12em] text-white">
+                          {wordpressPairing.pairing_code}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => void navigator.clipboard.writeText(wordpressPairing.pairing_code)}
+                          className="rounded-md border border-[#34363c] px-3 py-2 text-xs font-medium text-zinc-100"
+                        >
+                          Copy code
+                        </button>
+                      </div>
+                      <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-zinc-200">
+                        {wordpressPairing.instructions.map((instruction) => (
+                          <li key={instruction}>{instruction}</li>
+                        ))}
+                      </ol>
+                      <p className="mt-3 text-xs text-zinc-400">
+                        This code expires {formatRelativeTime(wordpressPairing.expires_at)} and works only for {wordpressPairing.site_url}.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {wordpressSetup?.credential_source === "site" ? (
+                    <div className="mt-4 rounded-md border border-[#26272c] bg-[#141518] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                            Website pages
+                          </p>
+                          <h4 className="mt-1.5 text-base font-semibold text-white">
+                            {wordpressInventory?.has_inventory
+                              ? `${wordpressInventory.summary.pages_found} pages are ready to review`
+                              : "See what is currently on the website"}
+                          </h4>
+                          <p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-300">
+                            This reads page settings and revision fingerprints so future previews use the current website. It does not change anything.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void syncWordPressContent()}
+                          disabled={!wordpressSetup.execution_ready || busyAction !== ""}
+                          className="rounded-md border border-sky-500/40 px-3 py-2 text-xs font-medium text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "wordpress-content-sync"
+                            ? "Reading website pages…"
+                            : wordpressInventory?.has_inventory
+                              ? "Refresh page list"
+                              : "Read website pages"}
+                        </button>
+                      </div>
+
+                      {!wordpressSetup.execution_ready ? (
+                        <p className="mt-3 text-xs text-amber-100">
+                          Test the connection before reading the website pages.
+                        </p>
+                      ) : null}
+                      {wordpressInventoryError ? (
+                        <p className="mt-3 text-sm text-rose-200">{wordpressInventoryError}</p>
+                      ) : null}
+
+                      {wordpressInventory?.has_inventory ? (
+                        <>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            {[
+                              ["Pages found", wordpressInventory.summary.pages_found],
+                              ["Published", wordpressInventory.summary.published],
+                              ["Need a description", wordpressInventory.summary.missing_description],
+                              ["Have structured details", wordpressInventory.summary.with_schema],
+                            ].map(([label, value]) => (
+                              <div key={String(label)} className="border-l border-[#34363c] pl-3">
+                                <p className="text-xs text-zinc-500">{label}</p>
+                                <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <details className="mt-4 border-t border-[#26272c] pt-4">
+                            <summary className="cursor-pointer text-sm font-medium text-zinc-200">
+                              View website page list
+                            </summary>
+                            <div className="mt-3 divide-y divide-[#26272c]">
+                              {wordpressInventory.items.slice(0, 100).map((item) => (
+                                <div key={item.id} className="grid gap-2 py-3 lg:grid-cols-[1fr_auto]">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-white">
+                                      {item.title || item.url}
+                                    </p>
+                                    <p className="mt-1 truncate text-xs text-zinc-500">{item.url}</p>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+                                    <span>{toTitleCase(item.publication_status)}</span>
+                                    <span>{item.word_count.toLocaleString()} words</span>
+                                    <span>{item.meta_description ? "Description saved" : "Needs a description"}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                          <p className="mt-3 text-xs text-zinc-500">
+                            Last read {formatRelativeTime(wordpressInventory.last_synced_at)}.
+                            {wordpressInventory.truncated
+                              ? ` Showing the first ${wordpressInventory.summary.pages_found} of ${wordpressInventory.source_total_count || "the"} pages.`
+                              : ""}
+                          </p>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   <div className="mt-4 grid gap-4 md:grid-cols-3">
                     <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                        Credential source
+                        Website connection
                       </p>
                       <p className="mt-2 text-sm text-zinc-200">
-                        {wordpressSetup
-                          ? toTitleCase(wordpressSetup.credential_source.replace(/_/g, " "))
-                          : "Unknown"}
+                        {wordpressSetup?.credential_source === "site"
+                          ? "Paired to this website"
+                          : wordpressSetup?.configured
+                            ? "Older connection saved"
+                            : "Not connected"}
                       </p>
                     </div>
                     <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                        Plugin health
+                        Plugin version
                       </p>
                       <p className="mt-2 text-sm text-zinc-200">
                         {wordpressSetup?.plugin_version
@@ -3924,12 +4392,12 @@ export default function OpportunitiesPage() {
                     </div>
                     <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                        Last issue
+                        Last connection check
                       </p>
                       <p className="mt-2 text-sm text-zinc-200">
-                        {wordpressSetup?.last_error_code
-                          ? toTitleCase(wordpressSetup.last_error_code.replace(/_/g, " "))
-                          : "No recent plugin error recorded"}
+                        {wordpressSetup?.last_success_at
+                          ? formatRelativeTime(wordpressSetup.last_success_at)
+                          : "Not checked yet"}
                       </p>
                     </div>
                   </div>
@@ -4215,19 +4683,104 @@ export default function OpportunitiesPage() {
                           </div>
                         ) : null}
 
+                        {selectedExecution.result?.public_verification ? (
+                          <div
+                            className={`rounded-md border p-4 ${
+                              selectedExecution.result.public_verification.passed
+                                ? "border-emerald-500/20 bg-emerald-500/10"
+                                : "border-rose-500/20 bg-rose-500/10"
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p
+                                  className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                                    selectedExecution.result.public_verification.passed
+                                      ? "text-emerald-300"
+                                      : "text-rose-300"
+                                  }`}
+                                >
+                                  Public website check
+                                </p>
+                                <h4 className="mt-1.5 text-base font-semibold text-white">
+                                  {selectedExecution.result.public_verification.passed
+                                    ? "The live website matches the approved changes"
+                                    : "The live website does not match every approved change yet"}
+                                </h4>
+                                <p className="mt-2 text-sm leading-6 text-zinc-200">
+                                  {selectedExecution.result.public_verification.checks_passed} of{" "}
+                                  {selectedExecution.result.public_verification.checks_total} checks passed
+                                  across {selectedExecution.result.public_verification.pages_checked}{" "}
+                                  {selectedExecution.result.public_verification.pages_checked === 1
+                                    ? "page"
+                                    : "pages"}
+                                  .
+                                </p>
+                              </div>
+                              <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-zinc-100">
+                                {selectedExecution.result.public_verification.passed
+                                  ? "Verified"
+                                  : "Needs attention"}
+                              </span>
+                            </div>
+                            <div className="mt-4 space-y-2">
+                              {selectedExecution.result.public_verification.results.map((check, index) => (
+                                <div
+                                  key={`${check.mutation_id || check.mutation_type || "check"}-${index}`}
+                                  className="rounded-md border border-white/10 bg-[#111214]/70 p-3"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-sm font-medium text-white">
+                                      {check.passed ? "Passed" : "Not confirmed"}: {describeMutationType(check.mutation_type)}
+                                    </p>
+                                    {check.target_url ? (
+                                      <a
+                                        href={check.target_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-xs font-medium text-sky-200 hover:text-sky-100"
+                                      >
+                                        Open public page
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-1.5 text-sm leading-6 text-zinc-300">{check.message}</p>
+                                </div>
+                              ))}
+                            </div>
+                            {!selectedExecution.result.public_verification.passed ? (
+                              <p className="mt-4 text-sm font-medium text-rose-100">
+                                {selectedExecution.result.recovery_action ||
+                                  "Review the failed checks. If the live page is wrong, use Rollback to restore the saved values."}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+
                         <ActionDrawer
                           title={describeExecutionType(selectedExecution.execution_type)}
                           summary={getExecutionSummary(selectedExecution)}
                           evidence={executionEvidence}
                           actions={
                             <>
-                              {canApproveExecution(selectedExecution) ? (
+                              {canApprovePreview(
+                                selectedExecution,
+                                dryRunPreview?.executionId === selectedExecution.id
+                                  ? dryRunPreview.result.preview
+                                  : null,
+                              ) ? (
                                 <button
                                   onClick={() =>
                                     void transitionExecution(
                                       selectedExecution.id,
                                       "approve",
                                       `${describeExecutionType(selectedExecution.execution_type)} approved and kept in the execution queue.`,
+                                      {
+                                        preview_hash:
+                                          dryRunPreview?.executionId === selectedExecution.id
+                                            ? dryRunPreview.result.preview?.preview_hash
+                                            : undefined,
+                                      },
                                     )
                                   }
                                   disabled={busyAction !== ""}
@@ -4235,7 +4788,7 @@ export default function OpportunitiesPage() {
                                 >
                                   {busyAction === `${selectedExecution.id}:approve`
                                     ? "Approving..."
-                                    : "Approve"}
+                                    : "Approve these changes"}
                                 </button>
                               ) : null}
 
@@ -4272,11 +4825,13 @@ export default function OpportunitiesPage() {
                                 >
                                   {busyAction === `${selectedExecution.id}:run`
                                     ? "Running..."
-                                    : "Dry run"}
+                                    : requiresWordPressSetup(selectedExecution.execution_type)
+                                      ? "Check website changes"
+                                      : "Preview action"}
                                 </button>
                               ) : null}
 
-                              {EXECUTION_CONSOLE_ENABLED && canRunExecution(selectedExecution) ? (
+                              {EXECUTION_CONSOLE_ENABLED && canRunLiveExecution(selectedExecution) ? (
                                 <button
                                   onClick={() =>
                                     void transitionExecution(
@@ -4362,14 +4917,70 @@ export default function OpportunitiesPage() {
                         ) : null}
 
                         {dryRunPreview?.executionId === selectedExecution.id ? (
-                          <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                              Latest dry run preview
-                            </p>
-                            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-sm leading-6 text-zinc-300">
-                              {JSON.stringify(dryRunPreview.result, null, 2)}
-                            </pre>
-                          </div>
+                          dryRunPreview.result.preview ? (
+                            <div className="space-y-4 rounded-md border border-[#26272c] bg-[#141518] p-4">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                                    Website change preview
+                                  </p>
+                                  <h3 className="mt-2 text-lg font-semibold text-zinc-100">
+                                    {dryRunPreview.result.preview.conflict_count
+                                      ? "A problem needs attention before anything can change"
+                                      : `${dryRunPreview.result.preview.mutation_count || 0} proposed website change${dryRunPreview.result.preview.mutation_count === 1 ? "" : "s"}`}
+                                  </h3>
+                                  <p className="mt-1 text-sm leading-6 text-zinc-400">
+                                    Nothing on the website was changed. Review the exact values below before approving.
+                                  </p>
+                                </div>
+                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${dryRunPreview.result.preview.conflict_count ? "border-rose-500/20 bg-rose-500/10 text-rose-100" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-100"}`}>
+                                  {dryRunPreview.result.preview.conflict_count ? "Needs attention" : "Ready for approval"}
+                                </span>
+                              </div>
+
+                              {(dryRunPreview.result.preview.conflicts || []).map((conflict, index) => (
+                                <div key={`${conflict.code || "conflict"}-${index}`} className="rounded-md border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-100">
+                                  <p>{conflict.message || "This change cannot run safely yet."}</p>
+                                  {conflict.recovery ? <p className="mt-1 text-rose-200">Next: {conflict.recovery}</p> : null}
+                                </div>
+                              ))}
+
+                              <div className="space-y-3">
+                                {(dryRunPreview.result.preview.changes || []).map((change, index) => (
+                                  <div key={change.mutation_id || `${change.mutation_type}-${index}`} className="rounded-md border border-[#2b2c31] bg-[#101114] p-4">
+                                    <p className="font-semibold text-zinc-100">{describeMutationType(change.mutation_type)}</p>
+                                    <p className="mt-1 break-all text-xs text-zinc-500">{change.target_url || "Website page"}</p>
+                                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                      <div className="rounded-md border border-[#26272c] p-3">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Current</p>
+                                        <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-zinc-300">{formatPreviewValue(change.before?.value ?? change.before)}</pre>
+                                      </div>
+                                      <div className="rounded-md border border-accent-500/20 bg-accent-500/5 p-3">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-300">Proposed</p>
+                                        <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-zinc-100">{formatPreviewValue(change.after?.value ?? change.after)}</pre>
+                                      </div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      {(change.validation_checks || []).map((check, checkIndex) => (
+                                        <span key={`${check.code || "check"}-${checkIndex}`} className={`rounded-full border px-2.5 py-1 text-xs ${check.passed ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-rose-500/20 bg-rose-500/10 text-rose-100"}`}>
+                                          {check.passed ? "✓" : "!"} {check.message || "Safety check"}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="rounded-md border border-sky-500/20 bg-sky-500/10 p-3 text-sm leading-6 text-sky-100">
+                                <strong>If you need to undo it:</strong>{" "}
+                                {dryRunPreview.result.preview.rollback_summary || "InsightOS will save the previous values before applying anything."}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-md border border-[#26272c] bg-[#141518] p-4 text-sm text-zinc-300">
+                              This action was previewed without changing anything.
+                            </div>
+                          )
                         ) : null}
 
                         {!EXECUTION_CONSOLE_ENABLED ? (

@@ -43,6 +43,7 @@ import {
   isFailedStatus,
   isPendingStatus,
 } from "../truth/dashboardTruth.mjs";
+import { hasOnboardingProgress } from "../truth/onboardingProgress.mjs";
 import {
   buildRuntimeTruthSignal,
   getRuntimeTruthSummary,
@@ -149,6 +150,54 @@ type SearchConsoleMetrics = {
   } | null;
   points: SearchConsolePoint[];
   comparison_points?: SearchConsolePoint[];
+};
+
+type WebsiteAnalyticsPoint = {
+  date: string;
+  visits: number;
+  engaged_visits: number;
+  important_actions: number;
+  verified_inquiries: number;
+};
+
+type WebsiteAnalyticsMetrics = {
+  campaign_id: string;
+  data_status: "not_connected" | "no_data" | "ready";
+  date_from?: string | null;
+  date_to?: string | null;
+  data_days?: number;
+  summary?: {
+    visits: number;
+    engaged_visits: number;
+    important_actions: number;
+    inquiries: number;
+    engagement_rate_percent: number;
+  } | null;
+  connection?: {
+    status: string;
+    last_success_at?: string | null;
+    external_resource_name?: string | null;
+    website_event_key_configured?: boolean;
+  } | null;
+  points: WebsiteAnalyticsPoint[];
+  top_landing_pages?: Array<{
+    name: string;
+    visits: number;
+    engaged_visits: number;
+    important_actions: number;
+  }>;
+  top_sources?: Array<{
+    name: string;
+    visits: number;
+    engaged_visits: number;
+    important_actions: number;
+  }>;
+  tracking_health?: {
+    status: "setup_required" | "waiting_for_first_event" | "active" | "check_tracking" | "quiet";
+    message: string;
+    key_configured: boolean;
+    last_event_at?: string | null;
+  };
 };
 
 type SearchDateRangeForm = {
@@ -1010,6 +1059,262 @@ function SearchPerformanceOverview({
   );
 }
 
+function WebsiteActivityTrendChart({ data }: { data: WebsiteAnalyticsPoint[] }) {
+  if (data.length === 0) {
+    return (
+      <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-[#2a2b31] bg-[#101114] px-6 text-center text-sm leading-6 text-zinc-400">
+        The next website update will start this trend chart.
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-64">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+          <CartesianGrid stroke="rgba(148,163,184,0.12)" vertical={false} />
+          <XAxis
+            dataKey="date"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#71717a", fontSize: 11 }}
+            minTickGap={28}
+            tickFormatter={(value) => formatMetricDate(String(value))}
+          />
+          <YAxis
+            yAxisId="visits"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#71717a", fontSize: 11 }}
+            width={38}
+            allowDecimals={false}
+          />
+          <YAxis
+            yAxisId="inquiries"
+            orientation="right"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#71717a", fontSize: 11 }}
+            width={28}
+            allowDecimals={false}
+          />
+          <Tooltip
+            labelFormatter={(value) => formatMetricDate(String(value))}
+            contentStyle={{
+              background: "#141518",
+              border: "1px solid #26272c",
+              borderRadius: 6,
+              color: "#f4f4f5",
+            }}
+          />
+          <Line
+            yAxisId="visits"
+            type="monotone"
+            dataKey="visits"
+            name="Visits"
+            stroke="#FF6A1A"
+            strokeWidth={2.25}
+            dot={false}
+            activeDot={{ r: 4 }}
+          />
+          <Line
+            yAxisId="visits"
+            type="monotone"
+            dataKey="engaged_visits"
+            name="Engaged visits"
+            stroke="#38bdf8"
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4 }}
+          />
+          <Line
+            yAxisId="inquiries"
+            type="monotone"
+            dataKey="verified_inquiries"
+            name="Verified inquiries"
+            stroke="#34d399"
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function WebsiteActivityList({
+  title,
+  emptyMessage,
+  items,
+}: {
+  title: string;
+  emptyMessage: string;
+  items: Array<{ name: string; visits: number }>;
+}) {
+  return (
+    <section className="border-t border-[#2a2b31] pt-4">
+      <h3 className="text-sm font-semibold text-white">{title}</h3>
+      {items.length > 0 ? (
+        <ol className="mt-3 space-y-2">
+          {items.slice(0, 5).map((item, index) => (
+            <li key={item.name} className="flex items-center gap-3 text-sm">
+              <span className="w-5 text-right text-xs font-semibold text-zinc-600">
+                {index + 1}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-zinc-200">{item.name}</span>
+              <span className="font-medium tabular-nums text-white">
+                {item.visits.toLocaleString("en-US")}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-2 text-sm leading-6 text-zinc-400">{emptyMessage}</p>
+      )}
+    </section>
+  );
+}
+
+function WebsiteActivityOverview({
+  campaign,
+  metrics,
+  onOpenSettings,
+}: {
+  campaign: Campaign;
+  metrics: WebsiteAnalyticsMetrics | null;
+  onOpenSettings: () => void;
+}) {
+  const isReady = metrics?.data_status === "ready" && Boolean(metrics.summary);
+  const healthNeedsAction = ["setup_required", "check_tracking"].includes(
+    metrics?.tracking_health?.status || "",
+  );
+
+  return (
+    <section id="website-activity" className="space-y-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            <ProductIcon name="chart" size={15} className="text-accent-400" />
+            Website activity
+          </p>
+          <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-white">
+            What visitors did after reaching your website
+          </h2>
+        </div>
+        {!isReady ? (
+          <p className="max-w-2xl text-sm text-zinc-400">
+            Connect this location&apos;s website activity to see visits and verified inquiries.
+          </p>
+        ) : null}
+      </div>
+
+      {isReady && metrics?.summary ? (
+        <div className="space-y-4">
+          <MetricStrip
+            label="Website activity results"
+            items={[
+              {
+                id: "website-visits",
+                icon: "arrow-up",
+                label: "Website visits",
+                value: metrics.summary.visits.toLocaleString("en-US"),
+              },
+              {
+                id: "engaged-visits",
+                icon: "chart",
+                label: "Engaged visits",
+                value: metrics.summary.engaged_visits.toLocaleString("en-US"),
+              },
+              {
+                id: "verified-inquiries",
+                icon: "check",
+                label: "Verified inquiries",
+                value: metrics.summary.inquiries.toLocaleString("en-US"),
+              },
+              {
+                id: "engagement-rate",
+                icon: "search-value",
+                label: "Engagement rate",
+                value: `${metrics.summary.engagement_rate_percent.toFixed(1)}%`,
+              },
+            ]}
+          />
+
+          <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+            <ChartCard
+              eyebrow="Visit-to-inquiry trend"
+              title="Visits, useful visits, and confirmed inquiries"
+              summary="The lines use saved activity for this location. A confirmed inquiry is counted only after the website sends the approved event."
+              chart={<WebsiteActivityTrendChart data={metrics.points || []} />}
+              scope={{
+                locationLabel: campaign.name || "This location",
+                dateRangeLabel: `${formatMetricDate(metrics.date_from)}-${formatMetricDate(metrics.date_to)}`,
+                comparisonLabel: "Last 90 saved days",
+              }}
+              footer={
+                <p
+                  className={`text-sm leading-5 ${
+                    healthNeedsAction ? "text-amber-100" : "text-zinc-300"
+                  }`}
+                >
+                  {metrics.tracking_health?.message ||
+                    "Inquiry tracking health will appear after the secure website connection is set up."}
+                </p>
+              }
+            />
+
+            <div className="rounded-md border border-[#26272c] bg-[#141518] p-4">
+              <WebsiteActivityList
+                title="Pages people entered on"
+                emptyMessage="Landing-page details will appear after the next website activity update."
+                items={metrics.top_landing_pages || []}
+              />
+              <div className="mt-5">
+                <WebsiteActivityList
+                  title="Where visits came from"
+                  emptyMessage="Traffic-source details will appear after the next website activity update."
+                  items={metrics.top_sources || []}
+                />
+              </div>
+            </div>
+          </div>
+
+          {healthNeedsAction ? (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-sm font-semibold text-amber-100"
+            >
+              Check website tracking
+            </button>
+          ) : null}
+        </div>
+      ) : metrics ? (
+        <EmptyState
+          title={
+            metrics.data_status === "not_connected"
+              ? "Connect website activity for this location"
+              : "No website activity has been saved yet"
+          }
+          summary={
+            metrics.data_status === "not_connected"
+              ? "Choose this location's website activity property in Settings, then run the first update."
+              : "Open Settings and update this location to bring in its first saved website results."
+          }
+          actionLabel="Open website connections"
+          onAction={onOpenSettings}
+        />
+      ) : (
+        <LoadingCard
+          title="Loading website activity"
+          summary={`Checking saved website activity for ${campaign.name || "this location"}.`}
+        />
+      )}
+    </section>
+  );
+}
+
 function TimelineCard({
   recentActivity,
 }: {
@@ -1079,6 +1384,8 @@ export default function DashboardPage() {
   const [latestReportTruth, setLatestReportTruth] = useState<RuntimeTruth | null>(null);
   const [searchConsoleMetrics, setSearchConsoleMetrics] =
     useState<SearchConsoleMetrics | null>(null);
+  const [websiteAnalyticsMetrics, setWebsiteAnalyticsMetrics] =
+    useState<WebsiteAnalyticsMetrics | null>(null);
   const [searchDateRangeForm, setSearchDateRangeForm] =
     useState<SearchDateRangeForm>(() => buildDefaultSearchDateRangeForm());
   const [searchMetricsQuery, setSearchMetricsQuery] = useState(() =>
@@ -1137,6 +1444,7 @@ export default function DashboardPage() {
     setLatestReports([]);
     setLatestReportTruth(null);
     setSearchConsoleMetrics(null);
+    setWebsiteAnalyticsMetrics(null);
   }
 
   async function loadLatest(
@@ -1149,7 +1457,7 @@ export default function DashboardPage() {
 
     const requestSequence = latestLoadRequestRef.current + 1;
     latestLoadRequestRef.current = requestSequence;
-    const [runsData, trendsData, reportsData, searchConsoleData] = await Promise.all([
+    const [runsData, trendsData, reportsData, searchConsoleData, websiteAnalyticsData] = await Promise.all([
       api(`/crawl/runs?campaign_id=${encodeURIComponent(campaignId)}`),
       api(`/rank/trends?campaign_id=${encodeURIComponent(campaignId)}`),
       api(`/reports?campaign_id=${encodeURIComponent(campaignId)}`),
@@ -1157,6 +1465,12 @@ export default function DashboardPage() {
         ? api(
             `/organizations/${encodeURIComponent(organizationId)}/data-connections/` +
               `google-search-console/metrics/${encodeURIComponent(campaignId)}?${searchMetricsQuery}`,
+          )
+        : Promise.resolve(null),
+      organizationId
+        ? api(
+            `/organizations/${encodeURIComponent(organizationId)}/data-connections/` +
+              `google-analytics/metrics/${encodeURIComponent(campaignId)}?days=90`,
           )
         : Promise.resolve(null),
     ]);
@@ -1181,6 +1495,9 @@ export default function DashboardPage() {
     setLatestReports((reportsData?.items || []) as Report[]);
     setLatestReportTruth((reportsData?.truth as RuntimeTruth) || null);
     setSearchConsoleMetrics((searchConsoleData as SearchConsoleMetrics | null) || null);
+    setWebsiteAnalyticsMetrics(
+      (websiteAnalyticsData as WebsiteAnalyticsMetrics | null) || null,
+    );
     return true;
   }
 
@@ -1348,6 +1665,12 @@ export default function DashboardPage() {
       try {
         const user = (await api("/auth/me", { method: "GET" })) as Me;
         setMe(user);
+        if (
+          user.organization_id &&
+          hasOnboardingProgress(window.localStorage, user.organization_id)
+        ) {
+          setShowWizard(true);
+        }
         await loadCampaigns();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Session invalid");
@@ -1569,7 +1892,7 @@ export default function DashboardPage() {
         impactTitle: "Why it matters",
         impactBody: "Until your business is set up, the dashboard cannot show ranking changes, reports, or recommended actions.",
         nextStepTitle: "Set up your business",
-        nextStepBody: "Complete the guided setup to run your first check and unlock your first visibility summary.",
+        nextStepBody: "Complete setup to run the first website and search checks for this business.",
         primaryActionLabel: "Set up your business",
         primaryAction: () => setShowWizard(true),
         secondaryActionLabel: "Add business manually",
@@ -1865,6 +2188,14 @@ export default function DashboardPage() {
             onApplyDateRange={applySearchDateRange}
             dateRangeError={dateRangeError}
             dateRangeLoading={loading}
+          />
+        ) : null}
+
+        {selectedCampaign ? (
+          <WebsiteActivityOverview
+            campaign={selectedCampaign}
+            metrics={websiteAnalyticsMetrics}
+            onOpenSettings={() => router.push("/settings")}
           />
         ) : null}
 

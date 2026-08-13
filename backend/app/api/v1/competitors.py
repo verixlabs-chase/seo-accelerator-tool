@@ -8,7 +8,13 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.schemas.competitor import CompetitorCreateIn, CompetitorOut
+from app.schemas.competitor import (
+    CompetitorContentBriefIn,
+    CompetitorCreateIn,
+    CompetitorDiscoverIn,
+    CompetitorOut,
+    CompetitorReviewIn,
+)
 from app.services import competitor_service
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import competitor_collect_snapshot
@@ -16,7 +22,9 @@ from app.tasks.tasks import competitor_collect_snapshot
 router = APIRouter(prefix="/competitors", tags=["competitors"])
 
 
-def _competitor_truth(*, competitor_count: int, snapshot_count: int, job_queued: bool, captured_at: str | None = None) -> dict:
+def _competitor_truth(
+    *, competitor_count: int, snapshot_count: int, job_queued: bool, captured_at: str | None = None
+) -> dict:
     settings = get_settings()
     backend = getattr(settings, "competitor_provider_backend", "dataset").strip().lower()
     environment = getattr(settings, "app_env", "").strip().lower()
@@ -81,6 +89,71 @@ def create_competitor(
     return envelope(request, CompetitorOut.model_validate(item).model_dump(mode="json"))
 
 
+@router.post("/discover")
+def discover_competitors(
+    request: Request,
+    body: CompetitorDiscoverIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = competitor_service.discover_competitors(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        limit=body.limit,
+    )
+    return envelope(request, payload)
+
+
+@router.get("/research")
+def get_competitor_research(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = competitor_service.competitor_research(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@router.post("/content-brief")
+def create_competitor_content_brief(
+    request: Request,
+    body: CompetitorContentBriefIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = competitor_service.create_content_brief(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        suggestion_id=body.suggestion_id,
+        competitor_id=body.competitor_id,
+    )
+    return envelope(request, payload)
+
+
+@router.post("/review")
+def review_competitor(
+    request: Request,
+    body: CompetitorReviewIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    item = competitor_service.review_competitor(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        competitor_id=body.competitor_id,
+        decision=body.decision,
+    )
+    return envelope(request, CompetitorOut.model_validate(item).model_dump(mode="json"))
+
+
 @router.get("")
 def get_competitors(
     request: Request,
@@ -88,7 +161,9 @@ def get_competitors(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    items = competitor_service.list_competitors(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    items = competitor_service.list_competitors(
+        db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+    )
     truth = _competitor_truth(competitor_count=len(items), snapshot_count=0, job_queued=False)
     return envelope(
         request,
@@ -107,12 +182,20 @@ def get_snapshots(
     db: Session = Depends(get_db),
 ) -> dict:
     try:
-        task = competitor_collect_snapshot.delay(campaign_id=campaign_id, tenant_id=user["tenant_id"])
+        task = competitor_collect_snapshot.delay(
+            campaign_id=campaign_id, tenant_id=user["tenant_id"]
+        )
     except KombuError:
         task = None
-    snapshots = competitor_service.list_snapshots(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    competitors = competitor_service.list_competitors(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    snapshots_collected = len({str(item.get("competitor_id", "")) for item in snapshots if item.get("competitor_id")})
+    snapshots = competitor_service.list_snapshots(
+        db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+    )
+    competitors = competitor_service.list_competitors(
+        db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+    )
+    snapshots_collected = len(
+        {str(item.get("competitor_id", "")) for item in snapshots if item.get("competitor_id")}
+    )
     truth = _competitor_truth(
         competitor_count=len(competitors),
         snapshot_count=snapshots_collected,
@@ -138,7 +221,9 @@ def get_gaps(
     db: Session = Depends(get_db),
 ) -> dict:
     gaps = competitor_service.compute_gaps(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    competitors = competitor_service.list_competitors(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    competitors = competitor_service.list_competitors(
+        db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+    )
     truth = _competitor_truth(
         competitor_count=len(competitors),
         snapshot_count=len(gaps),

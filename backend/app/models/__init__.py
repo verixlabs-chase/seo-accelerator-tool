@@ -9,6 +9,14 @@ from app.events.outbox.event_outbox import EventOutbox
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.auth_session import AuthSession
 from app.models.authority import (
+    AuthorityGapResearchRun,
+    AuthorityInventoryLink,
+    AuthorityInventoryRun,
+    AuthorityLinkChange,
+    AuthorityLinkChangeRun,
+    AuthorityLinkGap,
+    AuthorityOutreachDraft,
+    AuthorityUnlinkedMention,
     Backlink,
     BacklinkOpportunity,
     Citation,
@@ -21,6 +29,7 @@ from app.models.authority import (
 from app.models.business_location import BusinessLocation
 from app.models.business_service import BusinessService
 from app.models.business_service_area import BusinessServiceArea
+from app.models.billing import BillingWebhookEvent
 from app.models.campaign import Campaign
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
@@ -36,12 +45,19 @@ from app.models.google_business_profile_campaign import (  # noqa: F401
 )
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
-from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap
+from app.models.content import (
+    ContentAsset,
+    ContentBrief,
+    ContentQcEvent,
+    EditorialCalendar,
+    InternalLinkMap,
+)
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard
 from app.models.governed_ai import GovernedAIRun
 from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
+from app.models.engagement import AchievementGrant, AchievementPreference
 from app.models.intelligence import (
     AnomalyEvent,
     CampaignMilestone,
@@ -70,7 +86,11 @@ from app.models.learning_metric_snapshot import LearningMetricSnapshot
 from app.models.learning_report import LearningReport
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot
-from app.models.local_rank_grid import LocalRankGridPoint, LocalRankGridRun
+from app.models.local_rank_grid import (
+    LocalRankGridCompetitorPoint,
+    LocalRankGridPoint,
+    LocalRankGridRun,
+)
 from app.models.onboarding_state import OnboardingState
 from app.models.onboarding_session import OnboardingSession
 from app.models.runtime_version_lock import RuntimeVersionLock
@@ -104,6 +124,7 @@ from app.models.standards_governance import (
 from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
 from app.models.product_analytics import ProductAnalyticsEvent, ProductFeedback
+from app.models.support import SupportRequest
 from app.models.platform_provider_credential import PlatformProviderCredential
 from app.models.platform_job import PlatformJob
 from app.models.policy_weights import PolicyWeight
@@ -155,6 +176,17 @@ from app.models.tier_profile import TierProfile
 from app.models.usage_ledger import UsageLedger
 from app.models.user import User
 from app.models.website_performance import WebsitePerformanceMeasurement
+from app.models.website_analytics import (
+    AnalyticsLandingPageDailyMetric,
+    AnalyticsTrafficSourceDailyMetric,
+    WebsiteFormEvent,
+)
+from app.models.wordpress_site_connection import WordPressSiteConnection
+from app.models.wordpress_content_inventory import (
+    WordPressContentItem,
+    WordPressContentSyncRun,
+)
+from app.models.wordpress_change_preview import WordPressChangePreview
 
 __all__ = [
     "Tenant",
@@ -176,6 +208,14 @@ __all__ = [
     "CampaignDailyMetric",
     "AnalyticsDailyMetric",
     "AuditLog",
+    "AuthorityGapResearchRun",
+    "AuthorityInventoryLink",
+    "AuthorityInventoryRun",
+    "AuthorityLinkChange",
+    "AuthorityLinkChangeRun",
+    "AuthorityLinkGap",
+    "AuthorityOutreachDraft",
+    "AuthorityUnlinkedMention",
     "ActionPlanOccurrence",
     "ActionPlanStep",
     "ActionPlanMeasurement",
@@ -184,6 +224,7 @@ __all__ = [
     "TaskExecution",
     "ProductAnalyticsEvent",
     "ProductFeedback",
+    "SupportRequest",
     "Page",
     "CrawlRun",
     "CrawlPageResult",
@@ -193,6 +234,8 @@ __all__ = [
     "CompetitorEntity",
     "EntityAnalysisRun",
     "Entitlement",
+    "AchievementGrant",
+    "AchievementPreference",
     "KeywordCluster",
     "CampaignKeyword",
     "KeywordDailyEconomics",
@@ -218,6 +261,7 @@ __all__ = [
     "CompetitorPage",
     "CompetitorSignal",
     "ContentAsset",
+    "ContentBrief",
     "EditorialCalendar",
     "InternalLinkMap",
     "ContentQcEvent",
@@ -241,6 +285,7 @@ __all__ = [
     "ReputationResponseExecution",
     "LocalRankGridRun",
     "LocalRankGridPoint",
+    "LocalRankGridCompetitorPoint",
     "OnboardingState",
     "OnboardingSession",
     "SearchConsoleDailyMetric",
@@ -290,6 +335,7 @@ __all__ = [
     "BusinessLocation",
     "BusinessService",
     "BusinessServiceArea",
+    "BillingWebhookEvent",
     "StrategyRecommendation",
     "IntelligenceGraphNode",
     "IntelligenceGraphEdge",
@@ -319,4 +365,11 @@ __all__ = [
     "ReportTemplateVersion",
     "UsageLedger",
     "WebsitePerformanceMeasurement",
+    "AnalyticsLandingPageDailyMetric",
+    "AnalyticsTrafficSourceDailyMetric",
+    "WebsiteFormEvent",
+    "WordPressSiteConnection",
+    "WordPressContentItem",
+    "WordPressContentSyncRun",
+    "WordPressChangePreview",
 ]

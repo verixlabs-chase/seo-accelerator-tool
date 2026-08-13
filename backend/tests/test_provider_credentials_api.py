@@ -98,6 +98,65 @@ def test_platform_credentials_response_is_redacted(client, monkeypatch) -> None:
     assert "super-secret-value" not in payload_text
 
 
+def test_customer_search_data_credentials_route_hides_supplier_identity(
+    client, db_session, monkeypatch
+) -> None:
+    _set_master_key(monkeypatch)
+    token, tenant_id = _login(client, "a@example.com", "pass-a")
+    org = db_session.query(Organization).filter(Organization.id == tenant_id).first()
+    if org is None:
+        org = Organization(
+            id=tenant_id,
+            name="Search Data Credential Org",
+            plan_type="standard",
+            billing_mode="subscription",
+        )
+        db_session.add(org)
+        db_session.commit()
+
+    response = client.put(
+        f"/api/v1/organizations/{tenant_id}/search-data-credentials",
+        json={
+            "auth_mode": "basic",
+            "credentials": {"login": "customer", "password": "secret"},
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["data_source"] == "search_market_data"
+    assert "provider_name" not in data
+    assert "dataforseo" not in str(response.json()).lower()
+
+
+def test_platform_search_data_policy_route_uses_product_owned_label(
+    client, db_session, monkeypatch
+) -> None:
+    _set_master_key(monkeypatch)
+    token, _tenant_id = _login(client, "platform-owner@example.com", "pass-platform-owner")
+    org = Organization(
+        id=str(uuid.uuid4()),
+        name="Neutral Data Policy Org",
+        plan_type="standard",
+        billing_mode="subscription",
+    )
+    db_session.add(org)
+    db_session.commit()
+
+    response = client.put(
+        f"/api/v1/platform/organizations/{org.id}/data-source-policies/search_market_data",
+        json={"credential_mode": "byo_optional"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["data_source"] == "search_market_data"
+    assert "provider_name" not in data
+    assert "dataforseo" not in str(response.json()).lower()
+
+
 
 def test_byo_required_missing_credential_returns_reason_code(client, db_session, monkeypatch) -> None:
     _set_master_key(monkeypatch)
@@ -157,4 +216,3 @@ def test_byo_required_missing_credential_returns_reason_code(client, db_session,
         monkeypatch.delenv("RANK_PROVIDER_BACKEND", raising=False)
         monkeypatch.delenv("RANK_PROVIDER_SERPAPI_API_KEY", raising=False)
         get_settings.cache_clear()
-

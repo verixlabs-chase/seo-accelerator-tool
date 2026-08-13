@@ -116,6 +116,34 @@ def test_governed_events_are_scoped_validated_and_idempotent(client, db_session)
     )
 
 
+def test_role_aware_tour_events_use_bounded_properties(client) -> None:
+    token, _principal = _login(client, "org-admin@example.com", "pass-org-admin")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    started = client.post(
+        "/api/v1/product-analytics/events",
+        headers=headers,
+        json={"event_name": "tour.started", "properties": {"persona": "multi"}},
+    )
+    viewed = client.post(
+        "/api/v1/product-analytics/events",
+        headers=headers,
+        json={
+            "event_name": "tour.step_viewed",
+            "properties": {"persona": "multi", "step_number": "2"},
+        },
+    )
+    invalid = client.post(
+        "/api/v1/product-analytics/events",
+        headers=headers,
+        json={"event_name": "tour.started", "properties": {"persona": "custom"}},
+    )
+
+    assert started.status_code == 200
+    assert viewed.status_code == 200
+    assert invalid.status_code == 400
+
+
 def test_structured_feedback_has_no_free_form_content(client, db_session) -> None:
     token, principal = _login(client, "org-admin@example.com", "pass-org-admin")
     user = db_session.query(User).filter(User.email == "org-admin@example.com").one()

@@ -45,6 +45,22 @@ CREDIT_ACTION_CATALOG: dict[tuple[str, str], tuple[str, str]] = {
         "Measure local search demand",
         "Checks how often the shortlisted searches are used nearby.",
     ),
+    ("competitor_research", "competitors_domain_live"): (
+        "Find competing websites",
+        "Finds websites that repeatedly appear for the same customer searches.",
+    ),
+    ("authority_research", "page_intersection_live_limit_25"): (
+        "Compare trusted website mentions",
+        "Finds exact pages that link to confirmed competitors but not this business.",
+    ),
+    ("authority_research", "backlink_changes_live_limit_12_each"): (
+        "Check website mention changes",
+        "Finds exact pages newly linking to this business and links reported as lost.",
+    ),
+    ("authority_research", "inventory_and_mentions_live_limit_50_10"): (
+        "Check websites mentioning the business",
+        "Saves incoming links and checks exact-name mentions for a link to this business.",
+    ),
     ("governed_ai", "keyword_relevance_review"): (
         "Sort unclear searches",
         "Reviews a small saved batch against confirmed services and service areas.",
@@ -80,7 +96,7 @@ PLAN_ECONOMICS: dict[str, PlanEconomics] = {
     "solo": PlanEconomics(code="solo", name="Solo", monthly_revenue=Decimal("299.00")),
     "multi_location": PlanEconomics(
         code="multi_location",
-        name="Multi-location",
+        name="Growth",
         monthly_revenue=Decimal("699.00"),
     ),
     "enterprise": PlanEconomics(
@@ -94,6 +110,7 @@ PLAN_ALIASES = {
     "standard": "solo",
     "solo": "solo",
     "pro": "multi_location",
+    "growth": "multi_location",
     "multi-location": "multi_location",
     "multi_location": "multi_location",
     "enterprise": "enterprise",
@@ -548,8 +565,11 @@ def get_customer_credit_summary(
         if row.credential_owner == "organization" and row.event_type == "reservation"
     )
 
+    from app.services.commercial_plan_service import get_commercial_plan_summary
+
+    commercial = get_commercial_plan_summary(db, organization=org)
     return {
-        "plan": {"code": plan.code, "name": plan.name},
+        "plan": commercial["plan"],
         "period": {
             "start": period_start.isoformat(),
             "end": period_end.isoformat(),
@@ -574,6 +594,9 @@ def get_customer_credit_summary(
             "Insight Credits measure optional paid checks inside InsightOS. "
             "They are not cash and do not change your subscription price."
         ),
+        "commercial_catalog_version": commercial["catalog_version"],
+        "capabilities": commercial["capabilities"],
+        "upgrade": commercial["upgrade"],
     }
 
 
@@ -1083,6 +1106,126 @@ def _customer_action_prices(db: Session, *, now: datetime) -> list[dict[str, Any
                 ),
                 "credits": _credits_for_cost(research_cost),
                 "price_type": "up_to",
+            }
+        )
+
+    try:
+        competitor_card = _find_price_card(
+            db,
+            provider_name="dataforseo",
+            capability="competitor_research",
+            operation="competitors_domain_live",
+            model_name=None,
+            now=now,
+        )
+    except CostEconomicsError:
+        competitor_card = None
+    if competitor_card is not None:
+        items.append(
+            {
+                "code": "competitor_discovery",
+                "label": "Find competing websites",
+                "result": "Finds websites that repeatedly appear for the same customer searches.",
+                "credits": _credits_for_cost(
+                    _estimate_cost(
+                        competitor_card,
+                        quantity=Decimal("1"),
+                        input_tokens=None,
+                        cached_input_tokens=None,
+                        output_tokens=None,
+                    )
+                ),
+                "price_type": "fixed_ceiling",
+            }
+        )
+
+    try:
+        authority_gap_card = _find_price_card(
+            db,
+            provider_name="dataforseo",
+            capability="authority_research",
+            operation="page_intersection_live_limit_25",
+            model_name=None,
+            now=now,
+        )
+    except CostEconomicsError:
+        authority_gap_card = None
+    if authority_gap_card is not None:
+        items.append(
+            {
+                "code": "authority_link_gap_refresh",
+                "label": "Compare trusted website mentions",
+                "result": "Finds up to 25 exact pages that link to confirmed competitors but not this business.",
+                "credits": _credits_for_cost(
+                    _estimate_cost(
+                        authority_gap_card,
+                        quantity=Decimal("1"),
+                        input_tokens=None,
+                        cached_input_tokens=None,
+                        output_tokens=None,
+                    )
+                ),
+                "price_type": "fixed_ceiling",
+            }
+        )
+
+    try:
+        authority_change_card = _find_price_card(
+            db,
+            provider_name="dataforseo",
+            capability="authority_research",
+            operation="backlink_changes_live_limit_12_each",
+            model_name=None,
+            now=now,
+        )
+    except CostEconomicsError:
+        authority_change_card = None
+    if authority_change_card is not None:
+        items.append(
+            {
+                "code": "authority_link_change_refresh",
+                "label": "Check website mention changes",
+                "result": "Finds up to 12 newly found links and 12 links reported as lost.",
+                "credits": _credits_for_cost(
+                    _estimate_cost(
+                        authority_change_card,
+                        quantity=Decimal("1"),
+                        input_tokens=None,
+                        cached_input_tokens=None,
+                        output_tokens=None,
+                    )
+                ),
+                "price_type": "fixed_ceiling",
+            }
+        )
+
+    try:
+        authority_inventory_card = _find_price_card(
+            db,
+            provider_name="dataforseo",
+            capability="authority_research",
+            operation="inventory_and_mentions_live_limit_50_10",
+            model_name=None,
+            now=now,
+        )
+    except CostEconomicsError:
+        authority_inventory_card = None
+    if authority_inventory_card is not None:
+        items.append(
+            {
+                "code": "authority_inventory_refresh",
+                "label": "Check websites mentioning the business",
+                "result": "Saves up to 50 incoming links and checks up to 10 exact-name mentions.",
+                "credits": _credits_for_cost(
+                    _estimate_cost(
+                        authority_inventory_card,
+                        quantity=Decimal("1"),
+                        input_tokens=None,
+                        cached_input_tokens=None,
+                        output_tokens=None,
+                    )
+                ),
+                "price_type": "fixed_ceiling",
             }
         )
 

@@ -156,6 +156,12 @@ def test_provider_uses_current_endpoints_and_resolved_location_code() -> None:
             language_code="en",
             limit=25,
         )
+        provider.competitor_domains(
+            target="example.com",
+            location_name="Reno, Nevada, United States",
+            language_code="en",
+            limit=12,
+        )
         volume_result = provider.search_volume(
             keywords=["free tv recycling reno, nv"],
             location_name="Reno, Nevada, United States",
@@ -168,17 +174,20 @@ def test_provider_uses_current_endpoints_and_resolved_location_code() -> None:
     assert [path for path, _payload in requests] == [
         "/v3/dataforseo_labs/google/ranked_keywords/live",
         "/v3/dataforseo_labs/google/keyword_ideas/live",
+        "/v3/dataforseo_labs/google/competitors_domain/live",
         "/v3/keywords_data/google/search_volume/live",
     ]
     assert requests[0][1][0]["location_name"] == "United States"
     assert requests[1][1][0]["location_name"] == "United States"
-    assert requests[2][1][0]["location_code"] == 1022653
-    assert "location_name" not in requests[2][1][0]
+    assert requests[2][1][0]["exclude_top_domains"] is True
+    assert requests[2][1][0]["max_rank_group"] == 30
+    assert requests[3][1][0]["location_code"] == 1022653
+    assert "location_name" not in requests[3][1][0]
     ideas_payload = requests[1][1][0]
     assert ideas_payload["keywords"] == ["junk removal reno"]
     assert "include_seed_keyword" not in ideas_payload
     assert ideas_payload["order_by"] == ["keyword_info.search_volume,desc"]
-    volume_payload = requests[2][1][0]
+    volume_payload = requests[3][1][0]
     assert volume_payload["keywords"] == ["free tv recycling reno nv"]
     assert volume_result["items"][0]["keyword"] == "free tv recycling reno, nv"
 
@@ -192,6 +201,30 @@ def test_provider_warning_is_customer_safe() -> None:
     assert warning == (
         "Fresh ranked searches are temporarily unavailable. Saved search data is still shown."
     )
+
+
+def test_keyword_research_serializers_hide_internal_source_identifiers() -> None:
+    run = type(
+        "Run",
+        (),
+        {
+            "id": "run-1",
+            "campaign_id": "campaign-1",
+            "business_location_id": "location-1",
+            "status": "complete",
+            "location_name": "Reno",
+            "language_code": "en",
+            "sources": ["dataforseo_ranked", "dataforseo_ideas", "dataforseo_volume"],
+            "warnings": [],
+            "suggestion_count": 1,
+            "completed_at": None,
+        },
+    )()
+
+    payload = keyword_research_service._serialize_run(run)
+
+    assert payload["sources"] == ["live_rankings", "related_searches", "local_demand"]
+    assert "dataforseo" not in str(payload).lower()
 
 
 def test_confirmed_service_uses_bounded_versioned_synonyms() -> None:
@@ -454,10 +487,11 @@ def test_discovery_scores_real_sources_and_promotes_selected_searches(
 
     assert payload["run"]["status"] == "complete"
     assert payload["run"]["sources"] == [
-        "dataforseo_ideas",
-        "dataforseo_ranked",
-        "dataforseo_volume",
+        "related_searches",
+        "live_rankings",
+        "local_demand",
     ]
+    assert "dataforseo" not in str(payload).lower()
     assert payload["summary"]["total"] == 3
     emergency = next(item for item in payload["items"] if item["keyword"] == "emergency plumber")
     assert emergency["search_volume"] == 320

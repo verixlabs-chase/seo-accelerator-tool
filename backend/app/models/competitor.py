@@ -15,6 +15,13 @@ class Competitor(Base):
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
     domain: Mapped[str] = mapped_column(String(320), nullable=False)
     label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    discovery_source: Mapped[str] = mapped_column(String(40), nullable=False, default="manual")
+    review_status: Mapped[str] = mapped_column(String(24), nullable=False, default="confirmed", index=True)
+    overlap_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    average_position: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimated_traffic: Mapped[float | None] = mapped_column(Float, nullable=True)
+    discovery_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
@@ -53,4 +60,3 @@ class CompetitorSignal(Base):
     signal_value: Mapped[str] = mapped_column(String(255), nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
-

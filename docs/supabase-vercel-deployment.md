@@ -101,13 +101,14 @@ https://your-api-project.vercel.app/api/v1/providers/google/oauth/callback
 ```
 
 Create a Google Cloud OAuth web client, enable the Google Search Console API,
-and register that exact authorized redirect URI. Then set these backend
-variables:
+Google Analytics Data API, and Google Analytics Admin API, and register that
+exact authorized redirect URI. Then set these backend variables:
 
 ```text
 GOOGLE_OAUTH_CLIENT_ID=<web-client-id>
 GOOGLE_OAUTH_CLIENT_SECRET=<web-client-secret>
 GOOGLE_OAUTH_SCOPE_GSC=https://www.googleapis.com/auth/webmasters.readonly
+GOOGLE_OAUTH_SCOPE_ANALYTICS=https://www.googleapis.com/auth/analytics.readonly
 CUSTOMER_APP_BASE_URL=https://your-frontend-project.vercel.app
 DATA_CONNECTION_INITIAL_BACKFILL_DAYS=480
 DATA_CONNECTION_SYNC_DELAY_DAYS=2
@@ -120,10 +121,12 @@ frontend destination after OAuth completes. Add the frontend production URL to
 `CORS_ORIGINS` for direct API use. Preview deployments normally use the
 same-origin proxy and do not need wildcard CORS.
 
-The Search Console authorization is read-only. OAuth access and refresh tokens
-are encrypted through the existing organization credential store. Website
-property identifiers and per-location mappings are stored separately in
-`data_connections`; raw tokens are never exposed to the frontend.
+The Search Console and Analytics authorizations are read-only. OAuth access and
+refresh tokens are encrypted through the existing organization credential
+store. Website property identifiers and per-location mappings are stored
+separately in `data_connections`; raw tokens are never exposed to the frontend.
+Adding the Analytics scope to a production OAuth consent screen may require a
+new Google verification review before customers can approve it.
 
 Generate secrets locally:
 
@@ -151,6 +154,11 @@ The previous-key arrays are used only during a controlled rotation. Do not add
 an old key until the new active key is ready to deploy, and remove transition
 keys after sessions or encrypted credential rows have been migrated. Follow
 [the TR1 security and recovery runbook](./platform/runbooks/tr1_security_recovery.md).
+
+Subscription billing is optional until COM1 is activated. When it is ready,
+follow the [Stripe billing runbook](./operations/stripe-billing-runbook.md) and
+store all `STRIPE_*` variables only on the backend Vercel project. The frontend
+does not receive a secret or call Stripe directly.
 
 ## 6. Store report files privately in Supabase
 

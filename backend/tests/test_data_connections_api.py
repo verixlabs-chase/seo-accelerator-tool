@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
+from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.data_connection import DataConnection
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.platform_job import PlatformJob
+from app.models.website_analytics import (
+    AnalyticsLandingPageDailyMetric,
+    AnalyticsTrafficSourceDailyMetric,
+    WebsiteFormEvent,
+)
 from app.services import data_connections_service, traffic_fact_service
 
 
@@ -228,6 +234,111 @@ def test_search_console_resource_discovery_uses_owner_connection_flow(client, mo
     resources = response.json()["data"]["resources"]
     assert resources[0]["id"] == "sc-domain:example.com"
     assert resources[0]["permission_level"] == "siteOwner"
+
+
+def test_google_analytics_mapping_and_metrics_stay_location_scoped(client, db_session) -> None:
+    token, organization_id = _login(client)
+    location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="analytics-location",
+    )
+    mapping = client.put(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-analytics/mappings/{campaign_id}"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+        json={"external_resource_id": "123456789", "external_resource_name": "Reno website"},
+    )
+    assert mapping.status_code == 200
+    connection = mapping.json()["data"]["connection"]
+    assert connection["provider_name"] == data_connections_service.GOOGLE_ANALYTICS_PROVIDER
+    assert connection["business_location_id"] == location_id
+    assert "read-only website visit" in connection["source_truth"].lower()
+
+    db_session.add_all(
+        [
+            AnalyticsLandingPageDailyMetric(
+                tenant_id=organization_id,
+                organization_id=organization_id,
+                business_location_id=location_id,
+                campaign_id=campaign_id,
+                metric_date=date(2026, 8, 9),
+                landing_page="/services/junk-removal",
+                dimension_hash="1" * 64,
+                sessions=12,
+                engaged_sessions=9,
+                key_events=2,
+                deterministic_hash="2" * 64,
+            ),
+            AnalyticsTrafficSourceDailyMetric(
+                tenant_id=organization_id,
+                organization_id=organization_id,
+                business_location_id=location_id,
+                campaign_id=campaign_id,
+                metric_date=date(2026, 8, 9),
+                source_medium="google / organic",
+                dimension_hash="3" * 64,
+                sessions=12,
+                engaged_sessions=9,
+                key_events=2,
+                deterministic_hash="4" * 64,
+            ),
+            WebsiteFormEvent(
+                tenant_id=organization_id,
+                organization_id=organization_id,
+                business_location_id=location_id,
+                campaign_id=campaign_id,
+                data_connection_id=connection["id"],
+                event_id="evt-dashboard-001",
+                event_name="inquiry_confirmed",
+                website="https://analytics-location.example.com",
+                page_url="https://analytics-location.example.com/contact",
+                form_id="contact-main",
+                occurred_at=datetime(2026, 8, 9, 15, 0, tzinfo=UTC),
+                received_at=datetime(2026, 8, 9, 15, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+
+    for index in range(2):
+        db_session.add(
+            AnalyticsDailyMetric(
+                organization_id=organization_id,
+                campaign_id=campaign_id,
+                metric_date=date(2026, 8, 8 + index),
+                sessions=10 + index,
+                engaged_sessions=7 + index,
+                conversions=1 + index,
+                deterministic_hash=f"{index + 800:064d}",
+            )
+        )
+    db_session.commit()
+
+    response = client.get(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-analytics/metrics/{campaign_id}?days=30"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["data_status"] == "ready"
+    assert payload["summary"] == {
+        "visits": 21,
+        "engaged_visits": 15,
+        "important_actions": 3,
+        "inquiries": 1,
+        "engagement_rate_percent": 71.4,
+    }
+    assert [point["date"] for point in payload["points"]] == ["2026-08-08", "2026-08-09"]
+    assert payload["points"][1]["important_actions"] == 2
+    assert payload["points"][1]["verified_inquiries"] == 1
+    assert payload["top_landing_pages"][0]["name"] == "/services/junk-removal"
+    assert payload["top_sources"][0]["name"] == "google / organic"
 
 
 def test_search_console_mapping_requires_business_location(client) -> None:
@@ -556,6 +667,63 @@ def test_search_console_sync_is_durable_and_idempotent(client, db_session, monke
     assert connection.sync_cursor.get("last_metric_date")
     assert connection.sync_cursor.get("history_start_date")
     assert connection.sync_cursor.get("history_days") == 480
+
+
+def test_google_analytics_sync_is_durable_and_uses_saved_property(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    token, organization_id = _login(client)
+    _location_id, campaign_id = _create_location_campaign(
+        client,
+        token,
+        organization_id,
+        suffix="analytics-durable",
+    )
+    mapping = client.put(
+        (
+            f"/api/v1/organizations/{organization_id}/data-connections/"
+            f"google-analytics/mappings/{campaign_id}"
+        ),
+        headers={"Authorization": f"Bearer {token}"},
+        json={"external_resource_id": "987654321", "external_resource_name": "Main website"},
+    )
+    assert mapping.status_code == 200
+    mapped = mapping.json()["data"]["connection"]
+    calls: list[dict] = []
+
+    def _sync(**kwargs):
+        calls.append(kwargs)
+        return traffic_fact_service.TrafficFactSyncResult(
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            start_date=kwargs["start_date"],
+            end_date=kwargs["end_date"],
+            requested_days=480,
+            provider_calls=1,
+            inserted_rows=480,
+            updated_rows=0,
+            skipped_rows=0,
+        )
+
+    monkeypatch.setattr(
+        traffic_fact_service,
+        "sync_analytics_daily_metrics_for_campaign",
+        _sync,
+    )
+    endpoint = f"/api/v1/organizations/{organization_id}/data-connections/{mapped['id']}/sync"
+    first = client.post(endpoint, headers={"Authorization": f"Bearer {token}"})
+    second = client.post(endpoint, headers={"Authorization": f"Bearer {token}"})
+
+    assert first.status_code == 200
+    assert first.json()["data"]["job"]["status"] == "completed"
+    assert second.status_code == 200
+    assert second.json()["data"]["job"]["idempotent_replay"] is True
+    assert len(calls) == 1
+    assert calls[0]["property_id"] == "987654321"
+    assert (calls[0]["end_date"] - calls[0]["start_date"]).days + 1 == 480
+    assert db_session.query(PlatformJob).filter(PlatformJob.entity_id == mapped["id"]).count() == 1
 
 
 def test_search_console_sync_failure_is_visible_without_cross_tenant_leak(

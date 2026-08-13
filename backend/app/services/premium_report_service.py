@@ -11,6 +11,7 @@ from typing import Any, Iterable
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.intelligence.lexicon.plain_language import simplify_internal_language
 from app.models.action_plan import ActionPlanMeasurement, ActionPlanOccurrence
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
@@ -26,6 +27,22 @@ from app.services.strategy_engine.thresholds import version_id as strategy_thres
 
 REPORT_SNAPSHOT_VERSION = "rpt1-owner-v2"
 REPORT_PERIOD_DAYS = 30
+
+
+def _report_copy(
+    value: Any,
+    fallback: str,
+    *,
+    max_words: int = 48,
+    max_sentences: int = 3,
+) -> str:
+    simplified = simplify_internal_language(
+        str(value or ""),
+        max_words=max_words,
+        max_sentences=max_sentences,
+        action_first=False,
+    )
+    return simplified or fallback
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -1409,7 +1426,7 @@ def _report_charts(snapshot: dict[str, Any]) -> str:
                 unit=unit,
                 lower_is_better=lower_is_better,
             )
-            + f"<p>{escape(str(series.get('description') or ''))}</p></article>"
+            + f"<p>{escape(_report_copy(series.get('description'), 'This chart shows the saved results for these dates.'))}</p></article>"
         )
     if not cards:
         return "<section><h2>Performance over time</h2><p>No saved trend series are available yet. The report will add charts as connected measurements are collected.</p></section>"
@@ -1422,22 +1439,28 @@ def _next_action_html(items: list[dict[str, Any]]) -> str:
     cards: list[str] = []
     for index, item in enumerate(items, start=1):
         measurement = item.get("measurement") or {}
-        steps = "".join(f"<li>{escape(str(step))}</li>" for step in item.get("steps") or [])
-        evidence = "".join(f"<li>{escape(str(value))}</li>" for value in item.get("evidence") or [])
+        steps = "".join(
+            f"<li>{escape(_report_copy(step, 'Complete this step.'))}</li>"
+            for step in item.get("steps") or []
+        )
+        evidence = "".join(
+            f"<li>{escape(_report_copy(value, 'Saved information supports this action.'))}</li>"
+            for value in item.get("evidence") or []
+        )
         check_after = measurement.get("check_after_days")
         check_label = (
-            f"Check {escape(str(measurement.get('label') or 'the saved measurement'))} again after {int(check_after)} days."
+            f"Check {escape(_report_copy(measurement.get('label'), 'this result'))} again after {int(check_after)} days."
             if check_after
-            else f"Measure {escape(str(measurement.get('label') or 'the saved result'))} before and after the work."
+            else f"Measure {escape(_report_copy(measurement.get('label'), 'this result'))} before and after the work."
         )
         cards.append(
             f"<article class='action-card'><div class='action-number'>{index}</div><div>"
-            f"<h3>{escape(str(item.get('title') or 'Saved action'))}</h3>"
-            f"<p><strong>Why this matters:</strong> {escape(str(item.get('why_it_matters') or item.get('detail') or ''))}</p>"
+            f"<h3>{escape(_report_copy(item.get('title'), 'Review this action'))}</h3>"
+            f"<p><strong>Why this matters:</strong> {escape(_report_copy(item.get('why_it_matters') or item.get('detail'), 'This action is supported by the saved information for this location.'))}</p>"
             + (f"<ol>{steps}</ol>" if steps else "")
             + f"<p class='measurement'><strong>How results will be checked:</strong> {check_label} "
-            f"{escape(str(measurement.get('explanation') or ''))}</p>"
-            + (f"<details><summary>Evidence used</summary><ul>{evidence}</ul></details>" if evidence else "")
+            f"{escape(_report_copy(measurement.get('explanation'), '', max_words=36))}</p>"
+            + (f"<details><summary>Information checked</summary><ul>{evidence}</ul></details>" if evidence else "")
             + "</div></article>"
         )
     return "<section><h2>What to do next</h2><p>Each action appears once, is tied to this location, and names the measurement used to check the result.</p><div class='action-list'>" + "".join(cards) + "</div></section>"
@@ -1453,8 +1476,8 @@ def _data_sources_html(metrics: list[dict[str, Any]]) -> str:
         coverage_label = str(coverage.get("state") or "unknown").replace("_", " ").capitalize()
         rows.append(
             "<tr>"
-            f"<td><strong>{escape(str(item.get('label') or 'Measurement'))}</strong></td>"
-            f"<td>{escape(str(source.get('label') or 'Saved InsightOS data'))}</td>"
+            f"<td><strong>{escape(_report_copy(item.get('label'), 'Saved result'))}</strong></td>"
+            f"<td>{escape(_report_copy(source.get('label'), 'Saved InsightOS information'))}</td>"
             f"<td>{escape(str(source.get('last_updated') or 'Not available'))}</td>"
             f"<td>{escape(coverage_label)} ({observed} of {expected})</td>"
             "</tr>"
@@ -1475,10 +1498,10 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
 
     metric_cards = "".join(
         f"<article class='metric {escape(str(item.get('result') or ''))}'>"
-        f"<p>{escape(str(item.get('label') or 'Metric'))}</p>"
+        f"<p>{escape(_report_copy(item.get('label'), 'Saved result'))}</p>"
         f"<strong>{escape(_display_value(item))}</strong>"
         f"<small>{escape(comparison_label(item))}</small>"
-        f"<small class='source'>{escape(str((item.get('source') or {}).get('label') or 'Saved data'))} · "
+        f"<small class='source'>{escape(_report_copy((item.get('source') or {}).get('label'), 'Saved information'))} · "
         f"{escape(str((((item.get('coverage') or {}).get('current') or {}).get('state') or 'unknown')).replace('_', ' '))} coverage</small>"
         "</article>"
         for item in metrics
@@ -1486,8 +1509,8 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
 
     def list_section(title: str, items: list[dict], empty: str, detail_key: str = "detail") -> str:
         rows = "".join(
-            f"<li><strong>{escape(str(item.get('title') or 'Saved item'))}</strong>"
-            f"<span>{escape(str(item.get(detail_key) or item.get('result') or ''))}</span></li>"
+            f"<li><strong>{escape(_report_copy(item.get('title'), 'Saved item'))}</strong>"
+            f"<span>{escape(_report_copy(item.get(detail_key) or item.get('result'), 'More information will appear after the next update.'))}</span></li>"
             for item in items
         )
         return f"<section><h2>{escape(title)}</h2><ul>{rows or f'<li>{escape(empty)}</li>'}</ul></section>"
@@ -1526,8 +1549,8 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
 <body><main>
   <header>
     <div class="eyebrow">InsightOS progress report</div>
-    <h1>{escape(str(executive.get('headline') or 'Business progress report'))}</h1>
-    <p class="lede">{escape(str(executive.get('summary') or ''))}</p>
+    <h1>{escape(_report_copy(executive.get('headline'), 'Business progress report'))}</h1>
+    <p class="lede">{escape(_report_copy(executive.get('summary'), 'Review what changed and what to work on next.'))}</p>
     <p class="meta">{escape(str(campaign.get('location_name') or campaign.get('name') or 'Business'))} · {escape(str(period.get('start') or ''))} to {escape(str(period.get('end') or ''))}</p>
   </header>
   <div class="metrics">{metric_cards}</div>
@@ -1540,7 +1563,7 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
   </div>
   {_next_action_html(snapshot.get('next_priorities') or [])}
   {_data_sources_html(metrics)}
-  <footer>Snapshot {escape(str(snapshot.get('snapshot_hash') or 'legacy'))} · Data freshness: {escape(str((snapshot.get('source') or {}).get('freshness_state') or 'unknown'))}. Technical evidence is retained in the stored report snapshot.</footer>
+  <footer>Created from the saved information available for this report. Open InsightOS to see newer results.</footer>
 </main></body></html>"""
 
 
@@ -1550,19 +1573,19 @@ def report_pdf_lines(snapshot: dict[str, Any]) -> list[str]:
     executive = snapshot.get("executive_summary") or {}
     lines = [
         "InsightOS progress report",
-        str(executive.get("headline") or campaign.get("location_name") or "Business report"),
-        str(executive.get("summary") or ""),
+        _report_copy(executive.get("headline"), str(campaign.get("location_name") or "Business report")),
+        _report_copy(executive.get("summary"), "Review what changed and what to work on next."),
         f"Location: {campaign.get('location_name') or campaign.get('name') or 'Business'}",
         f"Period: {period.get('start') or 'unknown'} to {period.get('end') or 'unknown'}",
         "Key measurements",
     ]
     for metric in snapshot.get("metrics") or []:
         comparison = "no comparison" if metric.get("change_percent") is None else f"{abs(float(metric['change_percent'])):.1f}% {metric.get('direction')}"
-        lines.append(f"{metric.get('label')}: {_display_value(metric)} ({comparison})")
+        lines.append(f"{_report_copy(metric.get('label'), 'Saved result')}: {_display_value(metric)} ({comparison})")
         source = metric.get("source") or {}
         coverage = (metric.get("coverage") or {}).get("current") or {}
         lines.append(
-            f"  Source: {source.get('label') or 'Saved data'}; updated {source.get('last_updated') or 'not available'}; "
+            f"  Source: {_report_copy(source.get('label'), 'Saved information')}; updated {source.get('last_updated') or 'not available'}; "
             f"coverage {coverage.get('state') or 'unknown'} ({coverage.get('observed') or 0} of {coverage.get('expected') or 0})."
         )
     for title, key in (
@@ -1576,33 +1599,48 @@ def report_pdf_lines(snapshot: dict[str, Any]) -> list[str]:
         if not items:
             lines.append("No verified item recorded.")
         for item in items:
-            lines.append(f"- {item.get('title') or 'Saved item'}: {item.get('detail') or item.get('result') or item.get('status') or ''}")
+            lines.append(
+                f"- {_report_copy(item.get('title'), 'Saved item')}: "
+                f"{_report_copy(item.get('detail') or item.get('result') or item.get('status'), 'More information will appear after the next update.')}"
+            )
     lines.append("What to do next")
     priorities = snapshot.get("next_priorities") or []
     if not priorities:
         lines.append("No verified next action is ready yet.")
     for index, item in enumerate(priorities, start=1):
-        lines.append(f"{index}. {item.get('title') or 'Saved action'}")
-        lines.append(f"Why: {item.get('why_it_matters') or item.get('detail') or ''}")
+        lines.append(f"{index}. {_report_copy(item.get('title'), 'Review this action')}")
+        lines.append(
+            "Why: "
+            + _report_copy(
+                item.get("why_it_matters") or item.get("detail"),
+                "This action is supported by the saved information for this location.",
+            )
+        )
         for step_index, step in enumerate(item.get("steps") or [], start=1):
-            lines.append(f"   {step_index}) {step}")
+            lines.append(f"   {step_index}) {_report_copy(step, 'Complete this step.')}")
         measurement = item.get("measurement") or {}
         check_after = measurement.get("check_after_days")
         lines.append(
-            f"Measure: {measurement.get('label') or 'saved result'}"
+            f"Measure: {_report_copy(measurement.get('label'), 'saved result')}"
             + (f" after {check_after} days" if check_after else " before and after the work")
             + "."
         )
         if item.get("evidence"):
-            lines.append(f"Evidence: {'; '.join(str(value) for value in item['evidence'])}")
+            lines.append(
+                "Information checked: "
+                + "; ".join(
+                    _report_copy(value, "Saved information supports this action.")
+                    for value in item["evidence"]
+                )
+            )
     lines.extend(
         [
-            "Evidence appendix",
-            f"Snapshot version: {snapshot.get('schema_version')}",
-            f"Snapshot hash: {snapshot.get('snapshot_hash') or 'legacy'}",
-            f"Data freshness: {(snapshot.get('source') or {}).get('freshness_state') or 'unknown'}",
-            f"Latest metric: {(snapshot.get('source') or {}).get('latest_metric_at') or 'not available'}",
-            f"Strategy version: {(snapshot.get('source') or {}).get('strategy_version') or 'unknown'}",
+            "Report details",
+            f"Report format: {snapshot.get('schema_version')}",
+            f"Report reference: {snapshot.get('snapshot_hash') or 'legacy'}",
+            f"Information status: {(snapshot.get('source') or {}).get('freshness_state') or 'unknown'}",
+            f"Latest saved information: {(snapshot.get('source') or {}).get('latest_metric_at') or 'not available'}",
+            f"Recommendation rules: {(snapshot.get('source') or {}).get('strategy_version') or 'unknown'}",
         ]
     )
     return [str(line)[:220] for line in lines if str(line).strip()]

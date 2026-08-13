@@ -48,6 +48,8 @@ test("premium reports deduplicate and fully explain next actions", () => {
   assert.match(reportsPage, /How we will check it/);
   assert.match(reportsPage, /item\.steps/);
   assert.match(reportsPage, /measurement\?\.check_after_days/);
+  assert.match(reportsPage, /reportCopy\(item\.title/);
+  assert.match(reportsPage, /reportCopy\(step/);
 });
 
 test("premium reports keep completed work separate from measured results", () => {
@@ -60,7 +62,7 @@ test("premium reports keep completed work separate from measured results", () =>
 test("saved report facts can rebuild files without silently changing the report", () => {
   assert.match(reportsPage, /\/reports\/\$\{reportId\}\/regenerate/);
   assert.match(reportsPage, /Rebuild selected report files/);
-  assert.match(reportsPage, /same saved facts without changing the report numbers/);
+  assert.match(reportsPage, /same saved information without changing the report numbers/);
 });
 
 test("reports expose durable files, saved recipients, and expiring private links", () => {
@@ -91,4 +93,21 @@ test("reports replace raw network failures and keep optional tools from blocking
   assert.match(reportsPage, /Promise\.allSettled/);
   assert.match(reportsPage, /Try again/);
   assert.doesNotMatch(reportsPage, /setError\(err instanceof Error \? err\.message/);
+});
+
+test("reports keep internal file and scheduler language out of the customer view", () => {
+  assert.match(reportsPage, /Report files/);
+  assert.match(reportsPage, /Ranking checks/);
+  assert.match(reportsPage, /Website issues/);
+  assert.match(reportsPage, /How often/);
+  assert.doesNotMatch(reportsPage, />\s*Artifacts\s*</);
+  assert.doesNotMatch(reportsPage, />\s*Scheduler status\s*</);
+  assert.doesNotMatch(reportsPage, /minimal local artifact|local preview artifact|this runtime does not verify/i);
+});
+
+test("report previews sanitize saved narratives before showing them to customers", () => {
+  assert.match(reportsPage, /reportCopy\(reportReadiness\.title/);
+  assert.match(reportsPage, /reportCopy\(source\.detail/);
+  assert.match(reportsPage, /selectedReportDetail\.snapshot\.executive_summary\.headline/);
+  assert.match(reportsPage, /reportCopy\(metric\.source\?\.label/);
 });

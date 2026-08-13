@@ -89,8 +89,8 @@ test("opportunities keeps AI subordinate while using owner-friendly labels", () 
   );
   const source = readFileSync(pagePath, "utf8");
 
-  assert.match(source, /Open today&apos;s plain-language plan/);
-  assert.match(source, /InsightOS chooses the facts and saved actions/);
+  assert.match(source, /Open today&apos;s action list/);
+  assert.match(source, /InsightOS uses the saved facts and approved actions/);
   assert.match(source, /daily_actions/);
   assert.match(source, /Today&apos;s action list/);
   assert.match(source, /Automatic changes are off/);

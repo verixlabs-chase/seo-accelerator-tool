@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.intelligence.lexicon import get_active_lexicon
 from app.models.action_plan import ActionPlanMeasurement, ActionPlanOccurrence, ActionPlanStep
+from app.models.authority import AuthorityLinkChange, AuthorityLinkGap
 from app.models.campaign import Campaign
 from app.models.content import ContentAsset
 from app.models.crawl import CrawlPageResult, CrawlRun, TechnicalIssue
@@ -31,6 +32,7 @@ _DEFAULT_DIRECTIONS = {
     "local.gbp.bookings": "higher_is_better",
     "technical.issue_density": "lower_is_better",
     "technical.crawl_health": "higher_is_better",
+    "authority.referring_page_link_present": "higher_is_better",
 }
 _GBP_METRIC_NAMES = {
     "local.gbp.total_appearances": (
@@ -63,16 +65,19 @@ def _iso(value: datetime | date | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
-def _parse_evidence(recommendation: StrategyRecommendation) -> tuple[list[str], list[str]]:
+def _recommendation_evidence_payload(recommendation: StrategyRecommendation) -> dict[str, Any]:
     try:
         payload = json.loads(recommendation.evidence_json or "{}")
     except json.JSONDecodeError:
-        payload = {}
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _parse_evidence(recommendation: StrategyRecommendation) -> tuple[list[str], list[str]]:
+    payload = _recommendation_evidence_payload(recommendation)
     evidence: list[str] = []
     affected_urls: list[str] = []
-    if isinstance(payload, list):
-        evidence = [str(item) for item in payload]
-    elif isinstance(payload, dict):
+    if payload:
         raw_evidence = payload.get("evidence")
         if isinstance(raw_evidence, list):
             evidence = [str(item) for item in raw_evidence]
@@ -141,9 +146,7 @@ def _metric_target(metric: Any) -> dict[str, Any]:
         "target_range": {
             "good_boundary": float(good_boundary) if good_boundary is not None else None,
             "poor_boundary": (
-                float(thresholds.poor_boundary)
-                if thresholds.poor_boundary is not None
-                else None
+                float(thresholds.poor_boundary) if thresholds.poor_boundary is not None else None
             ),
             "semantics": thresholds.boundary_semantics,
         },
@@ -289,6 +292,121 @@ def _website_metric(
     return payload
 
 
+def _authority_link_presence_metric(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    campaign_id: str,
+    business_location_id: str | None,
+    metric: Any,
+    captured_at: datetime,
+    evidence_payload: dict[str, Any],
+) -> dict[str, Any]:
+    payload = _metric_shell(metric)
+    source_url = str(evidence_payload.get("source_url") or "").strip()
+    measurement_contract = evidence_payload.get("measurement_contract")
+    contract_payload = measurement_contract if isinstance(measurement_contract, dict) else {}
+    owner_domain = str(contract_payload.get("owner_domain") or "").strip()
+    if not source_url or not owner_domain:
+        payload["insufficient_reason"] = (
+            "The exact source page or business website is missing from this saved action."
+        )
+        return payload
+
+    change = (
+        db.query(AuthorityLinkChange)
+        .filter(
+            AuthorityLinkChange.tenant_id == tenant_id,
+            AuthorityLinkChange.organization_id == organization_id,
+            AuthorityLinkChange.campaign_id == campaign_id,
+            AuthorityLinkChange.source_url == source_url,
+            AuthorityLinkChange.observed_at <= captured_at,
+        )
+        .order_by(AuthorityLinkChange.observed_at.desc(), AuthorityLinkChange.created_at.desc())
+        .first()
+    )
+    gap = (
+        db.query(AuthorityLinkGap)
+        .filter(
+            AuthorityLinkGap.tenant_id == tenant_id,
+            AuthorityLinkGap.organization_id == organization_id,
+            AuthorityLinkGap.campaign_id == campaign_id,
+            AuthorityLinkGap.source_url == source_url,
+            AuthorityLinkGap.observed_at <= captured_at,
+        )
+        .order_by(AuthorityLinkGap.observed_at.desc(), AuthorityLinkGap.created_at.desc())
+        .first()
+    )
+    observations: list[tuple[datetime, float, str, str]] = []
+    if change is not None:
+        observations.append(
+            (
+                _as_aware(change.observed_at) or change.observed_at,
+                1.0 if change.change_state == "new" else 0.0,
+                change.id,
+                "New website mention" if change.change_state == "new" else "Lost website mention",
+            )
+        )
+    if gap is not None:
+        observations.append(
+            (
+                _as_aware(gap.observed_at) or gap.observed_at,
+                0.0,
+                gap.id,
+                "Competitor-only page check",
+            )
+        )
+    if not observations:
+        payload["insufficient_reason"] = (
+            "Run a fresh website-mention check for this exact page before measuring the result."
+        )
+        return payload
+
+    observed_at, value, source_record_id, source_label = max(
+        observations,
+        key=lambda item: item[0],
+    )
+    contract = metric_contract_service.contract_for_lexicon_metric(metric.metric_id)
+    scope = {
+        "organization_id": organization_id,
+        "campaign_id": campaign_id,
+        "source_url": source_url,
+        "owner_domain": owner_domain,
+        "observed_at": observed_at,
+    }
+    contract_scope = (
+        metric_contract_service.scope_evidence(contract.contract_id, scope, db=db)
+        if contract is not None
+        else {}
+    )
+    payload.update(
+        {
+            "status": "available",
+            "value": value,
+            "source": source_label,
+            "source_provider": "market_research",
+            "source_record_id": source_record_id,
+            "measured_at": _iso(observed_at),
+            "evidence_window_start": _iso(observed_at),
+            "evidence_window_end": _iso(observed_at),
+            "entity_scope": {
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+                "business_location_id": business_location_id,
+                "source_url": source_url,
+                "owner_domain": owner_domain,
+            },
+            "measurement_window_days": 1,
+            "metric_contract_id": contract.contract_id if contract is not None else None,
+            "metric_contract_version": contract.version if contract is not None else None,
+            "scope_key": contract_scope.get("scope_key"),
+            "insufficient_reason": None,
+        }
+    )
+    return payload
+
+
 def _search_metric(
     db: Session,
     *,
@@ -344,8 +462,7 @@ def _search_metric(
         weighted_impressions = sum(int(row.impressions or 0) for row in weighted_rows)
         if weighted_impressions > 0:
             value = sum(
-                float(row.avg_position) * int(row.impressions or 0)
-                for row in weighted_rows
+                float(row.avg_position) * int(row.impressions or 0) for row in weighted_rows
             ) / float(weighted_impressions)
     if value is None:
         return payload
@@ -480,7 +597,9 @@ def _google_business_profile_metric(
         .all()
     )
     if not rows:
-        payload["insufficient_reason"] = "Google Business Profile results have not been collected for this location yet."
+        payload["insufficient_reason"] = (
+            "Google Business Profile results have not been collected for this location yet."
+        )
         return payload
     contract = metric_contract_service.contract_for_lexicon_metric(metric.metric_id)
     scope_keys = {str(row.scope_key or "") for row in rows}
@@ -673,6 +792,7 @@ def _capture_metric(
     metric: Any,
     captured_at: datetime,
     observation_window_days: int,
+    evidence_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if metric.metric_id in _WEBSITE_COLUMNS:
         return _website_metric(
@@ -734,6 +854,17 @@ def _capture_metric(
             metric=metric,
             captured_at=captured_at,
         )
+    if metric.metric_id == "authority.referring_page_link_present":
+        return _authority_link_presence_metric(
+            db,
+            tenant_id=tenant_id,
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            business_location_id=business_location_id,
+            metric=metric,
+            captured_at=captured_at,
+            evidence_payload=evidence_payload or {},
+        )
     return _metric_shell(metric)
 
 
@@ -749,7 +880,9 @@ def _window_bounds(metrics: list[dict[str, Any]]) -> tuple[datetime | None, date
                 parsed = datetime.fromisoformat(str(value))
             except ValueError:
                 try:
-                    parsed = datetime.combine(date.fromisoformat(str(value)), datetime.min.time(), UTC)
+                    parsed = datetime.combine(
+                        date.fromisoformat(str(value)), datetime.min.time(), UTC
+                    )
                 except ValueError:
                     continue
             target.append(_as_aware(parsed) or parsed)
@@ -781,6 +914,7 @@ def capture_action_plan_baseline(
             detail="The saved action plan can no longer be matched to its measurement rules.",
         )
 
+    evidence_payload = _recommendation_evidence_payload(recommendation)
     metrics = [
         _capture_metric(
             db,
@@ -791,15 +925,12 @@ def capture_action_plan_baseline(
             metric=lexicon.metric_index[metric_id],
             captured_at=resolved_at,
             observation_window_days=int(action.observation_window_days),
+            evidence_payload=evidence_payload,
         )
         for metric_id in action.success_metric_ids
     ]
     evidence, affected_urls = _parse_evidence(recommendation)
-    measured_urls = [
-        str(item["measured_url"])
-        for item in metrics
-        if item.get("measured_url")
-    ]
+    measured_urls = [str(item["measured_url"]) for item in metrics if item.get("measured_url")]
     window_start, window_end = _window_bounds(metrics)
     has_baseline = any(item.get("status") == "available" for item in metrics)
     primary_metric_definition = (
@@ -976,9 +1107,7 @@ def _comparison(
             observed_at = None
     completed_at = _as_aware(work_completed_at)
     not_newer_than_work = bool(
-        observed_at is not None
-        and completed_at is not None
-        and observed_at <= completed_at
+        observed_at is not None and completed_at is not None and observed_at <= completed_at
     )
     scope_fields = (
         "metric_contract_id",
@@ -990,22 +1119,25 @@ def _comparison(
         "measurement_window_days",
         "entity_scope",
     )
-    scope_mismatches = [
-        key
-        for key in scope_fields
-        if baseline.get(key) != observed.get(key)
-    ]
+    scope_mismatches = [key for key in scope_fields if baseline.get(key) != observed.get(key)]
     insufficient_reasons: list[str] = []
     if before is None:
         insufficient_reasons.append("The starting measurement was not available.")
     if after is None:
         insufficient_reasons.append(
-            str(observed.get("insufficient_reason") or "A follow-up measurement is not available yet.")
+            str(
+                observed.get("insufficient_reason")
+                or "A follow-up measurement is not available yet."
+            )
         )
     if direction not in {"higher_is_better", "lower_is_better"}:
-        insufficient_reasons.append("The measurement does not have a governed improvement direction.")
+        insufficient_reasons.append(
+            "The measurement does not have a governed improvement direction."
+        )
     if same_source_record:
-        insufficient_reasons.append("The connected source has not published a newer measurement yet.")
+        insufficient_reasons.append(
+            "The connected source has not published a newer measurement yet."
+        )
     if not_newer_than_work:
         insufficient_reasons.append("The newest measurement predates the completed work.")
     if scope_mismatches:
@@ -1062,9 +1194,7 @@ def _classify_primary_result(
         None,
     )
     primary_comparison = (
-        str(primary_result.get("comparison"))
-        if primary_result is not None
-        else "insufficient_data"
+        str(primary_result.get("comparison")) if primary_result is not None else "insufficient_data"
     )
     if primary_comparison == "improved":
         return "improved", "helped", primary_result
@@ -1128,6 +1258,10 @@ def evaluate_action_plan_outcome(
         )
 
     lexicon = get_active_lexicon(db, tenant_id=tenant_id)
+    recommendation = db.get(StrategyRecommendation, measurement.recommendation_id)
+    evidence_payload = (
+        _recommendation_evidence_payload(recommendation) if recommendation is not None else {}
+    )
     baseline_by_id = {
         str(item.get("metric_id")): item for item in measurement.baseline_metrics or []
     }
@@ -1145,6 +1279,7 @@ def evaluate_action_plan_outcome(
             metric=metric,
             captured_at=resolved_at,
             observation_window_days=measurement.observation_window_days,
+            evidence_payload=evidence_payload,
         )
         outcome_metrics.append(
             _comparison(

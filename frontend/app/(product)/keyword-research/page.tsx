@@ -34,6 +34,7 @@ import {
 } from "../components";
 import { buildProductNav } from "../nav.config";
 import { platformApi } from "../../platform/api";
+import { simplifyCustomerCopy } from "../truth/customerLanguage.mjs";
 
 type ResearchRun = {
   id: string;
@@ -332,9 +333,20 @@ function positionLabel(item: SearchSuggestion) {
 }
 
 function demandLabel(value?: number | null) {
-  if (value === null || value === undefined) return "Not measured";
+  if (value === null || value === undefined) return "No estimate yet";
   if (value === 0) return "Very low";
   return `About ${value.toLocaleString()}/month`;
+}
+
+function intentLabel(intent: string) {
+  return {
+    commercial: "Comparing options",
+    transactional: "Ready to hire",
+    local: "Looking nearby",
+    informational: "Learning about the service",
+    navigational: "Looking for a specific business",
+    mixed: "Mixed customer need",
+  }[intent.toLowerCase()] ?? "Customer need not clear yet";
 }
 
 function trendTone(status?: NonNullable<SearchSuggestion["trend"]>["status"]) {
@@ -355,9 +367,9 @@ function shortDate(value?: string | null) {
 function sourceLabel(source: string) {
   return {
     google_search_console: "Search Console",
-    dataforseo_ranked: "Live rankings",
-    dataforseo_ideas: "Related searches",
-    dataforseo_volume: "Local demand",
+    live_rankings: "Live rankings",
+    related_searches: "Related searches",
+    local_demand: "Search estimates",
     tracked_rankings: "Your tracked list",
     website_content: "Your website",
     competitor_rankings: "Competitor search results",
@@ -983,7 +995,7 @@ export default function KeywordResearchPage() {
       setNotice(
         response.items.length
           ? `Found ${response.items.length} searches worth reviewing for this location.`
-          : "No useful searches were confirmed yet. Check the connected data sources below.",
+          : "No useful searches were confirmed yet. Check your services and work area, then try again.",
       );
       await loadCredits();
     } catch (err) {
@@ -1265,10 +1277,9 @@ export default function KeywordResearchPage() {
           </div>
         ) : null}
 
-        <TruthNotice title="Demand is an estimate, not a promise of new jobs.">
-          Demand comes from connected market research. Existing visibility comes from your Google
-          search history and live ranking checks. Confirm the work you sell and the places you serve
-          before you track a search.
+        <TruthNotice title="Search counts are estimates, not promised jobs.">
+          Use them to compare searches. Confirm the work you sell and the places you serve before
+          adding anything to Search Rankings.
         </TruthNotice>
 
         {selectedCampaignId ? (
@@ -1711,9 +1722,8 @@ export default function KeywordResearchPage() {
                 Find real searches without building a list by hand
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
-                InsightOS will combine your website, location, Google search history, current
-                rankings, and trusted market demand data. You confirm the work you sell and where
-                you take jobs.
+                InsightOS checks your website, work area, Google search history, current rankings,
+                and monthly search estimates. You confirm the work you sell and where you take jobs.
               </p>
             </div>
             <button
@@ -1759,7 +1769,7 @@ export default function KeywordResearchPage() {
                         }
                         className="rounded-md border border-violet-500/35 bg-violet-500/10 px-4 py-2.5 text-sm font-semibold text-violet-100 hover:bg-violet-500/15 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        {busy === "review" ? "Reviewing unclear searches…" : "Use AI to sort unclear searches"}
+                        {busy === "review" ? "Reviewing unclear searches…" : "Review unclear searches"}
                       </button>
                     ) : null}
                     <button
@@ -1838,7 +1848,7 @@ export default function KeywordResearchPage() {
                           ? "border-emerald-500"
                           : "border-rose-500"
                       }`}>
-                        <dt className="text-xs text-zinc-500">Measured demand change</dt>
+                        <dt className="text-xs text-zinc-500">Estimated searches changed</dt>
                         <dd className={`mt-1 text-2xl font-bold ${
                           data.history.comparison.demand_change >= 0
                             ? "text-emerald-300"
@@ -1870,20 +1880,20 @@ export default function KeywordResearchPage() {
                                 labelStyle={{ color: "#f4f4f5" }}
                               />
                               <Legend wrapperStyle={{ fontSize: 12, color: "#d4d4d8" }} />
-                              <Line yAxisId="demand" type="monotone" dataKey="measured_demand" name="Measured searches/month" stroke="#ff6a1a" strokeWidth={2.5} dot={{ r: 3 }} />
-                              <Line yAxisId="count" type="monotone" dataKey="useful_searches" name="Useful searches" stroke="#38bdf8" strokeWidth={2} dot={{ r: 3 }} />
+                              <Line yAxisId="demand" type="monotone" dataKey="measured_demand" name="Estimated searches/month" stroke="#ff6a1a" strokeWidth={2.5} dot={{ r: 3 }} />
+                              <Line yAxisId="count" type="monotone" dataKey="useful_searches" name="Helpful searches" stroke="#38bdf8" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
                         <div className="border-l border-[#26272c] pl-5 text-sm leading-6 text-zinc-400">
                           <p className="font-semibold text-white">How to read this</p>
                           <p className="mt-2">
-                            Orange shows the measured monthly demand across confirmed searches.
-                            Blue shows how many useful searches passed your business and service-area checks.
+                            Orange shows the estimated monthly searches across your confirmed list.
+                            Blue shows how many searches match your services and work area.
                           </p>
                           <p className="mt-3 text-xs text-zinc-500">
                             Compared {shortDate(data.history.comparison.previous_completed_at)} with{" "}
-                            {shortDate(data.history.comparison.current_completed_at)}. Search demand is an estimate, not promised jobs.
+                            {shortDate(data.history.comparison.current_completed_at)}. Search counts are estimates, not promised jobs.
                           </p>
                         </div>
                       </div>
@@ -1935,7 +1945,7 @@ export default function KeywordResearchPage() {
             {data.run.warnings.length ? (
               <section className="rounded-md border border-amber-500/20 bg-amber-500/8 p-4">
                 <p className="text-sm font-semibold text-amber-100">
-                  Fresh market data needs another try
+                  Some search estimates could not update
                 </p>
                 <p className="mt-2 text-sm text-amber-50/80">
                   Your saved rankings are still shown. Try Refresh search ideas again in a few
@@ -1978,7 +1988,7 @@ export default function KeywordResearchPage() {
                             {cluster.keywordCount} {cluster.keywordCount === 1 ? "search" : "searches"}
                             {cluster.totalDemand > 0
                               ? ` · about ${cluster.totalDemand.toLocaleString()} searches/month`
-                              : " · demand not measured"}
+                              : " · no search estimate yet"}
                           </p>
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -2012,7 +2022,7 @@ export default function KeywordResearchPage() {
                               title={
                                 cluster.hasMeasuredEvidence
                                   ? "Add a reviewable action backed by these saved searches"
-                                  : "This group needs measured search evidence first"
+                                  : "Check again after rankings or search estimates are available"
                               }
                               className="rounded-md border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
                             >
@@ -2054,7 +2064,7 @@ export default function KeywordResearchPage() {
                 <div>
                   <div className="mb-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                      Local demand
+                      Estimated monthly searches
                     </p>
                     <h2 className="mt-1 text-xl font-semibold text-white">What customers search most</h2>
                   </div>
@@ -2074,7 +2084,7 @@ export default function KeywordResearchPage() {
                         <Tooltip
                           cursor={{ fill: "rgba(255,255,255,0.035)" }}
                           contentStyle={{ background: "#141518", border: "1px solid #303137", borderRadius: 6 }}
-                          formatter={(value) => [`About ${Number(value).toLocaleString()} searches/month`, "Demand"]}
+                          formatter={(value) => [`About ${Number(value).toLocaleString()} searches/month`, "Estimated searches"]}
                         />
                         <Bar dataKey="demand" fill="#ff6a1a" radius={[0, 4, 4, 0]} />
                       </BarChart>
@@ -2183,7 +2193,7 @@ export default function KeywordResearchPage() {
                           {groupLabel(item.opportunity_group)}
                         </span>
                         <span className="rounded-full bg-[#1a1b1e] px-2 py-0.5 text-[11px] text-zinc-400">
-                          {item.intent}
+                          {intentLabel(item.intent)}
                         </span>
                         {item.matched_service_name ? (
                           <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200">
@@ -2202,7 +2212,7 @@ export default function KeywordResearchPage() {
                         ) : null}
                         {item.ai_review_status === "validated" ? (
                           <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-200">
-                            AI checked
+                            Reviewed
                           </span>
                         ) : null}
                         {item.competitor_evidence?.length ? (
@@ -2229,16 +2239,24 @@ export default function KeywordResearchPage() {
                       ) : null}
                     </div>
                     <div>
-                      <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">Local demand</p>
+                      <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">Estimated monthly searches</p>
                       <p className="mt-1 text-sm font-semibold text-zinc-100">{demandLabel(item.search_volume)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">Your position</p>
+                      <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">Where you appear</p>
                       <p className="mt-1 text-sm font-semibold text-zinc-100">{positionLabel(item)}</p>
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-white">{item.recommended_action}</p>
-                      <p className="mt-1 text-sm leading-5 text-zinc-400">{item.recommendation_reason}</p>
+                      <p className="text-sm font-semibold text-white">
+                        {simplifyCustomerCopy(item.recommended_action, {
+                          fallback: "Review this search before tracking it.",
+                        })}
+                      </p>
+                      <p className="mt-1 text-sm leading-5 text-zinc-400">
+                        {simplifyCustomerCopy(item.recommendation_reason, {
+                          fallback: "Use your services and work area to decide whether this search belongs on your list.",
+                        })}
+                      </p>
                       {item.competitor_evidence?.length ? (
                         <p className="mt-2 text-xs leading-5 text-amber-100/80">
                           Seen from {item.competitor_evidence.map((competitor, index) => {
@@ -2265,14 +2283,14 @@ export default function KeywordResearchPage() {
                         </p>
                       ) : null}
                       <details className="mt-2 text-xs text-zinc-500">
-                        <summary className="cursor-pointer hover:text-zinc-300">See the supporting data</summary>
+                        <summary className="cursor-pointer hover:text-zinc-300">Why this search is listed</summary>
                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                          <span>Opportunity score: {item.opportunity_score}/100</span>
+                          <span>Priority score: {item.opportunity_score}/100</span>
                           {item.keyword_difficulty !== null && item.keyword_difficulty !== undefined ? (
-                            <span>Difficulty: {item.keyword_difficulty}/100</span>
+                            <span>How hard it may be to rank: {item.keyword_difficulty}/100</span>
                           ) : null}
                           {item.cpc ? <span>Ad cost: ${item.cpc.toFixed(2)}/click</span> : null}
-                          <span>Sources: {item.source_types.map(sourceLabel).join(", ")}</span>
+                          <span>What we checked: {item.source_types.map(sourceLabel).join(", ")}</span>
                         </div>
                       </details>
                       {!item.tracked_at ? (

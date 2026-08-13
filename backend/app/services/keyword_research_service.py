@@ -263,7 +263,7 @@ def discover(
             password = str(credentials.get("password", ""))
             if not login or not password:
                 raise ProviderCredentialConfigurationError(
-                    "DataForSEO credentials are missing.",
+                    "Search data credentials are missing.",
                     reason_code="provider_credentials_missing",
                     status_code=409,
                 )
@@ -2013,7 +2013,7 @@ def _serialize_run(run: KeywordResearchRun) -> dict[str, Any]:
         "status": run.status,
         "location_name": run.location_name,
         "language_code": run.language_code,
-        "sources": run.sources,
+        "sources": _customer_source_keys(run.sources),
         "warnings": run.warnings,
         "suggestion_count": run.suggestion_count,
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
@@ -2022,10 +2022,13 @@ def _serialize_run(run: KeywordResearchRun) -> dict[str, Any]:
 
 def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
     evidence = item.evidence if isinstance(item.evidence, dict) else {}
+    customer_evidence = dict(evidence)
+    if isinstance(customer_evidence.get("sources"), list):
+        customer_evidence["sources"] = _customer_source_keys(customer_evidence["sources"])
     return {
         "id": item.id,
         "keyword": item.keyword,
-        "source_types": item.source_types,
+        "source_types": _customer_source_keys(item.source_types),
         "search_volume": item.search_volume,
         "cpc": float(item.cpc) if item.cpc is not None else None,
         "competition": item.competition,
@@ -2054,7 +2057,7 @@ def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
         "opportunity_score": item.opportunity_score,
         "recommended_action": item.recommended_action,
         "recommendation_reason": item.recommendation_reason,
-        "evidence": evidence,
+        "evidence": customer_evidence,
         "owner_feedback": evidence.get("owner_feedback"),
         "competitor_evidence": (
             evidence.get("competitors") if isinstance(evidence.get("competitors"), list) else []
@@ -2062,6 +2065,35 @@ def _serialize_suggestion(item: KeywordResearchSuggestion) -> dict[str, Any]:
         "tracked_at": item.tracked_at.isoformat() if item.tracked_at else None,
         "source_updated_at": item.source_updated_at.isoformat() if item.source_updated_at else None,
     }
+
+
+def planning_context_by_suggestion(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    suggestions: list[KeywordResearchSuggestion],
+) -> dict[str, dict[str, Any]]:
+    """Return the saved-page decision for already scoped research rows."""
+    target_pages = _load_target_pages(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
+    return {
+        item.id: _add_planning_context(_serialize_suggestion(item), target_pages=target_pages)
+        for item in suggestions
+        if item.tenant_id == tenant_id and item.campaign_id == campaign_id
+    }
+
+
+def _customer_source_keys(values: list[str] | None) -> list[str]:
+    customer_keys = {
+        "dataforseo_ranked": "live_rankings",
+        "dataforseo_ideas": "related_searches",
+        "dataforseo_volume": "local_demand",
+    }
+    return [customer_keys.get(value, value) for value in (values or [])]
 
 
 def _latest_feedback_by_keyword(

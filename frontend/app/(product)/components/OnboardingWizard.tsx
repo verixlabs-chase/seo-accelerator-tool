@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { platformApi } from "../../platform/api";
+import { getTenantId } from "../../lib/authStorage";
 import { trackProductEvent } from "../../lib/productAnalytics";
 import {
   getStepThreeSummary,
@@ -11,6 +13,12 @@ import {
   parseOwnerServices,
   summarizeTaskCounts,
 } from "../truth/onboardingTruth.mjs";
+import {
+  clearOnboardingProgress,
+  loadOnboardingProgress,
+  saveOnboardingProgress,
+} from "../truth/onboardingProgress.mjs";
+import { PRODUCT_TOUR_EVENT, requestProductTour } from "../truth/productTour.mjs";
 
 type OnboardingCompletion = {
   campaignId: string;
@@ -82,6 +90,45 @@ type SetupTask = {
 
 type BackgroundSetupTaskId = "crawl" | "keyword" | "ranking";
 
+const DEFAULT_SETUP_TASKS: SetupTask[] = [
+  {
+    id: "location",
+    title: "Create your business location",
+    description: "Keep this location's services, markets, and results separate.",
+    status: "pending",
+  },
+  {
+    id: "campaign",
+    title: "Save your business profile",
+    description: "Create the workspace for your business inside InsightOS.",
+    status: "pending",
+  },
+  {
+    id: "business-profile",
+    title: "Save what you do and where you work",
+    description: "Use your confirmed services and service areas to keep search ideas relevant.",
+    status: "pending",
+  },
+  {
+    id: "crawl",
+    title: "Start your website scan",
+    description: "Queue the first technical scan so the dashboard has website health data.",
+    status: "pending",
+  },
+  {
+    id: "keyword",
+    title: "Add a starter search term",
+    description: "Create the first tracked search so visibility can be measured.",
+    status: "pending",
+  },
+  {
+    id: "ranking",
+    title: "Run your first ranking check",
+    description: "Queue the first ranking snapshot for your business area.",
+    status: "pending",
+  },
+];
+
 function SetupTaskList({ tasks }: { tasks: SetupTask[] }) {
   return (
     <div className="space-y-3">
@@ -137,6 +184,9 @@ function SetupTaskList({ tasks }: { tasks: SetupTask[] }) {
 }
 
 export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizardProps) {
+  const router = useRouter();
+  const [progressRestored, setProgressRestored] = useState(false);
+  const [restoredNotice, setRestoredNotice] = useState("");
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -159,43 +209,71 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
   // Step 3 state
   const [scanStarted, setScanStarted] = useState(false);
   const [scanDone, setScanDone] = useState(false);
-  const [setupTasks, setSetupTasks] = useState<SetupTask[]>([
-    {
-      id: "location",
-      title: "Create your business location",
-      description: "Keep this location's services, markets, and results separate.",
-      status: "pending",
-    },
-    {
-      id: "campaign",
-      title: "Save your business profile",
-      description: "Create the workspace for your business inside InsightOS.",
-      status: "pending",
-    },
-    {
-      id: "business-profile",
-      title: "Save what you do and where you work",
-      description: "Use your confirmed services and service areas to keep search ideas relevant.",
-      status: "pending",
-    },
-    {
-      id: "crawl",
-      title: "Start your website scan",
-      description: "Queue the first technical scan so the dashboard has website health data.",
-      status: "pending",
-    },
-    {
-      id: "keyword",
-      title: "Add a starter search term",
-      description: "Create the first tracked search so visibility can be measured.",
-      status: "pending",
-    },
-    {
-      id: "ranking",
-      title: "Run your first ranking check",
-      description: "Queue the first ranking snapshot for your business area.",
-      status: "pending",
-    },
+  const [setupTasks, setSetupTasks] = useState<SetupTask[]>(DEFAULT_SETUP_TASKS);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    const saved = loadOnboardingProgress(window.localStorage, organizationId);
+    if (saved) {
+      setStep(saved.step);
+      setBusinessName(saved.businessName);
+      setWebsiteUrl(saved.websiteUrl);
+      setBusinessLocationId(saved.businessLocationId);
+      setCampaignId(saved.campaignId);
+      setCampaignDomain(saved.campaignDomain);
+      setServicesInput(saved.servicesInput);
+      setServiceAreasInput(saved.serviceAreasInput);
+      setPrimaryService(saved.primaryService);
+      setRankingArea(saved.rankingArea);
+      setSetupTasks(
+        saved.setupTasks.length === DEFAULT_SETUP_TASKS.length
+          ? saved.setupTasks
+          : DEFAULT_SETUP_TASKS,
+      );
+      setScanStarted(saved.scanStarted);
+      setScanDone(saved.scanDone);
+      setRestoredNotice(
+        saved.step === 3
+          ? "Your setup progress was restored. Completed work is still marked complete, and any interrupted check can be retried without starting over."
+          : "Your setup answers were restored. Continue where you left off.",
+      );
+    }
+    setProgressRestored(true);
+  }, [organizationId]);
+
+  useEffect(() => {
+    if (!progressRestored || !organizationId) return;
+    saveOnboardingProgress(window.localStorage, organizationId, {
+      step,
+      businessName,
+      websiteUrl,
+      businessLocationId,
+      campaignId,
+      campaignDomain,
+      servicesInput,
+      serviceAreasInput,
+      primaryService,
+      rankingArea,
+      setupTasks,
+      scanStarted,
+      scanDone,
+    });
+  }, [
+    businessLocationId,
+    businessName,
+    campaignDomain,
+    campaignId,
+    organizationId,
+    primaryService,
+    progressRestored,
+    rankingArea,
+    scanDone,
+    scanStarted,
+    serviceAreasInput,
+    servicesInput,
+    setupTasks,
+    step,
+    websiteUrl,
   ]);
 
   const updateTask = useCallback((taskId: string, status: SetupTask["status"]) => {
@@ -414,6 +492,33 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     )
     .map((task) => task.id);
 
+  function finishSetup(destination: "dashboard" | "connections") {
+    void trackProductEvent({
+      eventName: "onboarding.completed",
+      campaignId,
+      properties: {
+        result_status: hasSetupIssues ? "partial" : "success",
+        next_destination: destination,
+      },
+      idempotencyKey: `onboarding.completed:${campaignId}`,
+    });
+    clearOnboardingProgress(window.localStorage, organizationId);
+    if (destination === "dashboard" && !hasSetupIssues) {
+      requestProductTour(window.localStorage, getTenantId() || organizationId);
+      window.dispatchEvent(new CustomEvent(PRODUCT_TOUR_EVENT));
+    }
+    onComplete({
+      campaignId,
+      campaignDomain,
+      notice: hasSetupIssues
+        ? "Business setup finished, but one or more first checks need attention on the dashboard."
+        : "Business setup finished. Your first checks were queued successfully and results are now filling in.",
+    });
+    if (destination === "connections") {
+      router.push(`/settings?setup=connections&campaign_id=${encodeURIComponent(campaignId)}`);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-2xl py-8">
       <div className="rounded-md border border-[#26272c] bg-[#141518] p-7 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
@@ -427,6 +532,9 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
           <p className="mt-2.5 text-sm leading-6 text-zinc-300">
             We&apos;ll save your business, queue the first checks, and show you exactly what finished, what is still running, and what needs attention.
           </p>
+          <p className="mt-2 text-xs leading-5 text-zinc-500">
+            Your non-sensitive setup progress is saved on this device for 30 days, so you can leave this page and continue later.
+          </p>
         </div>
 
         <div className="mb-7">
@@ -435,6 +543,12 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
             steps={["Your business", "Services and areas", "First checks"]}
           />
         </div>
+
+        {restoredNotice && (
+          <div className="mb-4 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm leading-6 text-emerald-100">
+            {restoredNotice}
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 rounded-md border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-100">
@@ -669,26 +783,24 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
                     </p>
                   </div>
                 )}
-                <button
-                  onClick={() => {
-                    void trackProductEvent({
-                      eventName: "onboarding.completed",
-                      campaignId,
-                      properties: { result_status: hasSetupIssues ? "partial" : "success" },
-                      idempotencyKey: `onboarding.completed:${campaignId}`,
-                    });
-                    onComplete({
-                      campaignId,
-                      campaignDomain,
-                      notice: hasSetupIssues
-                        ? "Business setup finished, but one or more first checks need attention on the dashboard."
-                        : "Business setup finished. Your first checks were queued successfully and results are now filling in.",
-                    });
-                  }}
-                  className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100"
-                >
-                  Open your dashboard &rarr;
-                </button>
+                <div className="flex flex-wrap gap-3">
+                  {!hasSetupIssues ? (
+                    <button
+                      type="button"
+                      onClick={() => finishSetup("connections")}
+                      className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100"
+                    >
+                      Connect your Google data next &rarr;
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => finishSetup("dashboard")}
+                    className="rounded-md border border-[#303137] bg-[#141518] px-4 py-2 text-sm font-medium text-zinc-200"
+                  >
+                    {hasSetupIssues ? "Open dashboard and fix issues" : "Open dashboard"}
+                  </button>
+                </div>
               </>
             )}
           </div>

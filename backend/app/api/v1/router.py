@@ -5,6 +5,7 @@ from app.api.v1 import (
     auth,
     automation,
     authority,
+    billing,
     business_locations,
     business_services,
     business_service_areas,
@@ -16,6 +17,7 @@ from app.api.v1 import (
     debug_live_validation,
     dashboard,
     entity,
+    engagement,
     executions,
     google_oauth,
     google_business_profile_campaigns,
@@ -42,9 +44,11 @@ from app.api.v1 import (
     subaccounts,
     system_operational,
     strategy_memory,
+    support,
     tenants,
     usage_economics,
     website_performance,
+    website_events,
 )
 
 tenant_api_router = APIRouter()
@@ -52,6 +56,7 @@ settings = get_settings()
 tenant_api_router.include_router(health.router)
 tenant_api_router.include_router(tenants.router)
 tenant_api_router.include_router(auth.router)
+tenant_api_router.include_router(billing.router)
 tenant_api_router.include_router(automation.router)
 tenant_api_router.include_router(campaigns.router)
 tenant_api_router.include_router(crawl.router)
@@ -59,6 +64,7 @@ tenant_api_router.include_router(data_connections.router)
 if settings.app_env.lower() != 'production':
     tenant_api_router.include_router(debug_live_validation.router)
 tenant_api_router.include_router(entity.router)
+tenant_api_router.include_router(engagement.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
 tenant_api_router.include_router(google_business_profile_campaigns.router)
 tenant_api_router.include_router(rank.router)
@@ -92,8 +98,10 @@ tenant_api_router.include_router(locations.router)
 tenant_api_router.include_router(hierarchy_observability.router)
 tenant_api_router.include_router(portfolio_targeting.router)
 tenant_api_router.include_router(product_analytics.tenant_router)
+tenant_api_router.include_router(support.tenant_router)
 tenant_api_router.include_router(usage_economics.tenant_router)
 tenant_api_router.include_router(website_performance.router)
+tenant_api_router.include_router(website_events.tenant_router)
 
 control_plane_api_router = APIRouter()
 control_plane_api_router.include_router(internal_jobs.router)
@@ -102,3 +110,4 @@ control_plane_api_router.include_router(platform_control.router)
 control_plane_api_router.include_router(system_operational.router)
 control_plane_api_router.include_router(usage_economics.control_plane_router)
 control_plane_api_router.include_router(product_analytics.control_plane_router)
+control_plane_api_router.include_router(support.control_plane_router)

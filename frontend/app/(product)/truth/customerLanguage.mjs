@@ -1,18 +1,36 @@
-export const CUSTOMER_LANGUAGE_VERSION = "service-business-plain-language-v2";
+export const CUSTOMER_LANGUAGE_VERSION = "service-business-natural-voice-v3";
 
 export const PROHIBITED_PRIMARY_PHRASES = Object.freeze([
   "deterministic summary",
   "governed location target",
   "deeper review",
   "possible benefit",
+  "likely benefit",
   "evidence classification",
   "engine-selected action",
   "decision authority",
   "provider state",
   "runtime state",
+  "explained in plain english",
+  "without digging through seo tooling",
+  "actionable insights",
+  "ai-powered",
+  "less tech-savvy",
+  "non-technical owner",
+  "dataforseo",
+  "data for seo",
+  "local demand",
+  "measured demand",
+  "supporting data",
+  "unlock",
+  "leverage",
+  "seamless",
 ]);
 
 const CUSTOMER_LANGUAGE_REPLACEMENTS = Object.freeze([
+  [/data[\s_-]*for[\s_-]*seo/gi, "search data service"],
+  [/\b(?:local|measured) demand\b/gi, "estimated monthly searches"],
+  [/\bsupporting data\b/gi, "details behind this result"],
   [/deterministic SEO intelligence/gi, "InsightOS"],
   [/deterministic intelligence/gi, "InsightOS"],
   [/intelligence engine/gi, "recommendation system"],
@@ -23,6 +41,9 @@ const CUSTOMER_LANGUAGE_REPLACEMENTS = Object.freeze([
     /possible benefit(?:\s*[—-]\s*more evidence needed)?/gi,
     "we need more information before estimating the result",
   ],
+  [/likely benefit:\s*strong/gi, "the saved information strongly supports this action"],
+  [/likely benefit:\s*moderate/gi, "the saved information supports this action"],
+  [/likely benefit/gi, "support for this action"],
   [/reach more eligible completed customers/gi, "Get more reviews from recent customers"],
   [/eligible completed customers/gi, "recent customers"],
   [/completed customers/gi, "recent customers"],

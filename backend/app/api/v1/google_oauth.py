@@ -40,7 +40,9 @@ class GoogleOAuthClientConfigIn(BaseModel):
 def google_oauth_start(
     request: Request,
     organization_id: str,
-    scope_target: Literal["gsc", "gbp"] = Query(default=GOOGLE_OAUTH_SCOPE_TARGET_GSC),
+    scope_target: Literal["gsc", "gbp", "analytics"] = Query(
+        default=GOOGLE_OAUTH_SCOPE_TARGET_GSC
+    ),
     return_path: str | None = Query(default=None, max_length=500),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),

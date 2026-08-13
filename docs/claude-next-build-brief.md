@@ -504,6 +504,37 @@ Goal: make every customer-facing sentence sound like it was written by a
 knowledgeable, straightforward business advisor rather than by an SEO tool or
 an AI system.
 
+Implementation status (2026-08-11):
+
+- The UX13 foundation slice is implemented locally. Browser copy and generated
+  guidance now share `service-business-natural-voice-v3`, including reviewed
+  examples, read-aloud and five-second checks, and new prohibited wording for
+  self-conscious product narration and common marketing/AI filler.
+- The public home page now leads with `Know how your business is showing up on
+  Google`, and the sign-in screen states the work the owner will do after sign
+  in. Internal browser-session terminology was removed from the customer view.
+- High-visibility `unlock`, `plain-language plan`, and unnecessary AI labels
+  were replaced with specific customer outcomes or actions.
+- Customer pages, search-source identifiers, API errors, and generated guidance
+  now use product-owned search-data wording instead of naming the internal paid
+  market-data supplier. Internal adapters and operator logs retain the identifier
+  required to run and support the integration.
+- Keyword Research and Local Search now replace system-facing phrases such as
+  `local demand`, `measured demand`, `supporting data`, and missing-value zeroes
+  with estimated-search, customer-position, optional-explanation, and honest
+  `Not checked` wording.
+- The coded route audit is now complete locally. Reports sanitize saved
+  headlines, summaries, source labels, readiness messages, portfolio notes,
+  actions, steps, and downloaded report copy before a customer sees them. Next
+  Steps leads with the issue, reason, and first action; support, source, status,
+  and timing are available under optional detail instead of competing with the
+  checklist.
+- InsightOS does not yet ship a customer notification center. Notification and
+  digest wording belongs to ALT1 and must use this same contract when that
+  surface is implemented; UX13 does not claim a notification experience exists.
+- Remaining UX13 acceptance work is representative owner comprehension testing
+  and any revisions found during that test. It is not another route rewrite.
+
 Placement:
 - Run after the active MKT1.1 research and onboarding slices have stabilized
   their customer concepts and before broad paid-beta onboarding.
@@ -609,11 +640,11 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 24 | **G1.4B - Google Business Profile Fleet Operations - G1.4B-A implemented locally** | Growth and Enterprise operators can preview, approve, schedule, and safely fan out supported posts, photo uploads, and later typed profile actions across location groups, including Enterprise fleets with hundreds of authorized profiles. |
 | 25 | **PA1 first slice - Activation and Value Measurement - implemented locally** | A privacy-minimized governed event contract now measures setup, first evidence-backed value, location switching, recommendation and forecast use, completed action steps, measured outcomes, and structured usefulness/trust feedback. Platform owners receive aggregate plan-level funnels, time-to-value, return-value, churn-risk, feedback, and instrumentation coverage without session replay or sensitive business content. |
 | 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
-| 27 | **CX1 - Guided Onboarding, Education, and Support** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
+| 27 | **CX1 - Guided Onboarding, Education, and Support — completed locally** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
 | 28 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
 | 29 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
-| 30 | **ENG1 - Verified Progress Rewards and Healthy Habits** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
-| 31 | **G1.7 - Website Analytics and Form Events** | Website visits and form outcomes connect to the location without adding CRM or call-tracking scope. |
+| 30 | **ENG1 - Verified Progress Rewards and Healthy Habits - published in PR #50** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
+| 31 | **G1.7 - Website Analytics and Form Events - G1.7A-G1.7B published in PR #50** | Website visits, engaged visits, landing pages, traffic sources, and privacy-minimized form outcomes connect to the location without adding CRM or call-tracking scope. |
 | 32 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
 | 33 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
 | 34 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
@@ -1645,6 +1676,23 @@ Acceptance criteria:
 Goal: connect website behavior to search visibility without introducing the
 deferred CRM, call-tracking, job-management, payment, or revenue scope.
 
+Implementation status (2026-08-12):
+
+- **G1.7A is implemented.** An organization can request Google's
+  read-only Analytics scope, discover its GA4 properties, map one property to
+  each business location, run idempotent durable backfills, and retrieve daily
+  visits, engaged visits, and approved key-event totals in plain language.
+  Connection Health now tracks this third Google source per location.
+- **G1.7B is implemented locally.** Per-location updates now save landing-page
+  and source/medium facts, strip landing-page query strings, and backfill
+  detail history without repeating completed dates. A first-party website-form
+  endpoint accepts only approved event identifiers, names, page URLs, form
+  identifiers, and event times; rejects unknown fields; hashes its rotatable
+  connection key; and deduplicates retries. The dashboard shows visits,
+  engaged visits, verified inquiries, entry pages, traffic sources, and
+  conservative tracking health. It does not collect names, emails, phone
+  numbers, form contents, CRM records, calls, jobs, payments, or revenue.
+
 Scope:
 
 - Complete the existing Google Analytics Data API adapter, OAuth scope,
@@ -2413,9 +2461,41 @@ Implementation status (2026-08-11):
   team/agency operator. The support handoff tells the customer which four
   non-sensitive details to include and explicitly prohibits passwords,
   sign-in codes, payment numbers, and private access keys.
-- Remaining CX1 slices include the unified connection path, persistent setup
-  progress after navigation, consented diagnostic bundles,
-  response/escalation states, and short persona-aware product tours.
+- The CX1 persistent-progress slice is implemented locally. Guided setup saves
+  only non-sensitive business answers, durable record identifiers, and step
+  outcomes in organization-scoped browser storage for 30 days. Returning to
+  the dashboard automatically resumes the wizard, preserves completed work,
+  turns an interrupted request into an honest retry state, and clears the
+  saved draft when setup is completed. Authentication tokens, passwords, API
+  keys, and provider credentials are never included.
+- The CX1 unified-connection slice is implemented locally. A successful first
+  setup now continues directly into one ordered Google path: approve account
+  access, match each Search Console website, then match each authorized
+  business listing. The path preserves its place across Google OAuth returns,
+  shows one three-step completion count, explains what each connection provides,
+  and takes the owner back to the dashboard when all three steps are complete.
+  Failed first checks still lead to dashboard recovery instead of hiding the
+  problem behind connection setup.
+- The CX1 support-recovery slice is implemented locally. The Help Center now
+  creates durable tenant-scoped support requests with a reference number,
+  plan-aware response target, visible received/investigating/waiting/resolved/
+  escalated state, and a customer-controlled priority-review action. A safe
+  diagnostic summary is attached only after explicit consent and is limited to
+  identifiers, setup state, connection status/timestamps/error codes, and the
+  latest scan/report status. Passwords, tokens, credentials, page content,
+  review text, prompts, payment information, provider payloads, and raw error
+  messages are prohibited. Separate operator-inspection consent expires after
+  72 hours and cannot authorize website or listing changes. Platform support
+  can update the visible state through an audited authenticated boundary.
+- The CX1 product-tour slice is implemented locally. A customer can start a
+  four-step tour for one-business, multi-location, or team/agency work. A
+  successful setup opens it once, and Help Center can restart it at any time.
+  The non-modal guide remains usable while moving between product pages,
+  remembers only tenant-scoped persona/progress timestamps for 90 days, and
+  can be closed without blocking any work. Governed, bounded events measure
+  tour starts, viewed steps, and completion without recording customer content.
+- CX1 is feature-complete locally. Production QA and release remain before it
+  can be marked released.
 
 Acceptance criteria:
 
@@ -2703,6 +2783,86 @@ Implementation record (2026-08-04):
 Goal: add the deeper competitive research needed to replace the local-service
 parts of Semrush without delaying automated keyword discovery.
 
+Status (2026-08-12): organic competitor discovery, exact keyword/page-gap
+comparison, comparable-period movement alerts, and confirmed-competitor local
+grid overlap are locally complete. Exact gaps now also promote into review-only
+content briefs. The bounded AUTH1 foundation for competitor-only pages, owner
+link inventory/history, verified unlinked mentions, measurable actions, and
+manual-send outreach is now locally complete. Profile and local-profile action
+slices remain.
+
+Implementation record:
+
+- A location owner can run one explicit, credit-metered competitor search. The
+  provider boundary excludes large general sites where supported and stores the
+  exact shared-search count, average position, estimated traffic, location,
+  rules version, and observation time without exposing the internal supplier in
+  customer copy.
+- Discovered domains enter a `suggested` state. The owner must confirm a real
+  same-service competitor or dismiss it before that domain can influence
+  comparison research. Manual competitors use the same confirmed path.
+- The competitor page now derives its comparison from the latest immutable
+  MKT1.1 research run. Every visible gap names the exact relevant phrase,
+  competitor domain and URL, owner URL when known, both saved positions, service,
+  service area, demand when measured, and freshness.
+- One reviewed gap can be added directly to Search Rankings or converted into
+  the existing idempotent, review-only Next Steps recommendation. Both paths
+  reuse the saved suggestion and preserve its evidence instead of asking the
+  owner to copy a phrase between pages.
+- The former `100 - competitor position` gap score has been removed because it
+  did not compare the owner's website. A result appears only when the owner is
+  absent or trails the confirmed competitor by at least two positions.
+- Discovery and comparison remain location- and tenant-scoped. Refreshing a
+  comparison reuses the governed keyword research, relevance, allowance, and
+  freshness controls rather than building a separate unbounded data path.
+- Competitor movement now compares the same confirmed domain on the same exact
+  normalized phrase across the two latest completed or partial immutable
+  research runs. The page shows the prior and current saved positions and only
+  raises a movement alert at three or more places. Missing prior evidence stays
+  unavailable instead of being inferred as a new, lost, or improved result.
+- Each new local area-search run freezes a plan-limited list of confirmed
+  competitors and reuses the already returned Google Maps result set to save
+  their point-level positions. This creates no second map request and no extra
+  map-check charge. The owner can switch the same tracked phrase between their
+  business and each captured competitor, then see exact points where either
+  side leads or ties. Every row remains tied to one campaign, business location,
+  phrase, grid definition, run, and observation time; locations are never
+  blended.
+- An exact competitor gap can now create one idempotent, review-only content
+  brief. The saved draft preserves the exact phrase, owner and competitor
+  positions and pages, measured demand when present, service/location context,
+  research run, freshness, recommended existing-page or new-page path, and a
+  deterministic five-part outline. It cannot publish or copy competitor wording,
+  and replaying the action returns the existing draft instead of creating noise.
+- One explicit, idempotent authority check now compares up to five confirmed
+  competitors with the location website and saves at most 25 live referring
+  pages that point to those competitors while no owner link was found in the
+  same check. Each result preserves the exact source page, exact competitor
+  destination, link type, follow attribute, first/last-seen dates, and check
+  time. The customer UI uses plain language, does not expose the internal data
+  supplier, and does not invent an authority or toxicity score.
+- A separate bounded owner-link check now saves at most 12 exact newly found
+  links and 12 exact links explicitly reported as lost. New and lost states come
+  from the production link source rather than inference from a truncated result
+  window. Each row preserves the source page, owner destination, link details,
+  first/last-seen dates, and check time, then gives the owner a plain-language
+  follow-up and a measurable success check.
+- A broader bounded owner inventory now saves up to 50 exact live incoming links
+  and checks up to 10 exact-name pages for a link to the business website. A
+  page is labeled as a possible unlinked mention only when its saved title or
+  snippet contains the exact owner-confirmed business name and the same run's
+  URL-level link check returns no live link from that exact page. Results that
+  do not preserve that evidence are withheld. Relevant mentions can enter the
+  same deduplicated Next Steps and owner-reviewed, manual-send outreach path.
+
+Remaining delivery slices:
+
+- Add Google Business Profile attribute and activity comparisons after the
+  required production API access is available.
+- Extend direct promotion from the completed tracked-phrase and governed Next
+  Steps and content-brief paths into a local profile action while preserving the
+  same evidence packet and duplicate controls.
+
 Scope:
 
 - Discover real organic and map competitors automatically rather than requiring
@@ -2744,6 +2904,32 @@ Acceptance criteria:
 Goal: close the major Semrush authority gap with evidence-backed local link
 work rather than an unexplained domain score.
 
+Status (2026-08-12): the bounded AUTH1 foundation is locally complete. An
+explicit credit-metered competitor check uses exact page
+intersections, excludes the owner's website, persists immutable
+tenant/location-scoped runs, and shows the saved source page and competitor
+destinations on the Competitors page. A separate credit-metered owner check now
+stores exact newly found and explicitly lost referring pages with first/last
+seen dates and clear verification goals. Each competitor-only source page is now
+classified deterministically against confirmed services and included service
+areas, with excluded-area matches held for review. A relevant gap or exact lost
+link can become one review-only Next Steps item; stable source/action identity
+prevents duplicates, and its objective success metric moves from zero to one
+only when a later saved check finds that exact page linking to the business.
+The user can now prepare a deduplicated outreach draft directly from that exact
+evidence. InsightOS does not discover or invent recipients, send the message,
+or mark it ready until the owner supplies a verified email or contact page and
+confirms the recipient. The saved message remains editable, manual-send only,
+and explicitly avoids payment, link-trading, and ranking promises. Legacy
+automatic contact enrichment and sequence advancement are blocked. Broader
+owner-link inventory is now bounded to 50 live exact source/destination pairs.
+The same run also checks up to 10 owner-confirmed exact-name pages and retains a
+possible unlinked mention only when saved page text includes that exact name and
+a URL-level link check finds no live link from that exact page to the owner
+website. Those mentions reuse local relevance rules, deduplicated Next Steps,
+the exact-link success metric, and owner-reviewed manual-send drafts. AUTH1 now
+moves out of active delivery; WordPress WP1.1 is the next product sprint.
+
 Scope:
 
 - Connect DataForSEO Backlinks as the first production backlink source for
@@ -2766,8 +2952,8 @@ Acceptance criteria:
 
 - Every link fact identifies its production source, observed URL, destination,
   first/last seen dates, freshness, and location/campaign scope.
-- A user can move from competitor gap or lost link to a deduplicated, assigned,
-  measurable authority action.
+- A user can move from a competitor gap, lost link, or same-run-verified
+  unlinked mention to a deduplicated, assigned, measurable authority action.
 - No unexplained authority score is presented as proof of ranking ability or a
   guaranteed benefit.
 
@@ -2780,6 +2966,42 @@ changes.
 Plan entitlement: WP1.1 is Growth and Enterprise only. Solo can receive the
 same recommendation, evidence, draft, and manual implementation instructions,
 but cannot pair a site, provision plugin credentials, or dispatch a mutation.
+
+Implementation status (2026-08-12): the WP1.1 security, connection,
+read-only inventory, exact-change preview, installation-package, and public-verification slices are locally complete. Plugin
+v1.4.0 added a signed one-time request nonce
+backed by an atomic replay store, an authenticated read-only health endpoint,
+an owner-facing Settings page, and a schema upgrade guard. The platform binds
+the nonce into every HMAC,
+checks the returned site host, minimum plugin version, and required permissions,
+records the handshake as site-scoped health, and keeps live execution disabled
+until that handshake succeeds. The Next Steps workspace now provides an
+explicit **Test connection** action. A tenant administrator can now create a
+10-minute, hostname-bound, one-time pairing code; the WordPress administrator
+enters it under **Settings → InsightOS**, and site-scoped encrypted credentials
+are created without sharing an administrator password. Re-pairing rotates only
+that site's keys, while disconnect removes the keys from both the plugin and
+platform. Saved credentials alone no longer imply that the site is ready.
+The platform can now read and persist a bounded list of WordPress posts, pages,
+and public custom post types with publication state, titles, supported SEO
+metadata, canonical, headings, internal links, schema types, word count,
+revision identifier, and a content fingerprint. Raw page bodies are not stored,
+and the Next Steps workspace shows the current page inventory in plain language.
+Every WordPress mutation now requires a durable exact before/after preview,
+affected URLs, safety checks, conflicts, rollback explanation, and a human
+approval tied to the preview hash. Each page revision and content fingerprint
+is checked again immediately before the mutation batch, and any mismatch stops
+the whole batch before its first change. Authenticated Growth and Enterprise
+administrators can now download a deterministic, versioned installation ZIP
+from the setup panel, follow an owner-friendly installation guide, and verify
+its SHA-256 package identity. The deployment bundle now includes the reviewed
+plugin sources, and the ZIP never contains customer credentials or pairing
+codes. Plugin v1.5.0 renders approved title and description fallbacks on public
+pages. After delivery, the platform checks the live title, description, link,
+anchor, schema, or published-page output and shows each result in plain
+language. A mismatch is a failed execution with its applied mutation snapshots
+preserved so rollback remains available. A production-like installation,
+delivery, public verification, and rollback drill remains before WP1.1 release.
 
 Scope:
 
@@ -2934,6 +3156,19 @@ Acceptance criteria:
   adoption for each paid plan.
 
 ### Engagement ENG1 - Verified Progress Rewards and Healthy Habits
+
+Implementation status (2026-08-12): the foundation, healthy-habit, and first
+multi-location releases are built. Versioned, replay-safe rules now cover
+location setup, the first successful live update, the first trustworthy
+baseline, completed weekly and monthly plans, three distinct weekly work
+periods, every active location being ready, and every active location receiving
+a recent successful update. Next Steps shows one combined progress path while
+keeping setup, habit, and all-location counts distinct. Organization grants
+preserve evidence for every qualifying location and cannot be earned from one
+good location hiding an incomplete one. Verified-result rewards remain disabled
+until fresh same-scope post-action measurements are production-proven. The rule
+and correction contract is in
+`backend/docs/architecture/verified-progress-achievements.md`.
 
 Goal: reinforce the repeatable work that improves a location's organic
 presence, make progress feel rewarding, and create a durable reason to return
@@ -3310,6 +3545,49 @@ Scope:
 Goal: make each plan complete at its promised job while giving a one-location
 business a clear reason to upgrade for automation, speed, depth, and control.
 Do not make location count the only reason to buy the `$699/month` plan.
+
+Implementation status (August 11, 2026):
+
+- The first COM1 slice is implemented locally. A versioned commercial catalog
+  now resolves legacy `standard` and `pro` records to the public Solo and Growth
+  plans, exposes the current monthly price and active-location allowance, and
+  provides customer-facing capability and upgrade explanations in Settings.
+- The `$699` public plan is now named Growth in customer allowance responses.
+- WordPress setup and mutation delivery now fail closed on Solo at the backend
+  and execution-dispatch layers. Growth and Enterprise remain eligible; saved
+  data and rollback recovery are not removed by this gate.
+- Focused backend enforcement tests, customer plan UI tests, and the production
+  frontend build pass.
+
+#### COM1.2 - Subscription Lifecycle and Payment Recovery
+
+Implementation status (August 12, 2026):
+
+- The first billing-lifecycle slice is implemented locally. Organization-scoped
+  subscription state now records the billing customer, subscription, configured
+  price, current period, cancellation timing, last provider-event time, and a
+  customer-safe payment recovery code.
+- Organization owners can start a hosted subscription checkout or open the
+  customer billing portal. Return URLs are constructed from the configured
+  customer-app origin rather than accepted from the browser, and Enterprise
+  remains a custom-terms path.
+- The webhook endpoint verifies the signed raw request within a bounded replay
+  window. A durable receipt ledger hashes but does not retain raw provider
+  payloads, rejects conflicting organization/customer identifiers, processes an
+  event ID once, and ignores older state changes that arrive late.
+- Active or trialing subscriptions update the internal commercial plan only
+  when the configured Price ID and plan metadata agree. Payment failure keeps
+  the current plan and saved data while prompting recovery; a completed
+  cancellation returns authorization to Solo without deleting customer work.
+- Settings now shows billing health, secure upgrade and management actions, and
+  a plain-language payment recovery path. The application never returns secret
+  keys or raw billing-provider errors to the customer.
+- Focused lifecycle tests cover owner-only checkout, signature rejection,
+  replay rejection, duplicate delivery, plan activation, payment failure, and
+  cancellation. Remaining COM1 work includes Stripe environment provisioning,
+  live test-mode checkout/webhook evidence, portal policy configuration,
+  allowance materialization across every governed capability, invitations,
+  password recovery, session revocation, and downgrade grace/export rules.
 
 Packaging principle:
 

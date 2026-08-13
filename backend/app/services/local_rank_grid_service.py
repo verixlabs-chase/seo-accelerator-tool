@@ -14,8 +14,13 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import get_settings
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.competitor import Competitor
 from app.models.cost_economics import CostLedgerEntry
-from app.models.local_rank_grid import LocalRankGridPoint, LocalRankGridRun
+from app.models.local_rank_grid import (
+    LocalRankGridCompetitorPoint,
+    LocalRankGridPoint,
+    LocalRankGridRun,
+)
 from app.models.organization import Organization
 from app.models.rank import CampaignKeyword
 from app.providers.local_rank_grid import GridTaskRequest, build_provider, normalize_domain
@@ -41,9 +46,9 @@ OPERATION = "google_maps_standard"
 JOB_TYPE = "local.rank_grid.dispatch"
 TERMINAL_POINT_STATUSES = {"ranked", "not_found", "failed"}
 PLAN_LIMITS = {
-    "solo": {"grid": 5, "keywords": 2, "daily_runs": 5},
-    "multi_location": {"grid": 7, "keywords": 3, "daily_runs": 20},
-    "enterprise": {"grid": 7, "keywords": 3, "daily_runs": 100},
+    "solo": {"grid": 5, "keywords": 2, "daily_runs": 5, "competitors": 3},
+    "multi_location": {"grid": 7, "keywords": 3, "daily_runs": 20, "competitors": 10},
+    "enterprise": {"grid": 7, "keywords": 3, "daily_runs": 100, "competitors": 25},
 }
 
 
@@ -165,6 +170,27 @@ def _credential_owner(db: Session, organization_id: str) -> str:
         ) from exc
 
 
+def _confirmed_competitor_snapshot(
+    db: Session, *, tenant_id: str, campaign_id: str, limit: int
+) -> list[dict[str, str | None]]:
+    rows = (
+        db.query(Competitor)
+        .filter(
+            Competitor.tenant_id == tenant_id,
+            Competitor.campaign_id == campaign_id,
+            Competitor.review_status == "confirmed",
+        )
+        .order_by(Competitor.created_at.asc(), Competitor.id.asc())
+        .limit(max(0, limit))
+        .all()
+    )
+    return [
+        {"id": row.id, "domain": normalize_domain(row.domain), "label": row.label}
+        for row in rows
+        if normalize_domain(row.domain)
+    ]
+
+
 def preview_run(
     db: Session,
     *,
@@ -206,6 +232,12 @@ def preview_run(
         else 0
     )
     remaining = int(credit_summary["credits"]["remaining"])
+    competitor_snapshot = _confirmed_competitor_snapshot(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        limit=limits["competitors"],
+    )
     return {
         "campaign_id": campaign_id,
         "business_location_id": location.id,
@@ -222,6 +254,8 @@ def preview_run(
         "completion_mode": "standard_queue",
         "completion_message": "Usually ready in several minutes; some checks can take longer.",
         "source_label": "Google Maps results",
+        "competitors_included": competitor_snapshot,
+        "competitor_limit": limits["competitors"],
         "limits": limits,
         "can_start": owner == "organization" or estimated_credits <= remaining,
     }
@@ -347,6 +381,7 @@ def create_run(
         provider_location_name=str(location.provider_location_name),
         provider_location_type=location.provider_location_type,
         keyword_snapshot=preview["keywords"],
+        competitor_snapshot=preview["competitors_included"],
         keyword_count=len(keyword_ids),
         total_checks=preview["total_checks"],
         completion_mode="standard_queue",
@@ -556,6 +591,85 @@ def _target_match(run: LocalRankGridRun, items: list[dict[str, Any]]) -> dict[st
     return None
 
 
+def _competitor_match(competitor_domain: str, items: list[dict[str, Any]]) -> dict[str, Any] | None:
+    target_domain = normalize_domain(competitor_domain)
+    if not target_domain:
+        return None
+    for item in items:
+        if not isinstance(item, dict) or str(item.get("type") or "") != "maps_search":
+            continue
+        row_domain = normalize_domain(
+            str(item.get("domain") or item.get("url") or item.get("website") or "")
+        )
+        if not row_domain or not (
+            row_domain == target_domain or row_domain.endswith(f".{target_domain}")
+        ):
+            continue
+        rank = int(item.get("rank_absolute") or item.get("rank_group") or 0)
+        if rank <= 0:
+            return None
+        return {
+            "rank": rank,
+            "name": str(item.get("title") or item.get("name") or "") or None,
+            "domain": row_domain,
+        }
+    return None
+
+
+def _save_competitor_points(
+    db: Session,
+    *,
+    run: LocalRankGridRun,
+    point: LocalRankGridPoint,
+    items: list[dict[str, Any]],
+    captured_at: datetime,
+) -> None:
+    competitors = [row for row in (run.competitor_snapshot or []) if isinstance(row, dict)]
+    if not competitors:
+        return
+    existing = {
+        row.competitor_id: row
+        for row in db.query(LocalRankGridCompetitorPoint)
+        .filter(LocalRankGridCompetitorPoint.point_id == point.id)
+        .all()
+    }
+    for competitor in competitors:
+        competitor_id = str(competitor.get("id") or "").strip()
+        competitor_domain = normalize_domain(str(competitor.get("domain") or ""))
+        if not competitor_id or not competitor_domain:
+            continue
+        match = _competitor_match(competitor_domain, items)
+        row = existing.get(competitor_id)
+        if row is None:
+            row = LocalRankGridCompetitorPoint(
+                run_id=run.id,
+                point_id=point.id,
+                tenant_id=run.tenant_id,
+                organization_id=run.organization_id,
+                campaign_id=run.campaign_id,
+                business_location_id=run.business_location_id,
+                competitor_id=competitor_id,
+                competitor_domain=competitor_domain,
+                competitor_label=str(competitor.get("label") or "").strip() or None,
+                keyword_id=point.keyword_id,
+                keyword=point.keyword,
+                grid_index=point.grid_index,
+                status="ranked" if match else "not_found",
+                rank=match["rank"] if match else None,
+                matched_business_name=match["name"] if match else None,
+                matched_business_domain=match["domain"] if match else None,
+                captured_at=captured_at,
+                created_at=captured_at,
+            )
+            db.add(row)
+        else:
+            row.status = "ranked" if match else "not_found"
+            row.rank = match["rank"] if match else None
+            row.matched_business_name = match["name"] if match else None
+            row.matched_business_domain = match["domain"] if match else None
+            row.captured_at = captured_at
+
+
 def refresh_run(
     db: Session, *, tenant_id: str, organization_id: str, run_id: str
 ) -> LocalRankGridRun:
@@ -569,7 +683,9 @@ def refresh_run(
         .first()
     )
     if run is None:
-        raise LocalRankGridError("Area search run not found.", reason_code="run_not_found", status_code=404)
+        raise LocalRankGridError(
+            "Area search run not found.", reason_code="run_not_found", status_code=404
+        )
     pending = (
         db.query(LocalRankGridPoint)
         .filter(LocalRankGridPoint.run_id == run.id, LocalRankGridPoint.status == "pending")
@@ -584,12 +700,16 @@ def refresh_run(
         result = provider.fetch(str(point.provider_task_id))
         point.provider_status_code = result.get("status_code")
         point.provider_status_message = result.get("status_message")
-        point.provider_reported_cost = Decimal(str(result.get("cost") or point.provider_reported_cost or "0"))
+        point.provider_reported_cost = Decimal(
+            str(result.get("cost") or point.provider_reported_cost or "0")
+        )
         if result.get("status") == "failed":
             point.status = "failed"
             point.provider_reported_cost = Decimal("0")
         elif result.get("status") == "ready":
-            match = _target_match(run, result.get("items") or [])
+            result_items = result.get("items") or []
+            captured_at = datetime.now(UTC)
+            match = _target_match(run, result_items)
             if match and match["rank"] > 0:
                 point.status = "ranked"
                 point.rank = match["rank"]
@@ -598,7 +718,14 @@ def refresh_run(
             else:
                 point.status = "not_found"
                 point.rank = None
-            point.captured_at = datetime.now(UTC)
+            point.captured_at = captured_at
+            _save_competitor_points(
+                db,
+                run=run,
+                point=point,
+                items=result_items,
+                captured_at=captured_at,
+            )
         point.updated_at = datetime.now(UTC)
     _refresh_run_totals(db, run)
     db.commit()
@@ -621,20 +748,24 @@ def _refresh_run_totals(db: Session, run: LocalRankGridRun) -> None:
             reservation = db.get(CostLedgerEntry, run.reservation_id)
             if reservation is not None:
                 actual = sum(
-                    (Decimal(point.provider_reported_cost or 0) for point in points if point.status != "failed"),
+                    (
+                        Decimal(point.provider_reported_cost or 0)
+                        for point in points
+                        if point.status != "failed"
+                    ),
                     Decimal("0"),
                 )
                 if run.status == "failed":
                     release_provider_cost(db, reservation=reservation)
                 else:
-                    reconcile_provider_cost(db, reservation=reservation, provider_reported_cost=actual)
+                    reconcile_provider_cost(
+                        db, reservation=reservation, provider_reported_cost=actual
+                    )
                 run.provider_reported_cost = actual
     run.updated_at = datetime.now(UTC)
 
 
-def get_run(
-    db: Session, *, tenant_id: str, organization_id: str, run_id: str
-) -> LocalRankGridRun:
+def get_run(db: Session, *, tenant_id: str, organization_id: str, run_id: str) -> LocalRankGridRun:
     row = (
         db.query(LocalRankGridRun)
         .filter(
@@ -645,7 +776,9 @@ def get_run(
         .first()
     )
     if row is None:
-        raise LocalRankGridError("Area search run not found.", reason_code="run_not_found", status_code=404)
+        raise LocalRankGridError(
+            "Area search run not found.", reason_code="run_not_found", status_code=404
+        )
     return row
 
 
@@ -665,9 +798,13 @@ def list_runs(
     )
 
 
-def serialize_run(db: Session, run: LocalRankGridRun, *, include_points: bool = True) -> dict[str, Any]:
+def serialize_run(
+    db: Session, run: LocalRankGridRun, *, include_points: bool = True
+) -> dict[str, Any]:
     points: list[dict[str, Any]] = []
+    competitor_points: list[dict[str, Any]] = []
     rows: list[LocalRankGridPoint] = []
+    competitor_rows: list[LocalRankGridCompetitorPoint] = []
     if include_points:
         rows = (
             db.query(LocalRankGridPoint)
@@ -698,6 +835,33 @@ def serialize_run(db: Session, run: LocalRankGridRun, *, include_points: bool = 
             }
             for row in rows
         ]
+        competitor_rows = (
+            db.query(LocalRankGridCompetitorPoint)
+            .filter(LocalRankGridCompetitorPoint.run_id == run.id)
+            .order_by(
+                LocalRankGridCompetitorPoint.keyword_id,
+                LocalRankGridCompetitorPoint.competitor_id,
+                LocalRankGridCompetitorPoint.grid_index,
+            )
+            .all()
+        )
+        competitor_points = [
+            {
+                "id": row.id,
+                "point_id": row.point_id,
+                "competitor_id": row.competitor_id,
+                "competitor_domain": row.competitor_domain,
+                "competitor_label": row.competitor_label,
+                "keyword_id": row.keyword_id,
+                "keyword": row.keyword,
+                "grid_index": row.grid_index,
+                "status": row.status,
+                "rank": row.rank,
+                "matched_business_name": row.matched_business_name,
+                "captured_at": row.captured_at.isoformat(),
+            }
+            for row in competitor_rows
+        ]
     return {
         "id": run.id,
         "campaign_id": run.campaign_id,
@@ -705,8 +869,12 @@ def serialize_run(db: Session, run: LocalRankGridRun, *, include_points: bool = 
         "status": run.status,
         "grid_size": run.grid_size,
         "radius_miles": float(run.radius_miles),
-        "center": {"latitude": float(run.center_latitude), "longitude": float(run.center_longitude)},
+        "center": {
+            "latitude": float(run.center_latitude),
+            "longitude": float(run.center_longitude),
+        },
         "keywords": list(run.keyword_snapshot or []),
+        "competitors": list(run.competitor_snapshot or []),
         "keyword_count": run.keyword_count,
         "total_checks": run.total_checks,
         "completed_checks": run.completed_checks,
@@ -724,14 +892,74 @@ def serialize_run(db: Session, run: LocalRankGridRun, *, include_points: bool = 
             "provider_method": run.provider_method,
         },
         "visibility_summary": _grid_summary(db, run, rows) if rows else [],
-        "error_message": (
-            "Some map checks could not be completed." if run.error_message else None
+        "competitor_overlap_summary": _competitor_overlap_summary(
+            run=run,
+            owner_rows=rows,
+            competitor_rows=competitor_rows,
         ),
+        "error_message": ("Some map checks could not be completed." if run.error_message else None),
         "created_at": run.created_at.isoformat(),
         "submitted_at": run.submitted_at.isoformat() if run.submitted_at else None,
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
         "points": points,
+        "competitor_points": competitor_points,
     }
+
+
+def _competitor_overlap_summary(
+    *,
+    run: LocalRankGridRun,
+    owner_rows: list[LocalRankGridPoint],
+    competitor_rows: list[LocalRankGridCompetitorPoint],
+) -> list[dict[str, Any]]:
+    owner_by_scope = {(row.keyword_id, row.grid_index): row for row in owner_rows}
+    grouped: dict[tuple[str, str], list[LocalRankGridCompetitorPoint]] = {}
+    for row in competitor_rows:
+        grouped.setdefault((row.keyword_id, row.competitor_id), []).append(row)
+    snapshots = {
+        str(item.get("id")): item
+        for item in (run.competitor_snapshot or [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    summaries: list[dict[str, Any]] = []
+    for (keyword_id, competitor_id), rows in sorted(grouped.items()):
+        owner_ahead = 0
+        competitor_ahead = 0
+        tied = 0
+        comparable = 0
+        competitor_found = 0
+        for competitor_row in rows:
+            owner = owner_by_scope.get((keyword_id, competitor_row.grid_index))
+            if owner is None or owner.status not in {"ranked", "not_found"}:
+                continue
+            comparable += 1
+            owner_rank = owner.rank
+            competitor_rank = competitor_row.rank
+            competitor_found += int(competitor_rank is not None)
+            if owner_rank is not None and (competitor_rank is None or owner_rank < competitor_rank):
+                owner_ahead += 1
+            elif competitor_rank is not None and (
+                owner_rank is None or competitor_rank < owner_rank
+            ):
+                competitor_ahead += 1
+            elif owner_rank is not None and competitor_rank is not None:
+                tied += 1
+        snapshot = snapshots.get(competitor_id, {})
+        summaries.append(
+            {
+                "keyword_id": keyword_id,
+                "keyword": rows[0].keyword,
+                "competitor_id": competitor_id,
+                "competitor_domain": rows[0].competitor_domain,
+                "competitor_label": rows[0].competitor_label or snapshot.get("label"),
+                "comparable_points": comparable,
+                "owner_ahead": owner_ahead,
+                "competitor_ahead": competitor_ahead,
+                "tied": tied,
+                "competitor_found": competitor_found,
+            }
+        )
+    return summaries
 
 
 def _grid_summary(

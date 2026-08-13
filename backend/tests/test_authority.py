@@ -19,6 +19,8 @@ def test_authority_and_citation_endpoints(client):
     )
     assert outreach.status_code == 200
     outreach_id = outreach.json()["data"]["id"]
+    assert outreach.json()["data"]["status"] == "draft"
+    assert outreach.json()["data"]["manual_send_only"] is True
 
     contact = client.post(
         "/api/v1/authority/contacts",
@@ -31,6 +33,8 @@ def test_authority_and_citation_endpoints(client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert contact.status_code == 200
+    assert contact.json()["data"]["status"] == "draft"
+    assert contact.json()["data"]["manual_send_only"] is True
 
     backlinks = client.get(
         f"/api/v1/authority/backlinks?campaign_id={campaign['id']}",

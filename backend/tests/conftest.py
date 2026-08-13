@@ -28,9 +28,10 @@ import app.tasks.tasks as tasks_module
 from app.core.passwords import hash_password
 from app.services.operational_telemetry_service import reset_operational_telemetry
 
-from app.models.authority import Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
+from app.models.authority import AuthorityGapResearchRun, AuthorityLinkChange, AuthorityLinkChangeRun, AuthorityLinkGap, Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
+from app.models.billing import BillingWebhookEvent  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
-from app.models.content import ContentAsset, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
+from app.models.content import ContentAsset, ContentBrief, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard  # noqa: F401
 from app.models.crawl import CrawlRun, Page, TechnicalIssue  # noqa: F401
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity  # noqa: F401
@@ -38,7 +39,7 @@ from app.models.experiment import Experiment, ExperimentAssignment, ExperimentOu
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge  # noqa: F401
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
-from app.models.local_rank_grid import LocalRankGridPoint, LocalRankGridRun  # noqa: F401
+from app.models.local_rank_grid import LocalRankGridCompetitorPoint, LocalRankGridPoint, LocalRankGridRun  # noqa: F401
 from app.models.google_business_profile import (  # noqa: F401
     GoogleBusinessProfileDailyMetric,
     GoogleBusinessProfileSearchKeyword,
@@ -54,6 +55,7 @@ from app.models.intelligence_model_registry import IntelligenceModelRegistryStat
 from app.models.organization_membership import OrganizationMembership  # noqa: F401
 from app.models.organization_provider_credential import OrganizationProviderCredential  # noqa: F401
 from app.models.data_connection import DataConnection  # noqa: F401
+from app.models.engagement import AchievementGrant, AchievementPreference  # noqa: F401
 from app.models.platform_provider_credential import PlatformProviderCredential  # noqa: F401
 from app.models.policy_performance import PolicyPerformance  # noqa: F401
 from app.models.provider_health import ProviderHealthState  # noqa: F401
@@ -94,6 +96,12 @@ from app.models.sub_account import SubAccount  # noqa: F401
 from app.models.tenant import Tenant
 from app.models.temporal import MomentumMetric, StrategyPhaseHistory, TemporalSignalSnapshot  # noqa: F401
 from app.models.user import User
+from app.models.wordpress_site_connection import WordPressSiteConnection  # noqa: F401
+from app.models.wordpress_content_inventory import (  # noqa: F401
+    WordPressContentItem,
+    WordPressContentSyncRun,
+)
+from app.models.wordpress_change_preview import WordPressChangePreview  # noqa: F401
 from app.intelligence.knowledge_graph.update_engine import reset_graph_write_batcher
 from tests.fixtures.intelligence_graph_factory import create_intelligence_graph
 from tests.helpers.economic_setup import ensure_test_tier_profile, provision_test_organization
@@ -184,6 +192,16 @@ def _verify_required_tables(database_url: str) -> None:
             "keyword_relevance_feedback",
             "local_rank_grid_runs",
             "local_rank_grid_points",
+            "local_rank_grid_competitor_points",
+            "content_briefs",
+            "authority_gap_research_runs",
+            "authority_link_gaps",
+            "authority_link_change_runs",
+            "authority_link_changes",
+            "authority_inventory_runs",
+            "authority_inventory_links",
+            "authority_unlinked_mentions",
+            "authority_outreach_drafts",
             "google_business_profile_snapshots",
             "google_business_profile_daily_metrics",
             "google_business_profile_search_keywords",
@@ -191,6 +209,7 @@ def _verify_required_tables(database_url: str) -> None:
             "crawl_runs",
             "strategy_cohort_patterns",
             "recommendation_executions",
+            "wordpress_change_previews",
             "recommendation_outcomes",
             "intelligence_metrics_snapshots",
             "intelligence_model_registry_states",
@@ -216,6 +235,16 @@ def _verify_required_tables(database_url: str) -> None:
             "google_business_profile_campaign_variants",
             "product_analytics_events",
             "product_feedback",
+            "support_requests",
+            "billing_webhook_events",
+            "achievement_grants",
+            "achievement_preferences",
+            "analytics_landing_page_daily_metrics",
+            "analytics_traffic_source_daily_metrics",
+            "website_form_events",
+            "wordpress_site_connections",
+            "wordpress_content_sync_runs",
+            "wordpress_content_items",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:

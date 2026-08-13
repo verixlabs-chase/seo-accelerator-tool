@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.enums import StrategyRecommendationStatus
-from app.intelligence.recommendation_execution_engine import execute_recommendation, schedule_execution
+from app.intelligence.recommendation_execution_engine import approve_execution, execute_recommendation, schedule_execution
 from app.models.intelligence import StrategyRecommendation
 from app.models.recommendation_execution import RecommendationExecution
 from app.services.strategy_engine.automation_engine import evaluate_campaign_for_automation
@@ -12,6 +12,8 @@ from tests.conftest import create_test_campaign
 def test_schedule_and_execute_recommendation_idempotently(db_session, create_test_tenant, create_test_org) -> None:
     tenant = create_test_tenant(name='Exec Tenant')
     org = create_test_org(tenant_id=tenant.id, name='Exec Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
     campaign = create_test_campaign(
         db_session,
         org.id,
@@ -41,6 +43,15 @@ def test_schedule_and_execute_recommendation_idempotently(db_session, create_tes
     second = schedule_execution(rec.id, db=db_session)
     assert second is not None
     assert second.id == first.id
+
+    planned = execute_recommendation(first.id, db=db_session, dry_run=True)
+    assert isinstance(planned, dict)
+    approve_execution(
+        first.id,
+        approved_by="test-owner",
+        preview_hash=planned["preview"]["preview_hash"],
+        db=db_session,
+    )
 
     executed = execute_recommendation(first.id, db=db_session)
     assert executed is not None

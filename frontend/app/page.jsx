@@ -6,15 +6,14 @@ export default function HomePage() {
       <div className="mx-auto max-w-5xl">
         <div className="max-w-3xl rounded-2xl border border-[#26272c] bg-[#111214]/90 p-8 shadow-[0_0_30px_rgba(0,0,0,0.35)] backdrop-blur">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
-            InsightOS local-search platform
+            InsightOS
           </p>
           <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-white md:text-5xl">
-            InsightOS helps service businesses improve how they appear on Google.
+            Know how your business is showing up on Google.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-300">
-            InsightOS connects to Google Search Console and Google Business Profile,
-            measures search rankings and website health for each business location,
-            and turns those results into clear, practical next steps.
+            See which searches help people find you, how each location is doing,
+            and what to work on next.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -49,8 +48,7 @@ export default function HomePage() {
                 health by location.
               </li>
               <li className="rounded-lg border border-[#26272c] bg-[#141518] p-4">
-                Recommends prioritized work in plain language so you know what to do
-                and why it matters.
+                Puts the most important work first and shows why it matters.
               </li>
             </ul>
           </section>

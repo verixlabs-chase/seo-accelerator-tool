@@ -13,6 +13,10 @@ from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+from app.models.website_analytics import (
+    AnalyticsLandingPageDailyMetric,
+    AnalyticsTrafficSourceDailyMetric,
+)
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_analytics import GoogleAnalyticsProviderAdapter
 from app.providers.google_search_console import SearchConsoleProviderAdapter
@@ -42,6 +46,7 @@ class AnalyticsDailyMetricInput:
     metric_date: date
     sessions: int
     conversions: int
+    engaged_sessions: int = 0
 
 
 @dataclass(frozen=True)
@@ -243,6 +248,7 @@ def sync_analytics_daily_metrics_for_campaign(
     campaign: Campaign,
     start_date: date | str,
     end_date: date | str,
+    property_id: str | None = None,
 ) -> TrafficFactSyncResult:
     resolved_start = _coerce_date(start_date)
     resolved_end = _coerce_date(end_date)
@@ -264,7 +270,32 @@ def sync_analytics_daily_metrics_for_campaign(
         start_date=resolved_start,
         end_date=resolved_end,
     )
-    if not missing_dates:
+    landing_missing_dates = (
+        _missing_metric_dates(
+            db=db,
+            model=AnalyticsLandingPageDailyMetric,
+            campaign_id=campaign.id,
+            start_date=resolved_start,
+            end_date=resolved_end,
+        )
+        if campaign.business_location_id
+        else []
+    )
+    source_missing_dates = (
+        _missing_metric_dates(
+            db=db,
+            model=AnalyticsTrafficSourceDailyMetric,
+            campaign_id=campaign.id,
+            start_date=resolved_start,
+            end_date=resolved_end,
+        )
+        if campaign.business_location_id
+        else []
+    )
+    requested_dates = sorted(
+        set(missing_dates) | set(landing_missing_dates) | set(source_missing_dates)
+    )
+    if not requested_dates:
         return TrafficFactSyncResult(organization_id, campaign.id, resolved_start, resolved_end, 0, 0, 0, 0, 0)
     if _replay_mode_enabled():
         return TrafficFactSyncResult(
@@ -272,7 +303,7 @@ def sync_analytics_daily_metrics_for_campaign(
             campaign.id,
             resolved_start,
             resolved_end,
-            len(missing_dates),
+            len(requested_dates),
             0,
             0,
             0,
@@ -280,15 +311,19 @@ def sync_analytics_daily_metrics_for_campaign(
             replay_skipped=True,
         )
 
-    credentials = resolve_provider_credentials(db, organization_id, 'google')
-    property_id = _resolve_property_id(credentials=credentials)
-    if not property_id:
+    resolved_property_id = str(property_id or "").removeprefix("properties/").strip()
+    if not resolved_property_id:
+        credentials = resolve_provider_credentials(db, organization_id, 'google')
+        resolved_property_id = _resolve_property_id(credentials=credentials)
+    if not resolved_property_id:
         raise ValueError('Google Analytics property id missing for campaign traffic fact sync.')
     adapter = GoogleAnalyticsProviderAdapter(db=db)
 
     metrics_by_day: dict[date, dict[str, float]] = {}
+    landing_metrics: dict[tuple[date, str], dict[str, float]] = {}
+    source_metrics: dict[tuple[date, str], dict[str, float]] = {}
     provider_calls = 0
-    for range_start, range_end in _iter_missing_ranges(missing_dates):
+    for range_start, range_end in _iter_bounded_missing_ranges(missing_dates, max_days=31):
         provider_calls += 1
         result = adapter.execute(
             ProviderExecutionRequest(
@@ -296,11 +331,11 @@ def sync_analytics_daily_metrics_for_campaign(
                 payload={
                     'organization_id': organization_id,
                     'campaign_id': campaign.id,
-                    'property_id': property_id,
+                    'property_id': resolved_property_id,
                     'start_date': range_start.isoformat(),
                     'end_date': range_end.isoformat(),
                     'dimensions': ['date'],
-                    'metrics': ['sessions', 'conversions'],
+                    'metrics': ['sessions', 'engagedSessions', 'keyEvents'],
                     'limit': 1000,
                 },
             )
@@ -311,15 +346,76 @@ def sync_analytics_daily_metrics_for_campaign(
             row_date = _extract_row_date(row)
             if row_date is None or row_date not in missing_dates:
                 continue
-            entry = metrics_by_day.setdefault(row_date, {'sessions': 0.0, 'conversions': 0.0})
+            entry = metrics_by_day.setdefault(
+                row_date,
+                {'sessions': 0.0, 'engaged_sessions': 0.0, 'conversions': 0.0},
+            )
             entry['sessions'] += _safe_float(_metric_value(row, 'sessions'))
-            entry['conversions'] += _safe_float(_metric_value(row, 'conversions'))
+            entry['engaged_sessions'] += _safe_float(_metric_value(row, 'engagedSessions'))
+            entry['conversions'] += _safe_float(_metric_value(row, 'keyEvents'))
+
+    for dimension_name, destination, detail_missing_dates, empty_value in (
+        ("landingPagePlusQueryString", landing_metrics, landing_missing_dates, "/__no_activity__"),
+        ("sessionSourceMedium", source_metrics, source_missing_dates, "__no_activity__"),
+    ):
+        for range_start, range_end in _iter_bounded_missing_ranges(
+            detail_missing_dates,
+            max_days=31,
+        ):
+            provider_calls += 1
+            detail_result = adapter.execute(
+                ProviderExecutionRequest(
+                    operation="ga4_run_report",
+                    payload={
+                        "organization_id": organization_id,
+                        "campaign_id": campaign.id,
+                        "property_id": resolved_property_id,
+                        "start_date": range_start.isoformat(),
+                        "end_date": range_end.isoformat(),
+                        "dimensions": ["date", dimension_name],
+                        "metrics": ["sessions", "engagedSessions", "keyEvents"],
+                        "limit": 100000,
+                    },
+                )
+            )
+            if not detail_result.success:
+                raise RuntimeError("Google Analytics detail report call failed.")
+            returned_dates: set[date] = set()
+            for row in _rows(detail_result.raw_payload):
+                row_date = _extract_row_date(row)
+                raw_dimension = _dimension_value(row, dimension_name)
+                if row_date is None or row_date not in detail_missing_dates or not raw_dimension:
+                    continue
+                returned_dates.add(row_date)
+                dimension = (
+                    _clean_landing_page(raw_dimension)
+                    if dimension_name == "landingPagePlusQueryString"
+                    else raw_dimension[:500]
+                )
+                values = destination.setdefault(
+                    (row_date, dimension),
+                    {"sessions": 0.0, "engaged_sessions": 0.0, "key_events": 0.0},
+                )
+                values["sessions"] += _safe_float(_metric_value(row, "sessions"))
+                values["engaged_sessions"] += _safe_float(
+                    _metric_value(row, "engagedSessions")
+                )
+                values["key_events"] += _safe_float(_metric_value(row, "keyEvents"))
+            for metric_day in set(_iter_days(range_start, range_end)) - returned_dates:
+                destination[(metric_day, empty_value)] = {
+                    "sessions": 0.0,
+                    "engaged_sessions": 0.0,
+                    "key_events": 0.0,
+                }
 
     inserted_rows = 0
     updated_rows = 0
     skipped_rows = 0
     for metric_day in missing_dates:
-        values = metrics_by_day.get(metric_day, {'sessions': 0.0, 'conversions': 0.0})
+        values = metrics_by_day.get(
+            metric_day,
+            {'sessions': 0.0, 'engaged_sessions': 0.0, 'conversions': 0.0},
+        )
         outcome = upsert_analytics_daily_metric(
             db=db,
             metric_input=AnalyticsDailyMetricInput(
@@ -328,12 +424,40 @@ def sync_analytics_daily_metrics_for_campaign(
                 metric_date=metric_day,
                 sessions=int(round(float(values['sessions']))),
                 conversions=int(round(float(values['conversions']))),
+                engaged_sessions=int(round(float(values['engaged_sessions']))),
             ),
         )
         inserted_rows += int(outcome.inserted)
         updated_rows += int(outcome.updated)
         skipped_rows += int(outcome.skipped)
-    if inserted_rows or updated_rows:
+    if campaign.business_location_id:
+        for (metric_day, landing_page), values in landing_metrics.items():
+            _upsert_analytics_dimension_metric(
+                db=db,
+                model=AnalyticsLandingPageDailyMetric,
+                tenant_id=campaign.tenant_id,
+                organization_id=organization_id,
+                business_location_id=campaign.business_location_id,
+                campaign_id=campaign.id,
+                metric_date=metric_day,
+                dimension_field="landing_page",
+                dimension_value=landing_page,
+                values=values,
+            )
+        for (metric_day, source_medium), values in source_metrics.items():
+            _upsert_analytics_dimension_metric(
+                db=db,
+                model=AnalyticsTrafficSourceDailyMetric,
+                tenant_id=campaign.tenant_id,
+                organization_id=organization_id,
+                business_location_id=campaign.business_location_id,
+                campaign_id=campaign.id,
+                metric_date=metric_day,
+                dimension_field="source_medium",
+                dimension_value=source_medium,
+                values=values,
+            )
+    if provider_calls:
         db.commit()
 
     return TrafficFactSyncResult(
@@ -341,7 +465,7 @@ def sync_analytics_daily_metrics_for_campaign(
         campaign.id,
         resolved_start,
         resolved_end,
-        len(missing_dates),
+        len(requested_dates),
         provider_calls,
         inserted_rows,
         updated_rows,
@@ -434,6 +558,7 @@ def _normalize_analytics_daily_metric(metric_input: AnalyticsDailyMetricInput) -
         'campaign_id': metric_input.campaign_id,
         'metric_date': metric_input.metric_date,
         'sessions': int(metric_input.sessions),
+        'engaged_sessions': int(metric_input.engaged_sessions),
         'conversions': int(metric_input.conversions),
     }
     payload['deterministic_hash'] = _stable_hash(payload)
@@ -507,6 +632,21 @@ def _iter_missing_ranges(days: list[date]) -> list[tuple[date, date]]:
     return ranges
 
 
+def _iter_bounded_missing_ranges(
+    days: list[date],
+    *,
+    max_days: int,
+) -> list[tuple[date, date]]:
+    bounded: list[tuple[date, date]] = []
+    for range_start, range_end in _iter_missing_ranges(days):
+        cursor = range_start
+        while cursor <= range_end:
+            bounded_end = min(range_end, cursor + timedelta(days=max(1, max_days) - 1))
+            bounded.append((cursor, bounded_end))
+            cursor = bounded_end + timedelta(days=1)
+    return bounded
+
+
 def _iter_days(start: date, end: date) -> list[date]:
     days: list[date] = []
     cursor = start
@@ -576,6 +716,63 @@ def _metric_value(row: dict[str, Any], name: str) -> float | None:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _dimension_value(row: dict[str, Any], name: str) -> str:
+    dimensions = row.get("dimension_values")
+    if not isinstance(dimensions, dict):
+        return ""
+    return str(dimensions.get(name) or "").strip()
+
+
+def _clean_landing_page(value: str) -> str:
+    without_fragment = value.split("#", 1)[0]
+    return (without_fragment.split("?", 1)[0] or "/")[:2048]
+
+
+def _upsert_analytics_dimension_metric(
+    *,
+    db: Session,
+    model: type[AnalyticsLandingPageDailyMetric] | type[AnalyticsTrafficSourceDailyMetric],
+    tenant_id: str,
+    organization_id: str,
+    business_location_id: str,
+    campaign_id: str,
+    metric_date: date,
+    dimension_field: str,
+    dimension_value: str,
+    values: dict[str, float],
+) -> None:
+    dimension_hash = sha256(dimension_value.encode("utf-8")).hexdigest()
+    payload: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "organization_id": organization_id,
+        "business_location_id": business_location_id,
+        "campaign_id": campaign_id,
+        "metric_date": metric_date,
+        dimension_field: dimension_value,
+        "dimension_hash": dimension_hash,
+        "sessions": int(round(values.get("sessions", 0.0))),
+        "engaged_sessions": int(round(values.get("engaged_sessions", 0.0))),
+        "key_events": int(round(values.get("key_events", 0.0))),
+    }
+    payload["deterministic_hash"] = _stable_hash(payload)
+    existing = (
+        db.query(model)
+        .filter(
+            model.campaign_id == campaign_id,
+            model.metric_date == metric_date,
+            model.dimension_hash == dimension_hash,
+        )
+        .first()
+    )
+    if existing is None:
+        db.add(model(**payload))
+        return
+    if existing.deterministic_hash == payload["deterministic_hash"]:
+        return
+    for key, item in payload.items():
+        setattr(existing, key, item)
 
 
 def _safe_float(value: Any) -> float:

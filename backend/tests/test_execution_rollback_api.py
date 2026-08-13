@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.enums import StrategyRecommendationStatus
-from app.intelligence.recommendation_execution_engine import execute_recommendation, schedule_execution
+from app.intelligence.recommendation_execution_engine import approve_execution, execute_recommendation, schedule_execution
 from app.models.intelligence import StrategyRecommendation
 from app.models.user import User
 from app.utils.enum_guard import ensure_enum
@@ -19,6 +19,8 @@ def test_execution_rollback_api(client, db_session, create_test_org) -> None:
     acting_user = db_session.query(User).filter(User.email == 'org-admin@example.com').first()
     assert acting_user is not None
     org = create_test_org(tenant_id=acting_user.tenant_id, name='Rollback API Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
     campaign = create_test_campaign(db_session, org.id, tenant_id=acting_user.tenant_id, name='Rollback API Campaign', domain='rollback-api.example')
     recommendation = StrategyRecommendation(
         tenant_id=acting_user.tenant_id,
@@ -35,6 +37,14 @@ def test_execution_rollback_api(client, db_session, create_test_org) -> None:
     db_session.commit()
     execution = schedule_execution(recommendation.id, db=db_session)
     assert execution is not None
+    planned = execute_recommendation(execution.id, db=db_session, dry_run=True)
+    assert isinstance(planned, dict)
+    approve_execution(
+        execution.id,
+        approved_by="api-tester",
+        preview_hash=planned["preview"]["preview_hash"],
+        db=db_session,
+    )
     executed = execute_recommendation(execution.id, db=db_session)
     assert executed is not None
     assert executed.status == 'completed'

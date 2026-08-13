@@ -65,6 +65,7 @@ class ExecutionRunIn(BaseModel):
 
 class ExecutionApprovalIn(BaseModel):
     approved_by: str | None = None
+    preview_hash: str | None = None
 
 
 class ExecutionRollbackIn(BaseModel):

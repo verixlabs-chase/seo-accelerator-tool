@@ -93,7 +93,7 @@ function getCrawlWorkflowState(run, campaign, formatRelativeTime) {
       status: "Action needed",
       tone: "warning",
       detail: "Add a business first so InsightOS can scan your website.",
-      nextStep: "Set up your business to unlock the first scan.",
+      nextStep: "Set up your business to run the first website scan.",
     };
   }
 

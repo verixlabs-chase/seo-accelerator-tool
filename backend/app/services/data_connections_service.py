@@ -9,12 +9,18 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
+from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
 from app.models.google_business_profile import GoogleBusinessProfileDailyMetric
 from app.models.organization_provider_credential import OrganizationProviderCredential
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+from app.models.website_analytics import (
+    AnalyticsLandingPageDailyMetric,
+    AnalyticsTrafficSourceDailyMetric,
+    WebsiteFormEvent,
+)
 from app.services.provider_credentials_service import (
     ProviderCredentialConfigurationError,
     get_organization_provider_credentials,
@@ -23,6 +29,7 @@ from app.services.provider_credentials_service import (
 
 
 GOOGLE_SEARCH_CONSOLE_PROVIDER = "google_search_console"
+GOOGLE_ANALYTICS_PROVIDER = "google_analytics"
 MAX_SEARCH_CONSOLE_RANGE_DAYS = 480
 CONNECTION_STATUS_CONNECTED = "connected"
 CONNECTION_STATUS_SYNCING = "syncing"
@@ -75,6 +82,10 @@ def google_oauth_connection_summary(db: Session, organization_id: str) -> dict[s
             "business_profile": bool(
                 row is not None
                 and settings.google_oauth_scope_gbp in scopes
+            ),
+            "website_analytics": bool(
+                row is not None
+                and settings.google_oauth_scope_analytics in scopes
             ),
         },
         "updated_at": row.updated_at.isoformat() if row is not None and row.updated_at else None,
@@ -137,12 +148,21 @@ def get_connection_health(db: Session, organization_id: str) -> dict[str, Any]:
         .group_by(GoogleBusinessProfileDailyMetric.campaign_id)
         .all()
     )
+    analytics_dates = dict(
+        db.query(
+            AnalyticsDailyMetric.campaign_id,
+            func.max(AnalyticsDailyMetric.metric_date),
+        )
+        .filter(AnalyticsDailyMetric.organization_id == organization_id)
+        .group_by(AnalyticsDailyMetric.campaign_id)
+        .all()
+    )
     oauth = google_oauth_connection_summary(db, organization_id)
     approved_access = oauth.get("approved_access") or {}
     now = datetime.now(UTC)
     items: list[dict[str, Any]] = []
 
-    providers = (
+    providers: list[dict[str, Any]] = [
         {
             "provider_name": GOOGLE_SEARCH_CONSOLE_PROVIDER,
             "label": "Website search data",
@@ -159,7 +179,19 @@ def get_connection_health(db: Session, organization_id: str) -> dict[str, Any]:
             "approved": bool(approved_access.get("business_profile")),
             "newest_dates": business_profile_dates,
         },
+    ]
+    analytics_is_in_use = bool(approved_access.get("website_analytics")) or any(
+        row.provider_name == GOOGLE_ANALYTICS_PROVIDER for row in connections
     )
+    if analytics_is_in_use:
+        providers.append({
+            "provider_name": GOOGLE_ANALYTICS_PROVIDER,
+            "label": "Website visits and inquiries",
+            "mapping_anchor": "analytics-mappings",
+            "features": ["Overview", "Reports", "Next Steps"],
+            "approved": bool(approved_access.get("website_analytics")),
+            "newest_dates": analytics_dates,
+        })
 
     for campaign, location in campaign_rows:
         for provider in providers:
@@ -365,7 +397,194 @@ def serialize_connection(
         "last_error_message": connection.last_error_message,
         "sync_cursor": dict(connection.sync_cursor or {}),
         "source_truth": _connection_source_truth(connection.provider_name),
+        "website_event_key_configured": bool(
+            connection.provider_name == GOOGLE_ANALYTICS_PROVIDER
+            and (connection.connection_metadata or {}).get("website_event_token_hash")
+        ),
+        "website_event_key_created_at": (
+            (connection.connection_metadata or {}).get("website_event_token_created_at")
+            if connection.provider_name == GOOGLE_ANALYTICS_PROVIDER
+            else None
+        ),
         "updated_at": _iso(connection.updated_at),
+    }
+
+
+def get_google_analytics_metrics(
+    db: Session,
+    *,
+    organization_id: str,
+    campaign_id: str,
+    days: int = 90,
+) -> dict[str, Any]:
+    campaign = (
+        db.query(Campaign)
+        .filter(
+            Campaign.id == campaign_id,
+            Campaign.organization_id == organization_id,
+        )
+        .first()
+    )
+    if campaign is None:
+        raise DataConnectionError(
+            "Campaign not found in this organization.",
+            reason_code="campaign_not_found",
+            status_code=404,
+        )
+    connection = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.organization_id == organization_id,
+            DataConnection.campaign_id == campaign_id,
+            DataConnection.provider_name == GOOGLE_ANALYTICS_PROVIDER,
+        )
+        .first()
+    )
+    if connection is None:
+        return {
+            "organization_id": organization_id,
+            "campaign_id": campaign_id,
+            "provider_name": GOOGLE_ANALYTICS_PROVIDER,
+            "data_status": "not_connected",
+            "connection": None,
+            "summary": None,
+            "points": [],
+        }
+    latest_date = (
+        db.query(func.max(AnalyticsDailyMetric.metric_date))
+        .filter(
+            AnalyticsDailyMetric.organization_id == organization_id,
+            AnalyticsDailyMetric.campaign_id == campaign_id,
+        )
+        .scalar()
+    )
+    location = db.get(BusinessLocation, connection.business_location_id)
+    latest_website_event_at = _latest_website_form_event_at(
+        db,
+        organization_id=organization_id,
+        campaign_id=campaign_id,
+    )
+    if latest_date is None:
+        return {
+            "organization_id": organization_id,
+            "campaign_id": campaign_id,
+            "provider_name": GOOGLE_ANALYTICS_PROVIDER,
+            "data_status": "no_data",
+            "connection": serialize_connection(
+                connection,
+                campaign=campaign,
+                location=location,
+            ),
+            "summary": None,
+            "points": [],
+            "top_landing_pages": [],
+            "top_sources": [],
+            "tracking_health": _website_event_tracking_health(
+                connection=connection,
+                last_event_at=latest_website_event_at,
+                visits=0,
+            ),
+        }
+    normalized_days = max(7, min(int(days), MAX_SEARCH_CONSOLE_RANGE_DAYS))
+    start_date = latest_date - timedelta(days=normalized_days - 1)
+    rows = (
+        db.query(AnalyticsDailyMetric)
+        .filter(
+            AnalyticsDailyMetric.organization_id == organization_id,
+            AnalyticsDailyMetric.campaign_id == campaign_id,
+            AnalyticsDailyMetric.metric_date >= start_date,
+            AnalyticsDailyMetric.metric_date <= latest_date,
+        )
+        .order_by(AnalyticsDailyMetric.metric_date.asc())
+        .all()
+    )
+    sessions = sum(int(row.sessions or 0) for row in rows)
+    engaged_sessions = sum(int(row.engaged_sessions or 0) for row in rows)
+    inquiries = sum(int(row.conversions or 0) for row in rows)
+    form_events = (
+        db.query(WebsiteFormEvent)
+        .filter(
+            WebsiteFormEvent.organization_id == organization_id,
+            WebsiteFormEvent.campaign_id == campaign_id,
+            WebsiteFormEvent.occurred_at >= datetime.combine(start_date, datetime.min.time(), UTC),
+            WebsiteFormEvent.occurred_at
+            < datetime.combine(latest_date + timedelta(days=1), datetime.min.time(), UTC),
+        )
+        .order_by(WebsiteFormEvent.occurred_at.asc())
+        .all()
+    )
+    form_events_by_date: dict[date, int] = {}
+    for event in form_events:
+        event_date = _as_aware(event.occurred_at).date()
+        form_events_by_date[event_date] = form_events_by_date.get(event_date, 0) + 1
+    landing_rows = (
+        db.query(AnalyticsLandingPageDailyMetric)
+        .filter(
+            AnalyticsLandingPageDailyMetric.organization_id == organization_id,
+            AnalyticsLandingPageDailyMetric.campaign_id == campaign_id,
+            AnalyticsLandingPageDailyMetric.metric_date >= start_date,
+            AnalyticsLandingPageDailyMetric.metric_date <= latest_date,
+        )
+        .all()
+    )
+    source_rows = (
+        db.query(AnalyticsTrafficSourceDailyMetric)
+        .filter(
+            AnalyticsTrafficSourceDailyMetric.organization_id == organization_id,
+            AnalyticsTrafficSourceDailyMetric.campaign_id == campaign_id,
+            AnalyticsTrafficSourceDailyMetric.metric_date >= start_date,
+            AnalyticsTrafficSourceDailyMetric.metric_date <= latest_date,
+        )
+        .all()
+    )
+    top_landing_pages = _summarize_analytics_dimensions(
+        landing_rows,
+        dimension_name="landing_page",
+    )
+    top_sources = _summarize_analytics_dimensions(
+        source_rows,
+        dimension_name="source_medium",
+    )
+    verified_inquiries = len(form_events)
+    return {
+        "organization_id": organization_id,
+        "campaign_id": campaign_id,
+        "provider_name": GOOGLE_ANALYTICS_PROVIDER,
+        "data_status": "ready" if rows else "no_data",
+        "connection": serialize_connection(
+            connection,
+            campaign=campaign,
+            location=location,
+        ),
+        "date_from": start_date.isoformat(),
+        "date_to": latest_date.isoformat(),
+        "data_days": len(rows),
+        "summary": {
+            "visits": sessions,
+            "engaged_visits": engaged_sessions,
+            "important_actions": inquiries,
+            "inquiries": verified_inquiries,
+            "engagement_rate_percent": (
+                round((engaged_sessions / sessions) * 100, 1) if sessions else 0.0
+            ),
+        },
+        "points": [
+            {
+                "date": row.metric_date.isoformat(),
+                "visits": int(row.sessions or 0),
+                "engaged_visits": int(row.engaged_sessions or 0),
+                "important_actions": int(row.conversions or 0),
+                "verified_inquiries": form_events_by_date.get(row.metric_date, 0),
+            }
+            for row in rows
+        ],
+        "top_landing_pages": top_landing_pages,
+        "top_sources": top_sources,
+        "tracking_health": _website_event_tracking_health(
+            connection=connection,
+            last_event_at=latest_website_event_at,
+            visits=sessions,
+        ),
     }
 
 
@@ -885,6 +1104,224 @@ def discover_search_console_resources(db: Session, organization_id: str) -> list
     return sorted(resources, key=lambda item: item["name"].lower())
 
 
+def discover_google_analytics_resources(
+    db: Session,
+    organization_id: str,
+) -> list[dict[str, str | bool]]:
+    """Return GA4 properties available to the organization's read-only Google grant."""
+
+    try:
+        credentials = resolve_provider_credentials(
+            db,
+            organization_id,
+            "google",
+            required_credential_mode="byo_required",
+            require_org_oauth=True,
+        )
+    except ProviderCredentialConfigurationError as exc:
+        raise DataConnectionError(
+            str(exc),
+            reason_code=exc.reason_code,
+            status_code=exc.status_code,
+        ) from exc
+
+    access_token = str(credentials.get("access_token", "")).strip()
+    if not access_token:
+        raise DataConnectionError(
+            "Reconnect Google Analytics to continue.",
+            reason_code="org_oauth_credential_required",
+            status_code=409,
+        )
+    expected_scope = get_settings().google_oauth_scope_analytics.strip()
+    granted_scopes = str(credentials.get("scope", "")).split()
+    if expected_scope and granted_scopes and expected_scope not in granted_scopes:
+        raise DataConnectionError(
+            "Reconnect Google and approve read-only website analytics access.",
+            reason_code="oauth_scope_missing",
+            status_code=409,
+        )
+
+    resources: list[dict[str, str | bool]] = []
+    page_token = ""
+    try:
+        with httpx.Client() as client:
+            for _page in range(10):
+                params: dict[str, str | int] = {"pageSize": 200}
+                if page_token:
+                    params["pageToken"] = page_token
+                response = client.get(
+                    "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
+                    params=params,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=float(get_settings().google_oauth_http_timeout_seconds),
+                )
+                if response.status_code in {401, 403}:
+                    raise DataConnectionError(
+                        "Google Analytics access needs to be reconnected.",
+                        reason_code="oauth_reconnect_required",
+                        status_code=409,
+                    )
+                if response.status_code >= 400:
+                    raise DataConnectionError(
+                        "Google Analytics properties could not be loaded.",
+                        reason_code="provider_request_failed",
+                        status_code=502,
+                    )
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    raise DataConnectionError(
+                        "Google Analytics returned an invalid response.",
+                        reason_code="provider_response_invalid",
+                        status_code=502,
+                    ) from exc
+                summaries = payload.get("accountSummaries", []) if isinstance(payload, dict) else []
+                for account in summaries if isinstance(summaries, list) else []:
+                    if not isinstance(account, dict):
+                        continue
+                    account_name = str(account.get("displayName") or "Google Analytics account").strip()
+                    properties = account.get("propertySummaries", [])
+                    for item in properties if isinstance(properties, list) else []:
+                        if not isinstance(item, dict):
+                            continue
+                        property_resource = str(item.get("property") or "").strip()
+                        property_id = property_resource.removeprefix("properties/").strip()
+                        if not property_id.isdigit():
+                            continue
+                        display_name = str(item.get("displayName") or property_id).strip()
+                        resources.append(
+                            {
+                                "id": property_id,
+                                "name": display_name,
+                                "account_name": account_name,
+                                "property_type": str(item.get("propertyType") or "PROPERTY_TYPE_ORDINARY"),
+                                "can_edit": bool(item.get("canEdit")),
+                                "resource_scope": "ga4_property",
+                            }
+                        )
+                page_token = str(payload.get("nextPageToken") or "").strip() if isinstance(payload, dict) else ""
+                if not page_token:
+                    break
+    except httpx.TimeoutException as exc:
+        raise DataConnectionError(
+            "Google Analytics took too long to respond.",
+            reason_code="provider_timeout",
+            status_code=504,
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise DataConnectionError(
+            "Google Analytics could not be reached.",
+            reason_code="provider_unavailable",
+            status_code=502,
+        ) from exc
+
+    return sorted(resources, key=lambda item: (str(item["account_name"]).lower(), str(item["name"]).lower()))
+
+
+def upsert_google_analytics_mapping(
+    db: Session,
+    *,
+    organization_id: str,
+    campaign_id: str,
+    external_resource_id: str,
+    external_resource_name: str | None,
+    actor_user_id: str,
+) -> DataConnection:
+    campaign = (
+        db.query(Campaign)
+        .filter(
+            Campaign.id == campaign_id,
+            Campaign.organization_id == organization_id,
+        )
+        .first()
+    )
+    if campaign is None:
+        raise DataConnectionError(
+            "Campaign not found in this organization.",
+            reason_code="campaign_not_found",
+            status_code=404,
+        )
+    if not campaign.business_location_id:
+        raise DataConnectionError(
+            "Assign this website to a business location before connecting website analytics.",
+            reason_code="business_location_required",
+            status_code=409,
+        )
+    location = (
+        db.query(BusinessLocation)
+        .filter(
+            BusinessLocation.id == campaign.business_location_id,
+            BusinessLocation.organization_id == organization_id,
+        )
+        .first()
+    )
+    if location is None:
+        raise DataConnectionError(
+            "The campaign location could not be verified.",
+            reason_code="business_location_not_found",
+            status_code=404,
+        )
+
+    property_id = external_resource_id.removeprefix("properties/").strip()
+    if not property_id.isdigit():
+        raise DataConnectionError(
+            "Choose a valid Google Analytics property.",
+            reason_code="invalid_external_resource",
+            status_code=400,
+        )
+    resource_name = (external_resource_name or "").strip() or f"Property {property_id}"
+    existing = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.organization_id == organization_id,
+            DataConnection.provider_name == GOOGLE_ANALYTICS_PROVIDER,
+            DataConnection.campaign_id == campaign.id,
+        )
+        .first()
+    )
+    now = datetime.now(UTC)
+    if existing is None:
+        existing = DataConnection(
+            tenant_id=campaign.tenant_id,
+            organization_id=organization_id,
+            business_location_id=location.id,
+            campaign_id=campaign.id,
+            provider_name=GOOGLE_ANALYTICS_PROVIDER,
+            external_resource_id=property_id,
+            external_resource_name=resource_name,
+            resource_scope="ga4_property",
+            status=CONNECTION_STATUS_CONNECTED,
+            next_sync_at=now,
+            sync_cursor={},
+            connection_metadata={"read_only": True},
+            created_by_user_id=actor_user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(existing)
+    else:
+        if existing.external_resource_id != property_id and existing.last_success_at is not None:
+            raise DataConnectionError(
+                "This location already has saved website analytics history. Changing its property "
+                "requires a separate data-reset workflow.",
+                reason_code="mapping_change_requires_reset",
+                status_code=409,
+            )
+        existing.tenant_id = campaign.tenant_id
+        existing.business_location_id = location.id
+        existing.external_resource_id = property_id
+        existing.external_resource_name = resource_name
+        existing.resource_scope = "ga4_property"
+        existing.status = CONNECTION_STATUS_CONNECTED
+        existing.next_sync_at = now
+        existing.last_error_code = None
+        existing.last_error_message = None
+        existing.updated_at = now
+    db.commit()
+    db.refresh(existing)
+    return existing
+
+
 def upsert_search_console_mapping(
     db: Session,
     *,
@@ -1095,7 +1532,93 @@ def _connection_source_truth(provider_name: str) -> str:
             "Authorized data for one Google business listing. Results stay tied to the "
             "matched business location and are never blended with another listing."
         )
+    if provider_name == GOOGLE_ANALYTICS_PROVIDER:
+        return (
+            "Read-only website visit and inquiry totals from the Google Analytics property "
+            "matched to this business location."
+        )
     return (
         "Website-property data from Google Search Console. If multiple locations share "
         "one property, the metrics describe that shared website property."
     )
+
+
+def _summarize_analytics_dimensions(
+    rows: list[AnalyticsLandingPageDailyMetric] | list[AnalyticsTrafficSourceDailyMetric],
+    *,
+    dimension_name: str,
+) -> list[dict[str, Any]]:
+    totals: dict[str, dict[str, int]] = {}
+    for row in rows:
+        dimension = str(getattr(row, dimension_name) or "").strip()
+        if not dimension or dimension in {"/__no_activity__", "__no_activity__"}:
+            continue
+        values = totals.setdefault(
+            dimension,
+            {"visits": 0, "engaged_visits": 0, "important_actions": 0},
+        )
+        values["visits"] += int(row.sessions or 0)
+        values["engaged_visits"] += int(row.engaged_sessions or 0)
+        values["important_actions"] += int(row.key_events or 0)
+    return [
+        {"name": name, **values}
+        for name, values in sorted(
+            totals.items(),
+            key=lambda item: (-item[1]["visits"], item[0].lower()),
+        )[:5]
+    ]
+
+
+def _latest_website_form_event_at(
+    db: Session,
+    *,
+    organization_id: str,
+    campaign_id: str,
+) -> datetime | None:
+    return (
+        db.query(WebsiteFormEvent.occurred_at)
+        .filter(
+            WebsiteFormEvent.organization_id == organization_id,
+            WebsiteFormEvent.campaign_id == campaign_id,
+        )
+        .order_by(WebsiteFormEvent.occurred_at.desc())
+        .limit(1)
+        .scalar()
+    )
+
+
+def _website_event_tracking_health(
+    *,
+    connection: DataConnection,
+    last_event_at: datetime | None,
+    visits: int,
+) -> dict[str, Any]:
+    metadata = dict(connection.connection_metadata or {})
+    key_configured = bool(metadata.get("website_event_token_hash"))
+    normalized_last_event_at = _as_aware(last_event_at) if last_event_at is not None else None
+    now = datetime.now(UTC)
+    if not key_configured:
+        status = "setup_required"
+        message = "Connect the website form before inquiry tracking can begin."
+    elif normalized_last_event_at is None:
+        status = "waiting_for_first_event"
+        message = "The secure form connection is ready and waiting for its first inquiry."
+    elif now - normalized_last_event_at <= timedelta(days=14):
+        status = "active"
+        message = "Website inquiry tracking has received recent activity."
+    elif now - normalized_last_event_at > timedelta(days=30) and visits >= 100:
+        status = "check_tracking"
+        message = "Website visits continued, but no inquiry event arrived recently. Check the form connection."
+    else:
+        status = "quiet"
+        message = "No recent inquiry was recorded. This does not prove the form is broken."
+    return {
+        "status": status,
+        "message": message,
+        "key_configured": key_configured,
+        "last_event_at": (
+            normalized_last_event_at.isoformat()
+            if normalized_last_event_at is not None
+            else None
+        ),
+    }

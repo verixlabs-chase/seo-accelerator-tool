@@ -28,9 +28,13 @@ class LSOS_Auth
         }
 
         $timestamp = (string) $request->get_header('x-lsos-timestamp');
+        $nonce = trim((string) $request->get_header('x-lsos-nonce'));
         $signature = (string) $request->get_header('x-lsos-signature');
-        if ($timestamp === '' || $signature === '') {
-            return new WP_Error('lsos_missing_signature_headers', 'Missing timestamp or signature header.', array('status' => 401));
+        if ($timestamp === '' || $nonce === '' || $signature === '') {
+            return new WP_Error('lsos_missing_signature_headers', 'Missing timestamp, nonce, or signature header.', array('status' => 401));
+        }
+        if (! preg_match('/^[A-Za-z0-9_-]{20,128}$/', $nonce)) {
+            return new WP_Error('lsos_invalid_nonce', 'Invalid request nonce.', array('status' => 401));
         }
 
         $timestamp_epoch = strtotime($timestamp);
@@ -38,9 +42,12 @@ class LSOS_Auth
             return new WP_Error('lsos_expired_signature', 'Timestamp is outside the accepted replay window.', array('status' => 401));
         }
 
-        $expected = hash_hmac('sha256', $timestamp . '.' . $request->get_body(), $secret);
+        $expected = hash_hmac('sha256', $timestamp . '.' . $nonce . '.' . $request->get_body(), $secret);
         if (! hash_equals($expected, $signature)) {
             return new WP_Error('lsos_invalid_signature', 'Invalid request signature.', array('status' => 401));
+        }
+        if (! LSOS_Audit_Store::claim_request_nonce($provided_token . ':' . $nonce, time() + self::MAX_CLOCK_SKEW_SECONDS)) {
+            return new WP_Error('lsos_replayed_request', 'This signed request was already used.', array('status' => 409));
         }
 
         return true;
@@ -48,19 +55,29 @@ class LSOS_Auth
 
     private function configured_token(): string
     {
-        if (defined('LSOS_EXECUTION_PLUGIN_TOKEN')) {
-            return trim((string) LSOS_EXECUTION_PLUGIN_TOKEN);
+        if ((string) get_option('lsos_execution_plugin_disconnected', '') === '1') {
+            return '';
         }
-
-        return trim((string) get_option('lsos_execution_plugin_token', ''));
+        $saved = trim((string) get_option('lsos_execution_plugin_token', ''));
+        if ($saved !== '') {
+            return $saved;
+        }
+        return defined('LSOS_EXECUTION_PLUGIN_TOKEN')
+            ? trim((string) LSOS_EXECUTION_PLUGIN_TOKEN)
+            : '';
     }
 
     private function configured_secret(): string
     {
-        if (defined('LSOS_EXECUTION_PLUGIN_SHARED_SECRET')) {
-            return trim((string) LSOS_EXECUTION_PLUGIN_SHARED_SECRET);
+        if ((string) get_option('lsos_execution_plugin_disconnected', '') === '1') {
+            return '';
         }
-
-        return trim((string) get_option('lsos_execution_plugin_shared_secret', ''));
+        $saved = trim((string) get_option('lsos_execution_plugin_shared_secret', ''));
+        if ($saved !== '') {
+            return $saved;
+        }
+        return defined('LSOS_EXECUTION_PLUGIN_SHARED_SECRET')
+            ? trim((string) LSOS_EXECUTION_PLUGIN_SHARED_SECRET)
+            : '';
     }
 }

@@ -10,6 +10,12 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.authority import Citation
 from app.schemas.authority import (
+    AuthorityActionIn,
+    AuthorityGapRefreshIn,
+    AuthorityInventoryRefreshIn,
+    AuthorityLinkChangeRefreshIn,
+    AuthorityOutreachDraftIn,
+    AuthorityOutreachDraftUpdateIn,
     BacklinkOut,
     CitationSubmissionIn,
     DirectoryListingDiscoveryPreviewIn,
@@ -30,8 +36,6 @@ from app.tasks.tasks import (
     authority_sync_backlinks,
     citation_refresh_status,
     citation_submit_batch,
-    outreach_enrich_contacts,
-    outreach_execute_sequence_step,
 )
 
 authority_router = APIRouter(prefix="/authority", tags=["authority"])
@@ -43,14 +47,14 @@ def _raise_listing_discovery_error(exc: Exception) -> None:
         status_code=int(getattr(exc, "status_code", status.HTTP_409_CONFLICT)),
         detail={
             "message": str(exc),
-            "reason_code": str(
-                getattr(exc, "reason_code", "public_listing_check_unavailable")
-            ),
+            "reason_code": str(getattr(exc, "reason_code", "public_listing_check_unavailable")),
         },
     ) from exc
 
 
-def _citation_truth(*, citation_count: int, live_count: int, job_queued: bool, captured_at: str | None = None) -> dict:
+def _citation_truth(
+    *, citation_count: int, live_count: int, job_queued: bool, captured_at: str | None = None
+) -> dict:
     settings = get_settings()
     backend = getattr(settings, "authority_provider_backend", "synthetic").strip().lower()
     environment = getattr(settings, "app_env", "").strip().lower()
@@ -117,11 +121,17 @@ def create_outreach_campaign(
         campaign_id=body.campaign_id,
         name=body.name,
     )
-    try:
-        outreach_execute_sequence_step.delay(tenant_id=user["tenant_id"], outreach_campaign_id=item.id)
-    except KombuError:
-        pass
-    return envelope(request, {"id": item.id, "campaign_id": item.campaign_id, "name": item.name, "status": item.status})
+    return envelope(
+        request,
+        {
+            "id": item.id,
+            "campaign_id": item.campaign_id,
+            "name": item.name,
+            "status": item.status,
+            "manual_send_only": True,
+            "message": "Saved as a draft. No outreach was scheduled or sent.",
+        },
+    )
 
 
 @authority_router.post("/contacts")
@@ -139,10 +149,6 @@ def create_outreach_contact(
         full_name=body.full_name,
         email=body.email,
     )
-    try:
-        outreach_enrich_contacts.delay(tenant_id=user["tenant_id"], campaign_id=body.campaign_id)
-    except KombuError:
-        pass
     return envelope(
         request,
         {
@@ -152,8 +158,184 @@ def create_outreach_contact(
             "full_name": contact.full_name,
             "email": contact.email,
             "status": contact.status,
+            "manual_send_only": True,
+            "message": "Saved for owner review. The address was not enriched or contacted.",
         },
     )
+
+
+@authority_router.post("/link-gaps/refresh")
+def refresh_authority_link_gaps(
+    request: Request,
+    body: AuthorityGapRefreshIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.refresh_authority_link_gaps(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=body.campaign_id,
+        idempotency_key=body.idempotency_key,
+    )
+    return envelope(request, payload)
+
+
+@authority_router.get("/link-gaps")
+def get_authority_link_gaps(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.latest_authority_link_gaps(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@authority_router.post("/link-changes/refresh")
+def refresh_authority_link_changes(
+    request: Request,
+    body: AuthorityLinkChangeRefreshIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.refresh_authority_link_changes(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=body.campaign_id,
+        idempotency_key=body.idempotency_key,
+    )
+    return envelope(request, payload)
+
+
+@authority_router.get("/link-changes")
+def get_authority_link_changes(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.latest_authority_link_changes(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@authority_router.post("/inventory/refresh")
+def refresh_authority_inventory(
+    request: Request,
+    body: AuthorityInventoryRefreshIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.refresh_authority_inventory(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=body.campaign_id,
+        business_name=body.business_name,
+        idempotency_key=body.idempotency_key,
+    )
+    return envelope(request, payload)
+
+
+@authority_router.get("/inventory")
+def get_authority_inventory(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.latest_authority_inventory(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@authority_router.post("/actions")
+def create_authority_action(
+    request: Request,
+    body: AuthorityActionIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.create_authority_action(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=body.campaign_id,
+        source_type=body.source_type,
+        source_id=body.source_id,
+        owner_confirmed_relevant=body.owner_confirmed_relevant,
+    )
+    return envelope(request, payload)
+
+
+@authority_router.post("/outreach-drafts")
+def create_authority_outreach_draft(
+    request: Request,
+    body: AuthorityOutreachDraftIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.create_authority_outreach_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=body.campaign_id,
+        source_type=body.source_type,
+        source_id=body.source_id,
+        owner_confirmed_relevant=body.owner_confirmed_relevant,
+        actor_user_id=user["user_id"],
+    )
+    return envelope(request, payload)
+
+
+@authority_router.get("/outreach-drafts")
+def list_authority_outreach_drafts(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.list_authority_outreach_drafts(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@authority_router.patch("/outreach-drafts/{draft_id}")
+def update_authority_outreach_draft(
+    draft_id: str,
+    request: Request,
+    body: AuthorityOutreachDraftUpdateIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = authority_service.update_authority_outreach_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        updates=body.model_dump(exclude={"campaign_id"}, exclude_unset=True),
+    )
+    return envelope(request, payload)
 
 
 @authority_router.get("/backlinks")
@@ -167,7 +349,9 @@ def get_backlinks(
         task = authority_sync_backlinks.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
     except KombuError:
         task = None
-    rows = authority_service.list_backlinks(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    rows = authority_service.list_backlinks(
+        db, tenant_id=user["tenant_id"], campaign_id=campaign_id
+    )
     return envelope(
         request,
         {
@@ -221,8 +405,7 @@ def get_listing_inventory(
         request,
         {
             "items": [
-                DirectoryListingOut.model_validate(row).model_dump(mode="json")
-                for row in rows
+                DirectoryListingOut.model_validate(row).model_dump(mode="json") for row in rows
             ],
             "summary": listing_inventory_service.inventory_summary(rows),
             "truth": {
@@ -339,7 +522,9 @@ def get_citation_status(
         .order_by(Citation.updated_at.desc())
         .all()
     )
-    live_count = sum(1 for row in rows if row.submission_status in {"live", "verified"} or row.listing_url)
+    live_count = sum(
+        1 for row in rows if row.submission_status in {"live", "verified"} or row.listing_url
+    )
     truth = _citation_truth(
         citation_count=len(rows),
         live_count=live_count,

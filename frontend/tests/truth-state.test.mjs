@@ -38,7 +38,7 @@ import {
   getConnectionPortfolioSummary,
   getConnectionStatusView,
 } from "../app/(product)/truth/dataConnectionsTruth.mjs";
-import { getApiErrorDetail } from "../app/lib/apiError.mjs";
+import { getApiErrorDetail, getCustomerSafeApiMessage } from "../app/lib/apiError.mjs";
 
 const formatRelativeTime = () => "2 hours ago";
 
@@ -104,6 +104,32 @@ test("API error truth prefers the actionable structured detail", () => {
 
   assert.match(detail, /Google OAuth is not configured/i);
   assert.doesNotMatch(detail, /^Request failed$/i);
+});
+
+test("API error truth never exposes the internal search supplier", () => {
+  const supplier = ["Data", "For", "SEO"].join("");
+  const detail = getApiErrorDetail(
+    {
+      errors: [
+        {
+          message: "Request failed",
+          details: {
+            message: `${supplier} could not refresh https://api.${supplier.toLowerCase()}.com/v3/test`,
+          },
+        },
+      ],
+    },
+    502,
+  );
+
+  assert.equal(
+    detail,
+    "the search data service could not refresh the search data service",
+  );
+  assert.equal(
+    getCustomerSafeApiMessage("data_for_seo credentials expired"),
+    "the search data service credentials expired",
+  );
 });
 
 test("dashboard truth state marks failed crawl as needs attention with remediation", () => {
@@ -200,7 +226,7 @@ test("reports truth state downgrades generated report with minimal artifact trut
   );
 
   assert.equal(state.status, "Preview only");
-  assert.match(state.detail, /minimal local artifact/i);
+  assert.match(state.detail, /long-term file storage is not ready/i);
 });
 
 test("reports truth state marks failed report as needs attention", () => {
@@ -251,7 +277,7 @@ test("reports truth state marks exhausted scheduler retries as needs attention",
   );
 
   assert.equal(state.status, "Needs attention");
-  assert.match(state.detail, /exhausted/i);
+  assert.match(state.detail, /tried several times/i);
   assert.match(state.nextStep, /re-save/i);
 });
 
@@ -267,7 +293,7 @@ test("reports delivery truth marks sent event as unverified when runtime cannot 
   );
 
   assert.equal(state.status, "Unverified");
-  assert.match(state.detail, /does not verify external inbox delivery/i);
+  assert.match(state.detail, /receipt in that inbox has not been confirmed/i);
 });
 
 test("reports schedule truth marks past-due scheduled state as overdue", () => {
@@ -279,7 +305,7 @@ test("reports schedule truth marks past-due scheduled state as overdue", () => {
   );
 
   assert.equal(state.status, "Overdue");
-  assert.match(state.detail, /past-due next run/i);
+  assert.match(state.detail, /next report is overdue/i);
 });
 
 test("opportunities truth state distinguishes approved recommendation from execution completion", () => {

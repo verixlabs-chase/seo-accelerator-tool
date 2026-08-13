@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 
-SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION = "service-business-plain-language-v2"
+SERVICE_BUSINESS_LANGUAGE_GUIDE_VERSION = "service-business-natural-voice-v3"
 SUMMARY_MAX_WORDS = 32
 WHY_NOW_MAX_WORDS = 24
 ACTION_FIRST_VERBS = frozenset(
@@ -46,6 +46,10 @@ ACTION_FIRST_VERBS = frozenset(
 
 _GUIDE_PATH = Path(__file__).with_name("service_business_language_guide.md")
 _DISALLOWED_PATTERNS = (
+    (
+        "internal search supplier",
+        re.compile(r"data[\s_-]*for[\s_-]*seo", re.IGNORECASE),
+    ),
     ("deterministic", re.compile(r"\bdeterministic\b", re.IGNORECASE)),
     ("intelligence", re.compile(r"\bintelligence\b", re.IGNORECASE)),
     ("lexicon", re.compile(r"\blexicon\b", re.IGNORECASE)),
@@ -98,13 +102,42 @@ _DISALLOWED_PATTERNS = (
     ),
     ("deeper review", re.compile(r"\bdeeper review\b", re.IGNORECASE)),
     ("possible benefit", re.compile(r"\bpossible benefit\b", re.IGNORECASE)),
+    ("likely benefit", re.compile(r"\blikely benefit\b", re.IGNORECASE)),
     ("eligible customer", re.compile(r"\beligible customers?\b", re.IGNORECASE)),
     ("touchpoint", re.compile(r"\btouchpoints?\b", re.IGNORECASE)),
     ("review gating", re.compile(r"\breview gating\b", re.IGNORECASE)),
     ("social proof", re.compile(r"\bsocial proof\b", re.IGNORECASE)),
+    ("local demand", re.compile(r"\blocal demand\b", re.IGNORECASE)),
+    ("measured demand", re.compile(r"\bmeasured demand\b", re.IGNORECASE)),
+    ("supporting data", re.compile(r"\bsupporting data\b", re.IGNORECASE)),
+    ("unlock", re.compile(r"\bunlock\b", re.IGNORECASE)),
+    ("leverage", re.compile(r"\bleverage\b", re.IGNORECASE)),
+    ("seamless", re.compile(r"\bseamless(?:ly)?\b", re.IGNORECASE)),
+    (
+        "actionable insights",
+        re.compile(r"\bactionable insights?\b", re.IGNORECASE),
+    ),
+    ("AI-powered", re.compile(r"\bai-powered\b", re.IGNORECASE)),
+    (
+        "explained in plain English",
+        re.compile(r"\bexplained in plain english\b", re.IGNORECASE),
+    ),
+    (
+        "without digging through SEO tooling",
+        re.compile(r"\bwithout digging through seo tooling\b", re.IGNORECASE),
+    ),
+    (
+        "non-technical owner",
+        re.compile(r"\bnon-technical (?:owner|customer|user)\b", re.IGNORECASE),
+    ),
+    ("less tech-savvy", re.compile(r"\bless tech-savvy\b", re.IGNORECASE)),
 )
 
 _PLAIN_REPLACEMENTS = (
+    (
+        re.compile(r"data[\s_-]*for[\s_-]*seo", re.IGNORECASE),
+        "search data service",
+    ),
     (re.compile(r"\bdeterministic intelligence engine\b", re.IGNORECASE), "InsightOS"),
     (re.compile(r"\bdeterministic engine\b", re.IGNORECASE), "InsightOS"),
     (re.compile(r"\bGoogle Business Profile\b", re.IGNORECASE), "Google business listing"),
@@ -131,6 +164,15 @@ _PLAIN_REPLACEMENTS = (
         re.compile(r"\bpossible benefit(?:\s*[—-]\s*more evidence needed)?\b", re.IGNORECASE),
         "result before deciding",
     ),
+    (
+        re.compile(r"\blikely benefit:\s*strong\b", re.IGNORECASE),
+        "the saved information strongly supports this action",
+    ),
+    (
+        re.compile(r"\blikely benefit:\s*moderate\b", re.IGNORECASE),
+        "the saved information supports this action",
+    ),
+    (re.compile(r"\blikely benefit\b", re.IGNORECASE), "support for this action"),
     (
         re.compile(r"\beligible completed customers\b", re.IGNORECASE),
         "recent customers",
@@ -163,7 +205,19 @@ _PLAIN_REPLACEMENTS = (
     ),
     (re.compile(r"\breview gating\b", re.IGNORECASE), "filtering who gets asked"),
     (re.compile(r"\bsocial proof\b", re.IGNORECASE), "recent customer reviews"),
+    (
+        re.compile(r"\b(?:local|measured) demand\b", re.IGNORECASE),
+        "estimated monthly searches",
+    ),
+    (
+        re.compile(r"\bsupporting data\b", re.IGNORECASE),
+        "details behind this result",
+    ),
     (re.compile(r"\btouchpoints?\b", re.IGNORECASE), "follow-ups"),
+    (re.compile(r"\bunlock\b", re.IGNORECASE), "get"),
+    (re.compile(r"\bleverage\b", re.IGNORECASE), "use"),
+    (re.compile(r"\bactionable insights?\b", re.IGNORECASE), "useful findings"),
+    (re.compile(r"\bseamless(?:ly)?\b", re.IGNORECASE), ""),
 )
 
 

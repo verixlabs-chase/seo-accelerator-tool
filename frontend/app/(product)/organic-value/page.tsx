@@ -364,7 +364,7 @@ export default function SearchValuePage() {
         {!loading && payload?.status === "unavailable" ? (
           <EmptyState
             title="There is not enough saved information yet"
-            summary="Confirm useful customer searches, then refresh their rankings and local demand. Search Value will reuse that saved work automatically."
+            summary="Confirm useful customer searches, then refresh their rankings and monthly search estimates. Search Value will reuse that saved work automatically."
             actionLabel="Find customer searches"
             onAction={() => router.push("/keyword-research")}
           />

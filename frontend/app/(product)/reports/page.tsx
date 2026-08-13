@@ -22,6 +22,7 @@ import { platformApi, platformApiFile } from "../../platform/api";
 import {
   buildRuntimeTruthSignal,
 } from "../truth/runtimeTruth.mjs";
+import { simplifyCustomerCopy } from "../truth/customerLanguage.mjs";
 import {
   getDeliveryWorkflowState,
   getReportWorkflowState,
@@ -304,6 +305,10 @@ function toTitleCase(value?: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function reportCopy(value?: string | null, fallback = "More information will appear after the next update.") {
+  return simplifyCustomerCopy(value || "", { fallback });
+}
+
 function formatRelativeTime(value?: string) {
   if (!value) {
     return "No report yet";
@@ -459,9 +464,16 @@ function storyList(items: ReportStoryItem[], empty: string) {
             {index + 1}
           </span>
           <div>
-            <p className="text-sm font-medium text-white">{item.title}</p>
+            <p className="text-sm font-medium text-white">
+              {reportCopy(item.title, "Review this result")}
+            </p>
             {item.detail || item.result || item.status ? (
-              <p className="mt-1 text-xs leading-5 text-zinc-400">{item.detail || toTitleCase(item.result || item.status)}</p>
+              <p className="mt-1 text-xs leading-5 text-zinc-400">
+                {reportCopy(
+                  item.detail || toTitleCase(item.result || item.status),
+                  "Open the report for more detail.",
+                )}
+              </p>
             ) : null}
           </div>
         </div>
@@ -499,25 +511,33 @@ function nextActionList(items: ReportStoryItem[]) {
       {uniqueItems.map((item, index) => {
         const measurement = item.measurement;
         const checkLabel = measurement?.check_after_days
-          ? `Check ${measurement.label || "the saved measurement"} again after ${measurement.check_after_days} days.`
-          : `Measure ${measurement?.label || "the saved result"} before and after the work.`;
+          ? `Check ${reportCopy(measurement.label, "this result")} again after ${measurement.check_after_days} days.`
+          : `Measure ${reportCopy(measurement?.label, "this result")} before and after the work.`;
         return (
           <article key={item.id || canonicalStoryKey(item)} className="grid gap-3 rounded-md border border-[#26272c] bg-[#0f1012] p-4 sm:grid-cols-[2rem_1fr]">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-500 text-sm font-bold text-white">
               {index + 1}
             </span>
             <div>
-              <h5 className="font-semibold text-white">{item.title}</h5>
+              <h5 className="font-semibold text-white">
+                {reportCopy(item.title, "Review this action")}
+              </h5>
               <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                {item.why_it_matters || item.detail || "This action is tied to the saved evidence for this location."}
+                {reportCopy(
+                  item.why_it_matters || item.detail,
+                  "This action responds to what InsightOS found for this location.",
+                )}
               </p>
               {item.steps?.length ? (
                 <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-zinc-200">
-                  {item.steps.map((step) => <li key={step}>{step}</li>)}
+                  {item.steps.map((step) => (
+                    <li key={step}>{reportCopy(step, "Complete this step.")}</li>
+                  ))}
                 </ol>
               ) : null}
               <div className="mt-3 border-l-2 border-emerald-500 bg-emerald-500/5 px-3 py-2 text-xs leading-5 text-emerald-100">
-                <span className="font-semibold">How we will check it:</span> {checkLabel} {measurement?.explanation || ""}
+                <span className="font-semibold">How we will check it:</span> {checkLabel}{" "}
+                {reportCopy(measurement?.explanation, "")}
               </div>
             </div>
           </article>
@@ -615,8 +635,12 @@ function dataSourceList(metrics: ReportMetric[]) {
             const coverage = metric.coverage?.current;
             return (
               <tr key={metric.key}>
-                <td className="py-2.5 pr-4 font-medium text-white">{metric.label}</td>
-                <td className="py-2.5 pr-4">{metric.source?.label || "Saved InsightOS data"}</td>
+                <td className="py-2.5 pr-4 font-medium text-white">
+                  {reportCopy(metric.label, "Saved result")}
+                </td>
+                <td className="py-2.5 pr-4">
+                  {reportCopy(metric.source?.label, "Saved InsightOS information")}
+                </td>
                 <td className="py-2.5 pr-4">{metric.source?.last_updated || "Not available"}</td>
                 <td className="py-2.5">{toTitleCase(coverage?.state)} ({coverage?.observed || 0} of {coverage?.expected || 0})</td>
               </tr>
@@ -650,7 +674,9 @@ function buildReportSections(report?: ReportItem, providedSnapshot?: ReportSnaps
           <div className="grid gap-px overflow-hidden rounded-md border border-[#26272c] bg-[#26272c] sm:grid-cols-2 xl:grid-cols-3">
             {metrics.map((metric) => (
               <div key={metric.key} className="bg-[#0f1012] p-4">
-                <p className="text-xs font-medium text-zinc-400">{metric.label}</p>
+                <p className="text-xs font-medium text-zinc-400">
+                  {reportCopy(metric.label, "Saved result")}
+                </p>
                 <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">{formatMetricValue(metric)}</p>
                 <p className={`mt-1 text-xs font-medium ${metric.result === "improved" ? "text-emerald-400" : metric.result === "declined" ? "text-rose-400" : "text-zinc-500"}`}>
                   {metricTrendLabel(metric)}
@@ -702,9 +728,9 @@ function buildReportSections(report?: ReportItem, providedSnapshot?: ReportSnaps
 
   return [
     {
-      title: "Search visibility",
-      summary: "This section shows how much ranking data has been captured for the current report window.",
-      metric: `${coerceNumber(summary.rank_snapshots)} snapshots`,
+      title: "Search rankings",
+      summary: "This section shows how many ranking checks were saved for this report period.",
+      metric: `${coerceNumber(summary.rank_snapshots)} checks`,
     },
     {
       title: "Website health",
@@ -712,8 +738,8 @@ function buildReportSections(report?: ReportItem, providedSnapshot?: ReportSnaps
       metric: `${coerceNumber(summary.technical_issues)} issues`,
     },
     {
-      title: "Overall intelligence score",
-      summary: "Use this score as a simple summary of overall business visibility and health.",
+      title: "Overall search progress",
+      summary: "Use this score to see the combined direction of search visibility and website health.",
       metric:
         summary.intelligence_score === null || summary.intelligence_score === undefined
           ? "Not available"
@@ -1096,7 +1122,7 @@ export default function ReportsPage() {
     await runAction("regenerate", async () => {
       await platformApi(`/reports/${reportId}/regenerate`, { method: "POST" });
       await loadReportDetail(reportId);
-      setNotice("The report files were rebuilt from the same saved facts. The numbers and location were not changed.");
+      setNotice("The report files were rebuilt from the same saved information. The numbers and location were not changed.");
     });
   }
 
@@ -1332,13 +1358,13 @@ export default function ReportsPage() {
     if (latestReport.report_status === "generated") {
       return {
         title: hasTruthState(selectedReportDetail?.truth || reportsTruth, "minimal_artifact")
-          ? "Your latest report is a local preview artifact"
+          ? "Your latest report is ready for an early review"
           : "Your latest report is ready to review",
         body: hasTruthState(selectedReportDetail?.truth || reportsTruth, "minimal_artifact")
-          ? `Month ${latestReport.month_number} was generated ${formatRelativeTime(latestReport.generated_at)} as a minimal local artifact.`
+          ? `Month ${latestReport.month_number} was created ${formatRelativeTime(latestReport.generated_at)}, but long-term file storage is not ready yet.`
           : `Month ${latestReport.month_number} was generated ${formatRelativeTime(latestReport.generated_at)}.`,
         next: hasTruthState(selectedReportDetail?.truth || reportsTruth, "minimal_artifact")
-          ? "Review the preview first. Generated does not mean premium, durable, or already delivered."
+          ? "Review the report first. Download a copy before sharing it, and do not treat it as sent until delivery is confirmed."
           : "Review the preview, confirm the recipient, and send the report while the update is still fresh.",
       };
     }
@@ -1346,7 +1372,7 @@ export default function ReportsPage() {
     if (latestReport.report_status === "delivered" && hasTruthState(selectedReportDetail?.truth || reportsTruth, "delivery_unverified")) {
       return {
         title: "Your latest report is marked delivered, not externally verified",
-        body: `Month ${latestReport.month_number} has a delivered record, but this runtime does not verify real inbox delivery.`,
+        body: `Month ${latestReport.month_number} is marked sent, but receipt in the other person's inbox has not been confirmed.`,
         next: "Use the delivery history and external confirmation before treating this as a completed client send.",
       };
     }
@@ -1365,7 +1391,7 @@ export default function ReportsPage() {
       buildRuntimeTruthSignal(
         "Report status",
         selectedReportDetail?.truth || reportsTruth,
-        "Reports can exist before deliverability or durable storage are truly confirmed.",
+        "A report can be created before its file storage or email delivery is confirmed.",
       ),
       {
         label: "Reports",
@@ -1543,7 +1569,7 @@ export default function ReportsPage() {
                   <div className="border-b border-amber-500/20 bg-amber-500/5 px-4 py-3">
                     {portfolioComparison.warnings.map((warning) => (
                       <p key={warning} className="text-sm leading-6 text-amber-100">
-                        {warning}
+                        {reportCopy(warning, "One part of this comparison needs attention.")}
                       </p>
                     ))}
                   </div>
@@ -1553,7 +1579,10 @@ export default function ReportsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#2c2d32] bg-accent-500/5 px-4 py-3">
                     <p className="text-sm text-zinc-200">
                       <span className="font-semibold text-white">Start with {portfolioComparison.focus.location_name}.</span>{" "}
-                      {portfolioComparison.focus.reason}
+                      {reportCopy(
+                        portfolioComparison.focus.reason,
+                        "This location has the clearest need for attention.",
+                      )}
                     </p>
                     <button
                       type="button"
@@ -1626,7 +1655,10 @@ export default function ReportsPage() {
                                 </p>
                               ) : null}
                               <p className="mt-2 max-w-[220px] text-xs leading-5 text-zinc-500">
-                                {location.comparison_message}
+                                {reportCopy(
+                                  location.comparison_message,
+                                  "Open this location to review its latest results.",
+                                )}
                               </p>
                             </td>
                           </tr>
@@ -1637,7 +1669,7 @@ export default function ReportsPage() {
                 </div>
 
                 <p className="border-t border-[#2c2d32] px-4 py-3 text-xs leading-5 text-zinc-500">
-                  A direct comparison is only made when at least two locations use the same report dates. Open a location to review its full evidence and next steps.
+                  A direct comparison is only made when at least two locations use the same report dates. Open a location to review what changed and what to do next.
                 </p>
               </section>
             ) : null}
@@ -1658,10 +1690,13 @@ export default function ReportsPage() {
                       Before you create the next report
                     </p>
                     <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                      {reportReadiness.title}
+                      {reportCopy(reportReadiness.title, "Check the latest information")}
                     </h2>
                     <p className="mt-1.5 max-w-3xl text-sm leading-6 text-zinc-300">
-                      {reportReadiness.summary}
+                      {reportCopy(
+                        reportReadiness.summary,
+                        "Review the items below before creating this report.",
+                      )}
                     </p>
                   </div>
                   <span className="rounded-md border border-white/10 bg-black/20 px-2.5 py-1 text-xs font-semibold text-zinc-100">
@@ -1675,7 +1710,9 @@ export default function ReportsPage() {
                   {readinessSources.map((source) => (
                     <div key={source.key} className="rounded-md border border-white/10 bg-black/20 p-3">
                       <div className="flex items-center justify-between gap-2">
-                        <h3 className="text-sm font-semibold text-white">{source.label}</h3>
+                        <h3 className="text-sm font-semibold text-white">
+                          {reportCopy(source.label, "Saved information")}
+                        </h3>
                         <span
                           className={`text-xs font-semibold ${
                             source.state === "ready"
@@ -1696,14 +1733,16 @@ export default function ReportsPage() {
                                   : "Not ready"}
                         </span>
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-zinc-300">{source.detail}</p>
+                      <p className="mt-2 text-xs leading-5 text-zinc-300">
+                        {reportCopy(source.detail, "This information needs attention.")}
+                      </p>
                       {source.state !== "ready" && source.state !== "optional" && source.action_href ? (
                         <button
                           type="button"
                           onClick={() => router.push(source.action_href || "/settings")}
                           className="mt-3 text-xs font-semibold text-accent-300 hover:text-accent-200"
                         >
-                          {source.action_label || "Fix this"} →
+                          {reportCopy(source.action_label, "Fix this")} →
                         </button>
                       ) : null}
                     </div>
@@ -1834,7 +1873,7 @@ export default function ReportsPage() {
                     {selectedReportDetail?.snapshot?.snapshot_hash ? (
                       <div className="mt-4 border-t border-[#26272c] pt-4">
                         <p className="text-xs leading-5 text-zinc-400">
-                          Need a fresh copy of the selected files? Rebuild them from the same saved facts without changing the report numbers.
+                          Need a fresh copy? Rebuild the files from the same saved information without changing the report numbers.
                         </p>
                         <button
                           onClick={regenerateReportFiles}
@@ -1914,21 +1953,27 @@ export default function ReportsPage() {
               <ReportPreview
                 title={
                   selectedReportDetail?.snapshot?.executive_summary?.headline
-                    ? selectedReportDetail.snapshot.executive_summary.headline
+                    ? reportCopy(
+                        selectedReportDetail.snapshot.executive_summary.headline,
+                        "Latest business update",
+                      )
                     : selectedReportDetail?.report
                     ? `Month ${selectedReportDetail.report.month_number} report`
                     : "Report preview"
                 }
                 audienceLabel={
                   selectedReportDetail?.snapshot
-                    ? `${toTitleCase(selectedReportDetail.snapshot.audience || "owner")} report · ${toTitleCase(selectedReportDetail.snapshot.source?.freshness_state || "unknown data")}`
+                    ? `${toTitleCase(selectedReportDetail.snapshot.audience || "owner")} report · ${selectedReportDetail.snapshot.source?.latest_metric_at ? `Updated ${formatRelativeTime(selectedReportDetail.snapshot.source.latest_metric_at)}` : "Update time unavailable"}`
                     : selectedReportDetail?.report
                     ? toTitleCase(selectedReportDetail.report.report_status)
                     : "Awaiting report"
                 }
                 summary={
                   selectedReportDetail?.snapshot?.executive_summary?.summary
-                    ? selectedReportDetail.snapshot.executive_summary.summary
+                    ? reportCopy(
+                        selectedReportDetail.snapshot.executive_summary.summary,
+                        "Review what changed and what to work on next.",
+                      )
                     : selectedReportDetail?.report
                     ? reportPurpose(selectedReportDetail.report)
                     : "Generate a report to see a preview of what will be packaged and sent."
@@ -1989,7 +2034,7 @@ export default function ReportsPage() {
                               {report.report_status === "delivered"
                                 ? "Complete. This report has been shared."
                                 : report.report_status === "generated"
-                                  ? "Generated. Review the local preview before treating it as client-ready."
+                                  ? "Ready for review. Check the report before sharing it."
                                   : isFailedStatus(report.report_status)
                                     ? "Needs attention. Do not treat this as ready yet."
                                     : isPendingStatus(report.report_status)
@@ -2012,13 +2057,13 @@ export default function ReportsPage() {
                           </div>
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                              Rank snapshots
+                              Ranking checks
                             </p>
                             <p className="mt-1">{coerceNumber(summaryData?.rank_snapshots)}</p>
                           </div>
                           <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                              Technical issues
+                              Website issues
                             </p>
                             <p className="mt-1">{coerceNumber(summaryData?.technical_issues)}</p>
                           </div>
@@ -2039,7 +2084,7 @@ export default function ReportsPage() {
             {selectedReportDetail?.artifacts?.length ? (
               <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Artifacts
+                  Report files
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
                   Files created for the selected report
@@ -2064,7 +2109,7 @@ export default function ReportsPage() {
                           </p>
                           <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
                             {artifact.byte_size ? `${Math.max(1, Math.round(artifact.byte_size / 1024))} KB · ` : ""}
-                            {artifact.durable ? "Private cloud storage" : "Development storage"}
+                            {artifact.durable ? "Saved privately" : "Temporary file storage"}
                           </p>
                         </div>
                         <div className="flex items-center gap-3">
@@ -2224,8 +2269,8 @@ export default function ReportsPage() {
                   </h2>
                   <p className="mt-1.5 text-sm leading-6 text-zinc-300">
                     {schedule
-                      ? "Adjust the cadence, timezone, and next run time for automatic report generation. Use the workflow status above to confirm whether automation is active, retrying, paused, or needs attention."
-                      : "No schedule has been set up yet. Configure one below if you want automatic report generation."}
+                      ? "Choose how often reports should be created and when the next one should run. Check the status above if a scheduled report is late."
+                      : "No schedule has been set up. Choose one below if you want reports created automatically."}
                   </p>
                 </div>
                 {schedule ? (
@@ -2254,7 +2299,7 @@ export default function ReportsPage() {
 
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                   <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Cadence
+                    How often
                   </label>
                   <select
                     value={scheduleCadence}
@@ -2301,7 +2346,7 @@ export default function ReportsPage() {
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Retry count
+                      Attempts after a problem
                     </p>
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
                       {schedule.retry_count === 0
@@ -2311,7 +2356,7 @@ export default function ReportsPage() {
                   </div>
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Scheduler status
+                      Schedule status
                     </p>
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
                       {getScheduleStatusLabel(schedule.last_status)}

@@ -6,6 +6,16 @@ if (! defined('ABSPATH')) {
 
 class LSOS_Audit_Store
 {
+    private const SCHEMA_VERSION = '1.1.0';
+
+    public static function maybe_upgrade(): void
+    {
+        if ((string) get_option('lsos_execution_schema_version', '') === self::SCHEMA_VERSION) {
+            return;
+        }
+        self::install();
+    }
+
     public static function install(): void
     {
         global $wpdb;
@@ -32,12 +42,46 @@ class LSOS_Audit_Store
         ) {$charset};";
 
         dbDelta($sql);
+
+        $nonce_table = self::nonce_table_name();
+        $nonce_sql = "CREATE TABLE {$nonce_table} (
+            nonce_hash char(64) NOT NULL,
+            expires_at datetime NOT NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (nonce_hash),
+            KEY expires_at (expires_at)
+        ) {$charset};";
+        dbDelta($nonce_sql);
+        update_option('lsos_execution_schema_version', self::SCHEMA_VERSION, false);
     }
 
     public static function table_name(): string
     {
         global $wpdb;
         return $wpdb->prefix . 'lsos_execution_audit';
+    }
+
+    public static function nonce_table_name(): string
+    {
+        global $wpdb;
+        return $wpdb->prefix . 'lsos_request_nonces';
+    }
+
+    public static function claim_request_nonce(string $nonce, int $expires_at): bool
+    {
+        global $wpdb;
+        $table = self::nonce_table_name();
+        $now = current_time('mysql', true);
+        $wpdb->query($wpdb->prepare('DELETE FROM ' . $table . ' WHERE expires_at < %s', $now));
+        $inserted = $wpdb->query(
+            $wpdb->prepare(
+                'INSERT IGNORE INTO ' . $table . ' (nonce_hash, expires_at, created_at) VALUES (%s, %s, %s)',
+                hash('sha256', $nonce),
+                gmdate('Y-m-d H:i:s', $expires_at),
+                $now
+            )
+        );
+        return $inserted === 1;
     }
 
     public function get_mutation(string $mutation_id): ?array

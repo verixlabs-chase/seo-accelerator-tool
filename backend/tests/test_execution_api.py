@@ -44,6 +44,8 @@ def test_execution_api_run_retry_cancel_flow(client, db_session, create_test_org
     tenant_id = acting_user.tenant_id
 
     org = create_test_org(tenant_id=tenant_id, name='API Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
     campaign = create_test_campaign(
         db_session,
         org.id,
@@ -81,6 +83,14 @@ def test_execution_api_run_retry_cancel_flow(client, db_session, create_test_org
     assert dry_payload['dry_run'] is True
     assert dry_payload['result']['status'] == 'planned'
 
+    approve_resp = client.post(
+        f'/api/v1/executions/{execution.id}/approve',
+        json={'preview_hash': dry_payload['result']['preview']['preview_hash']},
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    assert approve_resp.status_code == 200
+    assert approve_resp.json()['data']['approved_at'] is not None
+
     run_resp = client.post(
         f'/api/v1/executions/{execution.id}/run',
         json={'dry_run': False},
@@ -98,7 +108,7 @@ def test_execution_api_run_retry_cancel_flow(client, db_session, create_test_org
     failed_execution = RecommendationExecution(
         recommendation_id=rec.id,
         campaign_id=campaign.id,
-        execution_type='fix_missing_title',
+        execution_type='optimize_gbp_profile',
         execution_payload=json.dumps(
             {
                 'recommendation_id': rec.id,
