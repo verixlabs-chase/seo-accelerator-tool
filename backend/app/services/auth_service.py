@@ -105,6 +105,32 @@ def _list_memberships(db: Session, user_id: str) -> list[OrganizationMembership]
     )
 
 
+def _organization_items(
+    db: Session,
+    memberships: list[OrganizationMembership],
+) -> list[dict[str, str]]:
+    organization_ids = [row.organization_id for row in memberships]
+    if not organization_ids:
+        return []
+
+    names = {
+        organization_id: name
+        for organization_id, name in (
+            db.query(Organization.id, Organization.name)
+            .filter(Organization.id.in_(organization_ids))
+            .all()
+        )
+    }
+    return [
+        {
+            "organization_id": row.organization_id,
+            "role": row.role,
+            "name": str(names.get(row.organization_id) or "Workspace"),
+        }
+        for row in memberships
+    ]
+
+
 def _resolve_org_context(
     memberships: list[OrganizationMembership],
     organization_id: str | None,
@@ -354,6 +380,7 @@ def login(db: Session, email: str, password: str, organization_id: str | None = 
         memberships,
         organization_id,
     )
+    org_items = _organization_items(db, memberships)
     if platform_role is None and selected_org_id is None and not requires_org_selection:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization context is required")
 
@@ -401,7 +428,7 @@ def refresh(db: Session, refresh_token: str) -> dict:
             org_role=None,
             auth_session=rotated_session,
             requires_org_selection=True,
-            organizations=[{"organization_id": row.organization_id, "role": row.role} for row in memberships],
+            organizations=_organization_items(db, memberships),
         )
         db.commit()
         return response_payload

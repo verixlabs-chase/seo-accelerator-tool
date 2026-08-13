@@ -13,8 +13,16 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [workspaces, setWorkspaces] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [selectingWorkspaceId, setSelectingWorkspaceId] = useState("");
+
+  function finishSignIn(user) {
+    setAuthSession({ tenantId: user.tenant_id });
+    router.replace("/dashboard");
+    router.refresh();
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -32,14 +40,38 @@ export default function LoginPage() {
         setError(json?.error?.message || "Login failed");
         return;
       }
-      setAuthSession({
-        tenantId: json.data.user.tenant_id,
-      });
-      router.push("/dashboard");
+      if (json.data.requires_org_selection) {
+        setWorkspaces(json.data.organizations || []);
+        return;
+      }
+      finishSignIn(json.data.user);
     } catch {
       setError("Unable to sign in right now. Please try again.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function selectWorkspace(organizationId) {
+    setError("");
+    setSelectingWorkspaceId(organizationId);
+    try {
+      const res = await fetch(`${API_BASE}/auth/select-org`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organization_id: organizationId })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json?.error?.message || "That workspace could not be opened. Please try again.");
+        return;
+      }
+      finishSignIn(json.data.user);
+    } catch {
+      setError("Unable to open that workspace right now. Please try again.");
+    } finally {
+      setSelectingWorkspaceId("");
     }
   }
 
@@ -56,6 +88,49 @@ export default function LoginPage() {
           See what changed on Google, what needs attention, and what to work on next.
         </p>
 
+        {workspaces.length ? (
+          <div className="mt-8 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-white">Choose the business you want to open</p>
+              <p className="mt-1 text-sm leading-6 text-zinc-400">
+                Your sign-in works with more than one business. Pick one to continue.
+              </p>
+            </div>
+            {workspaces.map((workspace) => (
+              <button
+                key={workspace.organization_id}
+                type="button"
+                disabled={Boolean(selectingWorkspaceId)}
+                onClick={() => selectWorkspace(workspace.organization_id)}
+                className="flex w-full items-center justify-between gap-4 rounded-md border border-[#2c2d32] bg-[#0b0b0c] px-4 py-3 text-left transition hover:border-accent-500/40 hover:bg-accent-500/5 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-zinc-100">
+                    {workspace.name || "Business workspace"}
+                  </span>
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    {workspace.role === "org_owner" || workspace.role === "org_admin"
+                      ? "You manage this business"
+                      : "You have access to this business"}
+                  </span>
+                </span>
+                <span className="text-sm text-zinc-300">
+                  {selectingWorkspaceId === workspace.organization_id ? "Opening..." : "Open"}
+                </span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setWorkspaces([]);
+                setPassword("");
+              }}
+              className="text-sm text-zinc-400 transition hover:text-white"
+            >
+              Use a different sign-in
+            </button>
+          </div>
+        ) : (
         <form onSubmit={submit} className="mt-8 space-y-4">
           <div>
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
@@ -90,6 +165,7 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
+        )}
 
         {error ? (
           <p className="mt-4 rounded-md border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
