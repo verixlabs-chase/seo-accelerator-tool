@@ -35,6 +35,14 @@ test("WordPress live delivery requires a customer-triggered connection handshake
   assert.match(page, /Package check/);
 });
 
+test("WordPress setup loading failures do not render live-only controls", () => {
+  const guardedLiveModeBranches =
+    page.match(/wordpressSetup && wordpressSetup\.mode !== "test"/g) || [];
+
+  assert.equal(guardedLiveModeBranches.length, 2);
+  assert.doesNotMatch(page, /wordpressSetup\?\.mode !== "test"/);
+});
+
 test("WordPress changes require a readable exact preview before approval", () => {
   assert.match(page, /Check website changes/);
   assert.match(page, /Website change preview/);
