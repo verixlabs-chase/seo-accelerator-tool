@@ -1,7 +1,7 @@
 # Customer Data Lifecycle and Portability
 
-Status: GOV1A account-export slice implemented locally on 2026-08-13. Provider
-disconnect, account closure, verified deletion, legal hold, and backup-erasure
+Status: GOV1A account export and GOV1B Google disconnect are implemented locally
+on 2026-08-13. Account closure, verified deletion, legal hold, and backup-erasure
 workflows remain future GOV1 slices and must not be represented as complete.
 
 ## Principles
@@ -22,7 +22,7 @@ workflows remain future GOV1 slices and must not be represented as complete.
 |---|---|---|---|---|
 | Identity and membership | User email, role, organization membership | Personal | Active account lifecycle; member facts are included in owner exports | User deletion, closure, hold, and backup rules |
 | Authentication | Password hashes, sessions, refresh state | Restricted | Never exported; retained only for active security/session operations | Verified account deletion and session revocation proof |
-| Connected-account secrets | OAuth tokens, provider credentials, webhook secrets | Restricted | Never exported; encrypted/controlled by the connection lifecycle | Disconnect, rotation, deletion, and revocation workflow |
+| Connected-account secrets | OAuth tokens, provider credentials, webhook secrets | Restricted | Never exported. Google disconnect attempts outside revocation, always deletes the local grant, clears connection secrets, and records the result | Extend the same contract to later providers; add credential rotation controls |
 | Business setup | Locations, campaigns, services, service areas | Customer confidential | Included in owner exports | Closure/deletion propagation |
 | Search and business measurements | Rankings, history, connection mappings/status | Customer confidential | Supported facts included; secret connection metadata excluded | Full measurement inventory and deletion propagation |
 | Recommendations and work | Governed recommendations, saved decisions | Customer confidential | Included in owner exports | Execution-record coverage and deletion propagation |
@@ -45,7 +45,8 @@ client request ID. The service creates one idempotent JSON artifact containing:
 - keyword groups, tracked searches, rankings, and ranking history;
 - recommendations;
 - report records, artifact metadata, and recipients without binary contents;
-- migration batches and imported-record provenance.
+- migration batches and imported-record provenance;
+- provider disconnect status and outside-revocation history without credentials.
 
 The artifact explicitly records excluded sensitive classes. It is serialized
 deterministically, hashed with SHA-256, size checked, stored with a seven-day
@@ -56,10 +57,38 @@ content while preserving the status, hash, timestamps, and audit trail.
 
 ## Explicit non-claims
 
-GOV1A does not delete a user, close an organization, revoke a provider, erase a
-backup, release a legal hold, or export report binaries. Those workflows must
+GOV1 does not yet delete a user, close an organization, erase a backup, release
+a legal hold, or export report binaries. Those workflows must
 not be enabled until their dependency ordering, hold behavior, recovery window,
 backup tombstones, audit proof, and production restore tests are complete.
+
+## GOV1B Google disconnect contract
+
+Only an organization owner can disconnect Google. The owner first receives a
+preview of affected locations, stopped updates, preserved record counts, and
+the exact confirmation phrase. The operation is idempotent and applies to the
+organization's shared Google grant, so Search Console, Business Profile,
+Analytics, and private inquiry collection tied to that Analytics connection
+cannot be presented as independent access switches.
+
+On confirmation, InsightOS:
+
+- attempts to revoke the refresh or access token through Google's revocation
+  endpoint without logging or persisting the raw token;
+- deletes the encrypted organization Google grant even when Google cannot
+  confirm the outside revocation;
+- marks every organization Google mapping disconnected, clears provider cursor
+  and connection-secret metadata, and prevents new scheduled collection;
+- cancels queued Google sync work and prevents late running work from changing
+  the connection back from disconnected;
+- preserves previously collected measurements, profile snapshots, search
+  terms, owned reviews, analytics facts, reports, and recommendations;
+- writes a durable owner/action/result record and a credential-free audit event.
+
+If Google's endpoint is unavailable, the customer sees that InsightOS access
+was removed but outside revocation was not confirmed, with a plain instruction
+to review third-party access in their Google Account. Reconnecting creates a
+new grant; removed private inquiry keys must be created again.
 
 ## Release evidence
 
@@ -71,3 +100,6 @@ backup tombstones, audit proof, and production restore tests are complete.
 - Task tests prove the nightly artifact-retention job is registered.
 - The Settings page explains what is included, what is excluded, who may
   download it, and when it expires without claiming deletion is complete.
+- Provider disconnect tests prove owner-only scope, exact confirmation,
+  credential deletion, outside-revocation truth, saved-result preservation,
+  queued-job cancellation, audit safety, idempotency, and late-worker guards.

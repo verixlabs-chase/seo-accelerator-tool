@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     google_oauth_scope_analytics: str = "https://www.googleapis.com/auth/analytics.readonly"
     google_oauth_auth_endpoint: str = "https://accounts.google.com/o/oauth2/v2/auth"
     google_oauth_token_endpoint: str = "https://oauth2.googleapis.com/token"
+    google_oauth_revoke_endpoint: str = "https://oauth2.googleapis.com/revoke"
     google_oauth_state_ttl_seconds: int = 600
     google_oauth_http_timeout_seconds: float = 15.0
     traffic_fact_sync_lookback_days: int = 7

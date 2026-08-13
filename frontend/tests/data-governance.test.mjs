@@ -25,3 +25,21 @@ test("the export screen explains its safety and retention limits in plain langua
   assert.match(settingsPage, /its audit record remains/);
   assert.doesNotMatch(settingsPage, /Delete (your )?(account|organization)/i);
 });
+
+test("Google disconnect is owner-confirmed, comprehensive, and preserves saved results", () => {
+  assert.match(settingsPage, /Google access and saved results/);
+  assert.match(settingsPage, /Review disconnect/);
+  assert.match(settingsPage, /This affects all Google access for this workspace/);
+  assert.match(settingsPage, /These updates will stop/);
+  assert.match(settingsPage, /This information will stay/);
+  assert.match(settingsPage, /googleDisconnectConfirmation !== googleDisconnectPreview\.confirmation_text/);
+  assert.match(settingsPage, /data-governance\/provider-disconnects/);
+  assert.match(settingsPage, /the local authorization was deleted, and your saved results remain available/);
+});
+
+test("disconnect history makes incomplete outside revocation visible", () => {
+  assert.match(settingsPage, /Most recent change/);
+  assert.match(settingsPage, /external_revocation_status === "not_confirmed"/);
+  assert.match(settingsPage, /Review third-party access in your Google Account/);
+  assert.match(settingsPage, /Google confirmed the authorization was revoked/);
+});

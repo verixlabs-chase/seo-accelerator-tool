@@ -34,7 +34,7 @@ from app.models.campaign import Campaign
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.data_connection import DataConnection
-from app.models.data_governance import DataExportRequest
+from app.models.data_governance import DataExportRequest, ProviderDisconnectRequest
 from app.models.google_business_profile import (
     GoogleBusinessProfileDailyMetric,
     GoogleBusinessProfileSearchKeyword,
@@ -299,6 +299,7 @@ __all__ = [
     "SearchConsoleDailyMetric",
     "DataConnection",
     "DataExportRequest",
+    "ProviderDisconnectRequest",
     "GoogleBusinessProfileSnapshot",
     "GoogleBusinessProfileDailyMetric",
     "GoogleBusinessProfileSearchKeyword",

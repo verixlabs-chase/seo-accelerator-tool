@@ -303,6 +303,33 @@ type DataExport = {
   download_available: boolean;
 };
 
+type ProviderDisconnectPreview = {
+  provider_name: "google";
+  connected: boolean;
+  credential_present: boolean;
+  connections_total: number;
+  active_connections: number;
+  affected_locations: number;
+  preserved_record_counts: Record<string, number>;
+  what_stops: string[];
+  what_stays: string[];
+  confirmation_text: string;
+};
+
+type ProviderDisconnectRecord = {
+  id: string;
+  provider_name: "google";
+  status: "completed" | "completed_external_action_required";
+  credential_deleted: boolean;
+  external_revocation_status: "confirmed" | "not_confirmed" | "not_needed";
+  external_revocation_code?: string | null;
+  connections_disconnected: number;
+  queued_jobs_cancelled: number;
+  preserved_record_counts: Record<string, number>;
+  requested_at: string;
+  completed_at?: string | null;
+};
+
 const primaryButtonClass =
   "inline-flex items-center justify-center rounded-md border border-accent-500/40 bg-accent-500/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-accent-500/70 hover:bg-accent-500/25 disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryButtonClass =
@@ -439,6 +466,10 @@ export default function SettingsPage() {
   const [migrationUploadProgress, setMigrationUploadProgress] = useState(0);
   const [migrationFileFingerprint, setMigrationFileFingerprint] = useState("");
   const [dataExports, setDataExports] = useState<DataExport[]>([]);
+  const [googleDisconnectPreview, setGoogleDisconnectPreview] = useState<ProviderDisconnectPreview | null>(null);
+  const [providerDisconnects, setProviderDisconnects] = useState<ProviderDisconnectRecord[]>([]);
+  const [showGoogleDisconnect, setShowGoogleDisconnect] = useState(false);
+  const [googleDisconnectConfirmation, setGoogleDisconnectConfirmation] = useState("");
 
   useEffect(() => {
     setGuidedConnectionSetup(
@@ -616,7 +647,7 @@ export default function SettingsPage() {
           throw new Error("An organization is required to manage data connections.");
         }
         setMe(currentUser);
-        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse, dataExportResponse] = await Promise.all([
+        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse, dataExportResponse, disconnectPreviewResponse, disconnectHistoryResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
           platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
@@ -630,12 +661,24 @@ export default function SettingsPage() {
                 method: "GET",
               }) as Promise<{ items?: DataExport[] }>).catch(() => ({ items: [] })))
             : Promise.resolve({ items: [] as DataExport[] }),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/provider-disconnects/google/preview`, {
+                method: "GET",
+              }) as Promise<{ preview?: ProviderDisconnectPreview }>).catch(() => ({ preview: undefined })))
+            : Promise.resolve({ preview: undefined }),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/provider-disconnects`, {
+                method: "GET",
+              }) as Promise<{ items?: ProviderDisconnectRecord[] }>).catch(() => ({ items: [] })))
+            : Promise.resolve({ items: [] as ProviderDisconnectRecord[] }),
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
         setBillingSummary(billingResponse);
         setMigrationHistory(migrationResponse.items || []);
         setDataExports(dataExportResponse.items || []);
+        setGoogleDisconnectPreview(disconnectPreviewResponse.preview || null);
+        setProviderDisconnects(disconnectHistoryResponse.items || []);
         const returnParams = new URLSearchParams(window.location.search);
         const billingReturned = returnParams.get("billing");
         const googleReturned = returnParams.get("google");
@@ -761,6 +804,51 @@ export default function SettingsPage() {
       setNotice("Your account export was downloaded.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to download your account export.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function disconnectGoogleProvider() {
+    if (!organizationId || !googleDisconnectPreview) return;
+    setBusyAction("google-disconnect");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-governance/provider-disconnects`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            client_request_id: crypto.randomUUID(),
+            provider_name: "google",
+            confirmation: googleDisconnectConfirmation,
+          }),
+        },
+      )) as { disconnect: ProviderDisconnectRecord };
+      const previewResponse = (await platformApi(
+        `/organizations/${organizationId}/data-governance/provider-disconnects/google/preview`,
+        { method: "GET" },
+      )) as { preview: ProviderDisconnectPreview };
+      await loadConnections(organizationId);
+      setGoogleDisconnectPreview(previewResponse.preview);
+      setProviderDisconnects((current) => [
+        response.disconnect,
+        ...current.filter((item) => item.id !== response.disconnect.id),
+      ]);
+      setResources([]);
+      setProfileResources([]);
+      setAnalyticsResources([]);
+      setWebsiteEventKeys({});
+      setShowGoogleDisconnect(false);
+      setGoogleDisconnectConfirmation("");
+      setNotice(
+        response.disconnect.external_revocation_status === "not_confirmed"
+          ? "Google is disconnected from InsightOS and the local authorization was deleted. Google could not confirm its side, so review third-party access in your Google Account."
+          : "Google is disconnected. Automatic updates stopped, the local authorization was deleted, and your saved results remain available.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to disconnect Google safely.");
     } finally {
       setBusyAction("");
     }
@@ -1544,6 +1632,117 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </details>
+            ) : null}
+
+            {me?.org_role === "org_owner" && googleDisconnectPreview ? (
+              <section aria-labelledby="google-access-control-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Account control
+                    </p>
+                    <h2 id="google-access-control-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Google access and saved results
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      {googleDisconnectPreview.connected
+                        ? `Google is supplying updates for ${googleDisconnectPreview.affected_locations} ${googleDisconnectPreview.affected_locations === 1 ? "location" : "locations"}. You can disconnect it without erasing results already saved in InsightOS.`
+                        : "Google is not connected. Previously saved results and reports remain available, but they will not receive new Google updates."}
+                    </p>
+                  </div>
+                  {googleDisconnectPreview.connected && !showGoogleDisconnect ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/10 px-3.5 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20"
+                      onClick={() => setShowGoogleDisconnect(true)}
+                    >
+                      Review disconnect
+                    </button>
+                  ) : null}
+                </div>
+
+                {showGoogleDisconnect && googleDisconnectPreview.connected ? (
+                  <div className="mt-5 rounded-md border border-rose-500/30 bg-rose-500/5 p-5">
+                    <p className="text-base font-semibold text-rose-100">Before you disconnect Google</p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-300">
+                      This affects all Google access for this workspace. An update already running may finish, but it cannot turn the connection back on.
+                    </p>
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <p className="text-sm font-semibold text-white">These updates will stop</p>
+                        <ul className="mt-2 space-y-2 text-sm leading-5 text-zinc-300">
+                          {googleDisconnectPreview.what_stops.map((item) => (
+                            <li key={item}>× {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">This information will stay</p>
+                        <ul className="mt-2 space-y-2 text-sm leading-5 text-zinc-300">
+                          {googleDisconnectPreview.what_stays.map((item) => (
+                            <li key={item}>✓ {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="mt-5 border-t border-rose-500/20 pt-4">
+                      <label htmlFor="google-disconnect-confirmation" className="block text-sm font-semibold text-white">
+                        Type {googleDisconnectPreview.confirmation_text} to confirm
+                      </label>
+                      <input
+                        id="google-disconnect-confirmation"
+                        type="text"
+                        autoComplete="off"
+                        className="mt-2 w-full max-w-md rounded-md border border-[#3a3b41] bg-[#101114] px-3 py-2.5 text-sm text-white outline-none focus:border-rose-400/60"
+                        value={googleDisconnectConfirmation}
+                        onChange={(event) => setGoogleDisconnectConfirmation(event.target.value)}
+                      />
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={
+                            googleDisconnectConfirmation !== googleDisconnectPreview.confirmation_text ||
+                            busyAction === "google-disconnect"
+                          }
+                          onClick={() => void disconnectGoogleProvider()}
+                        >
+                          {busyAction === "google-disconnect" ? "Disconnecting safely..." : "Disconnect Google"}
+                        </button>
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === "google-disconnect"}
+                          onClick={() => {
+                            setShowGoogleDisconnect(false);
+                            setGoogleDisconnectConfirmation("");
+                          }}
+                        >
+                          Keep Google connected
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {providerDisconnects.length > 0 ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Most recent change
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      Disconnected {formatTimestamp(providerDisconnects[0].completed_at || providerDisconnects[0].requested_at)}
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-zinc-400">
+                      {providerDisconnects[0].external_revocation_status === "not_confirmed"
+                        ? "InsightOS deleted its Google authorization, but Google did not confirm the outside revocation. Review third-party access in your Google Account."
+                        : providerDisconnects[0].external_revocation_status === "confirmed"
+                          ? "Google confirmed the authorization was revoked. Saved business results were kept."
+                          : "There was no saved Google authorization to revoke. Existing saved results were kept."}
+                    </p>
+                  </div>
+                ) : null}
+              </section>
             ) : null}
 
             {usageAllowance ? (

@@ -1425,6 +1425,13 @@ def upsert_search_console_mapping(
 
 
 def mark_sync_started(db: Session, connection: DataConnection, *, now: datetime | None = None) -> None:
+    db.refresh(connection)
+    if connection.status == CONNECTION_STATUS_DISCONNECTED:
+        raise DataConnectionError(
+            "This connection was disconnected before the update began.",
+            reason_code="provider_disconnected_by_owner",
+            status_code=409,
+        )
     resolved_now = now or datetime.now(UTC)
     connection.status = CONNECTION_STATUS_SYNCING
     connection.last_sync_started_at = resolved_now
@@ -1443,6 +1450,9 @@ def mark_sync_succeeded(
     metric_end_date: str,
     now: datetime | None = None,
 ) -> None:
+    db.refresh(connection)
+    if connection.status == CONNECTION_STATUS_DISCONNECTED:
+        return
     resolved_now = now or datetime.now(UTC)
     connection.status = CONNECTION_STATUS_CURRENT
     connection.last_sync_completed_at = resolved_now
@@ -1479,7 +1489,7 @@ def mark_sync_failed(
     now: datetime | None = None,
 ) -> None:
     connection = db.get(DataConnection, connection_id)
-    if connection is None:
+    if connection is None or connection.status == CONNECTION_STATUS_DISCONNECTED:
         return
     reason_code = str(getattr(error, "reason_code", "") or "sync_failed")
     connection.status = (

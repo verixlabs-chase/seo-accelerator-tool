@@ -6,12 +6,18 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_org_role
 from app.api.response import envelope
 from app.db.session import get_db
-from app.schemas.data_governance import DataExportCreateIn
+from app.schemas.data_governance import DataExportCreateIn, ProviderDisconnectCreateIn
 from app.services.data_governance_service import (
     DataGovernanceError,
     create_data_export,
     download_data_export,
     list_data_exports,
+)
+from app.services.provider_disconnect_service import (
+    ProviderDisconnectError,
+    disconnect_google_provider,
+    list_provider_disconnects,
+    preview_google_disconnect,
 )
 
 
@@ -87,6 +93,72 @@ def download_account_export(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.get("/organizations/{org_id}/data-governance/provider-disconnects/google/preview")
+def google_disconnect_preview(
+    request: Request,
+    org_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    _assert_org_scope(user, org_id)
+    preview = preview_google_disconnect(
+        db,
+        tenant_id=str(user.get("tenant_id") or ""),
+        organization_id=org_id,
+    )
+    return envelope(request, {"preview": preview})
+
+
+@router.get("/organizations/{org_id}/data-governance/provider-disconnects")
+def provider_disconnect_history(
+    request: Request,
+    org_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    _assert_org_scope(user, org_id)
+    items = list_provider_disconnects(
+        db,
+        tenant_id=str(user.get("tenant_id") or ""),
+        organization_id=org_id,
+    )
+    return envelope(request, {"items": items})
+
+
+@router.post("/organizations/{org_id}/data-governance/provider-disconnects")
+def disconnect_provider(
+    request: Request,
+    org_id: str,
+    body: ProviderDisconnectCreateIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    _assert_org_scope(user, org_id)
+    try:
+        if body.provider_name != "google":
+            raise ProviderDisconnectError(
+                "This provider cannot be disconnected here.",
+                reason_code="provider_disconnect_not_supported",
+                status_code=400,
+            )
+        result = disconnect_google_provider(
+            db,
+            tenant_id=str(user.get("tenant_id") or ""),
+            organization_id=org_id,
+            actor_user_id=str(user["id"]),
+            client_request_id=str(body.client_request_id),
+            confirmation=body.confirmation,
+        )
+        db.commit()
+    except ProviderDisconnectError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
+    return envelope(request, {"disconnect": result})
 
 
 def _assert_org_scope(user: dict, org_id: str) -> None:

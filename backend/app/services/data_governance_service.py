@@ -14,7 +14,7 @@ from app.models.business_service import BusinessService
 from app.models.business_service_area import BusinessServiceArea
 from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
-from app.models.data_governance import DataExportRequest
+from app.models.data_governance import DataExportRequest, ProviderDisconnectRequest
 from app.models.intelligence import StrategyRecommendation
 from app.models.migration_import import MigrationImportBatch, MigrationImportRecord
 from app.models.organization import Organization
@@ -371,6 +371,18 @@ def _build_export_payload(
             .order_by(MigrationImportRecord.created_at.asc(), MigrationImportRecord.id.asc()),
             "id", "batch_id", "row_number", "record_type", "status", "source_values", "result",
             "created_entities", "created_at",
+        ),
+        "provider_disconnect_history": _query_fields(
+            db.query(ProviderDisconnectRequest)
+            .filter(ProviderDisconnectRequest.organization_id == organization_id)
+            .order_by(
+                ProviderDisconnectRequest.created_at.asc(),
+                ProviderDisconnectRequest.id.asc(),
+            ),
+            "id", "provider_name", "status", "credential_deleted",
+            "external_revocation_status", "external_revocation_code",
+            "connections_disconnected", "queued_jobs_cancelled",
+            "preserved_record_counts", "requested_at", "completed_at", "created_at",
         ),
     }
     return {

@@ -13,6 +13,7 @@ JOB_STATUS_RUNNING = "running"
 JOB_STATUS_COMPLETED = "completed"
 JOB_STATUS_FAILED = "failed"
 JOB_STATUS_DEAD_LETTER = "dead_letter"
+JOB_STATUS_CANCELLED = "cancelled"
 
 
 def create_job(
