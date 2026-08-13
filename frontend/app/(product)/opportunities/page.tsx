@@ -2071,7 +2071,7 @@ export default function OpportunitiesPage() {
       );
       setWordpressInventory((response as WordPressContentInventory) || null);
       await loadWordPressExecutionSetup(selectedCampaignId);
-      setNotice(response?.message || "Website pages are up to date. Nothing was changed.");
+      setNotice(response?.message || "Website content is up to date. Nothing was changed.");
     });
   }
 
@@ -4291,15 +4291,15 @@ export default function OpportunitiesPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                            Website pages
+                            Website content
                           </p>
                           <h4 className="mt-1.5 text-base font-semibold text-white">
                             {wordpressInventory?.has_inventory
-                              ? `${wordpressInventory.summary.pages_found} pages are ready to review`
+                              ? `${wordpressInventory.summary.pages_found} website items are ready to review`
                               : "See what is currently on the website"}
                           </h4>
                           <p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-300">
-                            This reads page settings and revision fingerprints so future previews use the current website. It does not change anything.
+                            This reads posts, pages, and other public website content so future previews use the current version. It does not change anything.
                           </p>
                         </div>
                         <button
@@ -4309,16 +4309,16 @@ export default function OpportunitiesPage() {
                           className="rounded-md border border-sky-500/40 px-3 py-2 text-xs font-medium text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {busyAction === "wordpress-content-sync"
-                            ? "Reading website pages…"
+                            ? "Reading website content…"
                             : wordpressInventory?.has_inventory
-                              ? "Refresh page list"
-                              : "Read website pages"}
+                              ? "Refresh content list"
+                              : "Read website content"}
                         </button>
                       </div>
 
                       {!wordpressSetup.execution_ready ? (
                         <p className="mt-3 text-xs text-amber-100">
-                          Test the connection before reading the website pages.
+                          Test the connection before reading the website content.
                         </p>
                       ) : null}
                       {wordpressInventoryError ? (
@@ -4329,7 +4329,7 @@ export default function OpportunitiesPage() {
                         <>
                           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             {[
-                              ["Pages found", wordpressInventory.summary.pages_found],
+                              ["Items found", wordpressInventory.summary.pages_found],
                               ["Published", wordpressInventory.summary.published],
                               ["Need a description", wordpressInventory.summary.missing_description],
                               ["Have structured details", wordpressInventory.summary.with_schema],
@@ -4342,7 +4342,7 @@ export default function OpportunitiesPage() {
                           </div>
                           <details className="mt-4 border-t border-[#26272c] pt-4">
                             <summary className="cursor-pointer text-sm font-medium text-zinc-200">
-                              View website page list
+                              View website content list
                             </summary>
                             <div className="mt-3 divide-y divide-[#26272c]">
                               {wordpressInventory.items.slice(0, 100).map((item) => (
@@ -4365,7 +4365,7 @@ export default function OpportunitiesPage() {
                           <p className="mt-3 text-xs text-zinc-500">
                             Last read {formatRelativeTime(wordpressInventory.last_synced_at)}.
                             {wordpressInventory.truncated
-                              ? ` Showing the first ${wordpressInventory.summary.pages_found} of ${wordpressInventory.source_total_count || "the"} pages.`
+                              ? ` Showing the first ${wordpressInventory.summary.pages_found} of ${wordpressInventory.source_total_count || "the"} website items.`
                               : ""}
                           </p>
                         </>

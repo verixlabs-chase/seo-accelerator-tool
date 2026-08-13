@@ -2967,8 +2967,8 @@ Plan entitlement: WP1.1 is Growth and Enterprise only. Solo can receive the
 same recommendation, evidence, draft, and manual implementation instructions,
 but cannot pair a site, provision plugin credentials, or dispatch a mutation.
 
-Implementation status (2026-08-12): the WP1.1 security, connection,
-read-only inventory, exact-change preview, installation-package, and public-verification slices are locally complete. Plugin
+Implementation status (2026-08-13): WP1.1 is complete. The security, connection,
+read-only inventory, exact-change preview, installation-package, and public-verification slices are production-tested. Plugin
 v1.4.0 added a signed one-time request nonce
 backed by an atomic replay store, an authenticated read-only health endpoint,
 an owner-facing Settings page, and a schema upgrade guard. The platform binds
@@ -3000,8 +3000,7 @@ codes. Plugin v1.5.0 renders approved title and description fallbacks on public
 pages. After delivery, the platform checks the live title, description, link,
 anchor, schema, or published-page output and shows each result in plain
 language. A mismatch is a failed execution with its applied mutation snapshots
-preserved so rollback remains available. A production-like installation,
-delivery, public verification, and rollback drill remains before WP1.1 release.
+preserved so rollback remains available.
 Plugin v1.5.1 additionally reconciles an idempotent replay before checking the
 original preview version. If WordPress applied a change but the platform request
 was interrupted before saving its audit, replay returns the immutable applied
@@ -3009,6 +3008,14 @@ snapshot instead of duplicating the change or misclassifying the connector as
 broken. Platform execution, telemetry, mutation audit, and outcome writes now
 share one request-owned transaction, and interrupted runs expose an explicit
 safe recovery action.
+
+Production-like acceptance passed on 2026-08-13 with plugin v1.5.1. A connected
+WordPress site received one approved draft-page mutation. An interrupted
+delivery was replayed without creating a duplicate, the immutable mutation
+snapshot was reconciled into the platform audit, and public verification
+correctly recognized that a draft has no public page yet. Rollback removed the
+draft, recorded the audited terminal state and timestamp in InsightOS, and a
+fresh content sync confirmed that only the original site content remained.
 
 Scope:
 

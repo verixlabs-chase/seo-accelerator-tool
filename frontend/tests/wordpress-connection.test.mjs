@@ -21,9 +21,10 @@ test("WordPress live delivery requires a customer-triggered connection handshake
   assert.match(page, /Disconnect/);
   assert.match(page, /WordPress changes still require review and approval/);
   assert.match(page, /WordPress administrator password is never shared/i);
-  assert.match(page, /Read website pages/);
+  assert.match(page, /Read website content/);
   assert.match(page, /Nothing on the website was changed|It does not change anything/);
-  assert.match(page, /revision fingerprints/);
+  assert.match(page, /posts, pages, and other public website content/);
+  assert.match(page, /future previews use the current version/);
   assert.match(page, /platformApiFile/);
   assert.match(page, /\/provider-health\/wordpress-plugin-download/);
   assert.match(page, /Download WordPress plugin/);

@@ -586,6 +586,6 @@ def refresh_wordpress_content_inventory(
         request,
         {
             **result,
-            "message": "Website pages are up to date. Nothing on the website was changed.",
+            "message": "Website content is up to date. Nothing on the website was changed.",
         },
     )
