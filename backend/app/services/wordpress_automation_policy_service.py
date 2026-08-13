@@ -72,6 +72,9 @@ def serialize_wordpress_automation_policy(
             "campaign_id": campaign_id,
             "automation_enabled": False,
             "emergency_stop": False,
+            "paused_reason_code": None,
+            "paused_execution_id": None,
+            "paused_at": None,
             "allowed_action_types": [],
             "allowed_url_prefixes": [],
             "schedule_timezone": "UTC",
@@ -94,6 +97,9 @@ def serialize_wordpress_automation_policy(
         "campaign_id": policy.campaign_id,
         "automation_enabled": bool(policy.automation_enabled),
         "emergency_stop": bool(policy.emergency_stop),
+        "paused_reason_code": policy.paused_reason_code,
+        "paused_execution_id": policy.paused_execution_id,
+        "paused_at": policy.paused_at.isoformat() if policy.paused_at else None,
         "allowed_action_types": list(policy.allowed_action_types or []),
         "allowed_url_prefixes": list(policy.allowed_url_prefixes or []),
         "schedule_timezone": policy.schedule_timezone,
@@ -142,11 +148,47 @@ def save_wordpress_automation_policy(
         db.add(row)
     else:
         row.version = int(row.version or 0) + 1
+    was_emergency_stopped = bool(row.emergency_stop)
     for field_name, value in normalized.items():
         setattr(row, field_name, value)
+    if row.emergency_stop and not was_emergency_stopped:
+        row.paused_reason_code = "owner_emergency_stop"
+        row.paused_execution_id = None
+        row.paused_at = now
+    elif not row.emergency_stop:
+        row.paused_reason_code = None
+        row.paused_execution_id = None
+        row.paused_at = None
     row.acknowledged_by = actor_user_id
     row.acknowledged_at = now
     row.updated_at = now
+    db.flush()
+    return row
+
+
+def pause_wordpress_automation_policy(
+    db: Session,
+    *,
+    campaign_id: str,
+    reason_code: str,
+    execution_id: str,
+) -> WordPressAutomationPolicy | None:
+    row = get_wordpress_automation_policy(
+        db,
+        campaign_id=campaign_id,
+        lock_for_update=True,
+    )
+    if row is None or not row.automation_enabled:
+        return row
+    now = datetime.now(UTC)
+    row.emergency_stop = True
+    row.paused_reason_code = str(reason_code)[:80]
+    row.paused_execution_id = str(execution_id)[:36]
+    row.paused_at = now
+    row.acknowledged_by = "InsightOS safety monitor"
+    row.acknowledged_at = now
+    row.updated_at = now
+    row.version = int(row.version or 0) + 1
     db.flush()
     return row
 

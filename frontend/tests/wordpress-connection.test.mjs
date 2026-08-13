@@ -83,4 +83,6 @@ test("managed WordPress updates stay owner-scoped and fail closed", () => {
   assert.match(page, /Ask me before each update/);
   assert.match(page, /Pause managed updates now/);
   assert.match(page, /preview, history, and rollback/);
+  assert.match(page, /public website did not match an approved change/);
+  assert.match(page, /Review the failed action and use rollback/);
 });

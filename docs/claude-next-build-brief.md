@@ -3057,7 +3057,7 @@ single-site and portfolio automation within published allowances; Enterprise
 adds custom policy, provider, team, audit, and bulk-site controls. All tiers
 retain human-readable evidence and an honest verification plan.
 
-Implementation status (2026-08-13): the first two WP1.2 safety slices are complete.
+Implementation status (2026-08-13): the first three WP1.2 safety slices are complete.
 Each connected site now has a tenant-scoped, versioned policy with fail-closed
 defaults, allowed action types, an allowed URL work area, timezone-aware days
 and hours, blackout windows, a monthly update cap, a risk ceiling, an approval
@@ -3074,10 +3074,13 @@ Relative WordPress page addresses are resolved against the paired site before
 scope checks, and the current execution does not count against itself when the
 monthly allowance is rechecked. Scheduling locks the site policy while it
 reserves allowance so two workers cannot intentionally schedule around the
-same cap. Manual WP1.1 remains unchanged. The next
-WP1.2 slice will add automatic policy pauses after failed verification or
-repeated regression, plus the content/fact validation gates required before
-broader action categories can run unattended.
+same cap. If the public website does not match an automatically approved
+change, the system now records the failed execution, preserves the rollback
+snapshot, pauses that site's managed policy with the exact execution and
+reason, and blocks later managed work until an owner reviews and removes the
+pause. Manual WP1.1 remains unchanged. The next WP1.2 slice will add repeated
+post-change regression rules and the content/fact validation gates required
+before broader action categories can run unattended.
 
 Scope:
 

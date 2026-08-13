@@ -40,6 +40,7 @@ from app.services.wordpress_change_preview_service import (
 from app.services.wordpress_automation_policy_service import (
     evaluate_wordpress_automation,
     is_managed_wordpress_execution,
+    pause_wordpress_automation_policy,
 )
 
 MAX_EXECUTIONS_PER_CAMPAIGN_PER_DAY = 20
@@ -421,6 +422,23 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
             )
             result['reason_code'] = 'execution_internal_error'
         if result['status'] == 'failed':
+            if (
+                is_managed_wordpress_execution(execution)
+                and result.get('reason_code') == 'wordpress_public_verification_failed'
+            ):
+                paused_policy = pause_wordpress_automation_policy(
+                    session,
+                    campaign_id=execution.campaign_id,
+                    reason_code='wordpress_public_verification_failed',
+                    execution_id=execution.id,
+                )
+                if paused_policy is not None:
+                    result['managed_automation_paused'] = True
+                    result['automation_policy_version'] = int(paused_policy.version)
+                    result['recovery_action'] = (
+                        'Managed website updates were paused. Review the failed public checks '
+                        'and roll back the saved change if needed before removing the pause.'
+                    )
             execution.status = 'failed'
             execution.last_error = result.get('notes', 'execution failed')
             execution.result_summary = json.dumps(result, sort_keys=True)

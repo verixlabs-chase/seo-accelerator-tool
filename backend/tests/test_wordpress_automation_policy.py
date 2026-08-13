@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from datetime import UTC, datetime
 
+from app.intelligence import recommendation_execution_engine as execution_engine
 from app.enums import StrategyRecommendationStatus
 from app.intelligence.recommendation_execution_engine import (
     execute_recommendation,
@@ -418,3 +419,119 @@ def test_managed_preview_stays_pending_when_exact_url_is_outside_saved_scope(
     )
     assert preview.status == "ready"
     assert preview.approved_by is None
+
+
+def test_failed_public_verification_pauses_further_managed_updates(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    tenant = create_test_tenant(name="Managed Pause Tenant")
+    organization = create_test_org(tenant_id=tenant.id, name="Managed Pause Org")
+    organization.plan_type = "multi_location"
+    campaign = create_test_campaign(
+        db_session,
+        organization.id,
+        tenant_id=tenant.id,
+        name="Managed Pause Campaign",
+        domain="managed-pause.example",
+    )
+    policy = WordPressAutomationPolicy(
+        tenant_id=tenant.id,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        automation_enabled=True,
+        emergency_stop=False,
+        allowed_action_types=["fix_missing_title"],
+        allowed_url_prefixes=["https://managed-pause.example/"],
+        schedule_timezone="UTC",
+        schedule_days=[0, 1, 2, 3, 4, 5, 6],
+        window_start_local="00:00",
+        window_end_local="23:59",
+        blackout_windows=[],
+        monthly_action_limit=5,
+        risk_tier_ceiling=1,
+        requires_manual_approval=False,
+        version=1,
+    )
+    db_session.add_all(
+        [
+            policy,
+            WordPressSiteConnection(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                campaign_id=campaign.id,
+                site_url="https://managed-pause.example",
+                status="connected",
+                plugin_version="1.5.1",
+                paired_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    recommendation = _recommendation(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+    )
+    execution = schedule_execution(
+        recommendation.id,
+        db=db_session,
+        managed_automation=True,
+    )
+    assert isinstance(execution, RecommendationExecution)
+
+    def failed_public_check(db, *, execution, mutations):  # noqa: ANN001
+        results = [
+            {
+                "mutation_id": mutation["mutation_id"],
+                "status": "applied",
+                "mutation_type": mutation["action"],
+                "target_url": mutation["target_url"],
+                "before_state": {"value": "before"},
+                "after_state": {"value": "after"},
+                "rollback_payload": {"restore": "before"},
+            }
+            for mutation in mutations
+        ]
+        return {
+            "provider_name": "wordpress_plugin",
+            "delivery_mode": "wordpress_plugin",
+            "results": results,
+            "public_verification": {
+                "passed": False,
+                "checks_total": len(results),
+                "checks_passed": 0,
+                "checks_failed": len(results),
+                "pages_checked": 1,
+                "rollback_available": True,
+                "results": [],
+            },
+        }
+
+    monkeypatch.setattr(execution_engine, "apply_mutations", failed_public_check)
+    failed = execute_recommendation(execution.id, db=db_session)
+
+    assert isinstance(failed, RecommendationExecution)
+    assert failed.status == "failed"
+    assert failed.result_summary is not None
+    assert '"managed_automation_paused": true' in failed.result_summary
+    db_session.refresh(policy)
+    assert policy.emergency_stop is True
+    assert policy.paused_reason_code == "wordpress_public_verification_failed"
+    assert policy.paused_execution_id == execution.id
+    assert policy.paused_at is not None
+    assert policy.version == 2
+
+    later_recommendation = _recommendation(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+    )
+    blocked = schedule_execution(
+        later_recommendation.id,
+        db=db_session,
+        managed_automation=True,
+    )
+    assert isinstance(blocked, dict)
+    assert blocked["reason_code"] == "wordpress_automation_emergency_stop"

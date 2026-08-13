@@ -629,6 +629,9 @@ type WordPressAutomationPolicy = {
   campaign_id: string;
   automation_enabled: boolean;
   emergency_stop: boolean;
+  paused_reason_code: string | null;
+  paused_execution_id: string | null;
+  paused_at: string | null;
   allowed_action_types: string[];
   allowed_url_prefixes: string[];
   schedule_timezone: string;
@@ -4554,6 +4557,14 @@ export default function OpportunitiesPage() {
                       </summary>
 
                       <div className="mt-5 border-t border-[#303239] pt-5">
+                        {wordpressAutomation.emergency_stop ? (
+                          <div className="mb-5 rounded-md border border-rose-500/30 bg-rose-500/10 p-3 text-sm leading-6 text-rose-100">
+                            {wordpressAutomation.paused_reason_code ===
+                            "wordpress_public_verification_failed"
+                              ? "Managed updates stopped because the public website did not match an approved change. Review the failed action and use rollback if needed before removing the pause."
+                              : "Managed updates are paused. Review the latest website action before removing the pause."}
+                          </div>
+                        ) : null}
                         <label className="flex items-start gap-3 text-sm text-zinc-200">
                           <input
                             type="checkbox"
