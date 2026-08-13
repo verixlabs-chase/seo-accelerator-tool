@@ -34,6 +34,7 @@ from app.services.wordpress_connection_service import (
 from app.services.wordpress_public_verification_service import verify_public_mutation_delivery
 
 WORDPRESS_PROVIDER_NAME = 'wordpress_plugin'
+WORDPRESS_CONNECTOR_USER_AGENT = 'InsightOS-WordPress-Connector/1.5 (+https://insightos.verixlabs.com)'
 MAX_CONTENT_INVENTORY_ITEMS = 500
 CONTENT_INVENTORY_PAGE_SIZE = 50
 
@@ -491,8 +492,10 @@ def _post_json(site_config: dict[str, Any], path: str, payload: dict[str, Any]) 
         data=body,
         method='POST',
         headers={
+            'Accept': 'application/json',
             'Authorization': f"Bearer {site_config['token']}",
             'Content-Type': 'application/json',
+            'User-Agent': WORDPRESS_CONNECTOR_USER_AGENT,
             'X-LSOS-Timestamp': timestamp,
             'X-LSOS-Nonce': nonce,
             'X-LSOS-Signature': signature,

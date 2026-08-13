@@ -46,6 +46,8 @@ def test_wordpress_request_signature_binds_one_time_nonce(monkeypatch) -> None:
     timestamp = request.headers["X-lsos-timestamp"]
     nonce = request.headers["X-lsos-nonce"]
     signature = request.headers["X-lsos-signature"]
+    assert request.headers["Accept"] == "application/json"
+    assert request.headers["User-agent"] == wordpress_plugin.WORDPRESS_CONNECTOR_USER_AGENT
     assert len(nonce) == 32
     expected = hmac.new(
         b"shared-secret",
