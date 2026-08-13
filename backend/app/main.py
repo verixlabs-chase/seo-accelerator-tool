@@ -213,7 +213,20 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception(
+        "unhandled_api_exception",
+        exc_info=exc,
+        extra={
+            "event": "unhandled_api_exception",
+            "request_id": getattr(request.state, "request_id", None),
+            "correlation_id": getattr(request.state, "correlation_id", None),
+            "tenant_id": getattr(request.state, "tenant_id", None),
+            "organization_id": getattr(request.state, "organization_id", None),
+            "method": request.method,
+            "path": request.url.path,
+        },
+    )
     payload = exception_envelope(
         request=request,
         status_code=500,
