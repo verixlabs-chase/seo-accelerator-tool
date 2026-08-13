@@ -23,7 +23,8 @@ from app.services.audit_service import write_audit_log
 from app.services.provider_disconnect_service import disconnect_google_provider
 
 
-CLOSURE_CONFIRMATION = "CLOSE WORKSPACE"
+CLOSURE_CONFIRMATION = "Delete"
+CLOSURE_AUTHORIZATION_VERSION = "gov1d.delete.v1"
 CLOSURE_RECOVERY_WINDOW = timedelta(days=30)
 ACTIVE_CLOSURE_STATUSES = {"recovery_window", "on_hold"}
 BLOCKING_BILLING_STATUSES = {"active", "trialing", "past_due", "unpaid"}
@@ -106,6 +107,11 @@ def preview_organization_closure(
             "A restore-safe tombstone is required before verified deletion can finish",
         ],
         "confirmation_text": CLOSURE_CONFIRMATION,
+        "confirmation_steps": 2,
+        "required_acknowledgements": [
+            "I made an account-export choice before continuing.",
+            "I understand the 30-day recovery window leads to permanent deletion.",
+        ],
         "current_request": serialize_closure(current) if current is not None else None,
     }
 
@@ -118,6 +124,8 @@ def request_organization_closure(
     actor_user_id: str,
     client_request_id: str,
     confirmation: str,
+    data_export_choice_acknowledged: bool,
+    recovery_window_acknowledged: bool,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     existing = db.query(OrganizationClosureRequest).filter(
@@ -131,6 +139,11 @@ def request_organization_closure(
         raise OrganizationClosureError(
             f"Type {CLOSURE_CONFIRMATION} exactly to schedule closure.",
             reason_code="closure_confirmation_mismatch",
+        )
+    if not data_export_choice_acknowledged or not recovery_window_acknowledged:
+        raise OrganizationClosureError(
+            "Complete both deletion acknowledgements before continuing.",
+            reason_code="closure_acknowledgements_required",
         )
 
     organization = _organization(db, tenant_id=tenant_id, organization_id=organization_id)
@@ -172,9 +185,13 @@ def request_organization_closure(
         requested_by_user_id=actor_user_id,
         status="recovery_window",
         hold_status="active" if active_hold is not None else "clear",
+        deletion_authorization_version=CLOSURE_AUTHORIZATION_VERSION,
+        data_export_choice_acknowledged=True,
+        recovery_window_acknowledged=True,
         operational_snapshot=snapshot["restore_snapshot"],
         action_counts=snapshot["action_counts"],
         requested_at=requested_at,
+        deletion_authorized_at=requested_at,
         recovery_until=requested_at + CLOSURE_RECOVERY_WINDOW,
         created_at=requested_at,
         updated_at=requested_at,
@@ -193,6 +210,8 @@ def request_organization_closure(
             "closure_request_id": row.id,
             "recovery_until": row.recovery_until.isoformat(),
             "hold_active": active_hold is not None,
+            "deletion_authorization_version": CLOSURE_AUTHORIZATION_VERSION,
+            "confirmation_steps_completed": 2,
             "action_counts": row.action_counts,
         },
     )
@@ -382,7 +401,17 @@ def finalize_due_organization_closures(
     ).order_by(OrganizationClosureRequest.recovery_until.asc()).all()
     finalized = 0
     held = 0
+    authorization_required = 0
     for row in rows:
+        if not (
+            row.data_export_choice_acknowledged
+            and row.recovery_window_acknowledged
+            and row.deletion_authorized_at
+        ):
+            # A request created before durable deletion authorization was introduced
+            # must never advance into credential removal or deletion preparation.
+            authorization_required += 1
+            continue
         hold = _active_hold(
             db,
             tenant_id=row.tenant_id,
@@ -397,7 +426,11 @@ def finalize_due_organization_closures(
         _finalize_workspace_closure(db, row=row, now=cutoff)
         finalized += 1
     db.flush()
-    return {"closures_finalized": finalized, "closures_held": held}
+    return {
+        "closures_finalized": finalized,
+        "closures_held": held,
+        "closures_authorization_required": authorization_required,
+    }
 
 
 def serialize_closure(row: OrganizationClosureRequest) -> dict[str, Any]:
@@ -405,8 +438,17 @@ def serialize_closure(row: OrganizationClosureRequest) -> dict[str, Any]:
         "id": row.id,
         "status": row.status,
         "hold_status": row.hold_status,
+        "deletion_authorized": bool(
+            row.data_export_choice_acknowledged
+            and row.recovery_window_acknowledged
+            and row.deletion_authorized_at
+        ),
+        "deletion_authorization_version": row.deletion_authorization_version,
         "action_counts": row.action_counts or {},
         "requested_at": row.requested_at.isoformat(),
+        "deletion_authorized_at": (
+            row.deletion_authorized_at.isoformat() if row.deletion_authorized_at else None
+        ),
         "recovery_until": row.recovery_until.isoformat(),
         "cancelled_at": row.cancelled_at.isoformat() if row.cancelled_at else None,
         "closed_at": row.closed_at.isoformat() if row.closed_at else None,

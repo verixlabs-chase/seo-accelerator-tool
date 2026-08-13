@@ -1,7 +1,8 @@
 # Customer Data Lifecycle and Portability
 
-Status: GOV1A account export, GOV1B Google disconnect, and the GOV1C recoverable
-workspace-closure slice are implemented locally on 2026-08-13. Verified
+Status: GOV1A account export, GOV1B Google disconnect, the GOV1C recoverable
+workspace-closure slice, and GOV1D durable deletion authorization are implemented
+locally on 2026-08-13. Verified
 primary-store deletion, user deletion, artifact/cache inventory closeout, and
 backup erasure verification remain future GOV1 slices and must not be
 represented as complete.
@@ -128,6 +129,24 @@ marks the workspace closed, and creates a restore-safe deletion tombstone. The
 tombstone explicitly records that primary-store erasure is still pending and
 must be reapplied after any backup restore.
 
+## GOV1D durable deletion-authorization contract
+
+The customer interface uses two separate confirmation screens. The first shows
+what stops, what remains available, and the recovery rules. The second requires
+the owner to acknowledge both the account-export choice and the 30-day recovery
+window, then type the case-sensitive word `Delete` before the request can be
+submitted.
+
+The API independently requires all three signals; hiding or bypassing the user
+interface cannot schedule deletion. The closure ledger records the authorization
+contract version, both acknowledgements, and the authorization timestamp without
+storing the typed confirmation phrase. A finalizer refuses to advance any legacy
+or incomplete request that lacks this durable authorization evidence.
+
+This authorization starts recoverable closure. It is not consent to bypass a
+legal hold and is not proof that primary rows, artifacts, caches, or backups have
+already been erased.
+
 ## Release evidence
 
 - Alembic migration creates the tenant-scoped export-request ledger and
@@ -141,8 +160,10 @@ must be reapplied after any backup restore.
 - Provider disconnect tests prove owner-only scope, exact confirmation,
   credential deletion, outside-revocation truth, saved-result preservation,
   queued-job cancellation, audit safety, idempotency, and late-worker guards.
-- Closure tests prove exact owner confirmation, organization isolation, active-
-  billing blocking, central read-only enforcement, reversible safe state,
+- Closure tests prove two-stage owner authorization, exact typed confirmation,
+  durable acknowledgements, rejection of legacy/incomplete authorization,
+  organization isolation, active-billing blocking, central read-only
+  enforcement, reversible safe state,
   non-restoration of revoked links/jobs, platform-owner-only holds, hold-aware
   finalization, credential/session removal, honest primary-data status, and
   restore-safe tombstone creation.

@@ -23,7 +23,6 @@ test("the export screen explains its safety and retention limits in plain langua
   assert.match(settingsPage, /Available for seven days/);
   assert.match(settingsPage, /Only an account owner can create or download an export/);
   assert.match(settingsPage, /its audit record remains/);
-  assert.doesNotMatch(settingsPage, /Delete (your )?(account|organization)/i);
 });
 
 test("Google disconnect is owner-confirmed, comprehensive, and preserves saved results", () => {
@@ -45,12 +44,27 @@ test("disconnect history makes incomplete outside revocation visible", () => {
 });
 
 test("workspace closure is recoverable, owner-confirmed, and honest about deletion", () => {
-  assert.match(settingsPage, /Close this workspace safely/);
+  assert.match(settingsPage, /Delete this workspace safely/);
   assert.match(settingsPage, /read-only for \{closurePreview\.recovery_days\} days/);
   assert.match(settingsPage, /closureConfirmation !== closurePreview\.confirmation_text/);
+  assert.match(settingsPage, /!closureExportChoiceAcknowledged/);
+  assert.match(settingsPage, /!closureRecoveryAcknowledged/);
   assert.match(settingsPage, /data-governance\/closures/);
   assert.match(settingsPage, /Keep workspace open/);
   assert.match(settingsPage, /Primary business data is not claimed deleted/);
+});
+
+test("account deletion uses two separate confirmations and exact typed intent", () => {
+  assert.match(settingsPage, /closureReviewStep === 1/);
+  assert.match(settingsPage, /Step 1 of \{closurePreview\.confirmation_steps\}/);
+  assert.match(settingsPage, /Continue to final confirmation/);
+  assert.match(settingsPage, /closureReviewStep === 2/);
+  assert.match(settingsPage, /Step 2 of \{closurePreview\.confirmation_steps\}/);
+  assert.match(settingsPage, /I downloaded an account export, or I decided I do not need one/);
+  assert.match(settingsPage, /including the capital D/);
+  assert.match(settingsPage, /data_export_choice_acknowledged: closureExportChoiceAcknowledged/);
+  assert.match(settingsPage, /recovery_window_acknowledged: closureRecoveryAcknowledged/);
+  assert.match(settingsPage, /Start account deletion/);
 });
 
 test("closure screen explains holds, exports, and irreversible security actions", () => {

@@ -93,30 +93,62 @@ def test_owner_schedules_recoverable_closure_and_can_reopen(client, db_session) 
     assert preview_data["recovery_days"] == 30
     assert preview_data["affected_counts"]["active_connections"] == 1
     assert preview_data["affected_counts"]["queued_jobs"] == 1
-    assert preview_data["confirmation_text"] == "CLOSE WORKSPACE"
+    assert preview_data["confirmation_text"] == "Delete"
+    assert preview_data["confirmation_steps"] == 2
 
     rejected = client.post(
         f"/api/v1/organizations/{organization_id}/data-governance/closures",
         headers=headers,
-        json={"client_request_id": str(uuid.uuid4()), "confirmation": "close"},
+        json={
+            "client_request_id": str(uuid.uuid4()),
+            "confirmation": "delete",
+            "data_export_choice_acknowledged": True,
+            "recovery_window_acknowledged": True,
+        },
     )
     assert rejected.status_code == 400
+
+    missing_acknowledgement = client.post(
+        f"/api/v1/organizations/{organization_id}/data-governance/closures",
+        headers=headers,
+        json={
+            "client_request_id": str(uuid.uuid4()),
+            "confirmation": "Delete",
+            "data_export_choice_acknowledged": True,
+            "recovery_window_acknowledged": False,
+        },
+    )
+    assert missing_acknowledgement.status_code == 400
+    assert missing_acknowledgement.json()["errors"][0]["details"]["reason_code"] == (
+        "closure_acknowledgements_required"
+    )
 
     request_id = str(uuid.uuid4())
     scheduled = client.post(
         f"/api/v1/organizations/{organization_id}/data-governance/closures",
         headers=headers,
-        json={"client_request_id": request_id, "confirmation": "CLOSE WORKSPACE"},
+        json={
+            "client_request_id": request_id,
+            "confirmation": "Delete",
+            "data_export_choice_acknowledged": True,
+            "recovery_window_acknowledged": True,
+        },
     )
     assert scheduled.status_code == 200
     closure = scheduled.json()["data"]["closure"]
     assert closure["status"] == "recovery_window"
     assert closure["primary_data_deleted"] is False
+    assert closure["deletion_authorized"] is True
 
     replay = client.post(
         f"/api/v1/organizations/{organization_id}/data-governance/closures",
         headers=headers,
-        json={"client_request_id": request_id, "confirmation": "CLOSE WORKSPACE"},
+        json={
+            "client_request_id": request_id,
+            "confirmation": "Delete",
+            "data_export_choice_acknowledged": True,
+            "recovery_window_acknowledged": True,
+        },
     )
     assert replay.status_code == 200
     assert replay.json()["data"]["closure"]["id"] == closure["id"]
@@ -183,7 +215,9 @@ def test_due_closure_waits_for_hold_then_removes_access_and_creates_tombstone(
         organization_id=organization_id,
         actor_user_id=owner.id,
         client_request_id=str(uuid.uuid4()),
-        confirmation="CLOSE WORKSPACE",
+        confirmation="Delete",
+        data_export_choice_acknowledged=True,
+        recovery_window_acknowledged=True,
         now=started_at,
     )
     db_session.add(
@@ -211,7 +245,11 @@ def test_due_closure_waits_for_hold_then_removes_access_and_creates_tombstone(
         now=started_at + timedelta(days=31),
     )
     db_session.commit()
-    assert held_result == {"closures_finalized": 0, "closures_held": 1}
+    assert held_result == {
+        "closures_finalized": 0,
+        "closures_held": 1,
+        "closures_authorization_required": 0,
+    }
     db_session.expire_all()
     closure_row = db_session.get(OrganizationClosureRequest, closure["id"])
     assert closure_row.status == "on_hold"
@@ -228,7 +266,11 @@ def test_due_closure_waits_for_hold_then_removes_access_and_creates_tombstone(
         now=started_at + timedelta(days=32),
     )
     db_session.commit()
-    assert final_result == {"closures_finalized": 1, "closures_held": 0}
+    assert final_result == {
+        "closures_finalized": 1,
+        "closures_held": 0,
+        "closures_authorization_required": 0,
+    }
     db_session.expire_all()
     assert db_session.get(Organization, organization_id).status == "closed"
     assert db_session.get(OrganizationClosureRequest, closure["id"]).status == (
@@ -249,6 +291,46 @@ def test_due_closure_waits_for_hold_then_removes_access_and_creates_tombstone(
     payload = json.loads(audit.payload_json)
     assert payload["primary_store_deleted"] is False
     assert payload["backup_reapply_required"] is True
+
+
+def test_due_closure_without_durable_authorization_never_advances(client, db_session) -> None:
+    _token, organization_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    assert organization_id is not None
+    owner = db_session.query(User).filter(User.email == "org-owner@example.com").one()
+    started_at = datetime(2026, 6, 1, tzinfo=UTC)
+    closure = request_organization_closure(
+        db_session,
+        tenant_id=organization_id,
+        organization_id=organization_id,
+        actor_user_id=owner.id,
+        client_request_id=str(uuid.uuid4()),
+        confirmation="Delete",
+        data_export_choice_acknowledged=True,
+        recovery_window_acknowledged=True,
+        now=started_at,
+    )
+    closure_row = db_session.get(OrganizationClosureRequest, closure["id"])
+    assert closure_row is not None
+    closure_row.recovery_window_acknowledged = False
+    db_session.commit()
+
+    result = finalize_due_organization_closures(
+        db_session,
+        now=started_at + timedelta(days=31),
+    )
+    db_session.commit()
+
+    assert result == {
+        "closures_finalized": 0,
+        "closures_held": 0,
+        "closures_authorization_required": 1,
+    }
+    db_session.expire_all()
+    assert db_session.get(OrganizationClosureRequest, closure["id"]).status == "recovery_window"
+    assert db_session.get(Organization, organization_id).status == "closure_pending"
+    assert db_session.query(OrganizationDeletionTombstone).filter_by(
+        organization_id=organization_id
+    ).count() == 0
 
 
 def test_closure_is_owner_only_scoped_and_active_billing_blocks_it(client, db_session) -> None:
@@ -276,7 +358,9 @@ def test_closure_is_owner_only_scoped_and_active_billing_blocks_it(client, db_se
         headers={"Authorization": f"Bearer {owner_token}"},
         json={
             "client_request_id": str(uuid.uuid4()),
-            "confirmation": "CLOSE WORKSPACE",
+            "confirmation": "Delete",
+            "data_export_choice_acknowledged": True,
+            "recovery_window_acknowledged": True,
         },
     )
     assert blocked.status_code == 409

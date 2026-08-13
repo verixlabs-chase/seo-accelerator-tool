@@ -396,8 +396,10 @@ def _build_export_payload(
                 OrganizationClosureRequest.created_at.asc(),
                 OrganizationClosureRequest.id.asc(),
             ),
-            "id", "status", "hold_status", "action_counts", "requested_at",
-            "recovery_until", "cancelled_at", "closed_at", "deletion_ready_at", "created_at",
+            "id", "status", "hold_status", "deletion_authorization_version",
+            "data_export_choice_acknowledged", "recovery_window_acknowledged",
+            "deletion_authorized_at", "action_counts", "requested_at", "recovery_until",
+            "cancelled_at", "closed_at", "deletion_ready_at", "created_at",
         ),
         "workspace_deletion_status": _query_fields(
             db.query(OrganizationDeletionTombstone)

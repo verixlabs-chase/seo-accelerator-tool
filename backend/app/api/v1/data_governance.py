@@ -227,6 +227,8 @@ def schedule_organization_closure(
             actor_user_id=str(user["id"]),
             client_request_id=str(body.client_request_id),
             confirmation=body.confirmation,
+            data_export_choice_acknowledged=body.data_export_choice_acknowledged,
+            recovery_window_acknowledged=body.recovery_window_acknowledged,
         )
         db.commit()
     except OrganizationClosureError as exc:

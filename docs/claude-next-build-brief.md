@@ -652,7 +652,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 36 | **WP1.2 - WordPress Managed Autopilot - core implemented locally; live closeout pending** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
 | 37 | **MIG1 - Semrush/BrightLocal Migration - governed resumable import implemented locally** | New customers can review and atomically import supported setup, qualified history, and disabled report recipients through explicit source adapters, with durable provenance, resumable verified file parts, paginated review, idempotent retries, a dependency-safe rollback, and a guided switching checklist. Production migration and live proof remain. |
 | 38 | **ALT1 - In-Product Alerts First; Automated Email Later** | Customers first receive useful notices inside InsightOS. Reliable automated email and delivery tracking remain a later, behind-the-scenes platform capability and do not block the current reporting or product sprints. |
-| 39 | **GOV1 - Data Privacy, Retention, and Portability - GOV1A, GOV1B, and recoverable GOV1C closure implemented locally** | Owners can export their data, safely disconnect Google, and schedule a read-only workspace closure with an active-subscription blocker, 30-day recovery, platform-owner-only retention holds, access/credential finalization, audit proof, and a restore-safe pending-erasure tombstone. Verified primary-store, artifact/cache, and backup erasure remain later GOV1 closeout slices. |
+| 39 | **GOV1 - Data Privacy, Retention, and Portability - GOV1A-GOV1D implemented locally** | Owners can export their data, safely disconnect Google, and schedule a read-only workspace closure through two separate confirmation screens, two durable acknowledgements, and exact typed `Delete`, with an active-subscription blocker, 30-day recovery, platform-owner-only retention holds, access/credential finalization, audit proof, and a restore-safe pending-erasure tombstone. Verified primary-store, artifact/cache, and backup erasure remain later GOV1 closeout slices. |
 | 40 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
 | 41 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
 | 42 | **AIV1 - AI Search Visibility and Entity Intelligence** | A dedicated AI Search Visibility section shows where each business and location is mentioned or cited across supported major AI answer engines, how that changes over time, which competitors appear instead, and what evidence-backed work may improve coverage. |
@@ -3464,6 +3464,15 @@ client secrets, clears WordPress secrets, revokes organization sessions, and
 creates a restore-safe `pending_primary_erasure` tombstone. Primary-store,
 artifact/cache, and backup erasure are intentionally not claimed until the
 remaining inventory, dependency-order, and production restore checks exist.
+
+GOV1D hardens that workflow with migration `20260813_0146`. Account deletion now
+uses two separate confirmation screens: the first explains what stops and what
+remains, and the second requires explicit export-choice and recovery-window
+acknowledgements plus the exact case-sensitive word `Delete`. The API enforces
+all three signals, stores versioned authorization evidence and its timestamp,
+and refuses to finalize a legacy or incomplete request without that evidence.
+The typed word is not stored. This still begins the recoverable closure process;
+it does not claim immediate or verified primary-data erasure.
 
 Scope:
 

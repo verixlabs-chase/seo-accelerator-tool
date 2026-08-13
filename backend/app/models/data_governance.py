@@ -131,9 +131,21 @@ class OrganizationClosureRequest(Base):
     )
     status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     hold_status: Mapped[str] = mapped_column(String(24), nullable=False, default="clear")
+    deletion_authorization_version: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="gov1d.delete.v1"
+    )
+    data_export_choice_acknowledged: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    recovery_window_acknowledged: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     operational_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     action_counts: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    deletion_authorized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     recovery_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

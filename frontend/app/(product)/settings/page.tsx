@@ -341,6 +341,9 @@ type OrganizationClosureRecord = {
   cancelled_at?: string | null;
   closed_at?: string | null;
   deletion_ready_at?: string | null;
+  deletion_authorized: boolean;
+  deletion_authorization_version: string;
+  deletion_authorized_at: string | null;
   can_cancel: boolean;
   primary_data_deleted: false;
 };
@@ -356,6 +359,8 @@ type OrganizationClosurePreview = {
   what_stops: string[];
   what_stays: string[];
   confirmation_text: string;
+  confirmation_steps: 2;
+  required_acknowledgements: string[];
   current_request?: OrganizationClosureRecord | null;
 };
 
@@ -501,8 +506,10 @@ export default function SettingsPage() {
   const [googleDisconnectConfirmation, setGoogleDisconnectConfirmation] = useState("");
   const [closurePreview, setClosurePreview] = useState<OrganizationClosurePreview | null>(null);
   const [closureHistory, setClosureHistory] = useState<OrganizationClosureRecord[]>([]);
-  const [showClosureReview, setShowClosureReview] = useState(false);
+  const [closureReviewStep, setClosureReviewStep] = useState<0 | 1 | 2>(0);
   const [closureConfirmation, setClosureConfirmation] = useState("");
+  const [closureExportChoiceAcknowledged, setClosureExportChoiceAcknowledged] = useState(false);
+  const [closureRecoveryAcknowledged, setClosureRecoveryAcknowledged] = useState(false);
 
   useEffect(() => {
     setGuidedConnectionSetup(
@@ -912,6 +919,8 @@ export default function SettingsPage() {
           body: JSON.stringify({
             client_request_id: crypto.randomUUID(),
             confirmation: closureConfirmation,
+            data_export_choice_acknowledged: closureExportChoiceAcknowledged,
+            recovery_window_acknowledged: closureRecoveryAcknowledged,
           }),
         },
       )) as { closure: OrganizationClosureRecord };
@@ -924,8 +933,10 @@ export default function SettingsPage() {
         response.closure,
         ...current.filter((item) => item.id !== response.closure.id),
       ]);
-      setShowClosureReview(false);
+      setClosureReviewStep(0);
       setClosureConfirmation("");
+      setClosureExportChoiceAcknowledged(false);
+      setClosureRecoveryAcknowledged(false);
       setNotice(
         `Workspace closure is scheduled. It is now read-only, and an account owner can reopen it until ${formatTimestamp(response.closure.recovery_until)}.`,
       );
@@ -2717,20 +2728,20 @@ export default function SettingsPage() {
                       Workspace control
                     </p>
                     <h2 id="workspace-closure-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
-                      Close this workspace safely
+                      Delete this workspace safely
                     </h2>
                     <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
-                      Closing is staged so a mistake does not erase the business&apos;s history. The workspace becomes read-only for {closurePreview.recovery_days} days before credentials and login sessions are removed.
+                      Account deletion is staged so a mistake does not erase the business&apos;s history. The workspace becomes read-only for {closurePreview.recovery_days} days before credentials and login sessions are removed.
                     </p>
                   </div>
-                  {!closurePreview.current_request && !showClosureReview ? (
+                  {!closurePreview.current_request && closureReviewStep === 0 ? (
                     <button
                       type="button"
                       className="inline-flex items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/10 px-3.5 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={!closurePreview.can_request}
-                      onClick={() => setShowClosureReview(true)}
+                      onClick={() => setClosureReviewStep(1)}
                     >
-                      Review workspace closure
+                      Review account deletion
                     </button>
                   ) : null}
                 </div>
@@ -2775,11 +2786,14 @@ export default function SettingsPage() {
                   </div>
                 ) : null}
 
-                {showClosureReview && !closurePreview.current_request ? (
+                {closureReviewStep === 1 && !closurePreview.current_request ? (
                   <div className="mt-5 rounded-md border border-rose-500/30 bg-rose-500/5 p-5">
-                    <p className="text-base font-semibold text-rose-100">Before closure is scheduled</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-rose-200">
+                      Step 1 of {closurePreview.confirmation_steps}
+                    </p>
+                    <p className="mt-1 text-base font-semibold text-rose-100">Review what account deletion will do</p>
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
-                      Create and download an account export first if you need a portable copy. Closure revokes public report links and cancels queued work immediately; those security actions are not reversed if you reopen the workspace.
+                      Create and download an account export first if you need a portable copy. Starting deletion revokes public report links and cancels queued work immediately; those security actions are not reversed if you reopen the workspace.
                     </p>
                     <div className="mt-4 grid gap-4 lg:grid-cols-2">
                       <div>
@@ -2799,41 +2813,116 @@ export default function SettingsPage() {
                         </ul>
                       </div>
                     </div>
+                    <div className="mt-5 flex flex-wrap gap-3 border-t border-rose-500/20 pt-4">
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25"
+                        onClick={() => setClosureReviewStep(2)}
+                      >
+                        Continue to final confirmation
+                      </button>
+                      <button
+                        type="button"
+                        className={secondaryButtonClass}
+                        onClick={() => {
+                          setClosureReviewStep(0);
+                          setClosureConfirmation("");
+                          setClosureExportChoiceAcknowledged(false);
+                          setClosureRecoveryAcknowledged(false);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {closureReviewStep === 2 && !closurePreview.current_request ? (
+                  <div className="mt-5 rounded-md border border-rose-500/40 bg-rose-500/5 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-rose-200">
+                      Step 2 of {closurePreview.confirmation_steps}
+                    </p>
+                    <p className="mt-1 text-base font-semibold text-rose-100">Final account-deletion confirmation</p>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      This starts a {closurePreview.recovery_days}-day recovery window. The workspace becomes read-only now; permanent deletion is not claimed until the later deletion and verification work finishes.
+                    </p>
+
+                    <div className="mt-5 space-y-3">
+                      <label className="flex cursor-pointer items-start gap-3 rounded-md border border-[#303137] bg-[#101114] p-4 text-sm leading-6 text-zinc-200">
+                        <input
+                          id="closure-export-choice"
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 accent-rose-500"
+                          checked={closureExportChoiceAcknowledged}
+                          onChange={(event) => setClosureExportChoiceAcknowledged(event.target.checked)}
+                        />
+                        <span>I downloaded an account export, or I decided I do not need one.</span>
+                      </label>
+                      <label className="flex cursor-pointer items-start gap-3 rounded-md border border-[#303137] bg-[#101114] p-4 text-sm leading-6 text-zinc-200">
+                        <input
+                          id="closure-recovery-acknowledgement"
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 accent-rose-500"
+                          checked={closureRecoveryAcknowledged}
+                          onChange={(event) => setClosureRecoveryAcknowledged(event.target.checked)}
+                        />
+                        <span>
+                          I understand that I have {closurePreview.recovery_days} days to reopen the workspace before permanent deletion work can begin.
+                        </span>
+                      </label>
+                    </div>
+
                     <div className="mt-5 border-t border-rose-500/20 pt-4">
                       <label htmlFor="workspace-closure-confirmation" className="block text-sm font-semibold text-white">
-                        Type {closurePreview.confirmation_text} to confirm
+                        Type <span className="font-mono text-rose-200">{closurePreview.confirmation_text}</span> to confirm
                       </label>
                       <input
                         id="workspace-closure-confirmation"
                         type="text"
                         autoComplete="off"
+                        spellCheck={false}
                         className="mt-2 w-full max-w-md rounded-md border border-[#3a3b41] bg-[#101114] px-3 py-2.5 text-sm text-white outline-none focus:border-rose-400/60"
                         value={closureConfirmation}
                         onChange={(event) => setClosureConfirmation(event.target.value)}
                       />
+                      <p className="mt-2 text-xs leading-5 text-zinc-500">
+                        The word must match exactly, including the capital D.
+                      </p>
                       <div className="mt-4 flex flex-wrap gap-3">
                         <button
                           type="button"
                           className="inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-50"
                           disabled={
                             closureConfirmation !== closurePreview.confirmation_text ||
+                            !closureExportChoiceAcknowledged ||
+                            !closureRecoveryAcknowledged ||
                             busyAction === "workspace-closure" ||
                             !closurePreview.can_request
                           }
                           onClick={() => void scheduleWorkspaceClosure()}
                         >
-                          {busyAction === "workspace-closure" ? "Scheduling safely..." : "Schedule workspace closure"}
+                          {busyAction === "workspace-closure" ? "Starting safely..." : "Start account deletion"}
+                        </button>
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === "workspace-closure"}
+                          onClick={() => setClosureReviewStep(1)}
+                        >
+                          Back
                         </button>
                         <button
                           type="button"
                           className={secondaryButtonClass}
                           disabled={busyAction === "workspace-closure"}
                           onClick={() => {
-                            setShowClosureReview(false);
+                            setClosureReviewStep(0);
                             setClosureConfirmation("");
+                            setClosureExportChoiceAcknowledged(false);
+                            setClosureRecoveryAcknowledged(false);
                           }}
                         >
-                          Keep workspace open
+                          Cancel
                         </button>
                       </div>
                     </div>

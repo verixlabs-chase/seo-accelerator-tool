@@ -17,6 +17,8 @@ class ProviderDisconnectCreateIn(BaseModel):
 class OrganizationClosureCreateIn(BaseModel):
     client_request_id: UUID
     confirmation: str
+    data_export_choice_acknowledged: bool
+    recovery_window_acknowledged: bool
 
 
 class OrganizationLegalHoldCreateIn(BaseModel):

@@ -184,6 +184,15 @@ def test_migration_upgrade_and_downgrade():
         assert "data_export_requests" in inspector.get_table_names()
         assert "provider_disconnect_requests" in inspector.get_table_names()
         assert "organization_closure_requests" in inspector.get_table_names()
+        closure_request_cols = {
+            col["name"] for col in inspector.get_columns("organization_closure_requests")
+        }
+        assert {
+            "deletion_authorization_version",
+            "data_export_choice_acknowledged",
+            "recovery_window_acknowledged",
+            "deletion_authorized_at",
+        }.issubset(closure_request_cols)
         assert "organization_legal_holds" in inspector.get_table_names()
         assert "organization_deletion_tombstones" in inspector.get_table_names()
         report_recipient_cols = {
