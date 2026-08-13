@@ -7,6 +7,7 @@ from app.models.organization_membership import OrganizationMembership
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_quota import ProviderQuotaState
 from app.models.provider_policy import ProviderPolicy
+from app.models.tenant import Tenant
 
 
 def _login(client, email: str, password: str) -> tuple[str, str, str]:
@@ -275,6 +276,7 @@ def test_platform_owner_can_open_seeded_internal_acceptance_workspace(client, db
         .one()
     )
     assert membership.role == "org_owner"
+    assert db_session.get(Tenant, org.id) is not None
 
     repeat = client.post(
         f"/api/v1/platform/orgs/{org.id}/internal-access",

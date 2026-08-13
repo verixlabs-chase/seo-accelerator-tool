@@ -19,7 +19,7 @@ from app.models.provider_quota import ProviderQuotaState
 from app.models.tenant import Tenant
 from app.services.audit_service import write_audit_log
 from app.services.cost_economics_service import CostEconomicsError, resolve_plan_economics
-from app.services import provisioning_service, reputation_response_execution_service
+from app.services import reputation_response_execution_service
 
 ALLOWED_PLAN_TYPES = {
     "internal_anchor",
@@ -172,8 +172,6 @@ def grant_internal_workspace_access(
         )
         db.add(tenant)
         db.flush()
-
-    provisioning_service.ensure_organization_provisioned(db, organization_id=org.id)
 
     membership = (
         db.query(OrganizationMembership)
