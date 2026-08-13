@@ -5,8 +5,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import SessionLocal, get_db
-from app.schemas.crawl import CrawlRunOut, CrawlRunProgressOut, CrawlScheduleRequest, TechnicalIssueOut
-from app.services import crawl_metrics, crawl_service, infra_service
+from app.schemas.crawl import (
+    CrawlRunOut,
+    CrawlRunProgressOut,
+    CrawlScheduleRequest,
+    SiteIntegrityRefreshRequest,
+    TechnicalIssueOut,
+)
+from app.services import crawl_metrics, crawl_service, infra_service, site_integrity_service
 from app.tasks.tasks import crawl_fetch_batch, crawl_schedule_campaign
 
 router = APIRouter(prefix="/crawl", tags=["crawl"])
@@ -98,3 +104,55 @@ def get_crawl_metrics(
 ) -> dict:
     _ = user
     return envelope(request, crawl_metrics.snapshot())
+
+
+@router.get("/site-integrity")
+def get_site_integrity(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = site_integrity_service.get_site_integrity(
+            db,
+            tenant_id=user["tenant_id"],
+            campaign_id=campaign_id,
+        )
+    except site_integrity_service.SiteIntegrityError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=envelope(
+                request,
+                data=None,
+                error={"message": str(exc), "details": {"reason_code": exc.reason_code}},
+            ),
+        )
+    return envelope(request, data)
+
+
+@router.post("/site-integrity/refresh")
+def refresh_site_integrity(
+    request: Request,
+    body: SiteIntegrityRefreshRequest,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = site_integrity_service.refresh_site_integrity(
+            db,
+            tenant_id=user["tenant_id"],
+            campaign_id=body.campaign_id,
+            max_urls=body.max_urls,
+        )
+    except site_integrity_service.SiteIntegrityError as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=envelope(
+                request,
+                data=None,
+                error={"message": str(exc), "details": {"reason_code": exc.reason_code}},
+            ),
+        )
+    return envelope(request, data)

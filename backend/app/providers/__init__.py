@@ -4,7 +4,10 @@ from app.providers.crawl import CrawlAdapter, get_crawl_adapter
 from app.providers.email import EmailAdapter, get_email_adapter
 from app.providers.google_analytics import GoogleAnalyticsProviderAdapter
 from app.providers.google_places import GooglePlacesProviderAdapter
-from app.providers.google_search_console import SearchConsoleProviderAdapter
+from app.providers.google_search_console import (
+    SearchConsoleProviderAdapter,
+    SearchConsoleSiteIntegrityAdapter,
+)
 from app.providers.local import LocalProvider, get_local_provider
 from app.providers.proxy import ProxyRotationAdapter, get_proxy_rotation_adapter
 from app.providers.rank import RankProvider, get_rank_provider, get_rank_provider_for_organization
@@ -18,6 +21,7 @@ __all__ = [
     "ProxyRotationAdapter",
     "EmailAdapter",
     "SearchConsoleProviderAdapter",
+    "SearchConsoleSiteIntegrityAdapter",
     "GoogleAnalyticsProviderAdapter",
     "GooglePlacesProviderAdapter",
     "get_rank_provider",

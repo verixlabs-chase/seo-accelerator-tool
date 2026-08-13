@@ -12,7 +12,10 @@ from app.providers.circuit_breaker import CircuitBreaker
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_analytics import GoogleAnalyticsProviderAdapter
 from app.providers.google_places import GooglePlacesProviderAdapter
-from app.providers.google_search_console import SearchConsoleProviderAdapter
+from app.providers.google_search_console import (
+    SearchConsoleProviderAdapter,
+    SearchConsoleSiteIntegrityAdapter,
+)
 from app.providers.retry import RetryPolicy
 from app.services import standards_source_service
 from app.tasks.provider_task import CeleryProviderTask
@@ -50,6 +53,28 @@ class _FakeClient:
 
     def get(self, url: str, headers: dict[str, str], timeout: float):
         self._calls.append({"method": "GET", "url": url, "headers": headers, "timeout": timeout})
+        action = self._actions.pop(0)
+        if isinstance(action, Exception):
+            raise action
+        return action
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        json: dict[str, Any] | None,
+        headers: dict[str, str],
+        timeout: float,
+    ):
+        self._calls.append(
+            {
+                "method": method,
+                "url": url,
+                "json": json,
+                "headers": headers,
+                "timeout": timeout,
+            }
+        )
         action = self._actions.pop(0)
         if isinstance(action, Exception):
             raise action
@@ -157,6 +182,106 @@ def test_search_console_adapter_fails_closed_when_google_omits_a_metric(db_sessi
     assert result.error is not None
     assert result.error.reason_code == "response_invalid"
     assert "has not reviewed" in str(result.error)
+
+
+def test_search_console_site_integrity_normalizes_url_inspection(db_session, monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+    actions = [
+        _FakeResponse(
+            status_code=200,
+            payload={
+                "inspectionResult": {
+                    "indexStatusResult": {
+                        "verdict": "FAIL",
+                        "coverageState": "Excluded by 'noindex' tag",
+                        "robotsTxtState": "ALLOWED",
+                        "indexingState": "BLOCKED_BY_META_TAG",
+                        "pageFetchState": "SUCCESSFUL",
+                        "googleCanonical": "https://example.com/other",
+                        "userCanonical": "https://example.com/service",
+                        "lastCrawlTime": "2026-08-12T12:00:00Z",
+                        "sitemap": ["https://example.com/sitemap.xml"],
+                        "referringUrls": ["https://example.com/"],
+                    }
+                }
+            },
+        )
+    ]
+    _patch_credentials(monkeypatch, "app.providers.google_search_console")
+    _patch_http_client(monkeypatch, "app.providers.google_search_console", actions, calls)
+
+    provider = SearchConsoleSiteIntegrityAdapter(
+        db=db_session,
+        retry_policy=RetryPolicy(max_attempts=1, jitter_ratio=0.0),
+    )
+    result = provider.execute(
+        ProviderExecutionRequest(
+            operation="url_inspection",
+            payload={
+                "organization_id": "org-1",
+                "site_url": "sc-domain:example.com",
+                "inspection_url": "https://example.com/service",
+            },
+        )
+    )
+
+    assert result.success is True
+    assert result.raw_payload is not None
+    record = result.raw_payload["record"]
+    assert record["verdict"] == "FAIL"
+    assert record["indexing_state"] == "BLOCKED_BY_META_TAG"
+    assert record["sitemap_urls"] == ["https://example.com/sitemap.xml"]
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["json"]["inspectionUrl"] == "https://example.com/service"
+
+
+def test_search_console_site_integrity_ignores_deprecated_sitemap_indexed_count(
+    db_session,
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    actions = [
+        _FakeResponse(
+            status_code=200,
+            payload={
+                "sitemap": [
+                    {
+                        "path": "https://example.com/sitemap.xml",
+                        "type": "sitemap",
+                        "warnings": 1,
+                        "errors": 0,
+                        "contents": [
+                            {"type": "web", "submitted": 24, "indexed": 999},
+                            {"type": "image", "submitted": 4, "indexed": 999},
+                        ],
+                    }
+                ]
+            },
+        )
+    ]
+    _patch_credentials(monkeypatch, "app.providers.google_search_console")
+    _patch_http_client(monkeypatch, "app.providers.google_search_console", actions, calls)
+
+    provider = SearchConsoleSiteIntegrityAdapter(
+        db=db_session,
+        retry_policy=RetryPolicy(max_attempts=1, jitter_ratio=0.0),
+    )
+    result = provider.execute(
+        ProviderExecutionRequest(
+            operation="sitemaps_list",
+            payload={
+                "organization_id": "org-1",
+                "site_url": "sc-domain:example.com",
+            },
+        )
+    )
+
+    assert result.success is True
+    assert result.raw_payload is not None
+    row = result.raw_payload["rows"][0]
+    assert row["submitted_url_count"] == 28
+    assert all("indexed" not in content for content in row["contents"])
+    assert calls[0]["method"] == "GET"
 
 
 def test_search_console_adapter_does_not_retry_an_unreviewed_contract_change(

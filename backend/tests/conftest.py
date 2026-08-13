@@ -61,6 +61,10 @@ from app.models.intelligence_model_registry import IntelligenceModelRegistryStat
 from app.models.organization_membership import OrganizationMembership  # noqa: F401
 from app.models.organization_provider_credential import OrganizationProviderCredential  # noqa: F401
 from app.models.data_connection import DataConnection  # noqa: F401
+from app.models.site_integrity import (  # noqa: F401
+    SearchConsoleSitemapSnapshot,
+    UrlInspectionSnapshot,
+)
 from app.models.data_governance import (  # noqa: F401
     DataExportRequest,
     OrganizationClosureRequest,

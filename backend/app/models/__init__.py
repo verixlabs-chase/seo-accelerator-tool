@@ -33,6 +33,7 @@ from app.models.billing import BillingWebhookEvent
 from app.models.campaign import Campaign
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+from app.models.site_integrity import SearchConsoleSitemapSnapshot, UrlInspectionSnapshot
 from app.models.data_connection import DataConnection
 from app.models.data_governance import (
     DataExportRequest,
@@ -303,6 +304,8 @@ __all__ = [
     "OnboardingState",
     "OnboardingSession",
     "SearchConsoleDailyMetric",
+    "SearchConsoleSitemapSnapshot",
+    "UrlInspectionSnapshot",
     "DataConnection",
     "DataExportRequest",
     "OrganizationClosureRequest",

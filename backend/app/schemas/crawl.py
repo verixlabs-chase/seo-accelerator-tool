@@ -1,12 +1,17 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CrawlScheduleRequest(BaseModel):
     campaign_id: str
     crawl_type: str = "deep"
     seed_url: str
+
+
+class SiteIntegrityRefreshRequest(BaseModel):
+    campaign_id: str
+    max_urls: int = Field(default=10, ge=1, le=25)
 
 
 class CrawlRunOut(BaseModel):

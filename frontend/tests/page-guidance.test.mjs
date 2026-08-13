@@ -46,6 +46,21 @@ test("website health separates real-user and lab performance in plain language",
   assert.match(source, /The lab test did not finish/);
 });
 
+test("website health keeps Google index evidence distinct and actionable", () => {
+  const pagePath = fileURLToPath(
+    new URL("../app/(product)/site-health/page.tsx", import.meta.url),
+  );
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /Can Google find and keep your important pages/);
+  assert.match(source, /crawl\/site-integrity\/refresh/);
+  assert.match(source, /Check important pages/);
+  assert.match(source, /Confirmed in Google/);
+  assert.match(source, /specific page, evidence, source, and next step/);
+  assert.match(source, /not a live indexing test/);
+  assert.match(source, /A sitemap submission is not treated as proof/);
+});
+
 test("healthy data flags stay hidden while actionable states remain visible", () => {
   const statusPath = fileURLToPath(
     new URL("../app/(product)/components/TrustStatusBar.tsx", import.meta.url),
