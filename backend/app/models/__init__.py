@@ -62,7 +62,14 @@ from app.models.content import (
 )
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard
 from app.models.governed_ai import GovernedAIRun
-from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
+from app.models.crawl import (
+    CrawlFrontierUrl,
+    CrawlInternalLink,
+    CrawlPageResult,
+    CrawlRun,
+    Page,
+    TechnicalIssue,
+)
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
 from app.models.engagement import AchievementGrant, AchievementPreference
@@ -245,6 +252,7 @@ __all__ = [
     "CrawlPageResult",
     "TechnicalIssue",
     "CrawlFrontierUrl",
+    "CrawlInternalLink",
     "PageEntity",
     "CompetitorEntity",
     "EntityAnalysisRun",

@@ -324,7 +324,23 @@ function issueLabel(issueCode?: string) {
     case "missing_meta_description":
       return "Missing meta description";
     case "invalid_canonical":
-      return "Invalid canonical tag";
+      return "Preferred page setting is invalid";
+    case "canonical_external":
+      return "Preferred page points to another website";
+    case "canonical_points_elsewhere":
+      return "Page points search engines to another version";
+    case "canonical_target_missing":
+      return "Preferred page does not exist in this scan";
+    case "broken_internal_link":
+      return "A website link leads to a broken page";
+    case "duplicate_content":
+      return "Two pages contain the same content";
+    case "orphan_page":
+      return "No scanned page links to this page";
+    case "redirect_chain":
+      return "Page sends visitors through several redirects";
+    case "invalid_structured_data":
+      return "Search result details contain an error";
     case "missing_h1":
       return "Missing page heading";
     case "multiple_h1":
@@ -350,6 +366,22 @@ function issueImpact(issueCode?: string) {
       return "Search snippets may be weaker and less likely to attract clicks.";
     case "invalid_canonical":
       return "Search engines may get mixed signals about the correct page version.";
+    case "canonical_external":
+      return "Search engines may treat a page on another website as the preferred version.";
+    case "canonical_points_elsewhere":
+      return "This page may be left out of search in favor of the page it points to.";
+    case "canonical_target_missing":
+      return "Search engines are being sent to a preferred page that the complete scan could not find.";
+    case "broken_internal_link":
+      return "Customers can hit a dead end while moving through the website.";
+    case "duplicate_content":
+      return "Search engines may struggle to choose which page should appear in results.";
+    case "orphan_page":
+      return "Customers and search engines may have trouble discovering this page from the pages checked in the scan.";
+    case "redirect_chain":
+      return "Extra redirects slow the trip to the final page and create more places for the path to break.";
+    case "invalid_structured_data":
+      return "Google may not be able to use the extra business details attached to this page.";
     case "missing_h1":
       return "The page structure is weaker and harder for search engines to interpret.";
     case "multiple_h1":
@@ -374,7 +406,23 @@ function issueFix(issueCode?: string) {
     case "missing_meta_description":
       return "Write a short description that explains the page and encourages clicks.";
     case "invalid_canonical":
-      return "Correct the canonical tag so it points to a full valid URL.";
+      return "Update the preferred page setting so it points to a valid page.";
+    case "canonical_external":
+      return "Confirm the other website is intentional; otherwise point to the correct page on this site.";
+    case "canonical_points_elsewhere":
+      return "Confirm which page should appear in search, then keep only that page as the preferred version.";
+    case "canonical_target_missing":
+      return "Point the preferred page setting to a working page on this website.";
+    case "broken_internal_link":
+      return "Update or remove the broken link so it leads to a working page.";
+    case "duplicate_content":
+      return "Keep one useful version, then merge, redirect, or rewrite the other page.";
+    case "orphan_page":
+      return "Link to this page from a related page, or remove it if it is no longer useful.";
+    case "redirect_chain":
+      return "Update links so they go straight to the final page in one step.";
+    case "invalid_structured_data":
+      return "Correct the page's search result details, then scan the website again.";
     case "missing_h1":
       return "Add one main page heading that matches the page topic.";
     case "multiple_h1":
@@ -400,6 +448,41 @@ function parseIssueDetails(detailsJson?: string) {
   } catch {
     return {};
   }
+}
+
+function issueDetail(details: Record<string, string | number | null>) {
+  if (typeof details.target_url === "string") {
+    const status =
+      details.status_code !== undefined && details.status_code !== null
+        ? ` (status ${details.status_code})`
+        : "";
+    return `${details.target_url}${status}`;
+  }
+  if (typeof details.duplicate_with === "string") {
+    return `Matches ${details.duplicate_with}`;
+  }
+  if (typeof details.canonical_url === "string") {
+    return `Points to ${details.canonical_url}`;
+  }
+  if (typeof details.redirect_count === "number") {
+    return `${details.redirect_count} redirects before the final page`;
+  }
+  if (typeof details.invalid_blocks === "number") {
+    return `${details.invalid_blocks} invalid search detail block${details.invalid_blocks === 1 ? "" : "s"}`;
+  }
+  if (typeof details.page_url === "string") {
+    return details.page_url;
+  }
+  if (details.status_code !== undefined) {
+    return `Status ${details.status_code}`;
+  }
+  if (typeof details.canonical === "string") {
+    return `Canonical: ${details.canonical}`;
+  }
+  if (typeof details.h1_count === "number") {
+    return `${details.h1_count} H1 tags`;
+  }
+  return "No extra details";
 }
 
 function SiteHealthTooltip({
@@ -780,14 +863,7 @@ export default function SiteHealthPage() {
     () =>
       latestRunIssues.slice(0, 6).map((issue) => {
         const details = parseIssueDetails(issue.details_json);
-        const detailText =
-          details.status_code !== undefined
-            ? `Status ${details.status_code}`
-            : details.canonical
-              ? `Canonical: ${details.canonical}`
-              : details.h1_count !== undefined
-                ? `${details.h1_count} H1 tags`
-                : "No extra details";
+        const detailText = issueDetail(details);
 
         return {
           id: issue.id,

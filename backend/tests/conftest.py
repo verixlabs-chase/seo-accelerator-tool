@@ -33,7 +33,7 @@ from app.models.billing import BillingWebhookEvent  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
 from app.models.content import ContentAsset, ContentBrief, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard  # noqa: F401
-from app.models.crawl import CrawlRun, Page, TechnicalIssue  # noqa: F401
+from app.models.crawl import CrawlInternalLink, CrawlRun, Page, TechnicalIssue  # noqa: F401
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity  # noqa: F401
 from app.models.experiment import Experiment, ExperimentAssignment, ExperimentOutcome  # noqa: F401
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge  # noqa: F401

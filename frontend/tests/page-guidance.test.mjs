@@ -61,6 +61,21 @@ test("website health keeps Google index evidence distinct and actionable", () =>
   assert.match(source, /A sitemap submission is not treated as proof/);
 });
 
+test("website health explains crawl integrity findings without crawler jargon", () => {
+  const pagePath = fileURLToPath(
+    new URL("../app/(product)/site-health/page.tsx", import.meta.url),
+  );
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /A website link leads to a broken page/);
+  assert.match(source, /Two pages contain the same content/);
+  assert.match(source, /No scanned page links to this page/);
+  assert.match(source, /Page sends visitors through several redirects/);
+  assert.match(source, /Search result details contain an error/);
+  assert.match(source, /Update or remove the broken link/);
+  assert.match(source, /Matches \$\{details\.duplicate_with\}/);
+});
+
 test("healthy data flags stay hidden while actionable states remain visible", () => {
   const statusPath = fileURLToPath(
     new URL("../app/(product)/components/TrustStatusBar.tsx", import.meta.url),

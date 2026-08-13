@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -48,6 +48,15 @@ class CrawlPageResult(Base):
     meta_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     heading_text: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     body_text_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    final_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    redirect_chain: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    redirect_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    canonical_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    word_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    internal_link_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    structured_data_types: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    structured_data_valid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     crawled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
 
 
@@ -85,3 +94,38 @@ class CrawlFrontierUrl(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class CrawlInternalLink(Base):
+    __tablename__ = "crawl_internal_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "crawl_run_id",
+            "source_page_id",
+            "normalized_target_url",
+            name="uq_crawl_links_run_source_target",
+        ),
+        Index(
+            "ix_crawl_links_run_target",
+            "crawl_run_id",
+            "normalized_target_url",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    campaign_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    crawl_run_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("crawl_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_page_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("pages.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_page_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("pages.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    target_url: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_target_url: Mapped[str] = mapped_column(Text, nullable=False)
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
