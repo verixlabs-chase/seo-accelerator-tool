@@ -5,6 +5,7 @@ from app.models.intelligence import StrategyRecommendation
 from app.models.recommendation_execution import RecommendationExecution
 from app.utils.enum_guard import ensure_enum
 from tests.conftest import create_test_campaign
+from tests.helpers.wordpress_automation import enable_managed_wordpress_automation
 
 
 def test_simulation_event_flow_schedules_execution(db_session, create_test_tenant, create_test_org) -> None:
@@ -32,6 +33,15 @@ def test_simulation_event_flow_schedules_execution(db_session, create_test_tenan
     )
     db_session.add(recommendation)
     db_session.commit()
+
+    enable_managed_wordpress_automation(
+        db_session,
+        tenant_id=tenant.id,
+        organization_id=org.id,
+        campaign_id=campaign.id,
+        site_url="https://simulation-flow.example",
+        allowed_action_types=["create_content_brief"],
+    )
 
     reset_registry()
     register_default_subscribers()
