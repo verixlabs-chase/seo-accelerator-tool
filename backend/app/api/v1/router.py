@@ -30,6 +30,7 @@ from app.api.v1 import (
     keyword_research,
     local,
     locations,
+    migration_imports,
     onboarding,
     platform_control,
     portfolio_targeting,
@@ -96,6 +97,7 @@ tenant_api_router.include_router(business_locations.router)
 tenant_api_router.include_router(business_services.router)
 tenant_api_router.include_router(business_service_areas.router)
 tenant_api_router.include_router(locations.router)
+tenant_api_router.include_router(migration_imports.router)
 tenant_api_router.include_router(hierarchy_observability.router)
 tenant_api_router.include_router(portfolio_targeting.router)
 tenant_api_router.include_router(product_analytics.tenant_router)

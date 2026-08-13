@@ -438,6 +438,7 @@ def build_report_readiness(
         .filter(
             RankingSnapshot.tenant_id == tenant_id,
             RankingSnapshot.campaign_id == campaign.id,
+            RankingSnapshot.source_type != "imported",
         )
         .scalar()
     )
@@ -664,6 +665,7 @@ def build_report_snapshot(
         .filter(
             RankingSnapshot.tenant_id == tenant_id,
             RankingSnapshot.campaign_id == campaign.id,
+            RankingSnapshot.source_type != "imported",
             RankingSnapshot.captured_at >= previous_start_dt,
             RankingSnapshot.captured_at < current_end_dt,
         )
@@ -1255,6 +1257,11 @@ def build_report_snapshot(
             "completed_crawl_records": len(current_crawls),
             "review_snapshot_records": len(current_reviews),
             "current_rank_snapshot_records": len(current_rank_rows),
+            "imported_rank_history_records": db.query(RankingSnapshot).filter(
+                RankingSnapshot.tenant_id == tenant_id,
+                RankingSnapshot.campaign_id == campaign.id,
+                RankingSnapshot.source_type == "imported",
+            ).count(),
         },
     }
     # Keep the original summary keys while the product migrates to the RPT1 story contract.

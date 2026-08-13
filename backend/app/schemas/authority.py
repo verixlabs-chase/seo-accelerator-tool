@@ -45,6 +45,11 @@ class DirectoryListingOut(BaseModel):
     first_seen_at: datetime
     last_seen_at: datetime
     last_verified_at: datetime | None
+    source_type: str
+    source_system: str | None
+    source_record_id: str | None
+    source_claimed_status: str | None
+    import_batch_id: str | None
 
     model_config = {"from_attributes": True}
 

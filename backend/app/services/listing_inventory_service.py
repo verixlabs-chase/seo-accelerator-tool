@@ -95,13 +95,17 @@ def list_inventory(
 
 def inventory_summary(rows: list[DirectoryListing]) -> dict[str, Any]:
     counts = {item: 0 for item in sorted(ALLOWED_STATUSES)}
-    for row in rows:
+    fresh_rows = [row for row in rows if row.source_type != "imported"]
+    imported_rows = [row for row in rows if row.source_type == "imported"]
+    for row in fresh_rows:
         if row.status in counts:
             counts[row.status] += 1
     needs_attention = counts["inconsistent"] + counts["missing"] + counts["duplicate"]
-    latest = max((row.last_seen_at for row in rows), default=None)
+    latest = max((row.last_seen_at for row in fresh_rows), default=None)
     return {
         "total": len(rows),
+        "freshly_checked": len(fresh_rows),
+        "imported_history": len(imported_rows),
         "needs_attention": needs_attention,
         "confirmed": counts["correct"] + counts["verified"],
         "counts": counts,

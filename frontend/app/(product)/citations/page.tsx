@@ -58,12 +58,18 @@ type DirectoryListingItem = {
   primary_category?: string | null;
   field_differences: ListingDifference[];
   last_seen_at: string;
+  source_type: string;
+  source_system?: string | null;
+  source_claimed_status?: string | null;
+  import_batch_id?: string | null;
 };
 
 type ListingInventory = {
   items: DirectoryListingItem[];
   summary: {
     total: number;
+    freshly_checked: number;
+    imported_history: number;
     confirmed: number;
     needs_attention: number;
     newest_observation_at?: string | null;
@@ -264,7 +270,13 @@ export default function CitationsPage() {
     const saved = inventoryResponse as ListingInventory;
     setInventory({
       items: Array.isArray(saved?.items) ? saved.items : [],
-      summary: saved?.summary || { total: 0, confirmed: 0, needs_attention: 0 },
+      summary: saved?.summary || {
+        total: 0,
+        freshly_checked: 0,
+        imported_history: 0,
+        confirmed: 0,
+        needs_attention: 0,
+      },
       truth: saved?.truth || { correction_available: false },
     });
     setLatestDiscoveryRun((latestResponse?.run as DiscoveryRun | null) || null);
@@ -481,11 +493,16 @@ export default function CitationsPage() {
                 </div>
               ) : null}
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <KpiCard
                   label="Listings found"
                   value={inventory ? String(inventory.summary.total) : "—"}
                   summary="Matching listings saved for this location."
+                />
+                <KpiCard
+                  label="Freshly checked"
+                  value={inventory ? String(inventory.summary.freshly_checked) : "—"}
+                  summary="Listings checked through the current online connection."
                 />
                 <KpiCard
                   label="Details confirmed"
@@ -498,6 +515,11 @@ export default function CitationsPage() {
                   value={inventory ? String(inventory.summary.needs_attention) : "—"}
                   summary="Listings with a saved detail that does not match."
                 />
+                {inventory && inventory.summary.imported_history > 0 ? (
+                  <p className="sm:col-span-2 xl:col-span-4 text-xs leading-5 text-violet-200">
+                    {inventory.summary.imported_history} imported listing record{inventory.summary.imported_history === 1 ? " is" : "s are"} available as background history. Imported records do not count as a fresh online check.
+                  </p>
+                ) : null}
               </div>
 
               {latestDiscoveryRun ? (
@@ -525,10 +547,21 @@ export default function CitationsPage() {
                             {listing.primary_category ? ` · ${listing.primary_category}` : ""}
                           </p>
                         </div>
-                        <span className={`rounded-md border px-2 py-1 text-xs font-medium ${getStatusTone(listing.status)}`}>
-                          {listing.field_differences.length > 0 ? "Needs attention" : "Details match"}
+                        <span className={`rounded-md border px-2 py-1 text-xs font-medium ${listing.source_type === "imported" ? "border-violet-400/30 bg-violet-400/10 text-violet-100" : getStatusTone(listing.status)}`}>
+                          {listing.source_type === "imported"
+                            ? "Imported history"
+                            : listing.field_differences.length > 0
+                              ? "Needs attention"
+                              : "Details match"}
                         </span>
                       </div>
+
+                      {listing.source_type === "imported" ? (
+                        <div className="mt-3 rounded-md border border-violet-400/20 bg-violet-400/5 p-3 text-sm leading-6 text-violet-100">
+                          This record came from a previous system on {new Date(listing.last_seen_at).toLocaleDateString()}.
+                          {listing.source_claimed_status ? ` That file described it as ${listing.source_claimed_status.replaceAll("_", " ")}.` : ""} Run a public listing check before treating it as current.
+                        </div>
+                      ) : null}
 
                       {listing.field_differences.length > 0 ? (
                         <div className="mt-4 space-y-2">
@@ -544,16 +577,16 @@ export default function CitationsPage() {
                                 <span className="text-zinc-500">Saved:</span> {difference.expected}
                               </p>
                               <p className="text-zinc-300">
-                                <span className="text-zinc-500">Found online:</span> {difference.found}
+                                <span className="text-zinc-500">{listing.source_type === "imported" ? "Imported file:" : "Found online:"}</span> {difference.found}
                               </p>
                             </div>
                           ))}
                         </div>
-                      ) : (
+                      ) : listing.source_type !== "imported" ? (
                         <p className="mt-3 text-sm text-emerald-100">
                           The comparable business details match this location&apos;s saved information.
                         </p>
-                      )}
+                      ) : null}
 
                       {listing.listing_url ? (
                         <a

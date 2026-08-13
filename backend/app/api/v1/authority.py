@@ -401,18 +401,27 @@ def get_listing_inventory(
         tenant_id=user["tenant_id"],
         campaign_id=campaign_id,
     )
+    summary = listing_inventory_service.inventory_summary(rows)
     return envelope(
         request,
         {
             "items": [
                 DirectoryListingOut.model_validate(row).model_dump(mode="json") for row in rows
             ],
-            "summary": listing_inventory_service.inventory_summary(rows),
+            "summary": summary,
             "truth": {
-                "classification": "provider_backed" if rows else "not_collected",
+                "classification": (
+                    "provider_backed"
+                    if summary["freshly_checked"]
+                    else "imported_history"
+                    if summary["imported_history"]
+                    else "not_collected"
+                ),
                 "summary": (
-                    "These are saved public listing observations for this business location."
-                    if rows
+                    "These are saved public listing observations for this business location. Imported history is labeled and does not count as a fresh check."
+                    if summary["freshly_checked"]
+                    else "Imported listing history is available, but a fresh public listing check has not been completed yet."
+                    if summary["imported_history"]
                     else "No public listing inventory has been collected for this business location yet."
                 ),
                 "correction_available": False,

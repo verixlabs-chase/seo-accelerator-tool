@@ -728,6 +728,7 @@ def get_portfolio_summary(db: Session, *, tenant_id: str) -> dict:
             .filter(
                 RankingSnapshot.tenant_id == tenant_id,
                 RankingSnapshot.campaign_id == campaign.id,
+                RankingSnapshot.source_type != "imported",
             )
             .one()
         )

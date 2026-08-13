@@ -115,6 +115,15 @@ def test_migration_upgrade_and_downgrade():
         assert "campaign_keywords" in inspector.get_table_names()
         assert "rankings" in inspector.get_table_names()
         assert "ranking_snapshots" in inspector.get_table_names()
+        ranking_snapshot_columns = {
+            column["name"] for column in inspector.get_columns("ranking_snapshots")
+        }
+        assert {
+            "source_type",
+            "source_system",
+            "source_record_id",
+            "import_batch_id",
+        }.issubset(ranking_snapshot_columns)
         assert "competitors" in inspector.get_table_names()
         assert "competitor_rankings" in inspector.get_table_names()
         assert "competitor_pages" in inspector.get_table_names()

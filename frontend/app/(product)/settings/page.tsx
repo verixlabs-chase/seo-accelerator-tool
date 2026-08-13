@@ -213,6 +213,59 @@ type BillingSummary = {
   recovery_message?: string | null;
 };
 
+type MigrationReview = {
+  mode: "dry_run";
+  review_hash: string;
+  source_sha256: string;
+  writes_performed: number;
+  next_step: string;
+  summary: {
+    total_rows: number;
+    ready: number;
+    already_saved: number;
+    duplicates_in_file: number;
+    needs_attention: number;
+    locations: number;
+    keywords: number;
+    competitors: number;
+    ranking_history: number;
+    listing_history: number;
+  };
+  ignored_columns: Array<{
+    column: string;
+    populated_rows: number;
+    reason: string;
+  }>;
+  rows: Array<{
+    row_number: number;
+    record_type: string;
+    location_name: string;
+    status: "ready" | "already_saved" | "duplicate" | "needs_attention";
+    detail: string;
+    matched_location_name?: string | null;
+    values: Record<string, string>;
+    issues: Array<{ code: string; message: string }>;
+  }>;
+};
+
+type MigrationBatch = {
+  id: string;
+  source_system: string;
+  source_filename?: string | null;
+  status: "applied" | "rolled_back";
+  applied_at: string;
+  rolled_back_at?: string | null;
+  rollback_available: boolean;
+  summary: MigrationReview["summary"] & {
+    records_applied?: number;
+    locations_created?: number;
+    keywords_created?: number;
+    competitors_created?: number;
+    ranking_history_created?: number;
+    listing_history_created?: number;
+  };
+};
+
 const primaryButtonClass =
   "inline-flex items-center justify-center rounded-md border border-accent-500/40 bg-accent-500/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-accent-500/70 hover:bg-accent-500/25 disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryButtonClass =
@@ -290,6 +343,14 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [guidedConnectionSetup, setGuidedConnectionSetup] = useState(false);
+  const [migrationSource, setMigrationSource] = useState<"semrush" | "brightlocal" | "other">("other");
+  const [migrationCsv, setMigrationCsv] = useState("");
+  const [migrationFileName, setMigrationFileName] = useState("");
+  const [migrationReview, setMigrationReview] = useState<MigrationReview | null>(null);
+  const [migrationConfirmed, setMigrationConfirmed] = useState(false);
+  const [migrationRequestId, setMigrationRequestId] = useState("");
+  const [migrationBatch, setMigrationBatch] = useState<MigrationBatch | null>(null);
+  const [migrationHistory, setMigrationHistory] = useState<MigrationBatch[]>([]);
 
   useEffect(() => {
     setGuidedConnectionSetup(
@@ -467,16 +528,20 @@ export default function SettingsPage() {
           throw new Error("An organization is required to manage data connections.");
         }
         setMe(currentUser);
-        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse] = await Promise.all([
+        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
           platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
           (platformApi("/billing/summary", { method: "GET" }) as Promise<BillingSummary>)
             .catch(() => null),
+          (platformApi(`/organizations/${currentUser.organization_id}/migration-imports`, {
+            method: "GET",
+          }) as Promise<{ items?: MigrationBatch[] }>).catch(() => ({ items: [] })),
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
         setBillingSummary(billingResponse);
+        setMigrationHistory(migrationResponse.items || []);
         const returnParams = new URLSearchParams(window.location.search);
         const billingReturned = returnParams.get("billing");
         const googleReturned = returnParams.get("google");
@@ -544,6 +609,127 @@ export default function SettingsPage() {
       window.location.assign(response.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to open billing settings.");
+      setBusyAction("");
+    }
+  }
+
+  function downloadMigrationTemplate() {
+    const template = [
+      "Record Type,Location Name,Website,City,State,Country,Postal Code,Keyword,Group,Competitor,Position,Captured At,Source Record ID,Directory Name,Listing URL,Listing Status,Listing Business Name,Listing Address,Listing City,Listing Region,Listing Postal Code,Listing Phone,Listing Website,Primary Category,Directory Importance",
+      "location,Reno Location,example.com,Reno,NV,US,89501,,,",
+      "keyword,Reno Location,,,,,,junk removal reno,Core service,",
+      "competitor,Reno Location,,,,,,,,competitor.com",
+      "ranking,Reno Location,,,,,,junk removal reno,,,12,2026-07-31,legacy-row-101",
+      "listing,Reno Location,,,,US,,,,,,2026-07-31,legacy-listing-101,Google Business Profile,https://example.com/profile,live,Example Junk Removal,123 Main St,Reno,NV,89501,775-555-0100,example.com,Junk Removal,essential",
+    ].join("\r\n");
+    const url = URL.createObjectURL(new Blob([template], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "insightos-migration-template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function chooseMigrationFile(file?: File) {
+    setMigrationReview(null);
+    setMigrationConfirmed(false);
+    setMigrationRequestId("");
+    setMigrationBatch(null);
+    setMigrationCsv("");
+    setMigrationFileName("");
+    if (!file) return;
+    if (file.size > 1_500_000) {
+      setError("Choose a CSV file smaller than 1.5 MB.");
+      return;
+    }
+    setError("");
+    setMigrationFileName(file.name);
+    setMigrationCsv(await file.text());
+  }
+
+  async function reviewMigrationFile() {
+    if (!organizationId || !migrationCsv) return;
+    setBusyAction("migration-dry-run");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/migration-imports/dry-run`,
+        {
+          method: "POST",
+          body: JSON.stringify({ source_system: migrationSource, csv_text: migrationCsv }),
+        },
+      )) as MigrationReview;
+      setMigrationReview(response);
+      setMigrationConfirmed(false);
+      setMigrationRequestId(crypto.randomUUID());
+    } catch (err) {
+      setMigrationReview(null);
+      setError(err instanceof Error ? err.message : "Unable to review this migration file.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function applyMigrationFile() {
+    if (!organizationId || !migrationCsv || !migrationReview || !migrationConfirmed) return;
+    setBusyAction("migration-apply");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/migration-imports/apply`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            source_system: migrationSource,
+            source_filename: migrationFileName || null,
+            csv_text: migrationCsv,
+            review_hash: migrationReview.review_hash,
+            client_request_id: migrationRequestId,
+            confirmed: true,
+          }),
+        },
+      )) as { batch: MigrationBatch };
+      setMigrationBatch(response.batch);
+      setMigrationHistory((current) => [
+        response.batch,
+        ...current.filter((item) => item.id !== response.batch.id),
+      ]);
+      setNotice(
+        `Import complete: ${response.batch.summary.records_applied || 0} reviewed rows were added.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to apply this migration file.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function rollbackMigration(batch: MigrationBatch) {
+    if (!organizationId || !batch.rollback_available) return;
+    if (!window.confirm("Remove only the records created by this import? Newer attached work will be protected.")) {
+      return;
+    }
+    setBusyAction(`migration-rollback-${batch.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/migration-imports/${batch.id}/rollback`,
+        {
+          method: "POST",
+          body: JSON.stringify({ confirmed: true }),
+        },
+      )) as { batch: MigrationBatch };
+      setMigrationBatch((current) => current?.id === batch.id ? response.batch : current);
+      setMigrationHistory((current) => current.map((item) => (
+        item.id === batch.id ? response.batch : item
+      )));
+      setNotice("The records created by this import were removed. The review history was kept.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to roll back this import.");
+    } finally {
       setBusyAction("");
     }
   }
@@ -1837,6 +2023,259 @@ export default function SettingsPage() {
                 })}
               </section>
             ) : null}
+
+            <section aria-labelledby="migration-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Moving from another SEO tool
+                  </p>
+                  <h2 id="migration-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                    Bring over locations, searches, and competitors
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                    Put your existing setup into the InsightOS template, then check every match before anything is added.
+                  </p>
+                </div>
+                <button type="button" className={secondaryButtonClass} onClick={downloadMigrationTemplate}>
+                  Download CSV template
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-4 border-t border-[#292a2f] pt-5 lg:grid-cols-[220px_minmax(0,1fr)_auto] lg:items-end">
+                <div>
+                  <label htmlFor="migration-source" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Coming from
+                  </label>
+                  <select
+                    id="migration-source"
+                    className={selectClass}
+                    value={migrationSource}
+                    onChange={(event) => setMigrationSource(event.target.value as "semrush" | "brightlocal" | "other")}
+                  >
+                    <option value="other">Another spreadsheet</option>
+                    <option value="semrush">Semrush</option>
+                    <option value="brightlocal">BrightLocal</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="migration-file" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Completed template
+                  </label>
+                  <input
+                    id="migration-file"
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="block w-full rounded-md border border-[#303137] bg-[#101114] px-3 py-2 text-sm text-zinc-200 file:mr-3 file:rounded file:border-0 file:bg-accent-500/15 file:px-3 file:py-1.5 file:font-semibold file:text-accent-100"
+                    onChange={(event) => void chooseMigrationFile(event.target.files?.[0])}
+                  />
+                  <p className="mt-1.5 text-xs text-zinc-500">
+                    {migrationFileName || "CSV only · up to 2,500 rows · no changes are made during review"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={primaryButtonClass}
+                  disabled={!migrationCsv || busyAction === "migration-dry-run"}
+                  onClick={() => void reviewMigrationFile()}
+                >
+                  {busyAction === "migration-dry-run" ? "Checking file..." : "Review file"}
+                </button>
+              </div>
+
+              {migrationReview ? (
+                <div className="mt-5 border-t border-[#292a2f] pt-5">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                    {[
+                      ["Ready to add", migrationReview.summary.ready, "text-emerald-200"],
+                      ["Already saved", migrationReview.summary.already_saved, "text-sky-200"],
+                      ["Repeated rows", migrationReview.summary.duplicates_in_file, "text-zinc-300"],
+                      ["Needs attention", migrationReview.summary.needs_attention, "text-amber-200"],
+                      ["Past rankings", migrationReview.summary.ranking_history, "text-violet-200"],
+                      ["Past listings", migrationReview.summary.listing_history, "text-violet-200"],
+                    ].map(([label, value, color]) => (
+                      <div key={String(label)} className="border-l-2 border-[#35363c] pl-3">
+                        <p className="text-xs text-zinc-500">{label}</p>
+                        <p className={`mt-1 text-2xl font-semibold ${color}`}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-4 text-sm leading-6 text-zinc-300">{migrationReview.next_step}</p>
+
+                  {migrationReview.ignored_columns.length > 0 ? (
+                    <div className="mt-4 rounded-md border border-amber-500/25 bg-amber-500/5 p-4">
+                      <p className="text-sm font-semibold text-amber-100">
+                        {migrationReview.ignored_columns.length} file column{migrationReview.ignored_columns.length === 1 ? " is" : "s are"} not being imported
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-zinc-300">
+                        These columns stay in your original file and are listed here so nothing is silently treated as an InsightOS measurement.
+                      </p>
+                      <ul className="mt-3 space-y-2 text-sm text-zinc-300">
+                        {migrationReview.ignored_columns.map((item) => (
+                          <li key={item.column}>
+                            <strong className="text-white">{item.column}</strong> · {item.populated_rows} filled row{item.populated_rows === 1 ? "" : "s"} · {item.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                    {migrationReview.rows
+                      .filter((row) => row.status === "needs_attention" || row.status === "duplicate")
+                      .slice(0, 50)
+                      .map((row) => (
+                        <article key={`${row.row_number}-${row.record_type}`} className="grid gap-2 py-3 sm:grid-cols-[90px_minmax(0,1fr)]">
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">Row {row.row_number}</p>
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {row.location_name || "Location name missing"} · {row.record_type || "Unknown row"}
+                            </p>
+                            <p className="mt-1 text-sm text-amber-100">
+                              {row.issues[0]?.message || row.detail}
+                            </p>
+                          </div>
+                        </article>
+                      ))}
+                    {migrationReview.summary.needs_attention === 0 && migrationReview.summary.duplicates_in_file === 0 ? (
+                      <p className="py-4 text-sm font-medium text-emerald-200">
+                        Every row is ready for final review. Nothing has been imported yet.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {migrationReview.summary.needs_attention === 0 && migrationReview.summary.ready > 0 && !migrationBatch ? (
+                    <div className="mt-5 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-4">
+                      <label className="flex cursor-pointer items-start gap-3 text-sm leading-6 text-zinc-200">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 accent-orange-500"
+                          checked={migrationConfirmed}
+                          onChange={(event) => setMigrationConfirmed(event.target.checked)}
+                        />
+                        <span>
+                          I reviewed this file. Add the {migrationReview.summary.ready} ready rows and skip anything already saved or repeated.
+                        </span>
+                      </label>
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          className={primaryButtonClass}
+                          disabled={!migrationConfirmed || !migrationRequestId || busyAction === "migration-apply"}
+                          onClick={() => void applyMigrationFile()}
+                        >
+                          {busyAction === "migration-apply" ? "Adding reviewed rows..." : "Import reviewed rows"}
+                        </button>
+                        <p className="text-xs leading-5 text-zinc-500">
+                          The reviewed file is locked to this action. If it changes, InsightOS will require a new review.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {migrationBatch ? (
+                    <div className="mt-5 flex flex-col gap-4 rounded-md border border-sky-500/25 bg-sky-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-sky-100">
+                          {migrationBatch.status === "rolled_back" ? "Import removed safely" : "Import complete"}
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-zinc-300">
+                          {migrationBatch.status === "rolled_back"
+                            ? "The records created by this import were removed, and its audit history was kept."
+                            : `${migrationBatch.summary.locations_created || 0} locations, ${migrationBatch.summary.keywords_created || 0} searches, ${migrationBatch.summary.competitors_created || 0} competitors, ${migrationBatch.summary.ranking_history_created || 0} past ranking points, and ${migrationBatch.summary.listing_history_created || 0} past listing records were added.`}
+                        </p>
+                      </div>
+                      {migrationBatch.rollback_available ? (
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === `migration-rollback-${migrationBatch.id}`}
+                          onClick={() => void rollbackMigration(migrationBatch)}
+                        >
+                          {busyAction === `migration-rollback-${migrationBatch.id}` ? "Checking rollback..." : "Undo this import"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {migrationHistory.length > 0 ? (
+                <div className="mt-5 border-t border-[#292a2f] pt-5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Recent imports
+                  </p>
+                  <div className="mt-3 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                    {migrationHistory.slice(0, 5).map((batch) => (
+                      <div key={batch.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-white">
+                            {batch.source_filename || "Imported setup"}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {formatTimestamp(batch.applied_at)} · {batch.summary.records_applied || 0} rows · {batch.status === "rolled_back" ? "Undone" : "Applied"}
+                          </p>
+                        </div>
+                        {batch.rollback_available ? (
+                          <button
+                            type="button"
+                            className={secondaryButtonClass}
+                            disabled={busyAction === `migration-rollback-${batch.id}`}
+                            onClick={() => void rollbackMigration(batch)}
+                          >
+                            Undo import
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-5 border-t border-[#292a2f] pt-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                  Switching checklist
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-white">Finish the move with fresh measurements</h3>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-400">
+                  Imported rankings and listings give you background history. They never count as a new InsightOS check. Complete these steps before using the new workspace as your current source of truth.
+                </p>
+                <ol className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {[
+                    {
+                      title: "Review and import the old setup",
+                      detail: "Keep the source file and confirm every row before adding it.",
+                      done: migrationHistory.some((batch) => batch.status === "applied"),
+                    },
+                    {
+                      title: "Connect the business Google account",
+                      detail: "This allows current website and business profile data to be collected.",
+                      done: Boolean(payload?.google_oauth.connected),
+                    },
+                    {
+                      title: "Match each location to its live source",
+                      detail: "A saved location needs its own website or business profile connection.",
+                      done: connections.length > 0,
+                    },
+                    {
+                      title: "Run the first fresh checks",
+                      detail: "Use the new results as the baseline; use imported history only for context.",
+                      done: healthyConnectionItems.some((item) => Boolean(item.last_success_at)),
+                    },
+                  ].map((step, index) => (
+                    <li key={step.title} className="flex gap-3 rounded-md border border-[#292a2f] bg-[#101114] p-4">
+                      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${step.done ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100" : "border-zinc-700 text-zinc-400"}`}>
+                        {step.done ? "✓" : index + 1}
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-white">{step.title}</p>
+                        <p className="mt-1 text-sm leading-5 text-zinc-400">{step.detail}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </section>
           </>
         )}
       </section>

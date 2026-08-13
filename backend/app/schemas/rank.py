@@ -72,5 +72,9 @@ class RankingSnapshotOut(BaseModel):
     confidence: float
     captured_at: datetime
     month_partition: str
+    source_type: str = "live_collection"
+    source_system: str | None = None
+    source_record_id: str | None = None
+    import_batch_id: str | None = None
 
     model_config = {"from_attributes": True}

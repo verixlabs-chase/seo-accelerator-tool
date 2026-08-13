@@ -106,6 +106,8 @@ type RankingSnapshot = {
   position: number;
   confidence?: number | null;
   captured_at: string;
+  source_type?: "live_collection" | "imported";
+  import_batch_id?: string | null;
 };
 
 function coerceNumber(value: number | string | null | undefined, fallback = 0) {
@@ -599,6 +601,11 @@ export default function RankingsPage() {
       })),
     };
   }, [snapshots, trackedKeywords]);
+
+  const importedHistoryCount = useMemo(
+    () => snapshots.filter((snapshot) => snapshot.source_type === "imported").length,
+    [snapshots],
+  );
 
   const portfolioChartData = useMemo(
     () =>
@@ -1107,18 +1114,25 @@ export default function RankingsPage() {
                   )
                 }
                 footer={
-                  <div className="flex flex-wrap gap-3">
-                    {rankingHistory.series.map((series, index) => (
-                      <span key={series.id} className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{
-                            backgroundColor: ["#FF6A1A", "#38bdf8", "#22c55e", "#f59e0b", "#a78bfa"][index],
-                          }}
-                        />
-                        {series.label}
-                      </span>
-                    ))}
+                  <div>
+                    <div className="flex flex-wrap gap-3">
+                      {rankingHistory.series.map((series, index) => (
+                        <span key={series.id} className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{
+                              backgroundColor: ["#FF6A1A", "#38bdf8", "#22c55e", "#f59e0b", "#a78bfa"][index],
+                            }}
+                          />
+                          {series.label}
+                        </span>
+                      ))}
+                    </div>
+                    {importedHistoryCount > 0 ? (
+                      <p className="mt-3 border-t border-[#292a2f] pt-3 text-xs leading-5 text-violet-200">
+                        Includes {importedHistoryCount} imported historical point{importedHistoryCount === 1 ? "" : "s"}. These keep their original dates and do not count as a fresh live check.
+                      </p>
+                    ) : null}
                   </div>
                 }
               />

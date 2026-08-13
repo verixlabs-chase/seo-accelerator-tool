@@ -649,8 +649,8 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 33 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
 | 34 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
 | 35 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 36 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 37 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
+| 36 | **WP1.2 - WordPress Managed Autopilot - core implemented locally; live closeout pending** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 37 | **MIG1 - Semrush/BrightLocal Migration - governed core, ranking history, and listing history implemented locally** | New customers can review and atomically import supported setup and qualified history with durable provenance, idempotent retries, a dependency-safe rollback, and a guided switching checklist. Recipient settings, larger resumable files, provider-specific adapters, and production proof remain. |
 | 38 | **ALT1 - In-Product Alerts First; Automated Email Later** | Customers first receive useful notices inside InsightOS. Reliable automated email and delivery tracking remain a later, behind-the-scenes platform capability and do not block the current reporting or product sprints. |
 | 39 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
 | 40 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
@@ -3057,7 +3057,7 @@ single-site and portfolio automation within published allowances; Enterprise
 adds custom policy, provider, team, audit, and bulk-site controls. All tiers
 retain human-readable evidence and an honest verification plan.
 
-Implementation status (2026-08-13): the first eight WP1.2 safety slices are complete.
+Implementation status (2026-08-13): the core WP1.2 implementation is locally complete through eight safety slices.
 Each connected site now has a tenant-scoped, versioned policy with fail-closed
 defaults, allowed action types, an allowed URL work area, timezone-aware days
 and hours, blackout windows, a monthly update cap, a risk ceiling, an approval
@@ -3131,6 +3131,11 @@ draft/action mappings block the preview before policy approval or delivery.
 Existing deterministic actions remain unchanged. Broader unattended action
 categories may be added only after an equally exact copy-to-mutation mapping is
 implemented and tested.
+Production closeout still requires one owner-enabled, low-risk managed update
+on a live connected site, followed by public verification, the scheduled
+same-scope outcome check, customer-visible history, and a successful rollback
+drill. Until that proof is recorded, managed automation remains an explicitly
+controlled release candidate rather than a generally available promise.
 
 Scope:
 
@@ -3172,6 +3177,55 @@ Acceptance criteria:
 
 Goal: let a replacement-product customer preserve useful setup and supported
 history instead of rebuilding the account by hand.
+
+Implementation status (2026-08-13): the governed MIG1 core is implemented
+locally. Organization owners and administrators can download one
+plain CSV template, identify the source as Semrush, BrightLocal, or another
+spreadsheet, and review up to 2,500 location, tracked-search, and competitor
+rows. The tenant-scoped review maps familiar column aliases, matches saved
+locations by exact normalized website or name, finds already-saved records and
+same-file duplicates, and gives each invalid or ambiguous row one concrete fix.
+The first endpoint records and reports zero writes. A second, explicit customer
+confirmation locks the normalized review hash to an idempotency key and applies
+all ready rows in one database transaction. Every batch keeps its source file
+hash, normalized row snapshot, created-entity ledger, actor, timestamps, and
+audit events. Retrying the same request returns the same batch instead of
+creating duplicates. A customer can undo only the exact records created by the
+batch; rollback fails closed if rankings or other newer work are attached, and
+the batch history remains after reversal. Historical ranking snapshots and
+unsupported-column reporting are covered by the next slice below. Qualified
+listing history and the guided switching checklist are also implemented as
+described below; recipient settings, resumable chunked files, and production migration/live
+proof remain later MIG1 slices.
+
+Historical-ranking and field-transparency slice (2026-08-13): MIG1 now accepts
+explicit `ranking` rows tied to a reviewed location and tracked phrase, with a
+whole-number position, original captured date, and optional original record ID.
+These rows create provenance-labeled `RankingSnapshot` history with the source
+system, import batch, original date, and original identifier; they do not create
+or overwrite the live `Ranking` value. Ranking APIs and the customer chart
+identify imported history and exclude it from the latest-live-check freshness
+claim. Exact phrase/date/position duplicates are skipped, conflicts require
+review, batch rollback removes imported points, and later live work blocks unsafe
+parent deletion. CSV columns that are not mapped are now reported by name,
+filled-row count, and reason in the dry run and customer UI instead of being
+silently discarded. Listing facts, recipient settings, resumable chunked files,
+source-specific export adapters, and production migration/live proof remain.
+
+Listing-history and guided-switching slice (2026-08-13): MIG1 now accepts
+explicit `listing` or `citation` rows with the directory name, original
+collection date, optional source identifier and public link, source-claimed
+status, listing details, and importance. Imported records and their observation
+history carry the source system and batch provenance, retain the original claim,
+and deliberately remain `unavailable` as current verification until InsightOS
+runs a new public check. Listing totals separate freshly checked records from
+imported history; imported claims cannot increase the confirmed or
+needs-attention counts and are labeled in the Listings UI. Exact historical
+duplicates are skipped and rollback removes both the imported observation and
+its qualified listing record. Settings now includes a state-derived switching
+checklist for importing, connecting Google, mapping live sources, and collecting
+the first fresh baseline. Recipient settings, resumable chunked files,
+source-specific export adapters, and production migration/live proof remain.
 
 Scope:
 

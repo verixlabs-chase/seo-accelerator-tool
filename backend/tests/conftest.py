@@ -40,6 +40,7 @@ from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge  # 
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
 from app.models.local_rank_grid import LocalRankGridCompetitorPoint, LocalRankGridPoint, LocalRankGridRun  # noqa: F401
+from app.models.migration_import import MigrationImportBatch, MigrationImportRecord  # noqa: F401
 from app.models.google_business_profile import (  # noqa: F401
     GoogleBusinessProfileDailyMetric,
     GoogleBusinessProfileSearchKeyword,
@@ -246,6 +247,8 @@ def _verify_required_tables(database_url: str) -> None:
             "wordpress_site_connections",
             "wordpress_content_sync_runs",
             "wordpress_content_items",
+            "migration_import_batches",
+            "migration_import_records",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:
