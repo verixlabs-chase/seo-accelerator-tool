@@ -13,7 +13,7 @@ import {
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
-import { platformApi } from "../../platform/api";
+import { platformApi, platformApiFile } from "../../platform/api";
 import { getTenantId } from "../../lib/authStorage";
 import { getConnectionStatusView } from "../truth/dataConnectionsTruth.mjs";
 import { requestProductTour } from "../truth/productTour.mjs";
@@ -287,6 +287,22 @@ type MigrationBatch = {
   };
 };
 
+type DataExport = {
+  id: string;
+  status: "ready" | "failed" | "expired";
+  format: "json";
+  schema_version: string;
+  record_counts: Record<string, number>;
+  artifact_sha256?: string | null;
+  artifact_byte_size?: number | null;
+  failure_code?: string | null;
+  requested_at: string;
+  completed_at?: string | null;
+  downloaded_at?: string | null;
+  expires_at: string;
+  download_available: boolean;
+};
+
 const primaryButtonClass =
   "inline-flex items-center justify-center rounded-md border border-accent-500/40 bg-accent-500/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-accent-500/70 hover:bg-accent-500/25 disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryButtonClass =
@@ -342,6 +358,12 @@ function toneClasses(tone: string) {
   if (tone === "danger") return "border-rose-500/25 bg-rose-500/10 text-rose-100";
   if (tone === "warning") return "border-amber-500/25 bg-amber-500/10 text-amber-100";
   return "border-sky-500/25 bg-sky-500/10 text-sky-100";
+}
+
+function formatFileSize(value?: number | null) {
+  if (!value || value < 1) return "Size unavailable";
+  if (value < 1024) return `${value} bytes`;
+  return `${(value / 1024).toFixed(value >= 1024 * 100 ? 0 : 1)} KB`;
 }
 
 const migrationChunkBytes = 500 * 1024;
@@ -416,6 +438,7 @@ export default function SettingsPage() {
   const [migrationUploadId, setMigrationUploadId] = useState("");
   const [migrationUploadProgress, setMigrationUploadProgress] = useState(0);
   const [migrationFileFingerprint, setMigrationFileFingerprint] = useState("");
+  const [dataExports, setDataExports] = useState<DataExport[]>([]);
 
   useEffect(() => {
     setGuidedConnectionSetup(
@@ -593,7 +616,7 @@ export default function SettingsPage() {
           throw new Error("An organization is required to manage data connections.");
         }
         setMe(currentUser);
-        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse] = await Promise.all([
+        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse, dataExportResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
           platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
@@ -602,11 +625,17 @@ export default function SettingsPage() {
           (platformApi(`/organizations/${currentUser.organization_id}/migration-imports`, {
             method: "GET",
           }) as Promise<{ items?: MigrationBatch[] }>).catch(() => ({ items: [] })),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/exports`, {
+                method: "GET",
+              }) as Promise<{ items?: DataExport[] }>).catch(() => ({ items: [] })))
+            : Promise.resolve({ items: [] as DataExport[] }),
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
         setBillingSummary(billingResponse);
         setMigrationHistory(migrationResponse.items || []);
+        setDataExports(dataExportResponse.items || []);
         const returnParams = new URLSearchParams(window.location.search);
         const billingReturned = returnParams.get("billing");
         const googleReturned = returnParams.get("google");
@@ -674,6 +703,65 @@ export default function SettingsPage() {
       window.location.assign(response.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to open billing settings.");
+      setBusyAction("");
+    }
+  }
+
+  async function createAccountExport() {
+    if (!organizationId) return;
+    setBusyAction("data-export-create");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-governance/exports`,
+        {
+          method: "POST",
+          body: JSON.stringify({ client_request_id: crypto.randomUUID() }),
+        },
+      )) as { export: DataExport };
+      setDataExports((current) => [
+        response.export,
+        ...current.filter((item) => item.id !== response.export.id),
+      ]);
+      setNotice("Your account export is ready. Download it within seven days.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create your account export.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function downloadAccountExport(item: DataExport) {
+    if (!organizationId || !item.download_available) return;
+    setBusyAction(`data-export-download-${item.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/organizations/${organizationId}/data-governance/exports/${item.id}/download`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || `insightos-account-export-${item.id}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setDataExports((current) =>
+        current.map((exportItem) =>
+          exportItem.id === item.id
+            ? { ...exportItem, downloaded_at: new Date().toISOString() }
+            : exportItem,
+        ),
+      );
+      setNotice("Your account export was downloaded.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download your account export.");
+    } finally {
       setBusyAction("");
     }
   }
@@ -2216,6 +2304,99 @@ export default function SettingsPage() {
                     </article>
                   );
                 })}
+              </section>
+            ) : null}
+
+            {me?.org_role === "org_owner" ? (
+              <section aria-labelledby="account-data-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Your account data
+                    </p>
+                    <h2 id="account-data-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Download a copy of your saved business information
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      Create a portable JSON file containing your locations, members, tracked searches, measurements, recommendations, report records, recipients, and import history.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={primaryButtonClass}
+                    disabled={busyAction === "data-export-create"}
+                    onClick={() => void createAccountExport()}
+                  >
+                    {busyAction === "data-export-create" ? "Creating export..." : "Create account export"}
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-4 border-t border-[#292a2f] pt-5 lg:grid-cols-2">
+                  <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4">
+                    <p className="text-sm font-semibold text-emerald-100">Private by design</p>
+                    <p className="mt-1 text-sm leading-6 text-zinc-300">
+                      Passwords, login sessions, connected-account credentials, payment-provider identifiers, and internal security evidence are never placed in the file.
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-sky-500/20 bg-sky-500/5 p-4">
+                    <p className="text-sm font-semibold text-sky-100">Available for seven days</p>
+                    <p className="mt-1 text-sm leading-6 text-zinc-300">
+                      Only an account owner can create or download an export. The downloadable copy expires after seven days; its audit record remains.
+                    </p>
+                  </div>
+                </div>
+
+                {dataExports.length > 0 ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Recent exports
+                    </p>
+                    <div className="mt-3 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                      {dataExports.slice(0, 5).map((item) => {
+                        const savedRecords = Object.values(item.record_counts || {}).reduce(
+                          (total, value) => total + Number(value || 0),
+                          0,
+                        );
+                        const statusLabel = item.status === "ready"
+                          ? "Ready"
+                          : item.status === "expired"
+                            ? "Expired"
+                            : "Could not be created";
+                        return (
+                          <div key={item.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-white">{statusLabel}</p>
+                              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                Created {formatTimestamp(item.completed_at || item.requested_at)} · {savedRecords.toLocaleString()} saved records · {formatFileSize(item.artifact_byte_size)}
+                              </p>
+                              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                {item.download_available
+                                  ? `Download available until ${formatTimestamp(item.expires_at)}`
+                                  : item.failure_code
+                                    ? "This export was not stored. Create a new copy or contact support."
+                                    : "The downloadable copy is no longer stored."}
+                              </p>
+                            </div>
+                            {item.download_available ? (
+                              <button
+                                type="button"
+                                className={secondaryButtonClass}
+                                disabled={busyAction === `data-export-download-${item.id}`}
+                                onClick={() => void downloadAccountExport(item)}
+                              >
+                                {busyAction === `data-export-download-${item.id}` ? "Downloading..." : "Download JSON"}
+                              </button>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-5 border-t border-[#292a2f] pt-5 text-sm text-zinc-400">
+                    No account exports have been created yet.
+                  </p>
+                )}
               </section>
             ) : null}
 

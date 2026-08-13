@@ -21,6 +21,7 @@ from app.services import (
     content_service,
     crawl_metrics,
     crawl_service,
+    data_governance_service,
     entity_service,
     fleet_service,
     intelligence_service,
@@ -49,6 +50,20 @@ def migration_purge_expired_uploads() -> dict:
     db = SessionLocal()
     try:
         result = migration_upload_service.purge_expired_upload_sessions(db)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="governance.expire_data_exports")
+def governance_expire_data_exports() -> dict:
+    db = SessionLocal()
+    try:
+        result = data_governance_service.expire_data_export_artifacts(db)
         db.commit()
         return result
     except Exception:

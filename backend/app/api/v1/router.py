@@ -14,6 +14,7 @@ from app.api.v1 import (
     content,
     crawl,
     data_connections,
+    data_governance,
     debug_live_validation,
     dashboard,
     entity,
@@ -63,6 +64,7 @@ tenant_api_router.include_router(automation.router)
 tenant_api_router.include_router(campaigns.router)
 tenant_api_router.include_router(crawl.router)
 tenant_api_router.include_router(data_connections.router)
+tenant_api_router.include_router(data_governance.router)
 if settings.app_env.lower() != 'production':
     tenant_api_router.include_router(debug_live_validation.router)
 tenant_api_router.include_router(entity.router)

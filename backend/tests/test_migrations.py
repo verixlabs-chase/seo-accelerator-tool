@@ -181,6 +181,7 @@ def test_migration_upgrade_and_downgrade():
         assert "migration_import_records" in inspector.get_table_names()
         assert "migration_upload_sessions" in inspector.get_table_names()
         assert "migration_upload_chunks" in inspector.get_table_names()
+        assert "data_export_requests" in inspector.get_table_names()
         report_recipient_cols = {
             col["name"] for col in inspector.get_columns("report_recipients")
         }

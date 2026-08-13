@@ -652,7 +652,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 36 | **WP1.2 - WordPress Managed Autopilot - core implemented locally; live closeout pending** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
 | 37 | **MIG1 - Semrush/BrightLocal Migration - governed resumable import implemented locally** | New customers can review and atomically import supported setup, qualified history, and disabled report recipients through explicit source adapters, with durable provenance, resumable verified file parts, paginated review, idempotent retries, a dependency-safe rollback, and a guided switching checklist. Production migration and live proof remain. |
 | 38 | **ALT1 - In-Product Alerts First; Automated Email Later** | Customers first receive useful notices inside InsightOS. Reliable automated email and delivery tracking remain a later, behind-the-scenes platform capability and do not block the current reporting or product sprints. |
-| 39 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
+| 39 | **GOV1 - Data Privacy, Retention, and Portability - GOV1A account export implemented locally** | Owners can create an authenticated, credential-safe, integrity-checked account export that expires after seven days. Provider disconnect, account closure, verified deletion, legal hold, and backup-erasure workflows remain later GOV1 slices. |
 | 40 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
 | 41 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
 | 42 | **AIV1 - AI Search Visibility and Entity Intelligence** | A dedicated AI Search Visibility section shows where each business and location is mentioned or cited across supported major AI answer engines, how that changes over time, which competitors appear instead, and what evidence-backed work may improve coverage. |
@@ -3430,6 +3430,19 @@ Acceptance criteria:
 
 Goal: give customers and operators clear, enforceable control over collected
 data, credentials, generated artifacts, AI records, and deletion.
+
+Implementation status (2026-08-13): GOV1A is implemented locally. Migration
+`20260813_0143` adds the tenant-scoped export ledger with PostgreSQL RLS. An
+organization owner can create an idempotent JSON export, download it through an
+authenticated private endpoint, and see its durable status. The artifact is
+SHA-256 integrity checked and removed after seven days while its hash, status,
+timestamps, and audit events remain. Password hashes, sessions, connected-
+account credentials, billing-provider identifiers, report binaries, and
+internal security/legal-hold evidence are explicitly excluded. The data-class
+inventory and non-claims are documented in
+`backend/docs/architecture/customer-data-lifecycle.md`. Deletion and closure
+are intentionally not exposed until legal-hold, dependency-order, backup-
+tombstone, and restore tests exist.
 
 Scope:
 
