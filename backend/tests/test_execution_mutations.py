@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 from app.intelligence import recommendation_execution_engine as execution_engine
 from app.enums import StrategyRecommendationStatus
 from app.intelligence.recommendation_execution_engine import approve_execution, execute_recommendation, rollback_execution, schedule_execution
@@ -165,6 +168,27 @@ def test_execution_can_be_rolled_back(db_session, create_test_tenant, create_tes
     assert rows
     assert all(row.status == 'rolled_back' for row in rows)
     assert all(row.rolled_back_at is not None for row in rows)
+
+
+def test_postgres_rollback_uses_the_audited_terminal_override() -> None:
+    session = Mock()
+    session.get_bind.return_value.dialect.name = 'postgresql'
+    recommendation = SimpleNamespace(id='recommendation-1')
+    execution = SimpleNamespace(id='execution-1')
+
+    execution_engine._mark_recommendation_rolled_back(
+        session,
+        recommendation=recommendation,
+        execution=execution,
+        requested_by='owner-1',
+    )
+
+    statement, params = session.execute.call_args.args
+    assert 'governed_override_strategy_recommendation' in str(statement)
+    assert params['recommendation_id'] == 'recommendation-1'
+    assert params['actor_user_id'] == 'owner-1'
+    assert params['new_status'] == StrategyRecommendationStatus.ROLLED_BACK.value
+    assert 'execution-1' in params['reason']
 
 
 def test_failed_public_verification_preserves_and_can_rollback_applied_changes(

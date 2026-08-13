@@ -6,6 +6,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
@@ -297,7 +298,12 @@ def rollback_execution(execution_id: str, *, requested_by: str, db: Session | No
             'notes': 'Execution rollback completed using persisted mutation snapshots.',
             'mutations': [],
         }, sort_keys=True)
-        recommendation.status = StrategyRecommendationStatus.ROLLED_BACK
+        _mark_recommendation_rolled_back(
+            session,
+            recommendation=recommendation,
+            execution=execution,
+            requested_by=requested_by,
+        )
         outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.rolled_back', payload=_execution_event_payload(execution=execution, result_summary={'requested_by': requested_by, 'rolled_back_mutations': rollback_results}))
         if owns_session:
             session.commit()
@@ -491,6 +497,48 @@ def _set_recommendation_status_if_allowed(recommendation: StrategyRecommendation
     if current in TERMINAL_RECOMMENDATION_STATUSES and current != target:
         return
     recommendation.status = target
+
+
+def _mark_recommendation_rolled_back(
+    session: Session,
+    *,
+    recommendation: StrategyRecommendation,
+    execution: RecommendationExecution,
+    requested_by: str,
+) -> None:
+    """Record a rollback without bypassing terminal-output immutability.
+
+    Production Postgres deliberately blocks direct updates to terminal strategy
+    records. Its governed override function records the actor and reason in the
+    audit log before changing ``EXECUTED`` to ``ROLLED_BACK``. Test databases do
+    not install that Postgres function, so they use the equivalent ORM update.
+    """
+    dialect_name = session.get_bind().dialect.name
+    if dialect_name == 'postgresql':
+        session.execute(
+            text(
+                """
+                SELECT governed_override_strategy_recommendation(
+                    :recommendation_id,
+                    :actor_user_id,
+                    :reason,
+                    CAST(:new_status AS strategy_recommendation_status),
+                    NULL
+                )
+                """
+            ),
+            {
+                'recommendation_id': recommendation.id,
+                'actor_user_id': requested_by,
+                'reason': (
+                    f'Execution {execution.id} rollback completed using its '
+                    'persisted mutation snapshot.'
+                ),
+                'new_status': StrategyRecommendationStatus.ROLLED_BACK.value,
+            },
+        )
+        return
+    recommendation.status = StrategyRecommendationStatus.ROLLED_BACK
 
 
 def _record_outcome_if_possible(session: Session, execution: RecommendationExecution, result: dict[str, Any]) -> None:
