@@ -101,6 +101,7 @@ def schedule_execution(
                 campaign_id=recommendation.campaign_id,
                 execution_type=execution_type,
                 risk_tier=int(recommendation.risk_tier or 1),
+                lock_policy=True,
                 at=now,
             )
             if not automation_decision.allowed:
@@ -213,6 +214,111 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
                 session.commit()
             return execution
         if is_managed_wordpress_execution(execution):
+            automation_decision = evaluate_wordpress_automation(
+                session,
+                campaign_id=execution.campaign_id,
+                execution_type=execution.execution_type,
+                risk_tier=int(recommendation.risk_tier or 1),
+                exclude_execution_id=execution.id,
+            )
+            if not automation_decision.allowed:
+                execution.status = 'pending'
+                execution.last_error = automation_decision.reason_code
+                execution.result_summary = json.dumps(
+                    _governance_block(
+                        campaign_id=execution.campaign_id,
+                        execution_type=execution.execution_type,
+                        reason_code=automation_decision.reason_code,
+                        message=automation_decision.message,
+                    ),
+                    sort_keys=True,
+                )
+                if owns_session:
+                    session.commit()
+                return execution
+            if (
+                not automation_decision.requires_manual_approval
+                and not policy['requires_manual_approval']
+                and not (execution.approved_by and execution.approved_at)
+            ):
+                try:
+                    planned = _normalize_result(
+                        executor.plan(payload),
+                        execution.execution_type,
+                    )
+                    planned = create_change_preview(
+                        session,
+                        execution=execution,
+                        planned_result=planned,
+                    )
+                    preview_payload = planned.get('preview')
+                    if not isinstance(preview_payload, dict):
+                        raise WordPressChangePreviewError(
+                            'The managed update did not produce an exact website preview.',
+                            reason_code='wordpress_preview_missing',
+                        )
+                    if preview_payload.get('status') != 'ready':
+                        raise WordPressChangePreviewError(
+                            'The managed update preview found a conflict that needs review.',
+                            reason_code='wordpress_preview_conflict',
+                        )
+                    affected_urls = [
+                        str(value)
+                        for value in (preview_payload.get('affected_urls') or [])
+                        if str(value).strip()
+                    ]
+                    scoped_decision = evaluate_wordpress_automation(
+                        session,
+                        campaign_id=execution.campaign_id,
+                        execution_type=execution.execution_type,
+                        risk_tier=int(recommendation.risk_tier or 1),
+                        affected_urls=affected_urls,
+                        exclude_execution_id=execution.id,
+                    )
+                    if not scoped_decision.allowed:
+                        execution.status = 'pending'
+                        execution.last_error = scoped_decision.reason_code
+                        execution.result_summary = json.dumps(
+                            _governance_block(
+                                campaign_id=execution.campaign_id,
+                                execution_type=execution.execution_type,
+                                reason_code=scoped_decision.reason_code,
+                                message=scoped_decision.message,
+                            ),
+                            sort_keys=True,
+                        )
+                        if owns_session:
+                            session.commit()
+                        return execution
+                    approval_actor = (
+                        f'InsightOS policy v{scoped_decision.policy_version or "unknown"}'
+                    )
+                    approve_change_preview(
+                        session,
+                        execution=execution,
+                        preview_hash=str(preview_payload.get('preview_hash') or ''),
+                        approved_by=approval_actor,
+                    )
+                    execution.approved_by = approval_actor
+                    execution.approved_at = datetime.now(UTC)
+                    execution.status = 'scheduled'
+                    execution.last_error = None
+                    session.flush()
+                except WordPressChangePreviewError as exc:
+                    execution.status = 'pending'
+                    execution.last_error = exc.reason_code
+                    execution.result_summary = json.dumps(
+                        _governance_block(
+                            campaign_id=execution.campaign_id,
+                            execution_type=execution.execution_type,
+                            reason_code=exc.reason_code,
+                            message=str(exc),
+                        ),
+                        sort_keys=True,
+                    )
+                    if owns_session:
+                        session.commit()
+                    return execution
             preview = (
                 session.query(WordPressChangePreview)
                 .filter(
@@ -239,6 +345,7 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
                 execution_type=execution.execution_type,
                 risk_tier=int(recommendation.risk_tier or 1),
                 affected_urls=affected_urls,
+                exclude_execution_id=execution.id,
             )
             if not automation_decision.allowed:
                 execution.status = 'pending'

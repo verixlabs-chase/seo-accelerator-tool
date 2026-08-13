@@ -4532,7 +4532,7 @@ export default function OpportunitiesPage() {
                                   : "Off — every change still needs you"}
                             </h4>
                             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-300">
-                              Choose the exact work InsightOS may prepare automatically. Website changes still keep a preview, history, and rollback.
+                              Choose the exact work InsightOS may prepare and apply automatically. Website changes still keep a preview, history, and rollback.
                             </p>
                           </div>
                           <span
@@ -4574,7 +4574,7 @@ export default function OpportunitiesPage() {
 
                         <div className="mt-5">
                           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                            Work InsightOS may prepare
+                            Work InsightOS may handle
                           </p>
                           <div className="mt-3 grid gap-2 md:grid-cols-2">
                             {wordpressAutomationActions.map((actionType) => {
@@ -4648,7 +4648,7 @@ export default function OpportunitiesPage() {
                               className="mt-2 w-full rounded-md border border-[#34363c] bg-[#0f1012] px-3 py-2.5 text-sm text-white outline-none focus:border-orange-500/70"
                             />
                             <span className="mt-1.5 block text-xs leading-5 text-zinc-500">
-                              The system stops preparing managed changes when this limit is reached.
+                              The system stops starting managed changes when this limit is reached.
                             </span>
                           </label>
                         </div>

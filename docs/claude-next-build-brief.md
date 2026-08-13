@@ -3057,7 +3057,7 @@ single-site and portfolio automation within published allowances; Enterprise
 adds custom policy, provider, team, audit, and bulk-site controls. All tiers
 retain human-readable evidence and an honest verification plan.
 
-Implementation status (2026-08-13): the first WP1.2 safety slice is complete.
+Implementation status (2026-08-13): the first two WP1.2 safety slices are complete.
 Each connected site now has a tenant-scoped, versioned policy with fail-closed
 defaults, allowed action types, an allowed URL work area, timezone-aware days
 and hours, blackout windows, a monthly update cap, a risk ceiling, an approval
@@ -3065,10 +3065,19 @@ preference, and an emergency stop. Growth and Enterprise owners can review and
 save these controls from the WordPress section of Next Steps. Every change to
 the policy records the actor and a durable audit event. Autonomous WordPress
 scheduling now identifies itself as managed automation and is blocked unless
-the current owner policy allows the action; manual WP1.1 preview, approval,
-execution, verification, and rollback remain unchanged. The next WP1.2 slice
-will use an approved low-risk policy to advance exact previews without a
-per-change approval while preserving scope checks, verification, and rollback.
+the current owner policy allows the action. When the owner turns off
+per-change approval for an allowed low-risk action, InsightOS now creates the
+exact current-state preview, checks its final page addresses against the saved
+work area, records approval as the specific policy version, and only then
+applies the mutation through the existing verification and rollback path.
+Relative WordPress page addresses are resolved against the paired site before
+scope checks, and the current execution does not count against itself when the
+monthly allowance is rechecked. Scheduling locks the site policy while it
+reserves allowance so two workers cannot intentionally schedule around the
+same cap. Manual WP1.1 remains unchanged. The next
+WP1.2 slice will add automatic policy pauses after failed verification or
+repeated regression, plus the content/fact validation gates required before
+broader action categories can run unattended.
 
 Scope:
 

@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, time
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session
@@ -47,13 +47,18 @@ class WordPressAutomationDecision:
 
 
 def get_wordpress_automation_policy(
-    db: Session, *, campaign_id: str
+    db: Session,
+    *,
+    campaign_id: str,
+    lock_for_update: bool = False,
 ) -> WordPressAutomationPolicy | None:
-    return (
+    query = (
         db.query(WordPressAutomationPolicy)
         .filter(WordPressAutomationPolicy.campaign_id == campaign_id)
-        .first()
     )
+    if lock_for_update:
+        query = query.with_for_update()
+    return query.first()
 
 
 def serialize_wordpress_automation_policy(
@@ -120,7 +125,11 @@ def save_wordpress_automation_policy(
     values: dict[str, Any],
 ) -> WordPressAutomationPolicy:
     normalized = _normalize_policy_values(db, campaign_id=campaign_id, values=values)
-    row = get_wordpress_automation_policy(db, campaign_id=campaign_id)
+    row = get_wordpress_automation_policy(
+        db,
+        campaign_id=campaign_id,
+        lock_for_update=True,
+    )
     now = datetime.now(UTC)
     if row is None:
         row = WordPressAutomationPolicy(
@@ -149,9 +158,15 @@ def evaluate_wordpress_automation(
     execution_type: str,
     risk_tier: int,
     affected_urls: list[str] | None = None,
+    exclude_execution_id: str | None = None,
+    lock_policy: bool = False,
     at: datetime | None = None,
 ) -> WordPressAutomationDecision:
-    policy = get_wordpress_automation_policy(db, campaign_id=campaign_id)
+    policy = get_wordpress_automation_policy(
+        db,
+        campaign_id=campaign_id,
+        lock_for_update=lock_policy,
+    )
     if policy is None or not policy.automation_enabled:
         return _deny(
             "wordpress_automation_not_enabled",
@@ -222,6 +237,7 @@ def evaluate_wordpress_automation(
         campaign_id=campaign_id,
         local_now=local_now,
         timezone=timezone,
+        exclude_execution_id=exclude_execution_id,
     )
     if int(policy.monthly_action_limit) <= 0 or actions_used >= int(
         policy.monthly_action_limit
@@ -239,7 +255,8 @@ def evaluate_wordpress_automation(
     if affected_urls is not None:
         prefixes = list(policy.allowed_url_prefixes or [])
         if not affected_urls or any(
-            not _url_is_allowed(url, prefixes) for url in affected_urls
+            not _url_is_allowed(url, prefixes, site_url=connection.site_url)
+            for url in affected_urls
         ):
             return _deny(
                 "wordpress_automation_url_not_allowed",
@@ -447,20 +464,23 @@ def _managed_actions_used_this_month(
     campaign_id: str,
     local_now: datetime,
     timezone: ZoneInfo,
+    exclude_execution_id: str | None = None,
 ) -> int:
     local_start = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     utc_start = local_start.astimezone(UTC)
-    rows = (
-        db.query(RecommendationExecution.execution_payload)
-        .filter(
-            RecommendationExecution.campaign_id == campaign_id,
-            RecommendationExecution.created_at >= utc_start,
-        )
-        .all()
+    query = db.query(
+        RecommendationExecution.id,
+        RecommendationExecution.execution_payload,
+    ).filter(
+        RecommendationExecution.campaign_id == campaign_id,
+        RecommendationExecution.created_at >= utc_start,
     )
+    if exclude_execution_id:
+        query = query.filter(RecommendationExecution.id != exclude_execution_id)
+    rows = query.all()
     total = 0
     for row in rows:
-        raw = row[0] if isinstance(row, tuple) else row.execution_payload
+        raw = row.execution_payload
         try:
             payload = json.loads(raw or "{}")
         except (json.JSONDecodeError, TypeError):
@@ -470,13 +490,13 @@ def _managed_actions_used_this_month(
     return total
 
 
-def _url_is_allowed(url: str, prefixes: list[str]) -> bool:
-    target = urlsplit(url)
+def _url_is_allowed(url: str, prefixes: list[str], *, site_url: str) -> bool:
+    target = urlsplit(urljoin(f"{site_url.rstrip('/')}/", str(url).strip()))
     for prefix in prefixes:
         allowed = urlsplit(prefix)
         if target.scheme.lower() != allowed.scheme.lower():
             continue
-        if target.netloc.lower() != allowed.netloc.lower():
+        if _normalized_host(target.hostname) != _normalized_host(allowed.hostname):
             continue
         allowed_path = allowed.path or "/"
         target_path = target.path or "/"
@@ -485,6 +505,11 @@ def _url_is_allowed(url: str, prefixes: list[str]) -> bool:
         ):
             return True
     return False
+
+
+def _normalized_host(value: str | None) -> str:
+    host = str(value or "").strip().lower().rstrip(".")
+    return host[4:] if host.startswith("www.") else host
 
 
 def _deny(

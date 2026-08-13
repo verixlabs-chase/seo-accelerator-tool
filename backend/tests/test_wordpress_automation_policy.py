@@ -4,12 +4,16 @@ import base64
 from datetime import UTC, datetime
 
 from app.enums import StrategyRecommendationStatus
-from app.intelligence.recommendation_execution_engine import schedule_execution
+from app.intelligence.recommendation_execution_engine import (
+    execute_recommendation,
+    schedule_execution,
+)
 from app.models.audit_log import AuditLog
 from app.models.intelligence import StrategyRecommendation
 from app.models.organization import Organization
 from app.models.recommendation_execution import RecommendationExecution
 from app.models.wordpress_automation_policy import WordPressAutomationPolicy
+from app.models.wordpress_change_preview import WordPressChangePreview
 from app.models.wordpress_site_connection import WordPressSiteConnection
 from app.services.wordpress_automation_policy_service import evaluate_wordpress_automation
 from app.utils.enum_guard import ensure_enum
@@ -262,3 +266,155 @@ def test_autonomous_wordpress_scheduling_fails_closed_without_owner_policy(
     manual = schedule_execution(recommendation.id, db=db_session)
     assert isinstance(manual, RecommendationExecution)
     assert manual.idempotency_key.endswith(datetime.now(UTC).date().isoformat())
+
+
+def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+) -> None:
+    tenant = create_test_tenant(name="Managed Preview Tenant")
+    organization = create_test_org(
+        tenant_id=tenant.id,
+        name="Managed Preview Org",
+    )
+    organization.plan_type = "multi_location"
+    campaign = create_test_campaign(
+        db_session,
+        organization.id,
+        tenant_id=tenant.id,
+        name="Managed Preview Campaign",
+        domain="managed-preview.example",
+    )
+    db_session.add_all(
+        [
+            WordPressSiteConnection(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                campaign_id=campaign.id,
+                site_url="https://managed-preview.example",
+                status="connected",
+                plugin_version="1.5.1",
+                paired_at=datetime.now(UTC),
+            ),
+            WordPressAutomationPolicy(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                campaign_id=campaign.id,
+                automation_enabled=True,
+                emergency_stop=False,
+                allowed_action_types=["fix_missing_title"],
+                allowed_url_prefixes=["https://managed-preview.example/"],
+                schedule_timezone="UTC",
+                schedule_days=[0, 1, 2, 3, 4, 5, 6],
+                window_start_local="00:00",
+                window_end_local="23:59",
+                blackout_windows=[],
+                monthly_action_limit=1,
+                risk_tier_ceiling=1,
+                requires_manual_approval=False,
+                version=1,
+            ),
+        ]
+    )
+    recommendation = _recommendation(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+    )
+
+    execution = schedule_execution(
+        recommendation.id,
+        db=db_session,
+        managed_automation=True,
+    )
+    assert isinstance(execution, RecommendationExecution)
+    assert execution.status == "scheduled"
+    assert execution.approved_by is None
+
+    completed = execute_recommendation(execution.id, db=db_session)
+
+    assert isinstance(completed, RecommendationExecution)
+    assert completed.status == "completed"
+    assert completed.approved_by == "InsightOS policy v1"
+    preview = (
+        db_session.query(WordPressChangePreview)
+        .filter(WordPressChangePreview.execution_id == execution.id)
+        .one()
+    )
+    assert preview.status == "approved"
+    assert preview.approved_by == "InsightOS policy v1"
+    assert preview.snapshot["affected_urls"] == ["/"]
+
+
+def test_managed_preview_stays_pending_when_exact_url_is_outside_saved_scope(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+) -> None:
+    tenant = create_test_tenant(name="Managed Scope Tenant")
+    organization = create_test_org(tenant_id=tenant.id, name="Managed Scope Org")
+    organization.plan_type = "multi_location"
+    campaign = create_test_campaign(
+        db_session,
+        organization.id,
+        tenant_id=tenant.id,
+        name="Managed Scope Campaign",
+        domain="managed-scope.example",
+    )
+    db_session.add_all(
+        [
+            WordPressSiteConnection(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                campaign_id=campaign.id,
+                site_url="https://managed-scope.example",
+                status="connected",
+                plugin_version="1.5.1",
+                paired_at=datetime.now(UTC),
+            ),
+            WordPressAutomationPolicy(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                campaign_id=campaign.id,
+                automation_enabled=True,
+                emergency_stop=False,
+                allowed_action_types=["fix_missing_title"],
+                allowed_url_prefixes=["https://managed-scope.example/services"],
+                schedule_timezone="UTC",
+                schedule_days=[0, 1, 2, 3, 4, 5, 6],
+                window_start_local="00:00",
+                window_end_local="23:59",
+                blackout_windows=[],
+                monthly_action_limit=5,
+                risk_tier_ceiling=1,
+                requires_manual_approval=False,
+                version=1,
+            ),
+        ]
+    )
+    recommendation = _recommendation(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+    )
+    execution = schedule_execution(
+        recommendation.id,
+        db=db_session,
+        managed_automation=True,
+    )
+    assert isinstance(execution, RecommendationExecution)
+
+    blocked = execute_recommendation(execution.id, db=db_session)
+
+    assert isinstance(blocked, RecommendationExecution)
+    assert blocked.status == "pending"
+    assert blocked.last_error == "wordpress_automation_url_not_allowed"
+    assert blocked.approved_by is None
+    preview = (
+        db_session.query(WordPressChangePreview)
+        .filter(WordPressChangePreview.execution_id == execution.id)
+        .one()
+    )
+    assert preview.status == "ready"
+    assert preview.approved_by is None
