@@ -270,3 +270,58 @@ def test_execution_run_rejects_cross_tenant_campaign_mismatch(client, db_session
         headers={'Authorization': f'Bearer {token_b}'},
     )
     assert token_b_response.status_code == 404
+
+
+def test_retry_endpoint_recovers_an_interrupted_running_execution(
+    client,
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    token = _login(client, 'org-admin@example.com', 'pass-org-admin')
+    acting_user = db_session.query(User).filter(User.email == 'org-admin@example.com').first()
+    assert acting_user is not None
+    org = create_test_org(tenant_id=acting_user.tenant_id, name='Recovery Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
+    campaign = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=acting_user.tenant_id,
+        name='Recovery Campaign',
+        domain='recovery.example',
+    )
+    recommendation = _create_recommendation(
+        db_session,
+        acting_user.tenant_id,
+        campaign.id,
+        'improve_internal_links',
+    )
+    execution = schedule_execution(recommendation.id, db=db_session)
+    assert isinstance(execution, RecommendationExecution)
+    execution.status = 'running'
+    execution.attempt_count = 1
+    execution.executed_at = None
+    db_session.commit()
+
+    observed_status: list[str] = []
+
+    def complete_recovered(execution_id: str, db, *, dry_run: bool = False):  # noqa: ANN001
+        assert dry_run is False
+        row = db.get(RecommendationExecution, execution_id)
+        assert row is not None
+        observed_status.append(row.status)
+        row.status = 'completed'
+        row.executed_at = row.created_at
+        return row
+
+    monkeypatch.setattr('app.api.v1.executions.execute_recommendation', complete_recovered)
+
+    response = client.post(
+        f'/api/v1/executions/{execution.id}/retry',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+    assert response.status_code == 200
+    assert observed_status == ['scheduled']
+    assert response.json()['data']['status'] == 'completed'

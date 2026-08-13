@@ -1075,6 +1075,9 @@ function getApprovalState(execution: Execution) {
 }
 
 function getExecutionSummary(execution: Execution) {
+  if (execution.status === "running" && !execution.executed_at) {
+    return "This action was interrupted before InsightOS saved the final result. Finish it safely; the same approved website change will not be duplicated.";
+  }
   if (execution.result?.notes) {
     return execution.result.notes;
   }
@@ -1152,7 +1155,10 @@ function canRunLiveExecution(execution: Execution) {
 }
 
 function canRetryExecution(execution: Execution) {
-  return execution.status === "failed" && !execution.result?.rollback_available;
+  return (
+    execution.status === "running" ||
+    (execution.status === "failed" && !execution.result?.rollback_available)
+  );
 }
 
 function canCancelExecution(execution: Execution) {
@@ -4856,7 +4862,9 @@ export default function OpportunitiesPage() {
                                     void transitionExecution(
                                       selectedExecution.id,
                                       "retry",
-                                      `${describeExecutionType(selectedExecution.execution_type)} retried and re-queued.`,
+                                      selectedExecution.status === "running"
+                                        ? `${describeExecutionType(selectedExecution.execution_type)} resumed after the interrupted run.`
+                                        : `${describeExecutionType(selectedExecution.execution_type)} retried and re-queued.`,
                                     )
                                   }
                                   disabled={busyAction !== "" || Boolean(liveExecutionDisabledReason)}
@@ -4864,7 +4872,9 @@ export default function OpportunitiesPage() {
                                 >
                                   {busyAction === `${selectedExecution.id}:retry`
                                     ? "Retrying..."
-                                    : "Retry"}
+                                    : selectedExecution.status === "running"
+                                      ? "Finish interrupted run"
+                                      : "Retry"}
                                 </button>
                               ) : null}
 

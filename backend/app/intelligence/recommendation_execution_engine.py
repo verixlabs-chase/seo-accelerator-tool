@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -36,6 +37,7 @@ from app.services.wordpress_change_preview_service import (
 
 MAX_EXECUTIONS_PER_CAMPAIGN_PER_DAY = 20
 RETRY_LIMIT = 3
+logger = logging.getLogger("lsos.intelligence.execution")
 TERMINAL_RECOMMENDATION_STATUSES = {
     StrategyRecommendationStatus.EXECUTED,
     StrategyRecommendationStatus.FAILED,
@@ -202,9 +204,26 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
         outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.started', payload=_execution_event_payload(execution=execution, result_summary=None))
         try:
             result = _normalize_result(executor.run(payload), execution.execution_type)
-            result = _deliver_mutations(session, execution=execution, result=result)
-        except Exception as exc:  # pragma: no cover
-            result = _failed_result(execution.execution_type, str(exc))
+            # Website delivery is external, while its mutation audit is local.
+            # A savepoint keeps the session usable if audit persistence fails;
+            # the plugin's stable mutation IDs make a later retry idempotent.
+            with session.begin_nested():
+                result = _deliver_mutations(session, execution=execution, result=result)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "recommendation execution failed",
+                extra={
+                    "execution_id": execution.id,
+                    "campaign_id": execution.campaign_id,
+                    "execution_type": execution.execution_type,
+                    "attempt_count": int(execution.attempt_count or 0),
+                },
+            )
+            result = _failed_result(
+                execution.execution_type,
+                'The action could not be completed safely. Review the connection, then try again.',
+            )
+            result['reason_code'] = 'execution_internal_error'
         if result['status'] == 'failed':
             execution.status = 'failed'
             execution.last_error = result.get('notes', 'execution failed')
@@ -374,16 +393,36 @@ def retry_execution(execution_id: str, db: Session | None = None) -> Recommendat
         execution = session.get(RecommendationExecution, execution_id)
         if execution is None:
             return None
-        if execution.status != 'failed':
+        if execution.status not in {'failed', 'running'}:
+            return execution
+        interrupted = execution.status == 'running' and execution.executed_at is None
+        if execution.status == 'running' and not interrupted:
             return execution
         if int(execution.attempt_count or 0) >= RETRY_LIMIT:
+            if interrupted:
+                execution.status = 'failed'
+                execution.last_error = 'retry limit exceeded'
+                execution.result_summary = json.dumps(
+                    _failed_result(
+                        execution.execution_type,
+                        'This interrupted action reached its retry limit. Review it before trying again.',
+                    ),
+                    sort_keys=True,
+                )
+                execution.executed_at = datetime.now(UTC)
+                session.flush()
             return execution
         execution.status = 'scheduled'
         execution.last_error = None
         session.flush()
         recommendation = session.get(StrategyRecommendation, execution.recommendation_id)
         if recommendation is not None:
-            outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.scheduled', payload=_execution_event_payload(execution=execution, result_summary=None))
+            outbox_event_write(
+                session,
+                tenant_id=recommendation.tenant_id,
+                event_type='execution.recovered' if interrupted else 'execution.scheduled',
+                payload=_execution_event_payload(execution=execution, result_summary=None),
+            )
         if owns_session:
             session.commit()
             session.refresh(execution)
@@ -467,7 +506,13 @@ def _record_outcome_if_possible(session: Session, execution: RecommendationExecu
         metric_name = str(payload.get('metric_name', '') or '')
         signals = assemble_signals(execution.campaign_id, db=session)
         metric_after = float(signals.get(metric_name, metric_before) or metric_before)
-    record_execution_outcome(session, execution=execution, metric_before=metric_before, metric_after=metric_after)
+    record_execution_outcome(
+        session,
+        execution=execution,
+        metric_before=metric_before,
+        metric_after=metric_after,
+        commit=False,
+    )
 
 
 def _normalize_result(result: dict[str, Any], execution_type: str) -> dict[str, Any]:

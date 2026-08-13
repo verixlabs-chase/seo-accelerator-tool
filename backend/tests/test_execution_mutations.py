@@ -61,6 +61,47 @@ def test_execution_persists_mutation_audit_rows(db_session, create_test_tenant, 
         assert row.status == 'applied'
 
 
+def test_execution_helpers_do_not_commit_the_shared_action_transaction(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    tenant = create_test_tenant(name='Atomic Execution Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Atomic Execution Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
+    campaign = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=tenant.id,
+        name='Atomic Execution Campaign',
+        domain='atomic-execution.example',
+    )
+    recommendation = _recommendation(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_type='create_content_brief',
+    )
+    execution = schedule_execution(recommendation.id, db=db_session)
+    assert isinstance(execution, RecommendationExecution)
+    _preview_and_approve(db_session, execution)
+
+    def unexpected_commit() -> None:
+        raise AssertionError('execution helper committed the request transaction')
+
+    monkeypatch.setattr(db_session, 'commit', unexpected_commit)
+
+    completed = execute_recommendation(execution.id, db=db_session)
+
+    assert isinstance(completed, RecommendationExecution)
+    assert completed.status == 'completed'
+    assert db_session.query(ExecutionMutation).filter(
+        ExecutionMutation.execution_id == execution.id,
+    ).count() == 1
+
+
 def test_execution_can_be_rolled_back(db_session, create_test_tenant, create_test_org) -> None:
     tenant = create_test_tenant(name='Rollback Tenant')
     org = create_test_org(tenant_id=tenant.id, name='Rollback Org')

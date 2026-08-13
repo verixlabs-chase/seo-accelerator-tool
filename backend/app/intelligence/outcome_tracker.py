@@ -36,6 +36,7 @@ def record_outcome(
     measurement_kind: str = 'execution_metric',
     observation_only: bool | None = None,
     emit_learning_event: bool = True,
+    commit: bool = True,
 ) -> RecommendationOutcome:
     before = float(metric_before)
     after = float(metric_after)
@@ -73,8 +74,11 @@ def record_outcome(
     if not observation_only_mode:
         run_portfolio_cycle(db, row)
         _experiment_outcome, experiment_event = record_experiment_outcome(db, outcome=row)
-    db.commit()
-    db.refresh(row)
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
 
     if emit_learning_event and campaign is not None:
         emit_event(
@@ -94,11 +98,18 @@ def record_outcome(
                 'measured_at': row.measured_at.isoformat(),
             },
         )
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
 
-    if experiment_event is not None:
-        publish_event(str(experiment_event['event_type']), dict(experiment_event['payload']))
-    publish_event(EventType.OUTCOME_RECORDED.value, event_payload)
+    # Immediate in-process publication is only safe after this function owns
+    # the commit. Callers using a wider transaction rely on the durable outbox
+    # rows written above and publish after that transaction commits.
+    if commit:
+        if experiment_event is not None:
+            publish_event(str(experiment_event['event_type']), dict(experiment_event['payload']))
+        publish_event(EventType.OUTCOME_RECORDED.value, event_payload)
     return row
 
 
@@ -108,6 +119,7 @@ def record_execution_outcome(
     execution: RecommendationExecution,
     metric_before: float,
     metric_after: float,
+    commit: bool = True,
 ) -> RecommendationOutcome:
     simulation_id = _resolve_simulation_for_execution(db, execution)
     return record_outcome(
@@ -119,6 +131,7 @@ def record_execution_outcome(
         metric_after=metric_after,
         measurement_kind='execution_metric',
         emit_learning_event=True,
+        commit=commit,
     )
 
 

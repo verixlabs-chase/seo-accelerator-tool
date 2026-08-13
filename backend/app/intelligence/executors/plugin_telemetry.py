@@ -44,6 +44,7 @@ def track_plugin_health(
         last_error_at=None if healthy else datetime.now(UTC),
         last_success_at=datetime.now(UTC) if healthy else None,
         environment=get_settings().app_env.lower(),
+        commit=False,
     )
 
 

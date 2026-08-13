@@ -107,8 +107,9 @@ class ProviderTelemetryService:
         last_error_code: str | None = None,
         last_error_at: datetime | None = None,
         last_success_at: datetime | None = None,
+        commit: bool = True,
     ) -> None:
-        try:
+        def persist() -> None:
             row = (
                 self._db.query(ProviderHealthState)
                 .filter(
@@ -147,9 +148,21 @@ class ProviderTelemetryService:
                 row.last_error_at = last_error_at
                 row.last_success_at = last_success_at
                 row.updated_at = datetime.now(UTC)
-            self._db.commit()
+
+        try:
+            if commit:
+                persist()
+                self._db.commit()
+            else:
+                # WordPress execution telemetry shares the action transaction.
+                # A savepoint keeps telemetry non-blocking without committing
+                # the execution's temporary ``running`` state too early.
+                with self._db.begin_nested():
+                    persist()
+                    self._db.flush()
         except Exception:  # noqa: BLE001
-            self._db.rollback()
+            if commit:
+                self._db.rollback()
             logger.warning("provider health state persistence failed", exc_info=True)
 
     def upsert_quota_state(

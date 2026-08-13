@@ -91,6 +91,8 @@ def retry_execution_endpoint(request: Request, execution_id: str, user: dict = D
     if retried is None:
         raise HTTPException(status_code=404, detail='Execution not found')
     if retried.status != 'scheduled':
+        db.commit()
+        db.refresh(retried)
         return envelope(request, ExecutionOut.model_validate(retried).model_dump(mode='json'))
     executed = execute_recommendation(execution_id, db=db, dry_run=False)
     if isinstance(executed, RecommendationExecution):

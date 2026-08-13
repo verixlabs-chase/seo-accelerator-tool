@@ -64,3 +64,10 @@ test("WordPress results show public-page proof and a recovery path", () => {
   assert.match(page, /execution\.status === "failed" && execution\.result\?\.rollback_available/);
   assert.match(page, /execution\.status === "failed" && !execution\.result\?\.rollback_available/);
 });
+
+test("Interrupted WordPress actions can be finished without duplicating the approved change", () => {
+  assert.match(page, /execution\.status === "running"/);
+  assert.match(page, /Finish interrupted run/);
+  assert.match(page, /same approved website change will not be duplicated/);
+  assert.match(page, /resumed after the interrupted run/);
+});
