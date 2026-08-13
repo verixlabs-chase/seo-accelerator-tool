@@ -139,6 +139,8 @@ def test_multi_org_requires_selection_endpoint(client, db_session) -> None:
     refresh_token = data["refresh_token"]
     assert refresh_token
     assert len(data["organizations"]) >= 2
+    assert {item["name"] for item in data["organizations"]}
+    assert second_org.name in {item["name"] for item in data["organizations"]}
 
     select_res = client.post(
         "/api/v1/auth/select-org",
@@ -148,7 +150,6 @@ def test_multi_org_requires_selection_endpoint(client, db_session) -> None:
     selected = select_res.json()["data"]
     assert selected["access_token"]
     assert selected["user"]["organization_id"] == second_org.id
-
 
 
 
