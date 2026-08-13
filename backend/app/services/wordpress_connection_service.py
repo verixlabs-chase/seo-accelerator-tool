@@ -56,7 +56,9 @@ def start_pairing(db: Session, *, campaign: Campaign) -> dict[str, Any]:
 
     row.pairing_code_hash = _pairing_code_hash(raw_code)
     row.pairing_expires_at = expires_at
-    db.commit()
+    # The API adds the audit event in the same transaction.  Flushing here
+    # keeps the pairing code and its audit record atomic under PostgreSQL RLS.
+    db.flush()
     db.refresh(row)
     return {
         "campaign_id": campaign.id,
@@ -137,7 +139,9 @@ def exchange_pairing(
     row.disconnected_at = None
     row.last_rotated_at = now if replacing else None
     row.updated_at = now
-    db.commit()
+    # The public exchange endpoint supplies its narrowly scoped database
+    # security context and commits after adding the tenant audit event.
+    db.flush()
     return {
         "connected": True,
         "campaign_id": row.campaign_id,
@@ -175,7 +179,8 @@ def disconnect_site(db: Session, *, campaign_id: str) -> bool:
     row.key_version = None
     row.disconnected_at = now
     row.updated_at = now
-    db.commit()
+    # The API commits this state together with its audit event.
+    db.flush()
     return True
 
 
