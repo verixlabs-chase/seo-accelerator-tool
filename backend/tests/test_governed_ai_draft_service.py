@@ -194,6 +194,18 @@ def test_valid_draft_is_metered_cited_and_idempotent(
     assert first["item"]["output"]["evidence_details"][0]["label"] == (
         "Ask recent customers for reviews consistently"
     )
+    assert first["item"]["output"]["lineage_schema_version"] == (
+        "governed-copy-lineage-v1"
+    )
+    assert first["item"]["output"]["input_snapshot"] == provider.last_context
+    saved_run = db_session.get(GovernedAIRun, first["item"]["id"])
+    assert saved_run is not None
+    assert (
+        governed_ai_draft_service.governed_ai_service._hash_payload(
+            first["item"]["output"]["input_snapshot"]
+        )
+        == saved_run.context_hash
+    )
     assert first["item"]["usage"]["reconciled_cost"] > 0
     assert replay["item"]["id"] == first["item"]["id"]
     assert replay["idempotent_replay"] is True

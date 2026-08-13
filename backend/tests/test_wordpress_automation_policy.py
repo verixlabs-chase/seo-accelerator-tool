@@ -400,7 +400,7 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
     assert preview.snapshot["affected_urls"] == ["/"]
     validation = preview.snapshot["managed_content_validation"]
     assert validation["status"] == "passed"
-    assert validation["validator_version"] == "wordpress-managed-content-v1"
+    assert validation["validator_version"] == "wordpress-managed-content-v2"
     assert validation["traceability"]["recommendation_id"] == recommendation.id
     assert validation["traceability"]["automation_policy_version"] == 1
     result_summary = json.loads(completed.result_summary or "{}")

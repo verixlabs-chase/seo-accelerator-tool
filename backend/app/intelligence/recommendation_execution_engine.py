@@ -991,7 +991,19 @@ def _build_execution_payload(
         'rollback_plan': rollback_plan,
     }
     if isinstance(evidence, dict):
-        for key in ('source_url', 'target_url', 'anchor_text', 'schema_type', 'content_title', 'content_slug', 'content_target_url', 'meta_title', 'meta_description'):
+        for key in (
+            'source_url',
+            'target_url',
+            'anchor_text',
+            'schema_type',
+            'content_title',
+            'content_slug',
+            'content_target_url',
+            'meta_title',
+            'meta_description',
+            'content_generation_mode',
+            'governed_ai_run_id',
+        ):
             if key in evidence and evidence[key] is not None:
                 payload[key] = evidence[key]
     return payload

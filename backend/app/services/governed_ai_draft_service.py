@@ -891,6 +891,12 @@ def _output_payload(
         context,
         evidence_used=output.evidence_used,
     )
+    # Keep the exact bounded input that produced accepted copy. The row-level
+    # context hash proves this snapshot was not substituted later, while the
+    # snapshot makes every business fact and cited evidence replayable without
+    # relying on mutable campaign records.
+    payload["input_snapshot"] = context
+    payload["lineage_schema_version"] = "governed-copy-lineage-v1"
     return payload
 
 

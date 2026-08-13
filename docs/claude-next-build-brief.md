@@ -3057,7 +3057,7 @@ single-site and portfolio automation within published allowances; Enterprise
 adds custom policy, provider, team, audit, and bulk-site controls. All tiers
 retain human-readable evidence and an honest verification plan.
 
-Implementation status (2026-08-13): the first seven WP1.2 safety slices are complete.
+Implementation status (2026-08-13): the first eight WP1.2 safety slices are complete.
 Each connected site now has a tenant-scoped, versioned policy with fail-closed
 defaults, allowed action types, an allowed URL work area, timezone-aware days
 and hours, blackout windows, a monthly update cap, a risk ceiling, an approval
@@ -3117,9 +3117,20 @@ explicit zero-credit decision in the measurement contract and audit history.
 It never launches a paid provider call implicitly, stops after one refresh,
 and reports insufficient information if the connected source still has not
 published comparable data. The delta crawl continues to enforce the existing
-monthly crawl-page allowance. Broader unattended action categories still
-require model, prompt, and lexicon lineage whenever generated copy is
-introduced.
+monthly crawl-page allowance. Managed previews now also fail closed when a
+proposal identifies itself as AI-written. The governed AI run preserves the
+exact bounded input snapshot that was supplied to the model, and its saved
+context hash proves that the business facts were not substituted later. The
+WordPress content validator requires a tenant-, organization-, campaign-, and
+action-matched validated run; complete provider, model, prompt, lexicon,
+context, response, and evidence lineage; and an exact field-for-field match
+between the accepted draft and the title, description, or draft-page wording
+being previewed. That immutable lineage snapshot is copied into the WordPress
+preview. Missing records, changed copy, incomplete hashes, or unsupported
+draft/action mappings block the preview before policy approval or delivery.
+Existing deterministic actions remain unchanged. Broader unattended action
+categories may be added only after an equally exact copy-to-mutation mapping is
+implemented and tested.
 
 Scope:
 

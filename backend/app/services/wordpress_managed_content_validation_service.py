@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import string
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
@@ -9,14 +11,18 @@ from urllib.parse import urlsplit
 from sqlalchemy.orm import Session
 
 from app.models.campaign import Campaign
+from app.models.governed_ai import GovernedAIRun
 from app.models.recommendation_execution import RecommendationExecution
-from app.services import business_service_area_service, business_service_service
+from app.services import (
+    business_service_area_service,
+    business_service_service,
+)
 from app.services.wordpress_content_inventory_service import (
     get_wordpress_content_inventory,
 )
 
 
-VALIDATOR_VERSION = "wordpress-managed-content-v1"
+VALIDATOR_VERSION = "wordpress-managed-content-v2"
 INVENTORY_MAX_AGE = timedelta(hours=24)
 ACTION_CONTRACTS: dict[str, frozenset[str]] = {
     "create_content_brief": frozenset({"publish_content_page"}),
@@ -114,6 +120,7 @@ def validate_managed_wordpress_changes(
         "confirmed_service_ids": [],
         "confirmed_service_area_ids": [],
         "content_sync_run_id": None,
+        "generated_copy_lineage": None,
     }
     if campaign is None or campaign.tenant_id != str(payload.get("tenant_id") or ""):
         _issue(
@@ -150,6 +157,17 @@ def validate_managed_wordpress_changes(
             for item in issues
         ),
         "Wording, links, metadata, and structured data passed deterministic checks.",
+    )
+
+    _check_generated_copy_lineage(
+        db,
+        campaign=campaign,
+        execution=execution,
+        payload=payload,
+        mutations=mutations,
+        issues=issues,
+        check_results=check_results,
+        traceability=traceability,
     )
 
     services = business_service_service.confirmed_services_for_campaign(
@@ -237,6 +255,252 @@ def validate_managed_wordpress_changes(
         )
 
     return _report(issues, check_results, traceability)
+
+
+def _check_generated_copy_lineage(
+    db: Session,
+    *,
+    campaign: Campaign,
+    execution: RecommendationExecution,
+    payload: dict[str, Any],
+    mutations: list[dict[str, Any]],
+    issues: list[dict[str, str]],
+    check_results: list[dict[str, Any]],
+    traceability: dict[str, Any],
+) -> None:
+    generation_mode = (
+        str(payload.get("content_generation_mode") or "").strip().lower()
+    )
+    run_id = str(payload.get("governed_ai_run_id") or "").strip()
+    generated_copy_requested = bool(run_id) or generation_mode == "governed_ai"
+    if not generated_copy_requested:
+        if generation_mode and generation_mode != "deterministic":
+            _issue(
+                issues,
+                "wordpress_copy_source_invalid",
+                "The proposed wording does not have a recognized source record.",
+            )
+        _add_check(
+            check_results,
+            "generated_copy_lineage",
+            not generation_mode or generation_mode == "deterministic",
+            "The proposal was produced by the saved deterministic action contract.",
+        )
+        return
+
+    traceability["generation_mode"] = "governed_ai"
+    if not run_id:
+        _issue(
+            issues,
+            "wordpress_generated_copy_run_required",
+            "The AI-written wording is missing its saved source record.",
+        )
+        _add_check(
+            check_results,
+            "generated_copy_lineage",
+            False,
+            "AI-written wording must keep its complete saved source record.",
+        )
+        return
+
+    run = db.get(GovernedAIRun, run_id)
+    if run is None or any(
+        (
+            run.tenant_id != campaign.tenant_id,
+            run.organization_id != campaign.organization_id,
+            run.campaign_id != campaign.id,
+        )
+    ):
+        _issue(
+            issues,
+            "wordpress_generated_copy_scope_invalid",
+            "The AI-written wording does not belong to this business and location.",
+        )
+        _add_check(
+            check_results,
+            "generated_copy_lineage",
+            False,
+            "AI-written wording must belong to this exact business and location.",
+        )
+        return
+
+    output = run.output_payload if isinstance(run.output_payload, dict) else {}
+    input_snapshot = (
+        output.get("input_snapshot")
+        if isinstance(output.get("input_snapshot"), dict)
+        else None
+    )
+    snapshot = input_snapshot or {}
+    snapshot_evidence_ids = _string_list(snapshot.get("allowed_evidence_ids"))
+    draft_request = (
+        snapshot.get("draft_request")
+        if isinstance(snapshot.get("draft_request"), dict)
+        else {}
+    )
+    evidence_used = _string_list(output.get("evidence_used"))
+    evidence_details = [
+        item
+        for item in (output.get("evidence_details") or [])
+        if isinstance(item, dict)
+    ]
+    evidence_detail_ids = [
+        str(item.get("evidence_id") or "").strip()
+        for item in evidence_details
+        if str(item.get("evidence_id") or "").strip()
+    ]
+    selected_action_id = str(run.selected_action_id or "").strip()
+    recommendation_context = payload.get("recommendation_context")
+    expected_action_id = (
+        str(recommendation_context.get("action_id") or "").strip()
+        if isinstance(recommendation_context, dict)
+        else ""
+    )
+    lineage_complete = all(
+        (
+            run.feature == "intelligence_draft",
+            run.status == "validated",
+            run.provider_state == "ready",
+            bool(str(run.provider_name or "").strip()),
+            bool(str(run.model_name or "").strip()),
+            bool(str(run.prompt_template_version or "").strip()),
+            bool(str(run.lexicon_id or "").strip()),
+            bool(str(run.lexicon_version or "").strip()),
+            _is_sha256(run.context_hash),
+            _is_sha256(run.prompt_hash),
+            _is_sha256(run.response_hash),
+            output.get("lineage_schema_version") == "governed-copy-lineage-v1",
+            input_snapshot is not None,
+            bool(evidence_used),
+            evidence_used == evidence_detail_ids,
+            set(evidence_used).issubset(set(_string_list(run.evidence_refs))),
+            set(evidence_used).issubset(set(snapshot_evidence_ids)),
+            bool(selected_action_id),
+            selected_action_id in _string_list(run.allowed_action_ids),
+            bool(expected_action_id),
+            selected_action_id == expected_action_id,
+            str(output.get("action_id") or "").strip() == selected_action_id,
+            str(draft_request.get("action_id") or "").strip()
+            == selected_action_id,
+            str(draft_request.get("draft_type") or "").strip()
+            == str(output.get("draft_type") or "").strip(),
+            output.get("draft_state") == "ready",
+            output.get("approval_required") is True,
+        )
+    )
+    if input_snapshot is not None:
+        lineage_complete = lineage_complete and (
+            _hash_payload(input_snapshot) == run.context_hash
+        )
+    copy_matches = lineage_complete and _generated_copy_matches_mutations(
+        execution.execution_type,
+        output=output,
+        mutations=mutations,
+    )
+    if not lineage_complete:
+        _issue(
+            issues,
+            "wordpress_generated_copy_lineage_incomplete",
+            "The AI-written wording is missing the facts, evidence, model, or writing rules that produced it.",
+        )
+    elif not copy_matches:
+        _issue(
+            issues,
+            "wordpress_generated_copy_mismatch",
+            "The proposed website wording no longer matches the saved AI draft.",
+        )
+
+    if lineage_complete:
+        traceability["model_run_id"] = run.id
+        traceability["generated_copy_lineage"] = {
+            "schema_version": output.get("lineage_schema_version"),
+            "run_id": run.id,
+            "feature": run.feature,
+            "provider_name": run.provider_name,
+            "model_name": run.model_name,
+            "prompt_template_version": run.prompt_template_version,
+            "prompt_hash": run.prompt_hash,
+            "lexicon_id": run.lexicon_id,
+            "lexicon_version": run.lexicon_version,
+            "context_hash": run.context_hash,
+            "response_hash": run.response_hash,
+            "selected_action_id": selected_action_id,
+            "draft_type": output.get("draft_type"),
+            "evidence_used": evidence_used,
+            "evidence_details": evidence_details,
+            "input_snapshot": input_snapshot,
+        }
+    _add_check(
+        check_results,
+        "generated_copy_lineage",
+        bool(lineage_complete and copy_matches),
+        (
+            "The exact AI-written fields match a validated draft with replayable facts and evidence."
+            if lineage_complete and copy_matches
+            else "AI-written wording must match one complete, validated source record."
+        ),
+    )
+
+
+def _generated_copy_matches_mutations(
+    execution_type: str,
+    *,
+    output: dict[str, Any],
+    mutations: list[dict[str, Any]],
+) -> bool:
+    title = str(output.get("title") or "").strip()
+    body = str(output.get("body") or "").strip()
+    draft_type = str(output.get("draft_type") or "").strip()
+    if not title or not body:
+        return False
+    by_action = {
+        str(mutation.get("action") or ""): mutation.get("payload") or {}
+        for mutation in mutations
+        if isinstance(mutation, dict)
+        and isinstance(mutation.get("payload") or {}, dict)
+    }
+    if execution_type == "fix_missing_title" and draft_type == "search_result":
+        return (
+            str(by_action.get("update_meta_title", {}).get("title") or "").strip()
+            == title
+            and str(
+                by_action.get("update_meta_description", {}).get("description") or ""
+            ).strip()
+            == body
+        )
+    if execution_type == "create_content_brief" and draft_type == "page_outline":
+        page = by_action.get("publish_content_page", {})
+        block_text = [
+            str(item.get("text") or "").strip()
+            for item in (page.get("content_blocks") or [])
+            if isinstance(item, dict) and str(item.get("text") or "").strip()
+        ]
+        return str(page.get("title") or "").strip() == title and body in block_text
+    return False
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [
+        str(item).strip()
+        for item in (value or [])
+        if str(item).strip()
+    ]
+
+
+def _is_sha256(value: Any) -> bool:
+    raw = str(value or "")
+    return len(raw) == 64 and all(character in string.hexdigits for character in raw)
+
+
+def _hash_payload(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _check_action_contract(
