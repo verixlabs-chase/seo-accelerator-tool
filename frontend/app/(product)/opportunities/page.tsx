@@ -4177,7 +4177,7 @@ export default function OpportunitiesPage() {
                               : "Test connection"}
                         </button>
                       ) : null}
-                      {wordpressSetup?.mode !== "test" ? (
+                      {wordpressSetup && wordpressSetup.mode !== "test" ? (
                         <button
                           type="button"
                           onClick={() => void createWordPressPairingCode()}
@@ -4223,7 +4223,7 @@ export default function OpportunitiesPage() {
                     </div>
                   </div>
 
-                  {wordpressSetup?.mode !== "test" ? (
+                  {wordpressSetup && wordpressSetup.mode !== "test" ? (
                     <details
                       className="mt-4 rounded-md border border-[#26272c] bg-[#141518] p-4"
                       open={!wordpressSetup?.configured}
