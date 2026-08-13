@@ -3057,7 +3057,7 @@ single-site and portfolio automation within published allowances; Enterprise
 adds custom policy, provider, team, audit, and bulk-site controls. All tiers
 retain human-readable evidence and an honest verification plan.
 
-Implementation status (2026-08-13): the first six WP1.2 safety slices are complete.
+Implementation status (2026-08-13): the first seven WP1.2 safety slices are complete.
 Each connected site now has a tenant-scoped, versioned policy with fail-closed
 defaults, allowed action types, an allowed URL work area, timezone-aware days
 and hours, blackout windows, a monthly update cap, a risk ceiling, an approval
@@ -3108,10 +3108,18 @@ as the baseline; it is processed by the existing database-backed Vercel job
 drain and records insufficient information rather than inventing a result when
 comparable data is unavailable. The scheduler deliberately reuses connected
 crawl, ranking, Search Console, content, and Core Web Vitals facts instead of
-buying duplicate provider checks for every website edit. Source-specific forced
-collection for a missing or stale metric remains a later cost-governed slice.
-Broader unattended action categories also still require model, prompt, and
-lexicon lineage whenever generated copy is introduced.
+buying duplicate provider checks for every website edit. When the primary
+result is missing or predates the verified website change, the result worker
+now queues only the matching connected or included source: Search Console,
+real-user website performance, Google Business Profile, owned reviews, or a
+one-page delta crawl. It records the collection job, source, recheck, and an
+explicit zero-credit decision in the measurement contract and audit history.
+It never launches a paid provider call implicitly, stops after one refresh,
+and reports insufficient information if the connected source still has not
+published comparable data. The delta crawl continues to enforce the existing
+monthly crawl-page allowance. Broader unattended action categories still
+require model, prompt, and lexicon lineage whenever generated copy is
+introduced.
 
 Scope:
 

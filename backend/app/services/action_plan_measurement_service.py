@@ -657,7 +657,7 @@ def _technical_issue_density(
         .filter(
             CrawlRun.tenant_id == tenant_id,
             CrawlRun.campaign_id == campaign_id,
-            CrawlRun.status == "completed",
+            CrawlRun.status.in_(("complete", "completed")),
             CrawlRun.created_at <= captured_at,
         )
         .order_by(CrawlRun.finished_at.desc(), CrawlRun.created_at.desc())
@@ -1208,6 +1208,96 @@ def _classify_primary_result(
     return "not_enough_information", "insufficient_data", primary_result
 
 
+def _capture_action_plan_outcome_metrics(
+    db: Session,
+    *,
+    measurement: ActionPlanMeasurement,
+    measured_at: datetime,
+) -> list[dict[str, Any]]:
+    lexicon = get_active_lexicon(db, tenant_id=measurement.tenant_id)
+    recommendation = db.get(StrategyRecommendation, measurement.recommendation_id)
+    evidence_payload = (
+        _recommendation_evidence_payload(recommendation) if recommendation is not None else {}
+    )
+    baseline_by_id = {
+        str(item.get("metric_id")): item for item in measurement.baseline_metrics or []
+    }
+    outcome_metrics: list[dict[str, Any]] = []
+    for metric_id in measurement.success_metric_ids or []:
+        metric = lexicon.metric_index.get(str(metric_id))
+        if metric is None:
+            continue
+        observed = _capture_metric(
+            db,
+            tenant_id=measurement.tenant_id,
+            organization_id=measurement.organization_id,
+            campaign_id=measurement.campaign_id,
+            business_location_id=measurement.business_location_id,
+            metric=metric,
+            captured_at=measured_at,
+            observation_window_days=measurement.observation_window_days,
+            evidence_payload=evidence_payload,
+        )
+        outcome_metrics.append(
+            _comparison(
+                baseline_by_id.get(str(metric_id), {}),
+                observed,
+                work_completed_at=measurement.work_completed_at,
+            )
+        )
+    return outcome_metrics
+
+
+def preview_action_plan_outcome(
+    db: Session,
+    *,
+    measurement: ActionPlanMeasurement,
+    measured_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Inspect result readiness without completing or classifying the action plan."""
+    resolved_at = measured_at or datetime.now(UTC)
+    outcome_metrics = _capture_action_plan_outcome_metrics(
+        db,
+        measurement=measurement,
+        measured_at=resolved_at,
+    )
+    result_classification, outcome_status, primary_result = _classify_primary_result(
+        outcome_metrics,
+        [str(item) for item in measurement.success_metric_ids or []],
+    )
+    primary_metric_id = (
+        str((measurement.success_metric_ids or [""])[0]).strip() or None
+    )
+    primary_baseline = next(
+        (
+            item
+            for item in measurement.baseline_metrics or []
+            if str(item.get("metric_id") or "") == primary_metric_id
+        ),
+        None,
+    )
+    primary_baseline_ready = bool(
+        primary_baseline is not None
+        and primary_baseline.get("status") == "available"
+        and primary_baseline.get("value") is not None
+    )
+    primary_ready = bool(
+        primary_result is not None
+        and primary_result.get("comparison") != "insufficient_data"
+    )
+    return {
+        "measurement_id": measurement.id,
+        "measured_at": resolved_at.isoformat(),
+        "primary_metric_id": primary_metric_id,
+        "primary_baseline_ready": primary_baseline_ready,
+        "primary_metric_ready": primary_ready,
+        "result_classification": result_classification,
+        "outcome_status": outcome_status,
+        "primary_result": dict(primary_result) if primary_result is not None else None,
+        "outcome_metrics": outcome_metrics,
+    }
+
+
 def evaluate_action_plan_outcome(
     db: Session,
     *,
@@ -1260,37 +1350,11 @@ def evaluate_action_plan_outcome(
             detail=f"Results can be checked after {due_at.isoformat()}.",
         )
 
-    lexicon = get_active_lexicon(db, tenant_id=tenant_id)
-    recommendation = db.get(StrategyRecommendation, measurement.recommendation_id)
-    evidence_payload = (
-        _recommendation_evidence_payload(recommendation) if recommendation is not None else {}
+    outcome_metrics = _capture_action_plan_outcome_metrics(
+        db,
+        measurement=measurement,
+        measured_at=resolved_at,
     )
-    baseline_by_id = {
-        str(item.get("metric_id")): item for item in measurement.baseline_metrics or []
-    }
-    outcome_metrics: list[dict[str, Any]] = []
-    for metric_id in measurement.success_metric_ids or []:
-        metric = lexicon.metric_index.get(str(metric_id))
-        if metric is None:
-            continue
-        observed = _capture_metric(
-            db,
-            tenant_id=tenant_id,
-            organization_id=organization_id,
-            campaign_id=campaign_id,
-            business_location_id=measurement.business_location_id,
-            metric=metric,
-            captured_at=resolved_at,
-            observation_window_days=measurement.observation_window_days,
-            evidence_payload=evidence_payload,
-        )
-        outcome_metrics.append(
-            _comparison(
-                baseline_by_id.get(str(metric_id), {}),
-                observed,
-                work_completed_at=measurement.work_completed_at,
-            )
-        )
 
     result_classification, outcome_status, primary_result = _classify_primary_result(
         outcome_metrics,

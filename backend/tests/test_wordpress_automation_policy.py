@@ -12,6 +12,9 @@ from app.intelligence.recommendation_execution_engine import (
 )
 from app.models.action_plan import ActionPlanMeasurement, ActionPlanOccurrence, ActionPlanStep
 from app.models.audit_log import AuditLog
+from app.models.business_location import BusinessLocation
+from app.models.cost_economics import CostLedgerEntry
+from app.models.data_connection import DataConnection
 from app.models.intelligence import StrategyRecommendation
 from app.models.organization import Organization
 from app.models.platform_job import PlatformJob
@@ -19,8 +22,14 @@ from app.models.recommendation_execution import RecommendationExecution
 from app.models.wordpress_automation_policy import WordPressAutomationPolicy
 from app.models.wordpress_change_preview import WordPressChangePreview
 from app.models.wordpress_site_connection import WordPressSiteConnection
-from app.services import action_plan_measurement_service, durable_job_service, job_service
+from app.services import (
+    action_plan_measurement_service,
+    durable_job_service,
+    job_service,
+    traffic_fact_service,
+)
 from app.services.wordpress_automation_policy_service import evaluate_wordpress_automation
+from app.services.wordpress_measurement_collection_service import schedule_minimum_collection
 from app.utils.enum_guard import ensure_enum
 from tests.conftest import create_test_campaign
 
@@ -291,6 +300,16 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
         name="Managed Preview Campaign",
         domain="managed-preview.example",
     )
+    location = BusinessLocation(
+        organization_id=organization.id,
+        name="Managed Preview Location",
+        domain="managed-preview.example",
+        city="Reno",
+        region="NV",
+    )
+    db_session.add(location)
+    db_session.flush()
+    campaign.business_location_id = location.id
     db_session.add_all(
         [
             WordPressSiteConnection(
@@ -320,6 +339,16 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
                 requires_manual_approval=False,
                 version=1,
             ),
+            DataConnection(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                business_location_id=location.id,
+                campaign_id=campaign.id,
+                provider_name="google_search_console",
+                external_resource_id="sc-domain:managed-preview.example",
+                status="current",
+                last_success_at=datetime.now(UTC),
+            ),
         ]
     )
     recommendation = _recommendation(
@@ -332,6 +361,18 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
             "action_id": "organic.rewrite_search_snippet",
             "target_url": "/",
         }
+    )
+    traffic_fact_service.upsert_search_console_daily_metric(
+        db=db_session,
+        metric_input=traffic_fact_service.SearchConsoleDailyMetricInput(
+            organization_id=organization.id,
+            campaign_id=campaign.id,
+            metric_date=datetime.now(UTC).date(),
+            clicks=20,
+            impressions=200,
+            avg_position=4.0,
+            property_uri="sc-domain:managed-preview.example",
+        ),
     )
     db_session.commit()
 
@@ -372,6 +413,7 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
     assert occurrence.status == "waiting_for_results"
     assert measurement is not None
     assert measurement.measurement_status == "waiting_for_results"
+    assert measurement.baseline_metrics[0]["status"] == "available"
     baseline_captured_at = measurement.baseline_captured_at
     executed_at = completed.executed_at
     observation_due_at = measurement.observation_due_at
@@ -404,7 +446,43 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
     assert follow_up_job.status == "queued"
     assert follow_up_job.available_at == measurement.observation_due_at
 
+    jobs_before_unrecoverable_baseline = db_session.query(PlatformJob).count()
+    unrecoverable = schedule_minimum_collection(
+        db_session,
+        measurement=measurement,
+        readiness={
+            "primary_metric_id": "organic.ctr",
+            "primary_baseline_ready": False,
+            "primary_metric_ready": False,
+        },
+        requested_at=datetime.now(UTC),
+    )
+    assert unrecoverable["status"] == "unavailable"
+    assert unrecoverable["reason_code"] == "wordpress_measurement_baseline_unavailable"
+    assert unrecoverable["credits_reserved"] == 0
+    assert db_session.query(PlatformJob).count() == jobs_before_unrecoverable_baseline
+
+    preview_calls: list[str] = []
     measured_calls: list[str] = []
+
+    def _preview_needs_refresh(db, **kwargs):  # noqa: ANN001
+        preview_calls.append(str(kwargs["measurement"].id))
+        return {
+            "measurement_id": measurement.id,
+            "primary_metric_id": "organic.ctr",
+            "primary_baseline_ready": True,
+            "primary_metric_ready": False,
+            "primary_result": {
+                "metric_id": "organic.ctr",
+                "comparison": "insufficient_data",
+            },
+        }
+
+    monkeypatch.setattr(
+        action_plan_measurement_service,
+        "preview_action_plan_outcome",
+        _preview_needs_refresh,
+    )
 
     def _evaluate_outcome(db, **kwargs):  # noqa: ANN001
         measured_calls.append(str(kwargs["occurrence_id"]))
@@ -426,6 +504,57 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
         job_id=follow_up_job.id,
     )
     assert processed["status"] == "completed"
+    db_session.refresh(follow_up_job)
+    assert follow_up_job.result["measurement_status"] == "waiting_for_source_refresh"
+    assert preview_calls == [measurement.id]
+    assert measured_calls == []
+    refresh_job = (
+        db_session.query(PlatformJob)
+        .filter(
+            PlatformJob.job_type == durable_job_service.SEARCH_CONSOLE_SYNC_JOB_TYPE,
+            PlatformJob.payload["measurement_id"].as_string() == measurement.id,
+        )
+        .one()
+    )
+    assert refresh_job.payload["credit_units"] == 0
+    assert refresh_job.payload["credential_owner"] == "organization"
+    assert db_session.query(CostLedgerEntry).count() == 0
+    retry_job = (
+        db_session.query(PlatformJob)
+        .filter(
+            PlatformJob.job_type == durable_job_service.ACTION_PLAN_MEASUREMENT_JOB_TYPE,
+            PlatformJob.id != follow_up_job.id,
+            PlatformJob.payload["measurement_id"].as_string() == measurement.id,
+        )
+        .one()
+    )
+    assert retry_job.payload["collection_attempt"] == 1
+    assert measurement.measurement_contract["latest_source_refresh"]["credits_reserved"] == 0
+
+    def _preview_ready(db, **kwargs):  # noqa: ANN001
+        return {
+            "measurement_id": measurement.id,
+            "primary_metric_id": "organic.ctr",
+            "primary_baseline_ready": True,
+            "primary_metric_ready": True,
+            "primary_result": {
+                "metric_id": "organic.ctr",
+                "comparison": "improved",
+            },
+        }
+
+    monkeypatch.setattr(
+        action_plan_measurement_service,
+        "preview_action_plan_outcome",
+        _preview_ready,
+    )
+    job_service.start_job(db_session, retry_job.id, worker_id="test-worker")
+    db_session.commit()
+    retried = durable_job_service.execute_claimed_job(
+        db_session,
+        job_id=retry_job.id,
+    )
+    assert retried["status"] == "completed"
     assert measured_calls == [occurrence.id]
 
 

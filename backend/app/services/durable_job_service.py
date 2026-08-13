@@ -21,6 +21,7 @@ from app.models.reporting import ReportSchedule
 from app.models.website_performance import WebsitePerformanceMeasurement
 from app.services import (
     action_plan_measurement_service,
+    crawl_service,
     data_connections_service,
     google_business_profile_service,
     job_service,
@@ -32,6 +33,7 @@ from app.services import (
     standards_source_service,
     traffic_fact_service,
     website_performance_service,
+    wordpress_measurement_collection_service,
 )
 
 JobHandler = Callable[[Session, PlatformJob], dict[str, Any]]
@@ -49,6 +51,9 @@ DIRECTORY_LISTING_DISCOVERY_JOB_TYPE = "directory_listings.discover"
 OWNED_REVIEW_SYNC_JOB_TYPE = "reputation.owned_reviews_sync"
 REVIEW_RESPONSE_PUBLISH_JOB_TYPE = reputation_response_execution_service.JOB_TYPE
 ACTION_PLAN_MEASUREMENT_JOB_TYPE = "wordpress.post_change_measurement"
+WORDPRESS_MEASUREMENT_CRAWL_JOB_TYPE = (
+    wordpress_measurement_collection_service.CRAWL_COLLECTION_JOB_TYPE
+)
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -375,14 +380,54 @@ def _action_plan_measurement_handler(
         or not managed_contract.get("execution_id")
     ):
         raise ValueError("Post-change result check is missing its tenant-scoped measurement.")
+    measured_at = datetime.now(UTC)
+    if measurement.measurement_status != "measured":
+        readiness = action_plan_measurement_service.preview_action_plan_outcome(
+            db,
+            measurement=measurement,
+            measured_at=measured_at,
+        )
+        if not readiness["primary_metric_ready"]:
+            collection = wordpress_measurement_collection_service.schedule_minimum_collection(
+                db,
+                measurement=measurement,
+                readiness=readiness,
+                collection_attempt=max(0, int(job.payload.get("collection_attempt") or 0)),
+                requested_at=measured_at,
+            )
+            if collection["status"] == "scheduled":
+                return {
+                    "measurement_id": measurement.id,
+                    "measurement_status": "waiting_for_source_refresh",
+                    "result_classification": "waiting_for_results",
+                    "source_refresh": collection,
+                }
     return action_plan_measurement_service.evaluate_action_plan_outcome(
         db,
         tenant_id=tenant_id,
         organization_id=organization_id,
         campaign_id=campaign_id,
         occurrence_id=occurrence_id,
-        measured_at=datetime.now(UTC),
+        measured_at=measured_at,
     )
+
+
+def _wordpress_measurement_crawl_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    campaign_id = str(job.payload.get("campaign_id") or "").strip()
+    crawl_run_id = str(job.payload.get("crawl_run_id") or job.entity_id or "").strip()
+    campaign = db.get(Campaign, campaign_id) if campaign_id else None
+    if (
+        not tenant_id
+        or campaign is None
+        or campaign.tenant_id != tenant_id
+        or not crawl_run_id
+    ):
+        raise ValueError("Website result refresh is missing its tenant-scoped crawl.")
+    return crawl_service.execute_run(db, crawl_run_id=crawl_run_id)
 
 
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
@@ -399,6 +444,7 @@ DEFAULT_HANDLERS: dict[str, JobHandler] = {
     OWNED_REVIEW_SYNC_JOB_TYPE: _owned_review_sync_handler,
     REVIEW_RESPONSE_PUBLISH_JOB_TYPE: _review_response_publish_handler,
     ACTION_PLAN_MEASUREMENT_JOB_TYPE: _action_plan_measurement_handler,
+    WORDPRESS_MEASUREMENT_CRAWL_JOB_TYPE: _wordpress_measurement_crawl_handler,
 }
 
 
