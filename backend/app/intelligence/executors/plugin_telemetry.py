@@ -13,7 +13,7 @@ from app.services.provider_telemetry_service import ProviderTelemetryService
 
 WORDPRESS_PROVIDER_NAME = 'wordpress_plugin'
 WORDPRESS_CAPABILITY = 'mutation_execution'
-MINIMUM_PLUGIN_VERSION = '1.0.0'
+MINIMUM_PLUGIN_VERSION = '1.4.0'
 MAX_MUTATIONS_PER_PAGE = 5
 PROTECTED_URL_PREFIXES = ('/wp-admin', '/wp-login.php', '/checkout', '/cart')
 _SELECTOR_PATTERN = re.compile(r'^[A-Za-z0-9#._:\-\[\]="\'\s>+~(),]+$')

@@ -49,6 +49,62 @@ test("competitor movement uses comparable saved positions", () => {
   assert.match(page, /at least three places/);
 });
 
+test("authority gaps show exact competitor-only referring pages without an invented score", () => {
+  assert.match(page, /\/authority\/link-gaps/);
+  assert.match(page, /\/authority\/link-gaps\/refresh/);
+  assert.match(page, /Websites that mention competitors, but not you/);
+  assert.match(page, /Open the exact page/);
+  assert.match(page, /competitor_matches/);
+  assert.match(page, /source_url/);
+  assert.match(page, /target_url/);
+  assert.match(page, /first_seen_at/);
+  assert.match(page, /last_seen_at/);
+  assert.doesNotMatch(page, /authority_score/);
+});
+
+test("owner link history separates explicit new and lost evidence", () => {
+  assert.match(page, /\/authority\/link-changes/);
+  assert.match(page, /\/authority\/link-changes\/refresh/);
+  assert.match(page, /What changed with website mentions/);
+  assert.match(page, /New links to review/);
+  assert.match(page, /Lost links to investigate/);
+  assert.match(page, /change_state/);
+  assert.match(page, /source_url/);
+  assert.match(page, /target_url/);
+  assert.match(page, /verification_goal/);
+});
+
+test("authority inventory separates exact incoming links from same-run checked mentions", () => {
+  assert.match(page, /\/authority\/inventory/);
+  assert.match(page, /\/authority\/inventory\/refresh/);
+  assert.match(page, /Exact business name/);
+  assert.match(page, /Links you have and mentions to review/);
+  assert.match(page, /no link from that same page was found in the same check/i);
+  assert.match(page, /incoming_links/);
+  assert.match(page, /exact_name_pages_checked/);
+  assert.match(page, /unlinked_mentions/);
+  assert.match(page, /unlinked_mention/);
+});
+
+test("authority opportunities use local relevance and deduplicated next-step promotion", () => {
+  assert.match(page, /relevance_classification/);
+  assert.match(page, /matched_services/);
+  assert.match(page, /matched_service_areas/);
+  assert.match(page, /relevance_label/);
+  assert.match(page, /\/authority\/actions/);
+  assert.match(page, /Confirm and add to Next Steps/);
+});
+
+test("authority outreach stays owner-reviewed and manual-send only", () => {
+  assert.match(page, /\/authority\/outreach-drafts/);
+  assert.match(page, /Prepare a message/);
+  assert.match(page, /I checked the recipient/);
+  assert.match(page, /Manual send only/);
+  assert.match(page, /Copy message/);
+  assert.doesNotMatch(page, /Send message/);
+  assert.doesNotMatch(page, /enrich.*contact/i);
+});
+
 test("competitor customer copy does not expose the internal market supplier", () => {
   assert.doesNotMatch(page, /dataforseo/i);
 });

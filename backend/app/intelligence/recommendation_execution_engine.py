@@ -26,6 +26,13 @@ from app.services.commercial_plan_service import (
     require_commercial_feature,
 )
 from app.services.cost_economics_service import CostEconomicsError
+from app.services.wordpress_change_preview_service import (
+    WordPressChangePreviewError,
+    approve_change_preview,
+    bind_approved_preview,
+    create_change_preview,
+    requires_wordpress_preview,
+)
 
 MAX_EXECUTIONS_PER_CAMPAIGN_PER_DAY = 20
 RETRY_LIMIT = 3
@@ -135,7 +142,11 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
         executor = get_executor(execution.execution_type)
         executor.validate(payload)
         if dry_run:
-            return _normalize_result(executor.plan(payload), execution.execution_type)
+            planned = _normalize_result(executor.plan(payload), execution.execution_type)
+            if requires_wordpress_preview(execution):
+                planned = create_change_preview(session, execution=execution, planned_result=planned)
+            session.flush()
+            return planned
         recommendation = session.get(StrategyRecommendation, execution.recommendation_id)
         if recommendation is None:
             return None
@@ -157,6 +168,21 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
             execution.status = 'pending'
             execution.last_error = 'manual_approval_required'
             execution.result_summary = json.dumps(_governance_block(campaign_id=execution.campaign_id, execution_type=execution.execution_type, reason_code='manual_approval_required', message='Execution requires approval before run.'), sort_keys=True)
+            if owns_session:
+                session.commit()
+            return execution
+        if requires_wordpress_preview(execution) and not (execution.approved_by and execution.approved_at):
+            execution.status = 'pending'
+            execution.last_error = 'wordpress_preview_approval_required'
+            execution.result_summary = json.dumps(
+                _governance_block(
+                    campaign_id=execution.campaign_id,
+                    execution_type=execution.execution_type,
+                    reason_code='wordpress_preview_approval_required',
+                    message='Check and approve the exact website changes before running them.',
+                ),
+                sort_keys=True,
+            )
             if owns_session:
                 session.commit()
             return execution
@@ -215,7 +241,7 @@ def rollback_execution(execution_id: str, *, requested_by: str, db: Session | No
             return None
         if execution.status == 'rolled_back':
             return execution
-        if execution.status != 'completed':
+        if execution.status not in {'completed', 'failed'}:
             return execution
         recommendation = session.get(StrategyRecommendation, execution.recommendation_id)
         if recommendation is None:
@@ -263,17 +289,27 @@ def rollback_execution(execution_id: str, *, requested_by: str, db: Session | No
             session.close()
 
 
-def approve_execution(execution_id: str, *, approved_by: str, db: Session | None = None) -> RecommendationExecution | None:
+def approve_execution(execution_id: str, *, approved_by: str, preview_hash: str | None = None, db: Session | None = None) -> RecommendationExecution | None:
     owns_session = db is None
     session = db or SessionLocal()
     try:
         execution = session.get(RecommendationExecution, execution_id)
         if execution is None:
             return None
+        if requires_wordpress_preview(execution):
+            approve_change_preview(
+                session,
+                execution=execution,
+                preview_hash=preview_hash,
+                approved_by=approved_by,
+            )
         execution.approved_by = approved_by
         execution.approved_at = datetime.now(UTC)
-        if execution.status == 'pending':
+        if execution.status == 'pending' or (
+            execution.status == 'failed' and requires_wordpress_preview(execution)
+        ):
             execution.status = 'scheduled'
+            execution.last_error = None
         if owns_session:
             session.commit()
             session.refresh(execution)
@@ -459,7 +495,7 @@ def _normalize_result(result: dict[str, Any], execution_type: str) -> dict[str, 
         'notes': str(result.get('notes', '')),
         'mutations': mutations,
     }
-    for optional_key in ('metric_name', 'metric_before', 'metric_after', 'delta', 'delivery_mode', 'provider_name', 'mutation_results', 'rollback_delivery_mode', 'rolled_back_mutations'):
+    for optional_key in ('metric_name', 'metric_before', 'metric_after', 'delta', 'delivery_mode', 'provider_name', 'mutation_results', 'public_verification', 'rollback_available', 'recovery_action', 'rollback_delivery_mode', 'rolled_back_mutations'):
         if optional_key in result:
             normalized[optional_key] = result[optional_key]
     return normalized
@@ -555,6 +591,13 @@ def _deliver_mutations(session: Session, *, execution: RecommendationExecution, 
         failed['mutations'] = mutations
         return failed
     try:
+        mutations = bind_approved_preview(session, execution=execution, mutations=mutations)
+    except WordPressChangePreviewError as exc:
+        failed = _failed_result(execution.execution_type, str(exc))
+        failed['reason_code'] = exc.reason_code
+        failed['mutations'] = mutations
+        return failed
+    try:
         delivery = apply_mutations(session, execution=execution, mutations=mutations)
     except WordPressExecutionError as exc:
         failed = _failed_result(execution.execution_type, str(exc))
@@ -564,7 +607,22 @@ def _deliver_mutations(session: Session, *, execution: RecommendationExecution, 
     result['provider_name'] = delivery.get('provider_name', 'wordpress_plugin')
     result['delivery_mode'] = delivery.get('delivery_mode', 'unknown')
     result['mutation_results'] = persisted
-    result['notes'] = f"{result.get('notes', '').strip()} Mutation delivery completed.".strip()
+    verification = delivery.get('public_verification')
+    if isinstance(verification, dict):
+        result['public_verification'] = verification
+        result['rollback_available'] = bool(verification.get('rollback_available'))
+        if not bool(verification.get('passed')):
+            result['status'] = 'failed'
+            result['reason_code'] = 'wordpress_public_verification_failed'
+            result['recovery_action'] = (
+                'Review the failed public checks. Roll back the saved website change if it is not visible as approved.'
+            )
+            result['notes'] = (
+                'WordPress saved the change, but the public website did not match every approved value. '
+                'A rollback snapshot is available.'
+            )
+            return result
+    result['notes'] = f"{result.get('notes', '').strip()} Mutation delivery and public verification completed.".strip()
     return result
 
 
@@ -572,6 +630,15 @@ def _persist_mutation_audit_rows(session: Session, *, execution: RecommendationE
     now = datetime.now(UTC)
     results = delivery.get('results', []) if isinstance(delivery.get('results'), list) else []
     by_id = {str(item.get('mutation_id') or ''): item for item in results if isinstance(item, dict)}
+    verification = delivery.get('public_verification')
+    verification_results = (
+        verification.get('results', []) if isinstance(verification, dict) else []
+    )
+    verification_by_id = {
+        str(item.get('mutation_id') or ''): item
+        for item in verification_results
+        if isinstance(item, dict)
+    }
     rows: list[dict[str, Any]] = []
     for mutation in mutations:
         result = by_id.get(str(mutation.get('mutation_id') or ''), {})
@@ -591,6 +658,14 @@ def _persist_mutation_audit_rows(session: Session, *, execution: RecommendationE
             applied_at=now,
         )
         session.add(row)
-        rows.append({'mutation_id': row.external_mutation_id, 'mutation_type': row.mutation_type, 'target_url': row.target_url, 'status': row.status})
+        row_verification = verification_by_id.get(str(row.external_mutation_id or ''), {})
+        rows.append({
+            'mutation_id': row.external_mutation_id,
+            'mutation_type': row.mutation_type,
+            'target_url': row.target_url,
+            'status': row.status,
+            'public_verification': row_verification,
+            'rollback_available': bool(result.get('rollback_payload')),
+        })
     session.flush()
     return rows

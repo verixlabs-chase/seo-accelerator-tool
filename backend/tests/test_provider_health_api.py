@@ -130,3 +130,14 @@ def test_wordpress_execution_setup_requires_growth_plan(client, db_session) -> N
     )
     assert allowed.status_code == 200
     assert allowed.json()["data"]["execution_ready"] is True
+
+    connection_check = client.post(
+        "/api/v1/provider-health/wordpress-execution-check",
+        params={"campaign_id": campaign.id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert connection_check.status_code == 200
+    check_data = connection_check.json()["data"]
+    assert check_data["connected"] is True
+    assert check_data["mode"] == "test"
+    assert "review and approval" in check_data["message"]

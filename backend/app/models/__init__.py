@@ -9,6 +9,14 @@ from app.events.outbox.event_outbox import EventOutbox
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.auth_session import AuthSession
 from app.models.authority import (
+    AuthorityGapResearchRun,
+    AuthorityInventoryLink,
+    AuthorityInventoryRun,
+    AuthorityLinkChange,
+    AuthorityLinkChangeRun,
+    AuthorityLinkGap,
+    AuthorityOutreachDraft,
+    AuthorityUnlinkedMention,
     Backlink,
     BacklinkOpportunity,
     Citation,
@@ -173,6 +181,12 @@ from app.models.website_analytics import (
     AnalyticsTrafficSourceDailyMetric,
     WebsiteFormEvent,
 )
+from app.models.wordpress_site_connection import WordPressSiteConnection
+from app.models.wordpress_content_inventory import (
+    WordPressContentItem,
+    WordPressContentSyncRun,
+)
+from app.models.wordpress_change_preview import WordPressChangePreview
 
 __all__ = [
     "Tenant",
@@ -194,6 +208,14 @@ __all__ = [
     "CampaignDailyMetric",
     "AnalyticsDailyMetric",
     "AuditLog",
+    "AuthorityGapResearchRun",
+    "AuthorityInventoryLink",
+    "AuthorityInventoryRun",
+    "AuthorityLinkChange",
+    "AuthorityLinkChangeRun",
+    "AuthorityLinkGap",
+    "AuthorityOutreachDraft",
+    "AuthorityUnlinkedMention",
     "ActionPlanOccurrence",
     "ActionPlanStep",
     "ActionPlanMeasurement",
@@ -346,4 +368,8 @@ __all__ = [
     "AnalyticsLandingPageDailyMetric",
     "AnalyticsTrafficSourceDailyMetric",
     "WebsiteFormEvent",
+    "WordPressSiteConnection",
+    "WordPressContentItem",
+    "WordPressContentSyncRun",
+    "WordPressChangePreview",
 ]

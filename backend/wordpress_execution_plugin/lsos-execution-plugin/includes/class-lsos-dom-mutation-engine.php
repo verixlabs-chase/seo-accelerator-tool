@@ -47,6 +47,83 @@ class LSOS_DOM_Mutation_Engine
         throw new RuntimeException('Unsupported mutation action.');
     }
 
+    public function preview_mutation(array $mutation): array
+    {
+        $this->validate_mutation($mutation);
+        $action = (string) $mutation['action'];
+        $target_url = (string) ($mutation['source_url'] ?? $mutation['target_url'] ?? '/');
+        $payload = $this->payload($mutation);
+        $post = null;
+        $before = array();
+        $conflicts = array();
+
+        if ($action === 'publish_content_page') {
+            $slug = sanitize_title((string) ($payload['slug'] ?? $payload['title'] ?? ''));
+            $existing = $slug !== '' ? get_page_by_path($slug, OBJECT, get_post_types(array('public' => true), 'names')) : null;
+            if ($existing instanceof WP_Post) {
+                $conflicts[] = array(
+                    'code' => 'target_already_exists',
+                    'message' => 'A WordPress page already uses this address.',
+                    'recovery' => 'Choose a different page address or update the existing page instead.',
+                );
+            }
+            $expected_version = array(
+                'revision_id' => 'new:' . $slug,
+                'content_hash' => hash('sha256', 'new:' . $slug . ':' . ($existing instanceof WP_Post ? (string) $existing->ID : 'available')),
+            );
+            $before = array('page_exists' => $existing instanceof WP_Post, 'slug' => $slug);
+        } else {
+            $post = $this->resolve_post_by_url($target_url);
+            $expected_version = $this->post_version($post);
+            $before = $this->preview_before_state($post, $action);
+        }
+
+        return array(
+            'mutation_id' => (string) ($mutation['mutation_id'] ?? ''),
+            'mutation_type' => $action,
+            'target_url' => $target_url,
+            'before' => $before,
+            'after' => $this->preview_after_state($action, $payload),
+            'expected_version' => $expected_version,
+            'validation_checks' => array(
+                array('code' => 'target_checked', 'passed' => true, 'message' => 'The target page was checked.'),
+                array('code' => 'change_supported', 'passed' => true, 'message' => 'This type of change is supported.'),
+                array('code' => 'rollback_available', 'passed' => true, 'message' => 'The current value can be saved for rollback.'),
+            ),
+            'conflicts' => $conflicts,
+            'rollback_plan' => array(
+                'available' => true,
+                'summary' => $action === 'publish_content_page'
+                    ? 'Delete the draft page created by this change.'
+                    : 'Restore the exact WordPress values captured immediately before the change.',
+            ),
+        );
+    }
+
+    public function assert_preview_is_current(array $mutation): void
+    {
+        $expected = isset($mutation['expected_version']) && is_array($mutation['expected_version']) ? $mutation['expected_version'] : array();
+        if (empty($expected['revision_id']) || empty($expected['content_hash'])) {
+            throw new RuntimeException('An approved page version is required.');
+        }
+        $action = (string) ($mutation['action'] ?? '');
+        $payload = $this->payload($mutation);
+        if ($action === 'publish_content_page') {
+            $slug = sanitize_title((string) ($payload['slug'] ?? $payload['title'] ?? ''));
+            $existing = $slug !== '' ? get_page_by_path($slug, OBJECT, get_post_types(array('public' => true), 'names')) : null;
+            $current = array(
+                'revision_id' => 'new:' . $slug,
+                'content_hash' => hash('sha256', 'new:' . $slug . ':' . ($existing instanceof WP_Post ? (string) $existing->ID : 'available')),
+            );
+        } else {
+            $target_url = (string) ($mutation['source_url'] ?? $mutation['target_url'] ?? '/');
+            $current = $this->post_version($this->resolve_post_by_url($target_url));
+        }
+        if (! hash_equals((string) $expected['revision_id'], (string) $current['revision_id']) || ! hash_equals((string) $expected['content_hash'], (string) $current['content_hash'])) {
+            throw new RuntimeException('The WordPress page revision no longer matches the approved preview.');
+        }
+    }
+
     public function rollback_mutation(array $mutation): array
     {
         $rollback = isset($mutation['rollback_payload']) && is_array($mutation['rollback_payload']) ? $mutation['rollback_payload'] : array();
@@ -137,7 +214,7 @@ class LSOS_DOM_Mutation_Engine
         }
 
         $source_post = $this->resolve_post_by_url($source_url);
-        $target_url = $this->normalize_url((string) $mutation['target_url']);
+        $target_url = $this->normalize_url((string) ($payload['target_url'] ?? $mutation['target_url']));
         $before = $this->snapshot_post_state($source_post->ID, false, false, true, false);
         $updated_content = $this->apply_anchor_in_content((string) $source_post->post_content, $anchor_text, $target_url, (string) ($payload['selector'] ?? ''));
 
@@ -175,7 +252,7 @@ class LSOS_DOM_Mutation_Engine
     {
         $post = $this->resolve_post_by_url((string) $mutation['target_url']);
         $payload = $this->payload($mutation);
-        $schema = $payload['schema'] ?? $payload['value'] ?? null;
+        $schema = $payload['schema'] ?? $payload['schema_json'] ?? $payload['value'] ?? null;
         if (! is_array($schema)) {
             throw new RuntimeException('add_schema_markup requires a schema object payload.');
         }
@@ -197,9 +274,9 @@ class LSOS_DOM_Mutation_Engine
         $post_id = wp_insert_post(
             array(
                 'post_type' => sanitize_key((string) ($payload['post_type'] ?? 'page')),
-                'post_status' => sanitize_key((string) ($payload['status'] ?? 'draft')),
+                'post_status' => sanitize_key((string) ($payload['status'] ?? $payload['publication_state'] ?? 'draft')),
                 'post_title' => $title,
-                'post_content' => wp_kses_post((string) ($payload['content'] ?? '')),
+                'post_content' => $this->content_from_payload($payload),
                 'post_name' => sanitize_title((string) ($payload['slug'] ?? $title)),
             ),
             true
@@ -208,11 +285,14 @@ class LSOS_DOM_Mutation_Engine
             throw new RuntimeException($post_id->get_error_message());
         }
 
-        if (! empty($payload['meta_title'])) {
-            update_post_meta($post_id, '_lsos_meta_title', sanitize_text_field((string) $payload['meta_title']));
+        $seo = isset($payload['seo']) && is_array($payload['seo']) ? $payload['seo'] : array();
+        $meta_title = (string) ($payload['meta_title'] ?? $seo['meta_title'] ?? '');
+        $meta_description = (string) ($payload['meta_description'] ?? $seo['meta_description'] ?? '');
+        if ($meta_title !== '') {
+            update_post_meta($post_id, '_lsos_meta_title', sanitize_text_field($meta_title));
         }
-        if (! empty($payload['meta_description'])) {
-            update_post_meta($post_id, '_lsos_meta_description', sanitize_textarea_field((string) $payload['meta_description']));
+        if ($meta_description !== '') {
+            update_post_meta($post_id, '_lsos_meta_description', sanitize_textarea_field($meta_description));
         }
         if (! empty($payload['schema']) && is_array($payload['schema'])) {
             update_post_meta($post_id, '_lsos_schema_markup', wp_json_encode($payload['schema'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
@@ -252,6 +332,30 @@ class LSOS_DOM_Mutation_Engine
     private function payload(array $mutation): array
     {
         return isset($mutation['payload']) && is_array($mutation['payload']) ? $mutation['payload'] : array();
+    }
+
+    private function content_from_payload(array $payload): string
+    {
+        if (isset($payload['content'])) {
+            return wp_kses_post((string) $payload['content']);
+        }
+        $html = '';
+        foreach (($payload['content_blocks'] ?? array()) as $block) {
+            if (! is_array($block)) {
+                continue;
+            }
+            $text = trim((string) ($block['text'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+            $type = sanitize_key((string) ($block['type'] ?? 'paragraph'));
+            if (in_array($type, array('heading', 'h2'), true)) {
+                $html .= '<h2>' . esc_html($text) . '</h2>';
+            } else {
+                $html .= '<p>' . esc_html($text) . '</p>';
+            }
+        }
+        return wp_kses_post($html);
     }
 
     private function normalize_url(string $url): string
@@ -308,6 +412,79 @@ class LSOS_DOM_Mutation_Engine
             $state['schema_markup'] = get_post_meta($post_id, '_lsos_schema_markup', true);
         }
         return $state;
+    }
+
+    private function post_version(WP_Post $post): array
+    {
+        $revisions = wp_get_post_revisions($post->ID, array(
+            'posts_per_page' => 1,
+            'orderby' => 'ID',
+            'order' => 'DESC',
+        ));
+        $latest_revision = ! empty($revisions) ? reset($revisions) : null;
+        $revision_id = $latest_revision instanceof WP_Post
+            ? 'revision:' . (string) $latest_revision->ID
+            : 'modified:' . (string) $post->post_modified_gmt;
+        $fingerprint = wp_json_encode(array(
+            'title' => (string) $post->post_title,
+            'content' => (string) $post->post_content,
+            'meta_title' => (string) get_post_meta($post->ID, '_lsos_meta_title', true),
+            'meta_description' => (string) get_post_meta($post->ID, '_lsos_meta_description', true),
+            'canonical' => (string) get_post_meta($post->ID, '_lsos_canonical_url', true),
+            'schema' => (string) get_post_meta($post->ID, '_lsos_schema_markup', true),
+            'status' => (string) $post->post_status,
+        ));
+        return array(
+            'revision_id' => $revision_id,
+            'content_hash' => hash('sha256', (string) $fingerprint),
+        );
+    }
+
+    private function preview_before_state(WP_Post $post, string $action): array
+    {
+        switch ($action) {
+            case 'update_meta_title':
+                return array('value' => $this->first_saved_meta($post->ID, array('_lsos_meta_title', '_yoast_wpseo_title', 'rank_math_title', '_aioseo_title')), 'label' => 'Current search title');
+            case 'update_meta_description':
+                return array('value' => $this->first_saved_meta($post->ID, array('_lsos_meta_description', '_yoast_wpseo_metadesc', 'rank_math_description', '_aioseo_description')), 'label' => 'Current search description');
+            case 'add_schema_markup':
+                return array('value' => (string) get_post_meta($post->ID, '_lsos_schema_markup', true), 'label' => 'Current structured data');
+            case 'insert_internal_link':
+                return array('value' => 'No matching InsightOS link is recorded yet.', 'label' => 'Current page link');
+            case 'create_internal_anchor':
+                return array('value' => 'No matching InsightOS page anchor is recorded yet.', 'label' => 'Current page anchor');
+        }
+        return array('value' => '', 'label' => 'Current value');
+    }
+
+    private function first_saved_meta(int $post_id, array $keys): string
+    {
+        foreach ($keys as $key) {
+            $value = trim((string) get_post_meta($post_id, $key, true));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+        return '';
+    }
+
+    private function preview_after_state(string $action, array $payload): array
+    {
+        switch ($action) {
+            case 'update_meta_title':
+                return array('value' => (string) ($payload['title'] ?? $payload['value'] ?? ''), 'label' => 'New search title');
+            case 'update_meta_description':
+                return array('value' => (string) ($payload['description'] ?? $payload['value'] ?? ''), 'label' => 'New search description');
+            case 'add_schema_markup':
+                return array('value' => $payload['schema'] ?? $payload['schema_json'] ?? $payload['value'] ?? array(), 'label' => 'New structured data');
+            case 'insert_internal_link':
+                return array('value' => array('link_to' => $payload['target_url'] ?? '', 'words' => $payload['anchor_text'] ?? ''), 'label' => 'New page link');
+            case 'create_internal_anchor':
+                return array('value' => (string) ($payload['anchor_id'] ?? $payload['anchor_slug'] ?? $payload['anchor_text'] ?? ''), 'label' => 'New page anchor');
+            case 'publish_content_page':
+                return array('value' => array('title' => $payload['title'] ?? '', 'slug' => $payload['slug'] ?? '', 'status' => $payload['status'] ?? $payload['publication_state'] ?? 'draft'), 'label' => 'New draft page');
+        }
+        return array('value' => $payload, 'label' => 'New value');
     }
 
     private function build_rollback_payload(string $action, int $post_id, array $before_state, string $source_url = ''): array

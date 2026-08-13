@@ -29,7 +29,8 @@ def test_plugin_mutation_guards_validate_batches() -> None:
     with pytest.raises(PluginTelemetryError):
         validate_mutation_batch([{'target_url': '/checkout', 'payload': {}, 'action': 'insert_internal_link'}])
 
-    assert verify_plugin_version({'plugin_version': '1.3.0'})
+    assert not verify_plugin_version({'plugin_version': '1.3.0'})
+    assert verify_plugin_version({'plugin_version': '1.4.0'})
 
     verify_rollback_payloads(
         [

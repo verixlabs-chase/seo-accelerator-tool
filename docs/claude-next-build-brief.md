@@ -2786,7 +2786,10 @@ parts of Semrush without delaying automated keyword discovery.
 Status (2026-08-12): organic competitor discovery, exact keyword/page-gap
 comparison, comparable-period movement alerts, and confirmed-competitor local
 grid overlap are locally complete. Exact gaps now also promote into review-only
-content briefs. Profile, authority, and local-profile action slices remain.
+content briefs. The bounded AUTH1 foundation for competitor-only pages, owner
+link inventory/history, verified unlinked mentions, measurable actions, and
+manual-send outreach is now locally complete. Profile and local-profile action
+slices remain.
 
 Implementation record:
 
@@ -2831,12 +2834,31 @@ Implementation record:
   research run, freshness, recommended existing-page or new-page path, and a
   deterministic five-part outline. It cannot publish or copy competitor wording,
   and replaying the action returns the existing draft instead of creating noise.
+- One explicit, idempotent authority check now compares up to five confirmed
+  competitors with the location website and saves at most 25 live referring
+  pages that point to those competitors while no owner link was found in the
+  same check. Each result preserves the exact source page, exact competitor
+  destination, link type, follow attribute, first/last-seen dates, and check
+  time. The customer UI uses plain language, does not expose the internal data
+  supplier, and does not invent an authority or toxicity score.
+- A separate bounded owner-link check now saves at most 12 exact newly found
+  links and 12 exact links explicitly reported as lost. New and lost states come
+  from the production link source rather than inference from a truncated result
+  window. Each row preserves the source page, owner destination, link details,
+  first/last-seen dates, and check time, then gives the owner a plain-language
+  follow-up and a measurable success check.
+- A broader bounded owner inventory now saves up to 50 exact live incoming links
+  and checks up to 10 exact-name pages for a link to the business website. A
+  page is labeled as a possible unlinked mention only when its saved title or
+  snippet contains the exact owner-confirmed business name and the same run's
+  URL-level link check returns no live link from that exact page. Results that
+  do not preserve that evidence are withheld. Relevant mentions can enter the
+  same deduplicated Next Steps and owner-reviewed, manual-send outreach path.
 
 Remaining delivery slices:
 
 - Add Google Business Profile attribute and activity comparisons after the
   required production API access is available.
-- Add authority/referring-domain gaps through AUTH1.
 - Extend direct promotion from the completed tracked-phrase and governed Next
   Steps and content-brief paths into a local profile action while preserving the
   same evidence packet and duplicate controls.
@@ -2882,6 +2904,32 @@ Acceptance criteria:
 Goal: close the major Semrush authority gap with evidence-backed local link
 work rather than an unexplained domain score.
 
+Status (2026-08-12): the bounded AUTH1 foundation is locally complete. An
+explicit credit-metered competitor check uses exact page
+intersections, excludes the owner's website, persists immutable
+tenant/location-scoped runs, and shows the saved source page and competitor
+destinations on the Competitors page. A separate credit-metered owner check now
+stores exact newly found and explicitly lost referring pages with first/last
+seen dates and clear verification goals. Each competitor-only source page is now
+classified deterministically against confirmed services and included service
+areas, with excluded-area matches held for review. A relevant gap or exact lost
+link can become one review-only Next Steps item; stable source/action identity
+prevents duplicates, and its objective success metric moves from zero to one
+only when a later saved check finds that exact page linking to the business.
+The user can now prepare a deduplicated outreach draft directly from that exact
+evidence. InsightOS does not discover or invent recipients, send the message,
+or mark it ready until the owner supplies a verified email or contact page and
+confirms the recipient. The saved message remains editable, manual-send only,
+and explicitly avoids payment, link-trading, and ranking promises. Legacy
+automatic contact enrichment and sequence advancement are blocked. Broader
+owner-link inventory is now bounded to 50 live exact source/destination pairs.
+The same run also checks up to 10 owner-confirmed exact-name pages and retains a
+possible unlinked mention only when saved page text includes that exact name and
+a URL-level link check finds no live link from that exact page to the owner
+website. Those mentions reuse local relevance rules, deduplicated Next Steps,
+the exact-link success metric, and owner-reviewed manual-send drafts. AUTH1 now
+moves out of active delivery; WordPress WP1.1 is the next product sprint.
+
 Scope:
 
 - Connect DataForSEO Backlinks as the first production backlink source for
@@ -2904,8 +2952,8 @@ Acceptance criteria:
 
 - Every link fact identifies its production source, observed URL, destination,
   first/last seen dates, freshness, and location/campaign scope.
-- A user can move from competitor gap or lost link to a deduplicated, assigned,
-  measurable authority action.
+- A user can move from a competitor gap, lost link, or same-run-verified
+  unlinked mention to a deduplicated, assigned, measurable authority action.
 - No unexplained authority score is presented as proof of ranking ability or a
   guaranteed benefit.
 
@@ -2918,6 +2966,42 @@ changes.
 Plan entitlement: WP1.1 is Growth and Enterprise only. Solo can receive the
 same recommendation, evidence, draft, and manual implementation instructions,
 but cannot pair a site, provision plugin credentials, or dispatch a mutation.
+
+Implementation status (2026-08-12): the WP1.1 security, connection,
+read-only inventory, exact-change preview, installation-package, and public-verification slices are locally complete. Plugin
+v1.4.0 added a signed one-time request nonce
+backed by an atomic replay store, an authenticated read-only health endpoint,
+an owner-facing Settings page, and a schema upgrade guard. The platform binds
+the nonce into every HMAC,
+checks the returned site host, minimum plugin version, and required permissions,
+records the handshake as site-scoped health, and keeps live execution disabled
+until that handshake succeeds. The Next Steps workspace now provides an
+explicit **Test connection** action. A tenant administrator can now create a
+10-minute, hostname-bound, one-time pairing code; the WordPress administrator
+enters it under **Settings → InsightOS**, and site-scoped encrypted credentials
+are created without sharing an administrator password. Re-pairing rotates only
+that site's keys, while disconnect removes the keys from both the plugin and
+platform. Saved credentials alone no longer imply that the site is ready.
+The platform can now read and persist a bounded list of WordPress posts, pages,
+and public custom post types with publication state, titles, supported SEO
+metadata, canonical, headings, internal links, schema types, word count,
+revision identifier, and a content fingerprint. Raw page bodies are not stored,
+and the Next Steps workspace shows the current page inventory in plain language.
+Every WordPress mutation now requires a durable exact before/after preview,
+affected URLs, safety checks, conflicts, rollback explanation, and a human
+approval tied to the preview hash. Each page revision and content fingerprint
+is checked again immediately before the mutation batch, and any mismatch stops
+the whole batch before its first change. Authenticated Growth and Enterprise
+administrators can now download a deterministic, versioned installation ZIP
+from the setup panel, follow an owner-friendly installation guide, and verify
+its SHA-256 package identity. The deployment bundle now includes the reviewed
+plugin sources, and the ZIP never contains customer credentials or pairing
+codes. Plugin v1.5.0 renders approved title and description fallbacks on public
+pages. After delivery, the platform checks the live title, description, link,
+anchor, schema, or published-page output and shows each result in plain
+language. A mismatch is a failed execution with its applied mutation snapshots
+preserved so rollback remains available. A production-like installation,
+delivery, public verification, and rollback drill remains before WP1.1 release.
 
 Scope:
 

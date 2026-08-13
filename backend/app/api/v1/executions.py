@@ -12,6 +12,7 @@ from app.models.execution_mutation import ExecutionMutation
 from app.models.intelligence import StrategyRecommendation
 from app.models.recommendation_execution import RecommendationExecution
 from app.schemas.executions import ExecutionApprovalIn, ExecutionOut, ExecutionRollbackIn, ExecutionRunIn
+from app.services.wordpress_change_preview_service import WordPressChangePreviewError
 
 router = APIRouter(prefix='/executions', tags=['executions'])
 
@@ -60,14 +61,24 @@ def run_execution(request: Request, execution_id: str, body: ExecutionRunIn, use
     row = _tenant_scoped_execution(db, execution_id, user['tenant_id'])
     if row is None:
         raise HTTPException(status_code=404, detail='Execution not found')
-    result = execute_recommendation(execution_id, db=db, dry_run=body.dry_run)
+    try:
+        result = execute_recommendation(execution_id, db=db, dry_run=body.dry_run)
+    except WordPressChangePreviewError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={'reason_code': exc.reason_code, 'message': str(exc)},
+        ) from exc
     if result is None:
         raise HTTPException(status_code=404, detail='Execution not found')
     refreshed = db.get(RecommendationExecution, execution_id)
     if body.dry_run:
+        db.commit()
+        refreshed = db.get(RecommendationExecution, execution_id)
         return envelope(request, {'execution': ExecutionOut.model_validate(refreshed or row).model_dump(mode='json'), 'dry_run': True, 'result': result})
     if not isinstance(result, RecommendationExecution):
         raise HTTPException(status_code=500, detail='Unexpected execution response')
+    db.commit()
+    db.refresh(result)
     return envelope(request, ExecutionOut.model_validate(result).model_dump(mode='json'))
 
 
@@ -83,6 +94,8 @@ def retry_execution_endpoint(request: Request, execution_id: str, user: dict = D
         return envelope(request, ExecutionOut.model_validate(retried).model_dump(mode='json'))
     executed = execute_recommendation(execution_id, db=db, dry_run=False)
     if isinstance(executed, RecommendationExecution):
+        db.commit()
+        db.refresh(executed)
         return envelope(request, ExecutionOut.model_validate(executed).model_dump(mode='json'))
     latest = db.get(RecommendationExecution, execution_id)
     if latest is None:
@@ -100,6 +113,8 @@ def cancel_execution_endpoint(request: Request, execution_id: str, user: dict = 
     updated = cancel_execution(execution_id, db=db)
     if updated is None:
         raise HTTPException(status_code=404, detail='Execution not found')
+    db.commit()
+    db.refresh(updated)
     return envelope(request, ExecutionOut.model_validate(updated).model_dump(mode='json'))
 
 
@@ -109,9 +124,22 @@ def approve_execution_endpoint(request: Request, execution_id: str, body: Execut
     if row is None:
         raise HTTPException(status_code=404, detail='Execution not found')
     actor = body.approved_by or str(user.get('user_id') or user.get('id') or 'tenant_admin')
-    updated = approve_execution(execution_id, approved_by=actor, db=db)
+    try:
+        updated = approve_execution(
+            execution_id,
+            approved_by=actor,
+            preview_hash=body.preview_hash,
+            db=db,
+        )
+    except WordPressChangePreviewError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={'reason_code': exc.reason_code, 'message': str(exc)},
+        ) from exc
     if updated is None:
         raise HTTPException(status_code=404, detail='Execution not found')
+    db.commit()
+    db.refresh(updated)
     return envelope(request, ExecutionOut.model_validate(updated).model_dump(mode='json'))
 
 
@@ -124,6 +152,8 @@ def reject_execution_endpoint(request: Request, execution_id: str, body: Executi
     updated = reject_execution(execution_id, rejected_by=actor, db=db)
     if updated is None:
         raise HTTPException(status_code=404, detail='Execution not found')
+    db.commit()
+    db.refresh(updated)
     return envelope(request, ExecutionOut.model_validate(updated).model_dump(mode='json'))
 
 
@@ -141,4 +171,6 @@ def rollback_execution_endpoint(request: Request, execution_id: str, body: Execu
     rolled_back = rollback_execution(execution_id, requested_by=actor, db=db)
     if rolled_back is None:
         raise HTTPException(status_code=404, detail='Execution not found')
+    db.commit()
+    db.refresh(rolled_back)
     return envelope(request, ExecutionOut.model_validate(rolled_back).model_dump(mode='json'))

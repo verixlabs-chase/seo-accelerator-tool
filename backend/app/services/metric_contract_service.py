@@ -126,7 +126,11 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
                 name=name,
                 definition=(
                     f"Chrome UX Report {aggregation} {name} for the saved URL or origin and form factor."
-                    + (" This is supporting evidence, not a Core Web Vital." if metric_id == "ttfb" else "")
+                    + (
+                        " This is supporting evidence, not a Core Web Vital."
+                        if metric_id == "ttfb"
+                        else ""
+                    )
                 ),
                 unit=unit,
                 aggregation=aggregation,
@@ -146,7 +150,13 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
         ("ttfb", "Lab server response time", "milliseconds", "single_run", "lower_is_better"),
         ("fcp", "First Contentful Paint", "milliseconds", "single_run", "lower_is_better"),
         ("tbt", "Total Blocking Time", "milliseconds", "single_run", "lower_is_better"),
-        ("performance_score", "Lighthouse performance score", "score_0_100", "single_run", "higher_is_better"),
+        (
+            "performance_score",
+            "Lighthouse performance score",
+            "score_0_100",
+            "single_run",
+            "higher_is_better",
+        ),
     )
     for metric_id, name, unit, aggregation, direction in lab_metrics:
         rows.append(
@@ -179,8 +189,20 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
     gsc_metrics = (
         ("clicks", "Google search visits", "count", "sum", "higher_is_better"),
         ("impressions", "Google search appearances", "count", "sum", "higher_is_better"),
-        ("ctr", "Search click-through rate", "ratio", "clicks_divided_by_impressions", "higher_is_better"),
-        ("position", "Average Google position", "position", "impression_weighted_mean", "lower_is_better"),
+        (
+            "ctr",
+            "Search click-through rate",
+            "ratio",
+            "clicks_divided_by_impressions",
+            "higher_is_better",
+        ),
+        (
+            "position",
+            "Average Google position",
+            "position",
+            "impression_weighted_mean",
+            "lower_is_better",
+        ),
     )
     for metric_id, name, unit, aggregation, direction in gsc_metrics:
         rows.append(
@@ -205,11 +227,46 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
 
     unavailable_website = (
         ("search.indexing_state", "Indexing state", "state", "latest", "neutral", "indexing"),
-        ("search.selected_canonical", "Google-selected canonical", "url", "latest", "neutral", "indexing"),
-        ("search.robots_eligibility", "Robots eligibility", "state", "latest", "neutral", "indexing"),
-        ("search.sitemap_coverage", "Sitemap coverage", "ratio", "latest", "higher_is_better", "indexing"),
-        ("search.structured_data_eligibility", "Structured-data eligibility", "state", "latest", "neutral", "structured_data"),
-        ("search.structured_data_errors", "Structured-data errors", "count", "sum", "lower_is_better", "structured_data"),
+        (
+            "search.selected_canonical",
+            "Google-selected canonical",
+            "url",
+            "latest",
+            "neutral",
+            "indexing",
+        ),
+        (
+            "search.robots_eligibility",
+            "Robots eligibility",
+            "state",
+            "latest",
+            "neutral",
+            "indexing",
+        ),
+        (
+            "search.sitemap_coverage",
+            "Sitemap coverage",
+            "ratio",
+            "latest",
+            "higher_is_better",
+            "indexing",
+        ),
+        (
+            "search.structured_data_eligibility",
+            "Structured-data eligibility",
+            "state",
+            "latest",
+            "neutral",
+            "structured_data",
+        ),
+        (
+            "search.structured_data_errors",
+            "Structured-data errors",
+            "count",
+            "sum",
+            "lower_is_better",
+            "structured_data",
+        ),
     )
     for contract_id, name, unit, aggregation, direction, family in unavailable_website:
         source = "google.search.structured_data" if family == "structured_data" else None
@@ -226,7 +283,13 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
                 direction=direction,
                 status="not_collected",
                 source=source,
-                required=("organization_id", "campaign_id", "property_uri", "page_url", "checked_at"),
+                required=(
+                    "organization_id",
+                    "campaign_id",
+                    "property_uri",
+                    "page_url",
+                    "checked_at",
+                ),
                 comparison=("organization_id", "campaign_id", "property_uri", "page_url"),
                 freshness_days=7,
             )
@@ -238,10 +301,28 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
         ("redirect_defect_count", "Redirect problems", "count", "sum", "lower_is_better"),
         ("missing_title_count", "Pages missing titles", "count", "sum", "lower_is_better"),
         ("duplicate_title_count", "Duplicate page titles", "count", "sum", "lower_is_better"),
-        ("missing_description_count", "Pages missing descriptions", "count", "sum", "lower_is_better"),
-        ("duplicate_description_count", "Duplicate descriptions", "count", "sum", "lower_is_better"),
+        (
+            "missing_description_count",
+            "Pages missing descriptions",
+            "count",
+            "sum",
+            "lower_is_better",
+        ),
+        (
+            "duplicate_description_count",
+            "Duplicate descriptions",
+            "count",
+            "sum",
+            "lower_is_better",
+        ),
         ("internal_link_coverage", "Internal-link coverage", "ratio", "ratio", "higher_is_better"),
-        ("affected_page_ratio", "Pages affected by technical problems", "ratio", "ratio", "lower_is_better"),
+        (
+            "affected_page_ratio",
+            "Pages affected by technical problems",
+            "ratio",
+            "ratio",
+            "lower_is_better",
+        ),
     )
     for metric_id, name, unit, aggregation, direction in crawl_metrics:
         rows.append(
@@ -255,9 +336,17 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
                 unit=unit,
                 aggregation=aggregation,
                 direction=direction,
-                status="collected" if metric_id in {"indexable_page_count", "affected_page_ratio"} else "derived",
+                status="collected"
+                if metric_id in {"indexable_page_count", "affected_page_ratio"}
+                else "derived",
                 source=None,
-                required=("organization_id", "campaign_id", "crawl_run_id", "crawl_scope", "captured_at"),
+                required=(
+                    "organization_id",
+                    "campaign_id",
+                    "crawl_run_id",
+                    "crawl_scope",
+                    "captured_at",
+                ),
                 comparison=("organization_id", "campaign_id", "crawl_scope"),
                 optional=("pages_checked",),
                 freshness_days=14,
@@ -265,10 +354,34 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
         )
 
     gbp_metrics = (
-        ("BUSINESS_IMPRESSIONS_DESKTOP_MAPS", "Map appearances on computers", "count", "sum", "higher_is_better"),
-        ("BUSINESS_IMPRESSIONS_DESKTOP_SEARCH", "Search appearances on computers", "count", "sum", "higher_is_better"),
-        ("BUSINESS_IMPRESSIONS_MOBILE_MAPS", "Map appearances on phones", "count", "sum", "higher_is_better"),
-        ("BUSINESS_IMPRESSIONS_MOBILE_SEARCH", "Search appearances on phones", "count", "sum", "higher_is_better"),
+        (
+            "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+            "Map appearances on computers",
+            "count",
+            "sum",
+            "higher_is_better",
+        ),
+        (
+            "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+            "Search appearances on computers",
+            "count",
+            "sum",
+            "higher_is_better",
+        ),
+        (
+            "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+            "Map appearances on phones",
+            "count",
+            "sum",
+            "higher_is_better",
+        ),
+        (
+            "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+            "Search appearances on phones",
+            "count",
+            "sum",
+            "higher_is_better",
+        ),
         ("BUSINESS_DIRECTION_REQUESTS", "Direction requests", "count", "sum", "higher_is_better"),
         ("CALL_CLICKS", "Call button clicks", "count", "sum", "higher_is_better"),
         ("WEBSITE_CLICKS", "Website clicks", "count", "sum", "higher_is_better"),
@@ -354,17 +467,58 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
                 source="google.business.local_ranking",
                 required=_GRID_SCOPE + ("run_timestamp",),
                 comparison=_GRID_SCOPE,
-                optional=("grid_size", "radius_miles", "center_latitude", "center_longitude", "spacing_miles"),
+                optional=(
+                    "grid_size",
+                    "radius_miles",
+                    "center_latitude",
+                    "center_longitude",
+                    "spacing_miles",
+                ),
                 freshness_days=14,
             )
         )
 
     reputation_metrics = (
-        ("review_count_30d", "New reviews in 30 days", "count", "rolling_30_day_sum", "higher_is_better", "collected"),
-        ("review_pace", "Review pace", "reviews_per_30_days", "rolling_30_day_rate", "higher_is_better", "derived"),
-        ("average_rating_30d", "Average rating in 30 days", "rating_1_5", "rolling_30_day_mean", "higher_is_better", "collected"),
-        ("response_coverage", "Review response coverage", "ratio", "rolling_window_ratio", "higher_is_better", "not_collected"),
-        ("response_time", "Review response time", "hours", "median", "lower_is_better", "not_collected"),
+        (
+            "review_count_30d",
+            "New reviews in 30 days",
+            "count",
+            "rolling_30_day_sum",
+            "higher_is_better",
+            "collected",
+        ),
+        (
+            "review_pace",
+            "Review pace",
+            "reviews_per_30_days",
+            "rolling_30_day_rate",
+            "higher_is_better",
+            "derived",
+        ),
+        (
+            "average_rating_30d",
+            "Average rating in 30 days",
+            "rating_1_5",
+            "rolling_30_day_mean",
+            "higher_is_better",
+            "collected",
+        ),
+        (
+            "response_coverage",
+            "Review response coverage",
+            "ratio",
+            "rolling_window_ratio",
+            "higher_is_better",
+            "not_collected",
+        ),
+        (
+            "response_time",
+            "Review response time",
+            "hours",
+            "median",
+            "lower_is_better",
+            "not_collected",
+        ),
     )
     for metric_id, name, unit, aggregation, direction, status in reputation_metrics:
         rows.append(
@@ -380,7 +534,14 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
                 direction=direction,
                 status=status,
                 source=None,
-                required=("tenant_id", "campaign_id", "business_location_id", "profile_id", "window_start", "window_end"),
+                required=(
+                    "tenant_id",
+                    "campaign_id",
+                    "business_location_id",
+                    "profile_id",
+                    "window_start",
+                    "window_end",
+                ),
                 comparison=("tenant_id", "campaign_id", "business_location_id", "profile_id"),
                 freshness_days=14,
             )
@@ -405,6 +566,33 @@ def _default_contracts() -> tuple[MetricContractDefinition, ...]:
             freshness_days=14,
         )
     )
+    rows.append(
+        _contract(
+            "authority.source_page_link_presence",
+            provider="market_research",
+            family="authority_evidence",
+            metric_id="source_page_link_present",
+            name="Exact outside-page link presence",
+            definition=(
+                "The latest saved observation of whether one exact outside page links to the "
+                "business website."
+            ),
+            unit="boolean",
+            aggregation="latest",
+            direction="higher_is_better",
+            status="collected",
+            source="verix.internal.policy",
+            required=(
+                "organization_id",
+                "campaign_id",
+                "source_url",
+                "owner_domain",
+                "observed_at",
+            ),
+            comparison=("organization_id", "campaign_id", "source_url", "owner_domain"),
+            freshness_days=30,
+        )
+    )
     return tuple(rows)
 
 
@@ -427,6 +615,7 @@ LEXICON_METRIC_CONTRACTS = {
     "local.gbp.direction_requests": "gbp.performance.business_direction_requests",
     "local.gbp.bookings": "gbp.performance.business_bookings",
     "technical.issue_density": "crawl.affected_page_ratio",
+    "authority.referring_page_link_present": "authority.source_page_link_presence",
 }
 
 
@@ -500,9 +689,7 @@ def scope_evidence(
     if missing and require_complete:
         raise MetricContractScopeError(contract_id, missing)
     comparable = {
-        field: normalized.get(field)
-        for field in definition.comparison_keys
-        if field in normalized
+        field: normalized.get(field) for field in definition.comparison_keys if field in normalized
     }
     return {
         "metric_contract_id": definition.contract_id,
@@ -517,7 +704,9 @@ def scope_evidence(
     }
 
 
-def ensure_default_contracts(db: Session, *, commit: bool = True) -> list[ProviderMetricContractVersion]:
+def ensure_default_contracts(
+    db: Session, *, commit: bool = True
+) -> list[ProviderMetricContractVersion]:
     standards_source_service.ensure_default_sources(db, commit=False)
     rows: list[ProviderMetricContractVersion] = []
     for definition in DEFAULT_METRIC_CONTRACTS:

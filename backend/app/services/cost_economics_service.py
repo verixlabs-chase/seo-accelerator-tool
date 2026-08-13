@@ -49,6 +49,18 @@ CREDIT_ACTION_CATALOG: dict[tuple[str, str], tuple[str, str]] = {
         "Find competing websites",
         "Finds websites that repeatedly appear for the same customer searches.",
     ),
+    ("authority_research", "page_intersection_live_limit_25"): (
+        "Compare trusted website mentions",
+        "Finds exact pages that link to confirmed competitors but not this business.",
+    ),
+    ("authority_research", "backlink_changes_live_limit_12_each"): (
+        "Check website mention changes",
+        "Finds exact pages newly linking to this business and links reported as lost.",
+    ),
+    ("authority_research", "inventory_and_mentions_live_limit_50_10"): (
+        "Check websites mentioning the business",
+        "Saves incoming links and checks exact-name mentions for a link to this business.",
+    ),
     ("governed_ai", "keyword_relevance_review"): (
         "Sort unclear searches",
         "Reviews a small saved batch against confirmed services and service areas.",
@@ -1117,6 +1129,96 @@ def _customer_action_prices(db: Session, *, now: datetime) -> list[dict[str, Any
                 "credits": _credits_for_cost(
                     _estimate_cost(
                         competitor_card,
+                        quantity=Decimal("1"),
+                        input_tokens=None,
+                        cached_input_tokens=None,
+                        output_tokens=None,
+                    )
+                ),
+                "price_type": "fixed_ceiling",
+            }
+        )
+
+    try:
+        authority_gap_card = _find_price_card(
+            db,
+            provider_name="dataforseo",
+            capability="authority_research",
+            operation="page_intersection_live_limit_25",
+            model_name=None,
+            now=now,
+        )
+    except CostEconomicsError:
+        authority_gap_card = None
+    if authority_gap_card is not None:
+        items.append(
+            {
+                "code": "authority_link_gap_refresh",
+                "label": "Compare trusted website mentions",
+                "result": "Finds up to 25 exact pages that link to confirmed competitors but not this business.",
+                "credits": _credits_for_cost(
+                    _estimate_cost(
+                        authority_gap_card,
+                        quantity=Decimal("1"),
+                        input_tokens=None,
+                        cached_input_tokens=None,
+                        output_tokens=None,
+                    )
+                ),
+                "price_type": "fixed_ceiling",
+            }
+        )
+
+    try:
+        authority_change_card = _find_price_card(
+            db,
+            provider_name="dataforseo",
+            capability="authority_research",
+            operation="backlink_changes_live_limit_12_each",
+            model_name=None,
+            now=now,
+        )
+    except CostEconomicsError:
+        authority_change_card = None
+    if authority_change_card is not None:
+        items.append(
+            {
+                "code": "authority_link_change_refresh",
+                "label": "Check website mention changes",
+                "result": "Finds up to 12 newly found links and 12 links reported as lost.",
+                "credits": _credits_for_cost(
+                    _estimate_cost(
+                        authority_change_card,
+                        quantity=Decimal("1"),
+                        input_tokens=None,
+                        cached_input_tokens=None,
+                        output_tokens=None,
+                    )
+                ),
+                "price_type": "fixed_ceiling",
+            }
+        )
+
+    try:
+        authority_inventory_card = _find_price_card(
+            db,
+            provider_name="dataforseo",
+            capability="authority_research",
+            operation="inventory_and_mentions_live_limit_50_10",
+            model_name=None,
+            now=now,
+        )
+    except CostEconomicsError:
+        authority_inventory_card = None
+    if authority_inventory_card is not None:
+        items.append(
+            {
+                "code": "authority_inventory_refresh",
+                "label": "Check websites mentioning the business",
+                "result": "Saves up to 50 incoming links and checks up to 10 exact-name mentions.",
+                "credits": _credits_for_cost(
+                    _estimate_cost(
+                        authority_inventory_card,
                         quantity=Decimal("1"),
                         input_tokens=None,
                         cached_input_tokens=None,

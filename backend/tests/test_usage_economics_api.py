@@ -45,6 +45,7 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert {item["code"] for item in data["action_prices"]} >= {
         "keyword_research_refresh",
         "competitor_discovery",
+        "authority_inventory_refresh",
         "ranking_check",
         "keyword_relevance_review",
     }

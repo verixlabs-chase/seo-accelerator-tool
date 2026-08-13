@@ -30,7 +30,7 @@ def normalize_url_path(value: str | None) -> str:
     return raw if raw.startswith('/') else f'/{raw}'
 
 
-def build_mutation(*, action: str, target_url: str, payload: dict[str, Any], source_url: str | None = None, rollback_hint: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_mutation(*, action: str, target_url: str, payload: dict[str, Any], source_url: str | None = None, rollback_hint: dict[str, Any] | None = None, expected_version: dict[str, Any] | None = None) -> dict[str, Any]:
     if action not in SUPPORTED_MUTATION_ACTIONS:
         raise ValueError(f'Unsupported mutation action: {action}')
     mutation = {
@@ -44,6 +44,8 @@ def build_mutation(*, action: str, target_url: str, payload: dict[str, Any], sou
         mutation['rollback_hint'] = rollback_hint
     canonical = json.dumps(mutation, sort_keys=True, separators=(',', ':'))
     mutation['mutation_id'] = hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+    if expected_version:
+        mutation['expected_version'] = expected_version
     return mutation
 
 
@@ -58,6 +60,7 @@ def normalize_mutations(mutations: list[dict[str, Any]] | None) -> list[dict[str
             payload = {'value': payload}
         source_url = mutation.get('source_url')
         rollback_hint = mutation.get('rollback_hint')
+        expected_version = mutation.get('expected_version')
         normalized.append(
             build_mutation(
                 action=action,
@@ -65,6 +68,7 @@ def normalize_mutations(mutations: list[dict[str, Any]] | None) -> list[dict[str
                 payload=payload,
                 source_url=str(source_url) if source_url else None,
                 rollback_hint=rollback_hint if isinstance(rollback_hint, dict) else None,
+                expected_version=expected_version if isinstance(expected_version, dict) else None,
             )
         )
     return normalized

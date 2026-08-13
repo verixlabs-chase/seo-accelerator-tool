@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from app.enums import StrategyRecommendationStatus
-from app.intelligence.recommendation_execution_engine import execute_recommendation, schedule_execution
+from app.intelligence.recommendation_execution_engine import approve_execution, execute_recommendation, schedule_execution
 from app.models.audit_log import AuditLog
 from app.models.intelligence import StrategyRecommendation
 from app.utils.enum_guard import ensure_enum
@@ -39,6 +39,14 @@ def test_execution_lifecycle_events_are_emitted(db_session, create_test_tenant, 
 
     execution = schedule_execution(rec.id, db=db_session)
     assert execution is not None
+    planned = execute_recommendation(execution.id, db=db_session, dry_run=True)
+    assert isinstance(planned, dict)
+    approve_execution(
+        execution.id,
+        approved_by="event-owner",
+        preview_hash=planned["preview"]["preview_hash"],
+        db=db_session,
+    )
     execute_recommendation(execution.id, db=db_session)
 
     rows = (

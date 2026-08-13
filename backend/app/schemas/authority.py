@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -54,6 +55,44 @@ class DirectoryListingDiscoveryPreviewIn(BaseModel):
 
 class DirectoryListingDiscoveryRunIn(DirectoryListingDiscoveryPreviewIn):
     idempotency_key: str = Field(min_length=1, max_length=160)
+
+
+class AuthorityGapRefreshIn(BaseModel):
+    campaign_id: str
+    idempotency_key: str = Field(min_length=1, max_length=160)
+
+
+class AuthorityLinkChangeRefreshIn(BaseModel):
+    campaign_id: str
+    idempotency_key: str = Field(min_length=1, max_length=160)
+
+
+class AuthorityInventoryRefreshIn(BaseModel):
+    campaign_id: str
+    business_name: str = Field(min_length=2, max_length=255)
+    idempotency_key: str = Field(min_length=1, max_length=160)
+
+
+class AuthorityActionIn(BaseModel):
+    campaign_id: str
+    source_type: Literal["competitor_gap", "lost_link", "unlinked_mention"]
+    source_id: str = Field(min_length=1, max_length=36)
+    owner_confirmed_relevant: bool = False
+
+
+class AuthorityOutreachDraftIn(AuthorityActionIn):
+    pass
+
+
+class AuthorityOutreachDraftUpdateIn(BaseModel):
+    campaign_id: str
+    contact_name: str | None = Field(default=None, max_length=255)
+    contact_email: str | None = Field(default=None, max_length=320)
+    contact_page_url: str | None = Field(default=None, max_length=2048)
+    subject: str | None = Field(default=None, min_length=1, max_length=180)
+    message_body: str | None = Field(default=None, min_length=1, max_length=4000)
+    status: Literal["draft", "reviewed", "closed"] | None = None
+    owner_confirmed_recipient: bool | None = None
 
 
 class BacklinkOut(BaseModel):
