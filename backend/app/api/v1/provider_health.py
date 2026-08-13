@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.api.deps import require_roles
 from app.api.response import envelope
-from app.db.session import get_db
+from app.db.session import get_db, set_session_security_context
 from app.intelligence.executors import wordpress_plugin
 from app.intelligence.executors.plugin_telemetry import (
     WORDPRESS_CAPABILITY,
@@ -394,6 +394,18 @@ def exchange_wordpress_pairing(
 ) -> dict:
     """Public plugin exchange secured by a short-lived high-entropy one-time code."""
 
+    # The plugin does not have a user session yet: exchanging the one-time code
+    # is what creates its site credentials.  Use a narrowly scoped internal RLS
+    # context for this transaction so the service can find the hashed code and
+    # write the matching tenant audit event.  This endpoint performs no general
+    # tenant reads and returns data only after the site-scoped code is verified.
+    set_session_security_context(
+        db,
+        tenant_id=None,
+        organization_id=None,
+        user_id="wordpress-pairing-exchange",
+        platform_access=True,
+    )
     try:
         result = exchange_pairing(
             db,
