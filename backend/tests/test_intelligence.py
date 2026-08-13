@@ -351,6 +351,7 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
     assert measured["outcome_status"] == "helped"
     assert measured["result_classification"] == "improved"
     assert measured["measurement_contract"]["result"]["classification"] == "improved"
+    assert measured["measurement_contract"]["managed_wordpress_safety"]["status"] == "not_applicable"
     assert measured["outcome_metrics"][0]["baseline_value"] == 4200.0
     assert measured["outcome_metrics"][0]["value"] == 2400.0
     compared_forecast = db_session.query(ActionPlanForecast).one()

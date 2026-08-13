@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from datetime import UTC, datetime
 
 from app.intelligence import recommendation_execution_engine as execution_engine
@@ -9,13 +10,16 @@ from app.intelligence.recommendation_execution_engine import (
     execute_recommendation,
     schedule_execution,
 )
+from app.models.action_plan import ActionPlanMeasurement, ActionPlanOccurrence, ActionPlanStep
 from app.models.audit_log import AuditLog
 from app.models.intelligence import StrategyRecommendation
 from app.models.organization import Organization
+from app.models.platform_job import PlatformJob
 from app.models.recommendation_execution import RecommendationExecution
 from app.models.wordpress_automation_policy import WordPressAutomationPolicy
 from app.models.wordpress_change_preview import WordPressChangePreview
 from app.models.wordpress_site_connection import WordPressSiteConnection
+from app.services import action_plan_measurement_service, durable_job_service, job_service
 from app.services.wordpress_automation_policy_service import evaluate_wordpress_automation
 from app.utils.enum_guard import ensure_enum
 from tests.conftest import create_test_campaign
@@ -255,7 +259,6 @@ def test_autonomous_wordpress_scheduling_fails_closed_without_owner_policy(
         tenant_id=tenant.id,
         campaign_id=campaign.id,
     )
-
     managed = schedule_execution(
         recommendation.id,
         db=db_session,
@@ -273,6 +276,7 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
     db_session,
     create_test_tenant,
     create_test_org,
+    monkeypatch,
 ) -> None:
     tenant = create_test_tenant(name="Managed Preview Tenant")
     organization = create_test_org(
@@ -323,6 +327,13 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
         tenant_id=tenant.id,
         campaign_id=campaign.id,
     )
+    recommendation.evidence_json = json.dumps(
+        {
+            "action_id": "organic.rewrite_search_snippet",
+            "target_url": "/",
+        }
+    )
+    db_session.commit()
 
     execution = schedule_execution(
         recommendation.id,
@@ -346,6 +357,250 @@ def test_low_risk_managed_execution_auto_approves_its_exact_scoped_preview(
     assert preview.status == "approved"
     assert preview.approved_by == "InsightOS policy v1"
     assert preview.snapshot["affected_urls"] == ["/"]
+    validation = preview.snapshot["managed_content_validation"]
+    assert validation["status"] == "passed"
+    assert validation["validator_version"] == "wordpress-managed-content-v1"
+    assert validation["traceability"]["recommendation_id"] == recommendation.id
+    assert validation["traceability"]["automation_policy_version"] == 1
+    result_summary = json.loads(completed.result_summary or "{}")
+    follow_up = result_summary["post_change_measurement"]
+    assert follow_up["status"] == "scheduled"
+    assert follow_up["causal_claim"] is False
+    occurrence = db_session.get(ActionPlanOccurrence, follow_up["occurrence_id"])
+    measurement = db_session.get(ActionPlanMeasurement, follow_up["measurement_id"])
+    assert occurrence is not None
+    assert occurrence.status == "waiting_for_results"
+    assert measurement is not None
+    assert measurement.measurement_status == "waiting_for_results"
+    baseline_captured_at = measurement.baseline_captured_at
+    executed_at = completed.executed_at
+    observation_due_at = measurement.observation_due_at
+    assert executed_at is not None
+    assert observation_due_at is not None
+    if baseline_captured_at.tzinfo is None:
+        baseline_captured_at = baseline_captured_at.replace(tzinfo=UTC)
+    if executed_at.tzinfo is None:
+        executed_at = executed_at.replace(tzinfo=UTC)
+    if observation_due_at.tzinfo is None:
+        observation_due_at = observation_due_at.replace(tzinfo=UTC)
+    assert baseline_captured_at <= executed_at
+    assert observation_due_at > executed_at
+    assert measurement.measurement_contract["managed_wordpress_execution"][
+        "execution_id"
+    ] == completed.id
+    assert measurement.measurement_contract["managed_wordpress_execution"][
+        "causal_claim"
+    ] is False
+    steps = (
+        db_session.query(ActionPlanStep)
+        .filter(ActionPlanStep.occurrence_id == occurrence.id)
+        .all()
+    )
+    assert steps
+    assert all(step.status == "done" for step in steps if step.required)
+    follow_up_job = db_session.get(PlatformJob, follow_up["job_id"])
+    assert follow_up_job is not None
+    assert follow_up_job.job_type == "wordpress.post_change_measurement"
+    assert follow_up_job.status == "queued"
+    assert follow_up_job.available_at == measurement.observation_due_at
+
+    measured_calls: list[str] = []
+
+    def _evaluate_outcome(db, **kwargs):  # noqa: ANN001
+        measured_calls.append(str(kwargs["occurrence_id"]))
+        return {
+            "measurement_id": measurement.id,
+            "measurement_status": "measured",
+            "result_classification": "not_enough_information",
+        }
+
+    monkeypatch.setattr(
+        action_plan_measurement_service,
+        "evaluate_action_plan_outcome",
+        _evaluate_outcome,
+    )
+    job_service.start_job(db_session, follow_up_job.id, worker_id="test-worker")
+    db_session.commit()
+    processed = durable_job_service.execute_claimed_job(
+        db_session,
+        job_id=follow_up_job.id,
+    )
+    assert processed["status"] == "completed"
+    assert measured_calls == [occurrence.id]
+
+
+def test_managed_execution_blocks_unverified_business_claim_before_delivery(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+) -> None:
+    tenant = create_test_tenant(name="Managed Claim Tenant")
+    organization = create_test_org(tenant_id=tenant.id, name="Managed Claim Org")
+    organization.plan_type = "multi_location"
+    campaign = create_test_campaign(
+        db_session,
+        organization.id,
+        tenant_id=tenant.id,
+        name="Managed Claim Campaign",
+        domain="managed-claim.example",
+    )
+    db_session.add_all(
+        [
+            WordPressSiteConnection(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                campaign_id=campaign.id,
+                site_url="https://managed-claim.example",
+                status="connected",
+                plugin_version="1.5.1",
+                paired_at=datetime.now(UTC),
+            ),
+            WordPressAutomationPolicy(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                campaign_id=campaign.id,
+                automation_enabled=True,
+                emergency_stop=False,
+                allowed_action_types=["fix_missing_title"],
+                allowed_url_prefixes=["https://managed-claim.example/"],
+                schedule_timezone="UTC",
+                schedule_days=[0, 1, 2, 3, 4, 5, 6],
+                window_start_local="00:00",
+                window_end_local="23:59",
+                blackout_windows=[],
+                monthly_action_limit=2,
+                risk_tier_ceiling=1,
+                requires_manual_approval=False,
+                version=3,
+            ),
+        ]
+    )
+    recommendation = _recommendation(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+    )
+    recommendation.evidence_json = json.dumps(
+        {
+            "target_url": "/",
+            "meta_title": "Guaranteed top-rated service in town",
+            "meta_description": "Choose our award-winning team.",
+        }
+    )
+    db_session.commit()
+
+    execution = schedule_execution(
+        recommendation.id,
+        db=db_session,
+        managed_automation=True,
+    )
+    assert isinstance(execution, RecommendationExecution)
+
+    blocked = execute_recommendation(execution.id, db=db_session)
+
+    assert isinstance(blocked, RecommendationExecution)
+    assert blocked.status == "pending"
+    assert blocked.last_error == "wordpress_content_validation_failed"
+    assert blocked.approved_by is None
+    preview = (
+        db_session.query(WordPressChangePreview)
+        .filter(WordPressChangePreview.execution_id == execution.id)
+        .one()
+    )
+    assert preview.status == "blocked"
+    validation = preview.snapshot["managed_content_validation"]
+    assert validation["status"] == "blocked"
+    assert {
+        issue["code"] for issue in validation["blocking_issues"]
+    } == {"wordpress_content_unverified_claim"}
+    assert validation["traceability"]["automation_policy_version"] == 3
+
+
+def test_managed_draft_requires_confirmed_service_and_current_page_inventory(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+) -> None:
+    tenant = create_test_tenant(name="Managed Draft Tenant")
+    organization = create_test_org(tenant_id=tenant.id, name="Managed Draft Org")
+    organization.plan_type = "multi_location"
+    campaign = create_test_campaign(
+        db_session,
+        organization.id,
+        tenant_id=tenant.id,
+        name="Managed Draft Campaign",
+        domain="managed-draft.example",
+    )
+    db_session.add_all(
+        [
+            WordPressSiteConnection(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                campaign_id=campaign.id,
+                site_url="https://managed-draft.example",
+                status="connected",
+                plugin_version="1.5.1",
+                paired_at=datetime.now(UTC),
+            ),
+            WordPressAutomationPolicy(
+                tenant_id=tenant.id,
+                organization_id=organization.id,
+                campaign_id=campaign.id,
+                automation_enabled=True,
+                emergency_stop=False,
+                allowed_action_types=["create_content_brief"],
+                allowed_url_prefixes=["https://managed-draft.example/services"],
+                schedule_timezone="UTC",
+                schedule_days=[0, 1, 2, 3, 4, 5, 6],
+                window_start_local="00:00",
+                window_end_local="23:59",
+                blackout_windows=[],
+                monthly_action_limit=2,
+                risk_tier_ceiling=1,
+                requires_manual_approval=False,
+                version=2,
+            ),
+        ]
+    )
+    recommendation = _recommendation(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+    )
+    recommendation.recommendation_type = "content page"
+    recommendation.rationale = "Explain appliance removal services."
+    recommendation.evidence_json = json.dumps(
+        {
+            "content_title": "Appliance Removal",
+            "content_slug": "services-appliance-removal",
+            "content_target_url": "/services/appliance-removal",
+        }
+    )
+    db_session.commit()
+
+    execution = schedule_execution(
+        recommendation.id,
+        db=db_session,
+        managed_automation=True,
+    )
+    assert isinstance(execution, RecommendationExecution)
+
+    blocked = execute_recommendation(execution.id, db=db_session)
+
+    assert isinstance(blocked, RecommendationExecution)
+    assert blocked.status == "pending"
+    assert blocked.last_error == "wordpress_content_validation_failed"
+    preview = (
+        db_session.query(WordPressChangePreview)
+        .filter(WordPressChangePreview.execution_id == execution.id)
+        .one()
+    )
+    issue_codes = {
+        issue["code"]
+        for issue in preview.snapshot["managed_content_validation"]["blocking_issues"]
+    }
+    assert "wordpress_confirmed_service_required" in issue_codes
+    assert "wordpress_content_inventory_required" in issue_codes
 
 
 def test_managed_preview_stays_pending_when_exact_url_is_outside_saved_scope(

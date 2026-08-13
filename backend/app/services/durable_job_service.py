@@ -13,12 +13,14 @@ from app.core.config import get_settings
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle
 from app.intelligence.lexicon.loader import get_builtin_lexicon
 from app.intelligence.lexicon.standards import run_and_record_crux_standards_check
+from app.models.action_plan import ActionPlanMeasurement, ActionPlanOccurrence
 from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
 from app.models.platform_job import PlatformJob
 from app.models.reporting import ReportSchedule
 from app.models.website_performance import WebsitePerformanceMeasurement
 from app.services import (
+    action_plan_measurement_service,
     data_connections_service,
     google_business_profile_service,
     job_service,
@@ -46,6 +48,7 @@ LOCAL_RANK_GRID_DISPATCH_JOB_TYPE = "local.rank_grid.dispatch"
 DIRECTORY_LISTING_DISCOVERY_JOB_TYPE = "directory_listings.discover"
 OWNED_REVIEW_SYNC_JOB_TYPE = "reputation.owned_reviews_sync"
 REVIEW_RESPONSE_PUBLISH_JOB_TYPE = reputation_response_execution_service.JOB_TYPE
+ACTION_PLAN_MEASUREMENT_JOB_TYPE = "wordpress.post_change_measurement"
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -343,6 +346,45 @@ def _review_response_publish_handler(
     )
 
 
+def _action_plan_measurement_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    tenant_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    organization_id = str(job.payload.get("organization_id") or "").strip()
+    campaign_id = str(job.payload.get("campaign_id") or "").strip()
+    occurrence_id = str(job.payload.get("occurrence_id") or "").strip()
+    measurement_id = str(job.payload.get("measurement_id") or job.entity_id or "").strip()
+    measurement = db.get(ActionPlanMeasurement, measurement_id) if measurement_id else None
+    managed_contract = (
+        (measurement.measurement_contract or {}).get("managed_wordpress_execution")
+        if measurement is not None
+        else None
+    )
+    if (
+        not tenant_id
+        or not organization_id
+        or not campaign_id
+        or not occurrence_id
+        or measurement is None
+        or measurement.tenant_id != tenant_id
+        or measurement.organization_id != organization_id
+        or measurement.campaign_id != campaign_id
+        or measurement.occurrence_id != occurrence_id
+        or not isinstance(managed_contract, dict)
+        or not managed_contract.get("execution_id")
+    ):
+        raise ValueError("Post-change result check is missing its tenant-scoped measurement.")
+    return action_plan_measurement_service.evaluate_action_plan_outcome(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        campaign_id=campaign_id,
+        occurrence_id=occurrence_id,
+        measured_at=datetime.now(UTC),
+    )
+
+
 DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REPORT_SCHEDULE_JOB_TYPE: _report_schedule_handler,
     INTELLIGENCE_CAMPAIGN_CYCLE_JOB_TYPE: _intelligence_campaign_cycle_handler,
@@ -356,6 +398,7 @@ DEFAULT_HANDLERS: dict[str, JobHandler] = {
     DIRECTORY_LISTING_DISCOVERY_JOB_TYPE: _directory_listing_discovery_handler,
     OWNED_REVIEW_SYNC_JOB_TYPE: _owned_review_sync_handler,
     REVIEW_RESPONSE_PUBLISH_JOB_TYPE: _review_response_publish_handler,
+    ACTION_PLAN_MEASUREMENT_JOB_TYPE: _action_plan_measurement_handler,
 }
 
 
@@ -1025,6 +1068,93 @@ def create_website_performance_job(
     )
 
 
+def create_action_plan_measurement_job(
+    db: Session,
+    *,
+    measurement: ActionPlanMeasurement,
+    available_at: datetime | None = None,
+) -> PlatformJob:
+    due_at = measurement.observation_due_at or available_at or datetime.now(UTC)
+    return job_service.create_job(
+        db,
+        tenant_id=measurement.tenant_id,
+        job_type=ACTION_PLAN_MEASUREMENT_JOB_TYPE,
+        entity_type="action_plan_measurement",
+        entity_id=measurement.id,
+        idempotency_key=(
+            f"wordpress-post-change-measurement:{measurement.id}:{due_at.isoformat()}"
+        ),
+        payload={
+            "tenant_id": measurement.tenant_id,
+            "organization_id": measurement.organization_id,
+            "campaign_id": measurement.campaign_id,
+            "business_location_id": measurement.business_location_id,
+            "occurrence_id": measurement.occurrence_id,
+            "measurement_id": measurement.id,
+            "due_at": due_at.isoformat(),
+        },
+        available_at=available_at or due_at,
+        max_retries=2,
+    )
+
+
+def enqueue_due_action_plan_measurement_jobs(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    limit: int = 25,
+) -> int:
+    resolved_now = now or datetime.now(UTC)
+    rows = (
+        db.query(ActionPlanMeasurement)
+        .join(
+            ActionPlanOccurrence,
+            ActionPlanOccurrence.id == ActionPlanMeasurement.occurrence_id,
+        )
+        .filter(
+            ActionPlanMeasurement.measurement_status == "waiting_for_results",
+            ActionPlanMeasurement.observation_due_at.isnot(None),
+            ActionPlanMeasurement.observation_due_at <= resolved_now,
+            ActionPlanOccurrence.status == "waiting_for_results",
+        )
+        .order_by(
+            ActionPlanMeasurement.observation_due_at.asc(),
+            ActionPlanMeasurement.created_at.asc(),
+        )
+        .limit(max(1, min(int(limit) * 5, 500)))
+        .all()
+    )
+    created = 0
+    for measurement in rows:
+        managed_contract = (measurement.measurement_contract or {}).get(
+            "managed_wordpress_execution"
+        )
+        if not isinstance(managed_contract, dict) or not managed_contract.get(
+            "execution_id"
+        ):
+            continue
+        due_at = measurement.observation_due_at or resolved_now
+        idempotency_key = (
+            f"wordpress-post-change-measurement:{measurement.id}:{due_at.isoformat()}"
+        )
+        existing = (
+            db.query(PlatformJob)
+            .filter(PlatformJob.idempotency_key == idempotency_key)
+            .first()
+        )
+        create_action_plan_measurement_job(
+            db,
+            measurement=measurement,
+            available_at=resolved_now,
+        )
+        if existing is None:
+            created += 1
+        if created >= max(1, min(int(limit), 100)):
+            break
+    db.flush()
+    return created
+
+
 def enqueue_due_website_performance_jobs(
     db: Session,
     *,
@@ -1533,6 +1663,10 @@ def drain_platform_jobs(
         db,
         limit=resolved_batch_size * 5,
     )
+    due_action_plan_measurements_seen = enqueue_due_action_plan_measurement_jobs(
+        db,
+        limit=resolved_batch_size * 5,
+    )
     db.commit()
 
     claimed = job_service.claim_jobs(
@@ -1572,6 +1706,7 @@ def drain_platform_jobs(
         "due_cwv_standards_checks_seen": due_cwv_standards_checks_seen,
         "due_standards_source_checks_seen": due_standards_source_checks_seen,
         "due_website_performance_jobs_seen": due_website_performance_jobs_seen,
+        "due_action_plan_measurements_seen": due_action_plan_measurements_seen,
         "claimed": len(claimed_ids),
         "processed": len(results),
         "deferred": len(deferred_ids),

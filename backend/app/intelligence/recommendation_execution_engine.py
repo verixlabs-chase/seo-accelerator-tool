@@ -37,6 +37,10 @@ from app.services.wordpress_change_preview_service import (
     create_change_preview,
     requires_wordpress_preview,
 )
+from app.services.wordpress_post_change_measurement_service import (
+    prepare_managed_wordpress_measurement,
+    schedule_managed_wordpress_follow_up,
+)
 from app.services.wordpress_automation_policy_service import (
     evaluate_wordpress_automation,
     is_managed_wordpress_execution,
@@ -259,9 +263,22 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
                             reason_code='wordpress_preview_missing',
                         )
                     if preview_payload.get('status') != 'ready':
+                        validation = preview_payload.get('managed_content_validation')
+                        validation_blocked = (
+                            isinstance(validation, dict)
+                            and validation.get('status') == 'blocked'
+                        )
                         raise WordPressChangePreviewError(
-                            'The managed update preview found a conflict that needs review.',
-                            reason_code='wordpress_preview_conflict',
+                            (
+                                'The managed update did not pass its content and business-fact checks.'
+                                if validation_blocked
+                                else 'The managed update preview found a conflict that needs review.'
+                            ),
+                            reason_code=(
+                                'wordpress_content_validation_failed'
+                                if validation_blocked
+                                else 'wordpress_preview_conflict'
+                            ),
                         )
                     affected_urls = [
                         str(value)
@@ -399,6 +416,12 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
         execution.last_error = None
         session.flush()
         outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.started', payload=_execution_event_payload(execution=execution, result_summary=None))
+        if is_managed_wordpress_execution(execution):
+            _prepare_managed_measurement_if_possible(
+                session,
+                execution=execution,
+                recommendation=recommendation,
+            )
         try:
             result = _normalize_result(executor.run(payload), execution.execution_type)
             # Website delivery is external, while its mutation audit is local.
@@ -452,6 +475,12 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
         execution.status = 'completed'
         execution.last_error = None
         execution.executed_at = datetime.now(UTC)
+        if is_managed_wordpress_execution(execution):
+            result['post_change_measurement'] = _schedule_managed_follow_up_if_possible(
+                session,
+                execution=execution,
+                result=result,
+            )
         execution.result_summary = json.dumps(result, sort_keys=True)
         _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.EXECUTED)
         outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.completed', payload=_execution_event_payload(execution=execution, result_summary=result))
@@ -788,6 +817,68 @@ def _record_outcome_if_possible(session: Session, execution: RecommendationExecu
                 'execution_type': execution.execution_type,
             },
         )
+
+
+def _prepare_managed_measurement_if_possible(
+    session: Session,
+    *,
+    execution: RecommendationExecution,
+    recommendation: StrategyRecommendation,
+) -> dict[str, Any]:
+    try:
+        with session.begin_nested():
+            return prepare_managed_wordpress_measurement(
+                session,
+                execution=execution,
+                recommendation=recommendation,
+                prepared_at=datetime.now(UTC),
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            'managed WordPress baseline capture failed; primary action can continue',
+            extra={
+                'execution_id': execution.id,
+                'campaign_id': execution.campaign_id,
+                'execution_type': execution.execution_type,
+            },
+        )
+        return {
+            'required': True,
+            'status': 'unavailable',
+            'reason_code': 'wordpress_measurement_baseline_failed',
+            'message': 'The website action can continue, but its starting measurement is unavailable.',
+        }
+
+
+def _schedule_managed_follow_up_if_possible(
+    session: Session,
+    *,
+    execution: RecommendationExecution,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        with session.begin_nested():
+            return schedule_managed_wordpress_follow_up(
+                session,
+                execution=execution,
+                result_summary=result,
+                completed_at=execution.executed_at,
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            'managed WordPress follow-up scheduling failed; primary action remains completed',
+            extra={
+                'execution_id': execution.id,
+                'campaign_id': execution.campaign_id,
+                'execution_type': execution.execution_type,
+            },
+        )
+        return {
+            'required': is_managed_wordpress_execution(execution),
+            'status': 'unavailable',
+            'reason_code': 'wordpress_measurement_schedule_failed',
+            'message': 'The website change completed, but its automatic result check could not be scheduled.',
+        }
 
 
 def _normalize_result(result: dict[str, Any], execution_type: str) -> dict[str, Any]:

@@ -20,6 +20,9 @@ from app.models.local import ReviewVelocitySnapshot
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.website_performance import WebsitePerformanceMeasurement
 from app.services import action_plan_forecast_service, metric_contract_service
+from app.services.wordpress_regression_monitor_service import (
+    evaluate_wordpress_regression_pause,
+)
 
 
 _DEFAULT_DIRECTIONS = {
@@ -1317,6 +1320,14 @@ def evaluate_action_plan_outcome(
     }
     measurement.measurement_contract = contract
     measurement.updated_at = resolved_at
+    db.flush()
+    managed_wordpress_safety = evaluate_wordpress_regression_pause(
+        db,
+        measurement=measurement,
+    )
+    contract = dict(measurement.measurement_contract or {})
+    contract["managed_wordpress_safety"] = managed_wordpress_safety
+    measurement.measurement_contract = contract
     forecast = action_plan_forecast_service.get_action_plan_forecast(
         db,
         occurrence_id=occurrence_id,

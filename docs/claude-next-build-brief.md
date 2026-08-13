@@ -3057,7 +3057,7 @@ single-site and portfolio automation within published allowances; Enterprise
 adds custom policy, provider, team, audit, and bulk-site controls. All tiers
 retain human-readable evidence and an honest verification plan.
 
-Implementation status (2026-08-13): the first three WP1.2 safety slices are complete.
+Implementation status (2026-08-13): the first six WP1.2 safety slices are complete.
 Each connected site now has a tenant-scoped, versioned policy with fail-closed
 defaults, allowed action types, an allowed URL work area, timezone-aware days
 and hours, blackout windows, a monthly update cap, a risk ceiling, an approval
@@ -3078,9 +3078,40 @@ same cap. If the public website does not match an automatically approved
 change, the system now records the failed execution, preserves the rollback
 snapshot, pauses that site's managed policy with the exact execution and
 reason, and blocks later managed work until an owner reviews and removes the
-pause. Manual WP1.1 remains unchanged. The next WP1.2 slice will add repeated
-post-change regression rules and the content/fact validation gates required
-before broader action categories can run unattended.
+pause. Manual WP1.1 remains unchanged. Managed previews now also run a versioned,
+deterministic content and business-fact gate before policy approval. It checks
+the exact action-to-field contract; title, description, link, draft, and schema
+shape; unsafe markup; unsupported outcome and business claims; owner-confirmed
+service relevance; excluded service areas; and duplicate pages against a
+complete WordPress inventory refreshed within the prior 24 hours. Every result records the recommendation,
+execution, policy version, confirmed-fact identifiers, inventory run, and
+deterministic generation mode. A failed check leaves the execution pending,
+marks the preview as blocked, explains the issue in plain language, and sends
+nothing to WordPress. Manual WP1.1 previews remain approval-first and unchanged.
+
+Measured managed changes now also have a site-scoped regression circuit breaker.
+The first governed measurement classified as worse starts a watch. A second
+consecutive worse result for the same campaign pauses only that site's managed
+policy, records the relevant measurement and execution identifiers and metric
+identifiers, and writes a durable audit event. An improved, unchanged, or
+inconclusive result resets the consecutive-worse count. The product explicitly
+states that a result observed after a website change does not prove the change
+caused the movement. Public-page verification failure remains an immediate
+pause because it proves that the requested mutation was not published as
+expected. The regression rule runs whenever a governed outcome measurement is
+recorded. Managed WordPress execution now also captures the matching governed
+action baseline before the mutation, marks the action complete only after the
+public-page verification passes, and creates one idempotent durable outcome
+check for the action's saved observation date. That future check uses the same
+tenant, location, metric contract, provider, entity scope, and waiting period
+as the baseline; it is processed by the existing database-backed Vercel job
+drain and records insufficient information rather than inventing a result when
+comparable data is unavailable. The scheduler deliberately reuses connected
+crawl, ranking, Search Console, content, and Core Web Vitals facts instead of
+buying duplicate provider checks for every website edit. Source-specific forced
+collection for a missing or stale metric remains a later cost-governed slice.
+Broader unattended action categories also still require model, prompt, and
+lexicon lineage whenever generated copy is introduced.
 
 Scope:
 

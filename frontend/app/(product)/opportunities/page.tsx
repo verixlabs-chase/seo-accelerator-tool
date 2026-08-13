@@ -506,6 +506,13 @@ type WordPressChangePreview = {
   conflict_count?: number;
   changes?: WordPressChangePreviewItem[];
   conflicts?: Array<{ code?: string; message?: string; recovery?: string }>;
+  managed_content_validation?: {
+    required?: boolean;
+    status?: "not_required" | "passed" | "blocked";
+    validator_version?: string;
+    checks?: Array<{ code?: string; passed?: boolean; message?: string }>;
+    blocking_issues?: Array<{ code?: string; message?: string }>;
+  };
   rollback_summary?: string;
   created_at?: string;
 };
@@ -4562,6 +4569,9 @@ export default function OpportunitiesPage() {
                             {wordpressAutomation.paused_reason_code ===
                             "wordpress_public_verification_failed"
                               ? "Managed updates stopped because the public website did not match an approved change. Review the failed action and use rollback if needed before removing the pause."
+                              : wordpressAutomation.paused_reason_code ===
+                                  "wordpress_repeated_measured_regression"
+                                ? "Managed updates stopped after two measured results got worse in a row. This does not prove the website changes caused the declines. Review the affected pages and measurements before removing the pause."
                               : "Managed updates are paused. Review the latest website action before removing the pause."}
                           </div>
                         ) : null}
@@ -5356,6 +5366,24 @@ export default function OpportunitiesPage() {
                                   {conflict.recovery ? <p className="mt-1 text-rose-200">Next: {conflict.recovery}</p> : null}
                                 </div>
                               ))}
+
+                              {dryRunPreview.result.preview.managed_content_validation?.required ? (
+                                <div className="rounded-md border border-sky-500/20 bg-sky-500/5 p-3">
+                                  <p className="text-sm font-semibold text-sky-100">
+                                    Automatic safety checks
+                                  </p>
+                                  <p className="mt-1 text-sm leading-6 text-zinc-400">
+                                    InsightOS checked the proposed wording against the saved business information before allowing an automatic update.
+                                  </p>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {(dryRunPreview.result.preview.managed_content_validation.checks || []).map((check, checkIndex) => (
+                                      <span key={`${check.code || "managed-check"}-${checkIndex}`} className={`rounded-full border px-2.5 py-1 text-xs ${check.passed ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-rose-500/20 bg-rose-500/10 text-rose-100"}`}>
+                                        {check.passed ? "Passed" : "Review needed"}: {check.message || "Safety check"}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
 
                               <div className="space-y-3">
                                 {(dryRunPreview.result.preview.changes || []).map((change, index) => (
