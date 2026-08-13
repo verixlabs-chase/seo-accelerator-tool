@@ -49,6 +49,7 @@ from app.api.v1 import (
     usage_economics,
     website_performance,
     website_events,
+    wordpress_automation,
 )
 
 tenant_api_router = APIRouter()
@@ -102,6 +103,7 @@ tenant_api_router.include_router(support.tenant_router)
 tenant_api_router.include_router(usage_economics.tenant_router)
 tenant_api_router.include_router(website_performance.router)
 tenant_api_router.include_router(website_events.tenant_router)
+tenant_api_router.include_router(wordpress_automation.router)
 
 control_plane_api_router = APIRouter()
 control_plane_api_router.include_router(internal_jobs.router)

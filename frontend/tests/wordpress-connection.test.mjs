@@ -72,3 +72,15 @@ test("Interrupted WordPress actions can be finished without duplicating the appr
   assert.match(page, /same approved website change will not be duplicated/);
   assert.match(page, /resumed after the interrupted run/);
 });
+
+test("managed WordPress updates stay owner-scoped and fail closed", () => {
+  assert.match(page, /\/wordpress-automation\/policy/);
+  assert.match(page, /Managed website updates/);
+  assert.match(page, /Allow managed updates/);
+  assert.match(page, /Allowed website area/);
+  assert.match(page, /Monthly update limit/);
+  assert.match(page, /Highest risk allowed/);
+  assert.match(page, /Ask me before each update/);
+  assert.match(page, /Pause managed updates now/);
+  assert.match(page, /preview, history, and rollback/);
+});

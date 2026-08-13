@@ -23,17 +23,23 @@ from app.models.execution_mutation import ExecutionMutation
 from app.models.intelligence import StrategyRecommendation
 from app.models.intelligence_governance_policy import IntelligenceGovernancePolicy
 from app.models.recommendation_execution import RecommendationExecution
+from app.models.wordpress_change_preview import WordPressChangePreview
 from app.services.commercial_plan_service import (
     FEATURE_WORDPRESS_EXECUTION,
     require_commercial_feature,
 )
 from app.services.cost_economics_service import CostEconomicsError
 from app.services.wordpress_change_preview_service import (
+    WORDPRESS_MUTATION_EXECUTION_TYPES,
     WordPressChangePreviewError,
     approve_change_preview,
     bind_approved_preview,
     create_change_preview,
     requires_wordpress_preview,
+)
+from app.services.wordpress_automation_policy_service import (
+    evaluate_wordpress_automation,
+    is_managed_wordpress_execution,
 )
 
 MAX_EXECUTIONS_PER_CAMPAIGN_PER_DAY = 20
@@ -63,7 +69,12 @@ _DEFAULT_METRIC_BY_EXECUTION_TYPE: dict[str, str] = {
 }
 
 
-def schedule_execution(recommendation_id: str, db: Session | None = None) -> RecommendationExecution | dict[str, Any] | None:
+def schedule_execution(
+    recommendation_id: str,
+    db: Session | None = None,
+    *,
+    managed_automation: bool = False,
+) -> RecommendationExecution | dict[str, Any] | None:
     owns_session = db is None
     session = db or SessionLocal()
     try:
@@ -83,6 +94,22 @@ def schedule_execution(recommendation_id: str, db: Session | None = None) -> Rec
         policy = _resolve_governance_policy(session, campaign_id=recommendation.campaign_id, execution_type=execution_type)
         if not policy['enabled']:
             return _governance_block(campaign_id=recommendation.campaign_id, execution_type=execution_type, reason_code='execution_type_disabled', message='Execution type is disabled by governance policy.')
+        automation_decision = None
+        if managed_automation and execution_type in WORDPRESS_MUTATION_EXECUTION_TYPES:
+            automation_decision = evaluate_wordpress_automation(
+                session,
+                campaign_id=recommendation.campaign_id,
+                execution_type=execution_type,
+                risk_tier=int(recommendation.risk_tier or 1),
+                at=now,
+            )
+            if not automation_decision.allowed:
+                return _governance_block(
+                    campaign_id=recommendation.campaign_id,
+                    execution_type=execution_type,
+                    reason_code=automation_decision.reason_code,
+                    message=automation_decision.message,
+                )
         daily_count = (
             session.query(RecommendationExecution)
             .filter(RecommendationExecution.campaign_id == recommendation.campaign_id, RecommendationExecution.execution_type == execution_type, RecommendationExecution.created_at >= day_start)
@@ -95,13 +122,31 @@ def schedule_execution(recommendation_id: str, db: Session | None = None) -> Rec
         signals = assemble_signals(recommendation.campaign_id, db=session)
         metric_before = float(signals.get(metric_name, 0.0) or 0.0)
         idempotency_key = f'{recommendation.id}:{execution_type}:{day_start.date().isoformat()}'
+        if managed_automation:
+            idempotency_key = f'{idempotency_key}:managed'
         existing = session.query(RecommendationExecution).filter(RecommendationExecution.idempotency_key == idempotency_key).first()
         if existing is not None:
             return existing
         scope_of_change = max(1, int((recommendation.risk_tier or 1) * 2))
         risk = score_execution_risk(session, campaign_id=recommendation.campaign_id, execution_type=execution_type, scope_of_change=scope_of_change)
-        payload = _build_execution_payload(recommendation=recommendation, campaign=campaign, metric_name=metric_name, metric_before=metric_before, idempotency_key=idempotency_key, requires_manual_approval=bool(policy['requires_manual_approval']))
-        initial_status = 'pending' if policy['requires_manual_approval'] else 'scheduled'
+        requires_manual_approval = bool(policy['requires_manual_approval']) or bool(
+            automation_decision and automation_decision.requires_manual_approval
+        )
+        payload = _build_execution_payload(
+            recommendation=recommendation,
+            campaign=campaign,
+            metric_name=metric_name,
+            metric_before=metric_before,
+            idempotency_key=idempotency_key,
+            requires_manual_approval=requires_manual_approval,
+            managed_wordpress_automation=bool(
+                managed_automation and execution_type in WORDPRESS_MUTATION_EXECUTION_TYPES
+            ),
+            automation_policy_version=(
+                automation_decision.policy_version if automation_decision else None
+            ),
+        )
+        initial_status = 'pending' if requires_manual_approval else 'scheduled'
         execution = RecommendationExecution(
             recommendation_id=recommendation.id,
             campaign_id=recommendation.campaign_id,
@@ -116,7 +161,7 @@ def schedule_execution(recommendation_id: str, db: Session | None = None) -> Rec
             scope_of_change=risk.scope_of_change,
             historical_success_rate=risk.historical_success_rate,
         )
-        if policy['requires_manual_approval']:
+        if requires_manual_approval:
             execution.result_summary = json.dumps(_governance_block(campaign_id=recommendation.campaign_id, execution_type=execution_type, reason_code='manual_approval_required', message='Execution requires manual approval before run.'), sort_keys=True)
         session.add(execution)
         if initial_status == 'scheduled':
@@ -167,6 +212,49 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
             if owns_session:
                 session.commit()
             return execution
+        if is_managed_wordpress_execution(execution):
+            preview = (
+                session.query(WordPressChangePreview)
+                .filter(
+                    WordPressChangePreview.execution_id == execution.id,
+                    WordPressChangePreview.status == 'approved',
+                )
+                .order_by(
+                    WordPressChangePreview.approved_at.desc(),
+                    WordPressChangePreview.created_at.desc(),
+                )
+                .first()
+            )
+            preview_snapshot = (
+                preview.snapshot if preview is not None and isinstance(preview.snapshot, dict) else {}
+            )
+            affected_urls = (
+                [str(value) for value in (preview_snapshot.get('affected_urls') or [])]
+                if preview is not None
+                else None
+            )
+            automation_decision = evaluate_wordpress_automation(
+                session,
+                campaign_id=execution.campaign_id,
+                execution_type=execution.execution_type,
+                risk_tier=int(recommendation.risk_tier or 1),
+                affected_urls=affected_urls,
+            )
+            if not automation_decision.allowed:
+                execution.status = 'pending'
+                execution.last_error = automation_decision.reason_code
+                execution.result_summary = json.dumps(
+                    _governance_block(
+                        campaign_id=execution.campaign_id,
+                        execution_type=execution.execution_type,
+                        reason_code=automation_decision.reason_code,
+                        message=automation_decision.message,
+                    ),
+                    sort_keys=True,
+                )
+                if owns_session:
+                    session.commit()
+                return execution
         if policy['requires_manual_approval'] and not (execution.approved_by and execution.approved_at):
             execution.status = 'pending'
             execution.last_error = 'manual_approval_required'
@@ -655,7 +743,17 @@ def _execution_event_payload(*, execution: RecommendationExecution, result_summa
     }
 
 
-def _build_execution_payload(*, recommendation: StrategyRecommendation, campaign: Campaign, metric_name: str, metric_before: float, idempotency_key: str, requires_manual_approval: bool) -> dict[str, Any]:
+def _build_execution_payload(
+    *,
+    recommendation: StrategyRecommendation,
+    campaign: Campaign,
+    metric_name: str,
+    metric_before: float,
+    idempotency_key: str,
+    requires_manual_approval: bool,
+    managed_wordpress_automation: bool = False,
+    automation_policy_version: int | None = None,
+) -> dict[str, Any]:
     evidence = _load_payload(recommendation.evidence_json)
     rollback_plan = _load_payload(recommendation.rollback_plan_json)
     payload = {
@@ -671,6 +769,8 @@ def _build_execution_payload(*, recommendation: StrategyRecommendation, campaign
         'metric_before': metric_before,
         'idempotency_key': idempotency_key,
         'requires_manual_approval': requires_manual_approval,
+        'managed_wordpress_automation': managed_wordpress_automation,
+        'automation_policy_version': automation_policy_version,
         'recommendation_context': evidence,
         'rollback_plan': rollback_plan,
     }

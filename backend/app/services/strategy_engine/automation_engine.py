@@ -248,7 +248,7 @@ def evaluate_campaign_for_automation(campaign_id: str, db: Session, evaluation_d
     # Auto-schedule deterministic execution for approved/scheduled recommendations.
     for rec in recs:
         if rec.status in {StrategyRecommendationStatus.APPROVED, StrategyRecommendationStatus.SCHEDULED}:
-            schedule_execution(rec.id, db=db)
+            schedule_execution(rec.id, db=db, managed_automation=True)
 
     action_summary = {
         'recommendation_transitions': transitions,

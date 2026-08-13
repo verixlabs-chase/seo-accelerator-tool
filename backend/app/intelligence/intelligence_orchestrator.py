@@ -733,8 +733,8 @@ def _schedule_recommendation_executions(
 ) -> list[RecommendationExecution]:
     executions: list[RecommendationExecution] = []
     for recommendation in sorted(recommendations, key=lambda row: row.id):
-        execution = schedule_execution(recommendation.id, db=db)
-        if execution is not None:
+        execution = schedule_execution(recommendation.id, db=db, managed_automation=True)
+        if isinstance(execution, RecommendationExecution):
             executions.append(execution)
     return executions
 

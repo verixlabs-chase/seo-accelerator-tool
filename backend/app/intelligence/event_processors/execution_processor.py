@@ -25,7 +25,11 @@ def process(payload: dict[str, object]) -> dict[str, object] | None:
 
     session = SessionLocal()
     try:
-        execution = schedule_execution(recommendation_id, db=session)
+        execution = schedule_execution(
+            recommendation_id,
+            db=session,
+            managed_automation=True,
+        )
         if execution is None or isinstance(execution, dict):
             session.commit()
             return None

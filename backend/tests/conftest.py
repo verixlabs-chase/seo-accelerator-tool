@@ -102,6 +102,7 @@ from app.models.wordpress_content_inventory import (  # noqa: F401
     WordPressContentSyncRun,
 )
 from app.models.wordpress_change_preview import WordPressChangePreview  # noqa: F401
+from app.models.wordpress_automation_policy import WordPressAutomationPolicy  # noqa: F401
 from app.intelligence.knowledge_graph.update_engine import reset_graph_write_batcher
 from tests.fixtures.intelligence_graph_factory import create_intelligence_graph
 from tests.helpers.economic_setup import ensure_test_tier_profile, provision_test_organization

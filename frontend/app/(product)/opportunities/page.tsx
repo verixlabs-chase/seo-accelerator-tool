@@ -624,6 +624,40 @@ type WordPressContentInventory = {
   message?: string;
 };
 
+type WordPressAutomationPolicy = {
+  id?: string | null;
+  campaign_id: string;
+  automation_enabled: boolean;
+  emergency_stop: boolean;
+  allowed_action_types: string[];
+  allowed_url_prefixes: string[];
+  schedule_timezone: string;
+  schedule_days: number[];
+  window_start_local: string;
+  window_end_local: string;
+  blackout_windows: Array<{ start: string; end: string; label: string }>;
+  monthly_action_limit: number;
+  risk_tier_ceiling: number;
+  requires_manual_approval: boolean;
+  acknowledged_by?: string | null;
+  acknowledged_at?: string | null;
+  version: number;
+  safe_default?: boolean;
+};
+
+type WordPressAutomationPolicyResponse = {
+  policy: WordPressAutomationPolicy;
+  supported_action_types: string[];
+  message?: string;
+};
+
+const WORDPRESS_AUTOMATION_ACTION_LABELS: Record<string, string> = {
+  create_content_brief: "Create a new draft page",
+  fix_missing_title: "Fix missing page titles and descriptions",
+  improve_internal_links: "Add helpful links between pages",
+  publish_schema_markup: "Add supported structured details",
+};
+
 function toTitleCase(value?: string) {
   if (!value) {
     return "Unknown";
@@ -1786,6 +1820,10 @@ export default function OpportunitiesPage() {
   const [wordpressPairing, setWordpressPairing] = useState<WordPressPairingDetails | null>(null);
   const [wordpressInventory, setWordpressInventory] = useState<WordPressContentInventory | null>(null);
   const [wordpressInventoryError, setWordpressInventoryError] = useState("");
+  const [wordpressAutomation, setWordpressAutomation] =
+    useState<WordPressAutomationPolicy | null>(null);
+  const [wordpressAutomationActions, setWordpressAutomationActions] = useState<string[]>([]);
+  const [wordpressAutomationError, setWordpressAutomationError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -1997,6 +2035,34 @@ export default function OpportunitiesPage() {
     }
   }, []);
 
+  const loadWordPressAutomationPolicy = useCallback(async (campaignId: string) => {
+    if (!WORDPRESS_EXECUTION_SETUP_UI_ENABLED || !campaignId) {
+      setWordpressAutomation(null);
+      setWordpressAutomationActions([]);
+      setWordpressAutomationError("");
+      return;
+    }
+    try {
+      const response = (await platformApi(
+        `/wordpress-automation/policy?campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      )) as WordPressAutomationPolicyResponse;
+      setWordpressAutomation(response?.policy || null);
+      setWordpressAutomationActions(
+        Array.isArray(response?.supported_action_types)
+          ? response.supported_action_types
+          : [],
+      );
+      setWordpressAutomationError("");
+    } catch (err) {
+      setWordpressAutomation(null);
+      setWordpressAutomationActions([]);
+      setWordpressAutomationError(
+        err instanceof Error ? err.message : "Unable to load managed website settings.",
+      );
+    }
+  }, []);
+
   async function testWordPressConnection() {
     if (!selectedCampaignId) return;
     await runAction("wordpress-connection-check", async () => {
@@ -2075,6 +2141,35 @@ export default function OpportunitiesPage() {
     });
   }
 
+  async function saveWordPressAutomationPolicy(next: WordPressAutomationPolicy) {
+    if (!selectedCampaignId) return;
+    await runAction("wordpress-automation-policy", async () => {
+      const response = (await platformApi(
+        `/wordpress-automation/policy?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            automation_enabled: next.automation_enabled,
+            emergency_stop: next.emergency_stop,
+            allowed_action_types: next.allowed_action_types,
+            allowed_url_prefixes: next.allowed_url_prefixes,
+            schedule_timezone: next.schedule_timezone,
+            schedule_days: next.schedule_days,
+            window_start_local: next.window_start_local,
+            window_end_local: next.window_end_local,
+            blackout_windows: next.blackout_windows,
+            monthly_action_limit: next.monthly_action_limit,
+            risk_tier_ceiling: next.risk_tier_ceiling,
+            requires_manual_approval: next.requires_manual_approval,
+          }),
+        },
+      )) as WordPressAutomationPolicyResponse;
+      setWordpressAutomation(response.policy);
+      setNotice(response.message || "Managed website settings were saved.");
+      setWordpressAutomationError("");
+    });
+  }
+
   const refreshCampaignData = useCallback(
     async (campaignId: string) => {
       await Promise.all([
@@ -2082,9 +2177,16 @@ export default function OpportunitiesPage() {
         loadExecutions(campaignId),
         loadWordPressExecutionSetup(campaignId),
         loadWordPressInventory(campaignId),
+        loadWordPressAutomationPolicy(campaignId),
       ]);
     },
-    [loadExecutions, loadOpportunities, loadWordPressExecutionSetup, loadWordPressInventory],
+    [
+      loadExecutions,
+      loadOpportunities,
+      loadWordPressAutomationPolicy,
+      loadWordPressExecutionSetup,
+      loadWordPressInventory,
+    ],
   );
 
   async function runAction(action: string, fn: () => Promise<void>) {
@@ -4412,6 +4514,295 @@ export default function OpportunitiesPage() {
                     <div className="mt-4 rounded-md border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100">
                       {wordpressSetupError}
                     </div>
+                  ) : null}
+
+                  {wordpressSetup?.credential_source === "site" && wordpressAutomation ? (
+                    <details className="mt-4 rounded-md border border-[#303239] bg-[#141518] p-4">
+                      <summary className="cursor-pointer list-none">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                              Managed website updates
+                            </p>
+                            <h4 className="mt-1.5 text-base font-semibold text-white">
+                              {wordpressAutomation.emergency_stop
+                                ? "Paused immediately"
+                                : wordpressAutomation.automation_enabled
+                                  ? "On within your saved limits"
+                                  : "Off — every change still needs you"}
+                            </h4>
+                            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-300">
+                              Choose the exact work InsightOS may prepare automatically. Website changes still keep a preview, history, and rollback.
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                              wordpressAutomation.emergency_stop
+                                ? "border-rose-500/40 bg-rose-500/10 text-rose-100"
+                                : wordpressAutomation.automation_enabled
+                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+                                  : "border-zinc-600/50 text-zinc-300"
+                            }`}
+                          >
+                            {wordpressAutomation.emergency_stop
+                              ? "Paused"
+                              : wordpressAutomation.automation_enabled
+                                ? "On"
+                                : "Off"}
+                          </span>
+                        </div>
+                      </summary>
+
+                      <div className="mt-5 border-t border-[#303239] pt-5">
+                        <label className="flex items-start gap-3 text-sm text-zinc-200">
+                          <input
+                            type="checkbox"
+                            checked={wordpressAutomation.automation_enabled}
+                            onChange={(event) =>
+                              setWordpressAutomation({
+                                ...wordpressAutomation,
+                                automation_enabled: event.target.checked,
+                              })
+                            }
+                            className="mt-1 h-4 w-4 accent-orange-500"
+                          />
+                          <span>
+                            <strong className="block text-white">Allow managed updates</strong>
+                            Nothing runs automatically until this is checked and the settings below are saved.
+                          </span>
+                        </label>
+
+                        <div className="mt-5">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                            Work InsightOS may prepare
+                          </p>
+                          <div className="mt-3 grid gap-2 md:grid-cols-2">
+                            {wordpressAutomationActions.map((actionType) => {
+                              const checked = wordpressAutomation.allowed_action_types.includes(actionType);
+                              return (
+                                <label
+                                  key={actionType}
+                                  className="flex items-center gap-3 rounded-md border border-[#303239] px-3 py-2.5 text-sm text-zinc-200"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(event) =>
+                                      setWordpressAutomation({
+                                        ...wordpressAutomation,
+                                        allowed_action_types: event.target.checked
+                                          ? [...wordpressAutomation.allowed_action_types, actionType]
+                                          : wordpressAutomation.allowed_action_types.filter(
+                                              (value) => value !== actionType,
+                                            ),
+                                      })
+                                    }
+                                    className="h-4 w-4 accent-orange-500"
+                                  />
+                                  {WORDPRESS_AUTOMATION_ACTION_LABELS[actionType] || toTitleCase(actionType)}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                          <label className="text-sm text-zinc-200">
+                            <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                              Allowed website area
+                            </span>
+                            <input
+                              type="url"
+                              value={wordpressAutomation.allowed_url_prefixes[0] || ""}
+                              onChange={(event) =>
+                                setWordpressAutomation({
+                                  ...wordpressAutomation,
+                                  allowed_url_prefixes: event.target.value.trim()
+                                    ? [event.target.value]
+                                    : [],
+                                })
+                              }
+                              placeholder="https://example.com/services/"
+                              className="mt-2 w-full rounded-md border border-[#34363c] bg-[#0f1012] px-3 py-2.5 text-sm text-white outline-none focus:border-orange-500/70"
+                            />
+                            <span className="mt-1.5 block text-xs leading-5 text-zinc-500">
+                              Use the home address to allow the whole site, or a section address to keep work inside that section.
+                            </span>
+                          </label>
+
+                          <label className="text-sm text-zinc-200">
+                            <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                              Monthly update limit
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={500}
+                              value={wordpressAutomation.monthly_action_limit}
+                              onChange={(event) =>
+                                setWordpressAutomation({
+                                  ...wordpressAutomation,
+                                  monthly_action_limit: Number(event.target.value || 0),
+                                })
+                              }
+                              className="mt-2 w-full rounded-md border border-[#34363c] bg-[#0f1012] px-3 py-2.5 text-sm text-white outline-none focus:border-orange-500/70"
+                            />
+                            <span className="mt-1.5 block text-xs leading-5 text-zinc-500">
+                              The system stops preparing managed changes when this limit is reached.
+                            </span>
+                          </label>
+                        </div>
+
+                        <div className="mt-5 grid gap-4 md:grid-cols-3">
+                          <label className="text-sm text-zinc-200">
+                            <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                              Earliest time
+                            </span>
+                            <input
+                              type="time"
+                              value={wordpressAutomation.window_start_local}
+                              onChange={(event) =>
+                                setWordpressAutomation({
+                                  ...wordpressAutomation,
+                                  window_start_local: event.target.value,
+                                })
+                              }
+                              className="mt-2 w-full rounded-md border border-[#34363c] bg-[#0f1012] px-3 py-2.5 text-sm text-white"
+                            />
+                          </label>
+                          <label className="text-sm text-zinc-200">
+                            <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                              Latest time
+                            </span>
+                            <input
+                              type="time"
+                              value={wordpressAutomation.window_end_local}
+                              onChange={(event) =>
+                                setWordpressAutomation({
+                                  ...wordpressAutomation,
+                                  window_end_local: event.target.value,
+                                })
+                              }
+                              className="mt-2 w-full rounded-md border border-[#34363c] bg-[#0f1012] px-3 py-2.5 text-sm text-white"
+                            />
+                          </label>
+                          <label className="text-sm text-zinc-200">
+                            <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                              Highest risk allowed
+                            </span>
+                            <select
+                              value={wordpressAutomation.risk_tier_ceiling}
+                              onChange={(event) =>
+                                setWordpressAutomation({
+                                  ...wordpressAutomation,
+                                  risk_tier_ceiling: Number(event.target.value),
+                                })
+                              }
+                              className="mt-2 w-full rounded-md border border-[#34363c] bg-[#0f1012] px-3 py-2.5 text-sm text-white"
+                            >
+                              <option value={1}>Low risk only</option>
+                              <option value={2}>Low and medium risk</option>
+                              <option value={3}>All supported risk levels</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <div className="mt-5">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                            Allowed days
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
+                              (label, day) => {
+                                const selected = wordpressAutomation.schedule_days.includes(day);
+                                return (
+                                  <button
+                                    key={label}
+                                    type="button"
+                                    onClick={() =>
+                                      setWordpressAutomation({
+                                        ...wordpressAutomation,
+                                        schedule_days: selected
+                                          ? wordpressAutomation.schedule_days.filter(
+                                              (value) => value !== day,
+                                            )
+                                          : [...wordpressAutomation.schedule_days, day].sort(),
+                                      })
+                                    }
+                                    className={`rounded-md border px-3 py-2 text-xs font-medium ${
+                                      selected
+                                        ? "border-orange-500/50 bg-orange-500/10 text-orange-100"
+                                        : "border-[#34363c] text-zinc-400"
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              },
+                            )}
+                          </div>
+                          <p className="mt-2 text-xs text-zinc-500">
+                            Times use {wordpressAutomation.schedule_timezone}.
+                          </p>
+                        </div>
+
+                        <label className="mt-5 flex items-start gap-3 text-sm text-zinc-200">
+                          <input
+                            type="checkbox"
+                            checked={wordpressAutomation.requires_manual_approval}
+                            onChange={(event) =>
+                              setWordpressAutomation({
+                                ...wordpressAutomation,
+                                requires_manual_approval: event.target.checked,
+                              })
+                            }
+                            className="mt-1 h-4 w-4 accent-orange-500"
+                          />
+                          <span>
+                            <strong className="block text-white">Ask me before each update</strong>
+                            Keep this on while learning how managed updates behave. Turning it off still keeps policy checks, exact previews, verification, and rollback.
+                          </span>
+                        </label>
+
+                        {wordpressAutomationError ? (
+                          <p className="mt-4 rounded-md border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-100">
+                            {wordpressAutomationError}
+                          </p>
+                        ) : null}
+
+                        <div className="mt-5 flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void saveWordPressAutomationPolicy(wordpressAutomation)}
+                            disabled={busyAction !== ""}
+                            className="rounded-md bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {busyAction === "wordpress-automation-policy"
+                              ? "Saving…"
+                              : "Save managed update settings"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void saveWordPressAutomationPolicy({
+                                ...wordpressAutomation,
+                                emergency_stop: !wordpressAutomation.emergency_stop,
+                              })
+                            }
+                            disabled={busyAction !== ""}
+                            className={`rounded-md border px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                              wordpressAutomation.emergency_stop
+                                ? "border-emerald-500/40 text-emerald-100"
+                                : "border-rose-500/40 text-rose-100"
+                            }`}
+                          >
+                            {wordpressAutomation.emergency_stop
+                              ? "Remove emergency pause"
+                              : "Pause managed updates now"}
+                          </button>
+                        </div>
+                      </div>
+                    </details>
                   ) : null}
 
                   {wordpressSetup?.missing_requirements?.length ? (

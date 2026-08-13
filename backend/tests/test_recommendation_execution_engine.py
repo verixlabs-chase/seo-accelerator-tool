@@ -102,4 +102,12 @@ def test_automation_engine_enqueues_for_approved_or_scheduled(db_session, create
         .filter(RecommendationExecution.campaign_id == campaign.id)
         .count()
     )
-    assert count >= 2
+    # Managed WordPress work now fails closed until this campaign has an
+    # enabled site policy. Non-WordPress automation continues to schedule.
+    assert count == 1
+    execution = (
+        db_session.query(RecommendationExecution)
+        .filter(RecommendationExecution.campaign_id == campaign.id)
+        .one()
+    )
+    assert execution.recommendation_id == scheduled.id

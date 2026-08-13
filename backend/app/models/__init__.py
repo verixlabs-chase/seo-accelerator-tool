@@ -187,6 +187,7 @@ from app.models.wordpress_content_inventory import (
     WordPressContentSyncRun,
 )
 from app.models.wordpress_change_preview import WordPressChangePreview
+from app.models.wordpress_automation_policy import WordPressAutomationPolicy
 
 __all__ = [
     "Tenant",
@@ -372,4 +373,5 @@ __all__ = [
     "WordPressContentItem",
     "WordPressContentSyncRun",
     "WordPressChangePreview",
+    "WordPressAutomationPolicy",
 ]
