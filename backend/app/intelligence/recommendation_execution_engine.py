@@ -496,23 +496,37 @@ def _set_recommendation_status_if_allowed(recommendation: StrategyRecommendation
 def _record_outcome_if_possible(session: Session, execution: RecommendationExecution, result: dict[str, Any]) -> None:
     if execution.status != 'completed':
         return
-    payload = _load_payload(execution.execution_payload)
-    metric_before_value = result.get('metric_before')
-    metric_before = float(metric_before_value) if metric_before_value is not None else float(payload.get('metric_before', 0.0) or 0.0)
-    metric_after_value = result.get('metric_after')
-    if metric_after_value is not None:
-        metric_after = float(metric_after_value)
-    else:
-        metric_name = str(payload.get('metric_name', '') or '')
-        signals = assemble_signals(execution.campaign_id, db=session)
-        metric_after = float(signals.get(metric_name, metric_before) or metric_before)
-    record_execution_outcome(
-        session,
-        execution=execution,
-        metric_before=metric_before,
-        metric_after=metric_after,
-        commit=False,
-    )
+    try:
+        # Outcome learning is derived bookkeeping. It must never turn a
+        # successfully delivered and audited website change into an API 500.
+        # Isolate it in a savepoint so the primary action can still commit.
+        with session.begin_nested():
+            payload = _load_payload(execution.execution_payload)
+            metric_before_value = result.get('metric_before')
+            metric_before = float(metric_before_value) if metric_before_value is not None else float(payload.get('metric_before', 0.0) or 0.0)
+            metric_after_value = result.get('metric_after')
+            if metric_after_value is not None:
+                metric_after = float(metric_after_value)
+            else:
+                metric_name = str(payload.get('metric_name', '') or '')
+                signals = assemble_signals(execution.campaign_id, db=session)
+                metric_after = float(signals.get(metric_name, metric_before) or metric_before)
+            record_execution_outcome(
+                session,
+                execution=execution,
+                metric_before=metric_before,
+                metric_after=metric_after,
+                commit=False,
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            'execution outcome recording failed; primary action remains completed',
+            extra={
+                'execution_id': execution.id,
+                'campaign_id': execution.campaign_id,
+                'execution_type': execution.execution_type,
+            },
+        )
 
 
 def _normalize_result(result: dict[str, Any], execution_type: str) -> dict[str, Any]:

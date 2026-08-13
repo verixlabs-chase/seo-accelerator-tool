@@ -102,6 +102,48 @@ def test_execution_helpers_do_not_commit_the_shared_action_transaction(
     ).count() == 1
 
 
+def test_outcome_bookkeeping_failure_does_not_undo_a_delivered_action(
+    db_session,
+    create_test_tenant,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    tenant = create_test_tenant(name='Outcome Isolation Tenant')
+    org = create_test_org(tenant_id=tenant.id, name='Outcome Isolation Org')
+    org.plan_type = 'multi_location'
+    db_session.commit()
+    campaign = create_test_campaign(
+        db_session,
+        org.id,
+        tenant_id=tenant.id,
+        name='Outcome Isolation Campaign',
+        domain='outcome-isolation.example',
+    )
+    recommendation = _recommendation(
+        db_session,
+        tenant_id=tenant.id,
+        campaign_id=campaign.id,
+        recommendation_type='create_content_brief',
+    )
+    execution = schedule_execution(recommendation.id, db=db_session)
+    assert isinstance(execution, RecommendationExecution)
+    _preview_and_approve(db_session, execution)
+
+    def fail_outcome_bookkeeping(*_args, **_kwargs):
+        raise RuntimeError('simulated derived-bookkeeping failure')
+
+    monkeypatch.setattr(execution_engine, 'record_execution_outcome', fail_outcome_bookkeeping)
+
+    completed = execute_recommendation(execution.id, db=db_session)
+
+    assert isinstance(completed, RecommendationExecution)
+    assert completed.status == 'completed'
+    assert completed.last_error is None
+    assert db_session.query(ExecutionMutation).filter(
+        ExecutionMutation.execution_id == execution.id,
+    ).count() == 1
+
+
 def test_execution_can_be_rolled_back(db_session, create_test_tenant, create_test_org) -> None:
     tenant = create_test_tenant(name='Rollback Tenant')
     org = create_test_org(tenant_id=tenant.id, name='Rollback Org')
