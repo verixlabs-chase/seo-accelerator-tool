@@ -406,12 +406,21 @@ def transition_recommendation(
             recommendation_id=recommendation_id,
             target_state=body.target_state,
         )
-    except Exception:
+    except Exception as exc:
+        original = getattr(exc, "orig", None)
+        diagnostic = getattr(original, "diag", None)
         logger.exception(
-            "Recommendation transition failed: recommendation_id=%s campaign_id=%s target_state=%s",
+            "Recommendation transition failed: recommendation_id=%s campaign_id=%s "
+            "target_state=%s error_type=%s database_error_type=%s sqlstate=%s "
+            "table=%s constraint=%s",
             recommendation_id,
             campaign_id,
             body.target_state,
+            type(exc).__name__,
+            type(original).__name__ if original is not None else None,
+            getattr(original, "sqlstate", None) or getattr(original, "pgcode", None),
+            getattr(diagnostic, "table_name", None),
+            getattr(diagnostic, "constraint_name", None),
         )
         raise
     return envelope(request, RecommendationOut.model_validate(row).model_dump(mode="json"))
