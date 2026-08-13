@@ -3002,6 +3002,13 @@ anchor, schema, or published-page output and shows each result in plain
 language. A mismatch is a failed execution with its applied mutation snapshots
 preserved so rollback remains available. A production-like installation,
 delivery, public verification, and rollback drill remains before WP1.1 release.
+Plugin v1.5.1 additionally reconciles an idempotent replay before checking the
+original preview version. If WordPress applied a change but the platform request
+was interrupted before saving its audit, replay returns the immutable applied
+snapshot instead of duplicating the change or misclassifying the connector as
+broken. Platform execution, telemetry, mutation audit, and outcome writes now
+share one request-owned transaction, and interrupted runs expose an explicit
+safe recovery action.
 
 Scope:
 

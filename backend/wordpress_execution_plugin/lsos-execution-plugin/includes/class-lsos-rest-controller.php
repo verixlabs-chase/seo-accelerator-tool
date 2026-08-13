@@ -155,6 +155,15 @@ class LSOS_REST_Controller
 
         try {
             foreach ($mutations as $mutation) {
+                $mutation_id = (string) ($mutation['mutation_id'] ?? '');
+                $existing = $mutation_id !== '' ? $this->audit_store->get_mutation($mutation_id) : null;
+                if (is_array($existing) && in_array((string) $existing['status'], array('applied', 'skipped_duplicate'), true)) {
+                    // An interrupted platform request may replay the exact
+                    // mutation after WordPress already applied it. Return the
+                    // immutable audit snapshot before checking a now-stale
+                    // preview so the platform can reconcile and roll it back.
+                    continue;
+                }
                 $this->mutation_engine->assert_preview_is_current($mutation);
             }
         } catch (Throwable $throwable) {

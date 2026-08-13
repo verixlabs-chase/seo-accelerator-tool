@@ -166,7 +166,7 @@ def test_wordpress_plugin_contract_contains_health_and_replay_protection() -> No
     settings = (plugin_root / "includes" / "class-lsos-settings-page.php").read_text(
         encoding="utf-8"
     )
-    assert "Version: 1.5.0" in main
+    assert "Version: 1.5.1" in main
     assert "x-lsos-nonce" in auth
     assert "lsos_replayed_request" in auth
     assert "claim_request_nonce" in auth
@@ -186,6 +186,9 @@ def test_wordpress_plugin_contract_contains_health_and_replay_protection() -> No
     assert "post_version" in mutation_engine
     assert "content_from_payload" in mutation_engine
     assert "wordpress_preview_stale" in rest
+    assert rest.index("get_mutation($mutation_id)") < rest.index(
+        "assert_preview_is_current($mutation)"
+    )
     assert "content_hash" in rest
     assert "revision_id" in rest
     assert "meta_description" in rest

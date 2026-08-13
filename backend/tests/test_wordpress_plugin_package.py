@@ -14,8 +14,8 @@ def test_wordpress_plugin_package_is_deterministic_and_installable() -> None:
     second = build_wordpress_plugin_package()
 
     assert first.content == second.content
-    assert first.version == "1.5.0"
-    assert first.filename == "insightos-wordpress-1.5.0.zip"
+    assert first.version == "1.5.1"
+    assert first.filename == "insightos-wordpress-1.5.1.zip"
     assert first.sha256 == hashlib.sha256(first.content).hexdigest()
     assert first.file_count == 7
 
@@ -29,7 +29,7 @@ def test_wordpress_plugin_package_is_deterministic_and_installable() -> None:
         assert all("wp-config.php" not in name for name in names)
         entrypoint = archive.read("lsos-execution-plugin/lsos-execution-plugin.php")
         assert b"Plugin Name: LSOS WordPress Execution Plugin" in entrypoint
-        assert b"Version: 1.5.0" in entrypoint
+        assert b"Version: 1.5.1" in entrypoint
         assert b"test-secret-never-package" not in first.content
 
 
@@ -78,8 +78,8 @@ def test_wordpress_plugin_download_requires_plan_and_returns_verified_zip(
     assert response.headers["content-type"] == "application/zip"
     assert response.headers["cache-control"] == "private, no-store"
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["x-insightos-plugin-version"] == "1.5.0"
-    assert "insightos-wordpress-1.5.0.zip" in response.headers["content-disposition"]
+    assert response.headers["x-insightos-plugin-version"] == "1.5.1"
+    assert "insightos-wordpress-1.5.1.zip" in response.headers["content-disposition"]
     assert response.headers["x-insightos-package-sha256"] == hashlib.sha256(
         response.content
     ).hexdigest()

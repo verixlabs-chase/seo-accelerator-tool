@@ -2,7 +2,7 @@
 /**
  * Plugin Name: LSOS WordPress Execution Plugin
  * Description: Secure mutation execution engine for the LSOS autonomous SEO platform.
- * Version: 1.5.0
+ * Version: 1.5.1
  * Author: Verix Labs
  */
 
@@ -10,7 +10,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('LSOS_EXECUTION_PLUGIN_VERSION', '1.5.0');
+define('LSOS_EXECUTION_PLUGIN_VERSION', '1.5.1');
 define('LSOS_EXECUTION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('LSOS_EXECUTION_PLUGIN_URL', plugin_dir_url(__FILE__));
 

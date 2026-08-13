@@ -16,6 +16,10 @@ WORDPRESS_CAPABILITY = 'mutation_execution'
 MINIMUM_PLUGIN_VERSION = '1.4.0'
 MAX_MUTATIONS_PER_PAGE = 5
 PROTECTED_URL_PREFIXES = ('/wp-admin', '/wp-login.php', '/checkout', '/cart')
+NON_HEALTH_FAILURE_CODES = {
+    'wordpress_preview_conflict',
+    'wordpress_preview_stale',
+}
 _SELECTOR_PATTERN = re.compile(r'^[A-Za-z0-9#._:\-\[\]="\'\s>+~(),]+$')
 
 
@@ -54,6 +58,10 @@ def verify_plugin_version(site_config: dict[str, Any], minimum_version: str = MI
 
 
 def detect_plugin_failure(db: Session, *, tenant_id: str, site_id: str, reason_code: str, plugin_version: str | None = None) -> None:
+    if reason_code in NON_HEALTH_FAILURE_CODES:
+        # A changed page is a healthy safety response from WordPress, not a
+        # broken connector. Keep the connection available for a fresh preview.
+        return
     track_plugin_health(
         db,
         tenant_id=tenant_id,

@@ -9,6 +9,7 @@ from app.intelligence.executors.plugin_telemetry import (
     verify_plugin_version,
     verify_rollback_payloads,
 )
+from app.models.provider_health import ProviderHealthState
 
 
 def test_plugin_health_tracking_blocks_unhealthy_sites(db_session) -> None:
@@ -18,6 +19,35 @@ def test_plugin_health_tracking_blocks_unhealthy_sites(db_session) -> None:
     detect_plugin_failure(db_session, tenant_id='tenant-1', site_id='site-1', reason_code='timeout', plugin_version='1.2.0')
     with pytest.raises(PluginTelemetryError):
         block_execution_if_plugin_unhealthy(db_session, tenant_id='tenant-1', site_id='site-1')
+
+
+def test_stale_preview_does_not_mark_a_healthy_connection_as_broken(db_session) -> None:
+    track_plugin_health(
+        db_session,
+        tenant_id='tenant-preview',
+        site_id='site-preview',
+        plugin_version='1.5.1',
+        healthy=True,
+    )
+
+    detect_plugin_failure(
+        db_session,
+        tenant_id='tenant-preview',
+        site_id='site-preview',
+        reason_code='wordpress_preview_stale',
+        plugin_version='1.5.1',
+    )
+
+    row = db_session.query(ProviderHealthState).filter(
+        ProviderHealthState.tenant_id == 'tenant-preview',
+        ProviderHealthState.capability == 'mutation_execution:site-preview',
+    ).one()
+    assert row.breaker_state == 'closed'
+    block_execution_if_plugin_unhealthy(
+        db_session,
+        tenant_id='tenant-preview',
+        site_id='site-preview',
+    )
 
 
 def test_plugin_mutation_guards_validate_batches() -> None:
