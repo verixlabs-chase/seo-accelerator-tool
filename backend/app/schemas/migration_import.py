@@ -20,3 +20,22 @@ class MigrationApplyIn(MigrationDryRunIn):
 
 class MigrationRollbackIn(BaseModel):
     confirmed: bool = False
+
+
+class MigrationUploadCreateIn(BaseModel):
+    source_system: Literal["semrush", "brightlocal", "other"] = "other"
+    source_filename: str | None = Field(default=None, max_length=255)
+    total_chunks: int = Field(ge=1, le=100)
+    expected_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    client_request_id: UUID
+
+
+class MigrationUploadChunkIn(BaseModel):
+    content: str = Field(min_length=1, max_length=750_000)
+    chunk_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class MigrationUploadApplyIn(BaseModel):
+    review_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    client_request_id: UUID
+    confirmed: bool = False

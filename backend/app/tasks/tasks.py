@@ -26,6 +26,7 @@ from app.services import (
     intelligence_service,
     idempotency_service,
     local_service,
+    migration_upload_service,
     observability_service,
     portfolio_usage_service,
     reference_library_service,
@@ -41,6 +42,20 @@ logger = logging.getLogger("lsos.traffic.facts")
 @celery_app.task(name="ops.healthcheck.snapshot")
 def ops_healthcheck_snapshot() -> dict:
     return {"timestamp": datetime.now(UTC).isoformat(), "status": "ok"}
+
+
+@celery_app.task(name="migration.purge_expired_uploads")
+def migration_purge_expired_uploads() -> dict:
+    db = SessionLocal()
+    try:
+        result = migration_upload_service.purge_expired_upload_sessions(db)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 @celery_app.task(name="analytics.rollup_daily", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})

@@ -188,7 +188,12 @@ from app.models.wordpress_content_inventory import (
 )
 from app.models.wordpress_change_preview import WordPressChangePreview
 from app.models.wordpress_automation_policy import WordPressAutomationPolicy
-from app.models.migration_import import MigrationImportBatch, MigrationImportRecord
+from app.models.migration_import import (
+    MigrationImportBatch,
+    MigrationImportRecord,
+    MigrationUploadChunk,
+    MigrationUploadSession,
+)
 
 __all__ = [
     "Tenant",
@@ -377,4 +382,6 @@ __all__ = [
     "WordPressAutomationPolicy",
     "MigrationImportBatch",
     "MigrationImportRecord",
+    "MigrationUploadChunk",
+    "MigrationUploadSession",
 ]

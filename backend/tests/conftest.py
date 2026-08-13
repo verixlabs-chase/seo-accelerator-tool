@@ -40,7 +40,12 @@ from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge  # 
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
 from app.models.local_rank_grid import LocalRankGridCompetitorPoint, LocalRankGridPoint, LocalRankGridRun  # noqa: F401
-from app.models.migration_import import MigrationImportBatch, MigrationImportRecord  # noqa: F401
+from app.models.migration_import import (  # noqa: F401
+    MigrationImportBatch,
+    MigrationImportRecord,
+    MigrationUploadChunk,
+    MigrationUploadSession,
+)
 from app.models.google_business_profile import (  # noqa: F401
     GoogleBusinessProfileDailyMetric,
     GoogleBusinessProfileSearchKeyword,

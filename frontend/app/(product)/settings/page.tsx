@@ -215,6 +215,7 @@ type BillingSummary = {
 
 type MigrationReview = {
   mode: "dry_run";
+  adapter: string;
   review_hash: string;
   source_sha256: string;
   writes_performed: number;
@@ -230,6 +231,7 @@ type MigrationReview = {
     competitors: number;
     ranking_history: number;
     listing_history: number;
+    report_recipients: number;
   };
   ignored_columns: Array<{
     column: string;
@@ -246,6 +248,24 @@ type MigrationReview = {
     values: Record<string, string>;
     issues: Array<{ code: string; message: string }>;
   }>;
+  pagination?: {
+    page: number;
+    page_size: number;
+    total_rows: number;
+    total_pages: number;
+    has_more: boolean;
+  };
+};
+
+type MigrationUpload = {
+  id: string;
+  status: "uploading" | "reviewed" | "applied";
+  total_chunks: number;
+  received_chunks: number;
+  received_chunk_indexes: number[];
+  expected_sha256?: string | null;
+  review_hash?: string | null;
+  expires_at: string;
 };
 
 type MigrationBatch = {
@@ -263,6 +283,7 @@ type MigrationBatch = {
     competitors_created?: number;
     ranking_history_created?: number;
     listing_history_created?: number;
+    report_recipients_created?: number;
   };
 };
 
@@ -323,6 +344,47 @@ function toneClasses(tone: string) {
   return "border-sky-500/25 bg-sky-500/10 text-sky-100";
 }
 
+const migrationChunkBytes = 500 * 1024;
+const resumableMigrationThreshold = 1_200_000;
+
+async function sha256Text(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function splitMigrationChunks(value: string) {
+  const encoder = new TextEncoder();
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < value.length) {
+    let low = start + 1;
+    let high = Math.min(value.length, start + migrationChunkBytes);
+    let best = low;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const candidate = value.slice(start, middle);
+      if (encoder.encode(candidate).byteLength <= migrationChunkBytes) {
+        best = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
+    }
+    if (
+      best < value.length &&
+      /[\uD800-\uDBFF]/.test(value.charAt(best - 1)) &&
+      /[\uDC00-\uDFFF]/.test(value.charAt(best))
+    ) {
+      best -= 1;
+    }
+    chunks.push(value.slice(start, best));
+    start = best;
+  }
+  return chunks;
+}
+
 export default function SettingsPage() {
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
@@ -351,6 +413,9 @@ export default function SettingsPage() {
   const [migrationRequestId, setMigrationRequestId] = useState("");
   const [migrationBatch, setMigrationBatch] = useState<MigrationBatch | null>(null);
   const [migrationHistory, setMigrationHistory] = useState<MigrationBatch[]>([]);
+  const [migrationUploadId, setMigrationUploadId] = useState("");
+  const [migrationUploadProgress, setMigrationUploadProgress] = useState(0);
+  const [migrationFileFingerprint, setMigrationFileFingerprint] = useState("");
 
   useEffect(() => {
     setGuidedConnectionSetup(
@@ -615,12 +680,13 @@ export default function SettingsPage() {
 
   function downloadMigrationTemplate() {
     const template = [
-      "Record Type,Location Name,Website,City,State,Country,Postal Code,Keyword,Group,Competitor,Position,Captured At,Source Record ID,Directory Name,Listing URL,Listing Status,Listing Business Name,Listing Address,Listing City,Listing Region,Listing Postal Code,Listing Phone,Listing Website,Primary Category,Directory Importance",
+      "Record Type,Location Name,Website,City,State,Country,Postal Code,Keyword,Group,Competitor,Position,Captured At,Source Record ID,Directory Name,Listing URL,Listing Status,Listing Business Name,Listing Address,Listing City,Listing Region,Listing Postal Code,Listing Phone,Listing Website,Primary Category,Directory Importance,Recipient Email,Recipient Name,Recipient Role",
       "location,Reno Location,example.com,Reno,NV,US,89501,,,",
       "keyword,Reno Location,,,,,,junk removal reno,Core service,",
       "competitor,Reno Location,,,,,,,,competitor.com",
       "ranking,Reno Location,,,,,,junk removal reno,,,12,2026-07-31,legacy-row-101",
       "listing,Reno Location,,,,US,,,,,,2026-07-31,legacy-listing-101,Google Business Profile,https://example.com/profile,live,Example Junk Removal,123 Main St,Reno,NV,89501,775-555-0100,example.com,Junk Removal,essential",
+      "report recipient,Reno Location,,,,,,,,,,,legacy-recipient-101,,,,,,,,,,,,,owner@example.com,Alex Owner,owner",
     ].join("\r\n");
     const url = URL.createObjectURL(new Blob([template], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
@@ -637,14 +703,103 @@ export default function SettingsPage() {
     setMigrationBatch(null);
     setMigrationCsv("");
     setMigrationFileName("");
+    setMigrationUploadId("");
+    setMigrationUploadProgress(0);
+    setMigrationFileFingerprint("");
     if (!file) return;
-    if (file.size > 1_500_000) {
-      setError("Choose a CSV file smaller than 1.5 MB.");
+    if (file.size > 20 * 1024 * 1024) {
+      setError("Choose a CSV file smaller than 20 MB.");
       return;
     }
     setError("");
     setMigrationFileName(file.name);
+    setMigrationFileFingerprint(`${file.name}:${file.size}:${file.lastModified}`);
     setMigrationCsv(await file.text());
+  }
+
+  function migrationResumeKey() {
+    if (!organizationId || !migrationFileFingerprint) return "";
+    return `insightos:migration-upload:${organizationId}:${migrationSource}:${migrationFileFingerprint}`;
+  }
+
+  async function reviewResumableMigration() {
+    if (!organizationId || !migrationCsv) return null;
+    const chunks = splitMigrationChunks(migrationCsv);
+    if (chunks.length > 100) {
+      throw new Error("This file needs more than 100 upload parts. Choose a CSV smaller than 20 MB.");
+    }
+    const expectedSha256 = await sha256Text(migrationCsv);
+    const storageKey = migrationResumeKey();
+    let saved: { upload_id?: string; create_request_id?: string; expected_sha256?: string } = {};
+    if (storageKey) {
+      try {
+        saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}") as typeof saved;
+      } catch {
+        saved = {};
+      }
+    }
+    let createRequestId =
+      saved.expected_sha256 === expectedSha256 && saved.create_request_id
+        ? saved.create_request_id
+        : crypto.randomUUID();
+
+    async function createSession(requestId: string) {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/migration-imports/uploads`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            source_system: migrationSource,
+            source_filename: migrationFileName || null,
+            total_chunks: chunks.length,
+            expected_sha256: expectedSha256,
+            client_request_id: requestId,
+          }),
+        },
+      )) as { upload: MigrationUpload };
+      return response.upload;
+    }
+
+    let upload = await createSession(createRequestId);
+    if (upload.status === "applied" || new Date(upload.expires_at).getTime() <= Date.now()) {
+      createRequestId = crypto.randomUUID();
+      upload = await createSession(createRequestId);
+    }
+    setMigrationUploadId(upload.id);
+    if (storageKey) {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          upload_id: upload.id,
+          create_request_id: createRequestId,
+          expected_sha256: expectedSha256,
+        }),
+      );
+    }
+
+    const received = new Set(upload.received_chunk_indexes || []);
+    setMigrationUploadProgress(
+      Math.round(((upload.received_chunks || 0) / upload.total_chunks) * 100),
+    );
+    if (upload.status === "uploading") {
+      for (let index = 0; index < chunks.length; index += 1) {
+        if (received.has(index)) continue;
+        const content = chunks[index];
+        await platformApi(
+          `/organizations/${organizationId}/migration-imports/uploads/${upload.id}/chunks/${index}`,
+          {
+            method: "PUT",
+            body: JSON.stringify({ content, chunk_sha256: await sha256Text(content) }),
+          },
+        );
+        received.add(index);
+        setMigrationUploadProgress(Math.round((received.size / chunks.length) * 100));
+      }
+    }
+    return (await platformApi(
+      `/organizations/${organizationId}/migration-imports/uploads/${upload.id}/review?page=1&page_size=100`,
+      { method: "POST" },
+    )) as MigrationReview;
   }
 
   async function reviewMigrationFile() {
@@ -653,13 +808,19 @@ export default function SettingsPage() {
     setError("");
     setNotice("");
     try {
-      const response = (await platformApi(
-        `/organizations/${organizationId}/migration-imports/dry-run`,
-        {
-          method: "POST",
-          body: JSON.stringify({ source_system: migrationSource, csv_text: migrationCsv }),
-        },
-      )) as MigrationReview;
+      const rowCount = (migrationCsv.match(/\r?\n/g) || []).length;
+      const useResumableUpload =
+        migrationCsv.length > resumableMigrationThreshold || rowCount > 2_501;
+      const response = useResumableUpload
+        ? await reviewResumableMigration()
+        : ((await platformApi(
+            `/organizations/${organizationId}/migration-imports/dry-run`,
+            {
+              method: "POST",
+              body: JSON.stringify({ source_system: migrationSource, csv_text: migrationCsv }),
+            },
+          )) as MigrationReview);
+      if (!response) return;
       setMigrationReview(response);
       setMigrationConfirmed(false);
       setMigrationRequestId(crypto.randomUUID());
@@ -671,26 +832,60 @@ export default function SettingsPage() {
     }
   }
 
+  async function loadMoreMigrationReviewRows() {
+    if (!organizationId || !migrationUploadId || !migrationReview?.pagination?.has_more) return;
+    setBusyAction("migration-review-more");
+    setError("");
+    try {
+      const nextPage = migrationReview.pagination.page + 1;
+      const response = (await platformApi(
+        `/organizations/${organizationId}/migration-imports/uploads/${migrationUploadId}/review/rows?page=${nextPage}&page_size=${migrationReview.pagination.page_size}`,
+        { method: "GET" },
+      )) as MigrationReview;
+      setMigrationReview((current) =>
+        current
+          ? { ...current, rows: [...current.rows, ...response.rows], pagination: response.pagination }
+          : response,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load more review rows.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function applyMigrationFile() {
     if (!organizationId || !migrationCsv || !migrationReview || !migrationConfirmed) return;
     setBusyAction("migration-apply");
     setError("");
     setNotice("");
     try {
-      const response = (await platformApi(
-        `/organizations/${organizationId}/migration-imports/apply`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            source_system: migrationSource,
-            source_filename: migrationFileName || null,
-            csv_text: migrationCsv,
-            review_hash: migrationReview.review_hash,
-            client_request_id: migrationRequestId,
-            confirmed: true,
-          }),
-        },
-      )) as { batch: MigrationBatch };
+      const response = migrationUploadId
+        ? ((await platformApi(
+            `/organizations/${organizationId}/migration-imports/uploads/${migrationUploadId}/apply`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                review_hash: migrationReview.review_hash,
+                client_request_id: migrationRequestId,
+                confirmed: true,
+              }),
+            },
+          )) as { batch: MigrationBatch })
+        : ((await platformApi(
+            `/organizations/${organizationId}/migration-imports/apply`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                source_system: migrationSource,
+                source_filename: migrationFileName || null,
+                csv_text: migrationCsv,
+                review_hash: migrationReview.review_hash,
+                client_request_id: migrationRequestId,
+                confirmed: true,
+              }),
+            },
+          )) as { batch: MigrationBatch });
       setMigrationBatch(response.batch);
       setMigrationHistory((current) => [
         response.batch,
@@ -2031,10 +2226,10 @@ export default function SettingsPage() {
                     Moving from another SEO tool
                   </p>
                   <h2 id="migration-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
-                    Bring over locations, searches, and competitors
+                    Bring over your setup and useful history
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
-                    Put your existing setup into the InsightOS template, then check every match before anything is added.
+                    Add locations, searches, competitors, past rankings, listing history, and report recipients. Check every match before anything is added; imported recipients stay off.
                   </p>
                 </div>
                 <button type="button" className={secondaryButtonClass} onClick={downloadMigrationTemplate}>
@@ -2051,7 +2246,13 @@ export default function SettingsPage() {
                     id="migration-source"
                     className={selectClass}
                     value={migrationSource}
-                    onChange={(event) => setMigrationSource(event.target.value as "semrush" | "brightlocal" | "other")}
+                    onChange={(event) => {
+                      setMigrationSource(event.target.value as "semrush" | "brightlocal" | "other");
+                      setMigrationReview(null);
+                      setMigrationConfirmed(false);
+                      setMigrationUploadId("");
+                      setMigrationUploadProgress(0);
+                    }}
                   >
                     <option value="other">Another spreadsheet</option>
                     <option value="semrush">Semrush</option>
@@ -2070,8 +2271,13 @@ export default function SettingsPage() {
                     onChange={(event) => void chooseMigrationFile(event.target.files?.[0])}
                   />
                   <p className="mt-1.5 text-xs text-zinc-500">
-                    {migrationFileName || "CSV only · up to 2,500 rows · no changes are made during review"}
+                    {migrationFileName || "CSV only · up to 25,000 rows · large files resume after an interruption · no changes are made during review"}
                   </p>
+                  {busyAction === "migration-dry-run" && migrationUploadId ? (
+                    <p className="mt-1.5 text-xs font-medium text-sky-200" role="status">
+                      Secure upload {migrationUploadProgress}% complete. Uploaded parts are saved for seven days.
+                    </p>
+                  ) : null}
                 </div>
                 <button
                   type="button"
@@ -2085,7 +2291,10 @@ export default function SettingsPage() {
 
               {migrationReview ? (
                 <div className="mt-5 border-t border-[#292a2f] pt-5">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                  <p className="mb-4 text-xs leading-5 text-zinc-500">
+                    Using {migrationReview.adapter.replaceAll("_", " ")} to match this file&apos;s familiar headings.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
                     {[
                       ["Ready to add", migrationReview.summary.ready, "text-emerald-200"],
                       ["Already saved", migrationReview.summary.already_saved, "text-sky-200"],
@@ -2093,6 +2302,7 @@ export default function SettingsPage() {
                       ["Needs attention", migrationReview.summary.needs_attention, "text-amber-200"],
                       ["Past rankings", migrationReview.summary.ranking_history, "text-violet-200"],
                       ["Past listings", migrationReview.summary.listing_history, "text-violet-200"],
+                      ["Report recipients", migrationReview.summary.report_recipients, "text-sky-200"],
                     ].map(([label, value, color]) => (
                       <div key={String(label)} className="border-l-2 border-[#35363c] pl-3">
                         <p className="text-xs text-zinc-500">{label}</p>
@@ -2123,7 +2333,6 @@ export default function SettingsPage() {
                   <div className="mt-4 divide-y divide-[#292a2f] border-y border-[#292a2f]">
                     {migrationReview.rows
                       .filter((row) => row.status === "needs_attention" || row.status === "duplicate")
-                      .slice(0, 50)
                       .map((row) => (
                         <article key={`${row.row_number}-${row.record_type}`} className="grid gap-2 py-3 sm:grid-cols-[90px_minmax(0,1fr)]">
                           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">Row {row.row_number}</p>
@@ -2143,6 +2352,19 @@ export default function SettingsPage() {
                       </p>
                     ) : null}
                   </div>
+
+                  {migrationReview.pagination?.has_more ? (
+                    <button
+                      type="button"
+                      className={`${secondaryButtonClass} mt-4`}
+                      disabled={busyAction === "migration-review-more"}
+                      onClick={() => void loadMoreMigrationReviewRows()}
+                    >
+                      {busyAction === "migration-review-more"
+                        ? "Loading more rows..."
+                        : `Review more rows (${migrationReview.rows.length} of ${migrationReview.pagination.total_rows} loaded)`}
+                    </button>
+                  ) : null}
 
                   {migrationReview.summary.needs_attention === 0 && migrationReview.summary.ready > 0 && !migrationBatch ? (
                     <div className="mt-5 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-4">
@@ -2182,7 +2404,7 @@ export default function SettingsPage() {
                         <p className="mt-1 text-sm leading-6 text-zinc-300">
                           {migrationBatch.status === "rolled_back"
                             ? "The records created by this import were removed, and its audit history was kept."
-                            : `${migrationBatch.summary.locations_created || 0} locations, ${migrationBatch.summary.keywords_created || 0} searches, ${migrationBatch.summary.competitors_created || 0} competitors, ${migrationBatch.summary.ranking_history_created || 0} past ranking points, and ${migrationBatch.summary.listing_history_created || 0} past listing records were added.`}
+                            : `${migrationBatch.summary.locations_created || 0} locations, ${migrationBatch.summary.keywords_created || 0} searches, ${migrationBatch.summary.competitors_created || 0} competitors, ${migrationBatch.summary.ranking_history_created || 0} past ranking points, ${migrationBatch.summary.listing_history_created || 0} past listing records, and ${migrationBatch.summary.report_recipients_created || 0} report recipients were added. Imported recipients are off until reviewed.`}
                         </p>
                       </div>
                       {migrationBatch.rollback_available ? (

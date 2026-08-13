@@ -122,6 +122,15 @@ def test_celery_beat_includes_traffic_fact_sync_schedule() -> None:
     assert schedule['traffic-fact-sync-nightly']['task'] == 'traffic.nightly_sync_traffic_facts'
 
 
+def test_celery_beat_purges_expired_migration_uploads() -> None:
+    schedule = celery_app.conf.beat_schedule
+    assert 'migration-upload-retention-nightly' in schedule
+    assert (
+        schedule['migration-upload-retention-nightly']['task']
+        == 'migration.purge_expired_uploads'
+    )
+
+
 def test_nightly_sync_traffic_facts_tolerates_campaign_failures(db_session, monkeypatch) -> None:
     user = db_session.query(User).filter(User.email == 'a@example.com').first()
     assert user is not None

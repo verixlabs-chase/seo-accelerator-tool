@@ -650,7 +650,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 34 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
 | 35 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
 | 36 | **WP1.2 - WordPress Managed Autopilot - core implemented locally; live closeout pending** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 37 | **MIG1 - Semrush/BrightLocal Migration - governed core, ranking history, and listing history implemented locally** | New customers can review and atomically import supported setup and qualified history with durable provenance, idempotent retries, a dependency-safe rollback, and a guided switching checklist. Recipient settings, larger resumable files, provider-specific adapters, and production proof remain. |
+| 37 | **MIG1 - Semrush/BrightLocal Migration - governed resumable import implemented locally** | New customers can review and atomically import supported setup, qualified history, and disabled report recipients through explicit source adapters, with durable provenance, resumable verified file parts, paginated review, idempotent retries, a dependency-safe rollback, and a guided switching checklist. Production migration and live proof remain. |
 | 38 | **ALT1 - In-Product Alerts First; Automated Email Later** | Customers first receive useful notices inside InsightOS. Reliable automated email and delivery tracking remain a later, behind-the-scenes platform capability and do not block the current reporting or product sprints. |
 | 39 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
 | 40 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
@@ -3181,8 +3181,9 @@ history instead of rebuilding the account by hand.
 Implementation status (2026-08-13): the governed MIG1 core is implemented
 locally. Organization owners and administrators can download one
 plain CSV template, identify the source as Semrush, BrightLocal, or another
-spreadsheet, and review up to 2,500 location, tracked-search, and competitor
-rows. The tenant-scoped review maps familiar column aliases, matches saved
+spreadsheet, and directly review up to 2,500 location, tracked-search, competitor,
+historical-ranking, historical-listing, and report-recipient rows. The
+tenant-scoped review maps familiar column aliases, matches saved
 locations by exact normalized website or name, finds already-saved records and
 same-file duplicates, and gives each invalid or ambiguous row one concrete fix.
 The first endpoint records and reports zero writes. A second, explicit customer
@@ -3195,8 +3196,9 @@ batch; rollback fails closed if rankings or other newer work are attached, and
 the batch history remains after reversal. Historical ranking snapshots and
 unsupported-column reporting are covered by the next slice below. Qualified
 listing history and the guided switching checklist are also implemented as
-described below; recipient settings, resumable chunked files, and production migration/live
-proof remain later MIG1 slices.
+described below. Recipient configuration and provider-specific adapters are
+also implemented. A resumable path now accepts up to 25,000 reviewed rows and
+20 MB as described below; production migration and live proof remain.
 
 Historical-ranking and field-transparency slice (2026-08-13): MIG1 now accepts
 explicit `ranking` rows tied to a reviewed location and tracked phrase, with a
@@ -3209,8 +3211,9 @@ claim. Exact phrase/date/position duplicates are skipped, conflicts require
 review, batch rollback removes imported points, and later live work blocks unsafe
 parent deletion. CSV columns that are not mapped are now reported by name,
 filled-row count, and reason in the dry run and customer UI instead of being
-silently discarded. Listing facts, recipient settings, resumable chunked files,
-source-specific export adapters, and production migration/live proof remain.
+silently discarded. Listing facts, recipient configuration, and explicit
+source adapters and resumable files are covered by the later slices below;
+production migration and live proof remain.
 
 Listing-history and guided-switching slice (2026-08-13): MIG1 now accepts
 explicit `listing` or `citation` rows with the directory name, original
@@ -3224,8 +3227,35 @@ needs-attention counts and are labeled in the Listings UI. Exact historical
 duplicates are skipped and rollback removes both the imported observation and
 its qualified listing record. Settings now includes a state-derived switching
 checklist for importing, connecting Google, mapping live sources, and collecting
-the first fresh baseline. Recipient settings, resumable chunked files,
-source-specific export adapters, and production migration/live proof remain.
+the first fresh baseline.
+
+Recipient and export-adapter slice (2026-08-13): MIG1 now accepts explicit
+`report recipient` rows tied to a reviewed location and saves normalized email,
+display name, role, original identifier, source system, and import batch. Every
+imported recipient is disabled, no delivery job or event is created, and the
+Reports UI requires an explicit `Review and turn on` action before future
+scheduled use. That approval remains visibly provenance-labeled and prevents a
+later rollback from deleting the reviewed recipient. The CSV reader now reports
+and locks an explicit `semrush_csv_v1`, `brightlocal_csv_v1`, or standard
+InsightOS adapter into the review hash. The two provider adapters recognize
+documented familiar project, target-domain, tag, citation, live-link, and
+last-checked headings without silently reinterpreting unsupported columns.
+Production migration and live proof remain.
+
+Resumable-file slice (2026-08-13): large CSV files now use durable,
+tenant-scoped upload sessions with up to 100 ordered parts, per-part SHA-256
+checks, an optional expected whole-file hash, a 20 MB byte ceiling, and a
+seven-day expiry. Retrying the same create request or an already-saved part is
+idempotent; a different payload at the same part number fails closed. Review
+cannot begin until every part is present, locks the assembled file and review
+hash, supports up to 25,000 rows, and returns paginated row results. Apply
+reassembles and revalidates the locked file inside the existing atomic import
+contract. The Settings UI automatically chooses this path for large or
+row-heavy files, uploads only missing parts after navigation or interruption,
+stores only the non-sensitive session reference in browser storage, displays
+progress, and lets the owner page through the complete review. A nightly
+retention task deletes expired sessions and their raw file parts. Production
+migration and a real large-file interruption/resume proof remain.
 
 Scope:
 

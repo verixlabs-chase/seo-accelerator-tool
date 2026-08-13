@@ -1,12 +1,21 @@
+import hashlib
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from app.models.audit_log import AuditLog
 from app.models.authority import DirectoryListing, DirectoryListingObservation
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.competitor import Competitor
-from app.models.migration_import import MigrationImportBatch, MigrationImportRecord
+from app.models.migration_import import (
+    MigrationImportBatch,
+    MigrationImportRecord,
+    MigrationUploadChunk,
+    MigrationUploadSession,
+)
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
+from app.models.reporting import ReportDeliveryEvent, ReportRecipient
+from app.services.migration_upload_service import purge_expired_upload_sessions
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -61,6 +70,7 @@ keyword,Missing Location,,,,,appliance removal,Core service,
         "competitors": 1,
         "ranking_history": 0,
         "listing_history": 0,
+        "report_recipients": 0,
     }
     assert payload["field_mapping"]["phrase"] == "Keyword"
     assert payload["rows"][0]["status"] == "already_saved"
@@ -105,6 +115,260 @@ def test_migration_csv_dry_run_respects_organization_scope(client) -> None:
 
     assert response.status_code == 403
     assert response.json()["errors"][0]["details"]["reason_code"] == "organization_scope_mismatch"
+
+
+def test_resumable_migration_upload_is_idempotent_reviewable_and_applyable(
+    client, db_session
+) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    csv_text = (
+        "Record Type,Location Name,Website,City,State,Country,Keyword,Group\n"
+        "location,Boise Office,boise-junk.example,Boise,ID,US,,\n"
+        "keyword,Boise Office,,,,,junk removal boise,Core service\n"
+    )
+    chunks = [csv_text[:62], csv_text[62:121], csv_text[121:]]
+    file_hash = hashlib.sha256(csv_text.encode("utf-8")).hexdigest()
+    create_request_id = str(uuid.uuid4())
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads",
+        json={
+            "source_system": "other",
+            "source_filename": "large-legacy.csv",
+            "total_chunks": len(chunks),
+            "expected_sha256": file_hash,
+            "client_request_id": create_request_id,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert created.status_code == 200
+    upload = created.json()["data"]["upload"]
+    upload_id = upload["id"]
+    assert upload["status"] == "uploading"
+    assert upload["received_chunk_indexes"] == []
+
+    retried_create = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads",
+        json={
+            "source_system": "other",
+            "source_filename": "large-legacy.csv",
+            "total_chunks": len(chunks),
+            "expected_sha256": file_hash,
+            "client_request_id": create_request_id,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert retried_create.status_code == 200
+    assert retried_create.json()["data"]["upload"]["id"] == upload_id
+
+    def upload_chunk(index: int, content: str):
+        return client.put(
+            f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/chunks/{index}",
+            json={
+                "content": content,
+                "chunk_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    second = upload_chunk(1, chunks[1])
+    assert second.status_code == 200
+    assert second.json()["data"]["already_received"] is False
+    replayed = upload_chunk(1, chunks[1])
+    assert replayed.status_code == 200
+    assert replayed.json()["data"]["already_received"] is True
+    conflict = upload_chunk(1, f"{chunks[1]}changed")
+    assert conflict.status_code == 409
+    assert (
+        conflict.json()["errors"][0]["details"]["reason_code"]
+        == "migration_upload_chunk_conflict"
+    )
+
+    incomplete = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/review",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert incomplete.status_code == 409
+    assert (
+        incomplete.json()["errors"][0]["details"]["reason_code"]
+        == "migration_upload_incomplete"
+    )
+
+    assert upload_chunk(2, chunks[2]).status_code == 200
+    assert upload_chunk(0, chunks[0]).status_code == 200
+    status_response = client.get(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["data"]["upload"]["received_chunk_indexes"] == [0, 1, 2]
+
+    reviewed = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/review?page_size=1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert reviewed.status_code == 200
+    review = reviewed.json()["data"]
+    assert review["summary"]["total_rows"] == 2
+    assert len(review["rows"]) == 1
+    assert review["pagination"] == {
+        "page": 1,
+        "page_size": 1,
+        "total_rows": 2,
+        "total_pages": 2,
+        "has_more": True,
+    }
+    page_two = client.get(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/review/rows?page=2&page_size=1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert page_two.status_code == 200
+    assert page_two.json()["data"]["rows"][0]["record_type"] == "keyword"
+
+    locked_chunk = upload_chunk(0, chunks[0])
+    assert locked_chunk.status_code == 409
+    assert (
+        locked_chunk.json()["errors"][0]["details"]["reason_code"]
+        == "migration_upload_locked"
+    )
+
+    applied = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/apply",
+        json={
+            "review_hash": review["review_hash"],
+            "client_request_id": str(uuid.uuid4()),
+            "confirmed": True,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert applied.status_code == 200
+    result = applied.json()["data"]
+    assert result["batch"]["summary"]["records_applied"] == 2
+    assert result["upload"]["status"] == "applied"
+    db_session.expire_all()
+    assert db_session.query(MigrationUploadSession).filter_by(id=upload_id).one().status == "applied"
+    assert db_session.query(MigrationUploadChunk).filter_by(session_id=upload_id).count() == 3
+
+
+def test_resumable_migration_upload_rejects_wrong_complete_file_hash(client) -> None:
+    token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    csv_text = "Record Type,Location Name,Website\nlocation,Austin Office,austin.example\n"
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads",
+        json={
+            "source_system": "other",
+            "source_filename": "changed.csv",
+            "total_chunks": 1,
+            "expected_sha256": "0" * 64,
+            "client_request_id": str(uuid.uuid4()),
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    upload_id = created.json()["data"]["upload"]["id"]
+    uploaded = client.put(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/chunks/0",
+        json={
+            "content": csv_text,
+            "chunk_sha256": hashlib.sha256(csv_text.encode("utf-8")).hexdigest(),
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert uploaded.status_code == 200
+    reviewed = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/review",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert reviewed.status_code == 409
+    assert (
+        reviewed.json()["errors"][0]["details"]["reason_code"]
+        == "migration_upload_file_hash_mismatch"
+    )
+
+
+def test_resumable_migration_upload_reviews_more_than_direct_row_limit(client) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    rows = ["Record Type,Location Name,Website,Keyword,Group"]
+    rows.append("location,Large Account,large-account.example,,")
+    rows.extend(
+        f"keyword,Large Account,,service search {index},Imported"
+        for index in range(2_501)
+    )
+    csv_text = "\n".join(rows) + "\n"
+
+    direct = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/dry-run",
+        json={"source_system": "other", "csv_text": csv_text},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert direct.status_code == 422
+    assert (
+        direct.json()["errors"][0]["details"]["reason_code"]
+        == "migration_row_limit_exceeded"
+    )
+
+    source_hash = hashlib.sha256(csv_text.encode("utf-8")).hexdigest()
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads",
+        json={
+            "source_system": "other",
+            "source_filename": "large-account.csv",
+            "total_chunks": 1,
+            "expected_sha256": source_hash,
+            "client_request_id": str(uuid.uuid4()),
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert created.status_code == 200
+    upload_id = created.json()["data"]["upload"]["id"]
+    uploaded = client.put(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/chunks/0",
+        json={"content": csv_text, "chunk_sha256": source_hash},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert uploaded.status_code == 200
+    reviewed = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/review?page_size=25",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert reviewed.status_code == 200
+    review = reviewed.json()["data"]
+    assert review["summary"]["total_rows"] == 2_502
+    assert review["summary"]["ready"] == 2_502
+    assert review["pagination"]["total_pages"] == 101
+    assert len(review["rows"]) == 25
+
+
+def test_expired_migration_upload_content_is_purged(client, db_session) -> None:
+    token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    csv_text = "Record Type,Location Name,Website\nlocation,Old Upload,old.example\n"
+    source_hash = hashlib.sha256(csv_text.encode("utf-8")).hexdigest()
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads",
+        json={
+            "source_system": "other",
+            "source_filename": "old.csv",
+            "total_chunks": 1,
+            "expected_sha256": source_hash,
+            "client_request_id": str(uuid.uuid4()),
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    upload_id = created.json()["data"]["upload"]["id"]
+    uploaded = client.put(
+        f"/api/v1/organizations/{org_id}/migration-imports/uploads/{upload_id}/chunks/0",
+        json={"content": csv_text, "chunk_sha256": source_hash},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert uploaded.status_code == 200
+    upload = db_session.query(MigrationUploadSession).filter_by(id=upload_id).one()
+    upload.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db_session.commit()
+
+    result = purge_expired_upload_sessions(db_session)
+    db_session.commit()
+
+    assert result == {"sessions_deleted": 1, "chunks_deleted": 1}
+    assert db_session.query(MigrationUploadSession).filter_by(id=upload_id).count() == 0
+    assert db_session.query(MigrationUploadChunk).filter_by(session_id=upload_id).count() == 0
 
 
 def test_confirmed_migration_is_atomic_idempotent_and_rollbackable(client, db_session) -> None:
@@ -439,3 +703,157 @@ listing,Reno Listings,,,,US,Google Business Profile,https://example.com/reno-pro
         .count()
         == 0
     )
+
+
+def test_migration_imports_report_recipients_disabled_without_sending(
+    client,
+    db_session,
+) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    csv_text = """Record Type,Location Name,Website,City,State,Country,Recipient Email,Recipient Name,Recipient Role,Source Record ID
+location,Reno Reports,reno-reports.example,Reno,NV,US,,,,
+report recipient,Reno Reports,,,,,OWNER@EXAMPLE.COM,Alex Owner,owner,old-recipient-17
+"""
+    reviewed = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/dry-run",
+        json={"source_system": "other", "csv_text": csv_text},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert reviewed.status_code == 200
+    review = reviewed.json()["data"]
+    assert review["adapter"] == "insightos_standard_csv_v1"
+    assert review["summary"]["report_recipients"] == 1
+    assert review["rows"][1]["detail"].endswith(
+        "No report will be sent until an owner turns it on."
+    )
+
+    applied = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/apply",
+        json={
+            "source_system": "other",
+            "source_filename": "report-recipients.csv",
+            "csv_text": csv_text,
+            "review_hash": review["review_hash"],
+            "client_request_id": str(uuid.uuid4()),
+            "confirmed": True,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert applied.status_code == 200
+    batch = applied.json()["data"]["batch"]
+    assert batch["summary"]["report_recipients_created"] == 1
+    assert batch["records"][1]["result"]["delivery_state"] == (
+        "disabled_until_owner_review"
+    )
+
+    db_session.expire_all()
+    recipient = db_session.query(ReportRecipient).filter_by(tenant_id=org_id).one()
+    assert recipient.email == "owner@example.com"
+    assert recipient.enabled is False
+    assert recipient.source_type == "imported"
+    assert recipient.source_system == "other"
+    assert recipient.source_record_id == "old-recipient-17"
+    assert recipient.import_batch_id == batch["id"]
+    assert db_session.query(ReportDeliveryEvent).filter_by(tenant_id=org_id).count() == 0
+
+    listed = client.get(
+        f"/api/v1/reports/recipients?campaign_id={recipient.campaign_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert listed.status_code == 200
+    listed_recipient = listed.json()["data"]["items"][0]
+    assert listed_recipient["enabled"] is False
+    assert listed_recipient["source_type"] == "imported"
+
+    rolled_back = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/{batch['id']}/rollback",
+        json={"confirmed": True},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert rolled_back.status_code == 200
+    db_session.expire_all()
+    assert db_session.query(ReportRecipient).filter_by(import_batch_id=batch["id"]).count() == 0
+
+
+def test_migration_source_adapters_map_familiar_export_headers(client) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    semrush_csv = """Type,Project,Root Domain,Keyword,Tags
+location,Reno Project,reno-project.example,,
+keyword,Reno Project,,junk removal reno,Core service
+"""
+    semrush = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/dry-run",
+        json={"source_system": "semrush", "csv_text": semrush_csv},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert semrush.status_code == 200
+    semrush_review = semrush.json()["data"]
+    assert semrush_review["adapter"] == "semrush_csv_v1"
+    assert semrush_review["field_mapping"]["location_name"] == "Project"
+    assert semrush_review["field_mapping"]["website"] == "Root Domain"
+    assert semrush_review["field_mapping"]["keyword_group"] == "Tags"
+    assert semrush_review["summary"]["ready"] == 2
+
+    brightlocal_csv = """Type,Business,Website URL,Citation Name,Citation Link,Citation State,Last Checked
+location,Reno Citations,reno-citations.example,,,,
+listing,Reno Citations,,Google Business Profile,https://example.com/reno,live,2026-07-31
+"""
+    brightlocal = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/dry-run",
+        json={"source_system": "brightlocal", "csv_text": brightlocal_csv},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert brightlocal.status_code == 200
+    brightlocal_review = brightlocal.json()["data"]
+    assert brightlocal_review["adapter"] == "brightlocal_csv_v1"
+    assert brightlocal_review["field_mapping"]["location_name"] == "Business"
+    assert brightlocal_review["field_mapping"]["directory_name"] == "Citation Name"
+    assert brightlocal_review["field_mapping"]["captured_at"] == "Last Checked"
+    assert brightlocal_review["summary"]["ready"] == 2
+
+
+def test_reviewed_imported_recipient_is_protected_from_rollback(client, db_session) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    csv_text = """Record Type,Location Name,Website,Recipient Email,Recipient Role
+location,Protected Reports,protected-reports.example,,
+report recipient,Protected Reports,,client@example.com,client
+"""
+    review = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/dry-run",
+        json={"source_system": "other", "csv_text": csv_text},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+    applied = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/apply",
+        json={
+            "source_system": "other",
+            "csv_text": csv_text,
+            "review_hash": review["review_hash"],
+            "client_request_id": str(uuid.uuid4()),
+            "confirmed": True,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert applied.status_code == 200
+    batch_id = applied.json()["data"]["batch"]["id"]
+    db_session.expire_all()
+    recipient = db_session.query(ReportRecipient).filter_by(tenant_id=org_id).one()
+
+    approved = client.patch(
+        f"/api/v1/reports/recipients/{recipient.id}?enabled=true",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["data"]["source_type"] == "imported_approved"
+
+    rollback = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/{batch_id}/rollback",
+        json={"confirmed": True},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert rollback.status_code == 409
+    assert rollback.json()["errors"][0]["details"]["reason_code"] == (
+        "migration_rollback_blocked_by_new_work"
+    )
+    db_session.expire_all()
+    assert db_session.query(ReportRecipient).filter_by(id=recipient.id).count() == 1

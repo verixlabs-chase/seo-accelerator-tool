@@ -130,6 +130,10 @@ class ReportRecipientOut(BaseModel):
     display_name: str | None
     recipient_role: str
     enabled: bool
+    source_type: str
+    source_system: str | None
+    source_record_id: str | None
+    import_batch_id: str | None
     created_at: datetime
     updated_at: datetime
 

@@ -23,6 +23,7 @@ from app.models.migration_import import MigrationImportBatch, MigrationImportRec
 from app.models.organization import Organization
 from app.models.portfolio import Portfolio
 from app.models.rank import CampaignKeyword, KeywordCluster, RankingSnapshot
+from app.models.reporting import ReportRecipient
 from app.services.audit_service import write_audit_log
 from app.services.business_location_service import (
     BusinessLocationConflictError,
@@ -33,7 +34,14 @@ from app.services.listing_inventory_service import compare_listing_fields
 
 MAX_IMPORT_ROWS = 2_500
 MAX_CELL_LENGTH = 1_000
-RECORD_TYPES = {"location", "keyword", "competitor", "ranking", "listing"}
+RECORD_TYPES = {
+    "location",
+    "keyword",
+    "competitor",
+    "ranking",
+    "listing",
+    "report_recipient",
+}
 CANONICAL_FIELDS = (
     "record_type",
     "location_name",
@@ -60,6 +68,9 @@ CANONICAL_FIELDS = (
     "listing_website",
     "primary_category",
     "directory_importance",
+    "recipient_email",
+    "recipient_name",
+    "recipient_role",
 )
 FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "record_type": ("record_type", "type", "row_type"),
@@ -91,6 +102,29 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "listing_website": ("listing_website", "listed_website", "website_on_listing"),
     "primary_category": ("primary_category", "listing_category", "category_on_listing"),
     "directory_importance": ("directory_importance", "listing_importance", "importance"),
+    "recipient_email": ("recipient_email", "report_email", "delivery_email"),
+    "recipient_name": ("recipient_name", "report_recipient_name", "delivery_name"),
+    "recipient_role": ("recipient_role", "report_recipient_role", "delivery_role"),
+}
+
+SOURCE_FIELD_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
+    "semrush": {
+        "location_name": ("project", "project_name"),
+        "website": ("root_domain", "target_url"),
+        "keyword_group": ("tag", "tags"),
+        "competitor_domain": ("competitor_url",),
+        "captured_at": ("last_update", "last_updated"),
+    },
+    "brightlocal": {
+        "location_name": ("business", "business_location"),
+        "website": ("website_url", "business_website"),
+        "city": ("town",),
+        "phrase": ("search_query",),
+        "captured_at": ("last_checked", "date_updated"),
+        "directory_name": ("citation_name", "publisher"),
+        "listing_url": ("citation_link", "live_url"),
+        "listing_status": ("citation_state",),
+    },
 }
 
 
@@ -107,15 +141,19 @@ def dry_run_migration_csv(
     tenant_id: str,
     source_system: str,
     csv_text: str,
+    max_rows: int = MAX_IMPORT_ROWS,
 ) -> dict[str, Any]:
-    reader, field_mapping, ignored_headers = _reader(csv_text)
+    reader, field_mapping, ignored_headers, adapter_name = _reader(
+        csv_text,
+        source_system=source_system,
+    )
     raw_rows: list[dict[str, str]] = []
     ignored_column_counts = {header: 0 for header, _reason in ignored_headers}
     try:
         for raw_row in reader:
-            if len(raw_rows) >= MAX_IMPORT_ROWS:
+            if len(raw_rows) >= max_rows:
                 raise MigrationImportError(
-                    f"Review no more than {MAX_IMPORT_ROWS:,} rows at one time.",
+                    f"Review no more than {max_rows:,} rows at one time.",
                     reason_code="migration_row_limit_exceeded",
                 )
             for header in ignored_column_counts:
@@ -165,6 +203,7 @@ def dry_run_migration_csv(
     existing_competitors: dict[str, set[str]] = defaultdict(set)
     existing_rankings: dict[tuple[str, str, str], set[int]] = defaultdict(set)
     existing_listing_evidence: set[tuple[str, str, str, str]] = set()
+    existing_recipients: dict[str, set[str]] = defaultdict(set)
     if campaign_ids:
         for row in (
             db.query(CampaignKeyword)
@@ -217,6 +256,15 @@ def dry_run_migration_csv(
                     listing_url=listing.listing_url,
                 )
             )
+        for recipient in (
+            db.query(ReportRecipient)
+            .filter(
+                ReportRecipient.tenant_id == tenant_id,
+                ReportRecipient.campaign_id.in_(campaign_ids),
+            )
+            .all()
+        ):
+            existing_recipients[recipient.campaign_id].add(recipient.email.strip().lower())
 
     file_locations: dict[str, list[dict[str, Any]]] = defaultdict(list)
     file_keywords: dict[tuple[str, str], list[int]] = defaultdict(list)
@@ -247,6 +295,7 @@ def dry_run_migration_csv(
                 existing_competitors=existing_competitors,
                 existing_rankings=existing_rankings,
                 existing_listing_evidence=existing_listing_evidence,
+                existing_recipients=existing_recipients,
             )
         )
 
@@ -255,6 +304,7 @@ def dry_run_migration_csv(
     result = {
         "mode": "dry_run",
         "source_system": source_system,
+        "adapter": adapter_name,
         "source_sha256": _source_hash(csv_text),
         "writes_performed": 0,
         "field_mapping": field_mapping,
@@ -277,6 +327,7 @@ def dry_run_migration_csv(
             "competitors": types["competitor"],
             "ranking_history": types["ranking"],
             "listing_history": types["listing"],
+            "report_recipients": types["report_recipient"],
         },
         "rows": results,
         "next_step": (
@@ -300,6 +351,7 @@ def apply_migration_csv(
     review_hash: str,
     client_request_id: str,
     confirmed: bool,
+    max_rows: int = MAX_IMPORT_ROWS,
 ) -> dict[str, Any]:
     if not confirmed:
         raise MigrationImportError(
@@ -334,6 +386,7 @@ def apply_migration_csv(
         tenant_id=tenant_id,
         source_system=source_system,
         csv_text=csv_text,
+        max_rows=max_rows,
     )
     if review["review_hash"] != review_hash:
         raise MigrationImportError(
@@ -759,6 +812,66 @@ def apply_migration_csv(
         _mark_record_applied(record, listing_entities)
         created_entities.extend(listing_entities)
 
+    for reviewed_row in review["rows"]:
+        if (
+            reviewed_row["status"] != "ready"
+            or reviewed_row["record_type"] != "report_recipient"
+        ):
+            continue
+        values = reviewed_row["values"]
+        location = _location_for_reviewed_row(
+            db,
+            organization_id=organization_id,
+            reviewed_row=reviewed_row,
+            new_locations=new_locations,
+        )
+        if location is None:
+            raise MigrationImportError(
+                "A reviewed location could not be found while importing report recipients.",
+                reason_code="migration_location_changed",
+            )
+        campaign = campaign_cache.get(location.id)
+        if campaign is None:
+            campaign, _created = _ensure_campaign(
+                db,
+                organization_id=organization_id,
+                tenant_id=tenant_id,
+                location=location,
+            )
+            campaign_cache[location.id] = campaign
+        email = _normalized_email(values.get("recipient_email"))
+        role = _recipient_role(values.get("recipient_role"))
+        if email is None or role is None:
+            raise MigrationImportError(
+                "The reviewed report recipient is no longer valid.",
+                reason_code="migration_recipient_changed",
+            )
+        recipient = ReportRecipient(
+            tenant_id=tenant_id,
+            organization_id=organization_id,
+            campaign_id=campaign.id,
+            email=email,
+            display_name=(str(values.get("recipient_name") or "").strip()[:160] or None),
+            recipient_role=role,
+            enabled=False,
+            source_type="imported",
+            source_system=source_system,
+            source_record_id=(values.get("source_record_id") or None),
+            import_batch_id=batch.id,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(recipient)
+        db.flush()
+        recipient_entities = [_entity("report_recipient", recipient.id)]
+        record = records[int(reviewed_row["row_number"])]
+        record.result = {
+            **record.result,
+            "delivery_state": "disabled_until_owner_review",
+        }
+        _mark_record_applied(record, recipient_entities)
+        created_entities.extend(recipient_entities)
+
     created_entities = _deduplicate_entities(created_entities)
     counts = Counter(item["entity_type"] for item in created_entities)
     batch.created_entities = created_entities
@@ -770,6 +883,7 @@ def apply_migration_csv(
         "competitors_created": counts["competitor"],
         "ranking_history_created": counts["ranking_snapshot"],
         "listing_history_created": counts["directory_listing"],
+        "report_recipients_created": counts["report_recipient"],
     }
     write_audit_log(
         db,
@@ -1063,8 +1177,24 @@ def _rollback_blockers(db: Session, entities: dict[str, set[str]]) -> list[str]:
         "directory_listing_observations": entities.get(
             "directory_listing_observation", set()
         ),
+        "report_recipients": entities.get("report_recipient", set()),
     }
     blockers: list[str] = []
+    recipient_ids = entities.get("report_recipient", set())
+    if recipient_ids:
+        reviewed_recipient = (
+            db.query(ReportRecipient.id)
+            .filter(
+                ReportRecipient.id.in_(recipient_ids),
+                (
+                    (ReportRecipient.enabled.is_(True))
+                    | (ReportRecipient.source_type != "imported")
+                ),
+            )
+            .first()
+        )
+        if reviewed_recipient is not None:
+            blockers.append("report_recipients_reviewed")
     for entity_type, foreign_key_name in checks:
         parent_ids = entities.get(entity_type, set())
         if not parent_ids:
@@ -1099,6 +1229,7 @@ def _delete_created_entities(
     entities: dict[str, set[str]],
 ) -> None:
     model_deletes = (
+        (ReportRecipient, "report_recipient"),
         (DirectoryListingObservation, "directory_listing_observation"),
         (DirectoryListing, "directory_listing"),
         (RankingSnapshot, "ranking_snapshot"),
@@ -1128,6 +1259,7 @@ def _source_hash(csv_text: str) -> str:
 def _review_hash(review: dict[str, Any]) -> str:
     governed = {
         "source_system": review["source_system"],
+        "adapter": review["adapter"],
         "source_sha256": review["source_sha256"],
         "field_mapping": review["field_mapping"],
         "summary": review["summary"],
@@ -1145,7 +1277,9 @@ def _safe_filename(value: str | None) -> str | None:
 
 def _reader(
     csv_text: str,
-) -> tuple[csv.DictReader, dict[str, str], list[tuple[str, str]]]:
+    *,
+    source_system: str,
+) -> tuple[csv.DictReader, dict[str, str], list[tuple[str, str]], str]:
     sample = csv_text[:8_192]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
@@ -1161,7 +1295,8 @@ def _reader(
     normalized = {_header_key(header): header for header in headers if header}
     mapping: dict[str, str] = {}
     for canonical, aliases in FIELD_ALIASES.items():
-        for alias in aliases:
+        source_aliases = SOURCE_FIELD_ALIASES.get(source_system, {}).get(canonical, ())
+        for alias in (*source_aliases, *aliases):
             original = normalized.get(alias)
             if original:
                 mapping[canonical] = original
@@ -1176,7 +1311,10 @@ def _reader(
     alias_to_field = {
         alias: canonical
         for canonical, aliases in FIELD_ALIASES.items()
-        for alias in aliases
+        for alias in (
+            *SOURCE_FIELD_ALIASES.get(source_system, {}).get(canonical, ()),
+            *aliases,
+        )
     }
     ignored_headers: list[tuple[str, str]] = []
     for header in headers:
@@ -1189,7 +1327,11 @@ def _reader(
             else "This column is not supported by the current importer."
         )
         ignored_headers.append((header, reason))
-    return reader, mapping, ignored_headers
+    adapter_name = {
+        "semrush": "semrush_csv_v1",
+        "brightlocal": "brightlocal_csv_v1",
+    }.get(source_system, "insightos_standard_csv_v1")
+    return reader, mapping, ignored_headers, adapter_name
 
 
 def _canonical_row(raw_row: dict[str | None, Any], mapping: dict[str, str]) -> dict[str, str]:
@@ -1214,6 +1356,7 @@ def _review_row(
     existing_competitors: dict[str, set[str]],
     existing_rankings: dict[tuple[str, str, str], set[int]],
     existing_listing_evidence: set[tuple[str, str, str, str]],
+    existing_recipients: dict[str, set[str]],
 ) -> dict[str, Any]:
     record_type = _record_type(row.get("record_type"))
     location_name = row.get("location_name", "").strip()
@@ -1225,7 +1368,7 @@ def _review_row(
         _issue(
             issues,
             "record_type_invalid",
-            "Use location, keyword, competitor, ranking, or listing as the record type.",
+            "Use location, keyword, competitor, ranking, listing, or report recipient as the record type.",
         )
     if not location_name:
         _issue(issues, "location_name_missing", "Add the location name this row belongs to.")
@@ -1401,6 +1544,31 @@ def _review_row(
                     issues,
                     "This imported listing record is already saved.",
                 )
+    elif record_type == "report_recipient":
+        email = _normalized_email(row.get("recipient_email"))
+        role = _recipient_role(row.get("recipient_role"))
+        if email is None:
+            _issue(issues, "recipient_email_invalid", "Enter a complete report email address.")
+        if role is None:
+            _issue(issues, "recipient_role_invalid", "Use owner, manager, or client as the recipient role.")
+        if len(row.get("recipient_name", "")) > 160:
+            _issue(issues, "recipient_name_too_long", "Keep the recipient name under 161 characters.")
+        _assert_location_reference(issues, location_key, matched, file_locations)
+        key = ("report_recipient", location_key, email or "")
+        detail = (
+            "Save this report recipient in the off position. No report will be sent until an owner turns it on."
+        )
+        campaign = campaign_by_location.get(matched.id) if matched else None
+        if not issues and campaign and email in existing_recipients.get(campaign.id, set()):
+            return _result(
+                row_number,
+                record_type,
+                row,
+                "already_saved",
+                matched,
+                issues,
+                "This report recipient is already saved for the location.",
+            )
     else:
         key = ("invalid", str(row_number))
 
@@ -1501,6 +1669,9 @@ def _record_type(value: Any) -> str:
         "citation": "listing",
         "directory_listing": "listing",
         "listing_history": "listing",
+        "recipient": "report_recipient",
+        "report_email": "report_recipient",
+        "report_recipient_email": "report_recipient",
     }.get(normalized, normalized)
 
 
@@ -1557,6 +1728,27 @@ def _listing_claim_status(value: Any) -> str | None:
         "unavailable",
     }
     return normalized if normalized in allowed else None
+
+
+def _normalized_email(value: Any) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if not normalized or len(normalized) > 320:
+        return None
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
+        return None
+    return normalized
+
+
+def _recipient_role(value: Any) -> str | None:
+    normalized = _text_key(value).replace(" ", "_")
+    normalized = {
+        "": "client",
+        "customer": "client",
+        "business_owner": "owner",
+        "admin": "manager",
+        "location_manager": "manager",
+    }.get(normalized, normalized)
+    return normalized if normalized in {"owner", "manager", "client"} else None
 
 
 def _safe_public_url(value: Any) -> str:

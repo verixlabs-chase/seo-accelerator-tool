@@ -177,6 +177,19 @@ def test_migration_upgrade_and_downgrade():
         assert "report_delivery_events" in inspector.get_table_names()
         assert "report_template_versions" in inspector.get_table_names()
         assert "report_schedules" in inspector.get_table_names()
+        assert "migration_import_batches" in inspector.get_table_names()
+        assert "migration_import_records" in inspector.get_table_names()
+        assert "migration_upload_sessions" in inspector.get_table_names()
+        assert "migration_upload_chunks" in inspector.get_table_names()
+        report_recipient_cols = {
+            col["name"] for col in inspector.get_columns("report_recipients")
+        }
+        assert {
+            "source_type",
+            "source_system",
+            "source_record_id",
+            "import_batch_id",
+        }.issubset(report_recipient_cols)
         assert "reference_library_versions" in inspector.get_table_names()
         assert "reference_library_artifacts" in inspector.get_table_names()
         assert "reference_library_validation_runs" in inspector.get_table_names()

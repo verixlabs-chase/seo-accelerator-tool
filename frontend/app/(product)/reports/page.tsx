@@ -67,6 +67,10 @@ type ReportRecipient = {
   display_name?: string;
   recipient_role: string;
   enabled: boolean;
+  source_type: string;
+  source_system?: string | null;
+  source_record_id?: string | null;
+  import_batch_id?: string | null;
 };
 
 type ReportShareLink = {
@@ -1905,6 +1909,11 @@ export default function ReportsPage() {
                     <p className="mt-2 text-sm leading-6 text-zinc-300">
                       Save people you report to, then choose one before sending. Each business keeps its own list.
                     </p>
+                    {recipients.some((recipient) => recipient.source_type === "imported") ? (
+                      <p className="mt-2 rounded-md border border-violet-400/20 bg-violet-400/5 p-3 text-sm leading-6 text-violet-100">
+                        Imported recipients start turned off. Review the address and turn it on only if this person should receive future reports.
+                      </p>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         onClick={saveRecipient}
@@ -1934,13 +1943,22 @@ export default function ReportsPage() {
                             >
                               <p className="truncate text-sm font-medium text-white">{recipient.display_name || recipient.email}</p>
                               {recipient.display_name ? <p className="truncate text-xs text-zinc-400">{recipient.email}</p> : null}
+                              {recipient.source_type === "imported" ? (
+                                <p className="mt-1 text-xs font-medium text-violet-200">Imported · Off until reviewed</p>
+                              ) : recipient.source_type === "imported_approved" ? (
+                                <p className="mt-1 text-xs font-medium text-emerald-200">Imported · Reviewed and active</p>
+                              ) : null}
                             </button>
                             <button
                               onClick={() => toggleRecipient(recipient)}
                               disabled={busyAction !== ""}
                               className="shrink-0 text-xs font-medium text-zinc-400 hover:text-white disabled:opacity-50"
                             >
-                              {recipient.enabled ? "Pause" : "Turn on"}
+                              {recipient.enabled
+                                ? "Pause"
+                                : recipient.source_type === "imported"
+                                  ? "Review and turn on"
+                                  : "Turn on"}
                             </button>
                           </div>
                         ))}
