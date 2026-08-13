@@ -12,12 +12,14 @@ from app.api.response import envelope, public_data_source_label
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.organization import Organization
+from app.models.organization_membership import OrganizationMembership
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_policy import ProviderPolicy
 from app.models.provider_quota import ProviderQuotaState
+from app.models.tenant import Tenant
 from app.services.audit_service import write_audit_log
 from app.services.cost_economics_service import CostEconomicsError, resolve_plan_economics
-from app.services import reputation_response_execution_service
+from app.services import provisioning_service, reputation_response_execution_service
 
 ALLOWED_PLAN_TYPES = {
     "internal_anchor",
@@ -29,6 +31,7 @@ ALLOWED_PLAN_TYPES = {
 }
 ALLOWED_BILLING_MODES = {"platform_sponsored", "subscription", "custom_contract"}
 ALLOWED_ORG_STATUSES = {"active", "suspended", "archived"}
+INTERNAL_ACCEPTANCE_ORG_NAME = "internal_anchor_enterprise_seed"
 
 router = APIRouter(tags=["platform-control"])
 
@@ -88,10 +91,19 @@ def list_platform_orgs(
 def get_platform_org(
     request: Request,
     organization_id: str,
-    _user: dict = Depends(require_platform_role({"platform_owner", "platform_admin"})),
+    user: dict = Depends(require_platform_role({"platform_owner", "platform_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
     org = _org_or_404(db, organization_id)
+    membership = (
+        db.query(OrganizationMembership)
+        .filter(
+            OrganizationMembership.user_id == user["user_id"],
+            OrganizationMembership.organization_id == organization_id,
+            OrganizationMembership.status == "active",
+        )
+        .first()
+    )
     policies = (
         db.query(ProviderPolicy)
         .filter(ProviderPolicy.organization_id == organization_id)
@@ -102,6 +114,22 @@ def get_platform_org(
         request,
         {
             "organization": _serialize_org(org),
+            "current_user_membership": (
+                {
+                    "organization_id": membership.organization_id,
+                    "role": membership.role,
+                    "status": membership.status,
+                }
+                if membership is not None
+                else None
+            ),
+            "can_grant_internal_access": (
+                user.get("platform_role") == "platform_owner"
+                and org.name == INTERNAL_ACCEPTANCE_ORG_NAME
+                and org.billing_mode == "platform_sponsored"
+                and org.plan_type in {"enterprise", "internal_anchor"}
+                and org.status == "active"
+            ),
             "provider_policies": [
                 {
                     "provider_name": row.provider_name,
@@ -111,6 +139,80 @@ def get_platform_org(
                 }
                 for row in policies
             ],
+        },
+    )
+
+
+@router.post("/platform/orgs/{organization_id}/internal-access")
+def grant_internal_workspace_access(
+    request: Request,
+    organization_id: str,
+    user: dict = Depends(require_platform_owner()),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Grant the platform owner access to the seeded, sponsored acceptance workspace."""
+    org = _org_or_404(db, organization_id)
+    if not (
+        org.name == INTERNAL_ACCEPTANCE_ORG_NAME
+        and org.billing_mode == "platform_sponsored"
+        and org.plan_type in {"enterprise", "internal_anchor"}
+        and org.status == "active"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Internal access is only available for the active sponsored acceptance workspace.",
+        )
+
+    tenant = db.get(Tenant, org.id)
+    if tenant is None:
+        tenant = Tenant(
+            id=org.id,
+            name=f"{INTERNAL_ACCEPTANCE_ORG_NAME}-{org.id[:8]}",
+            status="Active",
+        )
+        db.add(tenant)
+        db.flush()
+
+    provisioning_service.ensure_organization_provisioned(db, organization_id=org.id)
+
+    membership = (
+        db.query(OrganizationMembership)
+        .filter(
+            OrganizationMembership.user_id == user["user_id"],
+            OrganizationMembership.organization_id == org.id,
+        )
+        .first()
+    )
+    if membership is None:
+        membership = OrganizationMembership(
+            user_id=user["user_id"],
+            organization_id=org.id,
+            role="org_owner",
+            status="active",
+        )
+        db.add(membership)
+    else:
+        membership.role = "org_owner"
+        membership.status = "active"
+
+    write_audit_log(
+        db,
+        tenant_id=org.id,
+        actor_user_id=user["user_id"],
+        event_type="platform.org.internal_access.granted",
+        payload={"organization_id": org.id, "role": membership.role},
+    )
+    db.commit()
+    db.refresh(membership)
+    return envelope(
+        request,
+        {
+            "organization": _serialize_org(org),
+            "membership": {
+                "organization_id": membership.organization_id,
+                "role": membership.role,
+                "status": membership.status,
+            },
         },
     )
 

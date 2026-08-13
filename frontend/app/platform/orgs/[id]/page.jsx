@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { platformApi } from "../../api";
+import { setAuthSession } from "../../../lib/authStorage";
 
 const PLAN_OPTIONS = [
   { value: "solo", label: "Solo · $299/month" },
@@ -32,6 +33,9 @@ export default function PlatformOrgDetailPage({ params }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [margin, setMargin] = useState(null);
+  const [currentMembership, setCurrentMembership] = useState(null);
+  const [canGrantInternalAccess, setCanGrantInternalAccess] = useState(false);
+  const [openingWorkspace, setOpeningWorkspace] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,6 +47,8 @@ export default function PlatformOrgDetailPage({ params }) {
       ]);
       const org = data.organization;
       setOrganization(org);
+      setCurrentMembership(data.current_user_membership || null);
+      setCanGrantInternalAccess(Boolean(data.can_grant_internal_access));
       setPolicies(data.provider_policies || []);
       setPlanType(org.plan_type);
       setBillingMode(org.billing_mode);
@@ -93,6 +99,26 @@ export default function PlatformOrgDetailPage({ params }) {
     }
   }
 
+  async function openWorkspace() {
+    setError("");
+    setNotice("");
+    setOpeningWorkspace(true);
+    try {
+      if (!currentMembership) {
+        await platformApi(`/platform/orgs/${id}/internal-access`, { method: "POST" });
+      }
+      const selection = await platformApi("/auth/select-org", {
+        method: "POST",
+        body: JSON.stringify({ organization_id: id }),
+      });
+      setAuthSession({ tenantId: selection.user.tenant_id });
+      window.location.assign("/locations");
+    } catch (err) {
+      setError(err.message || "Workspace could not be opened.");
+      setOpeningWorkspace(false);
+    }
+  }
+
   return (
     <main style={{ maxWidth: 1100, margin: "40px auto", padding: 24 }}>
       <h1>Organization Detail</h1>
@@ -115,6 +141,15 @@ export default function PlatformOrgDetailPage({ params }) {
             <p>
               <strong>Created:</strong> {organization.created_at || "-"}
             </p>
+            {currentMembership || canGrantInternalAccess ? (
+              <button onClick={openWorkspace} disabled={openingWorkspace}>
+                {openingWorkspace
+                  ? "Opening workspace..."
+                  : currentMembership
+                    ? "Open this workspace"
+                    : "Grant and open internal test workspace"}
+              </button>
+            ) : null}
           </section>
 
           <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16 }}>
