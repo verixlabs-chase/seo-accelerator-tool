@@ -86,3 +86,7 @@ test("managed WordPress updates stay owner-scoped and fail closed", () => {
   assert.match(page, /public website did not match an approved change/);
   assert.match(page, /Review the failed action and use rollback/);
 });
+
+test("next steps stays available while a location has no selected recommendation", () => {
+  assert.match(page, /recommendationState\?\.status \|\| "Not checked yet"/);
+});

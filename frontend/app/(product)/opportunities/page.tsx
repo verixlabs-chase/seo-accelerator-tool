@@ -3673,7 +3673,7 @@ export default function OpportunitiesPage() {
                 </p>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <h2 className="text-base font-semibold text-white">
-                    {recommendationState.status}
+                    {recommendationState?.status || "Not checked yet"}
                   </h2>
                   <span className="text-xs text-zinc-400">See progress details</span>
                 </div>
