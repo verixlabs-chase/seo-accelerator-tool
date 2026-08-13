@@ -35,6 +35,7 @@ def track_plugin_health(
     plugin_version: str | None,
     healthy: bool,
     error_code: str | None = None,
+    commit: bool = True,
 ) -> None:
     telemetry = ProviderTelemetryService(db)
     telemetry.upsert_health_state(
@@ -48,7 +49,7 @@ def track_plugin_health(
         last_error_at=None if healthy else datetime.now(UTC),
         last_success_at=datetime.now(UTC) if healthy else None,
         environment=get_settings().app_env.lower(),
-        commit=False,
+        commit=commit,
     )
 
 
@@ -57,7 +58,15 @@ def verify_plugin_version(site_config: dict[str, Any], minimum_version: str = MI
     return _version_tuple(version) >= _version_tuple(minimum_version)
 
 
-def detect_plugin_failure(db: Session, *, tenant_id: str, site_id: str, reason_code: str, plugin_version: str | None = None) -> None:
+def detect_plugin_failure(
+    db: Session,
+    *,
+    tenant_id: str,
+    site_id: str,
+    reason_code: str,
+    plugin_version: str | None = None,
+    commit: bool = True,
+) -> None:
     if reason_code in NON_HEALTH_FAILURE_CODES:
         # A changed page is a healthy safety response from WordPress, not a
         # broken connector. Keep the connection available for a fresh preview.
@@ -69,6 +78,7 @@ def detect_plugin_failure(db: Session, *, tenant_id: str, site_id: str, reason_c
         plugin_version=plugin_version,
         healthy=False,
         error_code=reason_code,
+        commit=commit,
     )
 
 

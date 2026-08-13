@@ -301,16 +301,29 @@ def preview_mutations(db: Session, *, execution: RecommendationExecution, mutati
                 site_id=site_id,
                 plugin_version=str(response.get('plugin_version', 'unknown')),
                 healthy=True,
+                commit=False,
             )
         return normalized_response
     except WordPressExecutionError as exc:
         if tenant_id:
-            detect_plugin_failure(db, tenant_id=tenant_id, site_id=site_id, reason_code=exc.reason_code)
+            detect_plugin_failure(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                reason_code=exc.reason_code,
+                commit=False,
+            )
         raise
     except ProviderCallError as exc:
         translated = _translate_provider_call_error(exc)
         if tenant_id:
-            detect_plugin_failure(db, tenant_id=tenant_id, site_id=site_id, reason_code=translated.reason_code)
+            detect_plugin_failure(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                reason_code=translated.reason_code,
+                commit=False,
+            )
         raise translated from exc
 
 
@@ -352,7 +365,14 @@ def apply_mutations(db: Session, *, execution: RecommendationExecution, mutation
             },
         }
         if tenant_id:
-            track_plugin_health(db, tenant_id=tenant_id, site_id=site_id, plugin_version='test', healthy=True)
+            track_plugin_health(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                plugin_version='test',
+                healthy=True,
+                commit=False,
+            )
         return result
     payload = {
         'execution_id': execution.id,
@@ -379,16 +399,35 @@ def apply_mutations(db: Session, *, execution: RecommendationExecution, mutation
             timeout_seconds=int(site_config.get('timeout_seconds', 15)),
         )
         if tenant_id:
-            track_plugin_health(db, tenant_id=tenant_id, site_id=site_id, plugin_version=str(response.get('plugin_version', 'unknown')), healthy=True)
+            track_plugin_health(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                plugin_version=str(response.get('plugin_version', 'unknown')),
+                healthy=True,
+                commit=False,
+            )
         return normalized_response
     except WordPressExecutionError as exc:
         if tenant_id:
-            detect_plugin_failure(db, tenant_id=tenant_id, site_id=site_id, reason_code=exc.reason_code)
+            detect_plugin_failure(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                reason_code=exc.reason_code,
+                commit=False,
+            )
         raise
     except ProviderCallError as exc:
         translated = _translate_provider_call_error(exc)
         if tenant_id:
-            detect_plugin_failure(db, tenant_id=tenant_id, site_id=site_id, reason_code=translated.reason_code)
+            detect_plugin_failure(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                reason_code=translated.reason_code,
+                commit=False,
+            )
         raise translated from exc
 
 
@@ -401,7 +440,14 @@ def rollback_mutations(db: Session, *, execution: RecommendationExecution, mutat
     if site_config['mode'] == 'test':
         result = {'provider_name': WORDPRESS_PROVIDER_NAME, 'delivery_mode': 'test_local', 'results': [_local_rollback_result(row) for row in mutation_rows]}
         if tenant_id:
-            track_plugin_health(db, tenant_id=tenant_id, site_id=site_id, plugin_version='test', healthy=True)
+            track_plugin_health(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                plugin_version='test',
+                healthy=True,
+                commit=False,
+            )
         return result
     payload = {
         'execution_id': execution.id,
@@ -431,16 +477,35 @@ def rollback_mutations(db: Session, *, execution: RecommendationExecution, mutat
         normalized = _normalize_remote_delivery(response)
         verify_rollback_payloads(normalized['results'])
         if tenant_id:
-            track_plugin_health(db, tenant_id=tenant_id, site_id=site_id, plugin_version=str(response.get('plugin_version', 'unknown')), healthy=True)
+            track_plugin_health(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                plugin_version=str(response.get('plugin_version', 'unknown')),
+                healthy=True,
+                commit=False,
+            )
         return normalized
     except WordPressExecutionError as exc:
         if tenant_id:
-            detect_plugin_failure(db, tenant_id=tenant_id, site_id=site_id, reason_code=exc.reason_code)
+            detect_plugin_failure(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                reason_code=exc.reason_code,
+                commit=False,
+            )
         raise
     except ProviderCallError as exc:
         translated = _translate_provider_call_error(exc)
         if tenant_id:
-            detect_plugin_failure(db, tenant_id=tenant_id, site_id=site_id, reason_code=translated.reason_code)
+            detect_plugin_failure(
+                db,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                reason_code=translated.reason_code,
+                commit=False,
+            )
         raise translated from exc
 
 
