@@ -14,7 +14,12 @@ from app.models.business_service import BusinessService
 from app.models.business_service_area import BusinessServiceArea
 from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
-from app.models.data_governance import DataExportRequest, ProviderDisconnectRequest
+from app.models.data_governance import (
+    DataExportRequest,
+    OrganizationClosureRequest,
+    OrganizationDeletionTombstone,
+    ProviderDisconnectRequest,
+)
 from app.models.intelligence import StrategyRecommendation
 from app.models.migration_import import MigrationImportBatch, MigrationImportRecord
 from app.models.organization import Organization
@@ -383,6 +388,24 @@ def _build_export_payload(
             "external_revocation_status", "external_revocation_code",
             "connections_disconnected", "queued_jobs_cancelled",
             "preserved_record_counts", "requested_at", "completed_at", "created_at",
+        ),
+        "workspace_closure_history": _query_fields(
+            db.query(OrganizationClosureRequest)
+            .filter(OrganizationClosureRequest.organization_id == organization_id)
+            .order_by(
+                OrganizationClosureRequest.created_at.asc(),
+                OrganizationClosureRequest.id.asc(),
+            ),
+            "id", "status", "hold_status", "action_counts", "requested_at",
+            "recovery_until", "cancelled_at", "closed_at", "deletion_ready_at", "created_at",
+        ),
+        "workspace_deletion_status": _query_fields(
+            db.query(OrganizationDeletionTombstone)
+            .filter(OrganizationDeletionTombstone.organization_id == organization_id)
+            .order_by(OrganizationDeletionTombstone.created_at.asc()),
+            "id", "state", "primary_store_status", "backup_reapply_required",
+            "delete_not_before", "primary_store_deleted_at", "verification_completed_at",
+            "created_at",
         ),
     }
     return {

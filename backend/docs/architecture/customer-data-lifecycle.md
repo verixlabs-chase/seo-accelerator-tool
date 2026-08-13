@@ -1,8 +1,10 @@
 # Customer Data Lifecycle and Portability
 
-Status: GOV1A account export and GOV1B Google disconnect are implemented locally
-on 2026-08-13. Account closure, verified deletion, legal hold, and backup-erasure
-workflows remain future GOV1 slices and must not be represented as complete.
+Status: GOV1A account export, GOV1B Google disconnect, and the GOV1C recoverable
+workspace-closure slice are implemented locally on 2026-08-13. Verified
+primary-store deletion, user deletion, artifact/cache inventory closeout, and
+backup erasure verification remain future GOV1 slices and must not be
+represented as complete.
 
 ## Principles
 
@@ -20,8 +22,8 @@ workflows remain future GOV1 slices and must not be represented as complete.
 
 | Data class | Examples | Sensitivity | Current lifecycle | GOV1 completion work |
 |---|---|---|---|---|
-| Identity and membership | User email, role, organization membership | Personal | Active account lifecycle; member facts are included in owner exports | User deletion, closure, hold, and backup rules |
-| Authentication | Password hashes, sessions, refresh state | Restricted | Never exported; retained only for active security/session operations | Verified account deletion and session revocation proof |
+| Identity and membership | User email, role, organization membership | Personal | Member facts are included in owner exports; workspace closure does not delete a user who may belong to another organization | User deletion and verified membership erasure |
+| Authentication | Password hashes, sessions, refresh state | Restricted | Never exported; organization sessions are revoked when the recovery window finishes | Verified user-account deletion proof |
 | Connected-account secrets | OAuth tokens, provider credentials, webhook secrets | Restricted | Never exported. Google disconnect attempts outside revocation, always deletes the local grant, clears connection secrets, and records the result | Extend the same contract to later providers; add credential rotation controls |
 | Business setup | Locations, campaigns, services, service areas | Customer confidential | Included in owner exports | Closure/deletion propagation |
 | Search and business measurements | Rankings, history, connection mappings/status | Customer confidential | Supported facts included; secret connection metadata excluded | Full measurement inventory and deletion propagation |
@@ -30,7 +32,7 @@ workflows remain future GOV1 slices and must not be represented as complete.
 | Imports | Import batches, source record states, review outcomes | Customer confidential | Supported records and provenance included | Upload parts expire after seven days; closure propagation remains |
 | Account exports | Portable JSON artifact, hash, status, audit timestamps | Customer confidential | Downloadable for seven days, then artifact content is removed; status/hash/audit remain | Customer-configurable policy only after legal/security review |
 | Billing identifiers | Customer/subscription/provider IDs | Restricted commercial | Never exported in the customer-data artifact | Document separate finance retention and deletion rules |
-| Security and audit evidence | Audit events, incidents, legal holds | Restricted | Never placed in the customer export | Approved immutable retention and hold-release process |
+| Security and audit evidence | Audit events, incidents, legal holds | Restricted | Never placed in the customer export; only a platform owner can place or release a hold | Approved immutable retention periods and production operating procedure |
 | Product analytics | Privacy-minimized product events | Internal/customer contextual | Governed by the PA1 event contract; no session replay | Publish retention and deletion behavior |
 
 ## GOV1A export contract
@@ -57,10 +59,13 @@ content while preserving the status, hash, timestamps, and audit trail.
 
 ## Explicit non-claims
 
-GOV1 does not yet delete a user, close an organization, erase a backup, release
-a legal hold, or export report binaries. Those workflows must
-not be enabled until their dependency ordering, hold behavior, recovery window,
-backup tombstones, audit proof, and production restore tests are complete.
+GOV1C can close a workspace and make it ready for verified deletion, but it
+does not yet claim that primary business rows, generated files, caches, or
+backups are erased. It does not delete a user, because one user may belong to
+more than one organization. The tombstone remains in
+`pending_primary_erasure` until dependency-ordered erasure, artifact/cache
+inventory checks, backup propagation, and restore verification are complete.
+Report binary export also remains future work.
 
 ## GOV1B Google disconnect contract
 
@@ -90,6 +95,39 @@ was removed but outside revocation was not confirmed, with a plain instruction
 to review third-party access in their Google Account. Reconnecting creates a
 new grant; removed private inquiry keys must be created again.
 
+## GOV1C recoverable workspace-closure contract
+
+Only an organization owner may schedule workspace closure, and an active paid
+subscription must be ended first so closing the software cannot silently leave
+provider billing active. The preview shows affected connections, schedules,
+share links, queued jobs, the 30-day recovery window, and the exact confirmation
+phrase.
+
+Scheduling closure immediately:
+
+- marks the organization `closure_pending` and centrally blocks customer write
+  requests while leaving read access and owner export/recovery controls;
+- pauses data mappings and WordPress access without deleting their encrypted
+  credentials during the recovery window;
+- disables report schedules, revokes public report links, and cancels queued
+  platform jobs;
+- saves a credential-free operational snapshot so safe mappings and schedules
+  can be restored if the owner reopens the workspace;
+- does not recreate revoked public links or canceled jobs after recovery;
+- writes a durable owner/action/result audit record.
+
+An owner may reopen the workspace before the recovery deadline. After the
+deadline, a nightly finalizer first checks for an active retention/legal hold.
+Only a platform owner can place or release that hold, its restricted reason is
+never returned to the customer, and a normal owner request cannot bypass it.
+
+When no hold exists, finalization deletes organization provider credentials and
+organization OAuth client secrets, disconnects mappings, clears WordPress
+secrets, disables schedules, revokes share links and organization sessions,
+marks the workspace closed, and creates a restore-safe deletion tombstone. The
+tombstone explicitly records that primary-store erasure is still pending and
+must be reapplied after any backup restore.
+
 ## Release evidence
 
 - Alembic migration creates the tenant-scoped export-request ledger and
@@ -103,3 +141,11 @@ new grant; removed private inquiry keys must be created again.
 - Provider disconnect tests prove owner-only scope, exact confirmation,
   credential deletion, outside-revocation truth, saved-result preservation,
   queued-job cancellation, audit safety, idempotency, and late-worker guards.
+- Closure tests prove exact owner confirmation, organization isolation, active-
+  billing blocking, central read-only enforcement, reversible safe state,
+  non-restoration of revoked links/jobs, platform-owner-only holds, hold-aware
+  finalization, credential/session removal, honest primary-data status, and
+  restore-safe tombstone creation.
+- The nightly closure finalizer is registered after the recovery window, and
+  Alembic creates RLS-protected closure, hold, and tombstone ledgers that do not
+  depend on the organization row surviving future primary-store deletion.

@@ -29,6 +29,7 @@ from app.services import (
     local_service,
     migration_upload_service,
     observability_service,
+    organization_closure_service,
     portfolio_usage_service,
     reference_library_service,
     rank_service,
@@ -64,6 +65,20 @@ def governance_expire_data_exports() -> dict:
     db = SessionLocal()
     try:
         result = data_governance_service.expire_data_export_artifacts(db)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="governance.finalize_due_organization_closures")
+def governance_finalize_due_organization_closures() -> dict:
+    db = SessionLocal()
+    try:
+        result = organization_closure_service.finalize_due_organization_closures(db)
         db.commit()
         return result
     except Exception:

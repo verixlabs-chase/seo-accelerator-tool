@@ -183,6 +183,9 @@ def test_migration_upgrade_and_downgrade():
         assert "migration_upload_chunks" in inspector.get_table_names()
         assert "data_export_requests" in inspector.get_table_names()
         assert "provider_disconnect_requests" in inspector.get_table_names()
+        assert "organization_closure_requests" in inspector.get_table_names()
+        assert "organization_legal_holds" in inspector.get_table_names()
+        assert "organization_deletion_tombstones" in inspector.get_table_names()
         report_recipient_cols = {
             col["name"] for col in inspector.get_columns("report_recipients")
         }

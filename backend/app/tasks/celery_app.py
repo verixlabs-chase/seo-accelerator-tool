@@ -208,6 +208,10 @@ def create_celery_app() -> Celery:
             'task': 'governance.expire_data_exports',
             'schedule': crontab(minute=55, hour=1),
         },
+        'organization-closure-finalization-nightly': {
+            'task': 'governance.finalize_due_organization_closures',
+            'schedule': crontab(minute=5, hour=2),
+        },
         'strategy-automation-monthly': {
             'task': 'strategy.run_automation_for_all_campaigns',
             'schedule': crontab(minute=0, hour=3, day_of_month=1),

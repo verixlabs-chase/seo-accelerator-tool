@@ -3,10 +3,15 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_org_role
+from app.api.deps import require_org_role, require_platform_owner
 from app.api.response import envelope
 from app.db.session import get_db
-from app.schemas.data_governance import DataExportCreateIn, ProviderDisconnectCreateIn
+from app.schemas.data_governance import (
+    DataExportCreateIn,
+    OrganizationClosureCreateIn,
+    OrganizationLegalHoldCreateIn,
+    ProviderDisconnectCreateIn,
+)
 from app.services.data_governance_service import (
     DataGovernanceError,
     create_data_export,
@@ -18,6 +23,15 @@ from app.services.provider_disconnect_service import (
     disconnect_google_provider,
     list_provider_disconnects,
     preview_google_disconnect,
+)
+from app.services.organization_closure_service import (
+    OrganizationClosureError,
+    cancel_organization_closure,
+    list_organization_closures,
+    place_organization_legal_hold,
+    preview_organization_closure,
+    release_organization_legal_hold,
+    request_organization_closure,
 )
 
 
@@ -161,6 +175,132 @@ def disconnect_provider(
     return envelope(request, {"disconnect": result})
 
 
+@router.get("/organizations/{org_id}/data-governance/closures/preview")
+def organization_closure_preview(
+    request: Request,
+    org_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    _assert_org_scope(user, org_id)
+    try:
+        preview = preview_organization_closure(
+            db,
+            tenant_id=str(user.get("tenant_id") or ""),
+            organization_id=org_id,
+        )
+    except OrganizationClosureError as exc:
+        raise _closure_http_error(exc) from exc
+    return envelope(request, {"preview": preview})
+
+
+@router.get("/organizations/{org_id}/data-governance/closures")
+def organization_closure_history(
+    request: Request,
+    org_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    _assert_org_scope(user, org_id)
+    items = list_organization_closures(
+        db,
+        tenant_id=str(user.get("tenant_id") or ""),
+        organization_id=org_id,
+    )
+    return envelope(request, {"items": items})
+
+
+@router.post("/organizations/{org_id}/data-governance/closures")
+def schedule_organization_closure(
+    request: Request,
+    org_id: str,
+    body: OrganizationClosureCreateIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    _assert_org_scope(user, org_id)
+    try:
+        result = request_organization_closure(
+            db,
+            tenant_id=str(user.get("tenant_id") or ""),
+            organization_id=org_id,
+            actor_user_id=str(user["id"]),
+            client_request_id=str(body.client_request_id),
+            confirmation=body.confirmation,
+        )
+        db.commit()
+    except OrganizationClosureError as exc:
+        db.rollback()
+        raise _closure_http_error(exc) from exc
+    return envelope(request, {"closure": result})
+
+
+@router.post("/organizations/{org_id}/data-governance/closures/{closure_id}/cancel")
+def reopen_organization_during_recovery(
+    request: Request,
+    org_id: str,
+    closure_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    _assert_org_scope(user, org_id)
+    try:
+        result = cancel_organization_closure(
+            db,
+            tenant_id=str(user.get("tenant_id") or ""),
+            organization_id=org_id,
+            actor_user_id=str(user["id"]),
+            closure_request_id=closure_id,
+        )
+        db.commit()
+    except OrganizationClosureError as exc:
+        db.rollback()
+        raise _closure_http_error(exc) from exc
+    return envelope(request, {"closure": result})
+
+
+@router.post("/platform/data-governance/legal-holds")
+def place_legal_hold(
+    request: Request,
+    body: OrganizationLegalHoldCreateIn,
+    user: dict = Depends(require_platform_owner()),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        result = place_organization_legal_hold(
+            db,
+            organization_id=str(body.organization_id),
+            actor_user_id=str(user["id"]),
+            hold_reference=body.hold_reference,
+            reason_summary=body.reason_summary,
+        )
+        db.commit()
+    except OrganizationClosureError as exc:
+        db.rollback()
+        raise _closure_http_error(exc) from exc
+    return envelope(request, {"legal_hold": result})
+
+
+@router.post("/platform/data-governance/legal-holds/{legal_hold_id}/release")
+def release_legal_hold(
+    request: Request,
+    legal_hold_id: str,
+    user: dict = Depends(require_platform_owner()),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        result = release_organization_legal_hold(
+            db,
+            legal_hold_id=legal_hold_id,
+            actor_user_id=str(user["id"]),
+        )
+        db.commit()
+    except OrganizationClosureError as exc:
+        db.rollback()
+        raise _closure_http_error(exc) from exc
+    return envelope(request, {"legal_hold": result})
+
+
 def _assert_org_scope(user: dict, org_id: str) -> None:
     if user.get("organization_id") != org_id:
         raise HTTPException(
@@ -181,5 +321,12 @@ def _governance_http_error(exc: DataGovernanceError) -> HTTPException:
         response_status = status.HTTP_409_CONFLICT
     return HTTPException(
         status_code=response_status,
+        detail={"message": str(exc), "reason_code": exc.reason_code},
+    )
+
+
+def _closure_http_error(exc: OrganizationClosureError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status_code,
         detail={"message": str(exc), "reason_code": exc.reason_code},
     )

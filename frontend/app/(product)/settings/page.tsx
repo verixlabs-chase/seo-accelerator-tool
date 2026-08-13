@@ -21,6 +21,7 @@ import { requestProductTour } from "../truth/productTour.mjs";
 type Me = {
   organization_id?: string;
   org_role?: string;
+  organization_status?: string;
 };
 
 type Campaign = {
@@ -330,6 +331,34 @@ type ProviderDisconnectRecord = {
   completed_at?: string | null;
 };
 
+type OrganizationClosureRecord = {
+  id: string;
+  status: "recovery_window" | "on_hold" | "cancelled" | "ready_for_verified_deletion";
+  hold_status: "clear" | "active";
+  action_counts: Record<string, number>;
+  requested_at: string;
+  recovery_until: string;
+  cancelled_at?: string | null;
+  closed_at?: string | null;
+  deletion_ready_at?: string | null;
+  can_cancel: boolean;
+  primary_data_deleted: false;
+};
+
+type OrganizationClosurePreview = {
+  organization_name: string;
+  organization_status: string;
+  recovery_days: number;
+  active_legal_hold: boolean;
+  can_request: boolean;
+  blockers: Array<{ code: string; message: string }>;
+  affected_counts: Record<string, number>;
+  what_stops: string[];
+  what_stays: string[];
+  confirmation_text: string;
+  current_request?: OrganizationClosureRecord | null;
+};
+
 const primaryButtonClass =
   "inline-flex items-center justify-center rounded-md border border-accent-500/40 bg-accent-500/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-accent-500/70 hover:bg-accent-500/25 disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryButtonClass =
@@ -470,6 +499,10 @@ export default function SettingsPage() {
   const [providerDisconnects, setProviderDisconnects] = useState<ProviderDisconnectRecord[]>([]);
   const [showGoogleDisconnect, setShowGoogleDisconnect] = useState(false);
   const [googleDisconnectConfirmation, setGoogleDisconnectConfirmation] = useState("");
+  const [closurePreview, setClosurePreview] = useState<OrganizationClosurePreview | null>(null);
+  const [closureHistory, setClosureHistory] = useState<OrganizationClosureRecord[]>([]);
+  const [showClosureReview, setShowClosureReview] = useState(false);
+  const [closureConfirmation, setClosureConfirmation] = useState("");
 
   useEffect(() => {
     setGuidedConnectionSetup(
@@ -647,7 +680,7 @@ export default function SettingsPage() {
           throw new Error("An organization is required to manage data connections.");
         }
         setMe(currentUser);
-        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse, dataExportResponse, disconnectPreviewResponse, disconnectHistoryResponse] = await Promise.all([
+        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse, dataExportResponse, disconnectPreviewResponse, disconnectHistoryResponse, closurePreviewResponse, closureHistoryResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
           platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
@@ -671,6 +704,16 @@ export default function SettingsPage() {
                 method: "GET",
               }) as Promise<{ items?: ProviderDisconnectRecord[] }>).catch(() => ({ items: [] })))
             : Promise.resolve({ items: [] as ProviderDisconnectRecord[] }),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/closures/preview`, {
+                method: "GET",
+              }) as Promise<{ preview?: OrganizationClosurePreview }>).catch(() => ({ preview: undefined })))
+            : Promise.resolve({ preview: undefined }),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/closures`, {
+                method: "GET",
+              }) as Promise<{ items?: OrganizationClosureRecord[] }>).catch(() => ({ items: [] })))
+            : Promise.resolve({ items: [] as OrganizationClosureRecord[] }),
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
@@ -679,6 +722,8 @@ export default function SettingsPage() {
         setDataExports(dataExportResponse.items || []);
         setGoogleDisconnectPreview(disconnectPreviewResponse.preview || null);
         setProviderDisconnects(disconnectHistoryResponse.items || []);
+        setClosurePreview(closurePreviewResponse.preview || null);
+        setClosureHistory(closureHistoryResponse.items || []);
         const returnParams = new URLSearchParams(window.location.search);
         const billingReturned = returnParams.get("billing");
         const googleReturned = returnParams.get("google");
@@ -849,6 +894,71 @@ export default function SettingsPage() {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to disconnect Google safely.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function scheduleWorkspaceClosure() {
+    if (!organizationId || !closurePreview) return;
+    setBusyAction("workspace-closure");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-governance/closures`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            client_request_id: crypto.randomUUID(),
+            confirmation: closureConfirmation,
+          }),
+        },
+      )) as { closure: OrganizationClosureRecord };
+      const previewResponse = (await platformApi(
+        `/organizations/${organizationId}/data-governance/closures/preview`,
+        { method: "GET" },
+      )) as { preview: OrganizationClosurePreview };
+      setClosurePreview(previewResponse.preview);
+      setClosureHistory((current) => [
+        response.closure,
+        ...current.filter((item) => item.id !== response.closure.id),
+      ]);
+      setShowClosureReview(false);
+      setClosureConfirmation("");
+      setNotice(
+        `Workspace closure is scheduled. It is now read-only, and an account owner can reopen it until ${formatTimestamp(response.closure.recovery_until)}.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to schedule workspace closure safely.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function cancelWorkspaceClosure(item: OrganizationClosureRecord) {
+    if (!organizationId) return;
+    setBusyAction("workspace-reopen");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-governance/closures/${item.id}/cancel`,
+        { method: "POST" },
+      )) as { closure: OrganizationClosureRecord };
+      const previewResponse = (await platformApi(
+        `/organizations/${organizationId}/data-governance/closures/preview`,
+        { method: "GET" },
+      )) as { preview: OrganizationClosurePreview };
+      setClosurePreview(previewResponse.preview);
+      setClosureHistory((current) => current.map((row) => (
+        row.id === response.closure.id ? response.closure : row
+      )));
+      setNotice(
+        "The workspace is open again. Safe connections and schedules were restored; old public report links and canceled jobs were not reopened.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to reopen this workspace.");
     } finally {
       setBusyAction("");
     }
@@ -2596,6 +2706,145 @@ export default function SettingsPage() {
                     No account exports have been created yet.
                   </p>
                 )}
+              </section>
+            ) : null}
+
+            {me?.org_role === "org_owner" && closurePreview ? (
+              <section aria-labelledby="workspace-closure-heading" className="rounded-md border border-rose-500/20 bg-[#141518] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Workspace control
+                    </p>
+                    <h2 id="workspace-closure-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Close this workspace safely
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      Closing is staged so a mistake does not erase the business&apos;s history. The workspace becomes read-only for {closurePreview.recovery_days} days before credentials and login sessions are removed.
+                    </p>
+                  </div>
+                  {!closurePreview.current_request && !showClosureReview ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/10 px-3.5 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!closurePreview.can_request}
+                      onClick={() => setShowClosureReview(true)}
+                    >
+                      Review workspace closure
+                    </button>
+                  ) : null}
+                </div>
+
+                {closurePreview.blockers.length > 0 ? (
+                  <div className="mt-5 rounded-md border border-amber-500/25 bg-amber-500/10 p-4">
+                    <p className="text-sm font-semibold text-amber-100">Finish this first</p>
+                    {closurePreview.blockers.map((blocker) => (
+                      <p key={blocker.code} className="mt-1 text-sm leading-6 text-amber-50/80">
+                        {blocker.message}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+
+                {closurePreview.current_request ? (
+                  <div className="mt-5 rounded-md border border-sky-500/25 bg-sky-500/5 p-5">
+                    <p className="text-base font-semibold text-white">
+                      {closurePreview.current_request.status === "recovery_window"
+                        ? "Closure scheduled — recovery window open"
+                        : closurePreview.current_request.status === "on_hold"
+                          ? "Closure paused by a retention requirement"
+                          : "Workspace closed — verified deletion is pending"}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-300">
+                      {closurePreview.current_request.status === "recovery_window"
+                        ? `The workspace is read-only. An account owner can reopen it until ${formatTimestamp(closurePreview.current_request.recovery_until)}.`
+                        : closurePreview.current_request.status === "on_hold"
+                          ? "Data cannot move to deletion while a required retention hold is active. The private reason is not shown in the customer workspace."
+                          : "Connected credentials and login sessions were removed. Primary business data is not claimed deleted until dependency-order, backup, and verification checks finish."}
+                    </p>
+                    {closurePreview.current_request.can_cancel ? (
+                      <button
+                        type="button"
+                        className={`${secondaryButtonClass} mt-4`}
+                        disabled={busyAction === "workspace-reopen"}
+                        onClick={() => void cancelWorkspaceClosure(closurePreview.current_request!)}
+                      >
+                        {busyAction === "workspace-reopen" ? "Reopening safely..." : "Keep workspace open"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {showClosureReview && !closurePreview.current_request ? (
+                  <div className="mt-5 rounded-md border border-rose-500/30 bg-rose-500/5 p-5">
+                    <p className="text-base font-semibold text-rose-100">Before closure is scheduled</p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-300">
+                      Create and download an account export first if you need a portable copy. Closure revokes public report links and cancels queued work immediately; those security actions are not reversed if you reopen the workspace.
+                    </p>
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <p className="text-sm font-semibold text-white">This stops immediately</p>
+                        <ul className="mt-2 space-y-2 text-sm leading-5 text-zinc-300">
+                          {closurePreview.what_stops.map((item) => (
+                            <li key={item}>× {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">These safeguards remain</p>
+                        <ul className="mt-2 space-y-2 text-sm leading-5 text-zinc-300">
+                          {closurePreview.what_stays.map((item) => (
+                            <li key={item}>✓ {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="mt-5 border-t border-rose-500/20 pt-4">
+                      <label htmlFor="workspace-closure-confirmation" className="block text-sm font-semibold text-white">
+                        Type {closurePreview.confirmation_text} to confirm
+                      </label>
+                      <input
+                        id="workspace-closure-confirmation"
+                        type="text"
+                        autoComplete="off"
+                        className="mt-2 w-full max-w-md rounded-md border border-[#3a3b41] bg-[#101114] px-3 py-2.5 text-sm text-white outline-none focus:border-rose-400/60"
+                        value={closureConfirmation}
+                        onChange={(event) => setClosureConfirmation(event.target.value)}
+                      />
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={
+                            closureConfirmation !== closurePreview.confirmation_text ||
+                            busyAction === "workspace-closure" ||
+                            !closurePreview.can_request
+                          }
+                          onClick={() => void scheduleWorkspaceClosure()}
+                        >
+                          {busyAction === "workspace-closure" ? "Scheduling safely..." : "Schedule workspace closure"}
+                        </button>
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === "workspace-closure"}
+                          onClick={() => {
+                            setShowClosureReview(false);
+                            setClosureConfirmation("");
+                          }}
+                        >
+                          Keep workspace open
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {closureHistory.some((item) => item.status === "cancelled") && !closurePreview.current_request ? (
+                  <p className="mt-5 border-t border-[#292a2f] pt-4 text-xs leading-5 text-zinc-500">
+                    A previous closure request was canceled. Its audit history remains, while revoked public links and canceled jobs stay closed for safety.
+                  </p>
+                ) : null}
               </section>
             ) : null}
 

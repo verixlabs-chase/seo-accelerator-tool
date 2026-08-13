@@ -43,3 +43,19 @@ test("disconnect history makes incomplete outside revocation visible", () => {
   assert.match(settingsPage, /Review third-party access in your Google Account/);
   assert.match(settingsPage, /Google confirmed the authorization was revoked/);
 });
+
+test("workspace closure is recoverable, owner-confirmed, and honest about deletion", () => {
+  assert.match(settingsPage, /Close this workspace safely/);
+  assert.match(settingsPage, /read-only for \{closurePreview\.recovery_days\} days/);
+  assert.match(settingsPage, /closureConfirmation !== closurePreview\.confirmation_text/);
+  assert.match(settingsPage, /data-governance\/closures/);
+  assert.match(settingsPage, /Keep workspace open/);
+  assert.match(settingsPage, /Primary business data is not claimed deleted/);
+});
+
+test("closure screen explains holds, exports, and irreversible security actions", () => {
+  assert.match(settingsPage, /Create and download an account export first/);
+  assert.match(settingsPage, /revokes public report links and cancels queued work immediately/);
+  assert.match(settingsPage, /retention hold is active/);
+  assert.match(settingsPage, /old public report links and canceled jobs were not reopened/);
+});

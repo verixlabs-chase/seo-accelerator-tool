@@ -652,7 +652,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 36 | **WP1.2 - WordPress Managed Autopilot - core implemented locally; live closeout pending** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
 | 37 | **MIG1 - Semrush/BrightLocal Migration - governed resumable import implemented locally** | New customers can review and atomically import supported setup, qualified history, and disabled report recipients through explicit source adapters, with durable provenance, resumable verified file parts, paginated review, idempotent retries, a dependency-safe rollback, and a guided switching checklist. Production migration and live proof remain. |
 | 38 | **ALT1 - In-Product Alerts First; Automated Email Later** | Customers first receive useful notices inside InsightOS. Reliable automated email and delivery tracking remain a later, behind-the-scenes platform capability and do not block the current reporting or product sprints. |
-| 39 | **GOV1 - Data Privacy, Retention, and Portability - GOV1A export and GOV1B Google disconnect implemented locally** | Owners can create an authenticated, credential-safe account export and safely disconnect the shared Google grant with outside-revocation truth, local credential deletion, stopped collection, preserved saved results, and durable audit status. Account closure, verified deletion, legal hold, and backup-erasure workflows remain later GOV1 slices. |
+| 39 | **GOV1 - Data Privacy, Retention, and Portability - GOV1A, GOV1B, and recoverable GOV1C closure implemented locally** | Owners can export their data, safely disconnect Google, and schedule a read-only workspace closure with an active-subscription blocker, 30-day recovery, platform-owner-only retention holds, access/credential finalization, audit proof, and a restore-safe pending-erasure tombstone. Verified primary-store, artifact/cache, and backup erasure remain later GOV1 closeout slices. |
 | 40 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
 | 41 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
 | 42 | **AIV1 - AI Search Visibility and Entity Intelligence** | A dedicated AI Search Visibility section shows where each business and location is mentioned or cited across supported major AI answer engines, how that changes over time, which competitors appear instead, and what evidence-backed work may improve coverage. |
@@ -3440,10 +3440,9 @@ timestamps, and audit events remain. Password hashes, sessions, connected-
 account credentials, billing-provider identifiers, report binaries, and
 internal security/legal-hold evidence are explicitly excluded. The data-class
 inventory and non-claims are documented in
-`backend/docs/architecture/customer-data-lifecycle.md`. Deletion and closure
-are intentionally not exposed until legal-hold, dependency-order, backup-
-tombstone, and restore tests exist. Migration `20260813_0144` adds a tenant-
-scoped provider-disconnect ledger. Owners receive an exact before/after preview
+`backend/docs/architecture/customer-data-lifecycle.md`. Migration
+`20260813_0144` adds a tenant-scoped provider-disconnect ledger. Owners receive
+an exact before/after preview
 and confirmation gate; Google revocation is attempted without storing the raw
 token, the local encrypted grant is deleted regardless of outside availability,
 all Google mappings stop scheduling, queued jobs are cancelled, late worker
@@ -3451,6 +3450,20 @@ failures cannot reactivate the connection, saved results remain available, and
 the outside-revocation result is shown honestly. Organization OAuth application
 configuration is not treated as the customer's Google data grant and remains
 available for a future reconnect.
+
+Migration `20260813_0145` adds organization-closure, restricted legal-hold,
+and deletion-tombstone ledgers without foreign keys that would erase lifecycle
+proof when primary data is later removed. Owners receive an exact closure
+preview and confirmation gate; active subscription billing blocks closure; the
+workspace becomes centrally read-only for a 30-day recovery window; queued
+work, scheduled reports, public report links, data mappings, and WordPress
+actions stop. Recovery restores safe connection/schedule state but does not
+recreate revoked links or canceled jobs. A nightly finalizer cannot pass an
+active platform-owner-only hold. When clear, it deletes credentials and OAuth
+client secrets, clears WordPress secrets, revokes organization sessions, and
+creates a restore-safe `pending_primary_erasure` tombstone. Primary-store,
+artifact/cache, and backup erasure are intentionally not claimed until the
+remaining inventory, dependency-order, and production restore checks exist.
 
 Scope:
 

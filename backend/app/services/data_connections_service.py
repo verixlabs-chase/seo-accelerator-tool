@@ -38,6 +38,7 @@ CONNECTION_STATUS_STALE = "stale"
 CONNECTION_STATUS_FAILED = "failed"
 CONNECTION_STATUS_RECONNECT_REQUIRED = "reconnect_required"
 CONNECTION_STATUS_DISCONNECTED = "disconnected"
+CONNECTION_STATUS_PAUSED_CLOSURE = "paused_closure"
 
 _AUTH_REASON_CODES = {
     "org_oauth_credential_required",
@@ -220,7 +221,13 @@ def get_connection_health(db: Session, organization_id: str) -> dict[str, Any]:
                 )
             )
 
-    attention_states = {"failed", "reconnect_required", "stale", "disconnected"}
+    attention_states = {
+        "failed",
+        "reconnect_required",
+        "stale",
+        "disconnected",
+        CONNECTION_STATUS_PAUSED_CLOSURE,
+    }
     setup_states = {"not_connected", "connected"}
     counts = {
         "healthy": sum(item["status"] == "current" for item in items),
@@ -291,7 +298,13 @@ def _serialize_connection_health_item(
         else "updating"
         if status == "syncing"
         else "needs_attention"
-        if status in {"failed", "reconnect_required", "stale", "disconnected"}
+        if status in {
+            "failed",
+            "reconnect_required",
+            "stale",
+            "disconnected",
+            CONNECTION_STATUS_PAUSED_CLOSURE,
+        }
         else "needs_setup"
     )
     summary_by_status = {
@@ -303,12 +316,16 @@ def _serialize_connection_health_item(
         "connected": "This location is matched and ready for its first update.",
         "not_connected": "This location has not been matched to this source yet.",
         "disconnected": "Automatic updates are turned off for this location.",
+        CONNECTION_STATUS_PAUSED_CLOSURE: (
+            "Automatic updates are paused while workspace closure is pending."
+        ),
     }
     current_failure = {
         "failed": "The last update did not finish.",
         "reconnect_required": "Google access needs to be renewed.",
         "stale": "A newer successful update is needed.",
         "disconnected": "Automatic updates are off.",
+        CONNECTION_STATUS_PAUSED_CLOSURE: "Workspace closure is pending.",
     }.get(status)
     return {
         "id": connection.id if connection is not None else f"{provider_name}:{campaign.id}",
@@ -342,6 +359,8 @@ def _connection_recovery_action(
         return {"kind": "none", "label": "No action needed", "href": None}
     if status == "syncing":
         return {"kind": "wait", "label": "Update in progress", "href": None}
+    if status == CONNECTION_STATUS_PAUSED_CLOSURE:
+        return {"kind": "wait", "label": "Workspace is read-only", "href": None}
     if status == "reconnect_required" or not oauth_connected or not approved:
         return {"kind": "reconnect", "label": "Reconnect Google", "href": "/settings"}
     if connection is None:
@@ -999,6 +1018,7 @@ def effective_connection_status(connection: DataConnection, *, now: datetime | N
         CONNECTION_STATUS_FAILED,
         CONNECTION_STATUS_RECONNECT_REQUIRED,
         CONNECTION_STATUS_DISCONNECTED,
+        CONNECTION_STATUS_PAUSED_CLOSURE,
     }:
         return connection.status
     if connection.last_success_at is None:
@@ -1426,10 +1446,14 @@ def upsert_search_console_mapping(
 
 def mark_sync_started(db: Session, connection: DataConnection, *, now: datetime | None = None) -> None:
     db.refresh(connection)
-    if connection.status == CONNECTION_STATUS_DISCONNECTED:
+    if connection.status in {CONNECTION_STATUS_DISCONNECTED, CONNECTION_STATUS_PAUSED_CLOSURE}:
         raise DataConnectionError(
-            "This connection was disconnected before the update began.",
-            reason_code="provider_disconnected_by_owner",
+            "This connection is not allowed to update right now.",
+            reason_code=(
+                "organization_closure_pending"
+                if connection.status == CONNECTION_STATUS_PAUSED_CLOSURE
+                else "provider_disconnected_by_owner"
+            ),
             status_code=409,
         )
     resolved_now = now or datetime.now(UTC)
@@ -1451,7 +1475,7 @@ def mark_sync_succeeded(
     now: datetime | None = None,
 ) -> None:
     db.refresh(connection)
-    if connection.status == CONNECTION_STATUS_DISCONNECTED:
+    if connection.status in {CONNECTION_STATUS_DISCONNECTED, CONNECTION_STATUS_PAUSED_CLOSURE}:
         return
     resolved_now = now or datetime.now(UTC)
     connection.status = CONNECTION_STATUS_CURRENT
@@ -1489,7 +1513,10 @@ def mark_sync_failed(
     now: datetime | None = None,
 ) -> None:
     connection = db.get(DataConnection, connection_id)
-    if connection is None or connection.status == CONNECTION_STATUS_DISCONNECTED:
+    if connection is None or connection.status in {
+        CONNECTION_STATUS_DISCONNECTED,
+        CONNECTION_STATUS_PAUSED_CLOSURE,
+    }:
         return
     reason_code = str(getattr(error, "reason_code", "") or "sync_failed")
     connection.status = (

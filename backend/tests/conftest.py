@@ -61,7 +61,13 @@ from app.models.intelligence_model_registry import IntelligenceModelRegistryStat
 from app.models.organization_membership import OrganizationMembership  # noqa: F401
 from app.models.organization_provider_credential import OrganizationProviderCredential  # noqa: F401
 from app.models.data_connection import DataConnection  # noqa: F401
-from app.models.data_governance import DataExportRequest, ProviderDisconnectRequest  # noqa: F401
+from app.models.data_governance import (  # noqa: F401
+    DataExportRequest,
+    OrganizationClosureRequest,
+    OrganizationDeletionTombstone,
+    OrganizationLegalHold,
+    ProviderDisconnectRequest,
+)
 from app.models.engagement import AchievementGrant, AchievementPreference  # noqa: F401
 from app.models.platform_provider_credential import PlatformProviderCredential  # noqa: F401
 from app.models.policy_performance import PolicyPerformance  # noqa: F401

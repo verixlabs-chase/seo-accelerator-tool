@@ -140,6 +140,15 @@ def test_celery_beat_expires_customer_data_exports() -> None:
     )
 
 
+def test_celery_beat_finalizes_due_organization_closures() -> None:
+    schedule = celery_app.conf.beat_schedule
+    assert 'organization-closure-finalization-nightly' in schedule
+    assert (
+        schedule['organization-closure-finalization-nightly']['task']
+        == 'governance.finalize_due_organization_closures'
+    )
+
+
 def test_nightly_sync_traffic_facts_tolerates_campaign_failures(db_session, monkeypatch) -> None:
     user = db_session.query(User).filter(User.email == 'a@example.com').first()
     assert user is not None
