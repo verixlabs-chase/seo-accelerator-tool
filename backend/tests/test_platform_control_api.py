@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.models.audit_log import AuditLog
 from app.models.organization import Organization
+from app.models.organization_membership import OrganizationMembership
 from app.models.provider_health import ProviderHealthState
 from app.models.provider_quota import ProviderQuotaState
 from app.models.provider_policy import ProviderPolicy
@@ -235,8 +236,109 @@ def test_platform_admin_read_only_cannot_mutate_org_metadata(client, db_session)
     assert status_res.status_code == 403
 
 
+def test_platform_owner_can_open_seeded_internal_acceptance_workspace(client, db_session) -> None:
+    token, _tenant_id, user_id = _login(client, "platform-owner@example.com", "pass-platform-owner")
+    org = (
+        db_session.query(Organization)
+        .filter(Organization.name == "internal_anchor_enterprise_seed")
+        .one()
+    )
+    org.plan_type = "enterprise"
+    org.billing_mode = "platform_sponsored"
+    org.status = "active"
+    db_session.commit()
+
+    detail = client.get(
+        f"/api/v1/platform/orgs/{org.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert detail.status_code == 200
+    assert detail.json()["data"]["current_user_membership"] is None
+    assert detail.json()["data"]["can_grant_internal_access"] is True
+
+    grant = client.post(
+        f"/api/v1/platform/orgs/{org.id}/internal-access",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert grant.status_code == 200
+    assert grant.json()["data"]["membership"] == {
+        "organization_id": org.id,
+        "role": "org_owner",
+        "status": "active",
+    }
+    membership = (
+        db_session.query(OrganizationMembership)
+        .filter(
+            OrganizationMembership.user_id == user_id,
+            OrganizationMembership.organization_id == org.id,
+        )
+        .one()
+    )
+    assert membership.role == "org_owner"
+
+    repeat = client.post(
+        f"/api/v1/platform/orgs/{org.id}/internal-access",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert repeat.status_code == 200
+    assert (
+        db_session.query(OrganizationMembership)
+        .filter(
+            OrganizationMembership.user_id == user_id,
+            OrganizationMembership.organization_id == org.id,
+        )
+        .count()
+        == 1
+    )
+
+    selected = client.post("/api/v1/auth/select-org", json={"organization_id": org.id})
+    assert selected.status_code == 200
+    assert selected.json()["data"]["user"]["organization_id"] == org.id
+
+
+def test_internal_workspace_access_rejects_customer_org_and_platform_admin(client, db_session) -> None:
+    owner_token, _tenant_id, _user_id = _login(
+        client,
+        "platform-owner@example.com",
+        "pass-platform-owner",
+    )
+    customer_org = Organization(
+        id=str(uuid.uuid4()),
+        name="Customer Enterprise",
+        plan_type="enterprise",
+        billing_mode="subscription",
+        status="active",
+    )
+    internal_org = (
+        db_session.query(Organization)
+        .filter(Organization.name == "internal_anchor_enterprise_seed")
+        .one()
+    )
+    internal_org.plan_type = "enterprise"
+    internal_org.billing_mode = "platform_sponsored"
+    internal_org.status = "active"
+    db_session.add(customer_org)
+    db_session.commit()
+
+    rejected = client.post(
+        f"/api/v1/platform/orgs/{customer_org.id}/internal-access",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert rejected.status_code == 409
+
+    admin_token, _admin_tenant_id, _admin_user_id = _login(
+        client,
+        "platform-admin@example.com",
+        "pass-platform-admin",
+    )
+    forbidden = client.post(
+        f"/api/v1/platform/orgs/{internal_org.id}/internal-access",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert forbidden.status_code == 403
+
+
 def test_platform_route_fails_without_platform_role_claim(client) -> None:
     token, _tenant_id, _user_id = _login(client, "a@example.com", "pass-a")
     response = client.get("/api/v1/platform/audit", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 403
-
