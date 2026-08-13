@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -43,6 +44,7 @@ from app.tasks.tasks import (
 )
 
 intelligence_router = APIRouter(prefix="/intelligence", tags=["intelligence"])
+logger = logging.getLogger(__name__)
 campaign_intelligence_router = APIRouter(tags=["campaigns"])
 
 
@@ -396,13 +398,22 @@ def transition_recommendation(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    row = intelligence_service.transition_recommendation_state(
-        db,
-        tenant_id=user["tenant_id"],
-        campaign_id=campaign_id,
-        recommendation_id=recommendation_id,
-        target_state=body.target_state,
-    )
+    try:
+        row = intelligence_service.transition_recommendation_state(
+            db,
+            tenant_id=user["tenant_id"],
+            campaign_id=campaign_id,
+            recommendation_id=recommendation_id,
+            target_state=body.target_state,
+        )
+    except Exception:
+        logger.exception(
+            "Recommendation transition failed: recommendation_id=%s campaign_id=%s target_state=%s",
+            recommendation_id,
+            campaign_id,
+            body.target_state,
+        )
+        raise
     return envelope(request, RecommendationOut.model_validate(row).model_dump(mode="json"))
 
 
