@@ -206,4 +206,10 @@ test("next steps separates finished work from a measured result", () => {
   assert.match(pageSource, /Why InsightOS waits before learning/);
   assert.match(pageSource, /A person must review enough comparable examples/);
   assert.match(pageSource, /No automatic rule changes/);
+  assert.match(pageSource, /Did anything else happen while we waited for this result/);
+  assert.match(pageSource, /Use this result/);
+  assert.match(pageSource, /Leave this result out/);
+  assert.match(pageSource, /Owner check required/);
+  assert.match(pageSource, /outcome-learning\/\$\{encodeURIComponent\(measurementId\)\}\/review/);
+  assert.match(pageSource, /automatic_experiments_enabled/);
 });

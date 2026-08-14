@@ -108,6 +108,7 @@ from app.models.local_rank_grid import (
 )
 from app.models.onboarding_state import OnboardingState
 from app.models.onboarding_session import OnboardingSession
+from app.models.outcome_learning import OutcomeLearningReview
 from app.models.runtime_version_lock import RuntimeVersionLock
 from app.models.location import Location
 from app.models.fleet_job import FleetJob
@@ -311,6 +312,7 @@ __all__ = [
     "LocalRankGridCompetitorPoint",
     "OnboardingState",
     "OnboardingSession",
+    "OutcomeLearningReview",
     "SearchConsoleDailyMetric",
     "SearchConsoleSitemapSnapshot",
     "UrlInspectionSnapshot",

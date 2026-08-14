@@ -17,6 +17,7 @@ from app.schemas.intelligence import (
     GenerateIntelligenceDraftIn,
     GenerateIntelligenceBriefIn,
     IntelligenceScoreOut,
+    OutcomeLearningReviewIn,
     RecommendationOut,
     RecommendationTransitionIn,
 )
@@ -504,6 +505,38 @@ def get_outcome_learning(
         ],
     )
     return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.put("/outcome-learning/{measurement_id}/review")
+def review_outcome_learning(
+    request: Request,
+    measurement_id: str,
+    body: OutcomeLearningReviewIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    review = outcome_learning_service.review_outcome_learning(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        measurement_id=measurement_id,
+        actor_user_id=user["id"],
+        decision=body.decision,
+        confounder_codes=body.confounder_codes,
+        note=body.note,
+    )
+    return envelope(
+        request,
+        {
+            "review": review,
+            "safety": {
+                "automatic_policy_updates_enabled": False,
+                "automatic_experiments_enabled": False,
+            },
+        },
+    )
 
 
 @intelligence_router.post("/cycles/run")

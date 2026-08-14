@@ -105,6 +105,15 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
     assert learning_payload["learning"]["state"] == "review_only"
     assert learning_payload["learning"]["automatic_policy_updates_enabled"] is False
     assert learning_payload["truth"]["classification"] == "unavailable"
+    review_too_early = client.put(
+        (
+            f"/api/v1/intelligence/outcome-learning/{measurement['id']}"
+            f"/review?campaign_id={campaign['id']}"
+        ),
+        json={"decision": "included", "confounder_codes": [], "note": None},
+        headers=headers_a,
+    )
+    assert review_too_early.status_code == 409
     completed_event = (
         db_session.query(ProductAnalyticsEvent)
         .filter(
@@ -181,3 +190,13 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
         headers=headers_b,
     )
     assert blocked_learning.status_code == 404
+
+    blocked_review = client.put(
+        (
+            f"/api/v1/intelligence/outcome-learning/{measurement['id']}"
+            f"/review?campaign_id={campaign['id']}"
+        ),
+        json={"decision": "excluded", "confounder_codes": [], "note": None},
+        headers=headers_b,
+    )
+    assert blocked_review.status_code == 404

@@ -55,6 +55,17 @@ const ROUTINE_SECTIONS = [
   { key: "weekly", title: "This week", summary: "The improvements to keep moving" },
   { key: "monthly", title: "This month", summary: "Larger projects and regular upkeep" },
 ] as const;
+const OUTCOME_CONTEXT_OPTIONS = [
+  { code: "other_website_changes", label: "Other website changes happened" },
+  { code: "google_or_search_change", label: "Google or search results changed" },
+  { code: "seasonal_demand", label: "Customer demand changed with the season" },
+  { code: "tracking_change", label: "Tracking or measurement changed" },
+  { code: "other_marketing", label: "Other marketing was running" },
+  { code: "website_outage", label: "The website had an outage or major problem" },
+  { code: "other", label: "Something else" },
+] as const;
+
+type OutcomeLearningDecision = "pending" | "included" | "excluded";
 
 type Campaign = {
   id: string;
@@ -311,6 +322,14 @@ type OutcomeLearningObservation = {
   result_classification: string;
   evidence_quality: "strong" | "moderate" | "insufficient";
   comparable: boolean;
+  review: {
+    decision: OutcomeLearningDecision;
+    confounder_codes: string[];
+    confounders?: Array<{ code: string; label: string }>;
+    note?: string | null;
+    reviewed_at?: string | null;
+    learning_eligible: boolean;
+  };
   forecast_check: {
     status: string;
     position: string;
@@ -324,6 +343,9 @@ type OutcomeLearningGroup = {
   action_label: string;
   metric_label: string;
   sample_count: number;
+  included_count?: number;
+  pending_review_count?: number;
+  excluded_count?: number;
   improved_count: number;
   unchanged_count: number;
   worse_count: number;
@@ -335,6 +357,10 @@ type OutcomeLearningResponse = {
   summary?: {
     measured_actions?: number;
     comparable_outcomes?: number;
+    learning_eligible_outcomes?: number;
+    pending_review_count?: number;
+    included_count?: number;
+    excluded_count?: number;
     improved_count?: number;
     unchanged_count?: number;
     worse_count?: number;
@@ -1868,6 +1894,148 @@ function ProductFeedbackPrompt({
   );
 }
 
+function OutcomeLearningReviewPanel({
+  observation,
+  busy,
+  onSave,
+}: {
+  observation: OutcomeLearningObservation;
+  busy: boolean;
+  onSave: (
+    decision: OutcomeLearningDecision,
+    confounderCodes: string[],
+    note: string,
+  ) => Promise<void>;
+}) {
+  const [confounderCodes, setConfounderCodes] = useState<string[]>(
+    observation.review.confounder_codes || [],
+  );
+  const [note, setNote] = useState(observation.review.note || "");
+  const [validationMessage, setValidationMessage] = useState("");
+
+  useEffect(() => {
+    setConfounderCodes(observation.review.confounder_codes || []);
+    setNote(observation.review.note || "");
+    setValidationMessage("");
+  }, [
+    observation.measurement_id,
+    observation.review.confounder_codes,
+    observation.review.decision,
+    observation.review.note,
+  ]);
+
+  function toggleCode(code: string) {
+    setConfounderCodes((current) =>
+      current.includes(code)
+        ? current.filter((item) => item !== code)
+        : [...current, code],
+    );
+  }
+
+  async function save(decision: OutcomeLearningDecision) {
+    if (confounderCodes.includes("other") && !note.trim() && decision !== "pending") {
+      setValidationMessage("Add a short note about what else happened.");
+      return;
+    }
+    setValidationMessage("");
+    await onSave(decision, decision === "pending" ? [] : confounderCodes, note.trim());
+  }
+
+  const reviewLabel =
+    observation.review.decision === "included"
+      ? "Used for learning"
+      : observation.review.decision === "excluded"
+        ? "Left out of learning"
+        : "Review what else changed";
+
+  return (
+    <details className="mt-3 border-t border-[#2d2f35] pt-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-zinc-200">
+        <span>{reviewLabel}</span>
+        <span className="text-xs font-normal text-zinc-500">Owner check required</span>
+      </summary>
+      <div className="mt-3 rounded-md border border-[#303137] bg-[#0d0e10] p-4">
+        <p className="text-sm font-medium text-white">
+          Did anything else happen while we waited for this result?
+        </p>
+        <p className="mt-1 text-xs leading-5 text-zinc-400">
+          This helps keep a seasonal rush, an outage, or another marketing campaign from getting
+          credit for this work by mistake.
+        </p>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {OUTCOME_CONTEXT_OPTIONS.map((option) => (
+            <label
+              key={option.code}
+              className="flex cursor-pointer items-start gap-2 rounded-md border border-[#292b30] bg-[#141518] p-2.5 text-xs text-zinc-300"
+            >
+              <input
+                type="checkbox"
+                checked={confounderCodes.includes(option.code)}
+                onChange={() => toggleCode(option.code)}
+                disabled={busy}
+                className="mt-0.5"
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
+        </div>
+        <label className="mt-3 block text-xs font-medium text-zinc-300">
+          Anything else worth noting? <span className="font-normal text-zinc-500">Optional</span>
+          <input
+            type="text"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            maxLength={1000}
+            disabled={busy}
+            className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm text-white outline-none focus:border-accent-500/60 disabled:opacity-50"
+            placeholder="For example: We also started a mail campaign that week."
+          />
+        </label>
+        {!observation.comparable ? (
+          <p className="mt-2 text-xs text-amber-200">
+            This result does not have enough matching information to use for learning.
+          </p>
+        ) : null}
+        {validationMessage ? (
+          <p className="mt-2 text-xs text-rose-300">{validationMessage}</p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy || !observation.comparable}
+            onClick={() => void save("included")}
+            className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+          >
+            Use this result
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void save("excluded")}
+            className="rounded-md border border-[#3a3b42] bg-[#18191c] px-3 py-1.5 text-xs font-medium text-zinc-200 disabled:opacity-40"
+          >
+            Leave this result out
+          </button>
+          {observation.review.decision !== "pending" ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void save("pending")}
+              className="px-3 py-1.5 text-xs font-medium text-zinc-400 disabled:opacity-40"
+            >
+              Clear review
+            </button>
+          ) : null}
+        </div>
+        <p className="mt-3 text-xs text-zinc-500">
+          This decision only controls the learning evidence. It cannot change your website or start
+          an experiment.
+        </p>
+      </div>
+    </details>
+  );
+}
+
 export default function OpportunitiesPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -2337,6 +2505,40 @@ export default function OpportunitiesPage() {
       await loadOpportunities(selectedCampaignId);
       setSelectedRecommendationId(recommendationId);
       setNotice("The latest measurement was compared with the saved starting point.");
+    });
+  }
+
+  async function saveOutcomeLearningReview(
+    measurementId: string,
+    decision: OutcomeLearningDecision,
+    confounderCodes: string[],
+    note: string,
+  ) {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+
+    await runAction(`${measurementId}:outcome-review`, async () => {
+      await platformApi(
+        `/intelligence/outcome-learning/${encodeURIComponent(measurementId)}/review?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            decision,
+            confounder_codes: confounderCodes,
+            note: note || null,
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        decision === "included"
+          ? "Review saved. This result may now count toward learning after enough matching results exist."
+          : decision === "excluded"
+            ? "Review saved. This result will stay visible but will not count toward learning."
+            : "Review cleared. This result is waiting for an owner decision.",
+      );
     });
   }
 
@@ -4250,27 +4452,24 @@ export default function OpportunitiesPage() {
                   summary="Finished work with a saved follow-up measurement."
                 />
                 <KpiCard
-                  label="Helped"
-                  value={String(outcomeLearning?.summary?.improved_count || 0)}
-                  summary="The main measurement moved in the right direction."
+                  label="Used for learning"
+                  value={String(outcomeLearning?.summary?.included_count || 0)}
+                  summary="Owner-reviewed results that may count after enough matching examples exist."
                 />
                 <KpiCard
-                  label="No clear change"
-                  value={String(outcomeLearning?.summary?.unchanged_count || 0)}
-                  summary="The main measurement stayed about the same."
-                />
-                <KpiCard
-                  label="Needs review"
-                  value={String(
-                    (outcomeLearning?.summary?.worse_count || 0) +
-                      (outcomeLearning?.summary?.insufficient_count || 0),
-                  )}
-                  summary="The result got worse or did not have enough matching information."
+                  label="Awaiting review"
+                  value={String(outcomeLearning?.summary?.pending_review_count || 0)}
+                  summary="Measured results that still need a quick owner check."
                   tone={
-                    (outcomeLearning?.summary?.worse_count || 0) > 0
+                    (outcomeLearning?.summary?.pending_review_count || 0) > 0
                       ? "highlight"
                       : "default"
                   }
+                />
+                <KpiCard
+                  label="Left out"
+                  value={String(outcomeLearning?.summary?.excluded_count || 0)}
+                  summary="Results kept in history but excluded from learning."
                 />
               </div>
 
@@ -4302,13 +4501,18 @@ export default function OpportunitiesPage() {
                             ? "Below the estimate"
                             : null;
                     return (
-                      <button
+                      <div
                         key={observation.measurement_id}
-                        type="button"
-                        onClick={() => setSelectedRecommendationId(observation.recommendation_id)}
                         className="w-full rounded-md border border-[#26272c] bg-[#111214] p-4 text-left"
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedRecommendationId(observation.recommendation_id)
+                          }
+                          className="w-full text-left"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-white">
                               {observation.action_label}
@@ -4346,8 +4550,21 @@ export default function OpportunitiesPage() {
                               {formatRelativeTime(observation.measured_at)}
                             </span>
                           </div>
-                        </div>
-                      </button>
+                          </div>
+                        </button>
+                        <OutcomeLearningReviewPanel
+                          observation={observation}
+                          busy={busyAction !== ""}
+                          onSave={(decision, confounderCodes, note) =>
+                            saveOutcomeLearningReview(
+                              observation.measurement_id,
+                              decision,
+                              confounderCodes,
+                              note,
+                            )
+                          }
+                        />
+                      </div>
                     );
                   })}
                 </div>
@@ -4427,7 +4644,8 @@ export default function OpportunitiesPage() {
 
               <p className="mt-4 text-xs uppercase tracking-[0.14em] text-zinc-500">
                 Human review required · No automatic rule changes ·{" "}
-                {outcomeLearning?.summary?.comparable_outcomes || 0} comparable results saved
+                {outcomeLearning?.summary?.included_count || 0} included ·{" "}
+                {outcomeLearning?.summary?.pending_review_count || 0} awaiting review
               </p>
             </section>
 

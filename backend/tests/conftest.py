@@ -60,6 +60,7 @@ from app.models.industry_intelligence import IndustryIntelligenceModel  # noqa: 
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState  # noqa: F401
 from app.models.organization_membership import OrganizationMembership  # noqa: F401
 from app.models.organization_provider_credential import OrganizationProviderCredential  # noqa: F401
+from app.models.outcome_learning import OutcomeLearningReview  # noqa: F401
 from app.models.data_connection import DataConnection  # noqa: F401
 from app.models.site_integrity import (  # noqa: F401
     SearchConsoleSitemapSnapshot,

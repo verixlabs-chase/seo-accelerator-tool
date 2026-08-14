@@ -100,3 +100,19 @@ class ActionPlanStepUpdateIn(BaseModel):
     status: Literal["not_started", "in_progress", "done", "skipped", "blocked"]
     blocker_reason: str | None = Field(default=None, max_length=1000)
     evidence: list[str] | None = Field(default=None, max_length=20)
+
+
+class OutcomeLearningReviewIn(BaseModel):
+    decision: Literal["pending", "included", "excluded"]
+    confounder_codes: list[
+        Literal[
+            "other_website_changes",
+            "google_or_search_change",
+            "seasonal_demand",
+            "tracking_change",
+            "other_marketing",
+            "website_outage",
+            "other",
+        ]
+    ] = Field(default_factory=list, max_length=7)
+    note: str | None = Field(default=None, max_length=1000)

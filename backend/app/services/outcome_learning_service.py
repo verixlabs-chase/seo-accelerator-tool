@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -10,9 +10,20 @@ from sqlalchemy.orm import Session
 from app.models.action_plan import ActionPlanForecast, ActionPlanMeasurement
 from app.models.campaign import Campaign
 from app.models.intelligence import StrategyRecommendation
+from app.models.outcome_learning import OutcomeLearningReview
+from app.services.audit_service import write_audit_log
 
 
 MINIMUM_COMPARABLE_OUTCOMES = 5
+CONFOUNDER_LABELS = {
+    "other_website_changes": "Other website changes happened",
+    "google_or_search_change": "Google or search results changed",
+    "seasonal_demand": "Customer demand changed with the season",
+    "tracking_change": "Tracking or measurement changed",
+    "other_marketing": "Other marketing was running",
+    "website_outage": "The website had an outage or major problem",
+    "other": "Something else may have affected the result",
+}
 
 
 def get_campaign_outcome_learning(
@@ -46,7 +57,12 @@ def get_campaign_outcome_learning(
         )
 
     rows = (
-        db.query(ActionPlanMeasurement, ActionPlanForecast, StrategyRecommendation)
+        db.query(
+            ActionPlanMeasurement,
+            ActionPlanForecast,
+            StrategyRecommendation,
+            OutcomeLearningReview,
+        )
         .join(
             StrategyRecommendation,
             StrategyRecommendation.id == ActionPlanMeasurement.recommendation_id,
@@ -54,6 +70,10 @@ def get_campaign_outcome_learning(
         .outerjoin(
             ActionPlanForecast,
             ActionPlanForecast.occurrence_id == ActionPlanMeasurement.occurrence_id,
+        )
+        .outerjoin(
+            OutcomeLearningReview,
+            OutcomeLearningReview.measurement_id == ActionPlanMeasurement.id,
         )
         .filter(
             ActionPlanMeasurement.tenant_id == tenant_id,
@@ -72,8 +92,8 @@ def get_campaign_outcome_learning(
     )
 
     observations = [
-        _serialize_observation(measurement, forecast, recommendation)
-        for measurement, forecast, recommendation in rows
+        _serialize_observation(measurement, forecast, recommendation, review)
+        for measurement, forecast, recommendation, review in rows
     ]
     comparable = [item for item in observations if item["comparable"]]
     group_members: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
@@ -93,9 +113,12 @@ def get_campaign_outcome_learning(
             key=lambda pair: (-len(pair[1]), pair[0]),
         )
     ]
+    learning_eligible = [
+        item for item in comparable if item["review"]["learning_eligible"]
+    ]
     forecast_checks = [
         item
-        for item in comparable
+        for item in learning_eligible
         if item["forecast_check"]["status"] in {"within_range", "outside_range"}
     ]
     within_range = sum(
@@ -124,6 +147,15 @@ def get_campaign_outcome_learning(
         1 for item in observations if item["result_classification"] == "worse"
     )
     insufficient_count = len(observations) - len(comparable)
+    pending_review_count = sum(
+        1 for item in observations if item["review"]["decision"] == "pending"
+    )
+    included_count = sum(
+        1 for item in observations if item["review"]["decision"] == "included"
+    )
+    excluded_count = sum(
+        1 for item in observations if item["review"]["decision"] == "excluded"
+    )
     review_ready_groups = sum(1 for group in groups if group["review_ready"])
     latest_measured_at = observations[0]["measured_at"] if observations else None
 
@@ -132,6 +164,10 @@ def get_campaign_outcome_learning(
         "summary": {
             "measured_actions": len(observations),
             "comparable_outcomes": len(comparable),
+            "learning_eligible_outcomes": len(learning_eligible),
+            "pending_review_count": pending_review_count,
+            "included_count": included_count,
+            "excluded_count": excluded_count,
             "improved_count": improved_count,
             "unchanged_count": unchanged_count,
             "worse_count": worse_count,
@@ -151,10 +187,16 @@ def get_campaign_outcome_learning(
             "causal_claims_allowed": False,
             "forecast_review_ready": len(forecast_checks) >= MINIMUM_COMPARABLE_OUTCOMES,
             "message": (
-                "Enough comparable results exist for a person to review the evidence. "
-                "InsightOS has not changed any rules or forecasts."
+                "Enough owner-reviewed results exist for a person to review this evidence group. "
+                "InsightOS still has not changed any rules or forecasts."
                 if review_ready_groups
-                else "InsightOS is saving comparable results. It will not change its rules or forecasts from a small sample."
+                else (
+                    f"Review {pending_review_count} measured result"
+                    f"{'s' if pending_review_count != 1 else ''} before they can inform learning. "
+                    "InsightOS will not change its rules or forecasts on its own."
+                    if pending_review_count
+                    else "InsightOS is saving owner-reviewed results. It will not change its rules or forecasts from a small sample."
+                )
             ),
         },
         "groups": groups,
@@ -166,6 +208,7 @@ def _serialize_observation(
     measurement: ActionPlanMeasurement,
     forecast: ActionPlanForecast | None,
     recommendation: StrategyRecommendation,
+    review: OutcomeLearningReview | None = None,
 ) -> dict[str, Any]:
     contract = dict(measurement.measurement_contract or {})
     metric_id = str(
@@ -183,16 +226,12 @@ def _serialize_observation(
         and outcome.get("source")
         and baseline.get("source") == outcome.get("source")
     )
-    scope_matches = outcome.get("scope_matches") is not False
     result_classification = str(measurement.result_classification or "")
-    comparable = bool(
-        result_classification in {"improved", "about_the_same", "worse"}
-        and baseline.get("status") == "available"
-        and outcome.get("status") == "available"
-        and baseline.get("value") is not None
-        and outcome.get("value") is not None
-        and outcome.get("comparison_requirements_met") is True
-        and scope_matches
+    comparable = _measurement_comparable(
+        measurement,
+        metric_id=metric_id,
+        baseline=baseline,
+        outcome=outcome,
     )
     evidence_quality = (
         "strong"
@@ -202,6 +241,7 @@ def _serialize_observation(
         else "insufficient"
     )
     confounders = _confounders(contract)
+    review_payload = _serialize_review(review, comparable=comparable)
     return {
         "measurement_id": measurement.id,
         "occurrence_id": measurement.occurrence_id,
@@ -225,6 +265,7 @@ def _serialize_observation(
         "evidence_quality": evidence_quality,
         "comparable": comparable,
         "confounders": confounders,
+        "review": review_payload,
         "forecast_check": {
             "forecast_id": forecast.id if forecast is not None else None,
             "model_id": forecast.model_id if forecast is not None else None,
@@ -251,13 +292,26 @@ def _summarize_group(
     contract_version: str,
     items: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    forecast_items = [
+    included_items = [
         item
         for item in items
+        if item.get("review", {}).get("decision") == "included"
+        and item.get("comparable", True)
+    ]
+    forecast_items = [
+        item
+        for item in included_items
         if item["forecast_check"]["status"] in {"within_range", "outside_range"}
     ]
     samples = len(items)
-    review_ready = samples >= MINIMUM_COMPARABLE_OUTCOMES
+    included_count = len(included_items)
+    pending_review_count = sum(
+        1 for item in items if item.get("review", {}).get("decision") == "pending"
+    )
+    excluded_count = sum(
+        1 for item in items if item.get("review", {}).get("decision") == "excluded"
+    )
+    review_ready = included_count >= MINIMUM_COMPARABLE_OUTCOMES
     return {
         "action_id": action_id,
         "action_label": items[0]["action_label"],
@@ -266,16 +320,21 @@ def _summarize_group(
         "metric_label": items[0]["metric_label"],
         "measurement_contract_version": contract_version,
         "sample_count": samples,
+        "included_count": included_count,
+        "pending_review_count": pending_review_count,
+        "excluded_count": excluded_count,
         "improved_count": sum(
-            1 for item in items if item["result_classification"] == "improved"
+            1
+            for item in included_items
+            if item["result_classification"] == "improved"
         ),
         "unchanged_count": sum(
             1
-            for item in items
+            for item in included_items
             if item["result_classification"] == "about_the_same"
         ),
         "worse_count": sum(
-            1 for item in items if item["result_classification"] == "worse"
+            1 for item in included_items if item["result_classification"] == "worse"
         ),
         "forecast_check_count": len(forecast_items),
         "forecast_within_range_count": sum(
@@ -284,10 +343,191 @@ def _summarize_group(
             if item["forecast_check"]["position"] == "within_range"
         ),
         "review_ready": review_ready,
-        "review_state": "ready_for_human_review" if review_ready else "needs_more_examples",
-        "examples_needed": max(0, MINIMUM_COMPARABLE_OUTCOMES - samples),
+        "review_state": (
+            "ready_for_human_review"
+            if review_ready
+            else "needs_human_review"
+            if pending_review_count
+            else "needs_more_included_examples"
+        ),
+        "examples_needed": max(0, MINIMUM_COMPARABLE_OUTCOMES - included_count),
         "automatic_changes_allowed": False,
     }
+
+
+def review_outcome_learning(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    campaign_id: str,
+    measurement_id: str,
+    actor_user_id: str,
+    decision: str,
+    confounder_codes: list[str] | None = None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Save a tenant-scoped human judgment without changing any learned policy."""
+
+    codes = list(dict.fromkeys(confounder_codes or []))
+    normalized_note = str(note or "").strip() or None
+    if decision not in {"pending", "included", "excluded"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Choose whether to use this result, leave it out, or clear the review",
+        )
+    if any(code not in CONFOUNDER_LABELS for code in codes):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="One or more result context choices are not supported",
+        )
+    if decision == "pending":
+        codes = []
+        normalized_note = None
+    if "other" in codes and not normalized_note:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Add a short note explaining what else may have affected the result",
+        )
+
+    measurement = (
+        db.query(ActionPlanMeasurement)
+        .filter(
+            ActionPlanMeasurement.id == measurement_id,
+            ActionPlanMeasurement.tenant_id == tenant_id,
+            ActionPlanMeasurement.organization_id == organization_id,
+            ActionPlanMeasurement.campaign_id == campaign_id,
+        )
+        .first()
+    )
+    if measurement is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Measured result not found",
+        )
+    if measurement.measurement_status != "measured":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This work does not have a follow-up result yet",
+        )
+    comparable = _measurement_comparable(measurement)
+    if decision == "included" and not comparable:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This result does not have enough matching information to use for learning",
+        )
+
+    row = (
+        db.query(OutcomeLearningReview)
+        .filter(
+            OutcomeLearningReview.measurement_id == measurement_id,
+            OutcomeLearningReview.tenant_id == tenant_id,
+            OutcomeLearningReview.organization_id == organization_id,
+        )
+        .first()
+    )
+    if row is None:
+        row = OutcomeLearningReview(
+            tenant_id=tenant_id,
+            organization_id=organization_id,
+            campaign_id=campaign_id,
+            business_location_id=measurement.business_location_id,
+            measurement_id=measurement_id,
+        )
+        db.add(row)
+
+    current_codes = list(row.confounder_codes or [])
+    unchanged = (
+        row.decision == decision
+        and current_codes == codes
+        and row.note == normalized_note
+    )
+    if not unchanged:
+        now = datetime.now(UTC)
+        row.decision = decision
+        row.confounder_codes = codes
+        row.note = normalized_note
+        row.reviewed_by_user_id = actor_user_id if decision != "pending" else None
+        row.reviewed_at = now if decision != "pending" else None
+        row.updated_at = now
+        write_audit_log(
+            db,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            event_type="intelligence.outcome_learning_reviewed",
+            payload={
+                "campaign_id": campaign_id,
+                "measurement_id": measurement_id,
+                "decision": decision,
+                "confounder_codes": codes,
+                "note_provided": normalized_note is not None,
+                "automatic_policy_updates_enabled": False,
+                "automatic_experiments_enabled": False,
+            },
+        )
+        db.commit()
+        db.refresh(row)
+
+    return _serialize_review(
+        row,
+        comparable=comparable,
+    )
+
+
+def _serialize_review(
+    review: OutcomeLearningReview | None,
+    *,
+    comparable: bool,
+) -> dict[str, Any]:
+    decision = review.decision if review is not None else "pending"
+    codes = list(review.confounder_codes or []) if review is not None else []
+    return {
+        "decision": decision,
+        "confounder_codes": codes,
+        "confounders": [
+            {"code": code, "label": CONFOUNDER_LABELS.get(code, code)}
+            for code in codes
+        ],
+        "note": review.note if review is not None else None,
+        "reviewed_at": _iso(review.reviewed_at) if review is not None else None,
+        "reviewed_by_user_id": (
+            review.reviewed_by_user_id if review is not None else None
+        ),
+        "learning_eligible": bool(comparable and decision == "included"),
+    }
+
+
+def _measurement_comparable(
+    measurement: ActionPlanMeasurement,
+    *,
+    metric_id: str | None = None,
+    baseline: dict[str, Any] | None = None,
+    outcome: dict[str, Any] | None = None,
+) -> bool:
+    contract = dict(measurement.measurement_contract or {})
+    resolved_metric_id = str(
+        metric_id
+        or contract.get("primary_metric_id")
+        or next(iter(measurement.success_metric_ids or []), "")
+    ).strip()
+    baseline_metric = baseline or _metric_by_id(
+        measurement.baseline_metrics,
+        resolved_metric_id,
+    )
+    outcome_metric = outcome or _metric_by_id(
+        measurement.outcome_metrics,
+        resolved_metric_id,
+    )
+    return bool(
+        measurement.result_classification
+        in {"improved", "about_the_same", "worse"}
+        and baseline_metric.get("status") == "available"
+        and outcome_metric.get("status") == "available"
+        and baseline_metric.get("value") is not None
+        and outcome_metric.get("value") is not None
+        and outcome_metric.get("comparison_requirements_met") is True
+        and outcome_metric.get("scope_matches") is not False
+    )
 
 
 def _metric_by_id(items: list | None, metric_id: str) -> dict[str, Any]:
