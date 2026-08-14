@@ -22,6 +22,7 @@ from app.schemas.intelligence import (
     GovernedExperimentProtocolRollbackIn,
     GovernedExperimentProtocolStartIn,
     GovernedExperimentProtocolStopIn,
+    GovernedPolicyCandidateReviewIn,
     IntelligenceScoreOut,
     OutcomeLearningReviewIn,
     RecommendationOut,
@@ -37,6 +38,7 @@ from app.services import (
     intelligence_service,
     governed_experiment_plan_service,
     governed_experiment_protocol_service,
+    governed_policy_candidate_service,
     outcome_learning_service,
     product_analytics_service,
 )
@@ -776,6 +778,105 @@ def verify_controlled_test_rollback(
         protocol_id=protocol_id,
         actor_user_id=user["id"],
         **body.model_dump(),
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.get("/policy-candidates")
+def get_policy_candidates(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_policy_candidate_service.list_candidates(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    truth = build_truth(
+        states=["generated"] + (["unavailable"] if not payload["items"] else []),
+        summary=(
+            "These saved comparisons test whether learning should require stronger proof. "
+            "They cannot activate a rule or change customer work."
+        ),
+        provider_state="saved_action_learning_replays",
+        setup_state="configured",
+        operator_state="human_review_required",
+        freshness_state="current" if payload["items"] else "unknown",
+        reasons=[
+            "owner_included_matching_outcomes_only",
+            "deterministic_replay_only",
+            "causal_claims_disabled",
+            "live_policy_activation_disabled",
+        ],
+    )
+    return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/policy-candidate")
+def create_policy_candidate(
+    request: Request,
+    protocol_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_policy_candidate_service.create_candidate(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/policy-candidates/{candidate_id}/replay")
+def replay_policy_candidate(
+    request: Request,
+    candidate_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_policy_candidate_service.replay_candidate(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        candidate_id=candidate_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.put("/policy-candidates/{candidate_id}/review")
+def review_policy_candidate(
+    request: Request,
+    candidate_id: str,
+    body: GovernedPolicyCandidateReviewIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    values = body.model_dump()
+    note = values.pop("note")
+    replay_id = values.pop("replay_id")
+    decision = values.pop("decision")
+    payload = governed_policy_candidate_service.review_candidate(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        candidate_id=candidate_id,
+        actor_user_id=user["id"],
+        decision=decision,
+        replay_id=replay_id,
+        acknowledgements=values,
+        note=note,
     )
     return envelope(request, payload)
 

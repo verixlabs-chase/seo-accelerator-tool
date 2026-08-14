@@ -654,7 +654,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 38 | **ALT1 - In-Product Alerts First; Automated Email Later** | Customers first receive useful notices inside InsightOS. Reliable automated email and delivery tracking remain a later, behind-the-scenes platform capability and do not block the current reporting or product sprints. |
 | 39 | **GOV1 - Data Privacy, Retention, and Portability - GOV1A-GOV1D implemented locally** | Owners can export their data, safely disconnect Google, and schedule a read-only workspace closure through two separate confirmation screens, two durable acknowledgements, and exact typed `Delete`, with an active-subscription blocker, 30-day recovery, platform-owner-only retention holds, access/credential finalization, audit proof, and a restore-safe pending-erasure tombstone. Verified primary-store, artifact/cache, and backup erasure remain later GOV1 closeout slices. |
 | 40 | **SEO2 - Advanced Search and Site Integrity - SEO2A-SEO2B implemented locally** | Google-owned index and sitemap evidence remains distinct from a richer tenant-scoped scan that now preserves redirect history, link relationships, canonical targets, exact-copy fingerprints, and JSON-LD parse evidence. It deterministically finds confirmed broken internal links, broken internal canonical targets, and exact duplicates; orphan findings require a successfully loaded same-site sitemap plus complete uncapped coverage. SERP features, content decay, cannibalization, entity coverage, and later optional Bing evidence remain. |
-| 41 | **I2 - Outcome Learning and Controlled Experiments - I2A-I2C implemented locally** | Verified action measurements and frozen forecast checks now form a minimum-sample learning record. Owners explicitly include or exclude each result, then save and review a controlled-test design with mandatory stop and undo rules. Approval is intentionally separate from launch; execution, calibration activation, and policy changes remain disabled. |
+| 41 | **I2 - Outcome Learning and Controlled Experiments - I2A-I2E implemented locally** | Verified action measurements and frozen forecast checks now form a minimum-sample learning record. Owners explicitly include or exclude each result, save and review a controlled-test design with mandatory stop and undo rules, run a separately authorized monitoring protocol, and compare a frozen current learning rule with a stricter proposal through deterministic replay. Human review remains separate from activation; live policy changes, publishing, assignments, and automatic execution remain disabled. |
 | 42 | **AIV1 - AI Search Visibility and Entity Intelligence** | A dedicated AI Search Visibility section shows where each business and location is mentioned or cited across supported major AI answer engines, how that changes over time, which competitors appear instead, and what evidence-backed work may improve coverage. |
 | 43 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
 | 44 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
@@ -3613,6 +3613,21 @@ preventing premature causal claims or uncontrolled self-modification.
 > scheduled guardrail checks, eligible champion/challenger policy governance,
 > and a separately gated change executor before any supported experiment can
 > apply or reverse production work.
+
+> **I2E implemented locally 2026-08-14:** A successfully completed governed
+> monitoring protocol can now prepare one immutable comparison between the
+> current action-learning eligibility rule and a stricter proposed rule. The
+> comparison counts only distinct, matching action measurements that the owner
+> explicitly included; repeated guardrail checks never inflate the sample. A
+> deterministic replay evaluates every saved prefix, minimum sample, improved
+> and worse result ratios, and a 90% Wilson confidence bound. The exact frozen
+> candidate and replay are hashed, tenant- and organization-scoped, and
+> append-only. An owner may mark a passing proposal reviewed for a separate
+> future activation decision, reject it, or cancel it. I2E has no activation,
+> recommendation mutation, forecast mutation, legacy experiment assignment,
+> publishing, WordPress, website, or business-profile change path. A later I2
+> slice must add an independently approved shadow rollout, monitoring, pause,
+> and verified rollback before a reviewed proposal can affect live behavior.
 
 Scope:
 

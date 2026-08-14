@@ -66,6 +66,9 @@ from app.models.governed_experiment import (
     GovernedExperimentGuardrailCheck,
     GovernedExperimentPlan,
     GovernedExperimentProtocol,
+    GovernedPolicyCandidate,
+    GovernedPolicyDecision,
+    GovernedPolicyReplay,
 )
 from app.models.crawl import (
     CrawlFrontierUrl,
@@ -301,6 +304,9 @@ __all__ = [
     "GovernedExperimentGuardrailCheck",
     "GovernedExperimentPlan",
     "GovernedExperimentProtocol",
+    "GovernedPolicyCandidate",
+    "GovernedPolicyDecision",
+    "GovernedPolicyReplay",
     "LocalProfile",
     "LocalHealthSnapshot",
     "Review",

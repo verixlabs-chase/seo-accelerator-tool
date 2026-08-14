@@ -471,6 +471,73 @@ type ControlledTestProtocolsResponse = {
   truth?: RuntimeTruth;
 };
 
+type GovernedLearningRules = {
+  minimum_independent_results?: number;
+  minimum_sample_size?: number;
+  minimum_improvement_ratio?: number;
+  maximum_worse_ratio?: number;
+  minimum_improvement_wilson_lower_bound?: number;
+  requires_completed_protocol?: boolean;
+};
+
+type GovernedPolicyReplay = {
+  id: string;
+  status: "passed" | "blocked" | "failed";
+  independent_sample_size?: number;
+  improved_count?: number;
+  unchanged_count?: number;
+  worse_count?: number;
+  improvement_ratio?: number;
+  worse_ratio?: number;
+  final_champion_eligible?: boolean;
+  final_challenger_eligible?: boolean;
+  changed_decision_count?: number;
+  blockers?: Array<string | { code?: string; message?: string }>;
+  created_at?: string | null;
+};
+
+type GovernedPolicyDecision = {
+  id?: string;
+  decision: "approved_for_future_activation" | "rejected" | "cancelled";
+  reviewed_at?: string | null;
+};
+
+type GovernedPolicyCandidate = {
+  id: string;
+  source_protocol_id: string;
+  source_plan_id?: string;
+  policy_family: "action_learning_eligibility";
+  action_id: string;
+  metric_id: string;
+  measurement_contract_version: string;
+  champion_version?: string;
+  champion_rules: GovernedLearningRules;
+  challenger_version?: string;
+  challenger_rules: GovernedLearningRules;
+  candidate_hash?: string;
+  state?: string;
+  latest_replay?: GovernedPolicyReplay | null;
+  decision?: GovernedPolicyDecision | null;
+  created_at?: string | null;
+  safety?: {
+    automatic_policy_updates_enabled?: false;
+    live_policy_activation_enabled?: false;
+    live_policy_changed?: false;
+    execution_enabled?: false;
+    assignments_created?: false;
+    publishing_enabled?: false;
+    wordpress_changes_enabled?: false;
+    standards_activation_enabled?: false;
+    automatic_rollback_enabled?: false;
+  };
+};
+
+type GovernedPolicyCandidatesResponse = {
+  items?: GovernedPolicyCandidate[];
+  count?: number;
+  truth?: RuntimeTruth;
+};
+
 type ControlledTestStopReason =
   | "safety_issue"
   | "primary_metric_regression"
@@ -2364,10 +2431,262 @@ function ControlledTestProtocolControls({
   );
 }
 
+function PolicyCandidateReviewControls({
+  protocol,
+  candidate,
+  busy,
+  onPrepare,
+  onReplay,
+  onReview,
+}: {
+  protocol: ControlledTestProtocol;
+  candidate?: GovernedPolicyCandidate;
+  busy: boolean;
+  onPrepare: (protocolId: string) => Promise<void>;
+  onReplay: (candidateId: string) => Promise<void>;
+  onReview: (
+    candidateId: string,
+    decision: GovernedPolicyDecision["decision"],
+    note: string,
+  ) => Promise<void>;
+}) {
+  const [reviewedChanges, setReviewedChanges] = useState(false);
+  const [understandsNotActive, setUnderstandsNotActive] = useState(false);
+  const [understandsNoProof, setUnderstandsNoProof] = useState(false);
+  const [note, setNote] = useState("");
+
+  if (protocol.status !== "completed") return null;
+
+  if (!candidate) {
+    return (
+      <div className="mt-3 rounded-md border border-violet-500/20 bg-violet-500/[0.04] p-3">
+        <p className="text-xs font-semibold text-violet-100">
+          Review a safer way to learn from results
+        </p>
+        <p className="mt-1 text-xs leading-5 text-zinc-400">
+          Compare today&apos;s evidence check with a stricter one that waits for more independent,
+          owner-approved results. Rechecking the same measurement never counts as another result.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void onPrepare(protocol.id)}
+          className="mt-3 rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-100 disabled:opacity-40"
+        >
+          Prepare rule comparison
+        </button>
+        <p className="mt-2 text-xs text-zinc-500">
+          Preview only — this cannot change recommendations, forecasts, your website, or your
+          business profile.
+        </p>
+      </div>
+    );
+  }
+
+  const replay = candidate.latest_replay;
+  const decision = candidate.decision;
+  const currentMinimum =
+    candidate.champion_rules.minimum_independent_results ??
+    candidate.champion_rules.minimum_sample_size ??
+    5;
+  const proposedMinimum =
+    candidate.challenger_rules.minimum_independent_results ??
+    candidate.challenger_rules.minimum_sample_size ??
+    10;
+  const proposedImprovement = Math.round(
+    (candidate.challenger_rules.minimum_improvement_ratio || 0) * 100,
+  );
+  const proposedWorse = Math.round(
+    (candidate.challenger_rules.maximum_worse_ratio ?? 1) * 100,
+  );
+  const blocker = replay?.blockers?.[0];
+  const blockerMessage =
+    typeof blocker === "string"
+      ? blocker
+      : blocker?.message || "More independent, owner-approved results are needed.";
+  const canApprove =
+    replay?.status === "passed" &&
+    replay.final_challenger_eligible === true &&
+    !decision &&
+    reviewedChanges &&
+    understandsNotActive &&
+    understandsNoProof;
+
+  return (
+    <div className="mt-3 rounded-md border border-violet-500/20 bg-violet-500/[0.04] p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold text-violet-100">
+            Review a safer way to learn from results
+          </p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            This checks when saved results are strong enough to guide a future product improvement.
+          </p>
+        </div>
+        <span className="rounded-md border border-violet-500/25 bg-violet-500/10 px-2 py-1 text-[11px] font-medium text-violet-100">
+          {decision
+            ? decision.decision === "approved_for_future_activation"
+              ? "Reviewed for future use"
+              : decision.decision === "rejected"
+                ? "Current rule kept"
+                : "Comparison cancelled"
+            : replay?.status === "passed"
+              ? "Ready for review"
+              : replay?.status === "blocked"
+                ? "Needs more evidence"
+                : replay?.status === "failed"
+                  ? "Did not pass"
+                  : "Needs replay"}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-md border border-[#303137] bg-[#111214] p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            Rule in use now
+          </p>
+          <p className="mt-2 text-sm font-medium text-white">
+            Review after {currentMinimum} matching results
+          </p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            Results must be comparable and explicitly included by the owner.
+          </p>
+        </div>
+        <div className="rounded-md border border-violet-500/20 bg-[#111214] p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/70">
+            Proposed rule
+          </p>
+          <p className="mt-2 text-sm font-medium text-white">
+            Wait for at least {proposedMinimum} independent results
+          </p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            At least {proposedImprovement}% should improve, no more than {proposedWorse}% should get
+            worse, and the saved confidence check must pass.
+          </p>
+        </div>
+      </div>
+
+      {replay ? (
+        <div className="mt-3 rounded-md border border-[#303137] bg-[#111214] p-3">
+          <p className="text-xs font-semibold text-white">What the saved results showed</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            {replay.independent_sample_size || 0} independent results: {replay.improved_count || 0}{" "}
+            improved, {replay.unchanged_count || 0} had no clear change, and {replay.worse_count || 0}{" "}
+            got worse.
+          </p>
+          {replay.status === "blocked" || replay.final_challenger_eligible === false ? (
+            <p className="mt-2 text-xs leading-5 text-amber-200">{blockerMessage}</p>
+          ) : replay.status === "passed" ? (
+            <p className="mt-2 text-xs leading-5 text-emerald-200">
+              The proposed rule passed the saved-evidence check. That makes it reviewable, not active.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs leading-5 text-rose-200">
+              The saved-evidence check could not be completed safely.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      {!decision ? (
+        <div className="mt-3 border-t border-violet-500/15 pt-3">
+          {!replay ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onReplay(candidate.id)}
+              className="rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-100 disabled:opacity-40"
+            >
+              Check against saved results
+            </button>
+          ) : null}
+
+          {replay?.status === "failed" || replay?.status === "blocked" ? (
+            <p className="text-xs leading-5 text-zinc-400">
+              This saved comparison is frozen. Finish another controlled test before preparing a
+              new rule comparison with newer evidence.
+            </p>
+          ) : null}
+
+          {replay?.status === "passed" && replay.final_challenger_eligible ? (
+            <div className="mt-3 space-y-2">
+              {[
+                [
+                  reviewedChanges,
+                  setReviewedChanges,
+                  "I compared the current and proposed evidence checks.",
+                ],
+                [
+                  understandsNotActive,
+                  setUnderstandsNotActive,
+                  "I understand this review does not make the proposed rule active.",
+                ],
+                [
+                  understandsNoProof,
+                  setUnderstandsNoProof,
+                  "I understand these results do not prove the work caused the outcome.",
+                ],
+              ].map(([checked, setter, label]) => (
+                <label key={String(label)} className="flex items-start gap-2 text-xs leading-5 text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(checked)}
+                    onChange={(event) =>
+                      (setter as (value: boolean) => void)(event.target.checked)
+                    }
+                    disabled={busy}
+                    className="mt-1"
+                  />
+                  {String(label)}
+                </label>
+              ))}
+              <input
+                type="text"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                maxLength={1000}
+                disabled={busy}
+                placeholder="Optional review note"
+                className="w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-xs text-white"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy || !canApprove}
+                  onClick={() =>
+                    void onReview(candidate.id, "approved_for_future_activation", note.trim())
+                  }
+                  className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+                >
+                  Mark proposal reviewed
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void onReview(candidate.id, "rejected", note.trim())}
+                  className="rounded-md border border-[#3a3b42] px-3 py-1.5 text-xs font-medium text-zinc-300 disabled:opacity-40"
+                >
+                  Keep the current rule
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <p className="mt-3 border-t border-violet-500/15 pt-3 text-xs text-zinc-500">
+        This comparison cannot change recommendations, forecasts, your website, or your business
+        profile. A later release would require a separate activation and rollback review.
+      </p>
+    </div>
+  );
+}
+
 function ControlledTestPlanner({
   groups,
   plans,
   protocols,
+  policyCandidates,
   busy,
   onCreate,
   onReview,
@@ -2377,10 +2696,14 @@ function ControlledTestPlanner({
   onCheckProtocol,
   onStopProtocol,
   onVerifyRollback,
+  onPreparePolicyCandidate,
+  onReplayPolicyCandidate,
+  onReviewPolicyCandidate,
 }: {
   groups: OutcomeLearningGroup[];
   plans: ControlledTestPlan[];
   protocols: ControlledTestProtocol[];
+  policyCandidates: GovernedPolicyCandidate[];
   busy: boolean;
   onCreate: (
     group: OutcomeLearningGroup,
@@ -2403,6 +2726,13 @@ function ControlledTestPlanner({
   onCheckProtocol: (protocolId: string) => Promise<void>;
   onStopProtocol: (protocolId: string, reasonCode: ControlledTestStopReason) => Promise<void>;
   onVerifyRollback: (protocolId: string, evidenceReference: string) => Promise<void>;
+  onPreparePolicyCandidate: (protocolId: string) => Promise<void>;
+  onReplayPolicyCandidate: (candidateId: string) => Promise<void>;
+  onReviewPolicyCandidate: (
+    candidateId: string,
+    decision: GovernedPolicyDecision["decision"],
+    note: string,
+  ) => Promise<void>;
 }) {
   const eligibleGroups = groups.filter((group) => Boolean(group.metric_id));
   const [selectedKey, setSelectedKey] = useState("");
@@ -2616,6 +2946,10 @@ function ControlledTestPlanner({
                   const note = reviewNotes[plan.id] || "";
                   const used = plan.eligibility.matching_result_count || 0;
                   const required = plan.eligibility.required_prior_results || 5;
+                  const protocol = protocols.find((item) => item.plan_id === plan.id);
+                  const policyCandidate = protocol
+                    ? policyCandidates.find((item) => item.source_protocol_id === protocol.id)
+                    : undefined;
                   return (
                     <div
                       key={plan.id}
@@ -2697,7 +3031,7 @@ function ControlledTestPlanner({
                       ) : null}
                       <ControlledTestProtocolControls
                         plan={plan}
-                        protocol={protocols.find((item) => item.plan_id === plan.id)}
+                        protocol={protocol}
                         busy={busy}
                         onPrepare={onPrepareProtocol}
                         onAuthorize={onAuthorizeProtocol}
@@ -2706,6 +3040,16 @@ function ControlledTestPlanner({
                         onStop={onStopProtocol}
                         onVerifyRollback={onVerifyRollback}
                       />
+                      {protocol ? (
+                        <PolicyCandidateReviewControls
+                          protocol={protocol}
+                          candidate={policyCandidate}
+                          busy={busy}
+                          onPrepare={onPreparePolicyCandidate}
+                          onReplay={onReplayPolicyCandidate}
+                          onReview={onReviewPolicyCandidate}
+                        />
+                      ) : null}
                     </div>
                   );
                 })
@@ -2750,6 +3094,8 @@ export default function OpportunitiesPage() {
   const [controlledTests, setControlledTests] = useState<ControlledTestsResponse | null>(null);
   const [controlledTestProtocols, setControlledTestProtocols] =
     useState<ControlledTestProtocolsResponse | null>(null);
+  const [policyCandidates, setPolicyCandidates] =
+    useState<GovernedPolicyCandidatesResponse | null>(null);
   const [intelligenceBrief, setIntelligenceBrief] =
     useState<GovernedIntelligenceBrief | null>(null);
   const [intelligenceRuntime, setIntelligenceRuntime] =
@@ -2799,6 +3145,7 @@ export default function OpportunitiesPage() {
       setOutcomeLearning(null);
       setControlledTests(null);
       setControlledTestProtocols(null);
+      setPolicyCandidates(null);
       setIntelligenceBrief(null);
       setIntelligenceRuntime(null);
       setIntelligenceAllowance(null);
@@ -2819,6 +3166,7 @@ export default function OpportunitiesPage() {
       outcomeLearningResponse,
       controlledTestsResponse,
       controlledTestProtocolsResponse,
+      policyCandidatesResponse,
       briefResponse,
       questionResponse,
       draftResponse,
@@ -2845,6 +3193,10 @@ export default function OpportunitiesPage() {
         `/intelligence/controlled-test-protocols?campaign_id=${encodeURIComponent(campaignId)}`,
         { method: "GET" },
       ),
+      platformApi(
+        `/intelligence/policy-candidates?campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      ).catch(() => ({ items: [] })),
       platformApi(`/intelligence/brief?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
@@ -2878,6 +3230,9 @@ export default function OpportunitiesPage() {
     setControlledTests((controlledTestsResponse as ControlledTestsResponse) || null);
     setControlledTestProtocols(
       (controlledTestProtocolsResponse as ControlledTestProtocolsResponse) || null,
+    );
+    setPolicyCandidates(
+      (policyCandidatesResponse as GovernedPolicyCandidatesResponse) || null,
     );
     const normalizedBrief = (briefResponse as GovernedIntelligenceBriefResponse) || null;
     setIntelligenceBrief(normalizedBrief?.item || null);
@@ -3415,6 +3770,66 @@ export default function OpportunitiesPage() {
       );
       await loadOpportunities(selectedCampaignId);
       setNotice("Rollback verification saved. InsightOS recorded the evidence but did not undo the change itself.");
+    });
+  }
+
+  async function preparePolicyCandidate(protocolId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:policy-candidate-prepare`, async () => {
+      const response = await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/policy-candidate?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        response?.created
+          ? "Evidence comparison prepared. It is review-only and cannot change the live system."
+          : "That evidence comparison was already prepared. Nothing in the live system changed.",
+      );
+    });
+  }
+
+  async function replayPolicyCandidate(candidateId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${candidateId}:policy-candidate-replay`, async () => {
+      const response = await platformApi(
+        `/intelligence/policy-candidates/${encodeURIComponent(candidateId)}/replay?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadOpportunities(selectedCampaignId);
+      const status = String(response?.item?.latest_replay?.status || "saved").replaceAll("_", " ");
+      setNotice(`Saved-evidence check ${status}. Nothing in the live system was changed.`);
+    });
+  }
+
+  async function reviewPolicyCandidate(
+    candidateId: string,
+    decision: GovernedPolicyDecision["decision"],
+    note: string,
+  ) {
+    if (!selectedCampaignId) return;
+    await runAction(`${candidateId}:policy-candidate-review`, async () => {
+      await platformApi(
+        `/intelligence/policy-candidates/${encodeURIComponent(candidateId)}/review?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            decision,
+            note: note || null,
+            reviewed_rule_comparison: true,
+            understands_not_active: true,
+            understands_no_causal_proof: true,
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        decision === "approved_for_future_activation"
+          ? "Evidence proposal marked reviewed for a future release. It is still not active."
+          : decision === "rejected"
+            ? "The current evidence check was kept. Nothing changed in production."
+            : "The rule comparison was cancelled. Nothing changed in production.",
+      );
     });
   }
 
@@ -5469,6 +5884,7 @@ export default function OpportunitiesPage() {
                 groups={outcomeLearning?.groups || []}
                 plans={controlledTests?.items || []}
                 protocols={controlledTestProtocols?.items || []}
+                policyCandidates={policyCandidates?.items || []}
                 busy={busyAction !== ""}
                 onCreate={createControlledTestPlan}
                 onReview={reviewControlledTestPlan}
@@ -5478,6 +5894,9 @@ export default function OpportunitiesPage() {
                 onCheckProtocol={checkControlledTestProtocol}
                 onStopProtocol={stopControlledTestProtocol}
                 onVerifyRollback={verifyControlledTestRollback}
+                onPreparePolicyCandidate={preparePolicyCandidate}
+                onReplayPolicyCandidate={replayPolicyCandidate}
+                onReviewPolicyCandidate={reviewPolicyCandidate}
               />
 
               <details className="mt-4 rounded-md border border-[#26272c] bg-[#111214] p-4">

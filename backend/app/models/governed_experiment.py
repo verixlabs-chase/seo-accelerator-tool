@@ -4,6 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -276,5 +277,215 @@ class GovernedExperimentGuardrailCheck(Base):
         String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+
+
+class GovernedPolicyCandidate(Base):
+    """Immutable proposal to tighten action-learning eligibility rules."""
+
+    __tablename__ = "governed_policy_candidates"
+    __table_args__ = (
+        CheckConstraint(
+            "policy_family = 'action_learning_eligibility'",
+            name="ck_governed_policy_candidates_family",
+        ),
+        CheckConstraint(
+            "automatic_activation_allowed = false",
+            name="ck_governed_policy_candidates_no_activation",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "protocol_id",
+            "policy_family",
+            name="uq_governed_policy_candidates_tenant_protocol_family",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "idempotency_key",
+            name="uq_governed_policy_candidates_tenant_idempotency",
+        ),
+        Index(
+            "ix_governed_policy_candidates_campaign_created",
+            "campaign_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    business_location_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("business_locations.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    protocol_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("governed_experiment_protocols.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    plan_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("governed_experiment_plans.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    policy_family: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    candidate_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    champion_rule: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    challenger_rule: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    protocol_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    candidate_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    automatic_activation_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    created_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+
+
+class GovernedPolicyReplay(Base):
+    """Append-only deterministic replay evidence for one frozen policy candidate."""
+
+    __tablename__ = "governed_policy_replays"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('passed','blocked','failed')",
+            name="ck_governed_policy_replays_status",
+        ),
+        CheckConstraint(
+            "automatic_activation_allowed = false",
+            name="ck_governed_policy_replays_no_activation",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "idempotency_key",
+            name="uq_governed_policy_replays_tenant_idempotency",
+        ),
+        Index(
+            "ix_governed_policy_replays_candidate_replayed",
+            "candidate_id",
+            "replayed_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    candidate_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("governed_policy_candidates.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    replay_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    candidate_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    ordered_measurement_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    cumulative_results: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    final_result: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    artifact_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    automatic_activation_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    replayed_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    replayed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+
+
+class GovernedPolicyDecision(Base):
+    """Append-only final human decision; it does not activate a policy."""
+
+    __tablename__ = "governed_policy_decisions"
+    __table_args__ = (
+        CheckConstraint(
+            "decision in ('approved_for_future_activation','rejected','cancelled')",
+            name="ck_governed_policy_decisions_decision",
+        ),
+        CheckConstraint(
+            "automatic_activation_allowed = false",
+            name="ck_governed_policy_decisions_no_activation",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "candidate_id",
+            name="uq_governed_policy_decisions_tenant_candidate",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "idempotency_key",
+            name="uq_governed_policy_decisions_tenant_idempotency",
+        ),
+        Index(
+            "ix_governed_policy_decisions_campaign_decided",
+            "campaign_id",
+            "decided_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    candidate_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("governed_policy_candidates.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    replay_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("governed_policy_replays.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    decision: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    acknowledgements: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    candidate_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    replay_artifact_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    decision_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    automatic_activation_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    decided_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    decided_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
     )

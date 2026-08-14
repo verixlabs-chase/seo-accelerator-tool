@@ -166,3 +166,16 @@ class GovernedExperimentProtocolStopIn(BaseModel):
 class GovernedExperimentProtocolRollbackIn(BaseModel):
     rollback_steps_confirmed: bool = False
     evidence_references: list[str] = Field(min_length=1, max_length=20)
+
+
+class GovernedPolicyCandidateReviewIn(BaseModel):
+    decision: Literal[
+        "approved_for_future_activation",
+        "rejected",
+        "cancelled",
+    ]
+    replay_id: str | None = Field(default=None, max_length=36)
+    reviewed_rule_comparison: bool = False
+    understands_not_active: bool = False
+    understands_no_causal_proof: bool = False
+    note: str | None = Field(default=None, max_length=1000)
