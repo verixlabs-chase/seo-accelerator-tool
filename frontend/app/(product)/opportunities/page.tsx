@@ -341,7 +341,11 @@ type OutcomeLearningObservation = {
 type OutcomeLearningGroup = {
   action_id: string;
   action_label: string;
+  measurement_track: "website" | "google_business_profile" | string;
+  metric_id?: string | null;
   metric_label: string;
+  direction?: string | null;
+  measurement_contract_version: string;
   sample_count: number;
   included_count?: number;
   pending_review_count?: number;
@@ -381,6 +385,45 @@ type OutcomeLearningResponse = {
   };
   groups?: OutcomeLearningGroup[];
   observations?: OutcomeLearningObservation[];
+  truth?: RuntimeTruth;
+};
+
+type ControlledTestPlan = {
+  id: string;
+  action_id: string;
+  metric_id: string;
+  measurement_contract_version: string;
+  hypothesis: string;
+  design_type: "content_split" | "staggered_rollout" | "holdout_comparison";
+  design_label: string;
+  status: "draft" | "approved" | "rejected" | "cancelled";
+  minimum_sample_size: number;
+  observation_window_days: number;
+  guardrail_metric_ids: string[];
+  eligibility: {
+    eligible?: boolean;
+    matching_result_count?: number;
+    required_prior_results?: number;
+    examples_needed?: number;
+    blockers?: Array<{ code: string; message: string }>;
+  };
+  stop_rules: Array<{ code: string; label: string; required: boolean }>;
+  rollback_steps: string[];
+  reviewed_at?: string | null;
+  review_note?: string | null;
+  created_at?: string | null;
+  safety: {
+    approval_is_launch: false;
+    launch_enabled: false;
+    assignments_created: false;
+    publishing_enabled: false;
+    automatic_policy_changes_enabled: false;
+  };
+};
+
+type ControlledTestsResponse = {
+  items?: ControlledTestPlan[];
+  count?: number;
   truth?: RuntimeTruth;
 };
 
@@ -2036,6 +2079,347 @@ function OutcomeLearningReviewPanel({
   );
 }
 
+function ControlledTestPlanner({
+  groups,
+  plans,
+  busy,
+  onCreate,
+  onReview,
+}: {
+  groups: OutcomeLearningGroup[];
+  plans: ControlledTestPlan[];
+  busy: boolean;
+  onCreate: (
+    group: OutcomeLearningGroup,
+    input: {
+      hypothesis: string;
+      designType: ControlledTestPlan["design_type"];
+      minimumSampleSize: number;
+      observationWindowDays: number;
+      rollbackSteps: string[];
+    },
+  ) => Promise<void>;
+  onReview: (
+    planId: string,
+    decision: "approved" | "rejected" | "cancelled",
+    note: string,
+  ) => Promise<void>;
+}) {
+  const eligibleGroups = groups.filter((group) => Boolean(group.metric_id));
+  const [selectedKey, setSelectedKey] = useState("");
+  const [hypothesis, setHypothesis] = useState("");
+  const [designType, setDesignType] =
+    useState<ControlledTestPlan["design_type"]>("staggered_rollout");
+  const [minimumSampleSize, setMinimumSampleSize] = useState(10);
+  const [observationWindowDays, setObservationWindowDays] = useState(28);
+  const [rollbackStep, setRollbackStep] = useState("");
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const selectedGroup =
+    eligibleGroups.find(
+      (group) =>
+        `${group.action_id}::${group.metric_id}::${group.measurement_contract_version}` ===
+        selectedKey,
+    ) || eligibleGroups[0];
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    const key = `${selectedGroup.action_id}::${selectedGroup.metric_id}::${selectedGroup.measurement_contract_version}`;
+    if (!selectedKey) setSelectedKey(key);
+    setHypothesis((current) =>
+      current ||
+      `Making this improvement for a limited group will improve ${selectedGroup.metric_label} without making protected results worse.`,
+    );
+    setRollbackStep((current) =>
+      current ||
+      (selectedGroup.measurement_track === "google_business_profile"
+        ? "Restore the approved business profile information."
+        : "Restore the approved starting website version."),
+    );
+  }, [selectedGroup, selectedKey]);
+
+  function selectGroup(key: string) {
+    const group = eligibleGroups.find(
+      (item) =>
+        `${item.action_id}::${item.metric_id}::${item.measurement_contract_version}` === key,
+    );
+    setSelectedKey(key);
+    if (group) {
+      setHypothesis(
+        `Making this improvement for a limited group will improve ${group.metric_label} without making protected results worse.`,
+      );
+      setRollbackStep(
+        group.measurement_track === "google_business_profile"
+          ? "Restore the approved business profile information."
+          : "Restore the approved starting website version.",
+      );
+    }
+  }
+
+  return (
+    <details className="mt-4 rounded-md border border-violet-500/20 bg-violet-500/[0.04] p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+        <span>
+          <span className="block text-sm font-semibold text-white">Plan a controlled test</span>
+          <span className="mt-1 block text-xs font-normal text-zinc-400">
+            Compare a limited change before deciding whether it should be used more widely.
+          </span>
+        </span>
+        <span className="rounded-md border border-violet-500/25 bg-violet-500/10 px-2 py-1 text-xs font-medium text-violet-100">
+          Owner approval required
+        </span>
+      </summary>
+
+      <div className="mt-4 space-y-4 border-t border-violet-500/15 pt-4">
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.06] p-3">
+          <p className="text-sm font-medium text-amber-100">
+            Approval does not launch or publish anything.
+          </p>
+          <p className="mt-1 text-xs leading-5 text-amber-100/70">
+            This saves a test design for review. InsightOS does not create test groups, edit a
+            website, or change a business profile from this plan.
+          </p>
+        </div>
+
+        {eligibleGroups.length ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-md border border-[#2d2f35] bg-[#101113] p-4">
+              <div>
+                <p className="text-sm font-semibold text-white">1. Choose what to test</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                  Only actions with a saved before-and-after result are available here.
+                </p>
+              </div>
+              <label className="block text-xs font-medium text-zinc-300">
+                Action and result to compare
+                <select
+                  value={selectedKey}
+                  onChange={(event) => selectGroup(event.target.value)}
+                  disabled={busy}
+                  className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                >
+                  {eligibleGroups.map((group) => {
+                    const key = `${group.action_id}::${group.metric_id}::${group.measurement_contract_version}`;
+                    return (
+                      <option key={key} value={key}>
+                        {group.action_label} — {group.metric_label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              <label className="block text-xs font-medium text-zinc-300">
+                What do you expect to happen?
+                <input
+                  type="text"
+                  value={hypothesis}
+                  onChange={(event) => setHypothesis(event.target.value)}
+                  minLength={10}
+                  maxLength={1000}
+                  disabled={busy}
+                  className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                />
+              </label>
+              <label className="block text-xs font-medium text-zinc-300">
+                Safest comparison method
+                <select
+                  value={designType}
+                  onChange={(event) =>
+                    setDesignType(event.target.value as ControlledTestPlan["design_type"])
+                  }
+                  disabled={busy}
+                  className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                >
+                  <option value="staggered_rollout">Start small, then compare</option>
+                  <option value="holdout_comparison">Compare changed and unchanged groups</option>
+                  <option value="content_split">Compare two approved page versions</option>
+                </select>
+              </label>
+              <details className="rounded-md border border-[#292b30] bg-[#141518] p-3">
+                <summary className="cursor-pointer text-xs font-medium text-zinc-300">
+                  Timing and sample settings
+                </summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="text-xs text-zinc-400">
+                    Minimum examples
+                    <input
+                      type="number"
+                      min={5}
+                      max={1000}
+                      value={minimumSampleSize}
+                      onChange={(event) => setMinimumSampleSize(Number(event.target.value))}
+                      disabled={busy}
+                      className="mt-1.5 w-full rounded-md border border-[#303137] bg-[#101113] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                  <label className="text-xs text-zinc-400">
+                    Days to observe
+                    <input
+                      type="number"
+                      min={7}
+                      max={180}
+                      value={observationWindowDays}
+                      onChange={(event) => setObservationWindowDays(Number(event.target.value))}
+                      disabled={busy}
+                      className="mt-1.5 w-full rounded-md border border-[#303137] bg-[#101113] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                </div>
+              </details>
+              <label className="block text-xs font-medium text-zinc-300">
+                How would you undo it?
+                <input
+                  type="text"
+                  value={rollbackStep}
+                  onChange={(event) => setRollbackStep(event.target.value)}
+                  maxLength={500}
+                  disabled={busy}
+                  className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                />
+              </label>
+              <div className="rounded-md border border-[#292b30] bg-[#141518] p-3 text-xs leading-5 text-zinc-400">
+                Every plan must stop if the main result gets worse, the measurement becomes
+                incomplete, a safety problem appears, or the account runs out of Insight Credits.
+              </div>
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  !selectedGroup ||
+                  hypothesis.trim().length < 10 ||
+                  !rollbackStep.trim()
+                }
+                onClick={() =>
+                  selectedGroup
+                    ? void onCreate(selectedGroup, {
+                        hypothesis: hypothesis.trim(),
+                        designType,
+                        minimumSampleSize,
+                        observationWindowDays,
+                        rollbackSteps: [rollbackStep.trim()],
+                      })
+                    : undefined
+                }
+                className="rounded-md border border-violet-500/35 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Save test plan for review
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-white">2. Review saved plans</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                  A design needs five matching owner-reviewed results before it can be approved.
+                </p>
+              </div>
+              {plans.length ? (
+                plans.map((plan) => {
+                  const note = reviewNotes[plan.id] || "";
+                  const used = plan.eligibility.matching_result_count || 0;
+                  const required = plan.eligibility.required_prior_results || 5;
+                  return (
+                    <div
+                      key={plan.id}
+                      className="rounded-md border border-[#2d2f35] bg-[#101113] p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{plan.design_label}</p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-400">{plan.hypothesis}</p>
+                        </div>
+                        <span className="rounded-md border border-[#34363c] bg-[#17181b] px-2 py-1 text-xs font-medium capitalize text-zinc-200">
+                          {plan.status}
+                        </span>
+                      </div>
+                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#25262b]">
+                        <div
+                          className="h-full rounded-full bg-violet-400"
+                          style={{ width: `${Math.min(100, (used / required) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-zinc-400">
+                        {used} of {required} matching results reviewed
+                        {plan.eligibility.eligible ? " — ready for a design decision" : ""}
+                      </p>
+                      <details className="mt-3 border-t border-[#292b30] pt-3">
+                        <summary className="cursor-pointer text-xs font-medium text-zinc-300">
+                          Safety rules and undo steps
+                        </summary>
+                        <ul className="mt-2 space-y-1 text-xs leading-5 text-zinc-400">
+                          {plan.stop_rules.map((rule) => (
+                            <li key={rule.code}>• {rule.label}</li>
+                          ))}
+                          {plan.rollback_steps.map((step) => (
+                            <li key={step}>• Undo: {step}</li>
+                          ))}
+                        </ul>
+                      </details>
+                      {plan.status === "draft" ? (
+                        <div className="mt-3 border-t border-[#292b30] pt-3">
+                          <input
+                            type="text"
+                            value={note}
+                            onChange={(event) =>
+                              setReviewNotes((current) => ({
+                                ...current,
+                                [plan.id]: event.target.value,
+                              }))
+                            }
+                            maxLength={1000}
+                            disabled={busy}
+                            placeholder="Optional approval note; required if declining"
+                            className="w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-xs text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                          />
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={busy || !plan.eligibility.eligible}
+                              onClick={() => void onReview(plan.id, "approved", note.trim())}
+                              className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+                            >
+                              Approve test design
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy || !note.trim()}
+                              onClick={() => void onReview(plan.id, "rejected", note.trim())}
+                              className="rounded-md border border-[#3a3b42] px-3 py-1.5 text-xs font-medium text-zinc-300 disabled:opacity-40"
+                            >
+                              Decline plan
+                            </button>
+                          </div>
+                          {!plan.eligibility.eligible ? (
+                            <p className="mt-2 text-xs text-amber-200">
+                              {plan.eligibility.blockers?.[0]?.message ||
+                                "More matching owner-reviewed results are needed."}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-md border border-dashed border-[#34363c] bg-[#101113] p-4 text-sm text-zinc-400">
+                  No controlled-test plans have been saved yet.
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-[#34363c] bg-[#101113] p-4">
+            <p className="text-sm font-medium text-white">Complete a measured action first.</p>
+            <p className="mt-1 text-xs leading-5 text-zinc-400">
+              Once an action has a matching before-and-after result, you can use it to design a
+              controlled test here.
+            </p>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 export default function OpportunitiesPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -2053,6 +2437,7 @@ export default function OpportunitiesPage() {
   const [engineState, setEngineState] = useState<IntelligenceEngineState | null>(null);
   const [outcomeHistory, setOutcomeHistory] = useState<OutcomeHistoryResponse | null>(null);
   const [outcomeLearning, setOutcomeLearning] = useState<OutcomeLearningResponse | null>(null);
+  const [controlledTests, setControlledTests] = useState<ControlledTestsResponse | null>(null);
   const [intelligenceBrief, setIntelligenceBrief] =
     useState<GovernedIntelligenceBrief | null>(null);
   const [intelligenceRuntime, setIntelligenceRuntime] =
@@ -2100,6 +2485,7 @@ export default function OpportunitiesPage() {
       setEngineState(null);
       setOutcomeHistory(null);
       setOutcomeLearning(null);
+      setControlledTests(null);
       setIntelligenceBrief(null);
       setIntelligenceRuntime(null);
       setIntelligenceAllowance(null);
@@ -2118,6 +2504,7 @@ export default function OpportunitiesPage() {
       scoreResponse,
       outcomeResponse,
       outcomeLearningResponse,
+      controlledTestsResponse,
       briefResponse,
       questionResponse,
       draftResponse,
@@ -2135,6 +2522,9 @@ export default function OpportunitiesPage() {
         method: "GET",
       }),
       platformApi(`/intelligence/outcome-learning?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }),
+      platformApi(`/intelligence/controlled-tests?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
       platformApi(`/intelligence/brief?campaign_id=${encodeURIComponent(campaignId)}`, {
@@ -2167,6 +2557,7 @@ export default function OpportunitiesPage() {
     );
     setOutcomeHistory((outcomeResponse as OutcomeHistoryResponse) || null);
     setOutcomeLearning((outcomeLearningResponse as OutcomeLearningResponse) || null);
+    setControlledTests((controlledTestsResponse as ControlledTestsResponse) || null);
     const normalizedBrief = (briefResponse as GovernedIntelligenceBriefResponse) || null;
     setIntelligenceBrief(normalizedBrief?.item || null);
     setIntelligenceRuntime(normalizedBrief?.runtime || null);
@@ -2538,6 +2929,75 @@ export default function OpportunitiesPage() {
           : decision === "excluded"
             ? "Review saved. This result will stay visible but will not count toward learning."
             : "Review cleared. This result is waiting for an owner decision.",
+      );
+    });
+  }
+
+  async function createControlledTestPlan(
+    group: OutcomeLearningGroup,
+    input: {
+      hypothesis: string;
+      designType: ControlledTestPlan["design_type"];
+      minimumSampleSize: number;
+      observationWindowDays: number;
+      rollbackSteps: string[];
+    },
+  ) {
+    if (!selectedCampaignId || !group.metric_id) {
+      setError("Select a measured result first.");
+      return;
+    }
+    await runAction("controlled-test-create", async () => {
+      const response = await platformApi(
+        `/intelligence/controlled-tests?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action_id: group.action_id,
+            metric_id: group.metric_id,
+            measurement_contract_version: group.measurement_contract_version,
+            hypothesis: input.hypothesis,
+            design_type: input.designType,
+            minimum_sample_size: input.minimumSampleSize,
+            observation_window_days: input.observationWindowDays,
+            guardrail_metric_ids: [],
+            rollback_steps: input.rollbackSteps,
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        response?.created
+          ? "Test plan saved for owner review. Nothing was launched or published."
+          : "That test plan was already saved. Nothing was launched or published.",
+      );
+    });
+  }
+
+  async function reviewControlledTestPlan(
+    planId: string,
+    decision: "approved" | "rejected" | "cancelled",
+    note: string,
+  ) {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+    await runAction(`${planId}:controlled-test-review`, async () => {
+      await platformApi(
+        `/intelligence/controlled-tests/${encodeURIComponent(planId)}/review?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ decision, note: note || null }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        decision === "approved"
+          ? "Test design approved. It is still not running and nothing was changed."
+          : decision === "rejected"
+            ? "Test plan declined. Nothing was changed."
+            : "Test plan cancelled. Nothing was changed.",
       );
     });
   }
@@ -4588,6 +5048,14 @@ export default function OpportunitiesPage() {
                   A person must review enough comparable examples before any rule or forecast can be updated.
                 </p>
               </div>
+
+              <ControlledTestPlanner
+                groups={outcomeLearning?.groups || []}
+                plans={controlledTests?.items || []}
+                busy={busyAction !== ""}
+                onCreate={createControlledTestPlan}
+                onReview={reviewControlledTestPlan}
+              />
 
               <details className="mt-4 rounded-md border border-[#26272c] bg-[#111214] p-4">
                 <summary className="cursor-pointer text-sm font-medium text-zinc-200">

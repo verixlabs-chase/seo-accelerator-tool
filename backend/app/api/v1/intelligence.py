@@ -16,6 +16,8 @@ from app.schemas.intelligence import (
     AskIntelligenceQuestionIn,
     GenerateIntelligenceDraftIn,
     GenerateIntelligenceBriefIn,
+    GovernedExperimentPlanCreateIn,
+    GovernedExperimentPlanReviewIn,
     IntelligenceScoreOut,
     OutcomeLearningReviewIn,
     RecommendationOut,
@@ -29,6 +31,7 @@ from app.services import (
     governed_ai_service,
     governed_ai_qa_service,
     intelligence_service,
+    governed_experiment_plan_service,
     outcome_learning_service,
     product_analytics_service,
 )
@@ -537,6 +540,80 @@ def review_outcome_learning(
             },
         },
     )
+
+
+@intelligence_router.get("/controlled-tests")
+def get_controlled_test_plans(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_plan_service.list_plans(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    truth = build_truth(
+        states=["generated"] + (["unavailable"] if not payload["items"] else []),
+        summary=(
+            "These are saved controlled-test designs. A person must approve a design, "
+            "and approval still does not launch a test or change anything."
+        ),
+        provider_state="saved_governed_designs",
+        setup_state="configured",
+        operator_state="human_review_required",
+        freshness_state="current" if payload["items"] else "unknown",
+        reasons=[
+            "human_design_review_required",
+            "launch_disabled",
+            "assignments_disabled",
+            "publishing_disabled",
+        ],
+    )
+    return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.post("/controlled-tests")
+def create_controlled_test_plan(
+    request: Request,
+    body: GovernedExperimentPlanCreateIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_plan_service.create_plan(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        actor_user_id=user["id"],
+        **body.model_dump(),
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.put("/controlled-tests/{plan_id}/review")
+def review_controlled_test_plan(
+    request: Request,
+    plan_id: str,
+    body: GovernedExperimentPlanReviewIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_plan_service.review_plan(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        plan_id=plan_id,
+        actor_user_id=user["id"],
+        decision=body.decision,
+        note=body.note,
+    )
+    return envelope(request, payload)
 
 
 @intelligence_router.post("/cycles/run")

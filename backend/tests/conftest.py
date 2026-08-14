@@ -66,6 +66,7 @@ from app.models.site_integrity import (  # noqa: F401
     SearchConsoleSitemapSnapshot,
     UrlInspectionSnapshot,
 )
+from app.models.governed_experiment import GovernedExperimentPlan  # noqa: F401
 from app.models.data_governance import (  # noqa: F401
     DataExportRequest,
     OrganizationClosureRequest,
@@ -236,6 +237,7 @@ def _verify_required_tables(database_url: str) -> None:
             "experiment_outcomes",
             "experiment_assignments",
             "experiments",
+            "governed_experiment_plans",
             "policy_performance",
             "causal_feature_edges",
             "policy_feature_edges",

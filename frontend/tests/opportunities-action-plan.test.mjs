@@ -212,4 +212,11 @@ test("next steps separates finished work from a measured result", () => {
   assert.match(pageSource, /Owner check required/);
   assert.match(pageSource, /outcome-learning\/\$\{encodeURIComponent\(measurementId\)\}\/review/);
   assert.match(pageSource, /automatic_experiments_enabled/);
+  assert.match(pageSource, /\/intelligence\/controlled-tests/);
+  assert.match(pageSource, /Plan a controlled test/);
+  assert.match(pageSource, /Approval does not launch or publish anything/);
+  assert.match(pageSource, /Save test plan for review/);
+  assert.match(pageSource, /five matching owner-reviewed results/);
+  assert.match(pageSource, /stop if the main result gets worse/);
+  assert.doesNotMatch(pageSource, />Launch test</);
 });

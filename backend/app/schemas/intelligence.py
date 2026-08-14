@@ -116,3 +116,24 @@ class OutcomeLearningReviewIn(BaseModel):
         ]
     ] = Field(default_factory=list, max_length=7)
     note: str | None = Field(default=None, max_length=1000)
+
+
+class GovernedExperimentPlanCreateIn(BaseModel):
+    action_id: str = Field(min_length=1, max_length=160)
+    metric_id: str = Field(min_length=1, max_length=160)
+    measurement_contract_version: str = Field(min_length=1, max_length=80)
+    hypothesis: str = Field(min_length=10, max_length=1000)
+    design_type: Literal[
+        "content_split",
+        "staggered_rollout",
+        "holdout_comparison",
+    ]
+    minimum_sample_size: int = Field(default=10, ge=5, le=1000)
+    observation_window_days: int = Field(default=28, ge=7, le=180)
+    guardrail_metric_ids: list[str] = Field(default_factory=list, max_length=10)
+    rollback_steps: list[str] = Field(min_length=1, max_length=10)
+
+
+class GovernedExperimentPlanReviewIn(BaseModel):
+    decision: Literal["approved", "rejected", "cancelled"]
+    note: str | None = Field(default=None, max_length=1000)

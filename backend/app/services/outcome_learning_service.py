@@ -318,6 +318,7 @@ def _summarize_group(
         "measurement_track": items[0]["measurement_track"],
         "metric_id": None if metric_id == "unknown" else metric_id,
         "metric_label": items[0]["metric_label"],
+        "direction": items[0].get("direction"),
         "measurement_contract_version": contract_version,
         "sample_count": samples,
         "included_count": included_count,
