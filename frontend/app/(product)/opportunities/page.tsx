@@ -288,6 +288,76 @@ type OutcomeHistoryResponse = {
   truth?: RuntimeTruth;
 };
 
+type OutcomeLearningObservation = {
+  measurement_id: string;
+  recommendation_id: string;
+  action_label: string;
+  recommendation_reason?: string;
+  measurement_track: "website" | "google_business_profile" | string;
+  metric_id?: string | null;
+  metric_label: string;
+  baseline: {
+    status?: string;
+    value?: number | null;
+    unit?: string | null;
+    source?: string | null;
+  };
+  outcome: {
+    status?: string;
+    value?: number | null;
+    unit?: string | null;
+    source?: string | null;
+  };
+  result_classification: string;
+  evidence_quality: "strong" | "moderate" | "insufficient";
+  comparable: boolean;
+  forecast_check: {
+    status: string;
+    position: string;
+  };
+  measured_at?: string | null;
+  causal_proof: false;
+};
+
+type OutcomeLearningGroup = {
+  action_id: string;
+  action_label: string;
+  metric_label: string;
+  sample_count: number;
+  improved_count: number;
+  unchanged_count: number;
+  worse_count: number;
+  review_ready: boolean;
+  examples_needed: number;
+};
+
+type OutcomeLearningResponse = {
+  summary?: {
+    measured_actions?: number;
+    comparable_outcomes?: number;
+    improved_count?: number;
+    unchanged_count?: number;
+    worse_count?: number;
+    insufficient_count?: number;
+    forecast_checks?: number;
+    within_range_count?: number;
+    better_than_range_count?: number;
+    worse_than_range_count?: number;
+    review_ready_groups?: number;
+  };
+  learning?: {
+    state?: "review_only";
+    minimum_comparable_outcomes?: number;
+    automatic_policy_updates_enabled?: false;
+    automatic_experiments_enabled?: false;
+    causal_claims_allowed?: false;
+    message?: string;
+  };
+  groups?: OutcomeLearningGroup[];
+  observations?: OutcomeLearningObservation[];
+  truth?: RuntimeTruth;
+};
+
 type IntelligenceCycleResponse = {
   status?: string;
   created?: boolean;
@@ -1814,6 +1884,7 @@ export default function OpportunitiesPage() {
   const [recommendationsTruth, setRecommendationsTruth] = useState<RuntimeTruth | null>(null);
   const [engineState, setEngineState] = useState<IntelligenceEngineState | null>(null);
   const [outcomeHistory, setOutcomeHistory] = useState<OutcomeHistoryResponse | null>(null);
+  const [outcomeLearning, setOutcomeLearning] = useState<OutcomeLearningResponse | null>(null);
   const [intelligenceBrief, setIntelligenceBrief] =
     useState<GovernedIntelligenceBrief | null>(null);
   const [intelligenceRuntime, setIntelligenceRuntime] =
@@ -1860,6 +1931,7 @@ export default function OpportunitiesPage() {
       setRecommendationsTruth(null);
       setEngineState(null);
       setOutcomeHistory(null);
+      setOutcomeLearning(null);
       setIntelligenceBrief(null);
       setIntelligenceRuntime(null);
       setIntelligenceAllowance(null);
@@ -1877,6 +1949,7 @@ export default function OpportunitiesPage() {
       summaryResponse,
       scoreResponse,
       outcomeResponse,
+      outcomeLearningResponse,
       briefResponse,
       questionResponse,
       draftResponse,
@@ -1891,6 +1964,9 @@ export default function OpportunitiesPage() {
         method: "GET",
       }),
       platformApi(`/intelligence/outcomes?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }),
+      platformApi(`/intelligence/outcome-learning?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
       platformApi(`/intelligence/brief?campaign_id=${encodeURIComponent(campaignId)}`, {
@@ -1922,6 +1998,7 @@ export default function OpportunitiesPage() {
         null,
     );
     setOutcomeHistory((outcomeResponse as OutcomeHistoryResponse) || null);
+    setOutcomeLearning((outcomeLearningResponse as OutcomeLearningResponse) || null);
     const normalizedBrief = (briefResponse as GovernedIntelligenceBriefResponse) || null;
     setIntelligenceBrief(normalizedBrief?.item || null);
     setIntelligenceRuntime(normalizedBrief?.runtime || null);
@@ -4151,50 +4228,155 @@ export default function OpportunitiesPage() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Outcome history
+                    Results over time
                   </p>
                   <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                    What changed after recommendations were chosen
+                    What the completed work is teaching us
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
-                    InsightOS compares saved opportunity-score checkpoints. This shows whether the
-                    overall score moved; it does not claim that one recommendation caused the
-                    change.
+                    These are real before-and-after measurements from finished checklists. Results
+                    are grouped only when the action, measurement, and rules match.
                   </p>
                 </div>
                 <span className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-100">
-                  Observation-only learning
+                  Reviewed before anything changes
                 </span>
               </div>
 
               <div className="mt-5 grid gap-4 md:grid-cols-4">
                 <KpiCard
-                  label="Measurements"
-                  value={String(outcomeHistory?.count || 0)}
-                  summary="Saved before-and-after score checkpoints for this business."
+                  label="Results checked"
+                  value={String(outcomeLearning?.summary?.measured_actions || 0)}
+                  summary="Finished work with a saved follow-up measurement."
                 />
                 <KpiCard
-                  label="Improved"
-                  value={String(outcomeHistory?.summary?.improved_count || 0)}
-                  summary="Measurements where the saved opportunity score increased."
+                  label="Helped"
+                  value={String(outcomeLearning?.summary?.improved_count || 0)}
+                  summary="The main measurement moved in the right direction."
                 />
                 <KpiCard
                   label="No clear change"
-                  value={String(outcomeHistory?.summary?.unchanged_count || 0)}
-                  summary="Measurements where the score stayed effectively the same."
+                  value={String(outcomeLearning?.summary?.unchanged_count || 0)}
+                  summary="The main measurement stayed about the same."
                 />
                 <KpiCard
-                  label="Declined"
-                  value={String(outcomeHistory?.summary?.declined_count || 0)}
-                  summary="Measurements that need review because the saved score decreased."
+                  label="Needs review"
+                  value={String(
+                    (outcomeLearning?.summary?.worse_count || 0) +
+                      (outcomeLearning?.summary?.insufficient_count || 0),
+                  )}
+                  summary="The result got worse or did not have enough matching information."
                   tone={
-                    (outcomeHistory?.summary?.declined_count || 0) > 0
+                    (outcomeLearning?.summary?.worse_count || 0) > 0
                       ? "highlight"
                       : "default"
                   }
                 />
               </div>
 
+              {outcomeLearning?.observations?.length ? (
+                <div className="mt-5 space-y-3">
+                  {outcomeLearning.observations.map((observation) => {
+                    const resultLabel =
+                      observation.result_classification === "improved"
+                        ? "Helped"
+                        : observation.result_classification === "about_the_same"
+                          ? "No clear change"
+                          : observation.result_classification === "worse"
+                            ? "Needs review"
+                            : "Not enough information";
+                    const resultTone =
+                      observation.result_classification === "improved"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                        : observation.result_classification === "worse"
+                          ? "border-rose-500/30 bg-rose-500/10 text-rose-100"
+                          : observation.comparable
+                            ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-200"
+                            : "border-amber-500/30 bg-amber-500/10 text-amber-100";
+                    const forecastLabel =
+                      observation.forecast_check.position === "within_range"
+                        ? "Matched the estimate"
+                        : observation.forecast_check.position === "better_than_range"
+                          ? "Beat the estimate"
+                          : observation.forecast_check.position === "worse_than_range"
+                            ? "Below the estimate"
+                            : null;
+                    return (
+                      <button
+                        key={observation.measurement_id}
+                        type="button"
+                        onClick={() => setSelectedRecommendationId(observation.recommendation_id)}
+                        className="w-full rounded-md border border-[#26272c] bg-[#111214] p-4 text-left"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {observation.action_label}
+                            </p>
+                            <p className="mt-1 text-sm text-zinc-300">
+                              {observation.metric_label}:{" "}
+                              {formatMeasurementValue(
+                                { unit: observation.baseline.unit || "" },
+                                observation.baseline.value,
+                              )}{" "}
+                              to{" "}
+                              {formatMeasurementValue(
+                                {
+                                  unit:
+                                    observation.outcome.unit ||
+                                    observation.baseline.unit ||
+                                    "",
+                                },
+                                observation.outcome.value,
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <span
+                              className={`rounded-md border px-2 py-1 text-xs font-medium ${resultTone}`}
+                            >
+                              {resultLabel}
+                            </span>
+                            {forecastLabel ? (
+                              <span className="rounded-md border border-violet-500/25 bg-violet-500/10 px-2 py-1 text-xs font-medium text-violet-100">
+                                {forecastLabel}
+                              </span>
+                            ) : null}
+                            <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-1 text-xs font-medium text-zinc-300">
+                              {formatRelativeTime(observation.measured_at)}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-5 rounded-md border border-dashed border-[#34363c] bg-[#111214] p-5">
+                  <p className="text-sm font-medium text-white">
+                    No completed work has a follow-up result yet.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">
+                    Start a checklist, finish the required work, and wait for the date shown on the
+                    action. InsightOS will compare the same measurement when fresh information arrives.
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-4 rounded-md border border-[#2d2f35] bg-[#101113] p-4">
+                <p className="text-sm font-medium text-white">Why InsightOS waits before learning</p>
+                <p className="mt-1 text-sm leading-6 text-zinc-400">
+                  {outcomeLearning?.learning?.message ||
+                    "InsightOS saves matching results, but a small sample cannot safely change future recommendations."}{" "}
+                  A person must review enough comparable examples before any rule or forecast can be updated.
+                </p>
+              </div>
+
+              <details className="mt-4 rounded-md border border-[#26272c] bg-[#111214] p-4">
+                <summary className="cursor-pointer text-sm font-medium text-zinc-200">
+                  See older overall-score checkpoints
+                </summary>
+                <div className="mt-3 border-t border-[#26272c] pt-3">
               {outcomeHistory?.items?.length ? (
                 <div className="mt-5 space-y-3">
                   {outcomeHistory.items.map((outcome) => (
@@ -4240,10 +4422,12 @@ export default function OpportunitiesPage() {
                   </p>
                 </div>
               )}
+                </div>
+              </details>
 
               <p className="mt-4 text-xs uppercase tracking-[0.14em] text-zinc-500">
-                Policy updates disabled · Causal claims disabled ·{" "}
-                {outcomeHistory?.learning?.observations_recorded || 0} observations recorded
+                Human review required · No automatic rule changes ·{" "}
+                {outcomeLearning?.summary?.comparable_outcomes || 0} comparable results saved
               </p>
             </section>
 

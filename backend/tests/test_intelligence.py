@@ -20,7 +20,11 @@ from app.models.user import User
 from app.models.website_performance import WebsitePerformanceMeasurement
 from app.intelligence.lexicon import get_active_lexicon
 from app.schemas.intelligence import IntelligenceScoreOut, RecommendationOut
-from app.services import action_plan_measurement_service, intelligence_service
+from app.services import (
+    action_plan_measurement_service,
+    intelligence_service,
+    outcome_learning_service,
+)
 
 
 def test_intelligence_score_recommendations_and_advance_month(db_session):
@@ -368,6 +372,39 @@ def test_action_plan_checklist_persists_progress_and_completes_required_work(
         }
     ]
 
+    learning = outcome_learning_service.get_campaign_outcome_learning(
+        db_session,
+        tenant_id=tenant.id,
+        organization_id=tenant.id,
+        campaign_id=campaign.id,
+    )
+    assert learning["summary"] == {
+        "measured_actions": 1,
+        "comparable_outcomes": 1,
+        "improved_count": 1,
+        "unchanged_count": 0,
+        "worse_count": 0,
+        "insufficient_count": 0,
+        "forecast_checks": 1,
+        "within_range_count": 0,
+        "better_than_range_count": 1,
+        "worse_than_range_count": 0,
+        "review_ready_groups": 0,
+        "latest_measured_at": measured["outcome_measured_at"],
+    }
+    assert learning["learning"]["state"] == "review_only"
+    assert learning["learning"]["automatic_policy_updates_enabled"] is False
+    assert learning["learning"]["automatic_experiments_enabled"] is False
+    assert learning["learning"]["causal_claims_allowed"] is False
+    assert learning["groups"][0]["sample_count"] == 1
+    assert learning["groups"][0]["examples_needed"] == 4
+    assert learning["observations"][0]["metric_id"] == "cwv.lcp"
+    assert learning["observations"][0]["baseline"]["value"] == 4200.0
+    assert learning["observations"][0]["outcome"]["value"] == 2400.0
+    assert learning["observations"][0]["evidence_quality"] == "strong"
+    assert learning["observations"][0]["forecast_check"]["position"] == "better_than_range"
+    assert learning["observations"][0]["causal_proof"] is False
+
 
 def test_action_plan_outcome_requires_new_post_completion_evidence():
     completed_at = datetime(2026, 8, 3, 18, 0, tzinfo=UTC)
@@ -393,6 +430,37 @@ def test_action_plan_outcome_requires_new_post_completion_evidence():
 
     assert comparison["comparison"] == "insufficient_data"
     assert comparison["change"] is None
+
+
+def test_outcome_learning_requires_five_comparable_examples_before_review():
+    item = {
+        "action_label": "Improve loading speed",
+        "measurement_track": "website",
+        "metric_label": "LCP",
+        "result_classification": "improved",
+        "forecast_check": {"status": "within_range", "position": "within_range"},
+    }
+
+    not_ready = outcome_learning_service._summarize_group(
+        "technical.reduce_render_blocking",
+        "cwv.lcp",
+        "2.0",
+        [dict(item) for _ in range(4)],
+    )
+    ready = outcome_learning_service._summarize_group(
+        "technical.reduce_render_blocking",
+        "cwv.lcp",
+        "2.0",
+        [dict(item) for _ in range(5)],
+    )
+
+    assert not_ready["review_ready"] is False
+    assert not_ready["examples_needed"] == 1
+    assert not_ready["automatic_changes_allowed"] is False
+    assert ready["review_ready"] is True
+    assert ready["examples_needed"] == 0
+    assert ready["review_state"] == "ready_for_human_review"
+    assert ready["automatic_changes_allowed"] is False
 
 
 def test_action_plan_outcome_rejects_a_different_measurement_scope():

@@ -94,6 +94,17 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
     assert "scope_not_defined" in {
         reason["code"] for reason in forecast["unavailable_reasons"]
     }
+
+    learning = client.get(
+        f"/api/v1/intelligence/outcome-learning?campaign_id={campaign['id']}",
+        headers=headers_a,
+    )
+    assert learning.status_code == 200
+    learning_payload = learning.json()["data"]
+    assert learning_payload["summary"]["measured_actions"] == 0
+    assert learning_payload["learning"]["state"] == "review_only"
+    assert learning_payload["learning"]["automatic_policy_updates_enabled"] is False
+    assert learning_payload["truth"]["classification"] == "unavailable"
     completed_event = (
         db_session.query(ProductAnalyticsEvent)
         .filter(
@@ -164,3 +175,9 @@ def test_checklist_api_persists_progress_and_blocks_cross_tenant_updates(
         headers=headers_b,
     )
     assert blocked_forecast.status_code == 404
+
+    blocked_learning = client.get(
+        f"/api/v1/intelligence/outcome-learning?campaign_id={campaign['id']}",
+        headers=headers_b,
+    )
+    assert blocked_learning.status_code == 404

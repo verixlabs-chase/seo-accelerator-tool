@@ -28,6 +28,7 @@ from app.services import (
     governed_ai_service,
     governed_ai_qa_service,
     intelligence_service,
+    outcome_learning_service,
     product_analytics_service,
 )
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
@@ -460,6 +461,46 @@ def get_intelligence_outcomes(
             "outcomes_compare_heuristic_score_checkpoints",
             "observation_only_learning_does_not_update_policies",
             "causal_claims_are_disabled",
+        ],
+    )
+    return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.get("/outcome-learning")
+def get_outcome_learning(
+    request: Request,
+    campaign_id: str = Query(...),
+    limit: int = Query(default=100, ge=1, le=200),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = outcome_learning_service.get_campaign_outcome_learning(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        limit=limit,
+    )
+    latest = payload["summary"]["latest_measured_at"]
+    truth = build_truth(
+        states=["generated"] + (["unavailable"] if not payload["observations"] else []),
+        summary=(
+            "This view groups real saved before-and-after measurements. It supports human review but does not prove causation or change product rules automatically."
+        ),
+        provider_state="stored_action_measurements",
+        setup_state="configured",
+        operator_state="human_review_required",
+        freshness_state=(
+            freshness_state_from_timestamp(latest, stale_after=timedelta(days=90))
+            if latest
+            else "unknown"
+        ),
+        reasons=[
+            "direct_action_measurements_only",
+            "minimum_sample_required_before_review",
+            "automatic_policy_changes_disabled",
+            "automatic_experiments_disabled",
+            "causal_claims_disabled",
         ],
     )
     return envelope(request, {**payload, "truth": truth})

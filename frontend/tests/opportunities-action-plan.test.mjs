@@ -200,4 +200,10 @@ test("next steps separates finished work from a measured result", () => {
   assert.match(pageSource, /Draft only - nothing is published/);
   assert.match(pageSource, /\/intelligence\/drafts/);
   assert.match(pageSource, /Nothing was changed or published/);
+  assert.match(pageSource, /\/intelligence\/outcome-learning/);
+  assert.match(pageSource, /What the completed work is teaching us/);
+  assert.match(pageSource, /Results checked/);
+  assert.match(pageSource, /Why InsightOS waits before learning/);
+  assert.match(pageSource, /A person must review enough comparable examples/);
+  assert.match(pageSource, /No automatic rule changes/);
 });
