@@ -137,3 +137,32 @@ class GovernedExperimentPlanCreateIn(BaseModel):
 class GovernedExperimentPlanReviewIn(BaseModel):
     decision: Literal["approved", "rejected", "cancelled"]
     note: str | None = Field(default=None, max_length=1000)
+
+
+class GovernedExperimentProtocolAuthorizeIn(BaseModel):
+    reviewed_frozen_plan: bool = False
+    rollback_ready: bool = False
+    understands_no_change_is_made: bool = False
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class GovernedExperimentProtocolStartIn(BaseModel):
+    evidence_references: list[str] = Field(min_length=1, max_length=20)
+    change_applied_at: datetime | None = None
+
+
+class GovernedExperimentProtocolStopIn(BaseModel):
+    reason_code: Literal[
+        "safety_issue",
+        "primary_metric_regression",
+        "protected_metric_regression",
+        "data_quality_loss",
+        "allowance_exhausted",
+        "owner_request",
+    ]
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class GovernedExperimentProtocolRollbackIn(BaseModel):
+    rollback_steps_confirmed: bool = False
+    evidence_references: list[str] = Field(min_length=1, max_length=20)

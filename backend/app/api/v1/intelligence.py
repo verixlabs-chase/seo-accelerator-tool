@@ -18,6 +18,10 @@ from app.schemas.intelligence import (
     GenerateIntelligenceBriefIn,
     GovernedExperimentPlanCreateIn,
     GovernedExperimentPlanReviewIn,
+    GovernedExperimentProtocolAuthorizeIn,
+    GovernedExperimentProtocolRollbackIn,
+    GovernedExperimentProtocolStartIn,
+    GovernedExperimentProtocolStopIn,
     IntelligenceScoreOut,
     OutcomeLearningReviewIn,
     RecommendationOut,
@@ -32,6 +36,7 @@ from app.services import (
     governed_ai_qa_service,
     intelligence_service,
     governed_experiment_plan_service,
+    governed_experiment_protocol_service,
     outcome_learning_service,
     product_analytics_service,
 )
@@ -612,6 +617,165 @@ def review_controlled_test_plan(
         actor_user_id=user["id"],
         decision=body.decision,
         note=body.note,
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.get("/controlled-test-protocols")
+def get_controlled_test_protocols(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.list_protocols(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    truth = build_truth(
+        states=["generated"] + (["unavailable"] if not payload["items"] else []),
+        summary=(
+            "These protocols watch saved measurements and stop rules. They do not apply a change, "
+            "publish content, create test assignments, or undo work automatically."
+        ),
+        provider_state="saved_metric_guardrails",
+        setup_state="configured",
+        operator_state="second_owner_approval_required",
+        freshness_state="current" if payload["items"] else "unknown",
+        reasons=[
+            "approved_design_required",
+            "second_authorization_required",
+            "external_change_evidence_required",
+            "publishing_disabled",
+            "automatic_rollback_disabled",
+        ],
+    )
+    return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.post("/controlled-tests/{plan_id}/protocol")
+def prepare_controlled_test_protocol(
+    request: Request,
+    plan_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.prepare_protocol(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        plan_id=plan_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.put("/controlled-test-protocols/{protocol_id}/authorize")
+def authorize_controlled_test_protocol(
+    request: Request,
+    protocol_id: str,
+    body: GovernedExperimentProtocolAuthorizeIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    values = body.model_dump()
+    note = values.pop("note")
+    payload = governed_experiment_protocol_service.authorize_protocol(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+        acknowledgements=values,
+        note=note,
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/start")
+def start_controlled_test_monitoring(
+    request: Request,
+    protocol_id: str,
+    body: GovernedExperimentProtocolStartIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.start_monitoring(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+        **body.model_dump(),
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/check")
+def check_controlled_test_guardrails(
+    request: Request,
+    protocol_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.check_guardrails(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/stop")
+def stop_controlled_test_monitoring(
+    request: Request,
+    protocol_id: str,
+    body: GovernedExperimentProtocolStopIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.stop_protocol(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+        **body.model_dump(),
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/rollback/verify")
+def verify_controlled_test_rollback(
+    request: Request,
+    protocol_id: str,
+    body: GovernedExperimentProtocolRollbackIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.verify_rollback(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+        **body.model_dump(),
     )
     return envelope(request, payload)
 

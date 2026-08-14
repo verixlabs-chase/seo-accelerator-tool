@@ -3596,6 +3596,24 @@ preventing premature causal claims or uncontrolled self-modification.
 > separately approved execution protocol, live guardrail monitoring,
 > champion/challenger policy governance, activation, and verified rollback.
 
+> **I2D implemented locally 2026-08-14:** An approved design can now be turned
+> into a separate, frozen monitoring protocol. Preparing the protocol captures
+> the current governed primary and protected measurements, Insight Credit state,
+> stop rules, undo steps, design hash, and a new protocol hash. A second explicit
+> owner authorization is required before monitoring may begin. Starting the
+> observation window requires a reference showing where the separately approved
+> change was made; this protocol itself never edits a website or business
+> profile, publishes content, or creates legacy experiment assignments. Each
+> requested safety check appends the exact saved primary, protected, and
+> allowance evidence it evaluated. Incomplete or mismatched data, measured
+> regression, or an exhausted allowance moves the protocol to a visible stop
+> state. The owner can stop at any time, follow the frozen undo steps, and record
+> evidence that rollback was completed. Rollback remains human-executed and
+> evidence-verified rather than silently automatic. Later I2 slices must add
+> scheduled guardrail checks, eligible champion/challenger policy governance,
+> and a separately gated change executor before any supported experiment can
+> apply or reverse production work.
+
 Scope:
 
 - Join pre-action baseline, intervention, execution verification, observation

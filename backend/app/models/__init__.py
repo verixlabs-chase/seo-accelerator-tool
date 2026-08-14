@@ -62,7 +62,11 @@ from app.models.content import (
 )
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard
 from app.models.governed_ai import GovernedAIRun
-from app.models.governed_experiment import GovernedExperimentPlan
+from app.models.governed_experiment import (
+    GovernedExperimentGuardrailCheck,
+    GovernedExperimentPlan,
+    GovernedExperimentProtocol,
+)
 from app.models.crawl import (
     CrawlFrontierUrl,
     CrawlInternalLink,
@@ -294,7 +298,9 @@ __all__ = [
     "OrganizationCostAllocation",
     "ProviderPriceCard",
     "GovernedAIRun",
+    "GovernedExperimentGuardrailCheck",
     "GovernedExperimentPlan",
+    "GovernedExperimentProtocol",
     "LocalProfile",
     "LocalHealthSnapshot",
     "Review",

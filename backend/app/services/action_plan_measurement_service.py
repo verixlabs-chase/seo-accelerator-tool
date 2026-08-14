@@ -892,6 +892,54 @@ def _window_bounds(metrics: list[dict[str, Any]]) -> tuple[datetime | None, date
     return (min(starts) if starts else None, max(ends) if ends else None)
 
 
+def capture_governed_metric_snapshot(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    campaign_id: str,
+    business_location_id: str | None,
+    metric_id: str,
+    observation_window_days: int,
+    captured_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Read one governed metric without creating work or changing an external system."""
+
+    campaign = (
+        db.query(Campaign)
+        .filter(
+            Campaign.id == campaign_id,
+            Campaign.tenant_id == tenant_id,
+            Campaign.organization_id == organization_id,
+        )
+        .first()
+    )
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    if business_location_id and campaign.business_location_id != business_location_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The saved test location no longer matches this business",
+        )
+    lexicon = get_active_lexicon(db, tenant_id=tenant_id)
+    metric = lexicon.metric_index.get(str(metric_id))
+    if metric is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The saved measurement is no longer available in the active rules",
+        )
+    return _capture_metric(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        campaign_id=campaign_id,
+        business_location_id=business_location_id,
+        metric=metric,
+        captured_at=captured_at or datetime.now(UTC),
+        observation_window_days=observation_window_days,
+    )
+
+
 def capture_action_plan_baseline(
     db: Session,
     *,

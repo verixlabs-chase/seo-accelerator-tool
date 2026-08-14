@@ -427,6 +427,58 @@ type ControlledTestsResponse = {
   truth?: RuntimeTruth;
 };
 
+type ControlledTestProtocol = {
+  id: string;
+  plan_id: string;
+  status:
+    | "prepared"
+    | "authorized"
+    | "monitoring"
+    | "stop_required"
+    | "rollback_pending"
+    | "rollback_verified"
+    | "completed"
+    | "cancelled";
+  baseline_snapshot: {
+    display_name?: string;
+    value?: number | null;
+    unit?: string | null;
+    measured_at?: string | null;
+  };
+  protected_baselines: Array<{ metric_id?: string; display_name?: string }>;
+  rollback_steps: string[];
+  latest_check_summary?: {
+    status?: string;
+    checked_at?: string | null;
+    triggered_rules?: Array<{ code: string; message: string }>;
+    fresh_data_available?: boolean;
+  };
+  observation_due_at?: string | null;
+  stop_reason_code?: string | null;
+  rollback_evidence?: string[];
+  safety: {
+    monitoring_only: true;
+    change_applied_by_protocol: false;
+    assignments_created: false;
+    publishing_enabled: false;
+    automatic_rollback: false;
+  };
+};
+
+type ControlledTestProtocolsResponse = {
+  items?: ControlledTestProtocol[];
+  count?: number;
+  truth?: RuntimeTruth;
+};
+
+type ControlledTestStopReason =
+  | "safety_issue"
+  | "primary_metric_regression"
+  | "protected_metric_regression"
+  | "data_quality_loss"
+  | "allowance_exhausted"
+  | "owner_request";
+
 type IntelligenceCycleResponse = {
   status?: string;
   created?: boolean;
@@ -2079,15 +2131,256 @@ function OutcomeLearningReviewPanel({
   );
 }
 
+function ControlledTestProtocolControls({
+  plan,
+  protocol,
+  busy,
+  onPrepare,
+  onAuthorize,
+  onStart,
+  onCheck,
+  onStop,
+  onVerifyRollback,
+}: {
+  plan: ControlledTestPlan;
+  protocol?: ControlledTestProtocol;
+  busy: boolean;
+  onPrepare: (planId: string) => Promise<void>;
+  onAuthorize: (protocolId: string) => Promise<void>;
+  onStart: (protocolId: string, evidenceReference: string) => Promise<void>;
+  onCheck: (protocolId: string) => Promise<void>;
+  onStop: (protocolId: string, reasonCode: ControlledTestStopReason) => Promise<void>;
+  onVerifyRollback: (protocolId: string, evidenceReference: string) => Promise<void>;
+}) {
+  const [acknowledgements, setAcknowledgements] = useState({
+    reviewed: false,
+    rollback: false,
+    noChange: false,
+  });
+  const [changeEvidence, setChangeEvidence] = useState("");
+  const [rollbackEvidence, setRollbackEvidence] = useState("");
+  const [rollbackConfirmed, setRollbackConfirmed] = useState(false);
+
+  if (plan.status !== "approved") return null;
+  if (!protocol) {
+    return (
+      <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/[0.05] p-3">
+        <p className="text-xs font-medium text-cyan-100">Ready to prepare the safety checks</p>
+        <p className="mt-1 text-xs leading-5 text-zinc-400">
+          This saves the starting measurement, stop rules, and undo steps. It does not make the
+          website or profile change.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void onPrepare(plan.id)}
+          className="mt-3 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 disabled:opacity-40"
+        >
+          Prepare safety checks
+        </button>
+      </div>
+    );
+  }
+
+  const triggered = protocol.latest_check_summary?.triggered_rules || [];
+  const statusLabel = protocol.status.replaceAll("_", " ");
+  return (
+    <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/[0.04] p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold text-cyan-100">Safety monitoring</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            Starting point: {protocol.baseline_snapshot.display_name || plan.metric_id}{" "}
+            {protocol.baseline_snapshot.value ?? "saved"}
+          </p>
+        </div>
+        <span className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium capitalize text-cyan-100">
+          {statusLabel}
+        </span>
+      </div>
+
+      {protocol.status === "prepared" ? (
+        <div className="mt-3 space-y-2 border-t border-cyan-500/15 pt-3">
+          {[
+            ["reviewed", "I reviewed the frozen plan and starting measurement."],
+            ["rollback", "The listed undo steps can be completed if a stop rule is hit."],
+            ["noChange", "I understand this only monitors results and makes no change."],
+          ].map(([key, label]) => (
+            <label key={key} className="flex items-start gap-2 text-xs leading-5 text-zinc-300">
+              <input
+                type="checkbox"
+                checked={acknowledgements[key as keyof typeof acknowledgements]}
+                onChange={(event) =>
+                  setAcknowledgements((current) => ({ ...current, [key]: event.target.checked }))
+                }
+                disabled={busy}
+                className="mt-1"
+              />
+              {label}
+            </label>
+          ))}
+          <button
+            type="button"
+            disabled={busy || !Object.values(acknowledgements).every(Boolean)}
+            onClick={() => void onAuthorize(protocol.id)}
+            className="mt-1 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 disabled:opacity-40"
+          >
+            Authorize monitoring
+          </button>
+        </div>
+      ) : null}
+
+      {protocol.status === "authorized" ? (
+        <div className="mt-3 border-t border-cyan-500/15 pt-3">
+          <p className="text-xs leading-5 text-zinc-400">
+            After the separately approved change is made, add a ticket, page revision, or other
+            reference so InsightOS knows when to start watching.
+          </p>
+          <input
+            type="text"
+            value={changeEvidence}
+            onChange={(event) => setChangeEvidence(event.target.value)}
+            maxLength={500}
+            disabled={busy}
+            placeholder="Example: WordPress revision 42"
+            className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-xs text-white"
+          />
+          <button
+            type="button"
+            disabled={busy || !changeEvidence.trim()}
+            onClick={() => void onStart(protocol.id, changeEvidence.trim())}
+            className="mt-2 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 disabled:opacity-40"
+          >
+            Start watching results
+          </button>
+        </div>
+      ) : null}
+
+      {protocol.status === "monitoring" ? (
+        <div className="mt-3 border-t border-cyan-500/15 pt-3">
+          <p className="text-xs leading-5 text-zinc-400">
+            {protocol.latest_check_summary?.status === "waiting_for_fresh_data"
+              ? "Waiting for a newer matching measurement. No result is being guessed."
+              : protocol.latest_check_summary?.status === "passed"
+                ? "The latest saved measurements passed the stop rules."
+                : "Run a safety check when new measurements arrive."}
+          </p>
+          {protocol.observation_due_at ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              Planned review date: {new Date(protocol.observation_due_at).toLocaleDateString()}
+            </p>
+          ) : null}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onCheck(protocol.id)}
+              className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+            >
+              Check saved results now
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onStop(protocol.id, "owner_request")}
+              className="rounded-md border border-red-500/25 bg-red-500/[0.06] px-3 py-1.5 text-xs font-medium text-red-100 disabled:opacity-40"
+            >
+              Stop and use undo plan
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {protocol.status === "stop_required" ? (
+        <div className="mt-3 rounded-md border border-red-500/25 bg-red-500/[0.06] p-3">
+          <p className="text-xs font-semibold text-red-100">A stop rule needs attention</p>
+          {triggered.map((item) => (
+            <p key={item.code} className="mt-1 text-xs leading-5 text-red-100/75">
+              {item.message}
+            </p>
+          ))}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void onStop(
+                protocol.id,
+                (protocol.stop_reason_code as ControlledTestStopReason) || "owner_request",
+              )
+            }
+            className="mt-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-100 disabled:opacity-40"
+          >
+            Stop monitoring and open undo steps
+          </button>
+        </div>
+      ) : null}
+
+      {protocol.status === "rollback_pending" ? (
+        <div className="mt-3 border-t border-cyan-500/15 pt-3">
+          <p className="text-xs font-semibold text-white">Confirm the change was undone</p>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-400">
+            {protocol.rollback_steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <input
+            type="text"
+            value={rollbackEvidence}
+            onChange={(event) => setRollbackEvidence(event.target.value)}
+            maxLength={500}
+            disabled={busy}
+            placeholder="Reference showing the original version was restored"
+            className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-xs text-white"
+          />
+          <label className="mt-2 flex items-start gap-2 text-xs leading-5 text-zinc-300">
+            <input
+              type="checkbox"
+              checked={rollbackConfirmed}
+              onChange={(event) => setRollbackConfirmed(event.target.checked)}
+              disabled={busy}
+              className="mt-1"
+            />
+            Every saved undo step was completed and checked.
+          </label>
+          <button
+            type="button"
+            disabled={busy || !rollbackConfirmed || !rollbackEvidence.trim()}
+            onClick={() => void onVerifyRollback(protocol.id, rollbackEvidence.trim())}
+            className="mt-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+          >
+            Save rollback verification
+          </button>
+        </div>
+      ) : null}
+
+      {protocol.status === "completed" || protocol.status === "rollback_verified" ? (
+        <p className="mt-3 border-t border-cyan-500/15 pt-3 text-xs leading-5 text-emerald-200">
+          {protocol.status === "completed"
+            ? "The observation window finished without a saved stop-rule failure. This is an experiment result, not automatic proof that the change caused it."
+            : "The undo steps and verification evidence were saved. InsightOS did not perform the rollback automatically."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function ControlledTestPlanner({
   groups,
   plans,
+  protocols,
   busy,
   onCreate,
   onReview,
+  onPrepareProtocol,
+  onAuthorizeProtocol,
+  onStartProtocol,
+  onCheckProtocol,
+  onStopProtocol,
+  onVerifyRollback,
 }: {
   groups: OutcomeLearningGroup[];
   plans: ControlledTestPlan[];
+  protocols: ControlledTestProtocol[];
   busy: boolean;
   onCreate: (
     group: OutcomeLearningGroup,
@@ -2104,6 +2397,12 @@ function ControlledTestPlanner({
     decision: "approved" | "rejected" | "cancelled",
     note: string,
   ) => Promise<void>;
+  onPrepareProtocol: (planId: string) => Promise<void>;
+  onAuthorizeProtocol: (protocolId: string) => Promise<void>;
+  onStartProtocol: (protocolId: string, evidenceReference: string) => Promise<void>;
+  onCheckProtocol: (protocolId: string) => Promise<void>;
+  onStopProtocol: (protocolId: string, reasonCode: ControlledTestStopReason) => Promise<void>;
+  onVerifyRollback: (protocolId: string, evidenceReference: string) => Promise<void>;
 }) {
   const eligibleGroups = groups.filter((group) => Boolean(group.metric_id));
   const [selectedKey, setSelectedKey] = useState("");
@@ -2396,6 +2695,17 @@ function ControlledTestPlanner({
                           ) : null}
                         </div>
                       ) : null}
+                      <ControlledTestProtocolControls
+                        plan={plan}
+                        protocol={protocols.find((item) => item.plan_id === plan.id)}
+                        busy={busy}
+                        onPrepare={onPrepareProtocol}
+                        onAuthorize={onAuthorizeProtocol}
+                        onStart={onStartProtocol}
+                        onCheck={onCheckProtocol}
+                        onStop={onStopProtocol}
+                        onVerifyRollback={onVerifyRollback}
+                      />
                     </div>
                   );
                 })
@@ -2438,6 +2748,8 @@ export default function OpportunitiesPage() {
   const [outcomeHistory, setOutcomeHistory] = useState<OutcomeHistoryResponse | null>(null);
   const [outcomeLearning, setOutcomeLearning] = useState<OutcomeLearningResponse | null>(null);
   const [controlledTests, setControlledTests] = useState<ControlledTestsResponse | null>(null);
+  const [controlledTestProtocols, setControlledTestProtocols] =
+    useState<ControlledTestProtocolsResponse | null>(null);
   const [intelligenceBrief, setIntelligenceBrief] =
     useState<GovernedIntelligenceBrief | null>(null);
   const [intelligenceRuntime, setIntelligenceRuntime] =
@@ -2486,6 +2798,7 @@ export default function OpportunitiesPage() {
       setOutcomeHistory(null);
       setOutcomeLearning(null);
       setControlledTests(null);
+      setControlledTestProtocols(null);
       setIntelligenceBrief(null);
       setIntelligenceRuntime(null);
       setIntelligenceAllowance(null);
@@ -2505,6 +2818,7 @@ export default function OpportunitiesPage() {
       outcomeResponse,
       outcomeLearningResponse,
       controlledTestsResponse,
+      controlledTestProtocolsResponse,
       briefResponse,
       questionResponse,
       draftResponse,
@@ -2527,6 +2841,10 @@ export default function OpportunitiesPage() {
       platformApi(`/intelligence/controlled-tests?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
+      platformApi(
+        `/intelligence/controlled-test-protocols?campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      ),
       platformApi(`/intelligence/brief?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
@@ -2558,6 +2876,9 @@ export default function OpportunitiesPage() {
     setOutcomeHistory((outcomeResponse as OutcomeHistoryResponse) || null);
     setOutcomeLearning((outcomeLearningResponse as OutcomeLearningResponse) || null);
     setControlledTests((controlledTestsResponse as ControlledTestsResponse) || null);
+    setControlledTestProtocols(
+      (controlledTestProtocolsResponse as ControlledTestProtocolsResponse) || null,
+    );
     const normalizedBrief = (briefResponse as GovernedIntelligenceBriefResponse) || null;
     setIntelligenceBrief(normalizedBrief?.item || null);
     setIntelligenceRuntime(normalizedBrief?.runtime || null);
@@ -2999,6 +3320,101 @@ export default function OpportunitiesPage() {
             ? "Test plan declined. Nothing was changed."
             : "Test plan cancelled. Nothing was changed.",
       );
+    });
+  }
+
+  async function prepareControlledTestProtocol(planId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${planId}:protocol-prepare`, async () => {
+      await platformApi(
+        `/intelligence/controlled-tests/${encodeURIComponent(planId)}/protocol?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("Safety checks prepared from the saved starting measurements. Nothing was changed.");
+    });
+  }
+
+  async function authorizeControlledTestProtocol(protocolId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-authorize`, async () => {
+      await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/authorize?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            reviewed_frozen_plan: true,
+            rollback_ready: true,
+            understands_no_change_is_made: true,
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("Monitoring authorized. It still has not made or published a change.");
+    });
+  }
+
+  async function startControlledTestProtocol(protocolId: string, evidenceReference: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-start`, async () => {
+      await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/start?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ evidence_references: [evidenceReference] }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("InsightOS is now watching saved measurements and stop rules for this test.");
+    });
+  }
+
+  async function checkControlledTestProtocol(protocolId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-check`, async () => {
+      const response = await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/check?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadOpportunities(selectedCampaignId);
+      const checkStatus = String(response?.check?.status || "saved").replaceAll("_", " ");
+      setNotice(`Safety check saved: ${checkStatus}. No website or profile change was made.`);
+    });
+  }
+
+  async function stopControlledTestProtocol(
+    protocolId: string,
+    reasonCode: ControlledTestStopReason,
+  ) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-stop`, async () => {
+      await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/stop?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ reason_code: reasonCode }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("Monitoring stopped. Complete the saved undo steps, then add verification evidence.");
+    });
+  }
+
+  async function verifyControlledTestRollback(protocolId: string, evidenceReference: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-rollback`, async () => {
+      await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/rollback/verify?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            rollback_steps_confirmed: true,
+            evidence_references: [evidenceReference],
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("Rollback verification saved. InsightOS recorded the evidence but did not undo the change itself.");
     });
   }
 
@@ -5052,9 +5468,16 @@ export default function OpportunitiesPage() {
               <ControlledTestPlanner
                 groups={outcomeLearning?.groups || []}
                 plans={controlledTests?.items || []}
+                protocols={controlledTestProtocols?.items || []}
                 busy={busyAction !== ""}
                 onCreate={createControlledTestPlan}
                 onReview={reviewControlledTestPlan}
+                onPrepareProtocol={prepareControlledTestProtocol}
+                onAuthorizeProtocol={authorizeControlledTestProtocol}
+                onStartProtocol={startControlledTestProtocol}
+                onCheckProtocol={checkControlledTestProtocol}
+                onStopProtocol={stopControlledTestProtocol}
+                onVerifyRollback={verifyControlledTestRollback}
               />
 
               <details className="mt-4 rounded-md border border-[#26272c] bg-[#111214] p-4">

@@ -218,5 +218,14 @@ test("next steps separates finished work from a measured result", () => {
   assert.match(pageSource, /Save test plan for review/);
   assert.match(pageSource, /five matching owner-reviewed results/);
   assert.match(pageSource, /stop if the main result gets worse/);
+  assert.match(pageSource, /\/intelligence\/controlled-test-protocols/);
+  assert.match(pageSource, /Prepare safety checks/);
+  assert.match(pageSource, /Authorize monitoring/);
+  assert.match(pageSource, /Start watching results/);
+  assert.match(pageSource, /Waiting for a newer matching measurement/);
+  assert.match(pageSource, /Stop and use undo plan/);
+  assert.match(pageSource, /Save rollback verification/);
+  assert.match(pageSource, /makes no change/);
+  assert.doesNotMatch(pageSource, /automatic_rollback:\s*true/);
   assert.doesNotMatch(pageSource, />Launch test</);
 });
