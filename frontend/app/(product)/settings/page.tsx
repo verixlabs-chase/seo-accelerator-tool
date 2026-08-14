@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import {
@@ -212,7 +212,146 @@ type BillingSummary = {
   current_period_end?: string | null;
   cancel_at_period_end: boolean;
   recovery_message?: string | null;
+  checkout_confirmation?: {
+    client_request_id?: string | null;
+    session_id?: string | null;
+    requested_plan_code?: string | null;
+    checkout_completed: boolean;
+    subscription_active: boolean;
+  } | null;
+  pending_checkout?: {
+    client_request_id: string | null;
+    session_id: string | null;
+    requested_plan_code: string | null;
+    expires_at: string | null;
+    active: boolean;
+  } | null;
 };
+
+type BillingCheckoutAttempt = {
+  organizationId: string;
+  planCode: string;
+  clientRequestId: string;
+  createdAt: number;
+  expiresAt?: string | null;
+};
+
+type BillingConfirmationState =
+  | "idle"
+  | "checking"
+  | "processing"
+  | "confirmed"
+  | "timed_out";
+
+const BILLING_CHECKOUT_ATTEMPT_KEY = "insightos:billing-checkout-attempt:v1";
+const BILLING_CHECKOUT_ATTEMPT_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+const BILLING_CONFIRMATION_DELAYS_MS = [0, 1000, 1500, 2000, 2500, 3000, 3500, 4000] as const;
+
+function safeSessionStorageGet(key: string) {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSessionStorageSet(key: string, value: string) {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // Checkout can still continue when the browser blocks session storage.
+  }
+}
+
+function safeSessionStorageRemove(key: string) {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Removing optional checkout recovery state must never block the page.
+  }
+}
+
+function readBillingCheckoutAttempt(organizationId: string) {
+  const raw = safeSessionStorageGet(BILLING_CHECKOUT_ATTEMPT_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<BillingCheckoutAttempt>;
+    if (
+      parsed.organizationId !== organizationId ||
+      typeof parsed.planCode !== "string" ||
+      typeof parsed.clientRequestId !== "string" ||
+      typeof parsed.createdAt !== "number" ||
+      (typeof parsed.expiresAt === "string"
+        ? !Number.isFinite(Date.parse(parsed.expiresAt)) || Date.parse(parsed.expiresAt) <= Date.now()
+        : Date.now() - parsed.createdAt > BILLING_CHECKOUT_ATTEMPT_MAX_AGE_MS)
+    ) {
+      safeSessionStorageRemove(BILLING_CHECKOUT_ATTEMPT_KEY);
+      return null;
+    }
+    return parsed as BillingCheckoutAttempt;
+  } catch {
+    safeSessionStorageRemove(BILLING_CHECKOUT_ATTEMPT_KEY);
+    return null;
+  }
+}
+
+function billingAttemptFromPending(
+  organizationId: string,
+  pending: BillingSummary["pending_checkout"],
+) {
+  if (
+    !pending?.active
+    || !pending.client_request_id
+    || !pending.requested_plan_code
+    || !pending.expires_at
+  ) {
+    return null;
+  }
+  return {
+    organizationId,
+    planCode: pending.requested_plan_code,
+    clientRequestId: pending.client_request_id,
+    createdAt: Date.now(),
+    expiresAt: pending.expires_at,
+  } satisfies BillingCheckoutAttempt;
+}
+
+function reconcileBillingCheckoutAttempt(
+  organizationId: string,
+  summary: BillingSummary,
+) {
+  const serverAttempt = billingAttemptFromPending(organizationId, summary.pending_checkout);
+  if (serverAttempt) return saveBillingCheckoutAttempt(serverAttempt);
+  clearBillingCheckoutAttempt(organizationId);
+  return null;
+}
+
+function saveBillingCheckoutAttempt(attempt: BillingCheckoutAttempt) {
+  safeSessionStorageSet(BILLING_CHECKOUT_ATTEMPT_KEY, JSON.stringify(attempt));
+  return attempt;
+}
+
+function checkoutAttemptForPlan(organizationId: string, planCode: string) {
+  const saved = readBillingCheckoutAttempt(organizationId);
+  if (saved?.planCode === planCode) return saved;
+  return saveBillingCheckoutAttempt({
+    organizationId,
+    planCode,
+    clientRequestId: crypto.randomUUID(),
+    createdAt: Date.now(),
+  });
+}
+
+function clearBillingCheckoutAttempt(organizationId: string) {
+  const saved = readBillingCheckoutAttempt(organizationId);
+  if (saved?.organizationId === organizationId) {
+    safeSessionStorageRemove(BILLING_CHECKOUT_ATTEMPT_KEY);
+  }
+}
+
+function waitForBillingConfirmation(delayMs: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+}
 
 type MigrationReview = {
   mode: "dry_run";
@@ -475,6 +614,12 @@ export default function SettingsPage() {
   const [payload, setPayload] = useState<ConnectionsPayload | null>(null);
   const [usageAllowance, setUsageAllowance] = useState<UsageAllowance | null>(null);
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
+  const [billingConfirmationState, setBillingConfirmationState] =
+    useState<BillingConfirmationState>("idle");
+  const [pendingBillingPlanCode, setPendingBillingPlanCode] = useState("");
+  const [pendingBillingClientRequestId, setPendingBillingClientRequestId] = useState("");
+  const [pendingBillingSessionId, setPendingBillingSessionId] = useState("");
+  const billingConfirmationRun = useRef(0);
   const [resources, setResources] = useState<SearchConsoleResource[]>([]);
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
   const [profileResources, setProfileResources] = useState<BusinessProfileResource[]>([]);
@@ -677,6 +822,92 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const confirmBillingReturn = useCallback(
+    async (
+      orgId: string,
+      expectedPlanCode: string,
+      expectedClientRequestId: string,
+      expectedSessionId: string,
+      initialSummary: BillingSummary | null = null,
+    ) => {
+      const runId = billingConfirmationRun.current + 1;
+      billingConfirmationRun.current = runId;
+      setPendingBillingPlanCode(expectedPlanCode);
+      setPendingBillingClientRequestId(expectedClientRequestId);
+      setPendingBillingSessionId(expectedSessionId);
+      setBillingConfirmationState("checking");
+
+      for (let index = 0; index < BILLING_CONFIRMATION_DELAYS_MS.length; index += 1) {
+        const delayMs = BILLING_CONFIRMATION_DELAYS_MS[index];
+        if (delayMs > 0) await waitForBillingConfirmation(delayMs);
+        if (billingConfirmationRun.current !== runId) return;
+
+        try {
+          const nextSummary =
+            index === 0 && initialSummary
+              ? initialSummary
+              : ((await platformApi("/billing/summary", {
+                  method: "GET",
+                })) as BillingSummary);
+          if (billingConfirmationRun.current !== runId) return;
+          setBillingSummary(nextSummary);
+
+          const confirmation = nextSummary.checkout_confirmation;
+          const expectedRequestMatches = Boolean(expectedClientRequestId)
+            && confirmation?.client_request_id === expectedClientRequestId;
+          const expectedSessionMatches = Boolean(expectedSessionId)
+            && confirmation?.session_id === expectedSessionId;
+          const expectedCheckoutMatches = expectedClientRequestId
+            ? expectedRequestMatches
+            : expectedSessionMatches;
+          const confirmedRequestedPlan = confirmation?.requested_plan_code || "";
+          const checkoutPlanMatches = expectedPlanCode
+            ? confirmedRequestedPlan === expectedPlanCode
+            : Boolean(confirmedRequestedPlan);
+          const activePlanMatches = checkoutPlanMatches
+            && nextSummary.plan_code === confirmedRequestedPlan;
+          if (
+            confirmation?.subscription_active === true
+            && expectedCheckoutMatches
+            && activePlanMatches
+          ) {
+            setBillingConfirmationState("confirmed");
+            clearBillingCheckoutAttempt(orgId);
+            const refreshedAllowance = await platformApi("/usage/credits", {
+              method: "GET",
+            }).catch(() => null);
+            if (billingConfirmationRun.current === runId && refreshedAllowance) {
+              setUsageAllowance(refreshedAllowance as UsageAllowance);
+            }
+            return;
+          }
+
+          if (
+            confirmation?.checkout_completed === true
+            && expectedCheckoutMatches
+            && checkoutPlanMatches
+          ) {
+            setBillingConfirmationState("processing");
+          }
+        } catch {
+          // A temporary read failure is retried within the same bounded confirmation window.
+        }
+      }
+
+      if (billingConfirmationRun.current === runId) {
+        setBillingConfirmationState("timed_out");
+      }
+    },
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      billingConfirmationRun.current += 1;
+    },
+    [],
+  );
+
   useEffect(() => {
     async function loadPage() {
       setLoading(true);
@@ -725,6 +956,10 @@ export default function SettingsPage() {
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
         setBillingSummary(billingResponse);
+        const localBillingAttempt = readBillingCheckoutAttempt(currentUser.organization_id);
+        const serverBillingAttempt = billingResponse
+          ? reconcileBillingCheckoutAttempt(currentUser.organization_id, billingResponse)
+          : null;
         setMigrationHistory(migrationResponse.items || []);
         setDataExports(dataExportResponse.items || []);
         setGoogleDisconnectPreview(disconnectPreviewResponse.preview || null);
@@ -733,12 +968,26 @@ export default function SettingsPage() {
         setClosureHistory(closureHistoryResponse.items || []);
         const returnParams = new URLSearchParams(window.location.search);
         const billingReturned = returnParams.get("billing");
+        const returnedBillingSessionId = returnParams.get("session_id") || "";
         const googleReturned = returnParams.get("google");
         const returnSource = returnParams.get("source");
         if (billingReturned === "success") {
-          setNotice("Checkout finished. We are confirming your plan now; access changes only after confirmation.");
+          const attempt = serverBillingAttempt || localBillingAttempt;
+          setNotice("");
           window.history.replaceState({}, "", "/settings");
+          void confirmBillingReturn(
+            currentUser.organization_id,
+            attempt?.planCode || "",
+            attempt?.clientRequestId || "",
+            returnedBillingSessionId,
+            billingResponse,
+          );
         } else if (billingReturned === "cancelled") {
+          billingConfirmationRun.current += 1;
+          setBillingConfirmationState("idle");
+          setPendingBillingPlanCode("");
+          setPendingBillingClientRequestId("");
+          setPendingBillingSessionId("");
           setNotice("Checkout was closed. Your current plan and saved work were not changed.");
           window.history.replaceState({}, "", "/settings");
         } else if (googleReturned === "connected") {
@@ -767,23 +1016,57 @@ export default function SettingsPage() {
       }
     }
     void loadPage();
-  }, [loadAnalyticsResources, loadConnections, loadProfileResources, loadResources]);
+  }, [confirmBillingReturn, loadAnalyticsResources, loadConnections, loadProfileResources, loadResources]);
 
   async function startCheckout(planCode: string) {
+    if (!organizationId) return;
     setBusyAction("billing-checkout");
     setError("");
     setNotice("");
     try {
+      const serverAttempt = billingAttemptFromPending(
+        organizationId,
+        billingSummary?.pending_checkout,
+      );
+      const attempt = serverAttempt || checkoutAttemptForPlan(organizationId, planCode);
+      const requestedPlanCode = serverAttempt?.planCode || planCode;
       const response = (await platformApi("/billing/checkout", {
         method: "POST",
-        body: JSON.stringify({ plan_code: planCode }),
-      })) as { url?: string };
+        body: JSON.stringify({
+          plan_code: requestedPlanCode,
+          client_request_id: attempt.clientRequestId,
+        }),
+      })) as {
+        url?: string;
+        session_id?: string;
+        expires_at?: string;
+        client_request_id?: string;
+        requested_plan_code?: string;
+        checkout_status?: "created" | "reused";
+      };
       if (!response.url) throw new Error("The secure checkout link was not created.");
+      saveBillingCheckoutAttempt({
+        ...attempt,
+        planCode: response.requested_plan_code || attempt.planCode,
+        clientRequestId: response.client_request_id || attempt.clientRequestId,
+        expiresAt: response.expires_at || attempt.expiresAt || null,
+      });
       window.location.assign(response.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to open secure checkout.");
       setBusyAction("");
     }
+  }
+
+  function refreshBillingConfirmation() {
+    if (!organizationId) return;
+    const attempt = readBillingCheckoutAttempt(organizationId);
+    void confirmBillingReturn(
+      organizationId,
+      pendingBillingPlanCode || attempt?.planCode || "",
+      pendingBillingClientRequestId || attempt?.clientRequestId || "",
+      pendingBillingSessionId,
+    );
   }
 
   async function manageBilling() {
@@ -1868,6 +2151,44 @@ export default function SettingsPage() {
 
             {usageAllowance ? (
               <section aria-labelledby="current-plan-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                {billingConfirmationState !== "idle" ? (
+                  <div
+                    role="status"
+                    className={`mb-5 rounded-md border p-4 text-sm ${
+                      billingConfirmationState === "confirmed"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-50"
+                        : "border-amber-500/30 bg-amber-500/10 text-amber-50"
+                    }`}
+                  >
+                    <p className="font-semibold">
+                      {billingConfirmationState === "confirmed"
+                        ? "Your plan is active"
+                        : billingConfirmationState === "processing"
+                          ? "Checkout is complete. Plan access is still updating"
+                          : billingConfirmationState === "timed_out"
+                            ? "Plan confirmation is taking longer than expected"
+                            : "Confirming your plan"}
+                    </p>
+                    <p className="mt-1 leading-6 opacity-80">
+                      {billingConfirmationState === "confirmed"
+                        ? `${billingSummary?.plan_name || "Your updated plan"} is confirmed and ready to use.`
+                        : billingConfirmationState === "processing"
+                          ? "The checkout is saved, but access will not change until the active plan is confirmed."
+                          : billingConfirmationState === "timed_out"
+                            ? "Your checkout may still be processing. You do not need to purchase it again. Check the plan status again, or refresh this page later."
+                            : "Checkout returned successfully. InsightOS is waiting for saved plan confirmation before changing access."}
+                    </p>
+                    {billingConfirmationState === "timed_out" ? (
+                      <button
+                        type="button"
+                        className={`${secondaryButtonClass} mt-3`}
+                        onClick={refreshBillingConfirmation}
+                      >
+                        Check plan status again
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {billingSummary?.recovery_message ? (
                   <div className="mb-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-50">
                     <p className="font-semibold">Payment needs attention</p>

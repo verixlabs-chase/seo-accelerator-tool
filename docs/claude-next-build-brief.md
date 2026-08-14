@@ -653,7 +653,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
 | 27 | **CX1 - Guided Onboarding, Education, and Support — completed locally** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
 | 28 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
-| 29 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
+| 29 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement - lifecycle closeout implemented locally; live Stripe evidence pending** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
 | 30 | **ENG1 - Verified Progress Rewards and Healthy Habits - published in PR #50** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
 | 31 | **G1.7 - Website Analytics and Form Events - G1.7A-G1.7B published in PR #50** | Website visits, engaged visits, landing pages, traffic sources, and privacy-minimized form outcomes connect to the location without adding CRM or call-tracking scope. |
 | 32 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
@@ -3903,7 +3903,7 @@ Implementation status (August 11, 2026):
 
 #### COM1.2 - Subscription Lifecycle and Payment Recovery
 
-Implementation status (August 12, 2026):
+Implementation status (August 14, 2026):
 
 - The first billing-lifecycle slice is implemented locally. Organization-scoped
   subscription state now records the billing customer, subscription, configured
@@ -3916,7 +3916,9 @@ Implementation status (August 12, 2026):
 - The webhook endpoint verifies the signed raw request within a bounded replay
   window. A durable receipt ledger hashes but does not retain raw provider
   payloads, rejects conflicting organization/customer identifiers, processes an
-  event ID once, and ignores older state changes that arrive late.
+  event ID once, and ignores older state changes that arrive late. Failed-event
+  retries atomically claim the receipt, while distinct events serialize their
+  organization changes under a database row lock.
 - Active or trialing subscriptions update the internal commercial plan only
   when the configured Price ID and plan metadata agree. Payment failure keeps
   the current plan and saved data while prompting recovery; a completed
@@ -3924,12 +3926,29 @@ Implementation status (August 12, 2026):
 - Settings now shows billing health, secure upgrade and management actions, and
   a plain-language payment recovery path. The application never returns secret
   keys or raw billing-provider errors to the customer.
+- Checkout retries now use an organization-scoped pending attempt. A second tab
+  or device cannot open a competing paid session, a closed checkout can reopen
+  the same attempt, and browser storage loss can recover confirmation from the
+  signed return session. A success URL alone never changes plan access; Settings
+  waits for the matching active-subscription webhook and stops polling after a
+  bounded window.
+- Subscription state and payment state now keep independent provider ordering.
+  Equal-time cancellation takes precedence over an active update, stale invoice
+  events cannot erase payment recovery, and a terminal subscriber can start a
+  new signed checkout without an operator clearing the old subscription ID.
+- The closeout migration adds nullable-unique customer and subscription
+  identities only after a non-mutating duplicate preflight, and conservatively
+  separates legacy recovery rows into active-subscription and payment-recovery
+  dimensions. Saved campaigns and customer work are never deleted by a billing
+  transition.
 - Focused lifecycle tests cover owner-only checkout, signature rejection,
-  replay rejection, duplicate delivery, plan activation, payment failure, and
-  cancellation. Remaining COM1 work includes Stripe environment provisioning,
-  live test-mode checkout/webhook evidence, portal policy configuration,
-  allowance materialization across every governed capability, invitations,
-  password recovery, session revocation, and downgrade grace/export rules.
+  replay rejection, conflicting duplicate payloads, durable checkout reuse,
+  plan activation, resubscription, out-of-order subscription and invoice
+  events, payment recovery, and cancellation. Remaining COM1 work includes
+  Stripe environment provisioning, live test-mode checkout/webhook evidence,
+  portal policy configuration, allowance materialization across every governed
+  capability, invitations, password recovery, session revocation, and downgrade
+  grace/export rules.
 
 Packaging principle:
 
