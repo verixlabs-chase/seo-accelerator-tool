@@ -1,4 +1,11 @@
 from app.models.audit_log import AuditLog
+from app.models.ai_visibility import (
+    AISearchCollectionRun,
+    AISearchEngineRegistry,
+    AISearchObservation,
+    AISearchProviderContractRegistry,
+    AISearchQuestionSet,
+)
 from app.models.action_plan import (
     ActionPlanForecast,
     ActionPlanMeasurement,
@@ -220,6 +227,11 @@ from app.models.migration_import import (
 )
 
 __all__ = [
+    "AISearchCollectionRun",
+    "AISearchEngineRegistry",
+    "AISearchObservation",
+    "AISearchProviderContractRegistry",
+    "AISearchQuestionSet",
     "Tenant",
     "User",
     "AuthSession",

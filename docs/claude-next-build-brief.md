@@ -89,6 +89,17 @@
 > status/provider-change confounders, minimized evidence, and owner-reviewed
 > investigation states. Portfolio-wide movement can create an investigation signal
 > but never be presented as knowledge of Google's private algorithm.
+> **AIV1-A: Provider-Neutral AI Visibility Foundation is implemented locally.**
+> It includes candidate-only engine and provider-contract versions,
+> provider-neutral dormant run/evidence storage, deterministic saved questions,
+> an honest beta workspace, supplier redaction, tenant isolation, and a
+> fail-closed non-executing cost/allowance preview. Live provider submit/poll,
+> full execution telemetry and price matching, credential dispatch,
+> customer-visible engines, schedules, reports, credit charging, and production
+> visibility claims remain disabled. AIV1-B will be a later operator-only live
+> provider and cost evaluation; AIV1-C will be the later governed customer
+> collection release. See
+> [AIV1 Provider and Economics Governance](./product_overview/aiv1_provider_economics_governance.md).
 > The remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7 and DT1,
@@ -655,7 +666,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 39 | **GOV1 - Data Privacy, Retention, and Portability - GOV1A-GOV1D implemented locally** | Owners can export their data, safely disconnect Google, and schedule a read-only workspace closure through two separate confirmation screens, two durable acknowledgements, and exact typed `Delete`, with an active-subscription blocker, 30-day recovery, platform-owner-only retention holds, access/credential finalization, audit proof, and a restore-safe pending-erasure tombstone. Verified primary-store, artifact/cache, and backup erasure remain later GOV1 closeout slices. |
 | 40 | **SEO2 - Advanced Search and Site Integrity - SEO2A-SEO2B implemented locally** | Google-owned index and sitemap evidence remains distinct from a richer tenant-scoped scan that now preserves redirect history, link relationships, canonical targets, exact-copy fingerprints, and JSON-LD parse evidence. It deterministically finds confirmed broken internal links, broken internal canonical targets, and exact duplicates; orphan findings require a successfully loaded same-site sitemap plus complete uncapped coverage. SERP features, content decay, cannibalization, entity coverage, and later optional Bing evidence remain. |
 | 41 | **I2 - Outcome Learning and Controlled Experiments - I2A-I2E implemented locally** | Verified action measurements and frozen forecast checks now form a minimum-sample learning record. Owners explicitly include or exclude each result, save and review a controlled-test design with mandatory stop and undo rules, run a separately authorized monitoring protocol, and compare a frozen current learning rule with a stricter proposal through deterministic replay. Human review remains separate from activation; live policy changes, publishing, assignments, and automatic execution remain disabled. |
-| 42 | **AIV1 - AI Search Visibility and Entity Intelligence** | A dedicated AI Search Visibility section shows where each business and location is mentioned or cited across supported major AI answer engines, how that changes over time, which competitors appear instead, and what evidence-backed work may improve coverage. |
+| 42 | **AIV1 - AI Search Visibility and Entity Intelligence - AIV1-A foundation implemented locally** | The provider-neutral slice establishes candidate-only engine/provider contracts, deterministic saved questions, dormant run/evidence storage, honest truth states, supplier redaction, a non-executing cost/allowance preview, and a location-scoped beta workspace. AIV1-B later proves the full live supplier and price contract; AIV1-C later enables governed collection and results inside that workspace. |
 | 43 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
 | 44 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
 | 45 | **AUT1 - External Automation Gateway** | Growth and Enterprise customers can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, scoped service accounts, governed workflow templates, and typed actions without granting direct database or unrestricted execution access. |
@@ -3663,6 +3674,30 @@ customer product rather than a documentation-only promise. An owner should be
 able to answer `Where does my business appear in AI search?`, `For which
 questions and locations?`, `Who appears instead?`, and `What should I improve?`
 from one dedicated workspace.
+
+Implementation status (2026-08-14):
+
+- **The AIV1-A foundation is implemented locally.** It covers candidate-only
+  engine and provider-contract registries, deterministic frozen questions,
+  dormant provider-neutral run/evidence storage, supplier redaction, a
+  side-effect-free preview whose cost and allowance checks remain blocked,
+  tenant isolation, tests, and a location-scoped beta workspace that remains
+  honest when no engine is available. Full live execution telemetry,
+  capability/operation matching, observed price matching, and dispatch are
+  explicitly deferred to AIV1-B/AIV1-C.
+- **AIV1-B is later operator-only live evaluation.** It must prove credential
+  entitlement, live schemas, supported surfaces and geographies, data rights,
+  failure behavior, repeat comparability, and observed unit cost. Candidate
+  results are not customer-visible.
+- **AIV1-C is later governed customer collection.** It adds individually
+  approved engines, durable manual/scheduled checks, history, comparisons,
+  reporting, and evidence-backed actions to the existing beta workspace only
+  after AIV1-B, allowance, cost, security, and QA gates pass.
+- During AIV1-A, live credential reads, provider submit/poll, customer runs,
+  engine activation, schedules, reports, production claims, guessed price
+  cards, and credit consumption are explicitly disabled.
+- The controlling integration and economics contract is
+  [AIV1 Provider and Economics Governance](./product_overview/aiv1_provider_economics_governance.md).
 
 Scope:
 

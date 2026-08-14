@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,7 +9,21 @@ from app.db.base import Base
 
 class Campaign(Base):
     __tablename__ = "campaigns"
-    __table_args__ = (Index("ix_campaigns_org_portfolio_setup_state", "organization_id", "portfolio_id", "setup_state"),)
+    __table_args__ = (
+        Index(
+            "ix_campaigns_org_portfolio_setup_state",
+            "organization_id",
+            "portfolio_id",
+            "setup_state",
+        ),
+        UniqueConstraint(
+            "id",
+            "tenant_id",
+            "organization_id",
+            "business_location_id",
+            name="uq_campaigns_ai_search_scoped_identity",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)

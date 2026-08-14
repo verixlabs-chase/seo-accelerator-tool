@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.core.config import get_settings
 from app.api.v1 import (
+    ai_visibility,
     auth,
     automation,
     authority,
@@ -59,6 +60,7 @@ settings = get_settings()
 tenant_api_router.include_router(health.router)
 tenant_api_router.include_router(tenants.router)
 tenant_api_router.include_router(auth.router)
+tenant_api_router.include_router(ai_visibility.router)
 tenant_api_router.include_router(billing.router)
 tenant_api_router.include_router(automation.router)
 tenant_api_router.include_router(campaigns.router)

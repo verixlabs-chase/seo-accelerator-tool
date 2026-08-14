@@ -11,6 +11,7 @@ const productRoutes = [
   "locations",
   "opportunities",
   "organic-value",
+  "ai-visibility",
   "rankings",
   "keyword-research",
   "reports",

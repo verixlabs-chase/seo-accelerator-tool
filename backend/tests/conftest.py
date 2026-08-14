@@ -203,6 +203,11 @@ def _verify_required_tables(database_url: str) -> None:
     try:
         inspector = inspect(verification_engine)
         required_tables = [
+            "ai_search_engine_registry",
+            "ai_search_provider_contract_registry",
+            "ai_search_question_sets",
+            "ai_search_collection_runs",
+            "ai_search_observations",
             "action_plan_occurrences",
             "action_plan_steps",
             "action_plan_measurements",

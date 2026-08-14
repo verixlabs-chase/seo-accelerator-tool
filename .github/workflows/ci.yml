@@ -71,6 +71,7 @@ jobs:
         run: >-
           python -m pytest -q
           tests/integration/test_rls_isolation.py
+          tests/integration/test_ai_visibility_security.py
           tests/integration/test_usage_credit_migration.py
 
   deterministic-replay-gate:

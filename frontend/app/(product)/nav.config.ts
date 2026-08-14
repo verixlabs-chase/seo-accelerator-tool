@@ -11,6 +11,7 @@ const PRODUCT_NAV_ITEMS: NavItem[] = [
   { href: "/settings", label: "Connection health", icon: "connections", section: "more" },
   { href: "/locations", label: "Manage locations", icon: "locations", section: "more" },
   { href: "/organic-value", label: "Search Value", icon: "search-value", section: "more" },
+  { href: "/ai-visibility", label: "AI Search", icon: "ai-search", section: "more", badge: "Beta" },
   { href: "/competitors", label: "Competitors", icon: "competitors", section: "more" },
   { href: "/citations", label: "Directory listings", icon: "listings", section: "more" },
   { href: "/reviews", label: "Customer reviews", icon: "reviews", section: "more" },

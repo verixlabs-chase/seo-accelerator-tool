@@ -37,6 +37,7 @@ const PRODUCT_PAGES = [
   "settings",
   "locations",
   "organic-value",
+  "ai-visibility",
   "competitors",
   "citations",
   "reviews",

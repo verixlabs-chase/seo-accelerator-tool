@@ -11,6 +11,7 @@ export type ProductIconName =
   | "connections"
   | "locations"
   | "search-value"
+  | "ai-search"
   | "competitors"
   | "listings"
   | "reviews"
@@ -117,6 +118,14 @@ function iconPaths(name: ProductIconName): ReactNode {
         <>
           <circle cx="9" cy="10" r="5" {...commonPathProps} />
           <path d="M9 7v6M7.5 8h2.2a1.3 1.3 0 0 1 0 2.6H8.3a1.3 1.3 0 0 0 0 2.6h2.2M14 17h7M18 13l3 4-3 4" {...commonPathProps} />
+        </>
+      );
+    case "ai-search":
+      return (
+        <>
+          <path d="M4 4h16v11H9l-5 4z" {...commonPathProps} />
+          <path d="m14.5 6.5.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z" {...commonPathProps} />
+          <path d="M7.5 8.5h3M7.5 11.5h4.5" {...commonPathProps} />
         </>
       );
     case "competitors":
