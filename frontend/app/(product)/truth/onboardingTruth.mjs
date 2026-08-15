@@ -130,6 +130,10 @@ function getTaskRecoveryGuidance(task) {
       missing: "The first Google position check did not start.",
       recovery: "Retry the unfinished checks. If it fails again, contact support.",
     },
+    baseline: {
+      missing: "The first website scan has not produced enough evidence to freeze the baseline report.",
+      recovery: "Retry the website scan, then retry the baseline analysis. Existing saved work will not be changed.",
+    },
   };
   const failure = failures[taskId] || {
     missing: "This setup step did not finish.",
@@ -145,25 +149,32 @@ function getTaskRecoveryGuidance(task) {
 
 function getStepThreeSummary(tasks, scanDone) {
   const counts = summarizeTaskCounts(tasks);
+  const includesBaseline = tasks.some((task) => task.id === "baseline");
 
-  if (!scanDone) {
-    return {
-      title: "Setup is still in progress",
-      body:
-        counts.runningTasks > 0
-          ? `InsightOS is actively starting ${counts.runningTasks} setup step${counts.runningTasks === 1 ? "" : "s"} right now.`
-          : counts.queuedTasks > 0
-            ? `${counts.queuedTasks} setup step${counts.queuedTasks === 1 ? "" : "s"} are queued to start next.`
-            : "InsightOS is still preparing your first checks.",
-      next: "Stay on this screen until the setup summary below updates.",
-    };
-  }
-
-  if (counts.hasSetupIssues) {
+  if (scanDone && counts.hasSetupIssues) {
     return {
       title: "Setup finished with issues",
       body: `${counts.completedTasks} of ${tasks.length} setup steps finished. ${counts.failedTasks} need${counts.failedTasks === 1 ? "s" : ""} attention before your first results are fully underway.`,
-      next: "Go to the dashboard, review the workflow status, and retry the steps that need attention.",
+      next: includesBaseline
+        ? "Review the marked step and retry it. Your dashboard and existing saved work remain available."
+        : "Go to the dashboard, review the workflow status, and retry the steps that need attention.",
+    };
+  }
+
+  if (!scanDone || counts.runningTasks > 0 || counts.queuedTasks > 0) {
+    return {
+      title: includesBaseline
+        ? "Setup and baseline analysis are still in progress"
+        : "Setup is still in progress",
+      body:
+        counts.runningTasks > 0
+          ? `InsightOS is actively working on ${counts.runningTasks} setup step${counts.runningTasks === 1 ? "" : "s"}, including the mandatory first diagnosis.`
+          : counts.queuedTasks > 0
+            ? `${counts.queuedTasks} setup step${counts.queuedTasks === 1 ? "" : "s"} are queued to start next.`
+            : "InsightOS is still preparing your first checks.",
+      next: includesBaseline
+        ? "You can stay here, or open the dashboard while the first website scan and baseline report finish."
+        : "Stay on this screen until the setup summary below updates.",
     };
   }
 

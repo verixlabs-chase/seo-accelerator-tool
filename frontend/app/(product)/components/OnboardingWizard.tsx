@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { PlatformApiError, platformApi } from "../../platform/api";
 import { getTenantId } from "../../lib/authStorage";
@@ -108,6 +108,18 @@ type SetupTask = {
 
 type BackgroundSetupTaskId = "crawl" | "keyword" | "ranking";
 
+type BaselineStatus = {
+  state: "collecting" | "blocked" | "ready" | "limited" | "ready_to_generate";
+  completion_satisfied: boolean;
+  message: string;
+  baseline?: {
+    report_id: string;
+    status: "ready" | "limited";
+    scores: { overall?: number | null };
+    diagnosis: { headline?: string; summary?: string };
+  } | null;
+};
+
 const DEFAULT_SETUP_TASKS: SetupTask[] = [
   {
     id: "location",
@@ -143,6 +155,12 @@ const DEFAULT_SETUP_TASKS: SetupTask[] = [
     id: "ranking",
     title: "Run your first ranking check",
     description: "Queue the first ranking snapshot for your business area.",
+    status: "pending",
+  },
+  {
+    id: "baseline",
+    title: "Create your baseline analysis and first diagnosis",
+    description: "Freeze the first website, organic visibility, traffic, and performance evidence into a detailed report with scores and prioritized fixes.",
     status: "pending",
   },
 ];
@@ -234,6 +252,8 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
   const [scanStarted, setScanStarted] = useState(false);
   const [scanDone, setScanDone] = useState(false);
   const [setupTasks, setSetupTasks] = useState<SetupTask[]>(DEFAULT_SETUP_TASKS);
+  const [baselineStatus, setBaselineStatus] = useState<BaselineStatus | null>(null);
+  const baselineRequestActive = useRef(false);
 
   useEffect(() => {
     if (!organizationId) return;
@@ -305,6 +325,36 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
       current.map((task) => (task.id === taskId ? { ...task, status } : task)),
     );
   }, []);
+
+  const refreshBaseline = useCallback(async () => {
+    if (!campaignId || baselineRequestActive.current) return;
+    baselineRequestActive.current = true;
+    updateTask("baseline", "running");
+    try {
+      const result = (await platformApi(
+        `/onboarding/baseline/${encodeURIComponent(campaignId)}`,
+        { method: "POST" },
+      )) as BaselineStatus;
+      setBaselineStatus(result);
+      if (result.completion_satisfied && result.baseline) {
+        updateTask("baseline", "done");
+      } else if (result.state === "blocked") {
+        updateTask("baseline", "error");
+      } else {
+        updateTask("baseline", "running");
+      }
+    } catch (err) {
+      setBaselineStatus({
+        state: "blocked",
+        completion_satisfied: false,
+        message: err instanceof Error ? err.message : "The baseline analysis could not be checked.",
+        baseline: null,
+      });
+      updateTask("baseline", "error");
+    } finally {
+      baselineRequestActive.current = false;
+    }
+  }, [campaignId, updateTask]);
 
   const loadLocationContext = useCallback(async () => {
     if (!organizationId) return;
@@ -607,8 +657,9 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
       }
       setScanDone(true);
       setBusy(false);
+      void refreshBaseline();
     },
-    [campaignDomain, campaignId, primaryService, rankingArea, updateTask],
+    [campaignDomain, campaignId, primaryService, rankingArea, refreshBaseline, updateTask],
   );
 
   // Step 3: fire scans on mount
@@ -617,6 +668,43 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
     setScanStarted(true);
     void runFirstChecks(["crawl", "keyword", "ranking"]);
   }, [step, scanStarted, runFirstChecks]);
+
+  const baselineTaskStatus =
+    setupTasks.find((task) => task.id === "baseline")?.status || "pending";
+  const baselineComplete = baselineTaskStatus === "done";
+
+  useEffect(() => {
+    if (
+      step === 3 &&
+      scanDone &&
+      campaignId &&
+      !baselineComplete &&
+      baselineStatus === null
+    ) {
+      void refreshBaseline();
+    }
+  }, [baselineComplete, baselineStatus, campaignId, refreshBaseline, scanDone, step]);
+
+  useEffect(() => {
+    if (
+      step !== 3 ||
+      !scanDone ||
+      !campaignId ||
+      baselineComplete ||
+      baselineTaskStatus === "error"
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => void refreshBaseline(), 6000);
+    return () => window.clearInterval(timer);
+  }, [
+    baselineComplete,
+    baselineTaskStatus,
+    campaignId,
+    refreshBaseline,
+    scanDone,
+    step,
+  ]);
 
   const retryableTaskIds = setupTasks
     .filter(
@@ -627,6 +715,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
     .map((task) => task.id);
 
   function finishSetup(destination: "dashboard" | "connections") {
+    if (!baselineComplete) return;
     void trackProductEvent({
       eventName: "onboarding.completed",
       campaignId,
@@ -646,11 +735,19 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
       campaignDomain,
       notice: hasSetupIssues
         ? "Business setup finished, but one or more first checks need attention on the dashboard."
-        : "Business setup finished. Your first checks were queued successfully and results are now filling in.",
+        : "Business setup finished. Your immutable baseline report and first diagnosis are ready.",
     });
     if (destination === "connections") {
       router.push(`/settings?setup=connections&campaign_id=${encodeURIComponent(campaignId)}`);
     }
+  }
+
+  function leaveWhileBaselineRuns() {
+    onComplete({
+      campaignId,
+      campaignDomain,
+      notice: "Your dashboard is available while the mandatory baseline finishes. Setup will reopen until the first diagnosis is ready.",
+    });
   }
 
   return (
@@ -664,7 +761,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
             Set up your business
           </h2>
           <p className="mt-2.5 text-sm leading-6 text-zinc-300">
-            We&apos;ll save your business, queue the first checks, and show you exactly what finished, what is still running, and what needs attention.
+            We&apos;ll save your business, run the first checks, and create a mandatory baseline report with your starting issues, organic metrics, score explanations, diagnosis, and prioritized fixes.
           </p>
           <p className="mt-2 text-xs leading-5 text-zinc-500">
             Your non-sensitive setup progress is saved on this device for 30 days, so you can leave this page and continue later.
@@ -923,24 +1020,51 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
               <p className="mt-3 text-sm font-medium text-zinc-100">Next: {stepThreeSummary.next}</p>
             </div>
 
-            {!scanDone ? (
+            {!scanDone || !baselineComplete ? (
               <>
-                <div className="flex justify-center">
-                  <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#26272c] border-t-accent-500" />
-                </div>
+                {baselineTaskStatus !== "error" ? (
+                  <div className="flex justify-center">
+                    <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#26272c] border-t-accent-500" />
+                  </div>
+                ) : null}
                 <div className="text-center">
                   <p className="text-sm font-medium text-white">
-                    {hasStartedBackgroundChecks
+                    {baselineTaskStatus === "error"
+                      ? "The baseline needs attention before setup can be completed."
+                      : scanDone
+                        ? "Building your baseline analysis and first diagnosis..."
+                        : hasStartedBackgroundChecks
                       ? "Your first checks are being started now..."
                       : "Preparing your first checks..."}
                   </p>
                   <p className="mt-1.5 text-sm leading-6 text-zinc-400">
-                    This usually takes about 1 to 2 minutes to queue. Setup completes when the requests above finish, but the actual results may keep filling in after you reach the dashboard.
+                    {baselineStatus?.message || "The report freezes the first website scan and every trustworthy organic metric available at the cutoff. Missing optional connections are labeled—not scored as zero."}
                   </p>
                 </div>
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
-                  Next: stay here until setup finishes, then open the dashboard to see whether each first check is complete, still running, or needs attention.
+                  <p className="font-medium text-white">Why this is required</p>
+                  <p className="mt-2">
+                    This immutable starting point makes every later ranking, traffic, website, and conversion change comparable to what existed before InsightOS recommended any work.
+                  </p>
                 </div>
+                {baselineTaskStatus === "error" ? (
+                  <button
+                    type="button"
+                    onClick={() => void refreshBaseline()}
+                    className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-100"
+                  >
+                    Retry baseline analysis
+                  </button>
+                ) : null}
+                {scanDone ? (
+                  <button
+                    type="button"
+                    onClick={leaveWhileBaselineRuns}
+                    className="rounded-md border border-[#303137] bg-[#141518] px-4 py-2 text-sm font-medium text-zinc-200"
+                  >
+                    Open dashboard while baseline finishes
+                  </button>
+                ) : null}
               </>
             ) : (
               <>
@@ -969,7 +1093,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
                 <p className="text-center text-sm leading-6 text-zinc-400">
                   {hasSetupIssues
                     ? "Your business was created, but one or more first checks did not finish cleanly. The dashboard will show exactly what needs attention and what to retry."
-                    : "Your business, services, and service areas were saved, and your first checks were queued. The dashboard will show progress as scan and ranking data arrive."}
+                    : `${baselineStatus?.baseline?.diagnosis?.summary || "Your business, services, and first evidence are saved."} Your detailed baseline report is available in Reports.`}
                 </p>
                 {hasSetupIssues && retryableTaskIds.length > 0 && (
                   <button
@@ -986,7 +1110,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
                   <p className="mt-2">
                     {hasSetupIssues
                       ? "Go to the dashboard now. Start with the workflow status cards, then retry any step marked as needing attention."
-                      : "Go to the dashboard now. Your confirmed services and areas will keep Find Searches focused, and any ideas found on your website will wait for your approval."}
+                      : "Open Reports to review the frozen issues, metrics, score explanations, and prioritized fixes. Later reports can compare against this exact starting point."}
                   </p>
                 </div>
                 {hasSetupIssues && (
@@ -998,6 +1122,15 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
                   </div>
                 )}
                 <div className="flex flex-wrap gap-3">
+                  {!hasSetupIssues && baselineStatus?.baseline?.report_id ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push("/reports")}
+                      className="rounded-md border border-[#303137] bg-[#141518] px-4 py-2 text-sm font-medium text-zinc-200"
+                    >
+                      Review baseline report
+                    </button>
+                  ) : null}
                   {!hasSetupIssues ? (
                     <button
                       type="button"

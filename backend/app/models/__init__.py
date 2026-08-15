@@ -124,6 +124,7 @@ from app.models.local_rank_grid import (
 )
 from app.models.onboarding_state import OnboardingState
 from app.models.onboarding_session import OnboardingSession
+from app.models.onboarding_baseline import OnboardingBaseline
 from app.models.outcome_learning import OutcomeLearningReview
 from app.models.runtime_version_lock import RuntimeVersionLock
 from app.models.location import Location
@@ -252,6 +253,7 @@ __all__ = [
     "CampaignDailyMetric",
     "CommercialFeatureActivation",
     "AnalyticsDailyMetric",
+    "OnboardingBaseline",
     "AuditLog",
     "AuthorityGapResearchRun",
     "AuthorityInventoryLink",

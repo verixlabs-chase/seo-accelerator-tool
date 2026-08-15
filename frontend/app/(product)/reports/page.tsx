@@ -271,6 +271,10 @@ type ReportSnapshot = {
     freshness_state?: string;
     latest_metric_at?: string | null;
   };
+  baseline?: {
+    immutable?: boolean;
+    analysis_version?: string;
+  };
   rank_snapshots?: number;
   technical_issues?: number;
   intelligence_score?: number | null;
@@ -347,6 +351,17 @@ function parseSummary(summaryJson?: string) {
   }
 }
 
+function isBaselineReport(report?: ReportItem | null) {
+  return Boolean(report && parseSummary(report.summary_json)?.baseline?.immutable);
+}
+
+function reportName(report?: ReportItem | null) {
+  if (!report) return "Report";
+  return isBaselineReport(report)
+    ? "Onboarding baseline"
+    : `Month ${report.month_number}`;
+}
+
 function getWorkflowToneClass(tone: string) {
   if (tone === "success") {
     return "border-emerald-500/20 bg-emerald-500/10 text-emerald-100";
@@ -376,6 +391,9 @@ function statusTone(status?: string) {
 }
 
 function reportPurpose(report: ReportItem) {
+  if (isBaselineReport(report)) {
+    return "This immutable first report preserves the starting issues, metrics, score explanations, diagnosis, and prioritized fixes for later comparison.";
+  }
   if (report.report_status === "delivered") {
     return "This report has already been sent and can be used as your latest client-facing summary.";
   }
@@ -1156,7 +1174,7 @@ export default function ReportsPage() {
           );
           const fileUrl = URL.createObjectURL(file.blob);
           const extension = artifact.artifact_type === "pdf" ? "pdf" : "html";
-          const filename = `insightos-report-month-${coerceNumber(selectedReportDetail?.report.month_number, 1)}.${extension}`;
+          const filename = `${isBaselineReport(selectedReportDetail?.report) ? "insightos-onboarding-baseline" : `insightos-report-month-${coerceNumber(selectedReportDetail?.report.month_number, 1)}`}.${extension}`;
 
           if (opensInBrowser) {
             if (reportWindow) {
@@ -1346,7 +1364,7 @@ export default function ReportsPage() {
     if (isFailedStatus(latestReport.report_status)) {
       return {
         title: "Your latest report needs attention",
-        body: `Month ${latestReport.month_number} is currently ${toTitleCase(latestReport.report_status)} and should not be treated as ready to send.`,
+        body: `${reportName(latestReport)} is currently ${toTitleCase(latestReport.report_status)} and should not be treated as ready to send.`,
         next: "Regenerate the report after confirming the latest checks are complete.",
       };
     }
@@ -1354,7 +1372,7 @@ export default function ReportsPage() {
     if (isPendingStatus(latestReport.report_status)) {
       return {
         title: "Your latest report is still processing",
-        body: `Month ${latestReport.month_number} exists, but it is still ${toTitleCase(latestReport.report_status)}.`,
+        body: `${reportName(latestReport)} exists, but it is still ${toTitleCase(latestReport.report_status)}.`,
         next: "Wait for generation to finish, then review the preview before sending it.",
       };
     }
@@ -1365,8 +1383,8 @@ export default function ReportsPage() {
           ? "Your latest report is ready for an early review"
           : "Your latest report is ready to review",
         body: hasTruthState(selectedReportDetail?.truth || reportsTruth, "minimal_artifact")
-          ? `Month ${latestReport.month_number} was created ${formatRelativeTime(latestReport.generated_at)}, but long-term file storage is not ready yet.`
-          : `Month ${latestReport.month_number} was generated ${formatRelativeTime(latestReport.generated_at)}.`,
+          ? `${reportName(latestReport)} was created ${formatRelativeTime(latestReport.generated_at)}, but long-term file storage is not ready yet.`
+          : `${reportName(latestReport)} was generated ${formatRelativeTime(latestReport.generated_at)}.`,
         next: hasTruthState(selectedReportDetail?.truth || reportsTruth, "minimal_artifact")
           ? "Review the report first. Download a copy before sharing it, and do not treat it as sent until delivery is confirmed."
           : "Review the preview, confirm the recipient, and send the report while the update is still fresh.",
@@ -1376,14 +1394,14 @@ export default function ReportsPage() {
     if (latestReport.report_status === "delivered" && hasTruthState(selectedReportDetail?.truth || reportsTruth, "delivery_unverified")) {
       return {
         title: "Your latest report is marked delivered, not externally verified",
-        body: `Month ${latestReport.month_number} is marked sent, but receipt in the other person's inbox has not been confirmed.`,
+        body: `${reportName(latestReport)} is marked sent, but receipt in the other person's inbox has not been confirmed.`,
         next: "Use the delivery history and external confirmation before treating this as a completed client send.",
       };
     }
 
     return {
       title: "Your latest report has been completed",
-      body: `Month ${latestReport.month_number} is marked ${toTitleCase(latestReport.report_status)}.`,
+      body: `${reportName(latestReport)} is marked ${toTitleCase(latestReport.report_status)}.`,
       next: latestReport.report_status === "delivered"
         ? "Generate the next report when you want to package a new round of ranking and website updates."
         : "Review the delivery history below before deciding whether to resend or generate a new report.",
@@ -1817,7 +1835,7 @@ export default function ReportsPage() {
               />
               <KpiCard
                 label="Latest report"
-                value={latestReport ? `M${latestReport.month_number}` : "None"}
+                value={latestReport ? (isBaselineReport(latestReport) ? "Baseline" : `M${latestReport.month_number}`) : "None"}
                 changeLabel={latestReport ? toTitleCase(latestReport.report_status) : undefined}
                 summary={
                   latestReport
@@ -1976,7 +1994,7 @@ export default function ReportsPage() {
                         "Latest business update",
                       )
                     : selectedReportDetail?.report
-                    ? `Month ${selectedReportDetail.report.month_number} report`
+                    ? `${reportName(selectedReportDetail.report)} report`
                     : "Report preview"
                 }
                 audienceLabel={
@@ -2043,7 +2061,7 @@ export default function ReportsPage() {
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <p className="text-base font-semibold text-white">
-                              Month {report.month_number} report
+                              {reportName(report)} report
                             </p>
                             <p className="mt-1 text-sm leading-6 text-zinc-300">
                               {reportPurpose(report)}

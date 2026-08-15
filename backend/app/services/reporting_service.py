@@ -255,6 +255,57 @@ def _report_delivery_readiness(artifacts: list[ReportArtifact]) -> dict:
     }
 
 
+def create_report_from_snapshot(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    month_number: int,
+    snapshot: dict,
+    event_type: str = "report.generated",
+) -> MonthlyReport:
+    """Create a frozen report and its artifacts inside the caller's transaction."""
+    report = MonthlyReport(
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        month_number=month_number,
+        report_status="generated",
+        summary_json=json.dumps(snapshot, sort_keys=True),
+    )
+    db.add(report)
+    db.flush()
+    stored_artifacts = _store_snapshot_artifacts(
+        tenant_id=tenant_id,
+        report_id=report.id,
+        snapshot=snapshot,
+    )
+    for artifact_type, stored in stored_artifacts.items():
+        artifact = ReportArtifact(
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+            report_id=report.id,
+            artifact_type=artifact_type,
+            storage_path=stored.storage_path,
+        )
+        _apply_stored_artifact(artifact, stored)
+        db.add(artifact)
+    db.flush()
+    emit_event(
+        db,
+        tenant_id=tenant_id,
+        event_type=event_type,
+        payload={
+            "campaign_id": campaign_id,
+            "report_id": report.id,
+            "month_number": month_number,
+            "snapshot_hash": snapshot["snapshot_hash"],
+            "snapshot_version": snapshot["schema_version"],
+        },
+    )
+    db.flush()
+    return report
+
+
 def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number: int, organization_id: str | None = None) -> MonthlyReport:
     campaign = _campaign_or_404(db, tenant_id, campaign_id, organization_id)
     stage = "build_snapshot"
@@ -265,49 +316,14 @@ def generate_report(db: Session, tenant_id: str, campaign_id: str, month_number:
             campaign=campaign,
             month_number=month_number,
         )
-        stage = "create_report_record"
-        report = MonthlyReport(
+        stage = "create_report_and_artifacts"
+        report = create_report_from_snapshot(
+            db,
             tenant_id=tenant_id,
             campaign_id=campaign_id,
             month_number=month_number,
-            report_status="generated",
-            summary_json=json.dumps(snapshot, sort_keys=True),
-        )
-        db.add(report)
-        db.flush()
-        storage = report_artifact_storage_service.get_report_artifact_storage()
-        stage = f"store_artifacts_{storage.storage_mode}"
-        stored_artifacts = _store_snapshot_artifacts(
-            tenant_id=tenant_id,
-            report_id=report.id,
             snapshot=snapshot,
         )
-        stage = "create_artifact_records"
-        for artifact_type, stored in stored_artifacts.items():
-            artifact = ReportArtifact(
-                tenant_id=tenant_id,
-                campaign_id=campaign_id,
-                report_id=report.id,
-                artifact_type=artifact_type,
-                storage_path=stored.storage_path,
-            )
-            _apply_stored_artifact(artifact, stored)
-            db.add(artifact)
-        db.flush()
-        stage = "emit_report_event"
-        emit_event(
-            db,
-            tenant_id=tenant_id,
-            event_type="report.generated",
-            payload={
-                "campaign_id": campaign_id,
-                "report_id": report.id,
-                "month_number": month_number,
-                "snapshot_hash": snapshot["snapshot_hash"],
-                "snapshot_version": snapshot["schema_version"],
-            },
-        )
-        db.flush()
         stage = "commit_report"
         db.commit()
         db.refresh(report)

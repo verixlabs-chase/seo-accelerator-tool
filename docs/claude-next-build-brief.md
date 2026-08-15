@@ -2535,6 +2535,34 @@ performance, followed by a clear diagnosis, explainable scoring, and a
 prioritized fix plan. The baseline becomes the comparison anchor for future
 reports and measured outcomes; it is not a disposable setup summary.
 
+Implementation status (2026-08-15):
+
+- CX1.1A is implemented locally. Guided setup now includes a mandatory baseline
+  task and cannot emit `onboarding.completed` until the first immutable
+  Ready/Limited baseline exists. Basic dashboard access remains available while
+  the required website scan is collecting or blocked, and saved setup progress
+  reopens the workflow until the baseline is complete.
+- Migration 0157 adds one append-only, tenant/organization/location/campaign-
+  scoped first baseline with RLS, database immutability, a 28-day evidence
+  cutoff, exact source states, deterministic evidence and score snapshots,
+  diagnosis/fix snapshots, and a linked frozen report/artifact hash. Repeated
+  requests reuse the same baseline and report.
+- The first report now includes the completed website crawl and grouped issues,
+  Core Web Vitals/lab evidence when measured, Search Console facts, tracked
+  positions, sessions, engagement, conversions, top landing pages, traffic
+  sources, and privacy-safe form-outcome counts when those sources exist.
+  Optional missing sources are labeled and excluded from scores rather than
+  converted to zero.
+- The local scorecard is deterministic and explainable. Each fix includes its
+  saved evidence, baseline metric when available, observation window, steps,
+  and verification method. The same snapshot creates the authenticated
+  HTML/PDF report, and the Reports page labels it as the onboarding baseline
+  instead of displaying `Month 0`.
+- Governed AI narrative enrichment remains the next CX1.1B slice. CX1.1A stores
+  the bounded evidence and allowed-fix contract it must consume and always
+  delivers a deterministic diagnosis when AI is unavailable; it does not yet
+  dispatch a baseline-specific model request or claim AI-written prose.
+
 Execution order and dependencies:
 
 - Schedule CX1.1 after G1.7 so the baseline can include website visits,
