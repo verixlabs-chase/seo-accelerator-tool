@@ -35,6 +35,7 @@ jobs:
 
   postgres-security:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -69,7 +70,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
       - name: Validate PostgreSQL tenant isolation
         run: >-
-          python -m pytest -q
+          python -m pytest -vv --tb=short --maxfail=1
           tests/integration/test_rls_isolation.py
           tests/integration/test_ai_visibility_security.py
           tests/integration/test_usage_credit_migration.py

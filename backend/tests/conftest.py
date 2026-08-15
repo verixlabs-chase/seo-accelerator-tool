@@ -340,6 +340,27 @@ def _reset_external_test_database(engine) -> None:
     joined_tables = ", ".join(f'"{table_name}"' for table_name in tables)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE TABLE {joined_tables} RESTART IDENTITY CASCADE"))
+        # TRUNCATE removes global registry rows as well as tenant fixtures. Keep
+        # the commercial activation singleton at its migration default so the
+        # per-test fixture can explicitly select observe or enforced behavior.
+        if "commercial_feature_activations" in tables:
+            now = datetime.now(UTC)
+            conn.execute(
+                text(
+                    "INSERT INTO commercial_feature_activations "
+                    "(code, state, catalog_version, created_at, updated_at) "
+                    "VALUES (:code, :state, :catalog_version, :created_at, :updated_at)"
+                ),
+                {
+                    "code": "active_location_allowance",
+                    "state": "observe",
+                    "catalog_version": "commercial-tiers-2026-08-v2",
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def apply_migrations() -> Generator[dict[str, object], None, None]:
     print("apply_migrations: start", flush=True)

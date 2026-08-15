@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import set_session_security_context
 from app.models.business_location import BusinessLocation
 from app.models.commercial_feature_activation import CommercialFeatureActivation
-from app.models.cost_economics import CostLedgerEntry
+from app.models.cost_economics import CostLedgerEntry, ProviderPriceCard
 from app.models.local_rank_grid import LocalRankGridPoint
 from app.models.organization import Organization
 from app.models.platform_job import PlatformJob
@@ -75,6 +75,33 @@ def _run_revision(connection, callback) -> None:
     context = MigrationContext.configure(connection)
     with Operations.context(context):
         callback()
+
+
+def _seed_price_card(
+    db_session: Session,
+    *,
+    capability: str,
+    operation: str,
+    version: str,
+    unit: str,
+    unit_cost: str,
+) -> None:
+    """Restore one migration-owned global contract after the PG test reset."""
+    db_session.add(
+        ProviderPriceCard(
+            provider_name="dataforseo",
+            capability=capability,
+            operation=operation,
+            model_name="",
+            version=version,
+            unit=unit,
+            unit_cost=Decimal(unit_cost),
+            currency="USD",
+            effective_from=datetime(2026, 7, 1, tzinfo=UTC),
+            active=True,
+        )
+    )
+    db_session.flush()
 
 
 def test_postgres_final_active_location_slot_has_one_winner(
@@ -390,6 +417,17 @@ def test_same_reservation_has_one_authorized_dispatch_winner(
 ) -> None:
     organization = db_session.query(Organization).order_by(Organization.id).first()
     assert organization is not None
+    # The PostgreSQL isolation fixture truncates tenant and global rows between
+    # tests. Seed the exact price contract this reservation concurrency test owns
+    # instead of depending on migration data left behind by another test.
+    _seed_price_card(
+        db_session,
+        capability="rank_tracking",
+        operation="google_organic_live_advanced",
+        version="pg-one-dispatch-winner-v1",
+        unit="serp_page",
+        unit_cost="0.002",
+    )
     reservation = reserve_provider_cost(
         db_session,
         organization_id=organization.id,
@@ -470,6 +508,14 @@ def test_same_listing_run_has_one_provider_dispatch(
     db_session,
     monkeypatch,
 ) -> None:
+    _seed_price_card(
+        db_session,
+        capability="directory_listing_discovery",
+        operation="business_listings_live_limit_20",
+        version="pg-listing-dispatch-v1",
+        unit="search",
+        unit_cost="0.0192",
+    )
     user, campaign, _location = _listing_location_campaign(db_session)
     monkeypatch.setattr(listing_discovery_service, "_credential_owner", lambda *_args: "platform")
     monkeypatch.setattr(
@@ -568,6 +614,14 @@ def test_same_grid_run_submits_each_point_once(
     db_session,
     monkeypatch,
 ) -> None:
+    _seed_price_card(
+        db_session,
+        capability="local_rank_grid",
+        operation="google_maps_standard",
+        version="pg-grid-dispatch-v1",
+        unit="serp_page",
+        unit_cost="0.0006",
+    )
     organization = db_session.query(Organization).order_by(Organization.id).first()
     assert organization is not None
     campaign, _location, keywords = _grid_location_campaign(
@@ -676,6 +730,14 @@ def test_expired_listing_claim_closes_ambiguously_without_second_provider_call(
     db_session,
     monkeypatch,
 ) -> None:
+    _seed_price_card(
+        db_session,
+        capability="directory_listing_discovery",
+        operation="business_listings_live_limit_20",
+        version="pg-expired-listing-v1",
+        unit="search",
+        unit_cost="0.0192",
+    )
     user, campaign, _location = _listing_location_campaign(db_session)
     monkeypatch.setattr(listing_discovery_service, "_credential_owner", lambda *_args: "platform")
     calls: list[str] = []
@@ -747,6 +809,14 @@ def test_expired_grid_claim_preserves_pending_and_never_resubmits_queued_points(
     db_session,
     monkeypatch,
 ) -> None:
+    _seed_price_card(
+        db_session,
+        capability="local_rank_grid",
+        operation="google_maps_standard",
+        version="pg-expired-grid-v1",
+        unit="serp_page",
+        unit_cost="0.0006",
+    )
     organization = db_session.query(Organization).order_by(Organization.id).first()
     assert organization is not None
     campaign, _location, keywords = _grid_location_campaign(
