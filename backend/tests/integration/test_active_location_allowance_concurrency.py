@@ -58,12 +58,29 @@ _MIGRATION_PATH = (
     / "versions"
     / "20260814_0155_commercial_active_location_allowance.py"
 )
+_ACTIVATION_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "alembic"
+    / "versions"
+    / "20260815_0156_enforce_active_location_allowance.py"
+)
 
 
 def _load_allowance_migration():
     spec = importlib.util.spec_from_file_location(
         "commercial_active_location_allowance_pg_0155",
         _MIGRATION_PATH,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_activation_migration():
+    spec = importlib.util.spec_from_file_location(
+        "enforce_active_location_allowance_pg_0156",
+        _ACTIVATION_MIGRATION_PATH,
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -343,6 +360,7 @@ def test_locked_allowance_refreshes_stale_plan_and_lifecycle_identity(
 def test_activation_flip_waits_for_inflight_app_role_allowance_decision(
     db_session,
 ) -> None:
+    migration = _load_activation_migration()
     user = db_session.query(User).filter(User.email == "a@example.com").one()
     organization_id = str(user.tenant_id)
     activation = db_session.get(
@@ -370,23 +388,13 @@ def test_activation_flip_waits_for_inflight_app_role_allowance_decision(
     errors: list[BaseException] = []
 
     def activate() -> None:
-        owner = Session(bind=db_session.get_bind(), autocommit=False, autoflush=False)
         try:
             update_started.set()
-            owner.execute(
-                text(
-                    "UPDATE commercial_feature_activations "
-                    "SET state = 'enforced', updated_at = :updated_at "
-                    "WHERE code = 'active_location_allowance'"
-                ),
-                {"updated_at": datetime.now(UTC)},
-            )
-            owner.commit()
+            with db_session.get_bind().begin() as connection:
+                _run_revision(connection, migration.upgrade)
         except BaseException as exc:  # pragma: no cover - asserted by parent thread
-            owner.rollback()
             errors.append(exc)
         finally:
-            owner.close()
             update_done.set()
 
     worker = threading.Thread(target=activate, daemon=True)

@@ -100,6 +100,11 @@
 > provider and cost evaluation; AIV1-C will be the later governed customer
 > collection release. See
 > [AIV1 Provider and Economics Governance](./product_overview/aiv1_provider_economics_governance.md).
+> **COM1.3A active-location allowance enforcement is implemented locally.**
+> The `0155` rolling-deploy bridge and `0156` controlled activation preserve
+> saved work while enforcing Solo/Growth/Enterprise active-location limits of
+> 1/10/20 after deployment; rollback returns the system to observation without
+> deleting customer data.
 > The remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7 and DT1,
@@ -4071,10 +4076,11 @@ Implementation status (August 14, 2026):
 
 #### COM1.3A - Active-Location Allowance and Downgrade Safety
 
-Implementation status (August 14, 2026):
+Implementation status (August 15, 2026):
 
-- COM1.3A is the `0155` expand/observe bridge, not the live allowance
-  activation. It seeds immutable v2 Solo, Growth, Enterprise, and internal
+- COM1.3A includes the `0155` expand/observe bridge and the controlled `0156`
+  enforcement migration. The bridge seeds immutable v2 Solo, Growth,
+  Enterprise, and internal
   catalog profiles, but leaves them unreferenced and retains every existing
   v1-compatible organization profile pointer so the previous runtime remains
   safe during a rolling deploy. It materializes and reports canonical
@@ -4086,7 +4092,10 @@ Implementation status (August 14, 2026):
   does not deny creation, reactivation, imports, or paid work solely because an
   organization is over its location count. Location/campaign mapping,
   corrupted-profile, corrupted-entitlement, cost, and provider-safety checks
-  remain active and fail closed.
+  remain active and fail closed. Migration `0156` locks organization and
+  entitlement truth in the same order as runtime authorization, validates every
+  saved 1/10/20 allowance and integrity hash, drains in-flight decisions, and
+  then changes only this activation record to `enforced`.
 - One active `BusinessLocation` is the sole unit of location capacity.
   Campaigns, portfolios, execution records, websites, groups, and addresses do
   not consume extra slots. Archiving or suspending a location releases its
@@ -4123,12 +4132,12 @@ Implementation status (August 14, 2026):
   keyword, crawl, AI, grid, storage, export, and user entitlements remain in the
   next COM1 materialization slice and must converge on the same versioned,
   server-authoritative resolver before full commercial release.
-- A separate, controlled `0156` activation is required after the bridge runtime
-  is fully deployed and verified. That release will flip the durable state to
-  `enforced`; it must include activation-boundary and rollback evidence. Until
-  then, the roadmap makes no claim that live 1/10/20 location limits are
-  enforced, and v2 organization-pointer cutover remains a later contract
-  migration.
+- The controlled `0156` activation is implemented locally after the bridge
+  runtime and PostgreSQL concurrency gate passed. Its downgrade changes only
+  `enforced` back to `observe`; it does not delete locations, entitlements,
+  ledgers, or catalog rows. Production remains in its previously deployed state
+  until this migration is reviewed and deployed. V2 organization-pointer
+  cutover remains a later contract migration.
 
 Packaging principle:
 
