@@ -41,7 +41,25 @@ async function authenticatedRequest(path, options = {}) {
 async function throwApiError(response) {
   const json = await response.json().catch(() => ({}));
   const detail = getApiErrorDetail(json, response.status);
-  throw new Error(detail);
+  throw new PlatformApiError(detail, response.status, json);
+}
+
+function apiErrorDetails(json) {
+  return (
+    json?.errors?.[0]?.details ||
+    (typeof json?.detail === "object" ? json.detail : {}) ||
+    {}
+  );
+}
+
+export class PlatformApiError extends Error {
+  constructor(message, status, json = {}) {
+    super(message);
+    this.name = "PlatformApiError";
+    this.status = status;
+    this.details = apiErrorDetails(json);
+    this.reasonCode = this.details?.reason_code || null;
+  }
 }
 
 export async function platformApi(path, options = {}) {
@@ -50,7 +68,7 @@ export async function platformApi(path, options = {}) {
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = getApiErrorDetail(json, response.status);
-    throw new Error(detail);
+    throw new PlatformApiError(detail, response.status, json);
   }
   return json.data;
 }

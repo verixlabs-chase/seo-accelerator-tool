@@ -304,7 +304,13 @@ def _local_rank_grid_dispatch_handler(
     run_id = str(job.payload.get("run_id") or job.entity_id or "").strip()
     if not tenant_id or not run_id:
         raise ValueError("Area search job is missing its location or run.")
-    return local_rank_grid_service.dispatch_run(db, run_id=run_id, tenant_id=tenant_id)
+    return local_rank_grid_service.dispatch_run(
+        db,
+        run_id=run_id,
+        tenant_id=tenant_id,
+        job_id=job.id,
+        expected_worker_id=str(job.locked_by or "").strip() or None,
+    )
 
 
 def _directory_listing_discovery_handler(
@@ -315,7 +321,13 @@ def _directory_listing_discovery_handler(
     run_id = str(job.payload.get("run_id") or job.entity_id or "").strip()
     if not tenant_id or not run_id:
         raise ValueError("Public listing check is missing its location or run.")
-    return listing_discovery_service.dispatch_run(db, run_id=run_id, tenant_id=tenant_id)
+    return listing_discovery_service.dispatch_run(
+        db,
+        run_id=run_id,
+        tenant_id=tenant_id,
+        job_id=job.id,
+        expected_worker_id=str(job.locked_by or "").strip() or None,
+    )
 
 
 def _owned_review_sync_handler(
@@ -1402,6 +1414,8 @@ def run_directory_listing_discovery_now(
             PlatformJob.entity_type == "directory_listing_discovery_run",
             PlatformJob.entity_id == run_id,
         )
+        .populate_existing()
+        .with_for_update()
         .first()
     )
     if job is None:
@@ -1454,6 +1468,8 @@ def run_local_rank_grid_dispatch_now(
             PlatformJob.entity_type == "local_rank_grid_run",
             PlatformJob.entity_id == run_id,
         )
+        .populate_existing()
+        .with_for_update()
         .first()
     )
     if job is None:
@@ -1627,11 +1643,17 @@ def execute_claimed_job(
 ) -> dict[str, Any]:
     settings = get_settings()
     handler_map = handlers or DEFAULT_HANDLERS
-    job = db.get(PlatformJob, job_id)
+    job = (
+        db.query(PlatformJob)
+        .filter(PlatformJob.id == job_id)
+        .populate_existing()
+        .one_or_none()
+    )
     if job is None:
         return {"job_id": job_id, "status": "missing"}
     if job.status != job_service.JOB_STATUS_RUNNING:
         return {"job_id": job_id, "status": "not_running"}
+    expected_worker_id = str(job.locked_by or "").strip() or None
 
     handler = handler_map.get(job.job_type)
     if handler is None:
@@ -1644,11 +1666,26 @@ def execute_claimed_job(
     payload = dict(job.payload or {})
     try:
         result = _json_safe(handler(db, job))
-        job_service.complete_job(db, job.id, result=result)
+        completed = job_service.complete_job(
+            db,
+            job.id,
+            result=result,
+            expected_worker_id=expected_worker_id,
+        )
+        if completed is None:
+            db.rollback()
+            return {"job_id": job_id, "status": "claim_lost"}
         db.commit()
         return {"job_id": job.id, "status": job_service.JOB_STATUS_COMPLETED}
     except Exception as exc:
         db.rollback()
+        if expected_worker_id is not None and not job_service.claimed_job_is_current(
+            db,
+            job_id=job_id,
+            expected_worker_id=expected_worker_id,
+        ):
+            db.rollback()
+            return {"job_id": job_id, "status": "claim_lost"}
         try:
             _record_handler_failure(
                 db,
@@ -1665,7 +1702,11 @@ def execute_claimed_job(
             job_id,
             error=str(exc),
             retry_base_seconds=settings.durable_job_retry_base_seconds,
+            expected_worker_id=expected_worker_id,
         )
+        if failed is None:
+            db.rollback()
+            return {"job_id": job_id, "status": "claim_lost"}
         db.commit()
         return {
             "job_id": job_id,

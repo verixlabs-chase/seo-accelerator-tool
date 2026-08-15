@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.intelligence.contracts.governed_ai import GovernedActionDraft
+from app.models.business_location import BusinessLocation
 from app.models.cost_economics import CostLedgerEntry
 from app.models.campaign import Campaign
 from app.models.governed_ai import GovernedAIRun
@@ -88,6 +89,17 @@ def _campaign_with_draftable_action(db_session, create_test_org):
         name="Governed draft campaign",
         domain="draft.example",
     )
+    location = BusinessLocation(
+        organization_id=organization.id,
+        name="Governed draft location",
+        domain=campaign.domain,
+        status="active",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(location)
+    db_session.flush()
+    campaign.business_location_id = location.id
     db_session.add(
         StrategyRecommendation(
             tenant_id=campaign.tenant_id,

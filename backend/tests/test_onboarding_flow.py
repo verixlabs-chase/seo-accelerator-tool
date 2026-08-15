@@ -59,7 +59,7 @@ def test_onboarding_happy_path(client, db_session, monkeypatch):
         .filter(Entitlement.organization_id == organization.id)
         .count()
     )
-    assert entitlement_count == 9
+    assert entitlement_count == 10
 
 
 def test_onboarding_failure_then_resume(client, monkeypatch):

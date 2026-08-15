@@ -16,6 +16,7 @@ from app.intelligence.lexicon.plain_language import (
     load_service_business_language_guide,
     simplify_internal_language,
 )
+from app.models.business_location import BusinessLocation
 from app.models.cost_economics import CostLedgerEntry
 from app.models.governed_ai import GovernedAIRun
 from app.models.intelligence import StrategyRecommendation
@@ -103,6 +104,17 @@ def _campaign_with_lexicon_action(db_session, create_test_org):
         name="Governed AI campaign",
         domain="governed-ai.example",
     )
+    location = BusinessLocation(
+        organization_id=organization.id,
+        name="Governed AI location",
+        domain=campaign.domain,
+        status="active",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(location)
+    db_session.flush()
+    campaign.business_location_id = location.id
     db_session.add(
         StrategyRecommendation(
             tenant_id=campaign.tenant_id,
@@ -264,6 +276,67 @@ def test_valid_provider_output_is_metered_validated_and_idempotent(
     assert next_day["item"]["status"] == "validated"
     assert provider.calls == 2
     assert db_session.query(CostLedgerEntry).count() == 4
+
+
+def test_paid_brief_rechecks_archived_location_after_reservation_commit(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_service,
+        "get_settings",
+        lambda: _settings(configured=True),
+    )
+    organization, campaign = _campaign_with_lexicon_action(
+        db_session,
+        create_test_org,
+    )
+    provider = ContextAwareProvider()
+    original_reserve = governed_ai_service.cost_economics_service.reserve_provider_cost
+
+    def reserve_then_archive(*args, **kwargs):
+        reservation = original_reserve(*args, **kwargs)
+        location = db_session.get(BusinessLocation, campaign.business_location_id)
+        location.status = "archived"
+        db_session.commit()
+        return reservation
+
+    monkeypatch.setattr(
+        governed_ai_service.cost_economics_service,
+        "reserve_provider_cost",
+        reserve_then_archive,
+    )
+
+    payload = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        provider=provider,
+        now=datetime(2026, 7, 30, 20, 45, tzinfo=UTC),
+    )
+
+    assert provider.calls == 0
+    assert payload["item"]["status"] == "fallback"
+    assert payload["item"]["provider_state"] == "cost_control_blocked"
+    assert payload["item"]["error_code"] == (
+        "active_business_location_required_for_provider_work"
+    )
+    reservation = (
+        db_session.query(CostLedgerEntry)
+        .filter(CostLedgerEntry.event_type == "reservation")
+        .one()
+    )
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == reservation.id,
+            CostLedgerEntry.event_type == "release",
+        )
+        .count()
+        == 1
+    )
 
 
 def test_daily_brief_uses_three_ranked_active_actions_and_current_work(

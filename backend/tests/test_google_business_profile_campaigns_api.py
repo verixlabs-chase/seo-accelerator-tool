@@ -8,8 +8,8 @@ from app.models.google_business_profile_campaign import (
     GoogleBusinessProfileCampaign,
     GoogleBusinessProfileCampaignVariant,
 )
-from app.models.organization import Organization
 from app.models.portfolio import Portfolio
+from app.services.commercial_plan_service import apply_commercial_plan
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -87,8 +87,11 @@ def test_profile_campaign_freezes_per_location_preview_and_approval_hold(
     db_session,
 ) -> None:
     token, organization_id = _login(client, "org-admin@example.com", "pass-org-admin")
-    organization = db_session.get(Organization, organization_id)
-    organization.plan_type = "multi_location"
+    apply_commercial_plan(
+        db_session,
+        organization_id=organization_id,
+        plan_code="multi_location",
+    )
     db_session.commit()
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -270,8 +273,11 @@ def test_profile_campaign_rejects_solo_cross_org_and_unconfirmed_content(
         "profile_campaign_upgrade_required"
     )
 
-    organization = db_session.get(Organization, organization_a)
-    organization.plan_type = "multi_location"
+    apply_commercial_plan(
+        db_session,
+        organization_id=organization_a,
+        plan_code="multi_location",
+    )
     db_session.commit()
     invalid = client.post(
         f"/api/v1/organizations/{organization_a}/profile-campaigns",

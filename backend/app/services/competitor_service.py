@@ -19,6 +19,7 @@ from app.providers.keyword_research import DataForSeoKeywordResearchProvider
 from app.services import keyword_research_service, rank_service
 from app.services.cost_economics_service import (
     CostEconomicsError,
+    authorize_reserved_provider_dispatch,
     reconcile_provider_cost,
     release_provider_cost,
     reserve_provider_cost,
@@ -200,6 +201,7 @@ def discover_competitors(
                 quantity=1,
                 idempotency_key=f"competitor-discovery:{campaign.id}:{observed_at.isoformat()}",
             )
+            authorize_reserved_provider_dispatch(db, reservation=reservation)
         except CostEconomicsError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     try:

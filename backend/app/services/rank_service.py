@@ -17,6 +17,7 @@ from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSna
 from app.providers import get_rank_provider_for_organization
 from app.services.cost_economics_service import (
     CostEconomicsError,
+    authorize_reserved_provider_dispatch,
     reconcile_provider_cost,
     release_provider_cost,
     reserve_provider_cost,
@@ -477,6 +478,7 @@ def run_snapshot_collection(db: Session, tenant_id: str, campaign_id: str, locat
                     quantity=quantity,
                     idempotency_key=f"rank:{collection_id}:{kw.id}",
                 )
+                authorize_reserved_provider_dispatch(db, reservation=reservation)
             except CostEconomicsError as exc:
                 raise HTTPException(
                     status_code=exc.status_code,

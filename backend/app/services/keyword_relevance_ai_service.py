@@ -366,6 +366,22 @@ def review_uncertain(
     db.commit()
 
     try:
+        cost_economics_service.authorize_reserved_provider_dispatch(
+            db,
+            reservation=reservation,
+        )
+    except cost_economics_service.CostEconomicsError as exc:
+        return _finalize_fallback(
+            db,
+            campaign=campaign,
+            run=ai_run,
+            provider_state="cost_control_blocked",
+            error_code=exc.reason_code,
+            message="AI review was skipped because this location is not currently eligible for paid updates. Nothing changed.",
+            now=occurred_at,
+        )
+
+    try:
         provider_response = provider.review_keyword_relevance(
             context=context,
             output_schema=GovernedKeywordRelevanceReview.model_json_schema(),

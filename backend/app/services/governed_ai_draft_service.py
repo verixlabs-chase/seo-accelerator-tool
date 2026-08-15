@@ -469,6 +469,28 @@ def generate_governed_draft(
     db.commit()
 
     try:
+        cost_economics_service.authorize_reserved_provider_dispatch(
+            db,
+            reservation=reservation,
+        )
+    except cost_economics_service.CostEconomicsError as exc:
+        _finalize_fallback(
+            db,
+            row,
+            output=fallback,
+            provider_state="cost_control_blocked",
+            error_code=exc.reason_code,
+            rejection_reason=str(exc),
+            now=occurred_at,
+        )
+        return _response(
+            db,
+            row,
+            available_actions=list(available.values()),
+            idempotent_replay=False,
+        )
+
+    try:
         provider_response = provider.draft_action(
             context=context,
             output_schema=GovernedActionDraft.model_json_schema(),

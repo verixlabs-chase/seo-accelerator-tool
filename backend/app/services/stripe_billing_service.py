@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.models.billing import BillingWebhookEvent
 from app.models.organization import Organization
 from app.services.audit_service import write_audit_log
+from app.services.commercial_plan_service import apply_commercial_plan
 from app.services.cost_economics_service import CostEconomicsError, resolve_plan_economics
 
 
@@ -567,6 +568,10 @@ def _apply_event(
         organization.billing_current_period_end = _subscription_current_period_end(obj)
         if price_id:
             organization.stripe_price_id = price_id
+        # Commercial plan materialization intentionally refreshes and locks
+        # the Organization row. Flush the verified provider identifiers first
+        # so that refresh cannot discard these same-transaction assignments.
+        db.flush()
         if status in ACTIVE_STATUSES:
             plan_code = incoming_plan_code
             if plan_code is None:
@@ -579,9 +584,17 @@ def _apply_event(
                 obj=obj,
                 plan_code=plan_code,
             )
-            organization.plan_type = plan_code
+            _materialize_webhook_plan(
+                db,
+                organization=organization,
+                plan_code=plan_code,
+            )
         elif status in ACCESS_ENDING_STATUSES:
-            organization.plan_type = "solo"
+            _materialize_webhook_plan(
+                db,
+                organization=organization,
+                plan_code="solo",
+            )
         organization.billing_subscription_status = status
         organization.billing_subscription_event_created_at = event_created
         organization.billing_subscription_event_type = event_type
@@ -623,6 +636,32 @@ def _apply_event(
         },
     )
     return None
+
+
+def _materialize_webhook_plan(
+    db: Session,
+    *,
+    organization: Organization,
+    plan_code: str,
+) -> None:
+    # A fully closed organization remains inaccessible and immutable, but its
+    # signed billing facts can still be recorded by the caller. Do not recreate
+    # commercial state after closure.
+    if organization.status.strip().lower() == "closed":
+        return
+    try:
+        apply_commercial_plan(
+            db,
+            organization_id=organization.id,
+            plan_code=plan_code,
+            system_billing_transition=True,
+        )
+    except CostEconomicsError as exc:
+        raise BillingError(
+            "The billing plan could not be applied safely.",
+            reason_code=exc.reason_code,
+            status_code=503,
+        ) from exc
 
 
 def _resolve_organization_for_event(

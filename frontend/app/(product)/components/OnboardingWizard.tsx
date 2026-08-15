@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { platformApi } from "../../platform/api";
+import { PlatformApiError, platformApi } from "../../platform/api";
 import { getTenantId } from "../../lib/authStorage";
 import { trackProductEvent } from "../../lib/productAnalytics";
 import {
@@ -19,6 +19,13 @@ import {
   saveOnboardingProgress,
 } from "../truth/onboardingProgress.mjs";
 import { PRODUCT_TOUR_EVENT, requestProductTour } from "../truth/productTour.mjs";
+import {
+  PlanGateNotice,
+  canActivateAnotherLocation,
+  isLocationAllowanceEnforced,
+  locationUsageLabel,
+  type LocationAllowanceSummary,
+} from "./PlanGateNotice";
 
 type OnboardingCompletion = {
   campaignId: string;
@@ -28,7 +35,18 @@ type OnboardingCompletion = {
 
 type OnboardingWizardProps = {
   organizationId: string;
+  orgRole?: string | null;
   onComplete: (payload: OnboardingCompletion) => void;
+};
+
+type ExistingBusinessLocation = {
+  id: string;
+  name: string;
+  domain?: string | null;
+  status: string;
+  city?: string | null;
+  primary_city?: string | null;
+  region?: string | null;
 };
 
 type ServiceAreaEntry = {
@@ -183,13 +201,19 @@ function SetupTaskList({ tasks }: { tasks: SetupTask[] }) {
   );
 }
 
-export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizardProps) {
+export function OnboardingWizard({ organizationId, orgRole, onComplete }: OnboardingWizardProps) {
   const router = useRouter();
   const [progressRestored, setProgressRestored] = useState(false);
   const [restoredNotice, setRestoredNotice] = useState("");
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [locationAllowance, setLocationAllowance] = useState<LocationAllowanceSummary | null>(null);
+  const [locationContextLoading, setLocationContextLoading] = useState(true);
+  const [locationContextError, setLocationContextError] = useState("");
+  const [locationAllowanceDetail, setLocationAllowanceDetail] = useState("");
+  const [existingLocations, setExistingLocations] = useState<ExistingBusinessLocation[]>([]);
+  const [existingLocationsLoaded, setExistingLocationsLoaded] = useState(false);
 
   // Step 1 state
   const [businessName, setBusinessName] = useState("");
@@ -282,6 +306,78 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     );
   }, []);
 
+  const loadLocationContext = useCallback(async () => {
+    if (!organizationId) return;
+    setLocationContextLoading(true);
+    setLocationContextError("");
+    const [allowanceResult, locationsResult] = await Promise.allSettled([
+      platformApi("/usage/credits", { method: "GET" }) as Promise<LocationAllowanceSummary>,
+      platformApi(
+        `/organizations/${encodeURIComponent(organizationId)}/business-locations`,
+        { method: "GET" },
+      ) as Promise<{ items?: ExistingBusinessLocation[] }>,
+    ]);
+
+    if (allowanceResult.status === "fulfilled") {
+      setLocationAllowance(allowanceResult.value);
+    } else {
+      setLocationAllowance(null);
+    }
+
+    if (locationsResult.status === "fulfilled") {
+      const activeLocations = (locationsResult.value?.items || []).filter(
+        (item) => item.status === "active",
+      );
+      setExistingLocations(activeLocations);
+      setExistingLocationsLoaded(true);
+      if (activeLocations.length === 1) {
+        const recovered = activeLocations[0];
+        setBusinessLocationId((current) => current || recovered.id);
+        setBusinessName((current) => current || recovered.name);
+        setWebsiteUrl((current) => current || recovered.domain || "");
+        setSetupTasks((current) =>
+          current.map((task) =>
+            task.id === "location" ? { ...task, status: "done" } : task,
+          ),
+        );
+        setRestoredNotice((current) =>
+          current || `We found ${recovered.name}, which was saved during an earlier setup. Continue here instead of creating it again.`,
+        );
+      }
+    } else {
+      setExistingLocations([]);
+      setExistingLocationsLoaded(false);
+    }
+
+    if (
+      allowanceResult.status === "rejected" ||
+      locationsResult.status === "rejected"
+    ) {
+      setLocationContextError(
+        "We could not confirm your saved locations and plan allowance. Nothing already saved was changed. Check again before adding a new location.",
+      );
+    }
+    setLocationContextLoading(false);
+  }, [organizationId]);
+
+  useEffect(() => {
+    if (!progressRestored || !organizationId) return;
+    void loadLocationContext();
+  }, [loadLocationContext, organizationId, progressRestored]);
+
+  function chooseExistingLocation(locationId: string) {
+    const location = existingLocations.find((item) => item.id === locationId);
+    setBusinessLocationId(locationId);
+    setLocationAllowanceDetail("");
+    if (location) {
+      setBusinessName(location.name);
+      setWebsiteUrl(location.domain || "");
+      updateTask("location", "done");
+      return;
+    }
+    updateTask("location", "pending");
+  }
+
   const {
     completedTasks,
     runningTasks,
@@ -291,11 +387,30 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     hasStartedBackgroundChecks,
   } = summarizeTaskCounts(setupTasks);
   const stepThreeSummary = getStepThreeSummary(setupTasks, scanDone);
+  const needsNewLocation = !businessLocationId;
+  const canCreateLocation = Boolean(
+    existingLocationsLoaded &&
+    locationAllowance &&
+    canActivateAnotherLocation(locationAllowance),
+  );
+  const newLocationCheckUnavailable = Boolean(
+    locationContextLoading ||
+    !existingLocationsLoaded ||
+    !locationAllowance,
+  );
 
   function handleStep1(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!businessName.trim() || !websiteUrl.trim()) {
       setError("Please enter your business name and website.");
+      return;
+    }
+    if (needsNewLocation && !canCreateLocation) {
+      setLocationAllowanceDetail(
+        locationAllowance
+          ? `Your ${locationAllowance.plan.name} plan has no open active-location slots. Nothing already saved was changed.`
+          : "Check your saved locations and plan before adding a new location.",
+      );
       return;
     }
     setError("");
@@ -321,6 +436,14 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     }
     if (!organizationId) {
       setError("Your organization could not be identified. Reload the page and try again.");
+      return;
+    }
+    if (!businessLocationId && !canCreateLocation) {
+      setLocationAllowanceDetail(
+        locationAllowance
+          ? `Your ${locationAllowance.plan.name} plan has no open active-location slots. Your setup answers are still here.`
+          : "Your setup answers are still here. Check your saved locations and plan before adding a new location.",
+      );
       return;
     }
 
@@ -354,6 +477,7 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
         }
         setBusinessLocationId(activeLocationId);
         updateTask("location", "done");
+        await loadLocationContext();
       }
 
       let activeCampaignId = campaignId;
@@ -401,6 +525,16 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
       setRankingArea([firstArea.name, firstArea.region].filter(Boolean).join(", "));
       setStep(3);
     } catch (err) {
+      if (
+        err instanceof PlatformApiError &&
+        err.reasonCode === "active_location_allowance_exhausted"
+      ) {
+        updateTask("location", "pending");
+        setLocationAllowanceDetail(err.message);
+        setError("");
+        await loadLocationContext();
+        return;
+      }
       setSetupTasks((current) =>
         current.map((task) =>
           task.status === "running" ? { ...task, status: "error" } : task,
@@ -556,6 +690,47 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
           </div>
         )}
 
+        <div className="mb-4 border-l-2 border-accent-500/45 pl-3 text-xs leading-5 text-zinc-300">
+          {locationAllowance ? (
+            <>
+              <span className="font-semibold text-white">
+                {locationUsageLabel(locationAllowance.plan)}.
+              </span>{" "}
+              {canActivateAnotherLocation(locationAllowance)
+                ? isLocationAllowanceEnforced(locationAllowance)
+                  ? `${locationAllowance.plan.remaining_locations} still available on ${locationAllowance.plan.name}.`
+                  : "You can continue setting up this location."
+                : "No open active-location slots."}
+            </>
+          ) : locationContextLoading ? (
+            "Checking your saved locations and plan..."
+          ) : (
+            "Your saved locations and plan need to be checked again."
+          )}
+        </div>
+
+        {needsNewLocation && locationContextError ? (
+          <div role="status" className="mb-4 rounded-md border border-sky-500/25 bg-sky-500/10 p-3 text-sm leading-6 text-sky-100">
+            <p>{locationContextError}</p>
+            <button
+              type="button"
+              className="mt-3 rounded-md border border-sky-200/25 bg-sky-50/10 px-3 py-1.5 text-xs font-semibold text-white"
+              onClick={() => void loadLocationContext()}
+            >
+              Check again
+            </button>
+          </div>
+        ) : null}
+
+        {needsNewLocation && locationAllowance && !canCreateLocation ? (
+          <PlanGateNotice
+            allowance={locationAllowance}
+            orgRole={orgRole}
+            detail={locationAllowanceDetail || undefined}
+            className="mb-4"
+          />
+        ) : null}
+
         {step === 1 && (
           <form onSubmit={handleStep1} className="space-y-5">
             <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
@@ -570,6 +745,35 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
                 Setup finishes when these requests are accepted. Your first results may keep filling in after you land on the dashboard.
               </p>
             </div>
+            {existingLocations.length > 0 ? (
+              <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4">
+                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100/75">
+                  Continue a saved location
+                  <select
+                    value={businessLocationId}
+                    onChange={(event) => chooseExistingLocation(event.target.value)}
+                    className="mt-2 w-full rounded-md border border-emerald-200/20 bg-[#0b0b0c] px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-zinc-100 outline-none"
+                  >
+                    <option value="" disabled={!canCreateLocation}>
+                      {canCreateLocation
+                        ? "Set up a different new location"
+                        : "Choose a saved location"}
+                    </option>
+                    {existingLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name}
+                        {location.city || location.primary_city
+                          ? ` · ${location.city || location.primary_city}${location.region ? `, ${location.region}` : ""}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="mt-2 text-xs leading-5 text-emerald-100/75">
+                  Choose a location that was already saved to continue its setup without creating a duplicate.
+                </p>
+              </div>
+            ) : null}
             <div>
               <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-zinc-500">
                 Business name
@@ -594,11 +798,21 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
             </div>
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || (needsNewLocation && !canCreateLocation)}
+              aria-describedby="onboarding-location-availability"
               className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Saving..." : "Continue"}
             </button>
+            <p id="onboarding-location-availability" className="text-xs leading-5 text-zinc-500">
+              {needsNewLocation
+                ? newLocationCheckUnavailable
+                  ? "Adding a new location stays paused until the plan check succeeds."
+                  : canCreateLocation
+                    ? "This setup will use one active location from your plan."
+                    : "Choose a saved location above or review your plan before continuing."
+                : "This setup will continue the saved location selected above."}
+            </p>
           </form>
         )}
 
@@ -650,7 +864,7 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
               </button>
               <button
                 type="submit"
-                disabled={busy}
+                disabled={busy || (needsNewLocation && !canCreateLocation)}
                 className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? "Saving your answers..." : "Save and start checks"}

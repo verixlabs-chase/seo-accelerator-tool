@@ -6,6 +6,7 @@ from app.models.audit_log import AuditLog
 from app.models.authority import DirectoryListing, DirectoryListingObservation
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.commercial_feature_activation import CommercialFeatureActivation
 from app.models.competitor import Competitor
 from app.models.migration_import import (
     MigrationImportBatch,
@@ -13,9 +14,11 @@ from app.models.migration_import import (
     MigrationUploadChunk,
     MigrationUploadSession,
 )
+from app.models.portfolio import Portfolio
 from app.models.rank import CampaignKeyword, KeywordCluster, Ranking, RankingSnapshot
 from app.models.reporting import ReportDeliveryEvent, ReportRecipient
 from app.services.migration_upload_service import purge_expired_upload_sessions
+from app.services.commercial_plan_service import apply_commercial_plan
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -115,6 +118,124 @@ def test_migration_csv_dry_run_respects_organization_scope(client) -> None:
 
     assert response.status_code == 403
     assert response.json()["errors"][0]["details"]["reason_code"] == "organization_scope_mismatch"
+
+
+def test_solo_import_batch_preflight_denies_two_locations_without_partial_writes(
+    client, db_session
+) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    csv_text = (
+        "Record Type,Location Name,Website,City,State,Country\n"
+        "location,North Office,north.example,Austin,TX,US\n"
+        "location,South Office,south.example,San Antonio,TX,US\n"
+    )
+    reviewed = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/dry-run",
+        json={"source_system": "other", "csv_text": csv_text},
+        headers=headers,
+    )
+    assert reviewed.status_code == 200
+    review = reviewed.json()["data"]
+    assert review["summary"]["ready"] == 2
+
+    applied = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/apply",
+        json={
+            "source_system": "other",
+            "source_filename": "two-locations.csv",
+            "csv_text": csv_text,
+            "review_hash": review["review_hash"],
+            "client_request_id": str(uuid.uuid4()),
+            "confirmed": True,
+        },
+        headers=headers,
+    )
+
+    assert applied.status_code == 409
+    assert applied.json()["errors"][0]["details"]["reason_code"] == (
+        "active_location_allowance_exhausted"
+    )
+    assert (
+        db_session.query(MigrationImportBatch)
+        .filter(MigrationImportBatch.organization_id == org_id)
+        .count()
+        == 0
+    )
+    assert (
+        db_session.query(MigrationImportRecord)
+        .filter(MigrationImportRecord.organization_id == org_id)
+        .count()
+        == 0
+    )
+    assert (
+        db_session.query(BusinessLocation)
+        .filter(BusinessLocation.organization_id == org_id)
+        .count()
+        == 0
+    )
+    assert (
+        db_session.query(Portfolio)
+        .filter(
+            Portfolio.organization_id == org_id,
+            Portfolio.business_location_id.is_not(None),
+        )
+        .count()
+        == 0
+    )
+
+
+def test_observe_bridge_allows_import_overage_and_records_all_locations(
+    client, db_session
+) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    activation = db_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    assert activation is not None
+    activation.state = "observe"
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    csv_text = (
+        "Record Type,Location Name,Website,City,State,Country\n"
+        "location,Observed North,north-observe.example,Austin,TX,US\n"
+        "location,Observed South,south-observe.example,San Antonio,TX,US\n"
+    )
+    reviewed = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/dry-run",
+        json={"source_system": "other", "csv_text": csv_text},
+        headers=headers,
+    )
+    assert reviewed.status_code == 200
+    review = reviewed.json()["data"]
+
+    applied = client.post(
+        f"/api/v1/organizations/{org_id}/migration-imports/apply",
+        json={
+            "source_system": "other",
+            "source_filename": "observe-two-locations.csv",
+            "csv_text": csv_text,
+            "review_hash": review["review_hash"],
+            "client_request_id": str(uuid.uuid4()),
+            "confirmed": True,
+        },
+        headers=headers,
+    )
+
+    assert applied.status_code == 200
+    assert (
+        db_session.query(BusinessLocation)
+        .filter(
+            BusinessLocation.organization_id == org_id,
+            BusinessLocation.status == "active",
+        )
+        .count()
+        == 2
+    )
 
 
 def test_resumable_migration_upload_is_idempotent_reviewable_and_applyable(

@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.intelligence.contracts.governed_ai import GovernedEvidenceAnswer
+from app.models.business_location import BusinessLocation
 from app.models.cost_economics import CostLedgerEntry
 from app.models.governed_ai import GovernedAIRun
 from app.models.intelligence import StrategyRecommendation
@@ -95,6 +96,17 @@ def _campaign_with_question_evidence(db_session, create_test_org):
         name="Governed question campaign",
         domain="question.example",
     )
+    location = BusinessLocation(
+        organization_id=organization.id,
+        name="Governed question location",
+        domain=campaign.domain,
+        status="active",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(location)
+    db_session.flush()
+    campaign.business_location_id = location.id
     db_session.add(
         StrategyRecommendation(
             tenant_id=campaign.tenant_id,

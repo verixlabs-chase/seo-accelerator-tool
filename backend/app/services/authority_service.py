@@ -32,6 +32,7 @@ from app.providers import get_authority_provider
 from app.providers.authority import DataForSeoAuthorityProvider
 from app.services.cost_economics_service import (
     CostEconomicsError,
+    authorize_reserved_provider_dispatch,
     reconcile_provider_cost,
     release_provider_cost,
     reserve_provider_cost,
@@ -67,6 +68,24 @@ _RELEVANCE_CLASSES = {
     "area_match",
     "needs_review",
 }
+
+
+def _authorize_authority_provider_dispatch(
+    db: Session,
+    *,
+    reservation: Any,
+    run: Any,
+) -> None:
+    try:
+        authorize_reserved_provider_dispatch(db, reservation=reservation)
+    except CostEconomicsError as exc:
+        run.status = "failed"
+        run.error_code = exc.reason_code
+        run.completed_at = datetime.now(UTC)
+        db.commit()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 _GENERIC_MATCH_TERMS = {
     "business",
     "company",
@@ -291,6 +310,9 @@ def refresh_authority_link_gaps(
     db.add(run)
     db.commit()
     db.refresh(run)
+
+    if reservation is not None:
+        _authorize_authority_provider_dispatch(db, reservation=reservation, run=run)
 
     try:
         result = live_provider.page_intersection(
@@ -824,6 +846,9 @@ def refresh_authority_link_changes(
     db.commit()
     db.refresh(run)
 
+    if reservation is not None:
+        _authorize_authority_provider_dispatch(db, reservation=reservation, run=run)
+
     try:
         result = live_provider.backlink_changes(
             target=owner_domain,
@@ -1049,6 +1074,9 @@ def refresh_authority_inventory(
     db.add(run)
     db.commit()
     db.refresh(run)
+
+    if reservation is not None:
+        _authorize_authority_provider_dispatch(db, reservation=reservation, run=run)
 
     try:
         result = live_provider.authority_inventory(

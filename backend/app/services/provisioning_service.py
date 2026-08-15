@@ -9,12 +9,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain import entitlement_codes
+from app.domain.commercial_tiers import (
+    COMMERCIAL_LEGACY_TIER_VERSION,
+    COMMERCIAL_TIER_VERSION,
+    COMMERCIAL_TIERS,
+    commercial_entitlement_template,
+    legacy_entitlement_template,
+    normalize_commercial_plan_code,
+)
 from app.domain.tier_defaults import (
     DEFAULT_TIER_CODE,
     DEFAULT_TIER_DISPLAY_NAME,
     DEFAULT_TIER_PROFILE_ID,
-    DEFAULT_TIER_VERSION,
-    default_entitlement_template,
 )
 from app.models.entitlement import Entitlement, EntitlementResetPeriod, EntitlementValueType
 from app.models.onboarding_state import (
@@ -64,31 +70,37 @@ class TierProfileValidationError(Exception):
 
 
 def ensure_default_tier_profile(db: Session) -> TierProfile:
-    """Return the built-in standard tier, creating it for non-migrated local DBs."""
+    """Return the immutable Standard v1 profile understood by both runtimes."""
+    entitlement_template = legacy_entitlement_template()
+    canonical_template = {
+        "tier_code": DEFAULT_TIER_CODE,
+        "version": COMMERCIAL_LEGACY_TIER_VERSION,
+        "entitlements": entitlement_template["entitlements"],
+    }
+    expected_hash = compute_tier_profile_hash(canonical_template)
     tier_profile = (
         db.query(TierProfile)
         .filter(
             TierProfile.tier_code == DEFAULT_TIER_CODE,
-            TierProfile.version == DEFAULT_TIER_VERSION,
+            TierProfile.version == COMMERCIAL_LEGACY_TIER_VERSION,
         )
         .first()
     )
     if tier_profile is not None:
+        validate_commercial_profile_pointer(
+            tier_profile,
+            plan_code="solo",
+            expected_hash=expected_hash,
+        )
         return tier_profile
 
-    entitlement_template = default_entitlement_template()
-    canonical_template = {
-        "tier_code": DEFAULT_TIER_CODE,
-        "version": DEFAULT_TIER_VERSION,
-        "entitlements": entitlement_template["entitlements"],
-    }
     tier_profile = TierProfile(
         id=DEFAULT_TIER_PROFILE_ID,
         tier_code=DEFAULT_TIER_CODE,
         display_name=DEFAULT_TIER_DISPLAY_NAME,
-        version=DEFAULT_TIER_VERSION,
+        version=COMMERCIAL_LEGACY_TIER_VERSION,
         entitlement_template_json=entitlement_template,
-        deterministic_hash=compute_tier_profile_hash(canonical_template),
+        deterministic_hash=expected_hash,
         is_active=True,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
@@ -103,12 +115,17 @@ def ensure_default_tier_profile(db: Session) -> TierProfile:
             db.query(TierProfile)
             .filter(
                 TierProfile.tier_code == DEFAULT_TIER_CODE,
-                TierProfile.version == DEFAULT_TIER_VERSION,
+                TierProfile.version == COMMERCIAL_LEGACY_TIER_VERSION,
             )
             .first()
         )
         if tier_profile is None:
             raise
+        validate_commercial_profile_pointer(
+            tier_profile,
+            plan_code="solo",
+            expected_hash=expected_hash,
+        )
         return tier_profile
 
 
@@ -120,13 +137,88 @@ def ensure_organization_provisioned(db: Session, *, organization_id: str) -> Pro
 
     tier_profile = db.get(TierProfile, organization.tier_profile_id) if organization.tier_profile_id else None
     if tier_profile is None:
-        tier_profile = ensure_default_tier_profile(db)
+        raise TierProfileValidationError(
+            "The organization's saved tier profile is missing and requires operator repair."
+        )
+    try:
+        plan_code = normalize_commercial_plan_code(organization.plan_type)
+    except ValueError as exc:
+        raise TierProfileValidationError(
+            "The organization's saved commercial plan requires operator repair."
+        ) from exc
+    if int(tier_profile.version) != int(organization.tier_version):
+        raise TierProfileValidationError(
+            "The organization's saved tier profile is inactive or version-mismatched."
+        )
+    validate_commercial_profile_pointer(tier_profile, plan_code=plan_code)
 
     return provision_organization(
         db,
         organization_id=organization_id,
         tier_profile_id=tier_profile.id,
     )
+
+
+def validate_commercial_profile_pointer(
+    tier_profile: TierProfile,
+    *,
+    plan_code: str,
+    expected_hash: str | None = None,
+) -> None:
+    raw_template = tier_profile.entitlement_template_json
+    if not isinstance(raw_template, dict) or not isinstance(
+        raw_template.get("entitlements"), list
+    ):
+        raise TierProfileValidationError("The published tier profile template is malformed.")
+    actual_hash = compute_tier_profile_hash(
+        {
+            "tier_code": tier_profile.tier_code,
+            "version": int(tier_profile.version),
+            "entitlements": raw_template["entitlements"],
+        }
+    )
+    profile_version = int(tier_profile.version)
+    if profile_version == COMMERCIAL_LEGACY_TIER_VERSION:
+        # The 0154 runtime changed only plan_type during Stripe transitions.
+        # During the expand bridge, any exact known immutable v1 pointer is
+        # accepted even when its historical tier code does not match the newer
+        # commercial plan. The active-location row remains the plan authority.
+        expected_tier_code = str(tier_profile.tier_code or "").strip().lower()
+        if expected_tier_code not in {"standard", "enterprise", "internal_anchor"}:
+            expected_tier_code = ""
+        published_hash = expected_hash or compute_tier_profile_hash(
+            {
+                "tier_code": expected_tier_code,
+                "version": COMMERCIAL_LEGACY_TIER_VERSION,
+                "entitlements": legacy_entitlement_template()["entitlements"],
+            }
+        )
+        identity_matches = tier_profile.tier_code == expected_tier_code
+    elif profile_version == COMMERCIAL_TIER_VERSION:
+        definition = COMMERCIAL_TIERS[plan_code]
+        published_hash = expected_hash or compute_tier_profile_hash(
+            {
+                "tier_code": plan_code,
+                "version": COMMERCIAL_TIER_VERSION,
+                "entitlements": commercial_entitlement_template(plan_code)["entitlements"],
+            }
+        )
+        identity_matches = (
+            tier_profile.id == definition.profile_id
+            and tier_profile.tier_code == plan_code
+        )
+    else:
+        identity_matches = False
+        published_hash = ""
+    if (
+        not identity_matches
+        or not tier_profile.is_active
+        or tier_profile.deterministic_hash != actual_hash
+        or actual_hash != published_hash
+    ):
+        raise TierProfileValidationError(
+            "The published tier profile does not match the current catalog."
+        )
 
 
 def provision_organization(

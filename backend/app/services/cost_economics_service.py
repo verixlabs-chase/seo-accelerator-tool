@@ -179,6 +179,40 @@ def reserve_provider_cost(
             status_code=400,
         )
 
+    occurred_at = _as_utc(now or datetime.now(UTC))
+    org = (
+        db.query(Organization)
+        .filter(Organization.id == organization_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if org is None:
+        raise CostEconomicsError(
+            "Organization not found.",
+            reason_code="organization_not_found",
+            status_code=404,
+        )
+    from app.services.location_allowance_service import (
+        ActiveLocationAllowanceError,
+        assert_provider_work_allowed,
+    )
+
+    try:
+        assert_provider_work_allowed(
+            db,
+            organization_id=organization_id,
+            business_location_id=business_location_id,
+            campaign_id=campaign_id,
+            locked_organization=org,
+        )
+    except ActiveLocationAllowanceError as exc:
+        raise CostEconomicsError(
+            str(exc),
+            reason_code=exc.reason_code,
+            status_code=409,
+        ) from exc
+
     existing = (
         db.query(CostLedgerEntry)
         .filter(
@@ -191,16 +225,6 @@ def reserve_provider_cost(
     if existing is not None:
         return existing
 
-    occurred_at = _as_utc(now or datetime.now(UTC))
-    org = (
-        db.query(Organization).filter(Organization.id == organization_id).with_for_update().first()
-    )
-    if org is None:
-        raise CostEconomicsError(
-            "Organization not found.",
-            reason_code="organization_not_found",
-            status_code=404,
-        )
     plan = resolve_plan_economics(org.plan_type)
     price_card = _find_price_card(
         db,
@@ -298,6 +322,77 @@ def reserve_provider_cost(
         raise
     db.refresh(row)
     return row
+
+
+def authorize_reserved_provider_dispatch(
+    db: Session,
+    *,
+    reservation: CostLedgerEntry | str,
+    release_on_denial: bool = True,
+) -> CostLedgerEntry:
+    """Revalidate current location/activation truth immediately before a paid call.
+
+    Reservations commit so that cost exposure is durable. That commit also
+    releases the organization and activation locks acquired during reservation.
+    Every synchronous provider boundary must call this helper after its last
+    local commit and immediately before invoking the provider. The returned
+    transaction intentionally remains open through that invocation, fencing a
+    concurrent activation flip, downgrade, archive, or campaign remap.
+    """
+    reservation_row = _reservation_or_error(db, reservation)
+    organization = (
+        db.query(Organization)
+        .filter(Organization.id == reservation_row.organization_id)
+        .populate_existing()
+        .with_for_update()
+        .one_or_none()
+    )
+    if organization is None:
+        release_provider_cost(db, reservation=reservation_row)
+        raise CostEconomicsError(
+            "Organization not found.",
+            reason_code="organization_not_found",
+            status_code=404,
+        )
+
+    terminal = (
+        db.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == reservation_row.id,
+            CostLedgerEntry.event_type.in_(["reconciliation", "release"]),
+        )
+        .order_by(CostLedgerEntry.created_at.asc(), CostLedgerEntry.id.asc())
+        .first()
+    )
+    if terminal is not None:
+        raise CostEconomicsError(
+            "This paid update has already been completed or released.",
+            reason_code="provider_dispatch_already_finalized",
+            status_code=409,
+        )
+
+    from app.services.location_allowance_service import (
+        ActiveLocationAllowanceError,
+        assert_provider_work_allowed,
+    )
+
+    try:
+        assert_provider_work_allowed(
+            db,
+            organization_id=str(reservation_row.organization_id),
+            business_location_id=reservation_row.business_location_id,
+            campaign_id=reservation_row.campaign_id,
+            locked_organization=organization,
+        )
+    except ActiveLocationAllowanceError as exc:
+        if release_on_denial:
+            release_provider_cost(db, reservation=reservation_row)
+        raise CostEconomicsError(
+            str(exc),
+            reason_code=exc.reason_code,
+            status_code=409,
+        ) from exc
+    return reservation_row
 
 
 def calculate_provider_cost(

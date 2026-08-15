@@ -31,6 +31,7 @@ from app.services.operational_telemetry_service import reset_operational_telemet
 from app.models.authority import AuthorityGapResearchRun, AuthorityLinkChange, AuthorityLinkChangeRun, AuthorityLinkGap, Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
 from app.models.billing import BillingWebhookEvent  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
+from app.models.commercial_feature_activation import CommercialFeatureActivation
 from app.models.content import ContentAsset, ContentBrief, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard  # noqa: F401
 from app.models.crawl import CrawlInternalLink, CrawlRun, Page, TechnicalIssue  # noqa: F401
@@ -429,6 +430,15 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
     test_session = test_session_local()
     reset_graph_write_batcher()
 
+    activation = test_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    assert activation is not None
+    activation.state = "enforced"
+    activation.updated_at = datetime.now(UTC)
+    test_session.flush()
+
     # Ensure eager Celery tasks read/write against the same committed test DB.
     db_session_module.bind_session_factory_for_tests(test_session_local)
     tasks_module.SessionLocal = db_session_module.SessionLocal
@@ -438,11 +448,11 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
 
     tenant_a = Tenant(id=str(uuid.uuid4()), name="Tenant A", created_at=datetime.now(UTC))
     tenant_b = Tenant(id=str(uuid.uuid4()), name="Tenant B", created_at=datetime.now(UTC))
-    test_tier_profile = ensure_test_tier_profile(test_session)
+    test_tier_profile = ensure_test_tier_profile(test_session, plan_code="solo")
     org_a = Organization(
         id=tenant_a.id,
         name=f"Org-{tenant_a.id[:8]}",
-        plan_type="standard",
+        plan_type="solo",
         billing_mode="subscription",
         status="active",
         tier_profile_id=test_tier_profile.id,
@@ -453,7 +463,7 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
     org_b = Organization(
         id=tenant_b.id,
         name=f"Org-{tenant_b.id[:8]}",
-        plan_type="standard",
+        plan_type="solo",
         billing_mode="subscription",
         status="active",
         tier_profile_id=test_tier_profile.id,
@@ -632,8 +642,8 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
         ]
     )
     test_session.commit()
-    provision_test_organization(test_session, org_a)
-    provision_test_organization(test_session, org_b)
+    provision_test_organization(test_session, org_a, plan_code="solo")
+    provision_test_organization(test_session, org_b, plan_code="solo")
     _seed_intelligence_state(test_session)
     test_session.commit()
     yield test_session
@@ -786,11 +796,11 @@ def create_test_org(
         resolved_org_id = organization_id or tenant.id
         organization = db_session.query(Organization).filter(Organization.id == resolved_org_id).one_or_none()
         if organization is None:
-            test_tier_profile = ensure_test_tier_profile(db_session)
+            test_tier_profile = ensure_test_tier_profile(db_session, plan_code="solo")
             organization = Organization(
                 id=resolved_org_id,
                 name=name or f"Org-{resolved_org_id[:8]}",
-                plan_type="standard",
+                plan_type="solo",
                 billing_mode="subscription",
                 status=status,
                 tier_profile_id=test_tier_profile.id,
@@ -800,6 +810,13 @@ def create_test_org(
             )
             db_session.add(organization)
             db_session.flush()
+            from app.services.commercial_plan_service import apply_commercial_plan
+
+            apply_commercial_plan(
+                db_session,
+                organization_id=organization.id,
+                plan_code="solo",
+            )
         return organization
 
     return _create_test_org
@@ -861,11 +878,11 @@ def create_test_campaign(
 
     organization = session.query(Organization).filter(Organization.id == org_id).one_or_none()
     if organization is None:
-        test_tier_profile = ensure_test_tier_profile(session)
+        test_tier_profile = ensure_test_tier_profile(session, plan_code="solo")
         organization = Organization(
             id=org_id,
             name=f"Org-{org_id[:8]}",
-            plan_type="standard",
+            plan_type="solo",
             billing_mode="subscription",
             status="active",
             tier_profile_id=test_tier_profile.id,
@@ -875,6 +892,13 @@ def create_test_campaign(
         )
         session.add(organization)
         session.flush()
+        from app.services.commercial_plan_service import apply_commercial_plan
+
+        apply_commercial_plan(
+            session,
+            organization_id=organization.id,
+            plan_code="solo",
+        )
 
     campaign = Campaign(
         tenant_id=tenant.id,

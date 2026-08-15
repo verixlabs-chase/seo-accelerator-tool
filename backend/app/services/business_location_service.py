@@ -13,6 +13,10 @@ from app.models.location import Location, LocationStatus
 from app.models.portfolio import Portfolio
 from app.models.sub_account import SubAccount
 from app.services.location_service import LocationWriteService
+from app.services.location_allowance_service import (
+    assert_active_location_capacity,
+    lock_organization_for_location_allowance,
+)
 from app.services.operational_telemetry_service import record_service_operation
 
 
@@ -90,6 +94,11 @@ def create_business_location_with_portfolio(
     started_at = monotonic()
     success = False
     try:
+        assert_active_location_capacity(
+            db,
+            organization_id=organization_id,
+            requested_delta=1,
+        )
         now = datetime.now(UTC)
         business_location_id = str(uuid.uuid4())
         normalized_name = name
@@ -241,6 +250,10 @@ def update_business_location(
     business_location_id: str,
     changes: dict[str, object],
 ) -> BusinessLocation:
+    locked_organization = lock_organization_for_location_allowance(
+        db,
+        organization_id=organization_id,
+    )
     row = (
         db.query(BusinessLocation)
         .filter(
@@ -322,6 +335,13 @@ def update_business_location(
         next_status = str(changes["status"]).strip().lower()
         if next_status not in ALLOWED_BUSINESS_LOCATION_STATUSES:
             raise BusinessLocationInvariantError("business_location_status_invalid")
+        if row.status != "active" and next_status == "active":
+            assert_active_location_capacity(
+                db,
+                organization_id=organization_id,
+                requested_delta=1,
+                locked_organization=locked_organization,
+            )
         row.status = next_status
 
     row.updated_at = datetime.now(UTC)

@@ -19,6 +19,7 @@ from app.models.provider_quota import ProviderQuotaState
 from app.models.tenant import Tenant
 from app.services.audit_service import write_audit_log
 from app.services.cost_economics_service import CostEconomicsError, resolve_plan_economics
+from app.services.commercial_plan_service import apply_commercial_plan
 from app.services import reputation_response_execution_service
 
 ALLOWED_PLAN_TYPES = {
@@ -300,18 +301,31 @@ def patch_org_plan(
             status_code=exc.status_code,
             detail={"message": str(exc), "reason_code": exc.reason_code},
         ) from exc
-    org = _org_or_404(db, organization_id)
-    previous = org.plan_type
-    org.plan_type = body.plan_type
-    org.updated_at = datetime.now(UTC)
-    write_audit_log(
-        db,
-        tenant_id=org.id,
-        actor_user_id=user["id"],
-        event_type="platform.org.plan.updated",
-        payload={"organization_id": org.id, "before": previous, "after": org.plan_type},
-    )
-    db.commit()
+    try:
+        org, materialization = apply_commercial_plan(
+            db,
+            organization_id=organization_id,
+            plan_code=body.plan_type,
+        )
+        write_audit_log(
+            db,
+            tenant_id=org.id,
+            actor_user_id=user["id"],
+            event_type="platform.org.plan.updated",
+            payload={
+                "organization_id": org.id,
+                "before": materialization["previous_plan_code"],
+                "after": org.plan_type,
+                "tier_version": materialization["tier_version"],
+            },
+        )
+        db.commit()
+    except CostEconomicsError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
     db.refresh(org)
     return envelope(request, {"organization": _serialize_org(org)})
 

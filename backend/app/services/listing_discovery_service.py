@@ -17,6 +17,8 @@ from app.models.organization import Organization
 from app.providers.listings import DataForSeoBusinessListingsProvider
 from app.services import job_service, listing_inventory_service
 from app.services.cost_economics_service import (
+    CostEconomicsError,
+    authorize_reserved_provider_dispatch,
     calculate_provider_cost,
     get_customer_credit_summary,
     reconcile_provider_cost,
@@ -29,8 +31,6 @@ from app.services.provider_credentials_service import (
     resolve_provider_credential_owner,
     resolve_provider_credentials,
 )
-
-
 PROVIDER_NAME = "dataforseo"
 CAPABILITY = "directory_listing_discovery"
 OPERATION = "business_listings_live_limit_20"
@@ -275,26 +275,110 @@ def create_run(
     return run, True
 
 
-def dispatch_run(db: Session, *, tenant_id: str, run_id: str) -> dict[str, Any]:
-    run = db.get(DirectoryListingDiscoveryRun, run_id)
+def dispatch_run(
+    db: Session,
+    *,
+    tenant_id: str,
+    run_id: str,
+    job_id: str | None = None,
+    expected_worker_id: str | None = None,
+) -> dict[str, Any]:
+    with job_service.serialized_provider_run_dispatch(
+        db,
+        scope=f"directory-listing-discovery:{run_id}",
+    ) as durable_fence:
+        return _dispatch_run_serialized(
+            db,
+            tenant_id=tenant_id,
+            run_id=run_id,
+            durable_fence=durable_fence,
+            job_id=job_id,
+            expected_worker_id=expected_worker_id,
+        )
+
+
+def _dispatch_run_serialized(
+    db: Session,
+    *,
+    tenant_id: str,
+    run_id: str,
+    durable_fence: bool,
+    job_id: str | None,
+    expected_worker_id: str | None,
+) -> dict[str, Any]:
+    # The run row is the durable dispatch claim.  Claiming under a row lock
+    # prevents two workers (including a reclaimed durable job or a manual
+    # run-now request) from making the same paid provider call.
+    run = (
+        db.query(DirectoryListingDiscoveryRun)
+        .filter(DirectoryListingDiscoveryRun.id == run_id)
+        .populate_existing()
+        .with_for_update()
+        .one_or_none()
+    )
     if run is None or run.tenant_id != tenant_id:
         raise ValueError("Public listing check was not found.")
     if run.status in {"completed", "failed"}:
         return serialize_run(run)
+    if run.status == "running":
+        if durable_fence:
+            return _fail_stale_dispatch_claim(db, run)
+        return serialize_run(run)
 
-    location = db.get(BusinessLocation, run.business_location_id)
+    location = (
+        db.query(BusinessLocation)
+        .filter(BusinessLocation.id == run.business_location_id)
+        .populate_existing()
+        .one_or_none()
+    )
     if location is None or location.latitude is None or location.longitude is None:
         return _fail_run(db, run, "location_unavailable")
-
     run.status = "running"
     run.started_at = run.started_at or datetime.now(UTC)
     run.updated_at = datetime.now(UTC)
     db.commit()
     try:
+        if job_id is not None and expected_worker_id is not None:
+            job_service.lock_claimed_job(
+                db,
+                job_id=job_id,
+                expected_worker_id=expected_worker_id,
+            )
+        if not run.reservation_id:
+            raise CostEconomicsError(
+                "This paid update does not have a saved cost reservation.",
+                reason_code="provider_reservation_required",
+                status_code=409,
+            )
+        authorize_reserved_provider_dispatch(
+            db,
+            reservation=run.reservation_id,
+        )
+        # Refresh the provider input after the authorization helper locks the
+        # current active location/campaign mapping.
+        location = (
+            db.query(BusinessLocation)
+            .filter(BusinessLocation.id == run.business_location_id)
+            .populate_existing()
+            .one_or_none()
+        )
+        if location is None or location.latitude is None or location.longitude is None:
+            raise CostEconomicsError(
+                "This business location is not ready for a paid update.",
+                reason_code="active_business_location_required_for_provider_work",
+                status_code=409,
+            )
+    except CostEconomicsError as exc:
+        return _fail_run(db, run, exc.reason_code, message=str(exc))
+    provider_call_started = False
+    provider_result_received = False
+    reported_cost: Decimal | None = None
+    try:
         credentials = resolve_provider_credentials(db, run.organization_id, PROVIDER_NAME)
         login = str(credentials.get("login") or credentials.get("username") or "").strip()
         password = str(credentials.get("password") or "")
         provider = DataForSeoBusinessListingsProvider(login=login, password=password)
+        provider_call_started = True
         result = provider.search(
             business_name=location.name,
             latitude=float(location.latitude),
@@ -302,6 +386,8 @@ def dispatch_run(db: Session, *, tenant_id: str, run_id: str) -> dict[str, Any]:
             radius_km=float(run.radius_km),
             limit=run.result_limit,
         )
+        provider_result_received = True
+        reported_cost = Decimal(str(result.get("cost") or run.estimated_cost))
         records = _relevant_records(location, list(result.get("items") or []))
         listing_inventory_service.upsert_discovered_listings(
             db,
@@ -309,7 +395,7 @@ def dispatch_run(db: Session, *, tenant_id: str, run_id: str) -> dict[str, Any]:
             campaign_id=run.campaign_id,
             records=records,
         )
-        actual_cost = Decimal(str(result.get("cost") or run.estimated_cost))
+        actual_cost = reported_cost
         if run.reservation_id:
             reservation = db.get(CostLedgerEntry, run.reservation_id)
             if reservation is not None:
@@ -334,22 +420,71 @@ def dispatch_run(db: Session, *, tenant_id: str, run_id: str) -> dict[str, Any]:
         run = db.get(DirectoryListingDiscoveryRun, run_id)
         if run is None:
             raise
-        return _fail_run(db, run, "listing_check_failed")
+        if provider_call_started and run.reservation_id:
+            reservation = db.get(CostLedgerEntry, run.reservation_id)
+            if reservation is not None:
+                reconcile_provider_cost(
+                    db,
+                    reservation=reservation,
+                    # Once the paid request may have left this process, a timeout
+                    # cannot be treated as free work. Prefer a returned provider
+                    # amount; otherwise conservatively settle the reserved estimate.
+                    provider_reported_cost=(
+                        reported_cost
+                        if provider_result_received and reported_cost is not None
+                        else Decimal(reservation.estimated_cost)
+                    ),
+                )
+        return _fail_run(
+            db,
+            run,
+            "listing_check_failed",
+            release_reservation=not provider_call_started,
+        )
+
+
+def _fail_stale_dispatch_claim(
+    db: Session,
+    run: DirectoryListingDiscoveryRun,
+) -> dict[str, Any]:
+    """Close an abandoned ambiguous claim without risking a duplicate paid call."""
+    if run.reservation_id:
+        reservation = db.get(CostLedgerEntry, run.reservation_id)
+        if reservation is not None:
+            reconcile_provider_cost(
+                db,
+                reservation=reservation,
+                provider_reported_cost=Decimal(reservation.estimated_cost),
+            )
+    run = db.get(DirectoryListingDiscoveryRun, run.id)
+    return _fail_run(
+        db,
+        run,
+        "listing_dispatch_claim_abandoned",
+        message=(
+            "The public listing check stopped before it could confirm a result. "
+            "Start a new check if you still need it."
+        ),
+        release_reservation=False,
+    )
 
 
 def _fail_run(
     db: Session,
     run: DirectoryListingDiscoveryRun,
     error_code: str,
+    *,
+    message: str | None = None,
+    release_reservation: bool = True,
 ) -> dict[str, Any]:
-    if run.reservation_id:
+    if release_reservation and run.reservation_id:
         reservation = db.get(CostLedgerEntry, run.reservation_id)
         if reservation is not None:
             release_provider_cost(db, reservation=reservation)
     run = db.get(DirectoryListingDiscoveryRun, run.id)
     run.status = "failed"
     run.error_code = error_code
-    run.error_message = "The public listing check could not be completed. Try again shortly."
+    run.error_message = message or "The public listing check could not be completed. Try again shortly."
     run.completed_at = datetime.now(UTC)
     run.updated_at = run.completed_at
     db.commit()

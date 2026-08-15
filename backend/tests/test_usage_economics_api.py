@@ -3,6 +3,7 @@ from app.models.cost_economics import CostLedgerEntry
 from app.models.audit_log import AuditLog
 from app.core.config import get_settings
 from app.services import rank_service
+from app.services.commercial_plan_service import apply_commercial_plan
 from tests.helpers.economic_setup import provision_test_organization
 
 
@@ -17,7 +18,7 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     token, tenant_id = _login(client, "org-admin@example.com", "pass-org-admin")
     org = db_session.get(Organization, tenant_id)
     assert org is not None
-    org.plan_type = "standard"
+    apply_commercial_plan(db_session, organization_id=org.id, plan_code="solo")
     db_session.commit()
 
     response = client.get(
@@ -30,7 +31,11 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert data["plan"]["name"] == "Solo"
     assert data["plan"]["monthly_price"] == 299.0
     assert data["plan"]["included_locations"] == 1
-    assert data["commercial_catalog_version"] == "commercial-plans-2026-08-v1"
+    assert data["commercial_catalog_version"] == "commercial-plans-2026-08-v2"
+    assert data["plan"]["over_limit_by"] == 0
+    assert data["plan"]["can_activate_location"] is True
+    assert "tier_version" not in data["plan"]
+    assert "allowance_source" not in data["plan"]
     assert data["upgrade"]["plan_name"] == "Growth"
     assert data["upgrade"]["monthly_price"] == 699.0
     wordpress = next(
@@ -149,9 +154,19 @@ def test_rank_schedule_reserves_then_reconciles_dataforseo_cost(
         assert org is not None
         provision_test_organization(db_session, org)
 
+        location = client.post(
+            f"/api/v1/organizations/{org.id}/business-locations",
+            json={"name": "Metered Rank Location"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).json()["data"]["business_location"]
+
         campaign = client.post(
             "/api/v1/campaigns",
-            json={"name": "Metered Rank Campaign", "domain": "metered.example"},
+            json={
+                "name": "Metered Rank Campaign",
+                "domain": "metered.example",
+                "business_location_id": location["id"],
+            },
             headers={"Authorization": f"Bearer {token}"},
         ).json()["data"]
         keyword = client.post(

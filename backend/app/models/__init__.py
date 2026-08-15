@@ -60,6 +60,7 @@ from app.models.google_business_profile_campaign import (  # noqa: F401
 )
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
+from app.models.commercial_feature_activation import CommercialFeatureActivation
 from app.models.content import (
     ContentAsset,
     ContentBrief,
@@ -249,6 +250,7 @@ __all__ = [
     "FeatureImpactEdge",
     "PolicyFeatureEdge",
     "CampaignDailyMetric",
+    "CommercialFeatureActivation",
     "AnalyticsDailyMetric",
     "AuditLog",
     "AuthorityGapResearchRun",

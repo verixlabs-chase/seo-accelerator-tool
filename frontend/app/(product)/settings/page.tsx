@@ -148,6 +148,7 @@ type UsageAllowance = {
     included_locations: number;
     active_locations: number;
     remaining_locations: number;
+    location_allowance_enforced?: boolean;
     additional_locations_require_custom_terms: boolean;
   };
   period: {
@@ -2150,7 +2151,7 @@ export default function SettingsPage() {
             ) : null}
 
             {usageAllowance ? (
-              <section aria-labelledby="current-plan-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <section id="plan-and-billing" aria-labelledby="current-plan-heading" className="scroll-mt-24 rounded-md border border-[#292a2f] bg-[#141518] p-5">
                 {billingConfirmationState !== "idle" ? (
                   <div
                     role="status"

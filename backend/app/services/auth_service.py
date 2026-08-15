@@ -14,7 +14,7 @@ from app.models.organization_membership import OrganizationMembership
 from app.models.role import Role, UserRole
 from app.models.tenant import Tenant
 from app.models.user import User
-from app.services import provisioning_service
+from app.services import commercial_plan_service, provisioning_service
 
 
 VALID_PLATFORM_ROLES = {"platform_owner", "platform_admin"}
@@ -40,7 +40,7 @@ def seed_local_admin(db: Session) -> None:
         organization = Organization(
             id=tenant.id,
             name=f"default-org-{tenant.id[:8]}",
-            plan_type="standard",
+            plan_type="solo",
             billing_mode="subscription",
             status="active",
             tier_profile_id=tier_profile.id,
@@ -48,6 +48,11 @@ def seed_local_admin(db: Session) -> None:
         )
         db.add(organization)
         db.flush()
+        commercial_plan_service.apply_commercial_plan(
+            db,
+            organization_id=organization.id,
+            plan_code="solo",
+        )
 
     role = db.query(Role).filter(Role.id == "tenant_admin").first()
     if role is None:

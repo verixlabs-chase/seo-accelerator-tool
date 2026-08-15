@@ -29,6 +29,10 @@ from app.services.business_location_service import (
     BusinessLocationConflictError,
     create_business_location_with_portfolio,
 )
+from app.services.location_allowance_service import (
+    ActiveLocationAllowanceError,
+    assert_active_location_capacity,
+)
 from app.services.listing_inventory_service import compare_listing_fields
 
 
@@ -403,6 +407,24 @@ def apply_migration_csv(
             "There are no new rows to import.",
             reason_code="migration_nothing_to_import",
         )
+
+    ready_location_count = sum(
+        1
+        for reviewed_row in review["rows"]
+        if reviewed_row["status"] == "ready" and reviewed_row["record_type"] == "location"
+    )
+    if ready_location_count:
+        try:
+            assert_active_location_capacity(
+                db,
+                organization_id=organization_id,
+                requested_delta=ready_location_count,
+            )
+        except ActiveLocationAllowanceError as exc:
+            raise MigrationImportError(
+                str(exc),
+                reason_code=exc.reason_code,
+            ) from exc
 
     now = datetime.now(UTC)
     batch = MigrationImportBatch(

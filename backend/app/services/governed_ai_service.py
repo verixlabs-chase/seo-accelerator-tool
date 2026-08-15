@@ -395,6 +395,23 @@ def generate_governed_brief(
     db.commit()
 
     try:
+        cost_economics_service.authorize_reserved_provider_dispatch(
+            db,
+            reservation=reservation,
+        )
+    except cost_economics_service.CostEconomicsError as exc:
+        _finalize_fallback(
+            db,
+            row,
+            output=fallback,
+            provider_state="cost_control_blocked",
+            error_code=exc.reason_code,
+            rejection_reason=str(exc),
+            now=occurred_at,
+        )
+        return _response(db, row, idempotent_replay=False)
+
+    try:
         provider_response = provider.generate(
             context=context,
             output_schema=GovernedIntelligenceBrief.model_json_schema(),

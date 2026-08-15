@@ -471,6 +471,25 @@ def generate_response_draft(
     db.commit()
 
     try:
+        cost_economics_service.authorize_reserved_provider_dispatch(
+            db,
+            reservation=reservation,
+        )
+    except cost_economics_service.CostEconomicsError as exc:
+        return _finalize_unavailable_draft(
+            db,
+            ai_run=ai_run,
+            review=review,
+            policy=policy,
+            context=context,
+            evidence_refs=evidence_refs,
+            idempotency_key=idempotency_key,
+            reason=str(exc),
+            error_code=exc.reason_code,
+            now=occurred_at,
+        )
+
+    try:
         provider_response = provider.draft_action(
             context=context,
             output_schema=GovernedActionDraft.model_json_schema(),

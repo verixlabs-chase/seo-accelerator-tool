@@ -1,4 +1,9 @@
+from datetime import UTC, datetime
+import uuid
+
 from sqlalchemy import text
+
+from app.models.location import Location, LocationStatus
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -61,9 +66,26 @@ def test_hierarchy_health_reports_zero_location_org(client) -> None:
 
 def test_hierarchy_health_reports_mixed_linkage(client, db_session) -> None:
     token, org_id = _login(client, 'org-admin@example.com', 'pass-org-admin')
-    _create_subaccount(client, token, org_id, 'Ops Alpha')
+    subaccount_id = _create_subaccount(client, token, org_id, 'Ops Alpha')
     business_location_id = _create_business_location(client, token, org_id, 'Main Street')
-    _create_location(client, token, org_id, 'Austin HQ')
+    # New work locations must be mapped. Seed one historical orphan directly so
+    # this observability test still covers the read-only recovery population.
+    now = datetime.now(UTC)
+    db_session.add(
+        Location(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            sub_account_id=subaccount_id,
+            business_location_id=None,
+            location_code="legacy-austin-orphan",
+            name="Austin HQ",
+            country_code="US",
+            status=LocationStatus.ACTIVE,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    db_session.commit()
     linked_location_id = _create_location(client, token, org_id, 'Dallas Branch', business_location_id)
 
     response = client.get(
@@ -115,7 +137,8 @@ def test_hierarchy_health_blocks_cross_org_access(client) -> None:
 def test_hierarchy_health_response_shape_is_deterministic(client, db_session) -> None:
     token, org_id = _login(client, 'org-admin@example.com', 'pass-org-admin')
     _create_subaccount(client, token, org_id, 'Ops Beta')
-    _create_location(client, token, org_id, 'Seattle Hub')
+    business_location_id = _create_business_location(client, token, org_id, 'Seattle Business')
+    _create_location(client, token, org_id, 'Seattle Hub', business_location_id)
 
     response = client.get(
         f'/api/v1/organizations/{org_id}/hierarchy/health',

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from time import monotonic, sleep
 from typing import Any
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
 from app.models.platform_job import PlatformJob
@@ -14,6 +17,14 @@ JOB_STATUS_COMPLETED = "completed"
 JOB_STATUS_FAILED = "failed"
 JOB_STATUS_DEAD_LETTER = "dead_letter"
 JOB_STATUS_CANCELLED = "cancelled"
+
+
+class ProviderRunDispatchBusy(RuntimeError):
+    """A different worker still owns the bounded paid-run dispatch fence."""
+
+
+class JobClaimOwnershipLost(RuntimeError):
+    """A durable job lease was reclaimed by a different worker."""
 
 
 def create_job(
@@ -119,8 +130,20 @@ def start_job(
     return row
 
 
-def complete_job(db: Session, job_id: str, result: dict[str, Any] | None = None) -> PlatformJob | None:
-    row = db.get(PlatformJob, job_id)
+def complete_job(
+    db: Session,
+    job_id: str,
+    result: dict[str, Any] | None = None,
+    *,
+    expected_worker_id: str | None = None,
+) -> PlatformJob | None:
+    query = db.query(PlatformJob).filter(PlatformJob.id == job_id).populate_existing()
+    if expected_worker_id is not None:
+        query = query.filter(
+            PlatformJob.status == JOB_STATUS_RUNNING,
+            PlatformJob.locked_by == expected_worker_id,
+        )
+    row = query.with_for_update().one_or_none()
     if row is None:
         return None
     row.status = JOB_STATUS_COMPLETED
@@ -184,8 +207,15 @@ def record_job_failure(
     *,
     error: str,
     retry_base_seconds: int = 30,
+    expected_worker_id: str | None = None,
 ) -> PlatformJob | None:
-    row = db.get(PlatformJob, job_id)
+    query = db.query(PlatformJob).filter(PlatformJob.id == job_id).populate_existing()
+    if expected_worker_id is not None:
+        query = query.filter(
+            PlatformJob.status == JOB_STATUS_RUNNING,
+            PlatformJob.locked_by == expected_worker_id,
+        )
+    row = query.with_for_update().one_or_none()
     if row is None:
         return None
 
@@ -211,6 +241,101 @@ def record_job_failure(
         row.finished_at = None
     db.flush()
     return row
+
+
+def claimed_job_is_current(
+    db: Session,
+    *,
+    job_id: str,
+    expected_worker_id: str,
+) -> bool:
+    """Lock and verify a durable-job ownership token before terminal mutation."""
+    row = (
+        db.query(PlatformJob.id)
+        .filter(
+            PlatformJob.id == job_id,
+            PlatformJob.status == JOB_STATUS_RUNNING,
+            PlatformJob.locked_by == expected_worker_id,
+        )
+        .with_for_update()
+        .one_or_none()
+    )
+    return row is not None
+
+
+def lock_claimed_job(
+    db: Session,
+    *,
+    job_id: str,
+    expected_worker_id: str,
+) -> PlatformJob:
+    """Fence one provider call with the current durable-job ownership row."""
+    row = (
+        db.query(PlatformJob)
+        .filter(
+            PlatformJob.id == job_id,
+            PlatformJob.status == JOB_STATUS_RUNNING,
+            PlatformJob.locked_by == expected_worker_id,
+        )
+        .populate_existing()
+        .with_for_update()
+        .one_or_none()
+    )
+    if row is None:
+        raise JobClaimOwnershipLost("This job is now owned by a different worker.")
+    return row
+
+
+@contextmanager
+def serialized_provider_run_dispatch(
+    db: Session,
+    *,
+    scope: str,
+    wait_seconds: float = 5.0,
+) -> Iterator[bool]:
+    """Serialize one paid run across commits and expired durable-job leases.
+
+    PostgreSQL session advisory locks live on a dedicated checked-out
+    connection, so they survive the service's intentional commits between a
+    durable run claim and provider batches. Process/connection death releases
+    the fence. Other dialects still use the run-row claim but cannot provide
+    the cross-commit crash signal returned by this context manager.
+    """
+    bind = db.get_bind()
+    dialect = bind.dialect.name.lower()
+    if dialect != "postgresql":
+        yield False
+        return
+
+    engine = bind.engine if hasattr(bind, "engine") else bind
+    lock_connection = engine.connect()
+    acquired = False
+    try:
+        deadline = monotonic() + max(0.1, float(wait_seconds))
+        while monotonic() < deadline:
+            acquired = bool(
+                lock_connection.execute(
+                    text("SELECT pg_try_advisory_lock(hashtextextended(:scope, 0))"),
+                    {"scope": scope},
+                ).scalar_one()
+            )
+            if acquired:
+                break
+            sleep(0.05)
+        if not acquired:
+            raise ProviderRunDispatchBusy(
+                "This paid update is already being handled by another worker."
+            )
+        yield True
+    finally:
+        try:
+            if acquired:
+                lock_connection.execute(
+                    text("SELECT pg_advisory_unlock(hashtextextended(:scope, 0))"),
+                    {"scope": scope},
+                )
+        finally:
+            lock_connection.close()
 
 
 def durable_job_health(

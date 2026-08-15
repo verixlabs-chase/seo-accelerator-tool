@@ -3,9 +3,16 @@ from decimal import Decimal
 
 import pytest
 
+from app.models.business_location import BusinessLocation
+from app.models.campaign import Campaign
+from app.models.commercial_feature_activation import CommercialFeatureActivation
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard
+from app.models.organization import Organization
+from app.services.commercial_plan_service import apply_commercial_plan
 from app.services.cost_economics_service import (
     CostAllowanceExceeded,
+    CostEconomicsError,
+    authorize_reserved_provider_dispatch,
     get_allowance_summary,
     get_customer_credit_summary,
     get_margin_report,
@@ -83,6 +90,326 @@ def test_platform_cost_reserves_reconciles_and_is_idempotent(db_session, create_
     }
     assert credits["recent_activity"][0]["state"] == "completed"
     assert credits["recent_activity"][0]["credits"] == 2
+
+
+def test_existing_reservation_retry_is_denied_after_over_limit_downgrade(
+    db_session, create_test_org
+) -> None:
+    org = create_test_org(name="Reservation downgrade guard org")
+    apply_commercial_plan(db_session, organization_id=org.id, plan_code="multi_location")
+    locations = [
+        BusinessLocation(organization_id=org.id, name=f"Covered location {index}", status="active")
+        for index in range(2)
+    ]
+    db_session.add_all(locations)
+    db_session.commit()
+    reservation = reserve_provider_cost(
+        db_session,
+        organization_id=org.id,
+        provider_name="dataforseo",
+        capability="rank_tracking",
+        operation="google_organic_live_advanced",
+        credential_owner="platform",
+        quantity=1,
+        idempotency_key="rank:reserved-before-downgrade",
+        business_location_id=locations[0].id,
+    )
+
+    apply_commercial_plan(db_session, organization_id=org.id, plan_code="solo")
+    db_session.commit()
+
+    with pytest.raises(CostEconomicsError) as exc_info:
+        reserve_provider_cost(
+            db_session,
+            organization_id=org.id,
+            provider_name="dataforseo",
+            capability="rank_tracking",
+            operation="google_organic_live_advanced",
+            credential_owner="platform",
+            quantity=1,
+            idempotency_key="rank:reserved-before-downgrade",
+            business_location_id=locations[0].id,
+        )
+
+    assert exc_info.value.reason_code == "active_location_overage_blocks_provider_work"
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.organization_id == org.id,
+            CostLedgerEntry.idempotency_key == "rank:reserved-before-downgrade",
+            CostLedgerEntry.event_type == "reservation",
+        )
+        .count()
+        == 1
+    )
+    assert db_session.get(CostLedgerEntry, reservation.id) is not None
+
+
+def test_observe_bridge_allows_overage_reservation_but_keeps_location_mapping_guard(
+    db_session, create_test_org
+) -> None:
+    org = create_test_org(name="Observed provider allowance org")
+    activation = db_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    assert activation is not None
+    activation.state = "observe"
+    locations = [
+        BusinessLocation(
+            organization_id=org.id,
+            name=f"Observed provider shop {index}",
+            status="active",
+        )
+        for index in range(2)
+    ]
+    db_session.add_all(locations)
+    db_session.commit()
+
+    reservation = reserve_provider_cost(
+        db_session,
+        organization_id=org.id,
+        provider_name="dataforseo",
+        capability="rank_tracking",
+        operation="google_organic_live_advanced",
+        credential_owner="platform",
+        quantity=1,
+        idempotency_key="rank:observe-overage",
+        business_location_id=locations[0].id,
+    )
+    assert reservation.event_type == "reservation"
+
+    activation = db_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    activation.state = "enforced"
+    db_session.commit()
+    with pytest.raises(CostEconomicsError) as activation_exc:
+        authorize_reserved_provider_dispatch(db_session, reservation=reservation)
+    assert activation_exc.value.reason_code == (
+        "active_location_overage_blocks_provider_work"
+    )
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == reservation.id,
+            CostLedgerEntry.event_type == "release",
+        )
+        .count()
+        == 1
+    )
+
+    activation = db_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    activation.state = "observe"
+    unmapped = Campaign(
+        tenant_id=org.id,
+        organization_id=org.id,
+        business_location_id=None,
+        name="Observed unmapped campaign",
+        domain="observed-unmapped.example",
+    )
+    db_session.add(unmapped)
+    db_session.commit()
+    with pytest.raises(CostEconomicsError) as exc_info:
+        reserve_provider_cost(
+            db_session,
+            organization_id=org.id,
+            provider_name="dataforseo",
+            capability="rank_tracking",
+            operation="google_organic_live_advanced",
+            credential_owner="platform",
+            quantity=1,
+            idempotency_key="rank:observe-unmapped",
+            campaign_id=unmapped.id,
+            business_location_id=None,
+        )
+    assert exc_info.value.reason_code == (
+        "active_business_location_required_for_provider_work"
+    )
+
+
+def test_dispatch_recheck_releases_when_location_archived_after_reservation(
+    db_session, create_test_org
+) -> None:
+    org = create_test_org(name="Archived between reserve and dispatch org")
+    location = BusinessLocation(
+        organization_id=org.id,
+        name="Archive at dispatch shop",
+        status="active",
+    )
+    db_session.add(location)
+    db_session.commit()
+    reservation = reserve_provider_cost(
+        db_session,
+        organization_id=org.id,
+        provider_name="dataforseo",
+        capability="rank_tracking",
+        operation="google_organic_live_advanced",
+        credential_owner="platform",
+        quantity=1,
+        idempotency_key="rank:archive-after-reserve",
+        business_location_id=location.id,
+    )
+    location.status = "archived"
+    db_session.commit()
+
+    with pytest.raises(CostEconomicsError) as exc_info:
+        authorize_reserved_provider_dispatch(db_session, reservation=reservation)
+
+    assert exc_info.value.reason_code == (
+        "active_business_location_required_for_provider_work"
+    )
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == reservation.id,
+            CostLedgerEntry.event_type == "release",
+        )
+        .count()
+        == 1
+    )
+
+
+def test_dispatch_recheck_rejects_already_terminal_reservation_without_second_event(
+    db_session, create_test_org
+) -> None:
+    org = create_test_org(name="Finalized provider dispatch org")
+    reservation = _reserve(db_session, org.id, key="rank:already-finalized", quantity=1)
+    release_provider_cost(db_session, reservation=reservation)
+
+    with pytest.raises(CostEconomicsError) as exc_info:
+        authorize_reserved_provider_dispatch(db_session, reservation=reservation)
+
+    assert exc_info.value.reason_code == "provider_dispatch_already_finalized"
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == reservation.id,
+            CostLedgerEntry.event_type == "release",
+        )
+        .count()
+        == 1
+    )
+
+
+def test_dispatch_recheck_releases_when_organization_becomes_inactive(
+    db_session, create_test_org
+) -> None:
+    org = create_test_org(name="Inactive between reserve and dispatch org")
+    reservation = _reserve(db_session, org.id, key="rank:inactive-after-reserve", quantity=1)
+    locked_org = db_session.get(Organization, org.id)
+    locked_org.status = "suspended"
+    db_session.commit()
+
+    with pytest.raises(CostEconomicsError) as exc_info:
+        authorize_reserved_provider_dispatch(db_session, reservation=reservation)
+
+    assert exc_info.value.reason_code == "organization_inactive_for_commercial_work"
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == reservation.id,
+            CostLedgerEntry.event_type == "release",
+        )
+        .count()
+        == 1
+    )
+
+
+def test_provider_reservation_rejects_archived_target_location(
+    db_session, create_test_org
+) -> None:
+    org = create_test_org(name="Archived location provider guard org")
+    location = BusinessLocation(
+        organization_id=org.id,
+        name="Archived shop",
+        status="archived",
+    )
+    db_session.add(location)
+    db_session.commit()
+
+    with pytest.raises(CostEconomicsError) as exc_info:
+        reserve_provider_cost(
+            db_session,
+            organization_id=org.id,
+            provider_name="dataforseo",
+            capability="rank_tracking",
+            operation="google_organic_live_advanced",
+            credential_owner="platform",
+            quantity=1,
+            idempotency_key="rank:archived-location",
+            business_location_id=location.id,
+        )
+
+    assert exc_info.value.reason_code == "active_business_location_required_for_provider_work"
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(CostLedgerEntry.idempotency_key == "rank:archived-location")
+        .count()
+        == 0
+    )
+
+
+def test_campaign_scoped_reservation_requires_exact_active_location_mapping(
+    db_session, create_test_org
+) -> None:
+    org = create_test_org(name="Campaign location mapping guard org")
+    apply_commercial_plan(db_session, organization_id=org.id, plan_code="multi_location")
+    locations = [
+        BusinessLocation(organization_id=org.id, name=f"Mapped shop {index}", status="active")
+        for index in range(2)
+    ]
+    db_session.add_all(locations)
+    db_session.flush()
+    unmapped = Campaign(
+        tenant_id=org.id,
+        organization_id=org.id,
+        business_location_id=None,
+        name="Legacy unmapped campaign",
+        domain="legacy-unmapped.example",
+    )
+    mapped = Campaign(
+        tenant_id=org.id,
+        organization_id=org.id,
+        business_location_id=locations[0].id,
+        name="Mapped campaign",
+        domain="mapped.example",
+    )
+    db_session.add_all([unmapped, mapped])
+    db_session.commit()
+
+    attempts = [
+        ("rank:unmapped-campaign", unmapped.id, None),
+        ("rank:mismatched-campaign", mapped.id, locations[1].id),
+    ]
+    for key, campaign_id, business_location_id in attempts:
+        with pytest.raises(CostEconomicsError) as exc_info:
+            reserve_provider_cost(
+                db_session,
+                organization_id=org.id,
+                provider_name="dataforseo",
+                capability="rank_tracking",
+                operation="google_organic_live_advanced",
+                credential_owner="platform",
+                quantity=1,
+                idempotency_key=key,
+                campaign_id=campaign_id,
+                business_location_id=business_location_id,
+            )
+        assert exc_info.value.reason_code == (
+            "active_business_location_required_for_provider_work"
+        )
+
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(CostLedgerEntry.idempotency_key.in_([item[0] for item in attempts]))
+        .count()
+        == 0
+    )
 
 
 def test_organization_credentials_do_not_consume_platform_cogs(db_session, create_test_org) -> None:

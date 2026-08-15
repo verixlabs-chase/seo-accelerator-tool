@@ -94,6 +94,18 @@ def test_migration_upgrade_and_downgrade():
             assert enterprise_sponsored_org[2] == "platform_sponsored"
             assert org_policy[0] == "byo_required"
             tier_profile_count = conn.execute(text("SELECT count(*) FROM tier_profiles")).scalar()
+            commercial_profile_ids = {
+                row[0]
+                for row in conn.execute(
+                    text(
+                        "SELECT id FROM tier_profiles WHERE id IN "
+                        "('d4e60a70-9c0c-4b8f-8cf9-4c7f0c690101', "
+                        "'d4e60a70-9c0c-4b8f-8cf9-4c7f0c690102', "
+                        "'d4e60a70-9c0c-4b8f-8cf9-4c7f0c690103', "
+                        "'d4e60a70-9c0c-4b8f-8cf9-4c7f0c690104')"
+                    )
+                )
+            }
             unprovisioned_org_count = conn.execute(
                 text(
                     "SELECT count(*) FROM organizations o "
@@ -101,7 +113,15 @@ def test_migration_upgrade_and_downgrade():
                     "OR (SELECT count(*) FROM entitlements e WHERE e.organization_id=o.id) < 9"
                 )
             ).scalar()
-            assert tier_profile_count == 3
+            # Three immutable legacy profiles remain for historical rows, while
+            # 0155 adds four versioned commercial profiles without rewriting them.
+            assert tier_profile_count == 7
+            assert commercial_profile_ids == {
+                "d4e60a70-9c0c-4b8f-8cf9-4c7f0c690101",
+                "d4e60a70-9c0c-4b8f-8cf9-4c7f0c690102",
+                "d4e60a70-9c0c-4b8f-8cf9-4c7f0c690103",
+                "d4e60a70-9c0c-4b8f-8cf9-4c7f0c690104",
+            }
             assert unprovisioned_org_count == 0
         print(f"[migrations-test] alembic_revision={revision}")
         print(f"[migrations-test] table_count={len(tables)}")

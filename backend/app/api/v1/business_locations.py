@@ -18,6 +18,7 @@ from app.services.business_location_service import (
     create_business_location_with_portfolio,
     update_business_location,
 )
+from app.services.location_allowance_service import ActiveLocationAllowanceError
 
 
 router = APIRouter(tags=["business-locations"])
@@ -66,6 +67,12 @@ def create_business_location(
                 "message": "BusinessLocation creation violated organization invariants.",
                 "reason_code": str(exc),
             },
+        ) from exc
+    except ActiveLocationAllowanceError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.safe_details(),
         ) from exc
 
     return envelope(request, {"business_location": BusinessLocationOut.model_validate(payload).model_dump(mode="json")})
@@ -144,6 +151,12 @@ def patch_business_location(
         )
         db.commit()
         db.refresh(row)
+    except ActiveLocationAllowanceError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.safe_details(),
+        ) from exc
     except BusinessLocationInvariantError as exc:
         db.rollback()
         reason = str(exc)

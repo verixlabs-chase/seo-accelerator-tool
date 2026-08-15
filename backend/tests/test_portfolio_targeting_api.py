@@ -5,6 +5,7 @@ import json
 from app.models.audit_log import AuditLog
 from app.models.campaign import Campaign
 from app.models.portfolio_targeting import PortfolioTargetSnapshot
+from app.services.commercial_plan_service import apply_commercial_plan
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -45,6 +46,11 @@ def test_saved_groups_and_immutable_target_previews_are_scoped_and_idempotent(
     db_session,
 ) -> None:
     token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    apply_commercial_plan(
+        db_session,
+        organization_id=org_id,
+        plan_code="multi_location",
+    )
     headers = {"Authorization": f"Bearer {token}"}
     dallas = _create_location(
         client,

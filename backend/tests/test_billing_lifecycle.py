@@ -11,8 +11,11 @@ import pytest
 from app.core.config import get_settings
 from app.models.audit_log import AuditLog
 from app.models.billing import BillingWebhookEvent
+from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.entitlement import Entitlement
 from app.models.organization import Organization
+from app.domain.entitlement_codes import LIMIT_ACTIVE_LOCATIONS
 from app.services import commercial_plan_service, stripe_billing_service
 
 
@@ -1058,6 +1061,97 @@ def test_equal_second_terminal_subscription_event_always_wins(
         assert organization.billing_subscription_status == "canceled"
         assert organization.billing_subscription_event_type == "customer.subscription.deleted"
         assert organization.billing_status == "canceled"
+    finally:
+        _clear_stripe(monkeypatch)
+
+
+def test_signed_cancellation_updates_suspended_closure_org_without_reviving_or_deleting_data(
+    client, db_session, monkeypatch
+) -> None:
+    _configure_stripe(monkeypatch)
+    try:
+        _token, organization_id = _login(client, "org-owner@example.com", "pass-org-owner")
+        organization = db_session.get(Organization, organization_id)
+        commercial_plan_service.apply_commercial_plan(
+            db_session,
+            organization_id=organization_id,
+            plan_code="multi_location",
+        )
+        organization.status = "closure_pending"
+        organization.stripe_customer_id = "cus_closure_pending"
+        organization.stripe_subscription_id = "sub_closure_pending"
+        organization.billing_status = "active"
+        organization.billing_subscription_status = "active"
+        organization.billing_subscription_event_type = "customer.subscription.created"
+        organization.billing_subscription_event_created_at = datetime.now(UTC) - timedelta(
+            minutes=1
+        )
+        locations = [
+            BusinessLocation(
+                organization_id=organization_id,
+                name=f"Saved closure location {index}",
+                status="active",
+            )
+            for index in range(2)
+        ]
+        db_session.add_all(locations)
+        db_session.commit()
+        timestamp = int(time.time())
+        deleted = {
+            "id": "evt_closure_pending_subscription_deleted",
+            "type": "customer.subscription.deleted",
+            "created": timestamp,
+            "data": {
+                "object": {
+                    "id": "sub_closure_pending",
+                    "object": "subscription",
+                    "customer": "cus_closure_pending",
+                    "status": "canceled",
+                    "metadata": {"organization_id": organization_id},
+                    "items": {"data": [{"price": {"id": "price_growth"}}]},
+                }
+            },
+        }
+
+        response = _post_event(client, deleted, timestamp)
+
+        assert response.status_code == 200
+        db_session.expire_all()
+        organization = db_session.get(Organization, organization_id)
+        assert organization.status == "closure_pending"
+        assert organization.billing_status == "canceled"
+        assert organization.billing_subscription_status == "canceled"
+        assert organization.plan_type == "solo"
+        allowance = (
+            db_session.query(Entitlement)
+            .filter(
+                Entitlement.organization_id == organization_id,
+                Entitlement.code == LIMIT_ACTIVE_LOCATIONS,
+            )
+            .one()
+        )
+        assert allowance.limit_value == 1
+        assert (
+            db_session.query(BusinessLocation)
+            .filter(BusinessLocation.id.in_([row.id for row in locations]))
+            .count()
+            == 2
+        )
+        assert {
+            row.status
+            for row in db_session.query(BusinessLocation)
+            .filter(BusinessLocation.id.in_([row.id for row in locations]))
+            .all()
+        } == {"active"}
+        receipt = (
+            db_session.query(BillingWebhookEvent)
+            .filter(
+                BillingWebhookEvent.provider_event_id
+                == "evt_closure_pending_subscription_deleted"
+            )
+            .one()
+        )
+        assert receipt.status == "processed"
     finally:
         _clear_stripe(monkeypatch)
 

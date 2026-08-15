@@ -131,17 +131,33 @@ def change_tier(db: Session, organization_id: str, new_tier_profile_id: str) -> 
         for code, row in existing_by_code.items():
             if code in template_codes:
                 continue
-            if not row.is_enforced:
+            disabled_config = {
+                **_normalize_config_json(row.config_json),
+                "denied_by_tier_profile": True,
+            }
+            if (
+                row.value_type == EntitlementValueType.INTEGER
+                and row.limit_value == 0
+                and row.reset_period == EntitlementResetPeriod.NONE
+                and row.is_enforced
+                and _normalize_config_json(row.config_json) == disabled_config
+            ):
                 continue
-            row.is_enforced = False
+            # `is_enforced=False` means unlimited in entitlement_service. A code
+            # removed by a tier must therefore be an explicit enforced zero.
+            row.value_type = EntitlementValueType.INTEGER
+            row.limit_value = 0
+            row.reset_period = EntitlementResetPeriod.NONE
+            row.is_enforced = True
+            row.config_json = disabled_config
             row.deterministic_hash = _entitlement_hash(
                 organization_id=organization_id,
                 code=row.code,
-                value_type=row.value_type,
-                limit_value=row.limit_value,
-                reset_period=row.reset_period,
-                is_enforced=False,
-                config_json=_normalize_config_json(row.config_json),
+                value_type=EntitlementValueType.INTEGER,
+                limit_value=0,
+                reset_period=EntitlementResetPeriod.NONE,
+                is_enforced=True,
+                config_json=disabled_config,
             )
             row.updated_at = now
             entitlements_disabled += 1

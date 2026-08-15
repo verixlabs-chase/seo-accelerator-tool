@@ -1,6 +1,9 @@
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import text
+
+from app.services.commercial_plan_service import apply_commercial_plan
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -43,7 +46,36 @@ def _create_location(client, token: str, org_id: str, name: str, business_locati
     return response.json()['data']['location']['id']
 
 
-def test_create_location_without_business_location_succeeds(client, db_session) -> None:
+def _insert_legacy_orphan_location(db_session, *, org_id: str, subaccount_id: str, name: str) -> str:
+    location_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    db_session.execute(
+        text(
+            '''
+            INSERT INTO locations (
+                id, organization_id, sub_account_id, location_code, name,
+                country_code, status, business_location_id, created_at, updated_at
+            ) VALUES (
+                :id, :organization_id, :sub_account_id, :location_code, :name,
+                'US', 'active', NULL, :created_at, :updated_at
+            )
+            '''
+        ),
+        {
+            'id': location_id,
+            'organization_id': org_id,
+            'sub_account_id': subaccount_id,
+            'location_code': f'legacy-{location_id[:8]}',
+            'name': name,
+            'created_at': now,
+            'updated_at': now,
+        },
+    )
+    db_session.commit()
+    return location_id
+
+
+def test_create_location_without_business_location_is_blocked(client, db_session) -> None:
     token, org_id = _login(client, 'org-admin@example.com', 'pass-org-admin')
     subaccount_id = _create_subaccount(client, token, org_id, 'Ops Alpha')
 
@@ -53,26 +85,14 @@ def test_create_location_without_business_location_succeeds(client, db_session) 
         headers={'Authorization': f'Bearer {token}'},
     )
 
-    assert response.status_code == 200
-    payload = response.json()['data']['location']
-    assert payload['organization_id'] == org_id
-    assert payload['name'] == 'Austin HQ'
-    assert payload['business_location_id'] is None
-
-    row = db_session.execute(
-        text(
-            '''
-            SELECT organization_id, sub_account_id, name, business_location_id
-            FROM locations
-            WHERE id = :location_id
-            '''
-        ),
-        {'location_id': payload['id']},
-    ).mappings().one()
-    assert row['organization_id'] == org_id
-    assert row['sub_account_id'] == subaccount_id
-    assert row['name'] == 'Austin HQ'
-    assert row['business_location_id'] is None
+    assert response.status_code == 409
+    details = response.json()['errors'][0]['details']
+    assert details['reason_code'] == 'business_location_required_for_active_location'
+    assert db_session.execute(
+        text('SELECT count(*) FROM locations WHERE organization_id = :organization_id'),
+        {'organization_id': org_id},
+    ).scalar_one() == 0
+    assert subaccount_id
 
 
 def test_create_location_with_same_org_business_location_succeeds(client, db_session) -> None:
@@ -159,7 +179,8 @@ def test_create_location_with_missing_business_location_returns_404(client, db_s
 def test_update_location_name_only_succeeds(client, db_session) -> None:
     token, org_id = _login(client, 'org-admin@example.com', 'pass-org-admin')
     _create_subaccount(client, token, org_id, 'Ops Epsilon')
-    location_id = _create_location(client, token, org_id, 'Austin HQ')
+    business_location_id = _create_business_location(client, token, org_id, 'Austin BL')
+    location_id = _create_location(client, token, org_id, 'Austin HQ', business_location_id)
 
     response = client.patch(
         f'/api/v1/organizations/{org_id}/locations/{location_id}',
@@ -170,7 +191,7 @@ def test_update_location_name_only_succeeds(client, db_session) -> None:
     assert response.status_code == 200
     payload = response.json()['data']['location']
     assert payload['name'] == 'Austin HQ Renamed'
-    assert payload['business_location_id'] is None
+    assert payload['business_location_id'] == business_location_id
 
     stored_name = db_session.execute(
         text('SELECT name FROM locations WHERE id = :location_id'),
@@ -181,8 +202,13 @@ def test_update_location_name_only_succeeds(client, db_session) -> None:
 
 def test_update_location_assigns_same_org_business_location(client, db_session) -> None:
     token, org_id = _login(client, 'org-admin@example.com', 'pass-org-admin')
-    _create_subaccount(client, token, org_id, 'Ops Zeta')
-    location_id = _create_location(client, token, org_id, 'Denver Hub')
+    subaccount_id = _create_subaccount(client, token, org_id, 'Ops Zeta')
+    location_id = _insert_legacy_orphan_location(
+        db_session,
+        org_id=org_id,
+        subaccount_id=subaccount_id,
+        name='Denver Hub',
+    )
     business_location_id = _create_business_location(client, token, org_id, 'Denver BL')
 
     response = client.patch(
@@ -203,6 +229,8 @@ def test_update_location_assigns_same_org_business_location(client, db_session) 
 
 def test_update_location_reassigns_to_different_same_org_business_location(client, db_session) -> None:
     token, org_id = _login(client, 'org-admin@example.com', 'pass-org-admin')
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="multi_location")
+    db_session.commit()
     _create_subaccount(client, token, org_id, 'Ops Eta')
     first_bl_id = _create_business_location(client, token, org_id, 'First BL')
     second_bl_id = _create_business_location(client, token, org_id, 'Second BL')
@@ -224,7 +252,7 @@ def test_update_location_reassigns_to_different_same_org_business_location(clien
     assert stored_business_location_id == second_bl_id
 
 
-def test_update_location_unlinks_business_location_when_set_null(client, db_session) -> None:
+def test_update_location_rejects_unlinking_business_location(client, db_session) -> None:
     token, org_id = _login(client, 'org-admin@example.com', 'pass-org-admin')
     _create_subaccount(client, token, org_id, 'Ops Theta')
     business_location_id = _create_business_location(client, token, org_id, 'Linkable BL')
@@ -236,21 +264,22 @@ def test_update_location_unlinks_business_location_when_set_null(client, db_sess
         headers={'Authorization': f'Bearer {token}'},
     )
 
-    assert response.status_code == 200
-    assert response.json()['data']['location']['business_location_id'] is None
+    assert response.status_code == 409
+    assert response.json()['errors'][0]['details']['reason_code'] == 'business_location_unlink_not_allowed'
 
     stored_business_location_id = db_session.execute(
         text('SELECT business_location_id FROM locations WHERE id = :location_id'),
         {'location_id': location_id},
     ).scalar_one()
-    assert stored_business_location_id is None
+    assert stored_business_location_id == business_location_id
 
 
 def test_update_location_rejects_cross_org_business_location_assignment(client, db_session) -> None:
     token_a, org_a = _login(client, 'org-admin@example.com', 'pass-org-admin')
     token_b, org_b = _login(client, 'b@example.com', 'pass-b')
     _create_subaccount(client, token_a, org_a, 'Ops Iota')
-    location_id = _create_location(client, token_a, org_a, 'Portland Hub')
+    own_business_location_id = _create_business_location(client, token_a, org_a, 'Portland BL')
+    location_id = _create_location(client, token_a, org_a, 'Portland Hub', own_business_location_id)
     foreign_business_location_id = _create_business_location(client, token_b, org_b, 'Foreign BL')
 
     response = client.patch(
@@ -267,13 +296,14 @@ def test_update_location_rejects_cross_org_business_location_assignment(client, 
         text('SELECT business_location_id FROM locations WHERE id = :location_id'),
         {'location_id': location_id},
     ).scalar_one()
-    assert stored_business_location_id is None
+    assert stored_business_location_id == own_business_location_id
 
 
 def test_update_location_rejects_missing_business_location_assignment(client, db_session) -> None:
     token, org_id = _login(client, 'org-admin@example.com', 'pass-org-admin')
     _create_subaccount(client, token, org_id, 'Ops Kappa')
-    location_id = _create_location(client, token, org_id, 'San Diego Hub')
+    own_business_location_id = _create_business_location(client, token, org_id, 'San Diego BL')
+    location_id = _create_location(client, token, org_id, 'San Diego Hub', own_business_location_id)
     missing_business_location_id = str(uuid.uuid4())
 
     response = client.patch(
@@ -290,14 +320,15 @@ def test_update_location_rejects_missing_business_location_assignment(client, db
         text('SELECT business_location_id FROM locations WHERE id = :location_id'),
         {'location_id': location_id},
     ).scalar_one()
-    assert stored_business_location_id is None
+    assert stored_business_location_id == own_business_location_id
 
 
 def test_update_location_rejects_cross_org_location_scope(client) -> None:
     token_a, org_a = _login(client, 'org-admin@example.com', 'pass-org-admin')
     token_b, org_b = _login(client, 'b@example.com', 'pass-b')
     _create_subaccount(client, token_b, org_b, 'Ops Lambda')
-    location_id = _create_location(client, token_b, org_b, 'Miami Hub')
+    business_location_id = _create_business_location(client, token_b, org_b, 'Miami BL')
+    location_id = _create_location(client, token_b, org_b, 'Miami Hub', business_location_id)
 
     response = client.patch(
         f'/api/v1/organizations/{org_a}/locations/{location_id}',

@@ -37,6 +37,7 @@ from app.services import business_service_service
 from app.services import business_service_area_service
 from app.services.cost_economics_service import (
     CostEconomicsError,
+    authorize_reserved_provider_dispatch,
     reconcile_provider_cost,
     release_provider_cost,
     reserve_provider_cost,
@@ -983,6 +984,7 @@ def _run_provider_call(
             else f"keyword-research:{run_id}:{operation}"
         ),
     )
+    authorize_reserved_provider_dispatch(db, reservation=reservation)
     try:
         result = call()
     except Exception:

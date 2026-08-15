@@ -130,20 +130,33 @@ def test_update_location_allows_same_org_business_location_link(db_session) -> N
     sub_account_id = _insert_sub_account(db_session, org_id, "Primary SubAccount")
     business_location_id = _insert_business_location(db_session, org_id, "Primary BL")
 
-    created = WRITE_SERVICE.create_location(
-        db_session,
-        organization_id=org_id,
-        sub_account_id=sub_account_id,
-        location_code="NYC-1",
-        name="New York",
-        country_code="US",
-        business_location_id=None,
+    location_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    db_session.execute(
+        text(
+            """
+            INSERT INTO locations (
+                id, organization_id, sub_account_id, location_code, name,
+                country_code, status, business_location_id, created_at, updated_at
+            ) VALUES (
+                :id, :organization_id, :sub_account_id, 'NYC-1', 'New York',
+                'US', 'active', NULL, :created_at, :updated_at
+            )
+            """
+        ),
+        {
+            "id": location_id,
+            "organization_id": org_id,
+            "sub_account_id": sub_account_id,
+            "created_at": now,
+            "updated_at": now,
+        },
     )
     db_session.commit()
 
     updated = WRITE_SERVICE.update_location(
         db_session,
-        location_id=str(created["id"]),
+        location_id=location_id,
         organization_id=org_id,
         business_location_id=business_location_id,
     )
@@ -159,6 +172,6 @@ def test_update_location_allows_same_org_business_location_link(db_session) -> N
             WHERE id = :location_id
             """
         ),
-        {"location_id": created["id"]},
+        {"location_id": location_id},
     ).scalar_one()
     assert linked_business_location_id == business_location_id

@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.data_connection import DataConnection
 from app.services import data_connections_service
+from app.services.commercial_plan_service import apply_commercial_plan
 
 
 def _login(client, email: str = "org-admin@example.com", password: str = "pass-org-admin") -> tuple[str, str]:
@@ -49,6 +50,11 @@ def _create_location_with_campaign(
 
 def test_portfolio_overview_ranks_locations_with_explainable_saved_evidence(client, db_session) -> None:
     token, org_id = _login(client)
+    apply_commercial_plan(
+        db_session,
+        organization_id=org_id,
+        plan_code="multi_location",
+    )
     headers = {"Authorization": f"Bearer {token}"}
     subaccount_response = client.post(
         f"/api/v1/organizations/{org_id}/subaccounts",
