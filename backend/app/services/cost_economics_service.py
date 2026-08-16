@@ -69,6 +69,10 @@ CREDIT_ACTION_CATALOG: dict[tuple[str, str], tuple[str, str]] = {
         "Explain today's priorities",
         "Turns verified business facts into a short action summary.",
     ),
+    ("governed_ai", "onboarding_baseline_narrative"): (
+        "Explain the starting baseline",
+        "Explains one frozen onboarding baseline without changing its facts, scores, or fixes.",
+    ),
     ("governed_ai", "review_response_draft"): (
         "Draft one review reply",
         "Prepares one reply for a person to edit and approve. It does not post the reply.",

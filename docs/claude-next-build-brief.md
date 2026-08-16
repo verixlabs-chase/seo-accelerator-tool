@@ -2560,10 +2560,20 @@ Implementation status (2026-08-15):
   and verification method. The same snapshot creates the authenticated
   HTML/PDF report, and the Reports page labels it as the onboarding baseline
   instead of displaying `Month 0`.
-- Governed AI narrative enrichment remains the next CX1.1B slice. CX1.1A stores
-  the bounded evidence and allowed-fix contract it must consume and always
-  delivers a deterministic diagnosis when AI is unavailable; it does not yet
-  dispatch a baseline-specific model request or claim AI-written prose.
+- CX1.1B is implemented locally. One metered, idempotent governed-AI request may
+  explain the minimized frozen evidence after the deterministic scores and fix
+  plan exist. A strict schema permits only plain-language headline, summary,
+  themes, cited evidence, uncertainty, and the exact existing fix order. Unknown
+  evidence, new or reordered fixes, unsupported promises, causal claims, and
+  technical customer language are rejected. The report remains deterministic
+  and usable when the provider is missing, blocked, unavailable, or returns an
+  invalid response.
+- Migration 0158 adds the versioned price card for the bounded baseline
+  explanation. Every attempt is auditable through the existing governed-AI run
+  ledger with frozen context/prompt/response hashes, token counts, allowance
+  reservation and reconciliation, and tenant/location scope. Credentials, raw
+  URLs, form contents, identities, and raw provider payloads are not included in
+  the model context. Live production-provider proof remains a release check.
 
 Execution order and dependencies:
 
@@ -2616,7 +2626,8 @@ Scope:
   only when the minimum required evidence contract is satisfied; excluded or
   missing sources never count as zero.
 - Use the governed AI runtime to synthesize the frozen evidence into natural
-  language, explain relationships, and prioritize supported fixes. The AI may
+  language, explain relationships, and explain the deterministic priority
+  order without changing it. The AI may
   label an evidence-backed hypothesis as an inference, but it cannot create a
   measurement, alter a deterministic score, invent a cause, or authorize an
   unsupported action. Every factual diagnosis and recommendation must resolve

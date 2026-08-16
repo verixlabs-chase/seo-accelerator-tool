@@ -4,6 +4,7 @@ import json
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
+import logging
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -24,11 +25,17 @@ from app.models.website_analytics import (
     AnalyticsTrafficSourceDailyMetric,
     WebsiteFormEvent,
 )
-from app.services import data_connections_service, premium_report_service, reporting_service
+from app.services import (
+    data_connections_service,
+    onboarding_baseline_ai_service,
+    premium_report_service,
+    reporting_service,
+)
 
 
 ANALYSIS_VERSION = "cx1.1-baseline-v1"
 EVIDENCE_WINDOW_DAYS = 28
+logger = logging.getLogger(__name__)
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -898,6 +905,27 @@ def _build_evidence(
     return evidence, scores, diagnosis
 
 
+def _merge_validated_ai_narrative(
+    diagnosis: dict[str, Any],
+    narrative: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge validated wording without allowing AI to change the fix plan."""
+    return {
+        **diagnosis,
+        "headline": str(narrative["headline"]),
+        "summary": str(narrative["summary"]),
+        "themes": list(narrative.get("themes") or []),
+        "evidence_used": list(narrative.get("evidence_used") or []),
+        "uncertainties": list(narrative.get("uncertainties") or []),
+        "analysis": {
+            **dict(diagnosis.get("analysis") or {}),
+            "narrative_source": "governed_ai",
+            "ai_enrichment": "validated",
+            "causal_proof": False,
+        },
+    }
+
+
 def _report_metric(
     *, key: str, label: str, value: float | int | None, unit: str, explanation: str, source: str
 ) -> dict[str, Any]:
@@ -1102,7 +1130,6 @@ def ensure_baseline(
         tenant_id=tenant_id,
         organization_id=organization_id,
         campaign_id=campaign_id,
-        lock=True,
     )
     existing = _existing(
         db,
@@ -1143,6 +1170,99 @@ def ensure_baseline(
         cutoff_at=cutoff_at,
     )
     source_states = readiness["sources"]
+    try:
+        ai_result = onboarding_baseline_ai_service.generate_baseline_narrative(
+            db,
+            campaign=campaign,
+            evidence=evidence,
+            scores=scores,
+            diagnosis=diagnosis,
+            source_states=source_states,
+            requested_by_user_id=generated_by_user_id,
+            now=cutoff_at,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Optional onboarding baseline explanation failed",
+            extra={
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+            },
+        )
+        ai_result = {
+            "state": "unavailable",
+            "narrative": None,
+            "context_hash": None,
+        }
+
+    # Provider and cost work happens before the immutable baseline lock. Re-read
+    # the same cutoff under the lock so a concurrent request cannot freeze AI
+    # wording against evidence that differs from the saved report.
+    campaign = _campaign(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        campaign_id=campaign_id,
+        lock=True,
+    )
+    existing = _existing(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        campaign_id=campaign_id,
+    )
+    if existing is not None:
+        return {
+            "created": False,
+            "state": existing.status,
+            "completion_required": True,
+            "completion_satisfied": True,
+            "basic_access_blocked": False,
+            "message": "Your immutable first baseline and diagnosis are ready.",
+            "baseline": _serialize(existing),
+        }
+    readiness = _readiness(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        campaign=campaign,
+        checked_at=cutoff_at,
+    )
+    if readiness["state"] != "ready_to_generate":
+        return {
+            **readiness,
+            "created": False,
+            "completion_satisfied": False,
+            "baseline": None,
+        }
+    evidence, scores, diagnosis = _build_evidence(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        campaign=campaign,
+        cutoff_at=cutoff_at,
+    )
+    source_states = readiness["sources"]
+    current_context_hash = onboarding_baseline_ai_service.baseline_context_hash(
+        evidence=evidence,
+        scores=scores,
+        diagnosis=diagnosis,
+        source_states=source_states,
+    )
+    narrative = ai_result.get("narrative")
+    if (
+        isinstance(narrative, dict)
+        and ai_result.get("state") == "validated"
+        and ai_result.get("context_hash") == current_context_hash
+    ):
+        diagnosis = _merge_validated_ai_narrative(diagnosis, narrative)
+    else:
+        diagnosis["analysis"] = {
+            **dict(diagnosis.get("analysis") or {}),
+            "narrative_source": "deterministic",
+            "ai_enrichment": "unavailable_non_blocking",
+        }
     limited = any(item["state"] != "measured" for item in source_states)
     baseline_status = "limited" if limited else "ready"
     report_snapshot = premium_report_service.build_report_snapshot(

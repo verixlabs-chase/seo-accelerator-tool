@@ -14,6 +14,7 @@ from app.models.rank import CampaignKeyword, KeywordCluster, RankingSnapshot
 from app.models.reporting import MonthlyReport
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.models.website_performance import WebsitePerformanceMeasurement
+from app.services import onboarding_baseline_ai_service, onboarding_baseline_service
 
 
 def _login(client, email: str = "org-admin@example.com") -> tuple[str, dict]:
@@ -339,6 +340,114 @@ def test_baseline_is_limited_without_optional_analytics_and_never_scores_missing
     assert sources["analytics"]["state"] == "not_connected"
     assert sources["analytics"]["optional"] is True
     assert "not scored as zero" in sources["analytics"]["detail"]
+
+
+def test_baseline_report_uses_validated_ai_wording_without_changing_fixes(
+    client, db_session, monkeypatch
+) -> None:
+    token, user = _login(client)
+    campaign = _campaign(db_session, user, name="Explained baseline")
+    _completed_crawl(db_session, campaign, issue_count=2)
+    _complete_optional_evidence(db_session, campaign)
+
+    def validated_narrative(
+        _db,
+        *,
+        evidence,
+        scores,
+        diagnosis,
+        source_states,
+        **_kwargs,
+    ):
+        return {
+            "state": "validated",
+            "narrative": {
+                "headline": "Start with the two website problems found in the scan",
+                "summary": (
+                    "The saved evidence shows two pages that need attention. "
+                    "Follow the measured fixes in the order shown."
+                ),
+                "themes": [
+                    {
+                        "title": "Website descriptions need attention",
+                        "explanation": "Two pages share the same saved problem.",
+                        "evidence_used": ["website:summary"],
+                    }
+                ],
+                "priority_order": [
+                    item["key"] for item in diagnosis.get("fixes") or []
+                ],
+                "evidence_used": ["website:summary"],
+                "uncertainties": [],
+            },
+            "context_hash": onboarding_baseline_ai_service.baseline_context_hash(
+                evidence=evidence,
+                scores=scores,
+                diagnosis=diagnosis,
+                source_states=source_states,
+            ),
+            "run_id": "governed-ai-run",
+            "idempotent_replay": False,
+        }
+
+    monkeypatch.setattr(
+        onboarding_baseline_service.onboarding_baseline_ai_service,
+        "generate_baseline_narrative",
+        validated_narrative,
+    )
+
+    response = client.post(
+        f"/api/v1/onboarding/baseline/{campaign.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    baseline = response.json()["data"]["baseline"]
+    assert baseline["diagnosis"]["headline"] == (
+        "Start with the two website problems found in the scan"
+    )
+    assert baseline["diagnosis"]["analysis"]["narrative_source"] == "governed_ai"
+    assert baseline["diagnosis"]["analysis"]["ai_enrichment"] == "validated"
+    assert baseline["diagnosis"]["fixes"][0]["key"].startswith("crawl:")
+    saved_report = db_session.get(MonthlyReport, baseline["report_id"])
+    report_snapshot = json.loads(saved_report.summary_json)
+    assert report_snapshot["executive_summary"]["headline"] == (
+        baseline["diagnosis"]["headline"]
+    )
+    assert report_snapshot["next_priorities"] == baseline["diagnosis"]["fixes"][:5]
+
+
+def test_optional_ai_failure_does_not_block_the_deterministic_baseline(
+    client, db_session, monkeypatch
+) -> None:
+    token, user = _login(client)
+    campaign = _campaign(db_session, user, name="Deterministic fallback baseline")
+    _completed_crawl(db_session, campaign)
+    _synced_search_connection(db_session, campaign)
+
+    def unavailable_narrative(*_args, **_kwargs):
+        raise RuntimeError("simulated optional provider failure")
+
+    monkeypatch.setattr(
+        onboarding_baseline_service.onboarding_baseline_ai_service,
+        "generate_baseline_narrative",
+        unavailable_narrative,
+    )
+
+    response = client.post(
+        f"/api/v1/onboarding/baseline/{campaign.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["created"] is True
+    assert payload["baseline"]["diagnosis"]["analysis"]["narrative_source"] == (
+        "deterministic"
+    )
+    assert payload["baseline"]["diagnosis"]["analysis"]["ai_enrichment"] == (
+        "unavailable_non_blocking"
+    )
 
 
 def test_baseline_rejects_cross_organization_campaign(client, db_session) -> None:

@@ -439,6 +439,134 @@ class GovernedKeywordRelevanceReview(BaseModel):
                 )
 
 
+class GovernedBaselineTheme(BaseModel):
+    """One plain-language theme grounded in frozen onboarding evidence."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(min_length=1, max_length=100)
+    explanation: str = Field(min_length=1, max_length=700)
+    evidence_used: list[str] = Field(min_length=1, max_length=8)
+
+    @field_validator("title")
+    @classmethod
+    def title_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="baseline theme title",
+            max_words=12,
+            max_sentences=1,
+            require_action_start=False,
+        )
+
+    @field_validator("explanation")
+    @classmethod
+    def explanation_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="baseline theme explanation",
+            max_words=70,
+            max_sentences=3,
+            require_action_start=False,
+        )
+
+    @field_validator("evidence_used")
+    @classmethod
+    def evidence_must_be_unique(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            stripped = item.strip()
+            if not stripped:
+                raise ValueError("Evidence identifiers must not be empty.")
+            if stripped not in normalized:
+                normalized.append(stripped)
+        return normalized
+
+
+class GovernedBaselineNarrative(BaseModel):
+    """Bounded AI wording for an immutable deterministic onboarding baseline."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    headline: str = Field(min_length=1, max_length=160)
+    summary: str = Field(min_length=1, max_length=1400)
+    themes: list[GovernedBaselineTheme] = Field(default_factory=list, max_length=4)
+    priority_order: list[str] = Field(default_factory=list, max_length=10)
+    evidence_used: list[str] = Field(min_length=1, max_length=20)
+    uncertainties: list[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator("headline")
+    @classmethod
+    def headline_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="baseline headline",
+            max_words=16,
+            max_sentences=1,
+            require_action_start=False,
+        )
+
+    @field_validator("summary")
+    @classmethod
+    def summary_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="baseline narrative",
+            max_words=130,
+            max_sentences=6,
+            require_action_start=False,
+        )
+
+    @field_validator("priority_order", "evidence_used", "uncertainties")
+    @classmethod
+    def list_items_must_be_unique(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            stripped = item.strip()
+            if not stripped:
+                raise ValueError("List items must not be empty.")
+            if stripped not in normalized:
+                normalized.append(stripped)
+        return normalized
+
+    def validate_against_context(
+        self,
+        *,
+        evidence_ids: set[str],
+        deterministic_fix_ids: list[str],
+    ) -> None:
+        cited_evidence = set(self.evidence_used)
+        for theme in self.themes:
+            cited_evidence.update(theme.evidence_used)
+        unknown_evidence = sorted(cited_evidence - evidence_ids)
+        if unknown_evidence:
+            raise ValueError(
+                f"AI output cited evidence outside the frozen baseline: {unknown_evidence}"
+            )
+        if self.priority_order != deterministic_fix_ids:
+            raise ValueError(
+                "AI output changed, removed, added, or reordered the deterministic fix plan."
+            )
+        combined_text = " ".join(
+            [
+                self.headline,
+                self.summary,
+                *(theme.title for theme in self.themes),
+                *(theme.explanation for theme in self.themes),
+                *self.uncertainties,
+            ]
+        ).lower()
+        for safe_phrase in SAFE_NEGATIONS:
+            combined_text = combined_text.replace(safe_phrase, "")
+        unsupported = [
+            phrase for phrase in UNSUPPORTED_CLAIM_PHRASES if phrase in combined_text
+        ]
+        if unsupported:
+            raise ValueError(
+                f"AI output contained an unsupported claim: {unsupported[0]}"
+            )
+
+
 def _validate_plain_language(
     value: str,
     *,

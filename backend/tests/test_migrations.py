@@ -113,6 +113,14 @@ def test_migration_upgrade_and_downgrade():
                     "OR (SELECT count(*) FROM entitlements e WHERE e.organization_id=o.id) < 9"
                 )
             ).scalar()
+            baseline_ai_price_card = conn.execute(
+                text(
+                    "SELECT model_name, input_token_cost_per_million, "
+                    "output_token_cost_per_million FROM provider_price_cards "
+                    "WHERE provider_name='mistral' AND capability='governed_ai' "
+                    "AND operation='onboarding_baseline_narrative' AND active=1"
+                )
+            ).first()
             # Three immutable legacy profiles remain for historical rows, while
             # 0155 adds four versioned commercial profiles without rewriting them.
             assert tier_profile_count == 7
@@ -123,6 +131,10 @@ def test_migration_upgrade_and_downgrade():
                 "d4e60a70-9c0c-4b8f-8cf9-4c7f0c690104",
             }
             assert unprovisioned_org_count == 0
+            assert baseline_ai_price_card is not None
+            assert baseline_ai_price_card[0] == "mistral-small-2603"
+            assert float(baseline_ai_price_card[1]) == 0.15
+            assert float(baseline_ai_price_card[2]) == 0.60
         print(f"[migrations-test] alembic_revision={revision}")
         print(f"[migrations-test] table_count={len(tables)}")
 
