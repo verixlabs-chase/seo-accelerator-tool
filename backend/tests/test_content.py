@@ -351,6 +351,25 @@ def test_content_workspace_combines_saved_pages_and_draft_briefs(client, db_sess
     ).json()["data"]
     assert with_draft["summary"]["working_drafts"] == 1
     assert with_draft["briefs"][0]["working_draft"]["revision"] == 2
+    metadata = with_draft["briefs"][0]["working_draft"][
+        "metadata_recommendations"
+    ]
+    assert [item["code"] for item in metadata] == [
+        "seo_title",
+        "meta_description",
+    ]
+    assert metadata[0]["current_value"] == "Plumbing services"
+    assert metadata[0]["proposed_value"] == "Emergency plumbing in Reno"
+    assert metadata[0]["state"] == "review"
+    assert metadata[1]["current_value"] is None
+    assert metadata[1]["state"] == "add"
+    assert metadata[1]["proposed_character_count"] <= 160
+    assert metadata[1]["safety"] == {
+        "owner_approval_required": True,
+        "automatic_publishing_allowed": False,
+        "website_changed": False,
+    }
+    assert "Google ranking rule" in metadata[0]["limitations"][0]
     assert with_draft["next_action"]["code"] == "continue_content_draft"
 
 

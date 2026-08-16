@@ -65,11 +65,33 @@ type WorkingContentDraft = {
   created_at: string;
   updated_at: string;
   ai_suggestion?: ContentDraftAISuggestionResult | null;
+  metadata_recommendations?: ContentMetadataRecommendation[];
   safety: {
     ai_generated: false;
     automatic_publishing_allowed: false;
     website_changed: false;
     approval_to_publish_recorded: false;
+  };
+};
+
+type ContentMetadataRecommendation = {
+  code: "seo_title" | "meta_description";
+  label: string;
+  state: "add" | "review" | "matches" | "not_enough_information";
+  current_value?: string | null;
+  current_label: string;
+  proposed_value?: string | null;
+  proposed_character_count?: number | null;
+  review_after_characters: number;
+  reason: string;
+  evidence: string[];
+  source_label?: string | null;
+  observed_at?: string | null;
+  limitations: string[];
+  safety: {
+    owner_approval_required: true;
+    automatic_publishing_allowed: false;
+    website_changed: false;
   };
 };
 
@@ -174,6 +196,13 @@ function publicationLabel(value: string) {
   if (value === "private") return "Private page";
   if (value === "needs_attention") return "Page needs attention";
   return value.replaceAll("_", " ");
+}
+
+function metadataStateLabel(value: ContentMetadataRecommendation["state"]) {
+  if (value === "add") return "Add this";
+  if (value === "matches") return "Already matches";
+  if (value === "not_enough_information") return "More information needed";
+  return "Review the difference";
 }
 
 function WorkingDraftEditor({
@@ -320,6 +349,57 @@ function WorkingDraftEditor({
         </button>
         <p className="text-xs text-zinc-500">Saving stores owner-written text only. It cannot contact WordPress or publish.</p>
       </div>
+      {(draft.metadata_recommendations || []).length ? (
+        <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+          <DetailsDisclosure
+            label="Title and search-description recommendations"
+            summary="Compared with the latest exact page evidence when it was available"
+          >
+            <div className="space-y-4">
+              {(draft.metadata_recommendations || []).map((item) => (
+                <article key={`${draft.id}-${item.code}`} className="rounded-md border border-[#303238] bg-[#111214] p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-zinc-100">{item.label}</p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {item.source_label
+                          ? `${item.source_label} · checked ${formatDate(item.observed_at)}`
+                          : "No exact current page value was saved"}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-emerald-500/25 px-2 py-1 text-xs text-emerald-100">
+                      {metadataStateLabel(item.state)}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">{item.current_label}</p>
+                      <p className="mt-1 text-sm leading-6 text-zinc-300">{item.current_value || "No saved value"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Proposed wording</p>
+                      <p className="mt-1 text-sm leading-6 text-zinc-100">
+                        {item.proposed_value || "The confirmed facts are not sufficient for a safe suggestion."}
+                      </p>
+                      {item.proposed_character_count !== null && item.proposed_character_count !== undefined ? (
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {item.proposed_character_count} characters · review after {item.review_after_characters}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-zinc-400">{item.reason}</p>
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">Evidence: {item.evidence.join(" · ")}</p>
+                </article>
+              ))}
+              <p className="text-xs leading-5 text-zinc-500">
+                Character checks are writing guidance, not Google ranking rules. Google may display different wording.
+                These recommendations have not changed the working draft or website.
+              </p>
+            </div>
+          </DetailsDisclosure>
+        </div>
+      ) : null}
       <div className="mt-4 rounded-lg border border-sky-500/20 bg-sky-500/5 p-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

@@ -3087,9 +3087,15 @@ draft revision. That request uses only the accepted brief and saved section
 headings/guidance, never sends owner-written section bodies, consumes the
 existing metered AI allowance and cost controls, validates citations and
 section order, and saves the result separately. It cannot overwrite the draft,
-record approval, contact WordPress, or publish. The next CNT1 slices remain
-metadata/schema/internal-link recommendations and an explicitly approved
-publishing handoff.
+record approval, contact WordPress, or publish. The deterministic metadata
+slice now also compares the latest exact saved page title and search
+description with proposed wording derived from the accepted service, service
+area, and customer search. It identifies missing, matching, and review states,
+shows the evidence date and source, and treats character counts as writing
+guidance rather than Google ranking rules. Opening the workspace creates no
+provider charge, and the recommendations cannot update the draft or website.
+The next CNT1 slices remain schema/internal-link recommendations, content
+validation, and an explicitly approved publishing handoff.
 
 Scope:
 

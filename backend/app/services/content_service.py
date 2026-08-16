@@ -108,6 +108,7 @@ def get_content_workspace(
     bounded_limit = max(1, min(int(page_limit), 200))
     pages: list[dict] = []
     seen_urls: set[str] = set()
+    page_metadata_by_url: dict[str, dict] = {}
 
     wordpress_run = (
         db.query(WordPressContentSyncRun)
@@ -139,6 +140,18 @@ def get_content_workspace(
         normalized_url = _normalized_page_url(item.url)
         if normalized_url:
             seen_urls.add(normalized_url)
+            page_metadata_by_url[normalized_url] = {
+                "url": item.url,
+                "title": str(item.meta_title or item.title or "").strip() or None,
+                "title_source": (
+                    "Saved SEO title"
+                    if str(item.meta_title or "").strip()
+                    else "Saved page title"
+                ),
+                "description": str(item.meta_description or "").strip() or None,
+                "source_label": "Connected website",
+                "observed_at": item.observed_at,
+            }
         attention: list[str] = []
         if not str(item.title or "").strip():
             attention.append("Add a clear page title")
@@ -193,6 +206,14 @@ def get_content_workspace(
             continue
         if normalized_url:
             seen_urls.add(normalized_url)
+            page_metadata_by_url[normalized_url] = {
+                "url": url,
+                "title": str(result.title or "").strip() or None,
+                "title_source": "Saved page title",
+                "description": str(result.meta_description or "").strip() or None,
+                "source_label": "Website scan",
+                "observed_at": result.crawled_at,
+            }
         attention = []
         if not str(result.title or "").strip():
             attention.append("Add a clear page title")
@@ -435,6 +456,11 @@ def get_content_workspace(
                 suggestion=(
                     suggestions_by_draft.get(drafts_by_brief[item.id].id)
                     if item.id in drafts_by_brief
+                    else None
+                ),
+                page_metadata=(
+                    page_metadata_by_url.get(_normalized_page_url(item.target_url or ""))
+                    if item.target_url
                     else None
                 ),
             )
@@ -736,6 +762,7 @@ def _serialize_workspace_brief(
     *,
     draft: ContentDraft | None = None,
     suggestion: GovernedAIRun | None = None,
+    page_metadata: dict | None = None,
 ) -> dict:
     return {
         "id": item.id,
@@ -753,7 +780,12 @@ def _serialize_workspace_brief(
         "created_at": item.created_at.isoformat(),
         "updated_at": item.updated_at.isoformat(),
         "working_draft": (
-            _serialize_content_draft(draft, suggestion=suggestion)
+            _serialize_content_draft(
+                draft,
+                suggestion=suggestion,
+                brief=item,
+                page_metadata=page_metadata,
+            )
             if draft is not None
             else None
         ),
@@ -764,6 +796,8 @@ def _serialize_content_draft(
     item: ContentDraft,
     *,
     suggestion: GovernedAIRun | None = None,
+    brief: ContentBrief | None = None,
+    page_metadata: dict | None = None,
 ) -> dict:
     ai_suggestion = None
     if suggestion is not None and isinstance(suggestion.output_payload, dict):
@@ -794,8 +828,175 @@ def _serialize_content_draft(
         "created_at": item.created_at.isoformat(),
         "updated_at": item.updated_at.isoformat(),
         "ai_suggestion": ai_suggestion,
+        "metadata_recommendations": (
+            _metadata_recommendations(brief, page_metadata=page_metadata)
+            if brief is not None
+            else []
+        ),
         "safety": _content_draft_safety(),
     }
+
+
+def _metadata_recommendations(
+    brief: ContentBrief,
+    *,
+    page_metadata: dict | None,
+) -> list[dict]:
+    service = _clean_metadata_fact(brief.service_name or brief.primary_keyword)
+    area = _clean_metadata_fact(brief.service_area_name)
+    evidence = [
+        "Accepted content brief",
+        *([f"Confirmed service: {service}"] if service else []),
+        *([f"Confirmed service area: {area}"] if area else []),
+        *(
+            [f"Customer search: {_clean_metadata_fact(brief.primary_keyword)}"]
+            if _clean_metadata_fact(brief.primary_keyword)
+            else []
+        ),
+    ]
+    proposed_title = _proposed_metadata_title(service=service, area=area)
+    proposed_description = _proposed_metadata_description(service=service, area=area)
+    current_title = _clean_metadata_fact(
+        (page_metadata or {}).get("title") if page_metadata else None
+    )
+    current_description = _clean_metadata_fact(
+        (page_metadata or {}).get("description") if page_metadata else None
+    )
+    observed_at = (page_metadata or {}).get("observed_at") if page_metadata else None
+    source_label = (
+        str((page_metadata or {}).get("source_label") or "").strip()
+        if page_metadata
+        else ""
+    )
+    source_evidence = [f"Current value: {source_label}"] if source_label else []
+    return [
+        _metadata_recommendation_item(
+            code="seo_title",
+            label="Search result title",
+            current_value=current_title,
+            current_label=(
+                str((page_metadata or {}).get("title_source") or "Saved page title")
+                if page_metadata
+                else "Current title not saved"
+            ),
+            proposed_value=proposed_title,
+            review_after_characters=65,
+            reason=(
+                "Keep the confirmed service and service area clear so a customer can understand the page before opening it."
+            ),
+            evidence=[*evidence, *source_evidence],
+            source_label=source_label or None,
+            observed_at=observed_at,
+        ),
+        _metadata_recommendation_item(
+            code="meta_description",
+            label="Search description",
+            current_value=current_description,
+            current_label=(
+                "Saved search description"
+                if page_metadata
+                else "Current description not saved"
+            ),
+            proposed_value=proposed_description,
+            review_after_characters=160,
+            reason=(
+                "Describe the confirmed service and area without adding prices, guarantees, or other unsupported claims."
+            ),
+            evidence=[*evidence, *source_evidence],
+            source_label=source_label or None,
+            observed_at=observed_at,
+        ),
+    ]
+
+
+def _metadata_recommendation_item(
+    *,
+    code: str,
+    label: str,
+    current_value: str | None,
+    current_label: str,
+    proposed_value: str | None,
+    review_after_characters: int,
+    reason: str,
+    evidence: list[str],
+    source_label: str | None,
+    observed_at: datetime | None,
+) -> dict:
+    if proposed_value is None:
+        recommendation_state = "not_enough_information"
+    elif current_value is None:
+        recommendation_state = "add"
+    elif current_value.casefold() == proposed_value.casefold():
+        recommendation_state = "matches"
+    else:
+        recommendation_state = "review"
+    return {
+        "code": code,
+        "label": label,
+        "state": recommendation_state,
+        "current_value": current_value,
+        "current_label": current_label,
+        "proposed_value": proposed_value,
+        "proposed_character_count": len(proposed_value) if proposed_value else None,
+        "review_after_characters": review_after_characters,
+        "reason": reason,
+        "evidence": list(dict.fromkeys(item for item in evidence if item)),
+        "source_label": source_label,
+        "observed_at": observed_at.isoformat() if observed_at is not None else None,
+        "limitations": [
+            "The character check is a writing guide, not a Google ranking rule.",
+            "Google may show different wording in a search result.",
+            "Review this recommendation before using it. Nothing has changed on the website.",
+        ],
+        "safety": {
+            "owner_approval_required": True,
+            "automatic_publishing_allowed": False,
+            "website_changed": False,
+        },
+    }
+
+
+def _proposed_metadata_title(*, service: str | None, area: str | None) -> str | None:
+    if not service:
+        return None
+    candidate = service
+    if area and area.casefold() not in service.casefold():
+        candidate = f"{service} in {area}"
+    if len(candidate) <= 65:
+        return _sentence_case(candidate)
+    if len(service) <= 65:
+        return _sentence_case(service)
+    return None
+
+
+def _proposed_metadata_description(
+    *,
+    service: str | None,
+    area: str | None,
+) -> str | None:
+    if not service:
+        return None
+    scope = f" for customers in {area}" if area else ""
+    candidate = (
+        f"{_sentence_case(service)}{scope}. Review the service details, who it helps, "
+        "and what to consider before choosing it."
+    )
+    if len(candidate) <= 160:
+        return candidate
+    shorter = f"{_sentence_case(service)}{scope}. Review the service details and who it helps."
+    if len(shorter) <= 160:
+        return shorter
+    service_only = f"{_sentence_case(service)}. Review the service details and who it helps."
+    return service_only if len(service_only) <= 160 else None
+
+
+def _clean_metadata_fact(value: object) -> str | None:
+    cleaned = " ".join(str(value or "").split()).strip()
+    return cleaned or None
+
+
+def _sentence_case(value: str) -> str:
+    return f"{value[:1].upper()}{value[1:]}" if value else value
 
 
 def _content_brief_hash(item: ContentBrief) -> str:

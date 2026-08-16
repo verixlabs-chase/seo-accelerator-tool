@@ -44,6 +44,17 @@ test("optional AI wording stays separate from the owner draft", () => {
   assert.doesNotMatch(page, /Publish suggestion/i);
 });
 
+test("title and search-description recommendations compare saved evidence without publishing", () => {
+  assert.match(page, /Title and search-description recommendations/);
+  assert.match(page, /Compared with the latest exact page evidence/);
+  assert.match(page, /Proposed wording/);
+  assert.match(page, /Character checks are writing guidance, not Google ranking rules/);
+  assert.match(page, /These recommendations have not changed the working draft or website/);
+  assert.match(page, /\(draft\.metadata_recommendations \|\| \[\]\)/);
+  assert.doesNotMatch(page, /Apply metadata/i);
+  assert.doesNotMatch(page, /Update WordPress now/i);
+});
+
 test("brief review saves one explicit owner decision without changing the website", () => {
   assert.match(page, /\/content\/briefs\/\$\{encodeURIComponent\(brief\.id\)\}\/review/);
   assert.match(page, /method: "PUT"/);
