@@ -18,6 +18,7 @@ from app.models.wordpress_content_inventory import (
     WordPressContentItem,
     WordPressContentSyncRun,
 )
+from app.services.audit_service import write_audit_log
 
 
 _ALLOWED_TRANSITIONS = {
@@ -227,6 +228,7 @@ def get_content_workspace(
         .limit(100)
         .all()
     )
+    briefs.sort(key=lambda item: (item.status != "draft", -item.created_at.timestamp()))
     assets = (
         db.query(ContentAsset)
         .filter(
@@ -245,7 +247,8 @@ def get_content_workspace(
         )
     )
     attention_count = sum(bool(item["attention"]) for item in pages)
-    if briefs:
+    first_draft_brief = next((item for item in briefs if item.status == "draft"), None)
+    if first_draft_brief is not None:
         next_action = {
             "code": "review_content_brief",
             "label": "Review the first content brief",
@@ -350,24 +353,7 @@ def get_content_workspace(
             },
         ],
         "pages": pages,
-        "briefs": [
-            {
-                "id": item.id,
-                "status": item.status,
-                "title": item.title,
-                "primary_search": item.primary_keyword,
-                "recommended_page_action": item.recommended_page_action,
-                "target_url": item.target_url,
-                "competitor_domain": item.competitor_domain,
-                "competitor_url": item.competitor_url,
-                "service_name": item.service_name,
-                "service_area_name": item.service_area_name,
-                "evidence": _customer_brief_evidence(item.evidence),
-                "outline": list(item.outline or []),
-                "created_at": item.created_at.isoformat(),
-            }
-            for item in briefs
-        ],
+        "briefs": [_serialize_workspace_brief(item) for item in briefs],
         "work": [
             {
                 "id": item.id,
@@ -385,6 +371,102 @@ def get_content_workspace(
 
 def _normalized_page_url(value: str) -> str:
     return str(value or "").strip().casefold().rstrip("/")
+
+
+def review_content_brief(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    brief_id: str,
+    decision: str,
+    note: str | None,
+    actor_user_id: str,
+) -> dict:
+    """Save one terminal owner decision without changing the frozen brief."""
+    _campaign_or_404(db, tenant_id, campaign_id)
+    brief = (
+        db.query(ContentBrief)
+        .filter(
+            ContentBrief.id == brief_id,
+            ContentBrief.tenant_id == tenant_id,
+            ContentBrief.campaign_id == campaign_id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if brief is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content brief not found")
+    target_status = "accepted" if decision == "accept" else "declined"
+    if brief.status == target_status:
+        return {
+            "changed": False,
+            "message": "This brief decision was already saved.",
+            "item": _serialize_workspace_brief(brief),
+            "safety": _brief_review_safety(),
+        }
+    if brief.status != "draft":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This brief already has a different final decision.",
+        )
+    now = datetime.now(UTC)
+    brief.status = target_status
+    brief.updated_at = now
+    write_audit_log(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        event_type="content.brief.reviewed",
+        payload={
+            "campaign_id": campaign_id,
+            "content_brief_id": brief.id,
+            "decision": target_status,
+            "note": str(note or "").strip() or None,
+            "brief_evidence_unchanged": True,
+            "publishing_enabled": False,
+        },
+    )
+    db.commit()
+    db.refresh(brief)
+    return {
+        "changed": True,
+        "message": (
+            "Page target accepted for later drafting. Nothing was published."
+            if target_status == "accepted"
+            else "Brief declined. Nothing was changed on the website."
+        ),
+        "item": _serialize_workspace_brief(brief),
+        "safety": _brief_review_safety(),
+    }
+
+
+def _serialize_workspace_brief(item: ContentBrief) -> dict:
+    return {
+        "id": item.id,
+        "status": item.status,
+        "title": item.title,
+        "primary_search": item.primary_keyword,
+        "recommended_page_action": item.recommended_page_action,
+        "target_url": item.target_url,
+        "competitor_domain": item.competitor_domain,
+        "competitor_url": item.competitor_url,
+        "service_name": item.service_name,
+        "service_area_name": item.service_area_name,
+        "evidence": _customer_brief_evidence(item.evidence),
+        "outline": list(item.outline or []),
+        "created_at": item.created_at.isoformat(),
+        "updated_at": item.updated_at.isoformat(),
+    }
+
+
+def _brief_review_safety() -> dict:
+    return {
+        "brief_evidence_changed": False,
+        "draft_generated": False,
+        "publishing_enabled": False,
+        "website_changed": False,
+    }
 
 
 def _customer_brief_evidence(value: dict | None) -> dict:

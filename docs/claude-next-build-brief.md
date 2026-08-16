@@ -3072,11 +3072,14 @@ connected-website inventory and website scan without storing raw page bodies,
 deduplicates matching URLs, and puts pages with clear saved issues first. It
 also shows review-only content briefs created from a confirmed customer search
 and competitor gap, including the target page choice, exact saved positions,
-and proposed outline. Inventory limits and missing sources stay visible, and
+and proposed outline. An owner can now accept that page target for a later
+drafting step or decline the brief; the decision is terminal, idempotent,
+audited, and cannot change the frozen evidence or publish anything. Inventory
+limits and missing sources stay visible, and
 only a small customer-safe evidence contract leaves the API. This slice cannot
 generate page copy, publish, or mutate a website. The next CNT1 slices remain
-page-target decisions, governed drafting and editing, metadata/schema/internal-
-link recommendations, and an explicitly approved publishing handoff.
+governed drafting and editing, metadata/schema/internal-link recommendations,
+and an explicitly approved publishing handoff.
 
 Scope:
 

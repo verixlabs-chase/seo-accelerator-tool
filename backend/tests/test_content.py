@@ -235,6 +235,46 @@ def test_content_workspace_combines_saved_pages_and_draft_briefs(client, db_sess
     assert payload["next_action"]["code"] == "review_content_brief"
     assert "provider" not in str(payload).lower()
 
+    brief_id = payload["briefs"][0]["id"]
+    review = client.put(
+        f"/api/v1/content/briefs/{brief_id}/review",
+        json={"campaign_id": campaign.id, "decision": "accept"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert review.status_code == 200
+    reviewed = review.json()["data"]
+    assert reviewed["changed"] is True
+    assert reviewed["item"]["status"] == "accepted"
+    assert reviewed["safety"] == {
+        "brief_evidence_changed": False,
+        "draft_generated": False,
+        "publishing_enabled": False,
+        "website_changed": False,
+    }
+
+    repeated = client.put(
+        f"/api/v1/content/briefs/{brief_id}/review",
+        json={"campaign_id": campaign.id, "decision": "accept"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["changed"] is False
+
+    conflicting = client.put(
+        f"/api/v1/content/briefs/{brief_id}/review",
+        json={"campaign_id": campaign.id, "decision": "decline"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert conflicting.status_code == 409
+
+    refreshed = client.get(
+        f"/api/v1/content/workspace?campaign_id={campaign.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+    assert refreshed["summary"]["draft_briefs"] == 0
+    assert refreshed["briefs"][0]["status"] == "accepted"
+    assert refreshed["next_action"]["code"] == "review_page_attention"
+
 
 def test_content_workspace_is_tenant_scoped(client):
     token_a = _login(client, "a@example.com", "pass-a")

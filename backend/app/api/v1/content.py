@@ -7,7 +7,12 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.models.content import ContentAsset
-from app.schemas.content import ContentAssetCreateIn, ContentAssetOut, ContentAssetUpdateIn
+from app.schemas.content import (
+    ContentAssetCreateIn,
+    ContentAssetOut,
+    ContentAssetUpdateIn,
+    ContentBriefReviewIn,
+)
 from app.services import content_service, infra_service
 from app.tasks.tasks import content_generate_plan, content_refresh_internal_link_map, content_run_qc_checks
 
@@ -71,6 +76,26 @@ def get_content_workspace(
         db,
         tenant_id=user["tenant_id"],
         campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@content_router.put("/briefs/{brief_id}/review")
+def review_content_brief(
+    request: Request,
+    brief_id: str,
+    body: ContentBriefReviewIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.review_content_brief(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        brief_id=brief_id,
+        decision=body.decision,
+        note=body.note,
+        actor_user_id=user["id"],
     )
     return envelope(request, payload)
 

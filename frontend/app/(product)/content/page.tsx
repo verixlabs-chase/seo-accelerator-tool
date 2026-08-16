@@ -91,6 +91,18 @@ type ContentWorkspace = {
   next_action: { code: string; label: string; detail: string; href?: string | null };
 };
 
+type ContentBriefReviewResult = {
+  changed: boolean;
+  message: string;
+  item: ContentBrief;
+  safety: {
+    brief_evidence_changed: false;
+    draft_generated: false;
+    publishing_enabled: false;
+    website_changed: false;
+  };
+};
+
 const SAFE_ACTION_PATHS = new Set(["/content#briefs", "/content#pages", "/site-health", "/competitors"]);
 
 function formatDate(value?: string | null) {
@@ -122,6 +134,9 @@ export default function ContentWorkspacePage() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [briefReviewBusy, setBriefReviewBusy] = useState("");
+  const [briefReviewMessage, setBriefReviewMessage] = useState("");
+  const [briefReviewError, setBriefReviewError] = useState("");
 
   const loadWorkspace = useCallback(async (campaignId: string, refresh = false) => {
     if (refresh) setRefreshing(true);
@@ -159,7 +174,7 @@ export default function ContentWorkspacePage() {
       .filter((value): value is string => Boolean(value)) || [];
     return values.sort().at(-1) || null;
   }, [payload]);
-  const firstBrief = payload?.briefs?.[0] || null;
+  const firstDraftBrief = payload?.briefs?.find((brief) => brief.status === "draft") || null;
   const firstPageNeedingAttention = payload?.pages?.find((page) => page.attention.length > 0) || null;
   const nextHref = payload?.next_action?.href && SAFE_ACTION_PATHS.has(payload.next_action.href)
     ? payload.next_action.href
@@ -172,6 +187,25 @@ export default function ContentWorkspacePage() {
       return;
     }
     router.push(nextHref);
+  }
+
+  async function reviewBrief(brief: ContentBrief, decision: "accept" | "decline") {
+    if (!selectedCampaignId || briefReviewBusy) return;
+    setBriefReviewBusy(brief.id);
+    setBriefReviewMessage("");
+    setBriefReviewError("");
+    try {
+      const result = (await platformApi(`/content/briefs/${encodeURIComponent(brief.id)}/review`, {
+        method: "PUT",
+        body: JSON.stringify({ campaign_id: selectedCampaignId, decision }),
+      })) as ContentBriefReviewResult;
+      setBriefReviewMessage(result.message);
+      await loadWorkspace(selectedCampaignId, true);
+    } catch {
+      setBriefReviewError("That brief decision could not be saved. Nothing was changed or published.");
+    } finally {
+      setBriefReviewBusy("");
+    }
   }
 
   return (
@@ -238,7 +272,7 @@ export default function ContentWorkspacePage() {
           <OwnerDecisionPanel
             eyebrow="Current content result"
             title={
-              firstBrief
+              firstDraftBrief
                 ? `${payload.summary.draft_briefs} content brief${payload.summary.draft_briefs === 1 ? " is" : "s are"} ready for review`
                 : firstPageNeedingAttention
                   ? `${payload.summary.pages_needing_attention} page${payload.summary.pages_needing_attention === 1 ? " needs" : "s need"} attention`
@@ -250,8 +284,20 @@ export default function ContentWorkspacePage() {
             nextStep={payload.next_action.detail}
             actionLabel={nextHref ? payload.next_action.label : undefined}
             onAction={nextHref ? followNextAction : undefined}
-            tone={firstBrief ? "neutral" : firstPageNeedingAttention ? "warning" : payload.summary.pages ? "positive" : "neutral"}
+            tone={firstDraftBrief ? "neutral" : firstPageNeedingAttention ? "warning" : payload.summary.pages ? "positive" : "neutral"}
           />
+        ) : null}
+
+        {briefReviewMessage ? (
+          <section role="status" className="border-y border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            {briefReviewMessage}
+          </section>
+        ) : null}
+
+        {briefReviewError ? (
+          <section role="alert" className="border-y border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {briefReviewError}
+          </section>
         ) : null}
 
         {!loading && payload ? (
@@ -305,8 +351,18 @@ export default function ContentWorkspacePage() {
                       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.35fr)]">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-full border border-accent-500/25 bg-accent-500/10 px-2 py-0.5 text-xs text-accent-100">
-                              Draft for review
+                            <span className={`rounded-full border px-2 py-0.5 text-xs ${
+                              brief.status === "accepted"
+                                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                                : brief.status === "declined"
+                                  ? "border-zinc-600/50 bg-zinc-800/60 text-zinc-300"
+                                  : "border-accent-500/25 bg-accent-500/10 text-accent-100"
+                            }`}>
+                              {brief.status === "accepted"
+                                ? "Page target accepted"
+                                : brief.status === "declined"
+                                  ? "Brief declined"
+                                  : "Draft for review"}
                             </span>
                             <span className="text-xs text-zinc-500">Saved {formatDate(brief.created_at)}</span>
                           </div>
@@ -341,6 +397,37 @@ export default function ContentWorkspacePage() {
                           ))}
                         </ol>
                       </DetailsDisclosure>
+                      {brief.status === "draft" ? (
+                        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#2a2b30] pt-4">
+                          <button
+                            type="button"
+                            onClick={() => void reviewBrief(brief, "accept")}
+                            disabled={Boolean(briefReviewBusy)}
+                            className="rounded-md bg-accent-500 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {briefReviewBusy === brief.id
+                              ? "Saving decision…"
+                              : brief.recommended_page_action === "create_service_page"
+                                ? "Accept new page target"
+                                : "Accept page target"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void reviewBrief(brief, "decline")}
+                            disabled={Boolean(briefReviewBusy)}
+                            className="rounded-md border border-[#34353b] px-3 py-2 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Decline brief
+                          </button>
+                          <p className="text-xs text-zinc-500">
+                            Accepting saves the page choice for a later drafting step. It does not write or publish content.
+                          </p>
+                        </div>
+                      ) : brief.status === "accepted" ? (
+                        <p className="mt-4 border-t border-[#2a2b30] pt-3 text-sm text-emerald-100">
+                          The page choice is saved. Drafting and publishing still require separate steps.
+                        </p>
+                      ) : null}
                     </article>
                   ))}
                 </div>

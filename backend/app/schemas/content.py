@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ContentAssetCreateIn(BaseModel):
@@ -16,6 +17,12 @@ class ContentAssetUpdateIn(BaseModel):
     target_url: str | None = None
 
 
+class ContentBriefReviewIn(BaseModel):
+    campaign_id: str = Field(min_length=1, max_length=36)
+    decision: Literal["accept", "decline"]
+    note: str | None = Field(default=None, max_length=500)
+
+
 class ContentAssetOut(BaseModel):
     id: str
     tenant_id: str
@@ -29,4 +36,3 @@ class ContentAssetOut(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
-

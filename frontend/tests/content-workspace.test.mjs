@@ -12,13 +12,24 @@ const nav = readFileSync(
   "utf8",
 );
 
-test("content workspace is location-scoped and read-only", () => {
+test("content workspace is location-scoped and cannot draft or publish", () => {
   assert.match(page, /\/content\/workspace\?campaign_id=/);
   assert.match(page, /selectedCampaignId/);
   assert.match(page, /Nothing on this page can publish to your website/);
   assert.match(page, /not proof that a page change will improve rankings/);
   assert.doesNotMatch(page, /method:\s*"POST"/);
   assert.doesNotMatch(page, /method:\s*"PATCH"/);
+});
+
+test("brief review saves one explicit owner decision without changing the website", () => {
+  assert.match(page, /\/content\/briefs\/\$\{encodeURIComponent\(brief\.id\)\}\/review/);
+  assert.match(page, /method: "PUT"/);
+  assert.match(page, /Accept page target/);
+  assert.match(page, /Accept new page target/);
+  assert.match(page, /Decline brief/);
+  assert.match(page, /does not write or publish content/);
+  assert.doesNotMatch(page, /Generate (?:a )?draft/i);
+  assert.doesNotMatch(page, /Publish now/i);
 });
 
 test("saved pages and evidence-backed briefs have plain next steps", () => {
