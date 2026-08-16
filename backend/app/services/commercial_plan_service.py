@@ -37,6 +37,7 @@ PLAN_CATALOG_VERSION = "commercial-plans-2026-08-v2"
 FEATURE_WORDPRESS_EXECUTION = "wordpress_execution"
 FEATURE_PROFILE_FLEET_ACTIONS = "business_profile_fleet_actions"
 FEATURE_AUTOMATIC_REVIEW_REPLIES = "automatic_review_replies"
+FEATURE_LISTING_CORRECTION_SYNC = "listing_correction_sync"
 FEATURE_EXTERNAL_AUTOMATION = "external_automation"
 FEATURE_PRIVATE_AI_PROVIDER = "private_ai_provider"
 FEATURE_PERFORMANCE_TREND = "performance_trend"
@@ -104,6 +105,12 @@ FEATURES: tuple[CommercialFeature, ...] = (
         code=FEATURE_AUTOMATIC_REVIEW_REPLIES,
         label="Approved automatic review replies",
         summary="Use saved rules and approval controls to prepare or publish review replies.",
+        minimum_plan_code="multi_location",
+    ),
+    CommercialFeature(
+        code=FEATURE_LISTING_CORRECTION_SYNC,
+        label="Managed directory corrections",
+        summary="Prepare, submit, and monitor approved directory listing corrections.",
         minimum_plan_code="multi_location",
     ),
     CommercialFeature(

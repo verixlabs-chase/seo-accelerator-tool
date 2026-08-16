@@ -32,9 +32,17 @@ type CitationItem = {
 };
 
 type StatusResult = {
-  job_id: string | null;
   items: CitationItem[];
   truth?: RuntimeTruth;
+  correction_access?: ListingCorrectionAccess;
+};
+
+type ListingCorrectionAccess = {
+  plan_eligible: boolean;
+  correction_enabled: false;
+  required_plan: string;
+  state: "plan_upgrade_required" | "provider_approval_required" | "plan_check_unavailable";
+  summary: string;
 };
 
 type ListingDifference = {
@@ -77,6 +85,7 @@ type ListingInventory = {
   truth: {
     correction_available: boolean;
     correction_reason?: string;
+    correction_access?: ListingCorrectionAccess;
   };
 };
 
@@ -139,21 +148,21 @@ function getStatusTone(status?: string) {
 
 function getStatusGuidance(citation: CitationItem) {
   if (citation.submission_status === "live" || citation.listing_url) {
-    return "This directory listing is live. The listing URL is available below.";
+    return "This saved record says the listing was live. Open the directory to confirm its current state.";
   }
   if (citation.submission_status === "verified") {
-    return "This listing has been verified. Use the refresh button to check for a live URL.";
+    return "This saved record says the listing was verified. Open the directory to confirm its current state.";
   }
   if (citation.submission_status === "submitted") {
-    return "Submitted and queued for processing. Use the refresh button to check for updates from the directory.";
+    return "This request was previously recorded as submitted. Its current directory status is not synchronized.";
   }
   if (citation.submission_status === "pending" || citation.submission_status === "draft") {
-    return "Waiting to be processed by the next batch run.";
+    return "This is saved request history. It is not proof that a directory is processing the request.";
   }
   if (citation.submission_status === "failed") {
-    return "This submission was not accepted. You can resubmit or check the directory manually.";
+    return "This saved request was not accepted. Check and correct the directory manually.";
   }
-  return "Status is unclear. Use the refresh button to pull the latest update.";
+  return "This saved status is unclear. Open the directory to confirm the current listing.";
 }
 
 function differenceLabel(field: string) {
@@ -179,7 +188,6 @@ export default function CitationsPage() {
   const [inventory, setInventory] = useState<ListingInventory | null>(null);
   const [discoveryPreview, setDiscoveryPreview] = useState<DiscoveryPreview | null>(null);
   const [latestDiscoveryRun, setLatestDiscoveryRun] = useState<DiscoveryRun | null>(null);
-  const [newDirectory, setNewDirectory] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -209,31 +217,6 @@ export default function CitationsPage() {
     }
   }
 
-  async function submitCitation() {
-    if (!selectedCampaignId) {
-      setError("Select a business first.");
-      return;
-    }
-    if (!newDirectory.trim()) {
-      setError("Directory name is required.");
-      return;
-    }
-    await runAction("submit", async () => {
-      const directory = newDirectory.trim();
-      await platformApi("/citations/submissions", {
-        method: "POST",
-        body: JSON.stringify({
-          campaign_id: selectedCampaignId,
-          directory_name: directory,
-        }),
-      });
-      setNewDirectory("");
-      setNotice(
-        `Citation submitted to "${directory}". A background job has been queued to process this batch. Use "Refresh status" below to check for updates.`,
-      );
-    });
-  }
-
   async function refreshStatus() {
     if (!selectedCampaignId) {
       setError("Select a business first.");
@@ -246,15 +229,11 @@ export default function CitationsPage() {
       );
       const raw = response as StatusResult | null;
       setStatusResult({
-        job_id: raw?.job_id ?? null,
         items: Array.isArray(raw?.items) ? (raw.items as CitationItem[]) : [],
         truth: raw?.truth || null,
+        correction_access: raw?.correction_access,
       });
-      setNotice(
-        raw?.job_id
-          ? "Status refreshed. A background job has been queued to pull updates from each directory. Results below reflect the current database state."
-          : "Status loaded. No background job was queued — the message broker may be unavailable. Results below reflect the current database state.",
-      );
+      setNotice("Saved listing request history loaded. No directory was contacted or changed.");
     });
   }
 
@@ -345,6 +324,8 @@ export default function CitationsPage() {
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedCampaign = campaigns.find((item) => item.id === selectedCampaignId) ?? null;
+  const correctionAccess =
+    inventory?.truth.correction_access || statusResult?.correction_access || null;
 
   const citations = statusResult?.items ?? [];
   const liveCount = citations.filter(
@@ -619,38 +600,38 @@ export default function CitationsPage() {
             <OwnerDecisionPanel
               title={
                 !statusResult
-                  ? "Load the current listing status"
+                  ? "Load saved listing request history"
                   : failedCount > 0
-                    ? `${failedCount} ${failedCount === 1 ? "listing needs" : "listings need"} attention`
+                    ? `${failedCount} saved ${failedCount === 1 ? "request needs" : "requests need"} attention`
                     : citations.length === 0
-                      ? "No listings are being tracked yet"
+                      ? "No saved listing requests yet"
                       : liveCount === citations.length
-                        ? "Every tracked listing is confirmed"
-                        : `${liveCount} of ${citations.length} listings are confirmed`
+                        ? "Every saved request was recorded as confirmed"
+                        : `${liveCount} of ${citations.length} saved requests were confirmed`
               }
               summary={
                 !statusResult
-                  ? "InsightOS has not loaded the saved directory results for this location yet."
+                  ? "InsightOS can show prior request records without contacting or changing a directory."
                   : failedCount > 0
-                    ? "A failed request can leave customers seeing missing or inconsistent business information."
+                    ? "These are saved workflow records, not a live directory status check."
                     : citations.length === 0
-                      ? "Add the most important directory first, then track it until the listing is confirmed."
+                      ? "Use the public listing check above to find differences, then correct the directory manually."
                       : liveCount === citations.length
-                        ? "Confirmed listings need no action unless the business name, address, or phone number changes."
-                        : `${pendingCount} ${pendingCount === 1 ? "request is" : "requests are"} still being processed by directories.`
+                        ? "Open the public listing before relying on an older saved confirmation."
+                        : `${pendingCount} saved ${pendingCount === 1 ? "request has" : "requests have"} no confirmed result.`
               }
               nextStep={
                 failedCount > 0
-                  ? "Check the failed listing below, correct the business information, and submit it again."
+                  ? "Open the directory, compare it with the public check above, and correct the information manually."
                   : !statusResult
-                    ? "Load the listing status so you can see what is live, pending, or failed."
+                    ? "Load the saved history to see what was previously recorded."
                     : citations.length === 0
-                      ? "Enter a directory name below and start the first listing request."
+                      ? "Run a public listing check and use its exact field differences as your correction checklist."
                       : liveCount === citations.length
-                        ? "Leave confirmed listings alone and check again after business information changes."
-                        : "Check for updates before starting duplicate listing requests."
+                        ? "Run a fresh public check after important business information changes."
+                        : "Confirm the current result directly with the directory before taking action."
               }
-              actionLabel={statusResult ? "Check for updates" : "Load listing status"}
+              actionLabel={statusResult ? "Reload saved history" : "Load saved history"}
               onAction={() => void refreshStatus()}
               tone={
                 failedCount > 0
@@ -667,7 +648,7 @@ export default function CitationsPage() {
                       label: "Confirmed listing progress",
                       value: liveCount,
                       total: citations.length,
-                      summary: "Only live or verified listings count as confirmed.",
+                      summary: "This reflects saved history and is not live synchronization.",
                     }
                   : undefined
               }
@@ -675,42 +656,42 @@ export default function CitationsPage() {
 
             <div className="grid gap-4 xl:grid-cols-4">
               <KpiCard
-                label="Listings tracked"
+                label="Saved requests"
                 value={statusResult ? String(citations.length) : "—"}
                 summary={
                   statusResult
-                    ? "Total directory submissions tracked for this business."
-                    : "Load listing status to see how many directories are tracked."
+                    ? "Historical listing-request records saved for this business."
+                    : "Load saved history to see prior request records."
                 }
               />
               <KpiCard
-                label="Live listings"
+                label="Recorded live"
                 value={statusResult ? String(liveCount) : "—"}
                 summary={
                   statusResult
-                    ? "Directories where the listing is confirmed live."
-                    : "Load listing status to see how many listings are live."
+                    ? "Saved records previously marked live or verified."
+                    : "Load saved history to see prior confirmations."
                 }
                 tone={liveCount > 0 ? "highlight" : undefined}
               />
               <KpiCard
-                label="In progress"
+                label="Saved in progress"
                 value={statusResult ? String(pendingCount) : "—"}
                 summary={
                   statusResult
-                    ? "Submissions that have been sent but are not yet confirmed live."
-                    : "Load listing status to see how many are still processing."
+                    ? "Records previously marked submitted, pending, or draft."
+                    : "Load saved history to see incomplete records."
                 }
               />
               <KpiCard
-                label="Failed"
+                label="Recorded failed"
                 value={statusResult ? String(failedCount) : "—"}
                 summary={
                   statusResult
                     ? failedCount > 0
-                      ? "These submissions were not accepted. You can resubmit or check the directory manually."
+                      ? "These saved requests were not accepted. Check the directory manually."
                       : "No failures recorded."
-                    : "Load listing status to check for any failed submissions."
+                    : "Load saved history to check prior failures."
                 }
               />
             </div>
@@ -718,46 +699,30 @@ export default function CitationsPage() {
             <div className="grid gap-5 xl:grid-cols-[0.72fr_1.28fr]">
               <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Submit
+                  Managed corrections
                 </p>
                 <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                  Add a directory listing
+                  {correctionAccess?.plan_eligible
+                    ? "Your plan is eligible, but live corrections are not available yet"
+                    : correctionAccess?.state === "plan_check_unavailable"
+                      ? "Managed correction access could not be confirmed"
+                    : correctionAccess
+                      ? `Managed corrections require ${correctionAccess.required_plan}`
+                      : "Managed corrections are not available yet"}
                 </h2>
                 <p className="mt-1.5 text-sm leading-6 text-zinc-300">
-                  Enter the name of the directory where you want the business listed. Start the
-                  request, then check back for a confirmed listing link.
+                  {correctionAccess?.summary ||
+                    "InsightOS has not confirmed an approved production correction connection for this workspace."}
                 </p>
-
-                <div className="mt-4 space-y-3">
-                  <div>
-                    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Directory name
-                    </label>
-                    <input
-                      value={newDirectory}
-                      onChange={(event) => setNewDirectory(event.target.value)}
-                      placeholder="e.g. Google Business Profile"
-                      className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
-                    />
-                  </div>
-
-                  <button
-                    onClick={() => void submitCitation()}
-                    disabled={busyAction !== "" || !newDirectory.trim()}
-                    className="w-full rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busyAction === "submit" ? "Starting..." : "Start listing request"}
-                  </button>
-                </div>
 
                 <div className="mt-5 rounded-md border border-[#26272c] bg-[#111214] p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    How listing requests work
+                    What you can do now
                   </p>
                   <p className="mt-2 text-sm leading-6 text-zinc-400">
-                    Directory approval can take time. Use{" "}
-                    <span className="text-zinc-300">Check for updates</span> to pull the latest
-                    status. Confirmed listings include a link when one is available.
+                    Run the public listing check, review each saved-versus-found difference, open
+                    the public listing, and make the correction directly with that directory.
+                    InsightOS will not claim that a directory was changed or synchronized.
                   </p>
                 </div>
               </section>
@@ -769,12 +734,12 @@ export default function CitationsPage() {
                       Status
                     </p>
                     <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                      Listing progress
+                      Saved request history
                     </h2>
                     <p className="mt-1.5 text-sm leading-6 text-zinc-300">
                       {statusResult
-                        ? "Showing the current database state. Refresh again to pull the latest updates from each directory."
-                        : "Check the current status of every directory listing for this business."}
+                        ? "Showing saved workflow records only. Reloading does not contact a directory."
+                        : "Load any prior listing-request records saved for this business."}
                     </p>
                   </div>
                   <button
@@ -783,24 +748,24 @@ export default function CitationsPage() {
                     className="shrink-0 rounded-md border border-[#26272c] bg-[#141518] px-3 py-1.5 text-sm font-medium text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busyAction === "refresh"
-                      ? "Refreshing..."
+                      ? "Loading..."
                       : statusResult
-                        ? "Check for updates"
-                        : "Load listing status"}
+                        ? "Reload saved history"
+                        : "Load saved history"}
                   </button>
                 </div>
 
                 {!statusResult ? (
                   <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
                     <p className="text-sm leading-6 text-zinc-400">
-                      Listing status has not been loaded yet. Use the button above to pull the
-                      current status of all directory submissions for this business.
+                      Saved request history has not been loaded yet. Use the button above to read
+                      existing records without contacting a directory.
                     </p>
                   </div>
                 ) : citations.length === 0 ? (
                   <EmptyState
-                    title="No directory listings found for this business"
-                    summary="Start a listing request using the form on the left."
+                    title="No saved listing request history"
+                    summary="Use the public listing check above and correct any differences directly with the directory."
                   />
                 ) : (
                   <div className="space-y-3">
@@ -835,12 +800,6 @@ export default function CitationsPage() {
                   </div>
                 )}
 
-                {statusResult && !statusResult.job_id ? (
-                  <p className="mt-4 text-xs text-zinc-600">
-                    No background job was queued on last refresh — message broker may be
-                    unavailable. Results reflect the current database state only.
-                  </p>
-                ) : null}
               </section>
             </div>
           </>

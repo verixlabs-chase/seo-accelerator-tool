@@ -4336,6 +4336,38 @@ Implementation status (August 16, 2026):
   stay readable regardless of plan. Sensitive and uncertain reviews continue
   to require a person and cannot become automation candidates.
 
+#### COM1.3E - Directory Correction Eligibility and Provider-Truth Boundary
+
+Implementation status (August 16, 2026):
+
+- Public directory discovery, saved-versus-found field comparisons, listing
+  inventory, and manual correction guidance remain available on Solo. These
+  are read-only intelligence workflows and are not relabeled as managed
+  correction or synchronization.
+- The canonical `listing_correction_sync` capability records Growth as the
+  minimum plan for future managed directory submission and synchronization.
+  Growth and Enterprise plan eligibility is reported separately from live
+  provider availability; an upgrade alone never implies that a listing can be
+  changed.
+- Live managed correction remains disabled for every plan until a separately
+  approved production listings-network provider, per-location commercial
+  terms, supported target directories, receipts, and rollback/recovery rules
+  pass validation. Solo receives a stable Growth-required denial, while an
+  eligible plan receives a distinct provider-not-approved denial.
+- The previous submission endpoint no longer creates a workflow row or queues
+  synthetic progress when no approved correction connection exists. Delayed
+  batch and refresh workers recheck the same boundary before changing saved
+  state or constructing a provider client, so stale jobs cannot bypass it.
+- Loading prior citation-request records is now read-only. It does not enqueue
+  a directory refresh, claim that a broker contacted a directory, or treat an
+  old `submitted`, `verified`, or `live` value as fresh confirmation. Existing
+  request history remains readable after plan changes.
+- The customer page explains the two independent blockers in plain language
+  and keeps the useful manual path: run a public listing check, review exact
+  field differences, open the public listing, and correct it directly with the
+  directory. Internal suppliers, provider pricing, and commercial registry
+  details remain hidden.
+
 Packaging principle:
 
 - Solo tells the owner what is happening, what to do, and whether the work
