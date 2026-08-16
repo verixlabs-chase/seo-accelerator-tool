@@ -14,6 +14,9 @@ from app.schemas.content import (
     ContentBriefReviewIn,
     ContentDraftAISuggestionIn,
     ContentDraftCreateIn,
+    ContentPublishingApprovalIn,
+    ContentPublishingDeliveryIn,
+    ContentPublishingHandoffIn,
     ContentDraftUpdateIn,
 )
 from app.services import content_draft_ai_service, content_service, infra_service
@@ -155,6 +158,62 @@ def suggest_content_draft_wording(
         campaign_id=body.campaign_id,
         draft_id=draft_id,
         requested_by_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/drafts/{draft_id}/publishing-handoff")
+def prepare_content_publishing_handoff(
+    request: Request,
+    draft_id: str,
+    body: ContentPublishingHandoffIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.prepare_content_publishing_handoff(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/drafts/{draft_id}/publishing-handoff/approve")
+def approve_content_publishing_handoff(
+    request: Request,
+    draft_id: str,
+    body: ContentPublishingApprovalIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.approve_content_publishing_handoff(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        preview_hash=body.preview_hash,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/drafts/{draft_id}/publishing-handoff/deliver")
+def deliver_content_publishing_handoff(
+    request: Request,
+    draft_id: str,
+    body: ContentPublishingDeliveryIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.deliver_content_publishing_handoff(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        preview_hash=body.preview_hash,
+        actor_user_id=user["id"],
     )
     return envelope(request, payload)
 

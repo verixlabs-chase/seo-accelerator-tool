@@ -9,6 +9,13 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import aliased
 
+from app.enums import StrategyRecommendationStatus
+from app.intelligence.executors.mutation_schema import slugify
+from app.intelligence.recommendation_execution_engine import (
+    approve_execution,
+    execute_recommendation,
+    schedule_execution,
+)
 from app.models.campaign import Campaign
 from app.models.content import (
     ContentAsset,
@@ -20,6 +27,9 @@ from app.models.content import (
 )
 from app.models.crawl import CrawlInternalLink, CrawlPageResult, CrawlRun, Page
 from app.models.governed_ai import GovernedAIRun
+from app.models.intelligence import StrategyRecommendation
+from app.models.recommendation_execution import RecommendationExecution
+from app.models.wordpress_change_preview import WordPressChangePreview
 from app.models.wordpress_content_inventory import (
     WordPressContentItem,
     WordPressContentSyncRun,
@@ -31,6 +41,7 @@ from app.services.wordpress_managed_content_validation_service import (
     UNVERIFIED_BUSINESS_PHRASES,
     UNVERIFIED_NUMBER_PATTERN,
 )
+from app.services.wordpress_change_preview_service import WordPressChangePreviewError
 
 
 _ALLOWED_TRANSITIONS = {
@@ -323,6 +334,16 @@ def get_content_workspace(
         else []
     )
     drafts_by_brief = {item.content_brief_id: item for item in drafts}
+    briefs_by_id = {item.id: item for item in briefs}
+    handoffs_by_draft = {
+        item.id: _serialize_publishing_handoff(
+            db,
+            draft=item,
+            brief=briefs_by_id[item.content_brief_id],
+        )
+        for item in drafts
+        if item.content_brief_id in briefs_by_id
+    }
     suggestions_by_draft: dict[str, GovernedAIRun] = {}
     if drafts:
         draft_ids = {item.id for item in drafts}
@@ -520,6 +541,11 @@ def get_content_workspace(
                     else None
                 ),
                 page_inventory=list(page_metadata_by_url.values()),
+                publishing_handoff=(
+                    handoffs_by_draft.get(drafts_by_brief[item.id].id)
+                    if item.id in drafts_by_brief
+                    else None
+                ),
             )
             for item in briefs
         ],
@@ -814,6 +840,237 @@ def update_content_draft(
     }
 
 
+def prepare_content_publishing_handoff(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    draft_id: str,
+    actor_user_id: str,
+) -> dict:
+    """Prepare an exact WordPress preview without changing the website."""
+    draft, brief = _publishing_handoff_rows(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        draft_id=draft_id,
+        lock=True,
+    )
+    _require_new_page_handoff_ready(draft, brief)
+    draft_hash = _content_draft_snapshot_hash(draft)
+    key = _publishing_handoff_key(draft, draft_hash)
+    recommendation = (
+        db.query(StrategyRecommendation)
+        .filter(
+            StrategyRecommendation.tenant_id == tenant_id,
+            StrategyRecommendation.campaign_id == campaign_id,
+            StrategyRecommendation.idempotency_key == key,
+        )
+        .first()
+    )
+    created = recommendation is None
+    if recommendation is None:
+        page_path = _publishing_target_path(brief)
+        metadata = _metadata_recommendations(brief, page_metadata=None)
+        meta_by_code = {item["code"]: item for item in metadata}
+        evidence = {
+            "source": "owner_content_draft",
+            "content_brief_id": brief.id,
+            "content_draft_id": draft.id,
+            "content_draft_revision": int(draft.revision),
+            "content_draft_hash": draft_hash,
+            "content_generation_mode": "owner_written",
+            "content_title": draft.title,
+            "content_slug": page_path.strip("/"),
+            "content_target_url": page_path,
+            "content_blocks": _content_draft_blocks(draft),
+            "meta_title": meta_by_code.get("seo_title", {}).get("proposed_value") or draft.title,
+            "meta_description": (
+                meta_by_code.get("meta_description", {}).get("proposed_value")
+                or f"Learn about {brief.service_name or draft.title} in {brief.service_area_name or 'your area'}."
+            ),
+        }
+        recommendation = StrategyRecommendation(
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+            recommendation_type="create_content_brief",
+            rationale="Create the exact owner-reviewed content as a non-public WordPress draft.",
+            confidence=1.0,
+            confidence_score=1.0,
+            evidence_json=json.dumps(evidence, sort_keys=True),
+            risk_tier=2,
+            rollback_plan_json=json.dumps(
+                {"steps": ["remove_or_restore_the_created_non_public_wordpress_draft"]},
+                sort_keys=True,
+            ),
+            status=StrategyRecommendationStatus.APPROVED,
+            engine_version="content-publishing-handoff-v1",
+            input_hash=draft_hash,
+            output_hash=draft_hash,
+            idempotency_key=key,
+        )
+        db.add(recommendation)
+        db.flush()
+    execution = schedule_execution(
+        recommendation.id,
+        db=db,
+        force_manual_approval=True,
+    )
+    if not isinstance(execution, RecommendationExecution):
+        reason = str((execution or {}).get("message") or "The publishing preview is not available right now.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=reason)
+    try:
+        planned = execute_recommendation(execution.id, db=db, dry_run=True)
+    except WordPressChangePreviewError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
+    if not isinstance(planned, dict) or not isinstance(planned.get("preview"), dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="WordPress did not return an exact change preview.",
+        )
+    write_audit_log(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        event_type="content.publishing_handoff.prepared",
+        payload={
+            "campaign_id": campaign_id,
+            "content_brief_id": brief.id,
+            "content_draft_id": draft.id,
+            "content_draft_revision": int(draft.revision),
+            "content_draft_hash": draft_hash,
+            "execution_id": execution.id,
+            "preview_hash": planned["preview"].get("preview_hash"),
+            "customer_copy_omitted": True,
+            "website_changed": False,
+        },
+    )
+    db.commit()
+    return {
+        "created": created,
+        "message": "Exact WordPress draft preview prepared. Nothing was changed or published.",
+        "item": _serialize_publishing_handoff(db, draft=draft, brief=brief),
+    }
+
+
+def approve_content_publishing_handoff(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    draft_id: str,
+    preview_hash: str,
+    actor_user_id: str,
+) -> dict:
+    draft, brief = _publishing_handoff_rows(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        draft_id=draft_id,
+        lock=True,
+    )
+    _require_new_page_handoff_ready(draft, brief)
+    execution = _current_publishing_execution(db, draft)
+    if execution is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Prepare the exact WordPress draft preview first.")
+    try:
+        approved = approve_execution(
+            execution.id,
+            approved_by=actor_user_id,
+            preview_hash=preview_hash,
+            db=db,
+        )
+    except WordPressChangePreviewError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
+    if approved is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Publishing handoff not found")
+    write_audit_log(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        event_type="content.publishing_handoff.approved",
+        payload={
+            "campaign_id": campaign_id,
+            "content_draft_id": draft.id,
+            "content_draft_revision": int(draft.revision),
+            "execution_id": execution.id,
+            "preview_hash": preview_hash,
+            "approval_scope": "exact_non_public_wordpress_draft_preview",
+            "delivery_started": False,
+        },
+    )
+    db.commit()
+    return {
+        "message": "Exact preview approved. The WordPress draft has not been created yet.",
+        "item": _serialize_publishing_handoff(db, draft=draft, brief=brief),
+    }
+
+
+def deliver_content_publishing_handoff(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    draft_id: str,
+    preview_hash: str,
+    actor_user_id: str,
+) -> dict:
+    draft, brief = _publishing_handoff_rows(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        draft_id=draft_id,
+        lock=True,
+    )
+    _require_new_page_handoff_ready(draft, brief)
+    execution = _current_publishing_execution(db, draft)
+    preview = _current_publishing_preview(db, execution) if execution is not None else None
+    if (
+        execution is None
+        or preview is None
+        or preview.preview_hash != preview_hash
+        or preview.status != "approved"
+        or not execution.approved_at
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Approve the current exact preview before creating the WordPress draft.",
+        )
+    completed = execute_recommendation(execution.id, db=db)
+    if not isinstance(completed, RecommendationExecution):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The WordPress draft could not be created safely.")
+    write_audit_log(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        event_type="content.publishing_handoff.delivered",
+        payload={
+            "campaign_id": campaign_id,
+            "content_draft_id": draft.id,
+            "content_draft_revision": int(draft.revision),
+            "execution_id": execution.id,
+            "preview_hash": preview_hash,
+            "execution_status": completed.status,
+            "public_page_requested": False,
+            "publication_state": "draft",
+        },
+    )
+    db.commit()
+    item = _serialize_publishing_handoff(db, draft=draft, brief=brief)
+    message = (
+        "Non-public WordPress draft created. It is not live on the website."
+        if completed.status == "completed"
+        else "The WordPress draft was not created. Review the saved handoff details before trying again."
+    )
+    return {"message": message, "item": item}
+
+
 def _serialize_workspace_brief(
     item: ContentBrief,
     *,
@@ -821,6 +1078,7 @@ def _serialize_workspace_brief(
     suggestion: GovernedAIRun | None = None,
     page_metadata: dict | None = None,
     page_inventory: list[dict] | None = None,
+    publishing_handoff: dict | None = None,
 ) -> dict:
     return {
         "id": item.id,
@@ -844,6 +1102,7 @@ def _serialize_workspace_brief(
                 brief=item,
                 page_metadata=page_metadata,
                 page_inventory=page_inventory,
+                publishing_handoff=publishing_handoff,
             )
             if draft is not None
             else None
@@ -858,6 +1117,7 @@ def _serialize_content_draft(
     brief: ContentBrief | None = None,
     page_metadata: dict | None = None,
     page_inventory: list[dict] | None = None,
+    publishing_handoff: dict | None = None,
 ) -> dict:
     ai_suggestion = None
     if suggestion is not None and isinstance(suggestion.output_payload, dict):
@@ -910,8 +1170,247 @@ def _serialize_content_draft(
         "content_readiness": (
             _content_readiness(item, brief) if brief is not None else None
         ),
+        "publishing_handoff": publishing_handoff,
         "safety": _content_draft_safety(),
     }
+
+
+def _publishing_handoff_rows(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    draft_id: str,
+    lock: bool,
+) -> tuple[ContentDraft, ContentBrief]:
+    _campaign_or_404(db, tenant_id, campaign_id)
+    query = db.query(ContentDraft).filter(
+        ContentDraft.id == draft_id,
+        ContentDraft.tenant_id == tenant_id,
+        ContentDraft.campaign_id == campaign_id,
+    )
+    if lock:
+        query = query.with_for_update()
+    draft = query.first()
+    if draft is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content draft not found")
+    brief = (
+        db.query(ContentBrief)
+        .filter(
+            ContentBrief.id == draft.content_brief_id,
+            ContentBrief.tenant_id == tenant_id,
+            ContentBrief.campaign_id == campaign_id,
+        )
+        .first()
+    )
+    if brief is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content brief not found")
+    return draft, brief
+
+
+def _require_new_page_handoff_ready(draft: ContentDraft, brief: ContentBrief) -> None:
+    if brief.status != "accepted":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Accept the page target before preparing a publishing handoff.")
+    if brief.recommended_page_action != "create_service_page":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Existing-page replacement is not enabled in this safe publishing handoff. Copy the approved wording manually for now.",
+        )
+    readiness = _content_readiness(draft, brief)
+    if readiness["state"] != "ready_for_owner_review":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Finish every draft-readiness check before preparing the WordPress draft preview.",
+        )
+
+
+def _content_draft_snapshot_hash(draft: ContentDraft) -> str:
+    snapshot = {
+        "id": draft.id,
+        "content_brief_id": draft.content_brief_id,
+        "revision": int(draft.revision),
+        "source_brief_hash": draft.source_brief_hash,
+        "title": draft.title,
+        "sections": list(draft.sections or []),
+    }
+    canonical = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _publishing_handoff_key(draft: ContentDraft, draft_hash: str | None = None) -> str:
+    snapshot_hash = draft_hash or _content_draft_snapshot_hash(draft)
+    return f"content-handoff:{draft.id}:r{int(draft.revision)}:{snapshot_hash[:16]}"
+
+
+def _publishing_target_path(brief: ContentBrief) -> str:
+    if brief.target_url:
+        parsed = urlparse(str(brief.target_url))
+        return parsed.path or "/"
+    subject = " ".join(
+        value
+        for value in (
+            str(brief.service_name or "").strip(),
+            str(brief.service_area_name or "").strip(),
+        )
+        if value
+    ) or brief.title
+    return f"/{slugify(subject)}"
+
+
+def _content_draft_blocks(draft: ContentDraft) -> list[dict[str, str]]:
+    blocks: list[dict[str, str]] = []
+    for item in list(draft.sections or []):
+        if not isinstance(item, dict):
+            continue
+        heading = str(item.get("heading") or "").strip()
+        body = str(item.get("body") or "").strip()
+        if heading:
+            blocks.append({"type": "heading", "text": heading})
+        if body:
+            blocks.append({"type": "paragraph", "text": body})
+    return blocks[:24]
+
+
+def _current_publishing_execution(
+    db: Session,
+    draft: ContentDraft,
+) -> RecommendationExecution | None:
+    recommendation = (
+        db.query(StrategyRecommendation)
+        .filter(
+            StrategyRecommendation.tenant_id == draft.tenant_id,
+            StrategyRecommendation.campaign_id == draft.campaign_id,
+            StrategyRecommendation.idempotency_key == _publishing_handoff_key(draft),
+        )
+        .first()
+    )
+    if recommendation is None:
+        return None
+    return (
+        db.query(RecommendationExecution)
+        .filter(RecommendationExecution.recommendation_id == recommendation.id)
+        .order_by(RecommendationExecution.created_at.desc(), RecommendationExecution.id.desc())
+        .first()
+    )
+
+
+def _current_publishing_preview(
+    db: Session,
+    execution: RecommendationExecution | None,
+) -> WordPressChangePreview | None:
+    if execution is None:
+        return None
+    return (
+        db.query(WordPressChangePreview)
+        .filter(WordPressChangePreview.execution_id == execution.id)
+        .order_by(WordPressChangePreview.created_at.desc(), WordPressChangePreview.id.desc())
+        .first()
+    )
+
+
+def _serialize_publishing_handoff(
+    db: Session,
+    *,
+    draft: ContentDraft,
+    brief: ContentBrief,
+) -> dict:
+    readiness = _content_readiness(draft, brief)
+    execution = _current_publishing_execution(db, draft)
+    preview = _current_publishing_preview(db, execution)
+    result = _json_object(execution.result_summary) if execution is not None else {}
+    target_path = _publishing_target_path(brief)
+    if brief.recommended_page_action != "create_service_page":
+        state = "existing_page_manual"
+        summary = "Existing-page replacement is not enabled yet. The saved wording remains available to copy safely."
+    elif readiness["state"] != "ready_for_owner_review":
+        state = "not_ready"
+        summary = "Finish the draft-readiness checks before preparing a WordPress draft preview."
+    elif execution is None:
+        state = "not_prepared"
+        summary = "Prepare an exact preview when the owner-written draft is final."
+    elif execution.status == "completed":
+        state = "draft_created"
+        summary = "A non-public WordPress draft was created from this exact saved revision."
+    elif execution.status == "failed":
+        state = "failed"
+        summary = "The WordPress draft was not created. Review the connection and saved preview before trying again."
+    elif preview is not None and preview.status == "approved":
+        state = "approved"
+        summary = "The exact preview is approved. Creating the non-public WordPress draft is a separate action."
+    elif preview is not None and preview.status == "blocked":
+        state = "blocked"
+        summary = "The exact preview found a conflict that must be resolved before approval."
+    elif preview is not None:
+        state = "preview_ready"
+        summary = "The exact WordPress draft preview is ready for owner review."
+    else:
+        state = "not_prepared"
+        summary = "Prepare an exact preview when the owner-written draft is final."
+    snapshot = preview.snapshot if preview is not None and isinstance(preview.snapshot, dict) else {}
+    public_verification = result.get("public_verification") if isinstance(result.get("public_verification"), dict) else {}
+    return {
+        "state": state,
+        "summary": summary,
+        "draft_revision": int(draft.revision),
+        "draft_hash": _content_draft_snapshot_hash(draft),
+        "execution_id": execution.id if execution is not None else None,
+        "target": {
+            "title": draft.title,
+            "url": target_path,
+            "publication_state": "draft",
+            "section_count": len(list(draft.sections or [])),
+        },
+        "preview": (
+            {
+                "preview_hash": preview.preview_hash,
+                "status": preview.status,
+                "affected_urls": list(snapshot.get("affected_urls") or []),
+                "mutation_count": int(preview.mutation_count or 0),
+                "conflict_count": int(preview.conflict_count or 0),
+                "conflicts": list(snapshot.get("conflicts") or []),
+                "rollback_available": all(
+                    bool((item.get("rollback_plan") or {}).get("available"))
+                    for item in list(snapshot.get("changes") or [])
+                    if isinstance(item, dict)
+                ),
+                "approved_at": preview.approved_at.isoformat() if preview.approved_at else None,
+            }
+            if preview is not None
+            else None
+        ),
+        "delivery": {
+            "status": execution.status if execution is not None else "not_started",
+            "non_public_wordpress_draft_created": bool(execution is not None and execution.status == "completed"),
+            "public_verification_status": (
+                next(
+                    (
+                        str(item.get("status"))
+                        for item in list(public_verification.get("results") or [])
+                        if isinstance(item, dict) and item.get("status")
+                    ),
+                    None,
+                )
+            ),
+            "rollback_available": bool(result.get("rollback_available")),
+        },
+        "safety": {
+            "owner_approval_required": True,
+            "approval_and_delivery_are_separate": True,
+            "automatic_publishing_allowed": False,
+            "public_page_requested": False,
+            "public_page_changed": False,
+        },
+    }
+
+
+def _json_object(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _content_readiness(draft: ContentDraft, brief: ContentBrief) -> dict:

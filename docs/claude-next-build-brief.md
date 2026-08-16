@@ -3114,8 +3114,20 @@ facts, unsafe markup, and business or performance claims that require proof.
 It reports exact section and word counts without turning them into a score or
 SEO target. `Ready for owner review` is explicitly not approval or publishing
 readiness; the check cannot approve, contact WordPress, mutate the website, or
-promise writing quality or business outcomes. The next CNT1 slice is an
-explicitly approved publishing handoff.
+promise writing quality or business outcomes. The explicitly approved
+publishing handoff is now implemented for new service pages. A ready saved
+revision can prepare an exact immutable WordPress change preview containing the
+owner-written title, sections, metadata, destination, expected version, and
+rollback contract. Preparing the preview changes nothing. The owner must then
+acknowledge and approve that exact preview hash, which still changes nothing,
+before a third explicit action can create a non-public WordPress draft. The
+handoff hard-codes draft status, never requests a public page, keeps automatic
+publishing disabled, and preserves the existing mutation audit and rollback
+path. A later edit creates a different revision/hash and cannot inherit the old
+approval. Existing-page replacement remains manual in this slice so the product
+cannot silently overwrite or duplicate a live page. With that boundary, the
+baseline CNT1 workspace is complete; broader existing-page editing and public
+publishing remain later governed extensions rather than implicit behavior.
 
 Scope:
 

@@ -69,11 +69,57 @@ type WorkingContentDraft = {
   structured_data_recommendation?: ContentStructuredDataRecommendation | null;
   internal_link_recommendations?: ContentInternalLinkRecommendations | null;
   content_readiness?: ContentReadiness | null;
+  publishing_handoff?: ContentPublishingHandoff | null;
   safety: {
     ai_generated: false;
     automatic_publishing_allowed: false;
     website_changed: false;
     approval_to_publish_recorded: false;
+  };
+};
+
+type ContentPublishingHandoff = {
+  state:
+    | "existing_page_manual"
+    | "not_ready"
+    | "not_prepared"
+    | "preview_ready"
+    | "blocked"
+    | "approved"
+    | "draft_created"
+    | "failed";
+  summary: string;
+  draft_revision: number;
+  draft_hash: string;
+  execution_id?: string | null;
+  target: {
+    title: string;
+    url: string;
+    publication_state: "draft";
+    section_count: number;
+  };
+  preview?: {
+    preview_hash: string;
+    status: "ready" | "blocked" | "approved" | "superseded";
+    affected_urls: string[];
+    mutation_count: number;
+    conflict_count: number;
+    conflicts: Array<{ code?: string; message?: string }>;
+    rollback_available: boolean;
+    approved_at?: string | null;
+  } | null;
+  delivery: {
+    status: string;
+    non_public_wordpress_draft_created: boolean;
+    public_verification_status?: string | null;
+    rollback_available: boolean;
+  };
+  safety: {
+    owner_approval_required: true;
+    approval_and_delivery_are_separate: true;
+    automatic_publishing_allowed: false;
+    public_page_requested: false;
+    public_page_changed: false;
   };
 };
 
@@ -328,6 +374,16 @@ function contentCheckLabel(value: ContentReadiness["checks"][number]["state"]) {
   return "Action needed";
 }
 
+function publishingHandoffLabel(value: ContentPublishingHandoff["state"]) {
+  if (value === "preview_ready") return "Preview ready";
+  if (value === "approved") return "Approved — not created";
+  if (value === "draft_created") return "WordPress draft created";
+  if (value === "blocked" || value === "failed") return "Needs attention";
+  if (value === "existing_page_manual") return "Manual handoff";
+  if (value === "not_ready") return "Draft checks first";
+  return "Not prepared";
+}
+
 function WorkingDraftEditor({
   draft,
   campaignId,
@@ -344,6 +400,12 @@ function WorkingDraftEditor({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [suggestionMessage, setSuggestionMessage] = useState("");
+  const [handoffBusy, setHandoffBusy] = useState("");
+  const [handoffMessage, setHandoffMessage] = useState("");
+  const [reviewedExactPreview, setReviewedExactPreview] = useState(false);
+  const [understandsDraft, setUnderstandsDraft] = useState(false);
+  const [understandsNotPublic, setUnderstandsNotPublic] = useState(false);
+  const [confirmDraftCreation, setConfirmDraftCreation] = useState(false);
 
   const hasUnsavedChanges = title !== draft.title
     || JSON.stringify(sections) !== JSON.stringify(draft.sections);
@@ -407,6 +469,46 @@ function WorkingDraftEditor({
       setError("The optional AI wording could not be prepared. Your working draft was not changed.");
     } finally {
       setSuggesting(false);
+    }
+  }
+
+  async function runPublishingHandoff(action: "prepare" | "approve" | "deliver") {
+    const handoff = draft.publishing_handoff;
+    if (handoffBusy || hasUnsavedChanges) return;
+    const previewHash = handoff?.preview?.preview_hash;
+    if ((action === "approve" || action === "deliver") && !previewHash) return;
+    setHandoffBusy(action);
+    setHandoffMessage("");
+    setError("");
+    try {
+      const suffix = action === "prepare" ? "" : `/${action}`;
+      const body = action === "approve"
+        ? {
+          campaign_id: campaignId,
+          preview_hash: previewHash,
+          reviewed_exact_preview: true,
+          understands_wordpress_draft: true,
+          understands_not_public: true,
+        }
+        : action === "deliver"
+          ? { campaign_id: campaignId, preview_hash: previewHash, create_non_public_draft: true }
+          : { campaign_id: campaignId };
+      const result = (await platformApi(
+        `/content/drafts/${encodeURIComponent(draft.id)}/publishing-handoff${suffix}`,
+        { method: "POST", body: JSON.stringify(body) },
+      )) as { message: string; item: ContentPublishingHandoff };
+      setHandoffMessage(result.message);
+      await onSaved(result.message);
+    } catch {
+      setError(
+        action === "prepare"
+          ? "The exact WordPress draft preview could not be prepared. Nothing was changed."
+          : action === "approve"
+            ? "That exact preview could not be approved. Nothing was created or published."
+            : "The non-public WordPress draft could not be created. Nothing was published publicly.",
+      );
+    } finally {
+      setHandoffBusy("");
     }
   }
 
@@ -496,6 +598,11 @@ function WorkingDraftEditor({
               <p className="mt-1 text-xs text-zinc-500">A factual count, not a recommended target.</p>
             </div>
           </div>
+          {draft.publishing_handoff.state === "existing_page_manual" ? (
+            <p className="mt-3 text-sm leading-6 text-amber-100">
+              Existing-page replacement is not enabled yet. Copy the reviewed wording manually so this workflow cannot overwrite a live page.
+            </p>
+          ) : null}
           <div className="mt-3 space-y-2">
             {draft.content_readiness.checks.map((check) => (
               <div key={`${draft.id}-readiness-${check.code}`} className="rounded-md border border-[#303238] bg-[#111214] p-3">
@@ -510,6 +617,108 @@ function WorkingDraftEditor({
           <p className="mt-3 text-xs leading-5 text-zinc-500">
             Ready for owner review is not approval and does not mean the page is ready to publish. These checks do not
             grade writing quality or guarantee rankings, traffic, leads, or revenue.
+          </p>
+        </div>
+      ) : null}
+      {draft.publishing_handoff ? (
+        <div className="mt-4 rounded-lg border border-orange-500/25 bg-orange-500/5 p-3" aria-label="WordPress draft handoff">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-medium text-orange-100">WordPress draft handoff</p>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">{draft.publishing_handoff.summary}</p>
+            </div>
+            <span className="rounded-full border border-orange-400/25 px-2 py-1 text-xs text-orange-100">
+              {publishingHandoffLabel(draft.publishing_handoff.state)}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-md border border-[#303238] bg-[#111214] p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Exact saved revision</p>
+              <p className="mt-1 text-sm text-zinc-100">Revision {draft.publishing_handoff.draft_revision} · {draft.publishing_handoff.target.section_count} sections</p>
+            </div>
+            <div className="rounded-md border border-[#303238] bg-[#111214] p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">WordPress destination</p>
+              <p className="mt-1 break-all text-sm text-zinc-100">{draft.publishing_handoff.target.url}</p>
+              <p className="mt-1 text-xs text-orange-100">Non-public draft — not a live page</p>
+            </div>
+          </div>
+          {draft.publishing_handoff.preview ? (
+            <div className="mt-3 rounded-md border border-[#303238] bg-[#111214] p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Exact change preview</p>
+              <p className="mt-1 text-sm text-zinc-200">
+                {draft.publishing_handoff.preview.mutation_count} draft change · {draft.publishing_handoff.preview.conflict_count} conflicts
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Preview {draft.publishing_handoff.preview.preview_hash.slice(0, 12)}… binds the title, sections, metadata, destination, and rollback snapshot.
+              </p>
+              {draft.publishing_handoff.preview.conflicts.map((conflict, index) => (
+                <p key={`${draft.id}-handoff-conflict-${index}`} className="mt-2 text-xs text-rose-100">
+                  {conflict.message || "Resolve the saved WordPress conflict before approval."}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          {draft.publishing_handoff.state === "not_prepared" ? (
+            <button
+              type="button"
+              onClick={() => void runPublishingHandoff("prepare")}
+              disabled={Boolean(handoffBusy) || hasUnsavedChanges}
+              className="mt-3 rounded-md border border-orange-400/35 px-3 py-2 text-sm font-semibold text-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {handoffBusy === "prepare" ? "Preparing exact preview…" : "Prepare WordPress draft preview"}
+            </button>
+          ) : null}
+          {draft.publishing_handoff.state === "preview_ready" ? (
+            <div className="mt-3 space-y-2">
+              <label className="flex items-start gap-2 text-sm text-zinc-300">
+                <input type="checkbox" checked={reviewedExactPreview} onChange={(event) => setReviewedExactPreview(event.target.checked)} className="mt-1" />
+                I reviewed this exact saved revision and destination.
+              </label>
+              <label className="flex items-start gap-2 text-sm text-zinc-300">
+                <input type="checkbox" checked={understandsDraft} onChange={(event) => setUnderstandsDraft(event.target.checked)} className="mt-1" />
+                I understand approval only authorizes a WordPress draft.
+              </label>
+              <label className="flex items-start gap-2 text-sm text-zinc-300">
+                <input type="checkbox" checked={understandsNotPublic} onChange={(event) => setUnderstandsNotPublic(event.target.checked)} className="mt-1" />
+                I understand this does not create or update a public page.
+              </label>
+              <button
+                type="button"
+                onClick={() => void runPublishingHandoff("approve")}
+                disabled={Boolean(handoffBusy) || !reviewedExactPreview || !understandsDraft || !understandsNotPublic}
+                className="rounded-md bg-accent-500 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {handoffBusy === "approve" ? "Approving exact preview…" : "Approve this exact draft preview"}
+              </button>
+              <p className="text-xs text-zinc-500">Approval is recorded separately. It does not contact WordPress or create the draft.</p>
+            </div>
+          ) : null}
+          {draft.publishing_handoff.state === "approved" ? (
+            <div className="mt-3 space-y-2">
+              <label className="flex items-start gap-2 text-sm text-zinc-300">
+                <input type="checkbox" checked={confirmDraftCreation} onChange={(event) => setConfirmDraftCreation(event.target.checked)} className="mt-1" />
+                Create this approved revision as a non-public WordPress draft now.
+              </label>
+              <button
+                type="button"
+                onClick={() => void runPublishingHandoff("deliver")}
+                disabled={Boolean(handoffBusy) || !confirmDraftCreation}
+                className="rounded-md border border-orange-400/35 px-3 py-2 text-sm font-semibold text-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {handoffBusy === "deliver" ? "Creating WordPress draft…" : "Create non-public WordPress draft"}
+              </button>
+            </div>
+          ) : null}
+          {draft.publishing_handoff.state === "draft_created" ? (
+            <p className="mt-3 text-sm leading-6 text-emerald-100">
+              WordPress confirmed the draft handoff. It is not public. Review it in WordPress before any separate publishing decision.
+              {draft.publishing_handoff.delivery.rollback_available ? " A rollback snapshot is saved." : ""}
+            </p>
+          ) : null}
+          {hasUnsavedChanges ? <p className="mt-2 text-xs text-amber-100">Save your latest edits before preparing or approving a preview.</p> : null}
+          {handoffMessage ? <p role="status" className="mt-2 text-sm text-orange-100">{handoffMessage}</p> : null}
+          <p className="mt-3 text-xs leading-5 text-zinc-500">
+            Preparing a preview, approving it, and creating the WordPress draft are three separate actions. This workflow never requests a public page.
           </p>
         </div>
       ) : null}
@@ -878,9 +1087,9 @@ export default function ContentWorkspacePage() {
           summary="Review saved pages and competitor-backed briefs before writing or changing anything."
         />
 
-        <TruthNotice title="Nothing on this page can publish to your website.">
-          This workspace uses saved page checks and confirmed research. A brief is a reviewable plan,
-          not proof that a page change will improve rankings.
+        <TruthNotice title="Nothing on this page can publish a public website page.">
+          This workspace uses saved page checks and confirmed research. For a checked new-page draft, an owner may
+          separately preview, approve, and create a non-public WordPress draft. Publishing it publicly remains outside this workflow.
         </TruthNotice>
 
         {loading || loadingLocations ? (

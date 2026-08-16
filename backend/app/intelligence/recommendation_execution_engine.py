@@ -79,6 +79,7 @@ def schedule_execution(
     db: Session | None = None,
     *,
     managed_automation: bool = False,
+    force_manual_approval: bool = False,
 ) -> RecommendationExecution | dict[str, Any] | None:
     owns_session = db is None
     session = db or SessionLocal()
@@ -135,7 +136,7 @@ def schedule_execution(
             return existing
         scope_of_change = max(1, int((recommendation.risk_tier or 1) * 2))
         risk = score_execution_risk(session, campaign_id=recommendation.campaign_id, execution_type=execution_type, scope_of_change=scope_of_change)
-        requires_manual_approval = bool(policy['requires_manual_approval']) or bool(
+        requires_manual_approval = bool(force_manual_approval) or bool(policy['requires_manual_approval']) or bool(
             automation_decision and automation_decision.requires_manual_approval
         )
         payload = _build_execution_payload(
@@ -1003,6 +1004,11 @@ def _build_execution_payload(
             'meta_description',
             'content_generation_mode',
             'governed_ai_run_id',
+            'content_blocks',
+            'content_draft_id',
+            'content_draft_revision',
+            'content_draft_hash',
+            'content_brief_id',
         ):
             if key in evidence and evidence[key] is not None:
                 payload[key] = evidence[key]

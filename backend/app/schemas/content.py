@@ -43,6 +43,22 @@ class ContentDraftUpdateIn(BaseModel):
     sections: list[ContentDraftSectionIn] = Field(min_length=1, max_length=12)
 
 
+class ContentPublishingHandoffIn(BaseModel):
+    campaign_id: str = Field(min_length=1, max_length=36)
+
+
+class ContentPublishingApprovalIn(ContentPublishingHandoffIn):
+    preview_hash: str = Field(min_length=64, max_length=64)
+    reviewed_exact_preview: Literal[True]
+    understands_wordpress_draft: Literal[True]
+    understands_not_public: Literal[True]
+
+
+class ContentPublishingDeliveryIn(ContentPublishingHandoffIn):
+    preview_hash: str = Field(min_length=64, max_length=64)
+    create_non_public_draft: Literal[True]
+
+
 class ContentAssetOut(BaseModel):
     id: str
     tenant_id: str

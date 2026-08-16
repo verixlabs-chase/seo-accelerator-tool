@@ -12,13 +12,30 @@ const nav = readFileSync(
   "utf8",
 );
 
-test("content workspace is location-scoped and cannot automatically generate or publish", () => {
+test("content workspace is location-scoped and cannot automatically publish", () => {
   assert.match(page, /\/content\/workspace\?campaign_id=/);
   assert.match(page, /selectedCampaignId/);
-  assert.match(page, /Nothing on this page can publish to your website/);
-  assert.match(page, /not proof that a page change will improve rankings/);
+  assert.match(page, /Nothing on this page can publish a public website page/);
+  assert.match(page, /Publishing it publicly remains outside this workflow/);
   assert.doesNotMatch(page, /method:\s*"PATCH"/);
   assert.doesNotMatch(page, /governed-ai|mistral|draft_action/);
+});
+
+test("publishing handoff separates preview, exact approval, and non-public draft creation", () => {
+  assert.match(page, /WordPress draft handoff/);
+  assert.match(page, /Prepare WordPress draft preview/);
+  assert.match(page, /\/publishing-handoff\$\{suffix\}/);
+  assert.match(page, /reviewed_exact_preview: true/);
+  assert.match(page, /understands_wordpress_draft: true/);
+  assert.match(page, /understands_not_public: true/);
+  assert.match(page, /Approve this exact draft preview/);
+  assert.match(page, /Create non-public WordPress draft/);
+  assert.match(page, /approval_and_delivery_are_separate/);
+  assert.match(page, /This workflow never requests a public page/);
+  assert.match(page, /Existing-page replacement is not enabled yet/);
+  assert.doesNotMatch(page, />Publish now</i);
+  assert.doesNotMatch(page, />Approve and publish</i);
+  assert.doesNotMatch(page, />Create public page</i);
 });
 
 test("accepted briefs become owner-editable working drafts only", () => {
