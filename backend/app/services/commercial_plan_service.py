@@ -39,6 +39,9 @@ FEATURE_PROFILE_FLEET_ACTIONS = "business_profile_fleet_actions"
 FEATURE_AUTOMATIC_REVIEW_REPLIES = "automatic_review_replies"
 FEATURE_EXTERNAL_AUTOMATION = "external_automation"
 FEATURE_PRIVATE_AI_PROVIDER = "private_ai_provider"
+FEATURE_PERFORMANCE_TREND = "performance_trend"
+FEATURE_CAMPAIGN_REPORT = "campaign_report"
+FEATURE_CAMPAIGN_STRATEGY = "campaign_strategy"
 
 _PLAN_LEVEL = {
     "solo": 1,
@@ -66,6 +69,24 @@ FEATURES: tuple[CommercialFeature, ...] = (
         label="Customer search research",
         summary="Find and track searches that match the work your business wants.",
         minimum_plan_code="solo",
+    ),
+    CommercialFeature(
+        code=FEATURE_PERFORMANCE_TREND,
+        label="Performance trends",
+        summary="Compare saved business results over time without losing the underlying dates.",
+        minimum_plan_code="solo",
+    ),
+    CommercialFeature(
+        code=FEATURE_CAMPAIGN_REPORT,
+        label="Owner-ready reports",
+        summary="Create a clear report from saved results, completed work, and measured changes.",
+        minimum_plan_code="solo",
+    ),
+    CommercialFeature(
+        code=FEATURE_CAMPAIGN_STRATEGY,
+        label="Deeper action plans",
+        summary="Turn saved evidence into a deeper, policy-controlled plan for the next work cycle.",
+        minimum_plan_code="multi_location",
     ),
     CommercialFeature(
         code=FEATURE_WORDPRESS_EXECUTION,

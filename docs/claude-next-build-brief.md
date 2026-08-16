@@ -4269,6 +4269,27 @@ Implementation status (August 15, 2026):
   until this migration is reviewed and deployed. V2 organization-pointer
   cutover remains a later contract migration.
 
+#### COM1.3B - Canonical Reporting and Strategy Capability Gates
+
+Implementation status (August 16, 2026):
+
+- Campaign performance trends, owner-ready reports, and deeper strategy plans
+  now resolve through the same versioned commercial-plan authority used by
+  Settings, billing transitions, WordPress, and customer upgrade explanations.
+  The contradictory legacy feature-gate service is removed from runtime.
+- Solo keeps the performance trends and owner-ready report promised by the
+  published plan. These read-only intelligence surfaces no longer return a
+  legacy Pro-only denial.
+- Deeper policy-controlled strategy remains a Growth capability. A Solo request
+  fails before strategy generation with the stable
+  `campaign_strategy_upgrade_required` reason and a customer-safe Growth
+  explanation; saved work is unchanged.
+- The customer allowance response exposes the same truth: trends and reports
+  are available on Solo, while deeper action plans identify Growth as the
+  required plan. No new numeric keyword, crawl, grid, AI, storage, export, or
+  user limit is invented in this slice; those require explicit published
+  quantities before ledger materialization.
+
 Packaging principle:
 
 - Solo tells the owner what is happening, what to do, and whether the work
