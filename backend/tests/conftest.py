@@ -32,7 +32,7 @@ from app.models.authority import AuthorityGapResearchRun, AuthorityLinkChange, A
 from app.models.billing import BillingWebhookEvent  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
 from app.models.commercial_feature_activation import CommercialFeatureActivation
-from app.models.content import ContentAsset, ContentBrief, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
+from app.models.content import ContentAsset, ContentBrief, ContentDraft, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard  # noqa: F401
 from app.models.crawl import CrawlInternalLink, CrawlRun, Page, TechnicalIssue  # noqa: F401
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity  # noqa: F401
@@ -220,6 +220,7 @@ def _verify_required_tables(database_url: str) -> None:
             "local_rank_grid_points",
             "local_rank_grid_competitor_points",
             "content_briefs",
+            "content_drafts",
             "authority_gap_research_runs",
             "authority_link_gaps",
             "authority_link_change_runs",

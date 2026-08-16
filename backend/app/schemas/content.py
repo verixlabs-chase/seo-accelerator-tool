@@ -23,6 +23,22 @@ class ContentBriefReviewIn(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class ContentDraftCreateIn(BaseModel):
+    campaign_id: str = Field(min_length=1, max_length=36)
+
+
+class ContentDraftSectionIn(BaseModel):
+    order: int = Field(ge=1, le=20)
+    heading: str = Field(min_length=1, max_length=160)
+    body: str = Field(default="", max_length=3000)
+
+
+class ContentDraftUpdateIn(BaseModel):
+    campaign_id: str = Field(min_length=1, max_length=36)
+    title: str = Field(min_length=1, max_length=320)
+    sections: list[ContentDraftSectionIn] = Field(min_length=1, max_length=12)
+
+
 class ContentAssetOut(BaseModel):
     id: str
     tenant_id: str

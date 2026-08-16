@@ -1,7 +1,9 @@
+import hashlib
 import json
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import aliased
 
@@ -9,6 +11,7 @@ from app.models.campaign import Campaign
 from app.models.content import (
     ContentAsset,
     ContentBrief,
+    ContentDraft,
     ContentQcEvent,
     EditorialCalendar,
     InternalLinkMap,
@@ -100,6 +103,7 @@ def get_content_workspace(
 ) -> dict:
     """Return saved page and brief facts without creating plans or provider work."""
     campaign = _campaign_or_404(db, tenant_id, campaign_id)
+    draft_storage_ready = _content_draft_storage_ready(db)
     bounded_limit = max(1, min(int(page_limit), 200))
     pages: list[dict] = []
     seen_urls: set[str] = set()
@@ -229,6 +233,18 @@ def get_content_workspace(
         .all()
     )
     briefs.sort(key=lambda item: (item.status != "draft", -item.created_at.timestamp()))
+    drafts = (
+        db.query(ContentDraft)
+        .filter(
+            ContentDraft.tenant_id == tenant_id,
+            ContentDraft.campaign_id == campaign_id,
+        )
+        .order_by(ContentDraft.updated_at.desc(), ContentDraft.id.desc())
+        .all()
+        if draft_storage_ready
+        else []
+    )
+    drafts_by_brief = {item.content_brief_id: item for item in drafts}
     assets = (
         db.query(ContentAsset)
         .filter(
@@ -248,6 +264,14 @@ def get_content_workspace(
     )
     attention_count = sum(bool(item["attention"]) for item in pages)
     first_draft_brief = next((item for item in briefs if item.status == "draft"), None)
+    first_accepted_without_draft = next(
+        (
+            item
+            for item in briefs
+            if item.status == "accepted" and item.id not in drafts_by_brief
+        ),
+        None,
+    )
     if first_draft_brief is not None:
         next_action = {
             "code": "review_content_brief",
@@ -256,6 +280,23 @@ def get_content_workspace(
                 "Check the saved customer search, page choice, evidence, and outline. "
                 "Nothing will be published from this screen."
             ),
+            "href": "/content#briefs",
+        }
+    elif first_accepted_without_draft is not None and draft_storage_ready:
+        next_action = {
+            "code": "start_content_draft",
+            "label": "Start the accepted working draft",
+            "detail": (
+                "Create an empty, editable draft from the accepted outline. "
+                "Nothing will be generated or published automatically."
+            ),
+            "href": "/content#briefs",
+        }
+    elif drafts:
+        next_action = {
+            "code": "continue_content_draft",
+            "label": "Continue the working draft",
+            "detail": "Add or review the page wording. Saving cannot publish it.",
             "href": "/content#briefs",
         }
     elif attention_count:
@@ -310,6 +351,7 @@ def get_content_workspace(
             "name": campaign.name,
             "domain": campaign.domain,
         },
+        "capabilities": {"working_drafts_available": draft_storage_ready},
         "truth": {
             "state": truth_state,
             "summary": truth_summary,
@@ -321,12 +363,18 @@ def get_content_workspace(
                     if inventory_is_partial
                     else []
                 ),
+                *(
+                    ["Working drafts are temporarily unavailable while storage is updated."]
+                    if not draft_storage_ready
+                    else []
+                ),
             ],
         },
         "summary": {
             "pages": len(pages),
             "pages_needing_attention": attention_count,
             "draft_briefs": sum(item.status == "draft" for item in briefs),
+            "working_drafts": len(drafts),
             "planned_work": sum(item.status != "published" for item in assets),
             "published_work": sum(item.status == "published" for item in assets),
         },
@@ -353,7 +401,10 @@ def get_content_workspace(
             },
         ],
         "pages": pages,
-        "briefs": [_serialize_workspace_brief(item) for item in briefs],
+        "briefs": [
+            _serialize_workspace_brief(item, draft=drafts_by_brief.get(item.id))
+            for item in briefs
+        ],
         "work": [
             {
                 "id": item.id,
@@ -441,7 +492,215 @@ def review_content_brief(
     }
 
 
-def _serialize_workspace_brief(item: ContentBrief) -> dict:
+def create_content_draft(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    brief_id: str,
+    actor_user_id: str,
+) -> dict:
+    """Create one empty working draft from an owner-accepted frozen brief."""
+    _campaign_or_404(db, tenant_id, campaign_id)
+    if not _content_draft_storage_ready(db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Working drafts are temporarily unavailable while storage is updated.",
+        )
+    brief = (
+        db.query(ContentBrief)
+        .filter(
+            ContentBrief.id == brief_id,
+            ContentBrief.tenant_id == tenant_id,
+            ContentBrief.campaign_id == campaign_id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if brief is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content brief not found")
+    if brief.status != "accepted":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Accept the page target before starting a working draft.",
+        )
+    existing = (
+        db.query(ContentDraft)
+        .filter(
+            ContentDraft.tenant_id == tenant_id,
+            ContentDraft.content_brief_id == brief.id,
+        )
+        .first()
+    )
+    if existing is not None:
+        return {
+            "created": False,
+            "message": "This working draft is already saved.",
+            "item": _serialize_content_draft(existing),
+            "safety": _content_draft_safety(),
+        }
+    sections = [
+        {
+            "order": int(item.get("order") or index),
+            "heading": str(item.get("heading") or "Page section").strip(),
+            "guidance": str(item.get("guidance") or "").strip(),
+            "body": "",
+        }
+        for index, item in enumerate(list(brief.outline or []), start=1)
+        if isinstance(item, dict)
+    ]
+    if not sections:
+        sections = [
+            {
+                "order": 1,
+                "heading": "Explain the service clearly",
+                "guidance": "Describe who this service helps and what customers receive.",
+                "body": "",
+            }
+        ]
+    now = datetime.now(UTC)
+    draft = ContentDraft(
+        tenant_id=brief.tenant_id,
+        organization_id=brief.organization_id,
+        campaign_id=brief.campaign_id,
+        business_location_id=brief.business_location_id,
+        content_brief_id=brief.id,
+        status="working",
+        title=brief.title,
+        sections=sections,
+        source_brief_hash=_content_brief_hash(brief),
+        revision=1,
+        automatic_publishing_allowed=False,
+        created_by_user_id=actor_user_id,
+        updated_by_user_id=actor_user_id,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(draft)
+    write_audit_log(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        event_type="content.draft.created",
+        payload={
+            "campaign_id": campaign_id,
+            "content_brief_id": brief.id,
+            "content_draft_id": draft.id,
+            "source_brief_hash": draft.source_brief_hash,
+            "draft_generated": False,
+            "publishing_enabled": False,
+        },
+    )
+    db.commit()
+    db.refresh(draft)
+    return {
+        "created": True,
+        "message": "Empty working draft created from the accepted outline.",
+        "item": _serialize_content_draft(draft),
+        "safety": _content_draft_safety(),
+    }
+
+
+def update_content_draft(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+    draft_id: str,
+    title: str,
+    sections: list[dict],
+    actor_user_id: str,
+) -> dict:
+    """Save owner-authored plain text without dispatching AI or website work."""
+    _campaign_or_404(db, tenant_id, campaign_id)
+    if not _content_draft_storage_ready(db):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Working drafts are temporarily unavailable while storage is updated.",
+        )
+    draft = (
+        db.query(ContentDraft)
+        .filter(
+            ContentDraft.id == draft_id,
+            ContentDraft.tenant_id == tenant_id,
+            ContentDraft.campaign_id == campaign_id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if draft is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content draft not found")
+    normalized_title = str(title or "").strip()
+    if not normalized_title:
+        raise HTTPException(status_code=422, detail="Add a draft page title.")
+    existing_guidance = {
+        int(item.get("order") or 0): str(item.get("guidance") or "").strip()
+        for item in list(draft.sections or [])
+        if isinstance(item, dict)
+    }
+    seen_orders: set[int] = set()
+    normalized_sections = []
+    total_body_characters = 0
+    for raw in sections:
+        order = int(raw.get("order") or 0)
+        heading = str(raw.get("heading") or "").strip()
+        body = str(raw.get("body") or "").strip()
+        if order < 1 or order in seen_orders or not heading:
+            raise HTTPException(status_code=422, detail="Each draft section needs a unique order and heading.")
+        seen_orders.add(order)
+        total_body_characters += len(body)
+        normalized_sections.append(
+            {
+                "order": order,
+                "heading": heading,
+                "guidance": existing_guidance.get(order, ""),
+                "body": body,
+            }
+        )
+    if total_body_characters > 12000:
+        raise HTTPException(status_code=422, detail="The working draft is too long to save safely.")
+    normalized_sections.sort(key=lambda item: item["order"])
+    if draft.title == normalized_title and list(draft.sections or []) == normalized_sections:
+        return {
+            "changed": False,
+            "message": "The working draft is already saved.",
+            "item": _serialize_content_draft(draft),
+            "safety": _content_draft_safety(),
+        }
+    draft.title = normalized_title
+    draft.sections = normalized_sections
+    draft.revision = int(draft.revision or 0) + 1
+    draft.updated_by_user_id = actor_user_id
+    draft.updated_at = datetime.now(UTC)
+    write_audit_log(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        event_type="content.draft.saved",
+        payload={
+            "campaign_id": campaign_id,
+            "content_brief_id": draft.content_brief_id,
+            "content_draft_id": draft.id,
+            "revision": draft.revision,
+            "customer_copy_omitted": True,
+            "publishing_enabled": False,
+        },
+    )
+    db.commit()
+    db.refresh(draft)
+    return {
+        "changed": True,
+        "message": "Working draft saved. Nothing was published.",
+        "item": _serialize_content_draft(draft),
+        "safety": _content_draft_safety(),
+    }
+
+
+def _serialize_workspace_brief(
+    item: ContentBrief,
+    *,
+    draft: ContentDraft | None = None,
+) -> dict:
     return {
         "id": item.id,
         "status": item.status,
@@ -457,7 +716,50 @@ def _serialize_workspace_brief(item: ContentBrief) -> dict:
         "outline": list(item.outline or []),
         "created_at": item.created_at.isoformat(),
         "updated_at": item.updated_at.isoformat(),
+        "working_draft": _serialize_content_draft(draft) if draft is not None else None,
     }
+
+
+def _serialize_content_draft(item: ContentDraft) -> dict:
+    return {
+        "id": item.id,
+        "status": item.status,
+        "title": item.title,
+        "sections": list(item.sections or []),
+        "revision": int(item.revision),
+        "created_at": item.created_at.isoformat(),
+        "updated_at": item.updated_at.isoformat(),
+        "safety": _content_draft_safety(),
+    }
+
+
+def _content_brief_hash(item: ContentBrief) -> str:
+    payload = {
+        "id": item.id,
+        "title": item.title,
+        "primary_keyword": item.primary_keyword,
+        "recommended_page_action": item.recommended_page_action,
+        "target_url": item.target_url,
+        "competitor_domain": item.competitor_domain,
+        "competitor_url": item.competitor_url,
+        "evidence": item.evidence or {},
+        "outline": item.outline or [],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _content_draft_safety() -> dict:
+    return {
+        "ai_generated": False,
+        "automatic_publishing_allowed": False,
+        "website_changed": False,
+        "approval_to_publish_recorded": False,
+    }
+
+
+def _content_draft_storage_ready(db: Session) -> bool:
+    return bool(inspect(db.get_bind()).has_table("content_drafts"))
 
 
 def _brief_review_safety() -> dict:

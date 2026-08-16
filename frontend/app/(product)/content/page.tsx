@@ -53,6 +53,23 @@ type ContentBrief = {
   };
   outline: Array<{ order: number; heading: string; guidance: string }>;
   created_at: string;
+  working_draft?: WorkingContentDraft | null;
+};
+
+type WorkingContentDraft = {
+  id: string;
+  status: "working";
+  title: string;
+  sections: Array<{ order: number; heading: string; guidance?: string; body: string }>;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  safety: {
+    ai_generated: false;
+    automatic_publishing_allowed: false;
+    website_changed: false;
+    approval_to_publish_recorded: false;
+  };
 };
 
 type ContentWork = {
@@ -71,11 +88,13 @@ type ContentWorkspace = {
     name: string;
     domain: string;
   };
+  capabilities?: { working_drafts_available?: boolean };
   truth: { state: string; summary: string; limitations: string[] };
   summary: {
     pages: number;
     pages_needing_attention: number;
     draft_briefs: number;
+    working_drafts: number;
     planned_work: number;
     published_work: number;
   };
@@ -103,6 +122,13 @@ type ContentBriefReviewResult = {
   };
 };
 
+type ContentDraftMutationResult = {
+  created?: boolean;
+  changed?: boolean;
+  message: string;
+  item: WorkingContentDraft;
+};
+
 const SAFE_ACTION_PATHS = new Set(["/content#briefs", "/content#pages", "/site-health", "/competitors"]);
 
 function formatDate(value?: string | null) {
@@ -126,6 +152,121 @@ function publicationLabel(value: string) {
   return value.replaceAll("_", " ");
 }
 
+function WorkingDraftEditor({
+  draft,
+  campaignId,
+  onSaved,
+}: {
+  draft: WorkingContentDraft;
+  campaignId: string;
+  onSaved: (message: string) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(draft.title);
+  const [sections, setSections] = useState(draft.sections);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setTitle(draft.title);
+    setSections(draft.sections);
+  }, [draft.id, draft.revision, draft.sections, draft.title]);
+
+  async function saveDraft() {
+    if (saving) return;
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      const result = (await platformApi(`/content/drafts/${encodeURIComponent(draft.id)}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          campaign_id: campaignId,
+          title,
+          sections: sections.map((section) => ({
+            order: section.order,
+            heading: section.heading,
+            body: section.body,
+          })),
+        }),
+      })) as ContentDraftMutationResult;
+      setMessage(result.message);
+      await onSaved(result.message);
+    } catch {
+      setError("The working draft could not be saved. Nothing was published.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="mt-4 border-t border-[#2a2b30] pt-4" aria-label="Editable working draft">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="font-semibold text-white">Working draft</p>
+          <p className="mt-1 text-xs text-zinc-500">Revision {draft.revision} · saved {formatDate(draft.updated_at)}</p>
+        </div>
+        <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
+          Not approved or published
+        </span>
+      </div>
+      <label className="mt-4 block text-sm font-medium text-zinc-200">
+        Page heading
+        <input
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          maxLength={320}
+          className="mt-2 w-full rounded-md border border-[#34353b] bg-[#111214] px-3 py-2 text-zinc-100 outline-none focus:border-accent-500"
+        />
+      </label>
+      <div className="mt-4 space-y-4">
+        {sections.map((section, index) => (
+          <section key={`${draft.id}-${section.order}`} className="border-l-2 border-[#34353b] pl-3">
+            <label className="block text-sm font-medium text-zinc-200">
+              Section {section.order} heading
+              <input
+                value={section.heading}
+                onChange={(event) => setSections((current) => current.map((item, itemIndex) => (
+                  itemIndex === index ? { ...item, heading: event.target.value } : item
+                )))}
+                maxLength={160}
+                className="mt-2 w-full rounded-md border border-[#34353b] bg-[#111214] px-3 py-2 text-zinc-100 outline-none focus:border-accent-500"
+              />
+            </label>
+            {section.guidance ? <p className="mt-2 text-xs leading-5 text-zinc-500">Guide: {section.guidance}</p> : null}
+            <label className="mt-3 block text-sm font-medium text-zinc-200">
+              Your wording
+              <textarea
+                value={section.body}
+                onChange={(event) => setSections((current) => current.map((item, itemIndex) => (
+                  itemIndex === index ? { ...item, body: event.target.value } : item
+                )))}
+                maxLength={3000}
+                rows={5}
+                placeholder="Write or paste the wording for this section."
+                className="mt-2 w-full resize-y rounded-md border border-[#34353b] bg-[#111214] px-3 py-2 text-zinc-100 outline-none focus:border-accent-500"
+              />
+            </label>
+          </section>
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void saveDraft()}
+          disabled={saving || !title.trim()}
+          className="rounded-md bg-accent-500 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save working draft"}
+        </button>
+        <p className="text-xs text-zinc-500">Saving stores owner-written text only. It cannot contact WordPress or publish.</p>
+      </div>
+      {message ? <p role="status" className="mt-3 text-sm text-emerald-100">{message}</p> : null}
+      {error ? <p role="alert" className="mt-3 text-sm text-rose-100">{error}</p> : null}
+    </section>
+  );
+}
+
 export default function ContentWorkspacePage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -137,6 +278,7 @@ export default function ContentWorkspacePage() {
   const [briefReviewBusy, setBriefReviewBusy] = useState("");
   const [briefReviewMessage, setBriefReviewMessage] = useState("");
   const [briefReviewError, setBriefReviewError] = useState("");
+  const [draftCreateBusy, setDraftCreateBusy] = useState("");
 
   const loadWorkspace = useCallback(async (campaignId: string, refresh = false) => {
     if (refresh) setRefreshing(true);
@@ -205,6 +347,25 @@ export default function ContentWorkspacePage() {
       setBriefReviewError("That brief decision could not be saved. Nothing was changed or published.");
     } finally {
       setBriefReviewBusy("");
+    }
+  }
+
+  async function startWorkingDraft(brief: ContentBrief) {
+    if (!selectedCampaignId || draftCreateBusy) return;
+    setDraftCreateBusy(brief.id);
+    setBriefReviewMessage("");
+    setBriefReviewError("");
+    try {
+      const result = (await platformApi(`/content/briefs/${encodeURIComponent(brief.id)}/draft`, {
+        method: "POST",
+        body: JSON.stringify({ campaign_id: selectedCampaignId }),
+      })) as ContentDraftMutationResult;
+      setBriefReviewMessage(result.message);
+      await loadWorkspace(selectedCampaignId, true);
+    } catch {
+      setBriefReviewError("The working draft could not be started. Nothing was generated or published.");
+    } finally {
+      setDraftCreateBusy("");
     }
   }
 
@@ -301,7 +462,7 @@ export default function ContentWorkspacePage() {
         ) : null}
 
         {!loading && payload ? (
-          <section aria-label="Saved content facts" className="grid gap-px bg-[#26272c] sm:grid-cols-2 xl:grid-cols-4">
+          <section aria-label="Saved content facts" className="grid gap-px bg-[#26272c] sm:grid-cols-2 xl:grid-cols-5">
             <KpiCard
               label="Saved pages"
               value={payload.summary.pages.toLocaleString()}
@@ -319,6 +480,12 @@ export default function ContentWorkspacePage() {
               value={payload.summary.draft_briefs.toLocaleString()}
               summary="Research-backed page plans waiting for a person to review."
               icon="reports"
+            />
+            <KpiCard
+              label="Working drafts"
+              value={payload.summary.working_drafts.toLocaleString()}
+              summary="Owner-editable page wording saved in InsightOS and not approved for publishing."
+              icon="content"
             />
             <KpiCard
               label="Published work"
@@ -424,9 +591,34 @@ export default function ContentWorkspacePage() {
                           </p>
                         </div>
                       ) : brief.status === "accepted" ? (
-                        <p className="mt-4 border-t border-[#2a2b30] pt-3 text-sm text-emerald-100">
-                          The page choice is saved. Drafting and publishing still require separate steps.
-                        </p>
+                        brief.working_draft ? (
+                          <WorkingDraftEditor
+                            draft={brief.working_draft}
+                            campaignId={selectedCampaignId || ""}
+                            onSaved={async (message) => {
+                              setBriefReviewMessage(message);
+                              if (selectedCampaignId) await loadWorkspace(selectedCampaignId, true);
+                            }}
+                          />
+                        ) : payload.capabilities?.working_drafts_available === true ? (
+                          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[#2a2b30] pt-4">
+                            <button
+                              type="button"
+                              onClick={() => void startWorkingDraft(brief)}
+                              disabled={Boolean(draftCreateBusy)}
+                              className="rounded-md bg-accent-500 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {draftCreateBusy === brief.id ? "Starting…" : "Start empty working draft"}
+                            </button>
+                            <p className="text-xs text-zinc-500">
+                              This copies the accepted headings into an editable workspace. It does not generate or publish wording.
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="mt-4 border-t border-[#2a2b30] pt-3 text-sm text-amber-100">
+                            The page choice is saved. Working drafts are temporarily unavailable while storage is updated.
+                          </p>
+                        )
                       ) : null}
                     </article>
                   ))}

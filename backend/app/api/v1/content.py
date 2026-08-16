@@ -12,6 +12,8 @@ from app.schemas.content import (
     ContentAssetOut,
     ContentAssetUpdateIn,
     ContentBriefReviewIn,
+    ContentDraftCreateIn,
+    ContentDraftUpdateIn,
 )
 from app.services import content_service, infra_service
 from app.tasks.tasks import content_generate_plan, content_refresh_internal_link_map, content_run_qc_checks
@@ -95,6 +97,44 @@ def review_content_brief(
         brief_id=brief_id,
         decision=body.decision,
         note=body.note,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/briefs/{brief_id}/draft")
+def create_content_draft(
+    request: Request,
+    brief_id: str,
+    body: ContentDraftCreateIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.create_content_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        brief_id=brief_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.put("/drafts/{draft_id}")
+def update_content_draft(
+    request: Request,
+    draft_id: str,
+    body: ContentDraftUpdateIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.update_content_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        title=body.title,
+        sections=[item.model_dump() for item in body.sections],
         actor_user_id=user["id"],
     )
     return envelope(request, payload)

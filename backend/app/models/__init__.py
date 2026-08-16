@@ -64,6 +64,7 @@ from app.models.commercial_feature_activation import CommercialFeatureActivation
 from app.models.content import (
     ContentAsset,
     ContentBrief,
+    ContentDraft,
     ContentQcEvent,
     EditorialCalendar,
     InternalLinkMap,
@@ -310,6 +311,7 @@ __all__ = [
     "CompetitorSignal",
     "ContentAsset",
     "ContentBrief",
+    "ContentDraft",
     "EditorialCalendar",
     "InternalLinkMap",
     "ContentQcEvent",

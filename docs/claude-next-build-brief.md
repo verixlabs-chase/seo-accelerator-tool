@@ -3077,9 +3077,13 @@ drafting step or decline the brief; the decision is terminal, idempotent,
 audited, and cannot change the frozen evidence or publish anything. Inventory
 limits and missing sources stay visible, and
 only a small customer-safe evidence contract leaves the API. This slice cannot
-generate page copy, publish, or mutate a website. The next CNT1 slices remain
-governed drafting and editing, metadata/schema/internal-link recommendations,
-and an explicitly approved publishing handoff.
+automatically generate page copy, publish, or mutate a website. An accepted
+brief can now create one idempotent working draft whose headings remain tied to
+a hash of that brief. The owner can edit and save plain-text headings and page
+sections with bounded lengths and revision numbers. Draft copy is omitted from
+audit logs, and the database enforces that automatic publishing is false. The
+next CNT1 slices remain optional governed AI wording, metadata/schema/internal-
+link recommendations, and an explicitly approved publishing handoff.
 
 Scope:
 

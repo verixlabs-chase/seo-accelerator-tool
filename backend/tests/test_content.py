@@ -213,10 +213,12 @@ def test_content_workspace_combines_saved_pages_and_draft_briefs(client, db_sess
     assert response.status_code == 200
     payload = response.json()["data"]
     assert payload["truth"]["state"] == "measured"
+    assert payload["capabilities"]["working_drafts_available"] is True
     assert payload["summary"] == {
         "pages": 1,
         "pages_needing_attention": 1,
         "draft_briefs": 1,
+        "working_drafts": 0,
         "planned_work": 0,
         "published_work": 0,
     }
@@ -236,6 +238,13 @@ def test_content_workspace_combines_saved_pages_and_draft_briefs(client, db_sess
     assert "provider" not in str(payload).lower()
 
     brief_id = payload["briefs"][0]["id"]
+    premature_draft = client.post(
+        f"/api/v1/content/briefs/{brief_id}/draft",
+        json={"campaign_id": campaign.id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert premature_draft.status_code == 409
+
     review = client.put(
         f"/api/v1/content/briefs/{brief_id}/review",
         json={"campaign_id": campaign.id, "decision": "accept"},
@@ -273,7 +282,76 @@ def test_content_workspace_combines_saved_pages_and_draft_briefs(client, db_sess
     ).json()["data"]
     assert refreshed["summary"]["draft_briefs"] == 0
     assert refreshed["briefs"][0]["status"] == "accepted"
-    assert refreshed["next_action"]["code"] == "review_page_attention"
+    assert refreshed["next_action"]["code"] == "start_content_draft"
+
+    create_draft = client.post(
+        f"/api/v1/content/briefs/{brief_id}/draft",
+        json={"campaign_id": campaign.id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert create_draft.status_code == 200
+    draft_payload = create_draft.json()["data"]
+    assert draft_payload["created"] is True
+    assert draft_payload["item"]["revision"] == 1
+    assert draft_payload["item"]["sections"][0]["body"] == ""
+    assert draft_payload["safety"] == {
+        "ai_generated": False,
+        "automatic_publishing_allowed": False,
+        "website_changed": False,
+        "approval_to_publish_recorded": False,
+    }
+
+    repeat_draft = client.post(
+        f"/api/v1/content/briefs/{brief_id}/draft",
+        json={"campaign_id": campaign.id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert repeat_draft.status_code == 200
+    assert repeat_draft.json()["data"]["created"] is False
+
+    draft_id = draft_payload["item"]["id"]
+    sections = [
+        {
+            "order": item["order"],
+            "heading": item["heading"],
+            "body": "Owner-written wording for this section.",
+        }
+        for item in draft_payload["item"]["sections"]
+    ]
+    saved = client.put(
+        f"/api/v1/content/drafts/{draft_id}",
+        json={
+            "campaign_id": campaign.id,
+            "title": "Emergency plumbing in Reno",
+            "sections": sections,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert saved.status_code == 200
+    saved_payload = saved.json()["data"]
+    assert saved_payload["changed"] is True
+    assert saved_payload["item"]["revision"] == 2
+    assert saved_payload["item"]["sections"][0]["body"].startswith("Owner-written")
+
+    repeated_save = client.put(
+        f"/api/v1/content/drafts/{draft_id}",
+        json={
+            "campaign_id": campaign.id,
+            "title": "Emergency plumbing in Reno",
+            "sections": sections,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert repeated_save.status_code == 200
+    assert repeated_save.json()["data"]["changed"] is False
+
+    with_draft = client.get(
+        f"/api/v1/content/workspace?campaign_id={campaign.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+    assert with_draft["summary"]["working_drafts"] == 1
+    assert with_draft["briefs"][0]["working_draft"]["revision"] == 2
+    assert with_draft["next_action"]["code"] == "continue_content_draft"
 
 
 def test_content_workspace_is_tenant_scoped(client):

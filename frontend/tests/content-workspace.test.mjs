@@ -12,13 +12,25 @@ const nav = readFileSync(
   "utf8",
 );
 
-test("content workspace is location-scoped and cannot draft or publish", () => {
+test("content workspace is location-scoped and cannot automatically generate or publish", () => {
   assert.match(page, /\/content\/workspace\?campaign_id=/);
   assert.match(page, /selectedCampaignId/);
   assert.match(page, /Nothing on this page can publish to your website/);
   assert.match(page, /not proof that a page change will improve rankings/);
-  assert.doesNotMatch(page, /method:\s*"POST"/);
   assert.doesNotMatch(page, /method:\s*"PATCH"/);
+  assert.doesNotMatch(page, /governed-ai|mistral|draft_action/);
+});
+
+test("accepted briefs become owner-editable working drafts only", () => {
+  assert.match(page, /\/content\/briefs\/\$\{encodeURIComponent\(brief\.id\)\}\/draft/);
+  assert.match(page, /Start empty working draft/);
+  assert.match(page, /working_drafts_available === true/);
+  assert.match(page, /temporarily unavailable while storage is updated/);
+  assert.match(page, /Editable working draft/);
+  assert.match(page, /Save working draft/);
+  assert.match(page, /cannot contact WordPress or publish/);
+  assert.match(page, /Not approved or published/);
+  assert.doesNotMatch(page, /Approve and publish/i);
 });
 
 test("brief review saves one explicit owner decision without changing the website", () => {
