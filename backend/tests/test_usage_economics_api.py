@@ -101,6 +101,45 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
             "Pipedream",
             "Generic signed webhooks",
         ],
+        "outbound_contract": {
+            "schema_version": "insightos.automation.event.v1",
+            "connection_setup_enabled": False,
+            "delivery_enabled": False,
+            "supported_events": [
+                {
+                    "code": "report.ready",
+                    "label": "Report ready",
+                    "summary": "A saved report is ready for the owner to review or share.",
+                },
+                {
+                    "code": "recommendation.ready",
+                    "label": "Recommendation ready",
+                    "summary": (
+                        "A saved, evidence-backed recommendation is ready for review."
+                    ),
+                },
+                {
+                    "code": "approval.requested",
+                    "label": "Approval requested",
+                    "summary": "A governed action is waiting for an authorized person.",
+                },
+                {
+                    "code": "action.completed",
+                    "label": "Action completed",
+                    "summary": "An approved action finished and saved its result.",
+                },
+                {
+                    "code": "action.failed",
+                    "label": "Action needs attention",
+                    "summary": "An approved action stopped and has a saved recovery step.",
+                },
+                {
+                    "code": "connection.health_changed",
+                    "label": "Connection status changed",
+                    "summary": "A connected data source needs attention or has recovered.",
+                },
+            ],
+        },
     }
     assert data["credits"]["monthly"] == 1995
     assert data["credits"]["remaining"] == 1995

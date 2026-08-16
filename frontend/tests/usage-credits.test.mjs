@@ -42,6 +42,10 @@ test("settings separates automation plan eligibility from a live gateway", () =>
   assert.match(settings, /Your plan is eligible, but external automation is not available yet/);
   assert.match(settings, /Planned as a vendor-neutral connection/);
   assert.match(settings, /No tool can connect, receive events, or run actions yet/);
+  assert.match(settings, /Planned starter triggers/);
+  assert.match(settings, /outbound_contract\?\.supported_events\.length/);
+  assert.match(settings, /event\.label/);
+  assert.match(settings, /event\.summary/);
   assert.doesNotMatch(settings, />Connect n8n</);
   assert.doesNotMatch(settings, /\/automation\/connections/);
 });

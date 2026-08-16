@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.automation import AUTOMATION_EVENT_SCHEMA_VERSION, automation_event_catalog
 from app.domain.commercial_tiers import (
     COMMERCIAL_LEGACY_TIER_VERSION,
     COMMERCIAL_TIERS,
@@ -438,6 +439,12 @@ def _external_automation_access(plan_code: str) -> dict[str, Any]:
             "Pipedream",
             "Generic signed webhooks",
         ],
+        "outbound_contract": {
+            "schema_version": AUTOMATION_EVENT_SCHEMA_VERSION,
+            "connection_setup_enabled": False,
+            "delivery_enabled": False,
+            "supported_events": automation_event_catalog(),
+        },
     }
 
 

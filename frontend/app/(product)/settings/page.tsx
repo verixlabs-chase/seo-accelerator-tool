@@ -210,6 +210,16 @@ type UsageAllowance = {
     state: "plan_upgrade_required" | "gateway_not_available";
     summary: string;
     planned_connection_options: string[];
+    outbound_contract?: {
+      schema_version: string;
+      connection_setup_enabled: false;
+      delivery_enabled: false;
+      supported_events: Array<{
+        code: string;
+        label: string;
+        summary: string;
+      }>;
+    };
   };
   upgrade?: {
     plan_code: string;
@@ -3423,6 +3433,19 @@ export default function SettingsPage() {
                     <p className="mt-2 text-xs leading-5 text-zinc-500">
                       Planned as a vendor-neutral connection for {usageAllowance.external_automation.planned_connection_options.join(", ")}. No tool can connect, receive events, or run actions yet.
                     </p>
+                    {usageAllowance.external_automation.outbound_contract?.supported_events.length ? (
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-zinc-300">Planned starter triggers</p>
+                        <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {usageAllowance.external_automation.outbound_contract?.supported_events.map((event) => (
+                            <li key={event.code} className="rounded-lg border border-[#292a2f] bg-[#101114] px-3 py-2">
+                              <p className="text-xs font-medium text-zinc-200">{event.label}</p>
+                              <p className="mt-1 text-xs leading-5 text-zinc-500">{event.summary}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </section>

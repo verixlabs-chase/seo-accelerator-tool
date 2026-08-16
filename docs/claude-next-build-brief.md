@@ -4534,6 +4534,33 @@ customer's other systems through one vendor-neutral contract without exposing
 the database, provider credentials, unrestricted AI prompts, or a way around
 product approvals.
 
+#### AUT1A - Versioned Signed Outbound Event Contract
+
+Implementation status (August 16, 2026):
+
+- The first vendor-neutral contract is implemented as a bounded, versioned
+  outbound envelope. Its initial allowlist covers report ready,
+  recommendation ready, approval requested, action completed, action failed,
+  and connection-health-changed events. Each event carries one organization,
+  optional location, truth state, same-product resource link, occurrence time,
+  and only fields approved for that exact event type.
+- Canonical JSON is signed with HMAC-SHA256 over the timestamp and exact body.
+  Verification uses constant-time comparison, binds the event and schema
+  headers to the signed body, rejects stale requests after five minutes, and
+  rejects tampering, duplicate fields, unknown event types, mismatched resource
+  types, oversized or deeply nested payloads, non-finite values, absolute
+  links, and nested credential, token, contact, raw-content, provider-payload,
+  prompt, or internal-cost fields.
+- Settings can show the approved starter triggers from the server contract, but
+  connection setup and event delivery remain explicitly false. AUT1A stores no
+  destination URL or signing secret, makes no outbound network request, exposes
+  no inbound command route, and cannot activate or approve an InsightOS action.
+- AUT1B still owns encrypted connection and secret storage, destination
+  ownership proof and SSRF-safe validation, subscription filters, durable
+  delivery and retry receipts, secret rotation, disable and revoke, per-platform
+  conformance, and the first real test delivery. Typed inbound actions remain a
+  later slice after outbound delivery is production-proven.
+
 Placement and packaging:
 
 - This is a later integration sprint after DT1 connection truth, ALT1 event
