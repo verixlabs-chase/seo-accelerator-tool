@@ -676,7 +676,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 43 | **AIV1 - AI Search Visibility and Entity Intelligence - AIV1-A foundation implemented locally** | The provider-neutral slice establishes candidate-only engine/provider contracts, deterministic saved questions, dormant run/evidence storage, honest truth states, supplier redaction, a non-executing cost/allowance preview, and a location-scoped beta workspace. AIV1-B later proves the full live supplier and price contract; AIV1-C later enables governed collection and results inside that workspace. |
 | 44 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
 | 45 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 46 | **AUT1 - External Automation Gateway** | Growth and Enterprise customers can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, scoped service accounts, governed workflow templates, and typed actions without granting direct database or unrestricted execution access. |
+| 46 | **AUT1 - External Automation Gateway** | Every paid tier can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, governed workflow templates, and typed actions; higher tiers add volume, collaboration, custom scopes, and service accounts without granting direct database or unrestricted execution access. |
 | 47 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 ### External API enablement map
@@ -956,17 +956,20 @@ Margin guardrail:
 
 | Plan | Monthly revenue | Total software COGS ceiling at 85% margin | 5% platform-API budget |
 | --- | ---: | ---: | ---: |
-| Solo | $299 | $44.85 | $14.95 |
+| Solo | $399 | $59.85 | $19.95 |
 | Growth | $699 | $104.85 | $34.95 |
 | Enterprise starting point | $1,999 | $299.85 | $99.95 |
 
 Pricing decision:
 
-- Solo is `$299/month` and includes one active location.
+- Solo is `$399/month`, includes one active location, and will include a bounded
+  catalog of standard AUT1 recipes once the automation gateway passes its
+  production security and delivery gates.
 - Growth is `$699/month` and includes up to ten active locations. Growth is
-  positioned as the automation tier, not merely the multi-location tier, so a
-  one-location business can upgrade for execution, higher allowances, deeper
-  history, and faster monitoring without paying for a meaningless label.
+  positioned as the expanded automation and collaboration tier, not merely the
+  multi-location tier, so a one-location business can upgrade for more recipes,
+  higher allowances, deeper history, and faster monitoring without paying for
+  a meaningless label.
 - Enterprise starts at `$1,999/month`, includes 11-20 active locations by
   default, and uses custom per-location pricing above 20 or when its approved
   user, provider, data-volume, or support allowance is exceeded.
@@ -4098,7 +4101,7 @@ Acceptance criteria:
 
 ### Commerce COM1 - Billing, Entitlements, and Self-Service Accounts
 
-Goal: make the $299, $699, and $1,999+ plans enforceable and supportable.
+Goal: make the $399, $699, and $1,999+ plans enforceable and supportable.
 
 Scope:
 
@@ -4372,15 +4375,14 @@ Implementation status (August 16, 2026):
 
 Implementation status (August 16, 2026):
 
-- The commercial catalog now matches the published packaging decision: Growth
-  is the minimum plan for standard approved external automation. Enterprise
-  remains the later custom-service-account, custom-scope, generic API, and
-  customer-hosted-client tier.
-- Plan eligibility is separate from gateway availability. Growth and
-  Enterprise report that the plan is eligible, but `gateway_enabled` and
-  `automatic_actions_enabled` remain false until AUT1 is implemented and
-  production validated. Solo receives a stable Growth-required explanation
-  while native alerts, reports, and manual workflows stay available.
+- This slice first established the separation between plan eligibility and a
+  live automation gateway. Its initial Growth-minimum packaging decision is
+  superseded by COM1.3G, which extends bounded standard recipe eligibility to
+  the `$399` Solo plan while retaining Enterprise for custom service accounts,
+  scopes, API access, and customer-hosted clients.
+- `gateway_enabled` and `automatic_actions_enabled` remain false until AUT1 is
+  implemented and production validated. Changing a plan or price never makes a
+  connector, event delivery, or external action available by itself.
 - Settings names the planned vendor-neutral options—n8n, Make, Zapier,
   Pipedream, and generic signed webhooks—without selecting one as the platform
   architecture or presenting a connection button. No option can receive
@@ -4392,21 +4394,48 @@ Implementation status (August 16, 2026):
   COM1.3F does not create a placeholder token, webhook, endpoint, or execution
   bypass before those controls exist.
 
+#### COM1.3G - $399 Solo Packaging and Standard Automation Eligibility
+
+Implementation status (August 16, 2026):
+
+- The canonical Solo price is now `$399/month`. Its platform-paid API allowance
+  rises from `$14.95` to `$19.95` while the existing 10% non-API reserve keeps
+  the modeled software-usage margin floor at 85%. Existing ledger rows retain
+  their original price and revenue snapshots; new reservations use the current
+  `$399` catalog snapshot. The runtime price must not be deployed ahead of the
+  matching Stripe price or an explicit legacy-subscriber transition decision.
+- Standard external automation eligibility now begins with Solo rather than
+  Growth. Once AUT1 is production-ready, Solo receives a small catalog of
+  supported recipes with bounded event/action allowances and the same explicit
+  approval rules as the underlying InsightOS action. Growth adds larger
+  allowances, more active workflows, multi-location routing, and team approval
+  controls. Enterprise adds custom scopes, service accounts, generic API and
+  webhook access, customer-hosted clients, retention, and contractual support.
+- Eligibility still does not turn on a connector. The gateway and automatic
+  action flags remain false for every plan until signed delivery, replay
+  protection, scoped commands, destination validation, audit, privacy,
+  idempotency, per-connector QA, and production recovery pass AUT1. This pricing
+  change creates no token, webhook, route, provider call, or execution bypass.
+- Before paid checkout is enabled publicly, the configured Stripe Solo Price
+  ID must be proven to charge exactly `$399/month`; a matching internal label
+  is not accepted as evidence of the external billing amount.
+
 Packaging principle:
 
 - Solo tells the owner what is happening, what to do, and whether the work
   helped. It must remain a useful end-to-end intelligence product rather than a
   crippled trial.
-- Growth helps the owner do the work through governed automation, higher
-  allowances, more frequent monitoring, collaboration, and longer history. It
-  includes up to ten locations, but is valuable even when only one is active.
+- Growth expands governed automation through more recipes, higher allowances,
+  more frequent monitoring, collaboration, multi-location routing, and longer
+  history. It includes up to ten locations, but is valuable even when only one
+  is active.
 - Enterprise adds organization-scale governance, customer-owned infrastructure,
   customization, API access, white label, advanced roles, and contractual
   operating support.
 
 Canonical feature gates:
 
-| Capability | Solo - `$299` | Growth - `$699` | Enterprise - `$1,999+` |
+| Capability | Solo - `$399` | Growth - `$699` | Enterprise - `$1,999+` |
 | --- | --- | --- | --- |
 | Active locations | 1 | Up to 10 | 11-20 included; custom above 20 |
 | Connected Google, website-health, ranking, keyword, citation, review, and competitor intelligence | Included with standard allowances | Included with higher pooled allowances | Included with custom allowances and provider options |
@@ -4419,7 +4448,7 @@ Canonical feature gates:
 | Content and on-page work | Recommendations and limited copy-ready drafts | Full governed content workspace plus approved WordPress publishing | Multi-site policy, advanced approval, API, and custom workflow integration |
 | Alerts | Essential weekly digest and critical connection/security notices | Faster change alerts, action reminders, and configurable digests | Webhook/API delivery, routing rules, and custom escalation |
 | Reports and exports | Owner-ready monthly report and basic export | Scheduled weekly/monthly reports, comparison views, and advanced export | White label, client-safe distribution, API, durable custom reporting, and retention controls |
-| External automation | Native alerts and reports only; no external write automation | AUT1 approved recipes for supported platforms, signed outbound events, and bounded actions with standard allowances | AUT1 custom event/action scopes, location-group permissions, service accounts, customer-hosted automation clients, generic webhook/API access, larger allowances, and longer audit retention |
+| External automation | AUT1 starter recipes for supported platforms, signed outbound events, and bounded approval-preserving actions with entry allowances | More recipes, larger event/action allowances, multi-location routing, and team approval controls | Custom event/action scopes, location-group permissions, service accounts, customer-hosted clients, generic webhook/API access, contractual allowances, and longer audit retention |
 | Users and workflow | Owner plus one collaborator | Team roles, delegated location access, approvals, and bulk work | Advanced/custom roles, client access, SSO when contracted, and organization audit views |
 | Competitor, backlink, AI-visibility, and historical depth | Useful baseline limits | Higher limits, deeper history, scheduled checks, and batch comparison | Custom limits, exports, provider ownership, and portfolio analysis |
 | Support and onboarding | Guided self-service | Assisted onboarding and priority product support | Managed onboarding, named escalation, and contracted support options |
@@ -4510,16 +4539,20 @@ Placement and packaging:
 - This is a later integration sprint after DT1 connection truth, ALT1 event
   delivery, COM1 entitlements, GOV1 privacy controls, and the governed action
   execution contracts are stable.
-- **Growth / Tier 2** receives a limited catalog of approved workflow recipes
-  for supported platforms, signed outbound events, and bounded inbound actions
-  with standard event, execution, history, and concurrency allowances.
+- **Solo / Tier 1** receives a small catalog of approved workflow recipes for
+  supported platforms, signed outbound events, and bounded inbound actions
+  with entry event, execution, history, and concurrency allowances.
+- **Growth / Tier 2** receives more recipes, larger allowances, multi-location
+  routing, and team approval controls while using the same governed contract.
 - **Enterprise / Tier 3** receives custom scoped service accounts, larger
   allowances, custom webhook destinations, organization and location-group
   filters, advanced approval roles, longer audit retention, and support for
   customer-hosted automation clients and custom integrations that use the same
   governed contract.
-- Solo does not receive external write automation. Essential reports and alerts
-  remain available through native InsightOS features.
+- No tier receives unrestricted write automation. A recipe can invoke only an
+  existing typed InsightOS action and must preserve that action's plan,
+  approval, scope, evidence, idempotency, safety, verification, and rollback
+  requirements.
 
 Outbound event contract:
 
@@ -4676,8 +4709,8 @@ Acceptance criteria:
 
 | Public plan | Price | Minimum completed sprints before general sale |
 | --- | ---: | --- |
-| Solo | $299/month · 1 active location | R1, TR1, G1.2-G1.7, DT1, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1 and AUTH1, copy-ready WordPress drafts without plugin execution, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
-| Growth | $699/month · up to 10 active locations | All Solo gates plus WP1.1-WP1.2 governed WordPress execution, ML1 portfolio intelligence, G1.4B profile campaigns inside the active-location allowance, AUT1 approved multi-platform automation recipes and bounded events/actions, higher pooled AI/provider allowances, faster monitoring, longer history, team roles, delegated location access, approval workflows, and bulk work. The plan must provide clear automation value to a one-location customer. |
+| Solo | $399/month · 1 active location | R1, TR1, G1.2-G1.7, DT1, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1 and AUTH1, AUT1 starter recipes and bounded approval-preserving events/actions, copy-ready WordPress drafts without plugin execution, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
+| Growth | $699/month · up to 10 active locations | All Solo gates plus WP1.1-WP1.2 governed WordPress execution, ML1 portfolio intelligence, G1.4B profile campaigns inside the active-location allowance, expanded AUT1 recipes, allowances, multi-location routing and team approvals, higher pooled AI/provider allowances, faster monitoring, longer history, team roles, delegated location access, approval workflows, and bulk work. The plan must provide clear automation value to a one-location customer. |
 | Enterprise | From $1,999/month · 11-20 active locations | All Growth gates plus G1.4B high-volume fleet operations with a contracted profile count and validated Google quota, AUT1 custom automation service accounts, generic webhook/API access, and customer-hosted client support, ENT1 API/export, white label, advanced roles, custom limits and per-location pricing above 20, durable reporting, managed onboarding, priority-support workflows, and I1.5 customer-owned or local-model API access |
 
 An invite-only paid beta may start earlier with explicit limits and known-feature

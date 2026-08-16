@@ -69,7 +69,7 @@ def test_platform_cost_reserves_reconciles_and_is_idempotent(db_session, create_
         now=datetime(2026, 7, 30, 16, 0, tzinfo=UTC),
     )
     assert summary["plan"]["name"] == "Solo"
-    assert summary["allowance"]["monthly"] == 14.95
+    assert summary["allowance"]["monthly"] == 19.95
     assert summary["allowance"]["used"] == 0.02
     assert summary["allowance"]["reserved"] == 0.0
 
@@ -80,10 +80,10 @@ def test_platform_cost_reserves_reconciles_and_is_idempotent(db_session, create_
     )
     assert credits["credits"] == {
         "name": "Insight Credits",
-        "monthly": 1495,
+        "monthly": 1995,
         "used": 2,
         "reserved": 0,
-        "remaining": 1493,
+        "remaining": 1993,
         "percent_committed": 0.1,
         "warning_level": None,
         "blocked": False,
@@ -456,11 +456,11 @@ def test_platform_allowance_stops_before_dispatch(db_session, create_test_org) -
     db_session.commit()
 
     _reserve(db_session, org.id, key="rank:test:first", quantity=1)
-    _reserve(db_session, org.id, key="rank:test:full", quantity=7470)
+    _reserve(db_session, org.id, key="rank:test:full", quantity=9970)
     with pytest.raises(CostAllowanceExceeded) as exc_info:
         _reserve(db_session, org.id, key="rank:test:blocked", quantity=1)
 
-    assert exc_info.value.budget == Decimal("14.95000000")
+    assert exc_info.value.budget == Decimal("19.95000000")
     assert exc_info.value.reason_code == "insight_credit_allowance_exhausted"
     assert (
         db_session.query(CostLedgerEntry)
@@ -492,7 +492,7 @@ def test_failed_provider_cost_is_released(db_session, create_test_org) -> None:
 
 @pytest.mark.parametrize(
     ("quantity", "expected_warning"),
-    [(3738, 50), (5607, 75), (6728, 90)],
+    [(5000, 50), (7500, 75), (9000, 90)],
 )
 def test_allowance_warning_thresholds(
     db_session,
@@ -631,7 +631,7 @@ def test_historical_margin_uses_the_plan_revenue_snapshot(db_session, create_tes
     )
 
     assert report["organization"]["plan_code"] == "solo"
-    assert report["revenue"] == 299.0
+    assert report["revenue"] == 399.0
     assert report["platform_api_cost"] == 0.02
 
 

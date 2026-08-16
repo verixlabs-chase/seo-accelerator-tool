@@ -46,6 +46,14 @@ test("settings separates automation plan eligibility from a live gateway", () =>
   assert.doesNotMatch(settings, /\/automation\/connections/);
 });
 
+test("platform plan controls use the current 399 Solo packaging", () => {
+  const organization = source("../app/platform/orgs/[id]/page.jsx");
+
+  assert.match(organization, /Solo · \$399\/month/);
+  assert.match(organization, /Growth · \$699\/month/);
+  assert.doesNotMatch(organization, /Solo · \$299\/month/);
+});
+
 test("keyword research shows the paid refresh price before it runs", () => {
   const research = source("../app/(product)/keyword-research/page.tsx");
 

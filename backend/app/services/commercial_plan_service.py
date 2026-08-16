@@ -32,7 +32,7 @@ from app.services.provisioning_service import (
 )
 
 
-PLAN_CATALOG_VERSION = "commercial-plans-2026-08-v2"
+PLAN_CATALOG_VERSION = "commercial-plans-2026-08-v3"
 
 FEATURE_WORDPRESS_EXECUTION = "wordpress_execution"
 FEATURE_PROFILE_FLEET_ACTIONS = "business_profile_fleet_actions"
@@ -117,7 +117,7 @@ FEATURES: tuple[CommercialFeature, ...] = (
         code=FEATURE_EXTERNAL_AUTOMATION,
         label="External automation connections",
         summary="Connect approved workflow tools through governed events and actions.",
-        minimum_plan_code="multi_location",
+        minimum_plan_code="solo",
     ),
     CommercialFeature(
         code=FEATURE_PRIVATE_AI_PROVIDER,
@@ -428,8 +428,8 @@ def _external_automation_access(plan_code: str) -> dict[str, Any]:
             "Your plan is eligible for approved external automation, but the governed "
             "automation gateway is not available yet."
             if plan_eligible
-            else "External automation connections require Growth. Native InsightOS alerts, "
-            "reports, and manual workflows remain available."
+            else "External automation is not included with this commercial plan. Native "
+            "InsightOS alerts, reports, and manual workflows remain available."
         ),
         "planned_connection_options": [
             "n8n",

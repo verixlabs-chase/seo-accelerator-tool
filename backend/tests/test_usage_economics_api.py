@@ -29,9 +29,9 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["plan"]["name"] == "Solo"
-    assert data["plan"]["monthly_price"] == 299.0
+    assert data["plan"]["monthly_price"] == 399.0
     assert data["plan"]["included_locations"] == 1
-    assert data["commercial_catalog_version"] == "commercial-plans-2026-08-v2"
+    assert data["commercial_catalog_version"] == "commercial-plans-2026-08-v3"
     assert data["plan"]["over_limit_by"] == 0
     assert data["plan"]["can_activate_location"] is True
     assert "tier_version" not in data["plan"]
@@ -82,17 +82,17 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert automatic_review_replies["required_plan"] == "Growth"
     assert listing_correction_sync["available"] is False
     assert listing_correction_sync["required_plan"] == "Growth"
-    assert external_automation["available"] is False
-    assert external_automation["required_plan"] == "Growth"
+    assert external_automation["available"] is True
+    assert external_automation["required_plan"] == "Solo"
     assert data["external_automation"] == {
-        "plan_eligible": False,
+        "plan_eligible": True,
         "gateway_enabled": False,
         "automatic_actions_enabled": False,
-        "required_plan": "Growth",
-        "state": "plan_upgrade_required",
+        "required_plan": "Solo",
+        "state": "gateway_not_available",
         "summary": (
-            "External automation connections require Growth. Native InsightOS alerts, "
-            "reports, and manual workflows remain available."
+            "Your plan is eligible for approved external automation, but the governed "
+            "automation gateway is not available yet."
         ),
         "planned_connection_options": [
             "n8n",
@@ -102,8 +102,8 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
             "Generic signed webhooks",
         ],
     }
-    assert data["credits"]["monthly"] == 1495
-    assert data["credits"]["remaining"] == 1495
+    assert data["credits"]["monthly"] == 1995
+    assert data["credits"]["remaining"] == 1995
     assert data["credits"]["name"] == "Insight Credits"
     assert data["catalog_version"] == "insight-credits-2026-08-v1"
     assert {item["code"] for item in data["action_prices"]} >= {
@@ -143,7 +143,7 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
         if item["code"] == "external_automation"
     )
     assert growth_capability["available"] is True
-    assert growth_capability["required_plan"] == "Growth"
+    assert growth_capability["required_plan"] == "Solo"
     assert growth["external_automation"]["plan_eligible"] is True
     assert growth["external_automation"]["gateway_enabled"] is False
     assert growth["external_automation"]["automatic_actions_enabled"] is False
