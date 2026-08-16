@@ -84,6 +84,22 @@ test("internal-link recommendations use exact saved pages and never insert links
   assert.doesNotMatch(page, /Publish links/i);
 });
 
+test("draft readiness validates saved owner copy without approving publication", () => {
+  assert.match(page, /Draft readiness/);
+  assert.match(page, /Ready for owner review/);
+  assert.match(page, /Sections with wording/);
+  assert.match(page, /Words saved/);
+  assert.match(page, /A factual count, not a recommended target/);
+  assert.match(page, /Confirm this claim/);
+  assert.match(page, /Ready for owner review is not approval/);
+  assert.match(page, /does not mean the page is ready to publish/);
+  assert.match(page, /do not\s+grade writing quality or guarantee rankings/);
+  assert.match(page, /draft\.content_readiness \?/);
+  assert.doesNotMatch(page, /Approve for publication/i);
+  assert.doesNotMatch(page, /Publish validated draft/i);
+  assert.doesNotMatch(page, /Content score/i);
+});
+
 test("brief review saves one explicit owner decision without changing the website", () => {
   assert.match(page, /\/content\/briefs\/\$\{encodeURIComponent\(brief\.id\)\}\/review/);
   assert.match(page, /method: "PUT"/);

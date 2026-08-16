@@ -417,6 +417,15 @@ def test_content_workspace_combines_saved_pages_and_draft_briefs(client, db_sess
         "website_changed": False,
     }
     assert any("exact shared accepted wording" in item for item in internal_links["limitations"])
+    readiness = with_draft["briefs"][0]["working_draft"]["content_readiness"]
+    assert readiness["state"] == "ready_for_owner_review"
+    assert readiness["facts"]["planned_sections"] == 1
+    assert readiness["facts"]["completed_sections"] == 1
+    assert readiness["facts"]["blocked_checks"] == 0
+    assert readiness["facts"]["checks_needing_attention"] == 0
+    assert {item["state"] for item in readiness["checks"]} == {"passed"}
+    assert readiness["safety"]["owner_approval_recorded"] is False
+    assert readiness["safety"]["publishing_allowed"] is False
     assert with_draft["next_action"]["code"] == "continue_content_draft"
 
 
@@ -525,3 +534,53 @@ def test_internal_link_recommendations_use_exact_saved_page_evidence():
     assert all(item["source_title"] != "About the company" for item in result["items"])
     assert all(item["source_title"] != "Emergency plumbing draft" for item in result["items"])
     assert result["safety"]["link_insertion_allowed"] is False
+
+
+def test_content_readiness_separates_owner_review_from_publishing():
+    brief = SimpleNamespace(
+        id="brief-1",
+        title="Emergency plumbing in Reno",
+        primary_keyword="emergency plumber reno",
+        recommended_page_action="improve_existing_page",
+        target_url="https://example.com/emergency-plumbing",
+        competitor_domain="competitor.example",
+        competitor_url=None,
+        service_name="Emergency plumbing",
+        service_area_name="Reno",
+        evidence={"competitor_position": 4},
+        outline=[
+            {"order": 1, "heading": "Explain the service"},
+            {"order": 2, "heading": "Explain the next step"},
+        ],
+    )
+    unsafe_copy = "Guaranteed 20 years <script>alert('no')</script>"
+    draft = SimpleNamespace(
+        title="Emergency plumbing",
+        sections=[
+            {
+                "order": 1,
+                "heading": "Explain the service",
+                "body": unsafe_copy,
+            }
+        ],
+        source_brief_hash=content_service._content_brief_hash(brief),
+    )
+
+    result = content_service._content_readiness(draft, brief)
+
+    assert result["state"] == "blocked"
+    checks = {item["code"]: item for item in result["checks"]}
+    assert checks["accepted_brief"]["state"] == "passed"
+    assert checks["required_sections"]["state"] == "blocked"
+    assert checks["service_fact"]["state"] == "passed"
+    assert checks["service_area_fact"]["state"] == "action_needed"
+    assert checks["safe_plain_text"]["state"] == "blocked"
+    assert checks["business_claims"]["state"] == "owner_confirmation"
+    assert unsafe_copy not in str(result)
+    assert result["safety"] == {
+        "owner_approval_recorded": False,
+        "publishing_allowed": False,
+        "automatic_publishing_allowed": False,
+        "website_changed": False,
+    }
+    assert "not approval" in result["limitations"][0]

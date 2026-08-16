@@ -25,6 +25,12 @@ from app.models.wordpress_content_inventory import (
     WordPressContentSyncRun,
 )
 from app.services.audit_service import write_audit_log
+from app.services.wordpress_managed_content_validation_service import (
+    UNSAFE_TEXT_PATTERN,
+    UNSUPPORTED_OUTCOME_PHRASES,
+    UNVERIFIED_BUSINESS_PHRASES,
+    UNVERIFIED_NUMBER_PATTERN,
+)
 
 
 _ALLOWED_TRANSITIONS = {
@@ -901,7 +907,168 @@ def _serialize_content_draft(
             if brief is not None
             else None
         ),
+        "content_readiness": (
+            _content_readiness(item, brief) if brief is not None else None
+        ),
         "safety": _content_draft_safety(),
+    }
+
+
+def _content_readiness(draft: ContentDraft, brief: ContentBrief) -> dict:
+    sections = [item for item in list(draft.sections or []) if isinstance(item, dict)]
+    expected_outline = [
+        item for item in list(brief.outline or []) if isinstance(item, dict)
+    ]
+    expected_orders = {
+        int(item.get("order") or index)
+        for index, item in enumerate(expected_outline, start=1)
+    }
+    actual_orders = {int(item.get("order") or 0) for item in sections}
+    missing_orders = sorted(expected_orders - actual_orders)
+    completed_sections = sum(bool(str(item.get("body") or "").strip()) for item in sections)
+    combined_copy = " ".join(
+        [
+            str(draft.title or "").strip(),
+            *[
+                str(value or "").strip()
+                for item in sections
+                for value in (item.get("heading"), item.get("body"))
+            ],
+        ]
+    ).strip()
+    normalized_copy = " ".join(combined_copy.casefold().split())
+    word_count = len(re.findall(r"\b[\w'-]+\b", combined_copy))
+    checks: list[dict] = []
+
+    lineage_matches = draft.source_brief_hash == _content_brief_hash(brief)
+    checks.append(
+        {
+            "code": "accepted_brief",
+            "label": "Accepted brief",
+            "state": "passed" if lineage_matches else "blocked",
+            "detail": (
+                "This draft still matches the accepted brief used to create it."
+                if lineage_matches
+                else "The accepted brief changed after this draft was created. Start a fresh review before using it."
+            ),
+        }
+    )
+    sections_present = bool(sections) and not missing_orders
+    checks.append(
+        {
+            "code": "required_sections",
+            "label": "Required sections",
+            "state": "passed" if sections_present else "blocked",
+            "detail": (
+                f"All {len(expected_orders) or len(sections)} planned sections are present."
+                if sections_present
+                else "One or more sections from the accepted outline are missing."
+            ),
+        }
+    )
+    all_sections_complete = bool(sections) and completed_sections == len(sections)
+    checks.append(
+        {
+            "code": "section_copy",
+            "label": "Section wording",
+            "state": "passed" if all_sections_complete else "action_needed",
+            "detail": (
+                f"All {completed_sections} saved sections include owner wording."
+                if all_sections_complete
+                else f"{completed_sections} of {len(sections)} saved sections include owner wording."
+            ),
+        }
+    )
+    for code, label, value in (
+        ("service_fact", "Confirmed service", brief.service_name),
+        ("service_area_fact", "Confirmed service area", brief.service_area_name),
+    ):
+        fact = " ".join(str(value or "").casefold().split())
+        found = not fact or fact in normalized_copy
+        checks.append(
+            {
+                "code": code,
+                "label": label,
+                "state": "passed" if found else "action_needed",
+                "detail": (
+                    "The confirmed fact appears in the saved title or page wording."
+                    if found and fact
+                    else (
+                        "No confirmed fact was required for this check."
+                        if not fact
+                        else "Add the confirmed fact naturally to the page before owner review."
+                    )
+                ),
+            }
+        )
+    unsafe_markup = bool(UNSAFE_TEXT_PATTERN.search(combined_copy))
+    checks.append(
+        {
+            "code": "safe_plain_text",
+            "label": "Safe plain text",
+            "state": "blocked" if unsafe_markup else "passed",
+            "detail": (
+                "Remove script-like markup or unsafe link code from the working draft."
+                if unsafe_markup
+                else "No script-like markup or unsafe link code was found."
+            ),
+        }
+    )
+    lowered_copy = combined_copy.casefold()
+    unverified_phrase_found = any(
+        phrase in lowered_copy
+        for phrase in (*UNVERIFIED_BUSINESS_PHRASES, *UNSUPPORTED_OUTCOME_PHRASES)
+    )
+    unverified_number_found = bool(UNVERIFIED_NUMBER_PATTERN.search(combined_copy))
+    claims_need_confirmation = unverified_phrase_found or unverified_number_found
+    checks.append(
+        {
+            "code": "business_claims",
+            "label": "Business claims",
+            "state": "owner_confirmation" if claims_need_confirmation else "passed",
+            "detail": (
+                "One or more business, performance, price, percentage, or experience claims need owner proof."
+                if claims_need_confirmation
+                else "No unsupported business or performance claim pattern was found."
+            ),
+        }
+    )
+    blocked_count = sum(item["state"] == "blocked" for item in checks)
+    action_needed_count = sum(
+        item["state"] in {"action_needed", "owner_confirmation"} for item in checks
+    )
+    if blocked_count:
+        readiness_state = "blocked"
+        summary = "Fix the blocked draft checks before owner review."
+    elif action_needed_count:
+        readiness_state = "needs_work"
+        summary = "The working draft still needs edits or owner confirmation."
+    else:
+        readiness_state = "ready_for_owner_review"
+        summary = "The saved draft is ready for an owner to review."
+    return {
+        "state": readiness_state,
+        "summary": summary,
+        "facts": {
+            "planned_sections": len(expected_orders) or len(sections),
+            "saved_sections": len(sections),
+            "completed_sections": completed_sections,
+            "word_count": word_count,
+            "blocked_checks": blocked_count,
+            "checks_needing_attention": action_needed_count,
+        },
+        "checks": checks,
+        "limitations": [
+            "Ready for owner review is not approval and does not mean the page is ready to publish.",
+            "These checks confirm saved structure and supported facts; they do not grade writing quality.",
+            "Passing these checks does not guarantee rankings, traffic, leads, or revenue.",
+        ],
+        "safety": {
+            "owner_approval_recorded": False,
+            "publishing_allowed": False,
+            "automatic_publishing_allowed": False,
+            "website_changed": False,
+        },
     }
 
 

@@ -68,6 +68,7 @@ type WorkingContentDraft = {
   metadata_recommendations?: ContentMetadataRecommendation[];
   structured_data_recommendation?: ContentStructuredDataRecommendation | null;
   internal_link_recommendations?: ContentInternalLinkRecommendations | null;
+  content_readiness?: ContentReadiness | null;
   safety: {
     ai_generated: false;
     automatic_publishing_allowed: false;
@@ -148,6 +149,32 @@ type ContentInternalLinkRecommendations = {
   safety: {
     owner_approval_required: true;
     link_insertion_allowed: false;
+    automatic_publishing_allowed: false;
+    website_changed: false;
+  };
+};
+
+type ContentReadiness = {
+  state: "ready_for_owner_review" | "needs_work" | "blocked";
+  summary: string;
+  facts: {
+    planned_sections: number;
+    saved_sections: number;
+    completed_sections: number;
+    word_count: number;
+    blocked_checks: number;
+    checks_needing_attention: number;
+  };
+  checks: Array<{
+    code: string;
+    label: string;
+    state: "passed" | "action_needed" | "owner_confirmation" | "blocked";
+    detail: string;
+  }>;
+  limitations: string[];
+  safety: {
+    owner_approval_recorded: false;
+    publishing_allowed: false;
     automatic_publishing_allowed: false;
     website_changed: false;
   };
@@ -286,6 +313,19 @@ function internalLinkStateLabel(value: ContentInternalLinkRecommendations["state
   if (value === "target_not_saved") return "Final page address needed";
   if (value === "not_enough_information") return "More information needed";
   return "No safe suggestion yet";
+}
+
+function contentReadinessLabel(value: ContentReadiness["state"]) {
+  if (value === "ready_for_owner_review") return "Ready for owner review";
+  if (value === "blocked") return "Blocked checks";
+  return "Edits still needed";
+}
+
+function contentCheckLabel(value: ContentReadiness["checks"][number]["state"]) {
+  if (value === "passed") return "Checked";
+  if (value === "owner_confirmation") return "Confirm this claim";
+  if (value === "blocked") return "Blocked";
+  return "Action needed";
 }
 
 function WorkingDraftEditor({
@@ -432,6 +472,47 @@ function WorkingDraftEditor({
         </button>
         <p className="text-xs text-zinc-500">Saving stores owner-written text only. It cannot contact WordPress or publish.</p>
       </div>
+      {draft.content_readiness ? (
+        <div className="mt-4 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-medium text-cyan-100">Draft readiness</p>
+              <p className="mt-1 text-sm leading-6 text-zinc-400">{draft.content_readiness.summary}</p>
+            </div>
+            <span className="rounded-full border border-cyan-400/25 px-2 py-1 text-xs text-cyan-100">
+              {contentReadinessLabel(draft.content_readiness.state)}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-md border border-[#303238] bg-[#111214] p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Sections with wording</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-100">
+                {draft.content_readiness.facts.completed_sections} of {draft.content_readiness.facts.saved_sections}
+              </p>
+            </div>
+            <div className="rounded-md border border-[#303238] bg-[#111214] p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Words saved</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-100">{draft.content_readiness.facts.word_count}</p>
+              <p className="mt-1 text-xs text-zinc-500">A factual count, not a recommended target.</p>
+            </div>
+          </div>
+          <div className="mt-3 space-y-2">
+            {draft.content_readiness.checks.map((check) => (
+              <div key={`${draft.id}-readiness-${check.code}`} className="rounded-md border border-[#303238] bg-[#111214] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-zinc-200">{check.label}</p>
+                  <span className="text-xs text-cyan-100">{contentCheckLabel(check.state)}</span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-zinc-500">{check.detail}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs leading-5 text-zinc-500">
+            Ready for owner review is not approval and does not mean the page is ready to publish. These checks do not
+            grade writing quality or guarantee rankings, traffic, leads, or revenue.
+          </p>
+        </div>
+      ) : null}
       {(draft.metadata_recommendations || []).length ? (
         <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
           <DetailsDisclosure

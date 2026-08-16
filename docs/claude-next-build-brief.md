@@ -3107,8 +3107,15 @@ and checks exact saved outgoing-link targets before suggesting anything. It
 shows the source page, destination page, bounded anchor wording, shared terms,
 evidence source/date, and whether the link already exists. It does not use an
 invented confidence score, insert a link, generate website code, publish, or
-promise ranking or traffic gains. The next CNT1 slices remain content
-validation and an explicitly approved publishing handoff.
+promise ranking or traffic gains. The content-readiness slice now checks the
+saved owner draft against its accepted brief: immutable brief lineage, planned
+section coverage, completed owner wording, confirmed service and service-area
+facts, unsafe markup, and business or performance claims that require proof.
+It reports exact section and word counts without turning them into a score or
+SEO target. `Ready for owner review` is explicitly not approval or publishing
+readiness; the check cannot approve, contact WordPress, mutate the website, or
+promise writing quality or business outcomes. The next CNT1 slice is an
+explicitly approved publishing handoff.
 
 Scope:
 
