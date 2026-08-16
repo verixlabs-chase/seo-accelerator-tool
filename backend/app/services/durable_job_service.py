@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.intelligence.intelligence_orchestrator import run_campaign_cycle
+from app.intelligence.workers.outbox_worker import process as process_outbox_events
 from app.intelligence.lexicon.loader import get_builtin_lexicon
 from app.intelligence.lexicon.standards import run_and_record_crux_standards_check
 from app.models.action_plan import ActionPlanMeasurement, ActionPlanOccurrence
@@ -21,6 +22,7 @@ from app.models.reporting import ReportSchedule
 from app.models.website_performance import WebsitePerformanceMeasurement
 from app.services import (
     action_plan_measurement_service,
+    automation_webhook_service,
     crawl_service,
     data_connections_service,
     google_business_profile_service,
@@ -54,6 +56,8 @@ ACTION_PLAN_MEASUREMENT_JOB_TYPE = "wordpress.post_change_measurement"
 WORDPRESS_MEASUREMENT_CRAWL_JOB_TYPE = (
     wordpress_measurement_collection_service.CRAWL_COLLECTION_JOB_TYPE
 )
+AUTOMATION_WEBHOOK_FANOUT_JOB_TYPE = automation_webhook_service.AUTOMATION_FANOUT_JOB_TYPE
+AUTOMATION_WEBHOOK_DELIVERY_JOB_TYPE = automation_webhook_service.AUTOMATION_DELIVERY_JOB_TYPE
 
 
 def _json_safe(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -88,6 +92,38 @@ def _intelligence_campaign_cycle_handler(
     ):
         raise ValueError("Intelligence cycle job has no active tenant-scoped campaign.")
     return run_campaign_cycle(campaign_id, db=db)
+
+
+def _automation_webhook_fanout_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    organization_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    source_event_id = str(
+        job.payload.get("source_outbox_event_id") or job.entity_id or ""
+    ).strip()
+    if not organization_id or not source_event_id:
+        raise ValueError("Automation fanout job is missing its organization or event.")
+    return automation_webhook_service.fan_out_product_event(
+        db,
+        organization_id=organization_id,
+        source_outbox_event_id=source_event_id,
+    )
+
+
+def _automation_webhook_delivery_handler(
+    db: Session,
+    job: PlatformJob,
+) -> dict[str, Any]:
+    organization_id = str(job.tenant_id or job.payload.get("tenant_id") or "").strip()
+    delivery_id = str(job.payload.get("delivery_id") or job.entity_id or "").strip()
+    if not organization_id or not delivery_id:
+        raise ValueError("Automation delivery job is missing its organization or delivery.")
+    return automation_webhook_service.run_background_delivery(
+        db,
+        organization_id=organization_id,
+        delivery_id=delivery_id,
+    )
 
 
 def _search_console_sync_handler(
@@ -457,6 +493,8 @@ DEFAULT_HANDLERS: dict[str, JobHandler] = {
     REVIEW_RESPONSE_PUBLISH_JOB_TYPE: _review_response_publish_handler,
     ACTION_PLAN_MEASUREMENT_JOB_TYPE: _action_plan_measurement_handler,
     WORDPRESS_MEASUREMENT_CRAWL_JOB_TYPE: _wordpress_measurement_crawl_handler,
+    AUTOMATION_WEBHOOK_FANOUT_JOB_TYPE: _automation_webhook_fanout_handler,
+    AUTOMATION_WEBHOOK_DELIVERY_JOB_TYPE: _automation_webhook_delivery_handler,
 }
 
 
@@ -1729,6 +1767,17 @@ def drain_platform_jobs(
     )
     started = monotonic()
 
+    db.commit()
+    try:
+        outbox_result = process_outbox_events({"limit": resolved_batch_size * 5})
+    except Exception:  # noqa: BLE001 - leave committed outbox rows pending for the next run
+        outbox_result = {
+            "processed": 0,
+            "failed": 0,
+            "automation_fanout_jobs": 0,
+            "error": "outbox_processing_failed",
+        }
+
     due_schedules_seen = enqueue_due_report_schedule_jobs(
         db,
         limit=resolved_batch_size * 5,
@@ -1787,6 +1836,11 @@ def drain_platform_jobs(
 
     return {
         "worker_id": resolved_worker_id,
+        "outbox_processed": int(outbox_result.get("processed", 0) or 0),
+        "outbox_failed": int(outbox_result.get("failed", 0) or 0),
+        "automation_fanout_jobs_seen": int(
+            outbox_result.get("automation_fanout_jobs", 0) or 0
+        ),
         "due_report_schedules_seen": due_schedules_seen,
         "due_intelligence_campaigns_seen": due_intelligence_campaigns_seen,
         "due_data_connections_seen": due_data_connections_seen,

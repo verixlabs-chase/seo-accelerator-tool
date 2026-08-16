@@ -129,6 +129,18 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
     assert secret not in listed_text
     assert "secret-token" not in listed_text
     assert listed.json()["data"]["automatic_actions_enabled"] is False
+    assert {
+        item["code"] for item in listed.json()["data"]["supported_events"]
+    } == {
+        "report.ready",
+        "recommendation.ready",
+        "action.completed",
+        "action.failed",
+    }
+    assert "approval.requested" not in listed.json()["data"]["live_event_types"]
+    assert "approval.requested" in {
+        item["code"] for item in listed.json()["data"]["contract_events"]
+    }
 
     audit = (
         db_session.query(AuditLog)
@@ -140,7 +152,7 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
     assert organization_id in {audit.tenant_id, row.organization_id}
 
 
-def test_only_owner_can_create_test_rotate_or_disconnect(client) -> None:
+def test_only_owner_can_create_test_pause_resume_recover_rotate_or_disconnect(client) -> None:
     owner_token, _ = _login(client, "org-owner@example.com", "pass-org-owner")
     created = client.post(
         "/api/v1/automation/connections",
@@ -165,6 +177,28 @@ def test_only_owner_can_create_test_rotate_or_disconnect(client) -> None:
     assert (
         client.post(
             f"/api/v1/automation/connections/{connection_id}/rotate-secret",
+            headers=_headers(admin_token),
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            f"/api/v1/automation/connections/{connection_id}/pause",
+            headers=_headers(admin_token),
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            f"/api/v1/automation/connections/{connection_id}/resume",
+            headers=_headers(admin_token),
+        ).status_code
+        == 403
+    )
+    missing_delivery_id = "00000000-0000-0000-0000-000000000000"
+    assert (
+        client.post(
+            f"/api/v1/automation/deliveries/{missing_delivery_id}/recover",
             headers=_headers(admin_token),
         ).status_code
         == 403

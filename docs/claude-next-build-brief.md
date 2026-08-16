@@ -4585,13 +4585,56 @@ Implementation status (August 16, 2026):
   tenant-scoped attempt receipts. Responses retain only status, duration, and a
   stable safe reason; response bodies, destination paths, signing secrets, and
   raw network errors are not stored or audited.
-- This slice proves owner-controlled connection and delivery behavior only.
-  Normal product events are not yet fanned out automatically, and there is no
-  inbound automation command, approval, publish, WordPress, Google Business
-  Profile, arbitrary prompt, or other mutation route. `automatic_actions_enabled`
-  remains false. Durable background fan-out, scheduled retries, dead-letter
-  recovery, per-event subscription delivery, vendor conformance fixtures, and
-  operational health controls remain AUT1C work.
+- This slice proved owner-controlled connection and test-delivery behavior.
+  AUT1C now owns durable product-event fan-out, scheduled retries, connection
+  pause/resume, and dead-letter recovery. Inbound commands, approval, publish,
+  WordPress, Google Business Profile, arbitrary prompts, and other mutation
+  routes remain absent; `automatic_actions_enabled` remains false.
+
+#### AUT1C - Durable Product-Event Fan-Out and Delivery Recovery
+
+Implementation status (August 16, 2026):
+
+- Committed report-ready, recommendation-ready, action-completed, and
+  action-failed product events now enter the existing transactional outbox.
+  The outbox creates an idempotent fan-out job, and fan-out creates a separate
+  encrypted delivery plus durable job for each active, verified, subscribed
+  connection. One failed destination cannot roll back the native product event
+  or block another connection.
+- Every delivery reuses the AUT1A canonical envelope and signature. The external
+  event ID is deterministically derived from the immutable source-outbox event,
+  so an at-least-once retry keeps one stable deduplication key. Customer payloads
+  include only the saved resource ID, same-product link, plain-language state,
+  occurrence time, and the minimum event-specific facts; report snapshots,
+  recommendation evidence, mutation payloads, provider data, secrets, raw
+  errors, contacts, prompts, and internal costs do not leave InsightOS.
+- Delivery runs in the lease-based platform job queue. A non-2xx response,
+  timeout, or network failure records a safe attempt receipt and schedules
+  exponential backoff. After three total attempts the delivery becomes a
+  customer-visible dead letter. An organization owner can recover that exact
+  event with three additional bounded attempts while preserving its event ID
+  and prior attempt history.
+- Owners can pause and resume each connection. Pausing stops new fan-out and
+  turns already queued, not-yet-sent work into a cancelled receipt without a
+  network request. Disconnect still removes the encrypted URL and secret.
+  Settings shows automatic-delivery state, retry timing, exhausted events, and
+  up to five recoverable dead letters without exposing endpoint paths or raw
+  network details.
+- The internal job drain now processes committed outbox rows before claiming
+  due jobs, and the Vercel cron cadence is five minutes. Outbox rows are claimed
+  with skip-locked row locks so concurrent workers do not publish the same row
+  simultaneously; fan-out and delivery idempotency provide a second durable
+  defense.
+- `approval.requested` remains part of the reviewed AUT1A schema but cannot be
+  selected or automatically delivered yet because the product has no exact,
+  native approval-requested outbox event. The UI states that limitation rather
+  than synthesizing approval truth.
+- This remains outbound-only. No connected workflow can approve a
+  recommendation, publish content, edit WordPress, change a Google Business
+  Profile, submit an arbitrary prompt, or call a generic InsightOS action.
+  Vendor conformance fixtures, customer-hosted n8n/generic destinations,
+  service accounts, typed inbound commands, and plan-specific event-volume
+  ledgers remain later AUT1 work.
 
 Placement and packaging:
 

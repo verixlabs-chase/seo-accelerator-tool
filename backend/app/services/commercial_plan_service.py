@@ -426,8 +426,9 @@ def _external_automation_access(plan_code: str) -> dict[str, Any]:
         "required_plan": required_plan.name,
         "state": "available" if plan_eligible else "plan_upgrade_required",
         "summary": (
-            "Your plan can send signed, outbound-only events to an approved workflow tool. "
-            "Connected tools cannot approve or carry out InsightOS actions."
+            "After a successful connection test, approved product events deliver "
+            "automatically as signed, outbound-only notifications. Connected tools "
+            "cannot approve or carry out InsightOS actions."
             if plan_eligible
             else "External automation is not included with this commercial plan. Native "
             "InsightOS alerts, reports, and manual workflows remain available."

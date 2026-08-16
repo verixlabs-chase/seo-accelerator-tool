@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import re
@@ -21,26 +21,46 @@ from app.automation import (
     generate_signing_secret,
     sign_automation_event,
 )
+from app.core.config import get_settings
 from app.core.crypto import CredentialCryptoError, decrypt_payload, encrypt_payload
+from app.events.emitter import EventEnvelope
+from app.events.outbox.event_outbox import EventOutbox
 from app.models.automation_webhook import (
     AutomationWebhookConnection,
     AutomationWebhookDelivery,
     AutomationWebhookDeliveryAttempt,
 )
+from app.models.campaign import Campaign
+from app.models.intelligence import StrategyRecommendation
 from app.models.organization import Organization
+from app.models.platform_job import PlatformJob
+from app.models.recommendation_execution import RecommendationExecution
+from app.models.reporting import MonthlyReport
 from app.services.audit_service import write_audit_log
 from app.services.commercial_plan_service import (
     FEATURE_EXTERNAL_AUTOMATION,
     CostEconomicsError,
     require_commercial_feature,
 )
+from app.services import job_service
 
 
 AUTOMATION_DELIVERY_TIMEOUT_SECONDS = 10.0
 AUTOMATION_DELIVERY_MAX_ATTEMPTS = 3
+AUTOMATION_FANOUT_JOB_TYPE = "automation.webhook.fanout"
+AUTOMATION_DELIVERY_JOB_TYPE = "automation.webhook.deliver"
 _PROVIDERS = {"zapier": "Zapier", "make": "Make", "pipedream": "Pipedream"}
 _PIPEDREAM_HOST = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}\.m\.pipedream\.net$")
 _MAKE_HOST = re.compile(r"^hook(?:\.[a-z0-9-]+)?\.make\.com$")
+_PRODUCT_EVENT_TYPES = {
+    "report.generated": "report.ready",
+    "report.regenerated": "report.ready",
+    "onboarding.baseline_generated": "report.ready",
+    "recommendation.generated": "recommendation.ready",
+    "execution.completed": "action.completed",
+    "execution.failed": "action.failed",
+}
+_LIVE_SUBSCRIPTION_TYPES = frozenset(_PRODUCT_EVENT_TYPES.values())
 
 
 class AutomationWebhookError(RuntimeError):
@@ -48,6 +68,10 @@ class AutomationWebhookError(RuntimeError):
         super().__init__(message)
         self.reason_code = reason_code
         self.status_code = status_code
+
+
+class AutomationDeliveryRetryableError(RuntimeError):
+    """Safe durable-job signal after one persisted delivery failure."""
 
 
 def list_connections(db: Session, *, organization_id: str) -> dict[str, Any]:
@@ -62,12 +86,157 @@ def list_connections(db: Session, *, organization_id: str) -> dict[str, Any]:
         "supported_providers": [
             {"code": code, "label": label} for code, label in _PROVIDERS.items()
         ],
-        "supported_events": automation_event_catalog(),
+        "supported_events": [
+            item
+            for item in automation_event_catalog()
+            if item["code"] in _LIVE_SUBSCRIPTION_TYPES
+        ],
+        "contract_events": automation_event_catalog(),
+        "live_event_types": sorted(set(_PRODUCT_EVENT_TYPES.values())),
         "automatic_actions_enabled": False,
         "truth": (
-            "Only signed outbound events are available. Connected tools cannot approve, "
-            "publish, change a website, or change a business profile."
+            "Approved product events are delivered as signed outbound notifications. "
+            "Connected tools cannot approve, publish, change a website, or change a "
+            "business profile."
         ),
+    }
+
+
+def queue_fanout_for_outbox_event(db: Session, *, event: EventEnvelope) -> bool:
+    """Create one durable fanout job for a committed, approved product event."""
+    if event.event_type not in _PRODUCT_EVENT_TYPES:
+        return False
+    job_service.create_job(
+        db,
+        tenant_id=event.tenant_id,
+        job_type=AUTOMATION_FANOUT_JOB_TYPE,
+        entity_type="event_outbox",
+        entity_id=event.event_id,
+        idempotency_key=f"{AUTOMATION_FANOUT_JOB_TYPE}:{event.event_id}",
+        payload={
+            "tenant_id": event.tenant_id,
+            "source_outbox_event_id": event.event_id,
+        },
+        max_retries=2,
+    )
+    return True
+
+
+def fan_out_product_event(
+    db: Session,
+    *,
+    organization_id: str,
+    source_outbox_event_id: str,
+) -> dict[str, Any]:
+    source = (
+        db.query(EventOutbox)
+        .filter(
+            EventOutbox.id == source_outbox_event_id,
+            EventOutbox.tenant_id == organization_id,
+        )
+        .one_or_none()
+    )
+    if source is None:
+        raise AutomationWebhookError(
+            "The product event is no longer available for delivery.",
+            reason_code="automation_source_event_not_found",
+            status_code=404,
+        )
+    internal = EventEnvelope.model_validate_json(source.payload_json)
+    external = _translate_product_event(db, source=source, event=internal)
+    if external is None:
+        return {
+            "source_event_id": source.id,
+            "event_type": None,
+            "connections_matched": 0,
+            "deliveries_created": 0,
+            "deliveries_existing": 0,
+        }
+
+    connections = (
+        db.query(AutomationWebhookConnection)
+        .filter(
+            AutomationWebhookConnection.organization_id == organization_id,
+            AutomationWebhookConnection.status == "active",
+            AutomationWebhookConnection.verification_status == "verified",
+        )
+        .order_by(AutomationWebhookConnection.id.asc())
+        .all()
+    )
+    matched = [
+        row for row in connections if external.event_type in _event_types(row.event_types_json)
+    ]
+    created = 0
+    existing = 0
+    for connection in matched:
+        delivery = (
+            db.query(AutomationWebhookDelivery)
+            .filter(
+                AutomationWebhookDelivery.connection_id == connection.id,
+                AutomationWebhookDelivery.event_id == external.event_id,
+            )
+            .one_or_none()
+        )
+        if delivery is not None:
+            existing += 1
+            continue
+        delivery = _new_delivery(
+            connection=connection,
+            event=external,
+            delivery_kind="product",
+            source_outbox_event_id=source.id,
+            actor_user_id=None,
+        )
+        db.add(delivery)
+        db.flush()
+        job = _queue_delivery_job(db, delivery=delivery)
+        delivery.platform_job_id = job.id
+        write_audit_log(
+            db,
+            tenant_id=organization_id,
+            actor_user_id=None,
+            event_type="automation.webhook_delivery.queued",
+            payload={
+                "connection_id": connection.id,
+                "delivery_id": delivery.id,
+                "event_id": delivery.event_id,
+                "event_type": delivery.event_type,
+                "delivery_kind": delivery.delivery_kind,
+            },
+        )
+        created += 1
+    db.flush()
+    return {
+        "source_event_id": source.id,
+        "event_type": external.event_type,
+        "connections_matched": len(matched),
+        "deliveries_created": created,
+        "deliveries_existing": existing,
+    }
+
+
+def run_background_delivery(
+    db: Session,
+    *,
+    organization_id: str,
+    delivery_id: str,
+) -> dict[str, Any]:
+    result = _attempt_delivery(
+        db,
+        organization_id=organization_id,
+        delivery_id=delivery_id,
+        actor_user_id=None,
+    )
+    delivery = result["delivery"]
+    if delivery["status"] == "failed":
+        raise AutomationDeliveryRetryableError(
+            "The workflow endpoint did not accept this signed event."
+        )
+    return {
+        "delivery_id": delivery["id"],
+        "event_id": delivery["event_id"],
+        "status": delivery["status"],
+        "attempt_count": delivery["attempt_count"],
     }
 
 
@@ -181,6 +350,8 @@ def rotate_signing_secret(
     row.signing_secret_version += 1
     row.status = "pending"
     row.verification_status = "not_tested"
+    row.paused_by_user_id = None
+    row.paused_at = None
     row.updated_at = now
     write_audit_log(
         db,
@@ -203,6 +374,70 @@ def rotate_signing_secret(
     }
 
 
+def pause_connection(
+    db: Session,
+    *,
+    organization_id: str,
+    connection_id: str,
+    actor_user_id: str,
+) -> dict[str, Any]:
+    row = _locked_connection(
+        db, organization_id=organization_id, connection_id=connection_id
+    )
+    _require_connected_config(row)
+    if row.status != "paused":
+        now = datetime.now(UTC)
+        row.status = "paused"
+        row.paused_by_user_id = actor_user_id
+        row.paused_at = now
+        row.updated_at = now
+        write_audit_log(
+            db,
+            tenant_id=organization_id,
+            actor_user_id=actor_user_id,
+            event_type="automation.webhook_connection.paused",
+            payload={"connection_id": row.id, "provider": row.provider},
+        )
+        db.commit()
+        db.refresh(row)
+    return {
+        "connection": _serialize_connection(db, row),
+        "new_product_deliveries_enabled": False,
+    }
+
+
+def resume_connection(
+    db: Session,
+    *,
+    organization_id: str,
+    connection_id: str,
+    actor_user_id: str,
+) -> dict[str, Any]:
+    row = _locked_connection(
+        db, organization_id=organization_id, connection_id=connection_id
+    )
+    _require_connected_config(row)
+    if row.status == "paused":
+        now = datetime.now(UTC)
+        row.status = "active" if row.verification_status == "verified" else "pending"
+        row.paused_by_user_id = None
+        row.paused_at = None
+        row.updated_at = now
+        write_audit_log(
+            db,
+            tenant_id=organization_id,
+            actor_user_id=actor_user_id,
+            event_type="automation.webhook_connection.resumed",
+            payload={"connection_id": row.id, "provider": row.provider},
+        )
+        db.commit()
+        db.refresh(row)
+    return {
+        "connection": _serialize_connection(db, row),
+        "new_product_deliveries_enabled": row.status == "active",
+    }
+
+
 def disconnect_connection(
     db: Session,
     *,
@@ -218,6 +453,8 @@ def disconnect_connection(
         row.encrypted_config_blob = None
         row.key_reference = None
         row.key_version = None
+        row.paused_by_user_id = None
+        row.paused_at = None
         row.disconnected_by_user_id = actor_user_id
         row.disconnected_at = now
         row.updated_at = now
@@ -233,6 +470,75 @@ def disconnect_connection(
     return {"connection": _serialize_connection(db, row), "secrets_removed": True}
 
 
+def recover_dead_letter_delivery(
+    db: Session,
+    *,
+    organization_id: str,
+    delivery_id: str,
+    actor_user_id: str,
+) -> dict[str, Any]:
+    delivery = (
+        db.query(AutomationWebhookDelivery)
+        .filter(
+            AutomationWebhookDelivery.id == delivery_id,
+            AutomationWebhookDelivery.organization_id == organization_id,
+        )
+        .populate_existing()
+        .with_for_update()
+        .one_or_none()
+    )
+    if delivery is None:
+        raise AutomationWebhookError(
+            "Automation delivery not found.",
+            reason_code="automation_delivery_not_found",
+            status_code=404,
+        )
+    if delivery.status != "dead_letter":
+        raise AutomationWebhookError(
+            "Only a delivery that exhausted its attempts can be recovered.",
+            reason_code="automation_delivery_recovery_unavailable",
+        )
+    connection = _locked_connection(
+        db,
+        organization_id=organization_id,
+        connection_id=delivery.connection_id,
+    )
+    _require_connected_config(connection)
+    if connection.status == "paused":
+        raise AutomationWebhookError(
+            "Resume this workflow connection before recovering the event.",
+            reason_code="automation_connection_paused",
+        )
+    now = datetime.now(UTC)
+    delivery.recovery_count += 1
+    delivery.max_attempts += AUTOMATION_DELIVERY_MAX_ATTEMPTS
+    delivery.status = "pending"
+    delivery.dead_lettered_at = None
+    delivery.next_attempt_at = now
+    delivery.updated_at = now
+    job = _queue_delivery_job(db, delivery=delivery)
+    delivery.platform_job_id = job.id
+    write_audit_log(
+        db,
+        tenant_id=organization_id,
+        actor_user_id=actor_user_id,
+        event_type="automation.webhook_delivery.recovered",
+        payload={
+            "connection_id": delivery.connection_id,
+            "delivery_id": delivery.id,
+            "event_id": delivery.event_id,
+            "recovery_count": delivery.recovery_count,
+        },
+    )
+    db.commit()
+    db.refresh(delivery)
+    return {
+        "delivery": _serialize_delivery(db, delivery),
+        "queued": True,
+        "automatic_actions_enabled": False,
+    }
+
+
 def send_test_delivery(
     db: Session,
     *,
@@ -243,6 +549,11 @@ def send_test_delivery(
     row = _locked_connection(db, organization_id=organization_id, connection_id=connection_id)
     _require_feature(db, organization_id)
     _require_connected_config(row)
+    if row.status == "paused":
+        raise AutomationWebhookError(
+            "Resume this workflow connection before sending a test.",
+            reason_code="automation_connection_paused",
+        )
     now = datetime.now(UTC)
     event = build_automation_event(
         event_id=f"evt_automation_test_{uuid.uuid4().hex}",
@@ -261,27 +572,12 @@ def send_test_delivery(
             "recovery_href": "/settings#external-automation",
         },
     )
-    event_json = event.model_dump(mode="json")
-    encrypted_event_blob, _, _ = _encrypt_config({"event": event_json})
-    event_bytes = json.dumps(
-        event_json, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-    delivery = AutomationWebhookDelivery(
-        id=str(uuid.uuid4()),
-        tenant_id=row.tenant_id,
-        organization_id=row.organization_id,
-        connection_id=row.id,
-        event_id=event.event_id,
-        event_type=event.event_type,
-        schema_version=AUTOMATION_EVENT_SCHEMA_VERSION,
-        status="pending",
-        encrypted_event_blob=encrypted_event_blob,
-        event_hash=hashlib.sha256(event_bytes).hexdigest(),
-        attempt_count=0,
-        max_attempts=AUTOMATION_DELIVERY_MAX_ATTEMPTS,
-        created_by_user_id=actor_user_id,
-        created_at=now,
-        updated_at=now,
+    delivery = _new_delivery(
+        connection=row,
+        event=event,
+        delivery_kind="test",
+        source_outbox_event_id=None,
+        actor_user_id=actor_user_id,
     )
     db.add(delivery)
     write_audit_log(
@@ -380,12 +676,218 @@ def validate_automation_destination(*, provider: str, destination_url: str) -> t
     return canonical, host
 
 
+def _new_delivery(
+    *,
+    connection: AutomationWebhookConnection,
+    event: AutomationEventEnvelope,
+    delivery_kind: str,
+    source_outbox_event_id: str | None,
+    actor_user_id: str | None,
+) -> AutomationWebhookDelivery:
+    event_json = event.model_dump(mode="json")
+    encrypted_event_blob, _, _ = _encrypt_config({"event": event_json})
+    event_bytes = json.dumps(
+        event_json, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    now = datetime.now(UTC)
+    return AutomationWebhookDelivery(
+        id=str(uuid.uuid4()),
+        tenant_id=connection.tenant_id,
+        organization_id=connection.organization_id,
+        connection_id=connection.id,
+        event_id=event.event_id,
+        event_type=event.event_type,
+        schema_version=AUTOMATION_EVENT_SCHEMA_VERSION,
+        status="pending",
+        delivery_kind=delivery_kind,
+        source_outbox_event_id=source_outbox_event_id,
+        encrypted_event_blob=encrypted_event_blob,
+        event_hash=hashlib.sha256(event_bytes).hexdigest(),
+        attempt_count=0,
+        max_attempts=AUTOMATION_DELIVERY_MAX_ATTEMPTS,
+        recovery_count=0,
+        created_by_user_id=actor_user_id,
+        next_attempt_at=now if delivery_kind == "product" else None,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _queue_delivery_job(
+    db: Session,
+    *,
+    delivery: AutomationWebhookDelivery,
+) -> PlatformJob:
+    return job_service.create_job(
+        db,
+        tenant_id=delivery.organization_id,
+        job_type=AUTOMATION_DELIVERY_JOB_TYPE,
+        entity_type="automation_webhook_delivery",
+        entity_id=delivery.id,
+        idempotency_key=(
+            f"{AUTOMATION_DELIVERY_JOB_TYPE}:{delivery.id}:"
+            f"recovery:{delivery.recovery_count}"
+        ),
+        payload={
+            "tenant_id": delivery.organization_id,
+            "delivery_id": delivery.id,
+            "recovery_count": delivery.recovery_count,
+        },
+        available_at=delivery.next_attempt_at or datetime.now(UTC),
+        max_retries=2,
+    )
+
+
+def _translate_product_event(
+    db: Session,
+    *,
+    source: EventOutbox,
+    event: EventEnvelope,
+) -> AutomationEventEnvelope | None:
+    external_type = _PRODUCT_EVENT_TYPES.get(event.event_type)
+    if external_type is None or event.tenant_id != source.tenant_id:
+        return None
+    payload = dict(event.payload or {})
+    occurred_at = _event_timestamp(event.timestamp)
+    external_event_id = f"evt_product_{source.id.replace('-', '')}"
+    campaign_id = str(payload.get("campaign_id") or "").strip()
+
+    if external_type == "report.ready":
+        report_id = str(payload.get("report_id") or "").strip()
+        report = db.get(MonthlyReport, report_id) if report_id else None
+        campaign = db.get(Campaign, campaign_id) if campaign_id else None
+        if (
+            report is None
+            or campaign is None
+            or report.tenant_id != source.tenant_id
+            or report.campaign_id != campaign.id
+            or campaign.tenant_id != source.tenant_id
+        ):
+            return None
+        return build_automation_event(
+            event_id=external_event_id,
+            event_type=external_type,
+            occurred_at=occurred_at,
+            organization_id=source.tenant_id,
+            location_id=campaign.business_location_id,
+            truth_state="ready",
+            resource_type="report",
+            resource_id=report.id,
+            resource_href="/reports",
+            data={
+                "report_id": report.id,
+                "report_label": f"{campaign.name} report",
+                "observed_through": _iso(report.generated_at),
+                "summary": "A saved InsightOS report is ready for owner review.",
+                "report_href": "/reports",
+            },
+        )
+
+    if external_type == "recommendation.ready":
+        recommendation_id = str(payload.get("recommendation_id") or "").strip()
+        recommendation = (
+            db.get(StrategyRecommendation, recommendation_id)
+            if recommendation_id
+            else None
+        )
+        campaign = db.get(Campaign, campaign_id) if campaign_id else None
+        if (
+            recommendation is None
+            or campaign is None
+            or recommendation.tenant_id != source.tenant_id
+            or recommendation.campaign_id != campaign.id
+            or campaign.tenant_id != source.tenant_id
+        ):
+            return None
+        priority = "Higher attention" if int(recommendation.risk_tier or 0) >= 3 else "Standard"
+        return build_automation_event(
+            event_id=external_event_id,
+            event_type=external_type,
+            occurred_at=occurred_at,
+            organization_id=source.tenant_id,
+            location_id=campaign.business_location_id,
+            truth_state="ready",
+            resource_type="recommendation",
+            resource_id=recommendation.id,
+            resource_href="/opportunities",
+            data={
+                "recommendation_id": recommendation.id,
+                "title": "Review a new SEO recommendation",
+                "priority": priority,
+                "summary": "A saved, evidence-backed recommendation is ready for owner review.",
+                "recommendation_href": "/opportunities",
+            },
+        )
+
+    execution_id = str(payload.get("execution_id") or "").strip()
+    execution = db.get(RecommendationExecution, execution_id) if execution_id else None
+    campaign = db.get(Campaign, campaign_id) if campaign_id else None
+    if (
+        execution is None
+        or campaign is None
+        or execution.campaign_id != campaign.id
+        or campaign.tenant_id != source.tenant_id
+    ):
+        return None
+    if external_type == "action.completed":
+        return build_automation_event(
+            event_id=external_event_id,
+            event_type=external_type,
+            occurred_at=occurred_at,
+            organization_id=source.tenant_id,
+            location_id=campaign.business_location_id,
+            truth_state="completed",
+            resource_type="action",
+            resource_id=execution.id,
+            resource_href="/opportunities",
+            data={
+                "action_id": execution.id,
+                "title": "Approved SEO action",
+                "completed_at": _iso(execution.executed_at) or occurred_at.isoformat(),
+                "result_summary": "The approved action finished and saved its result.",
+                "action_href": "/opportunities",
+            },
+        )
+    if external_type == "action.failed":
+        return build_automation_event(
+            event_id=external_event_id,
+            event_type=external_type,
+            occurred_at=occurred_at,
+            organization_id=source.tenant_id,
+            location_id=campaign.business_location_id,
+            truth_state="failed",
+            resource_type="action",
+            resource_id=execution.id,
+            resource_href="/opportunities",
+            data={
+                "action_id": execution.id,
+                "title": "Approved SEO action needs attention",
+                "failed_at": occurred_at.isoformat(),
+                "summary": "The approved action stopped and saved recovery guidance.",
+                "recovery": "Open InsightOS to review the saved failure before trying again.",
+                "action_href": "/opportunities",
+            },
+        )
+    return None
+
+
+def _event_timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise AutomationWebhookError(
+            "The product event timestamp is invalid.",
+            reason_code="automation_source_event_invalid",
+        ) from exc
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+
+
 def _attempt_delivery(
     db: Session,
     *,
     organization_id: str,
     delivery_id: str,
-    actor_user_id: str,
+    actor_user_id: str | None,
     retry: bool = False,
 ) -> dict[str, Any]:
     delivery = (
@@ -411,6 +913,16 @@ def _attempt_delivery(
                 reason_code="automation_delivery_already_delivered",
             )
         return {"delivery": _serialize_delivery(db, delivery)}
+    if delivery.status in {"dead_letter", "cancelled"}:
+        if retry:
+            raise AutomationWebhookError(
+                "This delivery needs owner recovery before it can be sent again.",
+                reason_code="automation_delivery_recovery_required",
+            )
+        return {
+            "delivery": _serialize_delivery(db, delivery),
+            "received_by_destination": False,
+        }
     recoverable_pending = delivery.status == "pending" and delivery.attempt_count == 0
     if retry and delivery.status != "failed" and not recoverable_pending:
         raise AutomationWebhookError(
@@ -427,26 +939,74 @@ def _attempt_delivery(
         organization_id=organization_id,
         connection_id=delivery.connection_id,
     )
-    _require_feature(db, organization_id)
-    _require_connected_config(connection)
-    config = _decrypt_config(connection.encrypted_config_blob)
-    destination, host = validate_automation_destination(
-        provider=connection.provider,
-        destination_url=str(config.get("destination_url") or ""),
-    )
-    if host != connection.endpoint_host:
-        raise AutomationWebhookError(
-            "The saved destination no longer matches this connection.",
-            reason_code="automation_destination_identity_mismatch",
-        )
+    if connection.status == "disconnected" or not connection.encrypted_config_blob:
+        if delivery.delivery_kind == "product":
+            return _cancel_undispatched_delivery(
+                db,
+                delivery=delivery,
+                connection=connection,
+                actor_user_id=actor_user_id,
+                reason_code="automation_connection_disconnected",
+            )
+        _require_connected_config(connection)
     try:
+        _require_feature(db, organization_id)
+    except AutomationWebhookError as exc:
+        if delivery.delivery_kind == "product":
+            return _cancel_undispatched_delivery(
+                db,
+                delivery=delivery,
+                connection=connection,
+                actor_user_id=actor_user_id,
+                reason_code=exc.reason_code,
+            )
+        raise
+    if connection.status == "paused":
+        return _cancel_undispatched_delivery(
+            db,
+            delivery=delivery,
+            connection=connection,
+            actor_user_id=actor_user_id,
+            reason_code="automation_connection_paused",
+        )
+    _require_connected_config(connection)
+    try:
+        config = _decrypt_config(connection.encrypted_config_blob)
+        destination, host = validate_automation_destination(
+            provider=connection.provider,
+            destination_url=str(config.get("destination_url") or ""),
+        )
+        if host != connection.endpoint_host:
+            raise AutomationWebhookError(
+                "The saved destination no longer matches this connection.",
+                reason_code="automation_destination_identity_mismatch",
+            )
         event_payload = _decrypt_config(delivery.encrypted_event_blob).get("event")
         event = AutomationEventEnvelope.model_validate(event_payload)
     except (CredentialCryptoError, ValidationError, TypeError, ValueError) as exc:
-        raise AutomationWebhookError(
+        error = AutomationWebhookError(
             "The saved event cannot be delivered safely.",
             reason_code="automation_delivery_event_invalid",
-        ) from exc
+        )
+        if delivery.delivery_kind == "product":
+            return _cancel_undispatched_delivery(
+                db,
+                delivery=delivery,
+                connection=connection,
+                actor_user_id=actor_user_id,
+                reason_code=error.reason_code,
+            )
+        raise error from exc
+    except AutomationWebhookError as exc:
+        if delivery.delivery_kind == "product":
+            return _cancel_undispatched_delivery(
+                db,
+                delivery=delivery,
+                connection=connection,
+                actor_user_id=actor_user_id,
+                reason_code=exc.reason_code,
+            )
+        raise
     signed = sign_automation_event(
         event,
         signing_secret=str(config.get("signing_secret") or ""),
@@ -456,6 +1016,7 @@ def _attempt_delivery(
     delivery.attempt_count = attempt_number
     delivery.status = "pending"
     delivery.last_attempt_at = attempted_at
+    delivery.next_attempt_at = None
     delivery.updated_at = attempted_at
     db.flush()
 
@@ -491,12 +1052,19 @@ def _attempt_delivery(
         attempted_at=now,
     )
     db.add(attempt)
-    delivery.status = "delivered" if delivered else "failed"
+    exhausted = not delivered and attempt_number >= delivery.max_attempts
+    delivery.status = "delivered" if delivered else "dead_letter" if exhausted else "failed"
     delivery.last_reason_code = reason_code
     delivery.last_response_status = response_status
     delivery.delivered_at = now if delivered else None
+    delivery.dead_lettered_at = now if exhausted else None
+    if not delivered and not exhausted:
+        retry_base = max(1, int(get_settings().durable_job_retry_base_seconds))
+        delay_seconds = min(3600, retry_base * (2 ** max(0, attempt_number - 1)))
+        delivery.next_attempt_at = now + timedelta(seconds=delay_seconds)
     delivery.updated_at = now
-    connection.last_tested_at = now
+    if delivery.delivery_kind == "test":
+        connection.last_tested_at = now
     connection.updated_at = now
     if delivered:
         connection.status = "active"
@@ -505,7 +1073,8 @@ def _attempt_delivery(
         connection.last_success_at = now
     else:
         connection.status = "unhealthy"
-        connection.verification_status = "failed"
+        if delivery.delivery_kind == "test":
+            connection.verification_status = "failed"
         connection.consecutive_failures += 1
         connection.last_failure_at = now
     write_audit_log(
@@ -535,6 +1104,41 @@ def _attempt_delivery(
     }
 
 
+def _cancel_undispatched_delivery(
+    db: Session,
+    *,
+    delivery: AutomationWebhookDelivery,
+    connection: AutomationWebhookConnection,
+    actor_user_id: str | None,
+    reason_code: str,
+) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    delivery.status = "cancelled"
+    delivery.last_reason_code = reason_code
+    delivery.cancelled_at = now
+    delivery.next_attempt_at = None
+    delivery.updated_at = now
+    write_audit_log(
+        db,
+        tenant_id=delivery.organization_id,
+        actor_user_id=actor_user_id,
+        event_type="automation.webhook_delivery.cancelled",
+        payload={
+            "connection_id": connection.id,
+            "delivery_id": delivery.id,
+            "event_id": delivery.event_id,
+            "reason_code": reason_code,
+        },
+    )
+    db.commit()
+    db.refresh(delivery)
+    return {
+        "delivery": _serialize_delivery(db, delivery),
+        "connection": _serialize_connection(db, connection),
+        "received_by_destination": False,
+    }
+
+
 def _post_signed_event(
     *,
     destination_url: str,
@@ -558,6 +1162,24 @@ def _serialize_connection(
         .order_by(AutomationWebhookDelivery.created_at.desc())
         .first()
     )
+    dead_letter_count = (
+        db.query(AutomationWebhookDelivery)
+        .filter(
+            AutomationWebhookDelivery.connection_id == row.id,
+            AutomationWebhookDelivery.status == "dead_letter",
+        )
+        .count()
+    )
+    recoverable_deliveries = (
+        db.query(AutomationWebhookDelivery)
+        .filter(
+            AutomationWebhookDelivery.connection_id == row.id,
+            AutomationWebhookDelivery.status == "dead_letter",
+        )
+        .order_by(AutomationWebhookDelivery.dead_lettered_at.desc())
+        .limit(5)
+        .all()
+    )
     return {
         "id": row.id,
         "name": row.name,
@@ -571,11 +1193,19 @@ def _serialize_connection(
         "last_tested_at": _iso(row.last_tested_at),
         "last_success_at": _iso(row.last_success_at),
         "last_failure_at": _iso(row.last_failure_at),
+        "paused_at": _iso(row.paused_at),
         "created_at": _iso(row.created_at),
         "disconnected_at": _iso(row.disconnected_at),
         "destination_url_saved": bool(row.encrypted_config_blob),
         "destination_url_revealed": False,
         "last_delivery": _serialize_delivery(db, last_delivery) if last_delivery else None,
+        "dead_letter_count": dead_letter_count,
+        "recoverable_deliveries": [
+            _serialize_delivery(db, delivery) for delivery in recoverable_deliveries
+        ],
+        "automatic_delivery_enabled": (
+            row.status == "active" and row.verification_status == "verified"
+        ),
         "automatic_actions_enabled": False,
     }
 
@@ -589,6 +1219,10 @@ def _serialize_delivery(
         .order_by(AutomationWebhookDeliveryAttempt.attempt_number.asc())
         .all()
     )
+    job = db.get(PlatformJob, row.platform_job_id) if row.platform_job_id else None
+    next_attempt_at = row.next_attempt_at
+    if job is not None and job.status == job_service.JOB_STATUS_QUEUED:
+        next_attempt_at = job.available_at
     return {
         "id": row.id,
         "connection_id": row.connection_id,
@@ -596,18 +1230,25 @@ def _serialize_delivery(
         "event_type": row.event_type,
         "schema_version": row.schema_version,
         "status": row.status,
+        "delivery_kind": row.delivery_kind,
         "attempt_count": row.attempt_count,
         "max_attempts": row.max_attempts,
+        "recovery_count": row.recovery_count,
         "last_reason_code": row.last_reason_code,
         "last_response_status": row.last_response_status,
         "last_attempt_at": _iso(row.last_attempt_at),
         "delivered_at": _iso(row.delivered_at),
+        "next_attempt_at": _iso(next_attempt_at),
+        "dead_lettered_at": _iso(row.dead_lettered_at),
+        "cancelled_at": _iso(row.cancelled_at),
         "created_at": _iso(row.created_at),
         "can_retry": (
             row.status == "failed"
             or (row.status == "pending" and row.attempt_count == 0)
         )
         and row.attempt_count < row.max_attempts,
+        "can_recover": row.status == "dead_letter",
+        "job_status": job.status if job is not None else None,
         "attempts": [
             {
                 "attempt_number": item.attempt_number,
@@ -681,7 +1322,7 @@ def _require_connected_config(row: AutomationWebhookConnection) -> None:
 
 
 def _validate_event_types(values: list[str]) -> list[str]:
-    approved = {item["code"] for item in automation_event_catalog()}
+    approved = _LIVE_SUBSCRIPTION_TYPES
     normalized = sorted({str(value or "").strip() for value in values if str(value or "").strip()})
     if not normalized or any(value not in approved for value in normalized):
         raise AutomationWebhookError(

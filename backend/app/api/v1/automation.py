@@ -19,6 +19,9 @@ from app.services.automation_webhook_service import (
     list_connections,
     list_deliveries,
     retry_delivery,
+    recover_dead_letter_delivery,
+    pause_connection,
+    resume_connection,
     rotate_signing_secret,
     send_test_delivery,
 )
@@ -164,6 +167,44 @@ def rotate_automation_connection_secret(
     return envelope(request, data)
 
 
+@router.post('/connections/{connection_id}/pause')
+def pause_automation_connection(
+    request: Request,
+    connection_id: str,
+    user: dict = Depends(require_org_role({'org_owner'})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = pause_connection(
+            db,
+            organization_id=str(user['organization_id']),
+            connection_id=connection_id,
+            actor_user_id=str(user['id']),
+        )
+    except AutomationWebhookError as exc:
+        raise _webhook_http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.post('/connections/{connection_id}/resume')
+def resume_automation_connection(
+    request: Request,
+    connection_id: str,
+    user: dict = Depends(require_org_role({'org_owner'})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = resume_connection(
+            db,
+            organization_id=str(user['organization_id']),
+            connection_id=connection_id,
+            actor_user_id=str(user['id']),
+        )
+    except AutomationWebhookError as exc:
+        raise _webhook_http_error(exc) from exc
+    return envelope(request, data)
+
+
 @router.delete('/connections/{connection_id}')
 def delete_automation_connection(
     request: Request,
@@ -209,6 +250,25 @@ def retry_automation_delivery(
 ) -> dict:
     try:
         data = retry_delivery(
+            db,
+            organization_id=str(user['organization_id']),
+            delivery_id=delivery_id,
+            actor_user_id=str(user['id']),
+        )
+    except AutomationWebhookError as exc:
+        raise _webhook_http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.post('/deliveries/{delivery_id}/recover')
+def recover_automation_delivery(
+    request: Request,
+    delivery_id: str,
+    user: dict = Depends(require_org_role({'org_owner'})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = recover_dead_letter_delivery(
             db,
             organization_id=str(user['organization_id']),
             delivery_id=delivery_id,

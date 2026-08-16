@@ -27,7 +27,7 @@ class AutomationWebhookConnection(Base):
             name="ck_automation_webhook_connections_provider",
         ),
         CheckConstraint(
-            "status in ('pending','active','unhealthy','disconnected')",
+            "status in ('pending','active','unhealthy','paused','disconnected')",
             name="ck_automation_webhook_connections_status",
         ),
         CheckConstraint(
@@ -89,6 +89,10 @@ class AutomationWebhookConnection(Base):
     disconnected_by_user_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL")
     )
+    paused_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
@@ -102,12 +106,16 @@ class AutomationWebhookDelivery(Base):
     __tablename__ = "automation_webhook_deliveries"
     __table_args__ = (
         CheckConstraint(
-            "status in ('pending','delivered','failed')",
+            "status in ('pending','delivered','failed','dead_letter','cancelled')",
             name="ck_automation_webhook_deliveries_status",
         ),
         CheckConstraint(
-            "attempt_count >= 0 AND attempt_count <= max_attempts AND max_attempts = 3",
+            "attempt_count >= 0 AND attempt_count <= max_attempts AND max_attempts >= 3",
             name="ck_automation_webhook_deliveries_attempts",
+        ),
+        CheckConstraint(
+            "delivery_kind in ('test','product') AND recovery_count >= 0",
+            name="ck_automation_webhook_deliveries_kind_recovery",
         ),
         ForeignKeyConstraint(
             ["connection_id", "tenant_id", "organization_id"],
@@ -141,6 +149,10 @@ class AutomationWebhookDelivery(Base):
             "organization_id",
             "status",
         ),
+        Index(
+            "ix_automation_webhook_deliveries_platform_job",
+            "platform_job_id",
+        ),
     )
 
     id: Mapped[str] = mapped_column(
@@ -157,14 +169,27 @@ class AutomationWebhookDelivery(Base):
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(80), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    delivery_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="test"
+    )
+    source_outbox_event_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("event_outbox.id", ondelete="RESTRICT")
+    )
+    platform_job_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("platform_jobs.id", ondelete="SET NULL")
+    )
     encrypted_event_blob: Mapped[str] = mapped_column(Text, nullable=False)
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    recovery_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_reason_code: Mapped[str | None] = mapped_column(String(80))
     last_response_status: Mapped[int | None] = mapped_column(Integer)
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by_user_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL")
     )

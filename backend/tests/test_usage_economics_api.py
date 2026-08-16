@@ -91,8 +91,9 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
         "required_plan": "Solo",
         "state": "available",
         "summary": (
-            "Your plan can send signed, outbound-only events to an approved workflow "
-            "tool. Connected tools cannot approve or carry out InsightOS actions."
+            "After a successful connection test, approved product events deliver "
+            "automatically as signed, outbound-only notifications. Connected tools "
+            "cannot approve or carry out InsightOS actions."
         ),
         "planned_connection_options": [
             "Make",

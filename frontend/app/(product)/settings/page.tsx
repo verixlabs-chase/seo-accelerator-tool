@@ -262,14 +262,20 @@ type AutomationDelivery = {
   id: string;
   event_id: string;
   event_type: string;
-  status: "pending" | "delivered" | "failed";
+  status: "pending" | "delivered" | "failed" | "dead_letter" | "cancelled";
+  delivery_kind: "test" | "product";
   attempt_count: number;
   max_attempts: number;
+  recovery_count: number;
   last_reason_code?: string | null;
   last_response_status?: number | null;
   last_attempt_at?: string | null;
   delivered_at?: string | null;
+  next_attempt_at?: string | null;
+  dead_lettered_at?: string | null;
   can_retry: boolean;
+  can_recover: boolean;
+  job_status?: string | null;
 };
 
 type AutomationConnection = {
@@ -277,7 +283,7 @@ type AutomationConnection = {
   name: string;
   provider: "zapier" | "make" | "pipedream";
   provider_label: string;
-  status: "pending" | "active" | "unhealthy" | "disconnected";
+  status: "pending" | "active" | "unhealthy" | "paused" | "disconnected";
   endpoint_host: string;
   event_types: string[];
   verification_status: "not_tested" | "verified" | "failed";
@@ -285,9 +291,13 @@ type AutomationConnection = {
   last_tested_at?: string | null;
   last_success_at?: string | null;
   last_failure_at?: string | null;
+  paused_at?: string | null;
   destination_url_saved: boolean;
   destination_url_revealed: false;
   last_delivery?: AutomationDelivery | null;
+  dead_letter_count: number;
+  recoverable_deliveries: AutomationDelivery[];
+  automatic_delivery_enabled: boolean;
   automatic_actions_enabled: false;
 };
 
@@ -295,6 +305,7 @@ type AutomationConnectionsPayload = {
   items: AutomationConnection[];
   supported_providers: Array<{ code: "zapier" | "make" | "pipedream"; label: string }>;
   supported_events: Array<{ code: string; label: string; summary: string }>;
+  live_event_types: string[];
   automatic_actions_enabled: false;
   truth: string;
 };
@@ -1036,6 +1047,51 @@ export default function SettingsPage() {
         await loadAutomationConnections();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to disconnect this workflow.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const setAutomationConnectionPaused = useCallback(
+    async (connectionId: string, paused: boolean) => {
+      const action = paused ? "pause" : "resume";
+      setBusyAction(`automation-${action}-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        await platformApi(`/automation/connections/${connectionId}/${action}`, {
+          method: "POST",
+        });
+        setNotice(
+          paused
+            ? "Automatic events paused. Saved history and connection details were preserved."
+            : "Automatic events resumed. New subscribed events can be delivered again.",
+        );
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : `Unable to ${action} this workflow.`);
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const recoverAutomationDelivery = useCallback(
+    async (deliveryId: string) => {
+      setBusyAction(`automation-recover-${deliveryId}`);
+      setError("");
+      setNotice("");
+      try {
+        await platformApi(`/automation/deliveries/${deliveryId}/recover`, {
+          method: "POST",
+        });
+        setNotice("Recovery queued with three new bounded attempts. The original event ID is preserved.");
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to recover this event.");
       } finally {
         setBusyAction("");
       }
@@ -3625,7 +3681,7 @@ export default function SettingsPage() {
                     </p>
                     <h3 className="mt-1 font-semibold text-white">
                       {usageAllowance.external_automation.gateway_enabled
-                        ? "Connect reports and alerts to your workflow tool"
+                        ? "Send report and action updates to your workflow tool"
                         : `External automation requires ${usageAllowance.external_automation.required_plan}`}
                     </h3>
                     <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
@@ -3758,29 +3814,58 @@ export default function SettingsPage() {
                                 <div>
                                   <p className="font-medium text-white">{connection.name}</p>
                                   <p className="mt-1 text-xs text-zinc-400">
-                                    {connection.provider_label} · {connection.endpoint_host} · {connection.status === "active" ? "Verified" : connection.status === "unhealthy" ? "Needs attention" : connection.status === "disconnected" ? "Disconnected" : "Test required"}
+                                    {connection.provider_label} · {connection.endpoint_host} · {connection.status === "active" ? "Automatic delivery on" : connection.status === "unhealthy" ? "Needs attention" : connection.status === "paused" ? "Automatic delivery paused" : connection.status === "disconnected" ? "Disconnected" : "Test required"}
                                   </p>
                                   <p className="mt-2 text-xs leading-5 text-zinc-500">
-                                    {connection.event_types.length} approved {connection.event_types.length === 1 ? "event" : "events"}. Destination URL stays private. Signing secret version {connection.signing_secret_version}.
+                                    {connection.event_types.length} live {connection.event_types.length === 1 ? "event" : "events"} subscribed. Destination URL stays private. Signing secret version {connection.signing_secret_version}.
                                   </p>
+                                  {connection.dead_letter_count > 0 ? (
+                                    <div className="mt-2 space-y-2 rounded-md border border-rose-500/20 bg-rose-500/5 p-3">
+                                      <p className="text-xs font-medium text-rose-300">
+                                        {connection.dead_letter_count} event {connection.dead_letter_count === 1 ? "needs" : "need"} owner recovery.
+                                      </p>
+                                      {(connection.recoverable_deliveries || []).map((item) => (
+                                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
+                                          <span>{item.event_type} · {item.attempt_count} attempts exhausted</span>
+                                          {me?.org_role === "org_owner" ? (
+                                            <button
+                                              type="button"
+                                              className={secondaryButtonClass}
+                                              disabled={busyAction === `automation-recover-${item.id}`}
+                                              onClick={() => void recoverAutomationDelivery(item.id)}
+                                            >
+                                              {busyAction === `automation-recover-${item.id}` ? "Queuing..." : "Recover event"}
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                   {delivery ? (
-                                    <p className={`mt-2 text-xs ${delivery.status === "delivered" ? "text-emerald-300" : delivery.status === "failed" ? "text-rose-300" : "text-amber-300"}`}>
-                                      Last test: {delivery.status === "delivered" ? "Accepted" : delivery.status === "failed" ? "Not accepted" : "In progress"} · {delivery.attempt_count} of {delivery.max_attempts} attempts
-                                    </p>
+                                    <div className="mt-2">
+                                      <p className={`text-xs ${delivery.status === "delivered" ? "text-emerald-300" : delivery.status === "failed" || delivery.status === "dead_letter" ? "text-rose-300" : "text-amber-300"}`}>
+                                        Last {delivery.delivery_kind === "test" ? "test" : "product event"}: {delivery.status === "delivered" ? "Accepted" : delivery.status === "failed" ? "Retry scheduled" : delivery.status === "dead_letter" ? "Attempts exhausted" : delivery.status === "cancelled" ? "Stopped before delivery" : "Queued"} · {delivery.attempt_count} of {delivery.max_attempts} attempts
+                                      </p>
+                                      {delivery.next_attempt_at && delivery.status === "failed" ? (
+                                        <p className="mt-1 text-xs text-zinc-500">Next bounded retry: {formatTimestamp(delivery.next_attempt_at)}</p>
+                                      ) : null}
+                                    </div>
                                   ) : (
                                     <p className="mt-2 text-xs text-amber-300">No test event sent yet.</p>
                                   )}
                                 </div>
                                 {me?.org_role === "org_owner" && connection.status !== "disconnected" ? (
                                   <div className="flex flex-wrap gap-2">
-                                    <button
-                                      type="button"
-                                      className={secondaryButtonClass}
-                                      disabled={busyAction === `automation-test-${connection.id}`}
-                                      onClick={() => void testAutomationConnection(connection.id)}
-                                    >
-                                      {busyAction === `automation-test-${connection.id}` ? "Sending..." : "Send test"}
-                                    </button>
+                                    {connection.status !== "paused" ? (
+                                      <button
+                                        type="button"
+                                        className={secondaryButtonClass}
+                                        disabled={busyAction === `automation-test-${connection.id}`}
+                                        onClick={() => void testAutomationConnection(connection.id)}
+                                      >
+                                        {busyAction === `automation-test-${connection.id}` ? "Sending..." : "Send test"}
+                                      </button>
+                                    ) : null}
                                     {delivery?.can_retry ? (
                                       <button
                                         type="button"
@@ -3791,6 +3876,14 @@ export default function SettingsPage() {
                                         {busyAction === `automation-retry-${delivery.id}` ? "Retrying..." : "Retry last test"}
                                       </button>
                                     ) : null}
+                                    <button
+                                      type="button"
+                                      className={secondaryButtonClass}
+                                      disabled={busyAction === `automation-${connection.status === "paused" ? "resume" : "pause"}-${connection.id}`}
+                                      onClick={() => void setAutomationConnectionPaused(connection.id, connection.status !== "paused")}
+                                    >
+                                      {connection.status === "paused" ? "Resume events" : "Pause events"}
+                                    </button>
                                     <button
                                       type="button"
                                       className={secondaryButtonClass}
@@ -3820,7 +3913,10 @@ export default function SettingsPage() {
 
                     {usageAllowance.external_automation.outbound_contract?.supported_events.length ? (
                       <div className="mt-3">
-                        <p className="text-xs font-medium text-zinc-300">Available outbound triggers</p>
+                        <p className="text-xs font-medium text-zinc-300">Approved outbound event contract</p>
+                        <p className="mt-1 text-xs leading-5 text-zinc-500">
+                          Report, recommendation, and approved-action results deliver automatically after a successful test. Approval-requested remains reserved until an exact native approval event is available.
+                        </p>
                         <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                           {usageAllowance.external_automation.outbound_contract?.supported_events.map((event) => (
                             <li key={event.code} className="rounded-lg border border-[#292a2f] bg-[#101114] px-3 py-2">
