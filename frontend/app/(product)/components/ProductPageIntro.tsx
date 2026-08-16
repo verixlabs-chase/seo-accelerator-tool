@@ -32,6 +32,8 @@ const START_HERE_BY_PATH: Record<string, string> = {
     "Choose one location, then compare the saved answers by AI search service and customer question.",
   "/competitors":
     "Confirm the real local competitors first, then review the exact searches where they are ahead.",
+  "/content":
+    "Review the first saved brief, then check the matching page before writing or changing anything.",
   "/citations":
     "Fix failed or missing listings first; confirmed live listings need no action.",
   "/reviews":
@@ -55,6 +57,7 @@ const PAGE_ICON_BY_PATH: Record<string, ProductIconName> = {
   "/organic-value": "search-value",
   "/ai-visibility": "ai-search",
   "/competitors": "competitors",
+  "/content": "content",
   "/citations": "listings",
   "/reviews": "reviews",
   "/profile-campaigns": "profile-campaigns",

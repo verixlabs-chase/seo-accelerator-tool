@@ -7,6 +7,7 @@ const productRoutes = [
   "dashboard",
   "citations",
   "competitors",
+  "content",
   "local-visibility",
   "locations",
   "opportunities",

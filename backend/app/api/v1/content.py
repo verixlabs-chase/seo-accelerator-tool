@@ -60,6 +60,21 @@ def update_content_asset(
     return envelope(request, ContentAssetOut.model_validate(asset).model_dump(mode="json"))
 
 
+@content_router.get("/workspace")
+def get_content_workspace(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.get_content_workspace(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
 @content_router.get("/plan")
 def get_content_plan(
     request: Request,

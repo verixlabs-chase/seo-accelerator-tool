@@ -1,3 +1,12 @@
+from datetime import UTC, datetime
+
+from app.models.campaign import Campaign
+from app.models.competitor import Competitor
+from app.models.content import ContentBrief
+from app.models.crawl import CrawlPageResult, CrawlRun, Page
+from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion
+
+
 def _login(client, email, password):
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
@@ -78,3 +87,167 @@ def test_content_asset_lifecycle_and_internal_links(client):
     assert links.status_code == 200
     assert len(links.json()["data"]["items"]) >= 2
 
+
+def test_content_workspace_combines_saved_pages_and_draft_briefs(client, db_session):
+    token = _login(client, "a@example.com", "pass-a")
+    campaign_payload = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Content Workspace", "domain": "workspace-content.com"},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["data"]
+    campaign = db_session.get(Campaign, campaign_payload["id"])
+    now = datetime.now(UTC)
+    crawl = CrawlRun(
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        crawl_type="deep",
+        status="completed",
+        seed_url="https://workspace-content.com",
+        pages_discovered=1,
+        created_at=now,
+        started_at=now,
+        finished_at=now,
+    )
+    page = Page(
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        url="https://workspace-content.com/plumbing",
+        last_crawled_at=now,
+    )
+    db_session.add_all([crawl, page])
+    db_session.flush()
+    db_session.add(
+        CrawlPageResult(
+            tenant_id=campaign.tenant_id,
+            campaign_id=campaign.id,
+            crawl_run_id=crawl.id,
+            page_id=page.id,
+            status_code=200,
+            is_indexable=1,
+            title="Plumbing services",
+            meta_description=None,
+            final_url=page.url,
+            word_count=80,
+            crawled_at=now,
+        )
+    )
+    run = KeywordResearchRun(
+        tenant_id=campaign.tenant_id,
+        organization_id=campaign.organization_id,
+        campaign_id=campaign.id,
+        business_location_id=campaign.business_location_id,
+        status="complete",
+        location_name="Reno, Nevada",
+        sources=["saved_search_evidence"],
+        completed_at=now,
+    )
+    competitor = Competitor(
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        domain="confirmed-competitor.example",
+        discovery_source="manual",
+        review_status="confirmed",
+    )
+    db_session.add_all([run, competitor])
+    db_session.flush()
+    suggestion = KeywordResearchSuggestion(
+        run_id=run.id,
+        tenant_id=campaign.tenant_id,
+        organization_id=campaign.organization_id,
+        campaign_id=campaign.id,
+        business_location_id=campaign.business_location_id,
+        keyword="emergency plumber reno",
+        normalized_keyword="emergency plumber reno",
+        source_types=["saved_search_evidence"],
+        evidence={},
+        intent="service",
+        opportunity_group="new_opportunity",
+        relevance_score=95,
+        relevance_status="relevant",
+        opportunity_score=88,
+        recommended_action="create_content_brief",
+        recommendation_reason="A confirmed competitor appears for this saved search.",
+        source_updated_at=now,
+    )
+    db_session.add(suggestion)
+    db_session.flush()
+    db_session.add(
+        ContentBrief(
+            tenant_id=campaign.tenant_id,
+            organization_id=campaign.organization_id,
+            campaign_id=campaign.id,
+            business_location_id=campaign.business_location_id,
+            suggestion_id=suggestion.id,
+            competitor_id=competitor.id,
+            idempotency_key=f"workspace-brief:{campaign.id}",
+            status="draft",
+            title="Improve emergency plumbing for Reno",
+            primary_keyword=suggestion.keyword,
+            recommended_page_action="improve_existing_page",
+            target_url=page.url,
+            competitor_domain=competitor.domain,
+            service_name="Emergency plumbing",
+            service_area_name="Reno",
+            evidence={
+                "owner_position": None,
+                "competitor_position": 4,
+                "source_updated_at": now.isoformat(),
+                "internal_research_run_id": run.id,
+            },
+            outline=[
+                {
+                    "order": 1,
+                    "heading": "Make the service clear",
+                    "guidance": "Explain who the service helps.",
+                }
+            ],
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/api/v1/content/workspace?campaign_id={campaign.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["truth"]["state"] == "measured"
+    assert payload["summary"] == {
+        "pages": 1,
+        "pages_needing_attention": 1,
+        "draft_briefs": 1,
+        "planned_work": 0,
+        "published_work": 0,
+    }
+    assert payload["pages"][0]["source_label"] == "Website scan"
+    assert payload["pages"][0]["attention"] == [
+        "Add a clear search description",
+        "Review whether this page gives customers enough useful detail",
+    ]
+    assert payload["briefs"][0]["primary_search"] == "emergency plumber reno"
+    assert payload["briefs"][0]["evidence"] == {
+        "owner_position": None,
+        "competitor_position": 4,
+        "source_updated_at": now.isoformat(),
+    }
+    assert payload["briefs"][0]["outline"][0]["heading"] == "Make the service clear"
+    assert payload["next_action"]["code"] == "review_content_brief"
+    assert "provider" not in str(payload).lower()
+
+
+def test_content_workspace_is_tenant_scoped(client):
+    token_a = _login(client, "a@example.com", "pass-a")
+    token_b = _login(client, "b@example.com", "pass-b")
+    campaign = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Private Content", "domain": "private-content.com"},
+        headers={"Authorization": f"Bearer {token_a}"},
+    ).json()["data"]
+
+    response = client.get(
+        f"/api/v1/content/workspace?campaign_id={campaign['id']}",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+
+    assert response.status_code == 404

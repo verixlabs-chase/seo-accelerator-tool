@@ -108,6 +108,7 @@ test("every customer route has an original navigation and page-heading icon", ()
     "search-value",
     "ai-search",
     "competitors",
+    "content",
     "listings",
     "reviews",
     "help",

@@ -39,6 +39,7 @@ const PRODUCT_PAGES = [
   "organic-value",
   "ai-visibility",
   "competitors",
+  "content",
   "citations",
   "reviews",
   "profile-campaigns",

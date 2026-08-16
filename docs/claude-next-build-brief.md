@@ -3066,6 +3066,18 @@ Acceptance criteria:
 Goal: replace the most useful Semrush content and on-page workflows for local
 service businesses.
 
+Implementation status (2026-08-15): the first read-only CNT1 workspace is
+implemented locally. The new **Content** page combines the latest saved
+connected-website inventory and website scan without storing raw page bodies,
+deduplicates matching URLs, and puts pages with clear saved issues first. It
+also shows review-only content briefs created from a confirmed customer search
+and competitor gap, including the target page choice, exact saved positions,
+and proposed outline. Inventory limits and missing sources stay visible, and
+only a small customer-safe evidence contract leaves the API. This slice cannot
+generate page copy, publish, or mutate a website. The next CNT1 slices remain
+page-target decisions, governed drafting and editing, metadata/schema/internal-
+link recommendations, and an explicitly approved publishing handoff.
+
 Scope:
 
 - Productize the existing content-plan, content-asset, internal-link, entity,
