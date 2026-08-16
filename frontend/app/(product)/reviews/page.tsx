@@ -81,6 +81,13 @@ type ReviewResponsePolicy = {
   human_approval_required: true;
   direct_posting_enabled: false;
   automatic_posting_enabled: false;
+  automatic_reply_access: {
+    plan_eligible: boolean;
+    automation_enabled: false;
+    required_plan: string;
+    state: "plan_upgrade_required" | "production_validation_required";
+    summary: string;
+  };
   ai_configured: boolean;
   maximum_credits_per_draft?: number | null;
 };
@@ -1166,6 +1173,25 @@ export default function ReviewsPage() {
           Every suggested reply must be checked and approved by a person. Posting is a separate step
           with its own confirmation. Automatic replies are off.
         </TruthNotice>
+
+        {responsePolicy?.automatic_reply_access ? (
+          <section className="rounded-md border border-sky-500/20 bg-sky-500/[0.07] p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/70">
+              Review automation
+            </p>
+            <h2 className="mt-1.5 text-base font-semibold text-white">
+              {responsePolicy.automatic_reply_access.plan_eligible
+                ? "Your plan is eligible, but automatic replies are still off"
+                : `Automatic replies require ${responsePolicy.automatic_reply_access.required_plan}`}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-300">
+              {responsePolicy.automatic_reply_access.summary}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-zinc-500">
+              Drafting, human approval, copying, and individually confirmed posting are separate from automation.
+            </p>
+          </section>
+        ) : null}
 
         {responsePolicy && !responsePolicy.ai_configured ? (
           <section className="rounded-md border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-100">

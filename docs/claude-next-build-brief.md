@@ -4313,6 +4313,29 @@ Implementation status (August 16, 2026):
   access, quota, profile ownership, content safety, or publishing approval has
   passed.
 
+#### COM1.3D - Review Automation Plan Truth and Human-Approval Boundary
+
+Implementation status (August 16, 2026):
+
+- The review policy response now resolves the canonical
+  `automatic_review_replies` capability and reports plan eligibility separately
+  from live automation. Solo retains monitoring, governed drafts, editing,
+  human approval, copying, and individually confirmed posting. Growth and
+  Enterprise are eligible for a later governed automation mode, but eligibility
+  never enables that mode.
+- Automatic posting remains structurally disabled for every plan until the
+  production Google review-reply capability is validated and a separate
+  explicit opt-in policy is implemented. The customer UI states both truths and
+  never suggests that upgrading alone turns automatic replies on.
+- Queueing now requires durable human-review identity and time in addition to
+  approved text and the separate public-post confirmation. The worker rechecks
+  the same human-review proof immediately before provider dispatch, so database
+  changes, stale jobs, and retries cannot convert an approved manual workflow
+  into an automatic reply.
+- Saved reviews, drafts, approvals, posting history, pause, cancel, and recovery
+  stay readable regardless of plan. Sensitive and uncertain reviews continue
+  to require a person and cannot become automation candidates.
+
 Packaging principle:
 
 - Solo tells the owner what is happening, what to do, and whether the work

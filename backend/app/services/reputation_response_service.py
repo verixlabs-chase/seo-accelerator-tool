@@ -29,6 +29,11 @@ from app.models.reputation import (
     ReputationReview,
 )
 from app.services import business_service_service, cost_economics_service, governed_ai_service
+from app.services.commercial_plan_service import (
+    FEATURE_AUTOMATIC_REVIEW_REPLIES,
+    CommercialPlanFeatureDenied,
+    require_commercial_feature,
+)
 from app.services.governed_ai_provider import (
     GovernedAIDraftProvider,
     GovernedAIProviderError,
@@ -167,6 +172,10 @@ def policy_status(
     configured = settings.ai_provider_backend.strip().lower() == "mistral" and bool(
         settings.mistral_api_key.strip()
     )
+    automatic_reply_access = _automatic_reply_access(
+        db,
+        organization_id=organization_id,
+    )
     return {
         "campaign_id": campaign.id,
         "policy_version": policy.version,
@@ -174,12 +183,46 @@ def policy_status(
         "human_approval_required": True,
         "direct_posting_enabled": False,
         "automatic_posting_enabled": False,
+        "automatic_reply_access": automatic_reply_access,
         "sensitive_topics": list(SENSITIVE_TOPIC_LABELS.values()),
         "ai_configured": configured,
         "maximum_credits_per_draft": _maximum_credit_ceiling(db),
         "allowance": governed_ai_service._action_allowance(
             db,
             organization_id=organization_id,
+        ),
+    }
+
+
+def _automatic_reply_access(
+    db: Session,
+    *,
+    organization_id: str,
+) -> dict[str, Any]:
+    try:
+        feature = require_commercial_feature(
+            db,
+            organization_id=organization_id,
+            feature_code=FEATURE_AUTOMATIC_REVIEW_REPLIES,
+        )
+        plan_eligible = True
+        required_plan = str(feature["required_plan"])
+    except CommercialPlanFeatureDenied as exc:
+        plan_eligible = False
+        required_plan = exc.required_plan_name
+    return {
+        "plan_eligible": plan_eligible,
+        "automation_enabled": False,
+        "required_plan": required_plan,
+        "state": (
+            "production_validation_required"
+            if plan_eligible
+            else "plan_upgrade_required"
+        ),
+        "summary": (
+            "This plan can support governed review automation after production Google validation and explicit opt-in. Automatic replies remain off."
+            if plan_eligible
+            else "Automatic review replies require Growth. Review monitoring, drafts, and human approval remain available."
         ),
     }
 

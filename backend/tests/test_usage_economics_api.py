@@ -57,6 +57,11 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
         for item in data["capabilities"]
         if item["code"] == "business_profile_fleet_actions"
     )
+    automatic_review_replies = next(
+        item
+        for item in data["capabilities"]
+        if item["code"] == "automatic_review_replies"
+    )
     assert performance_trend["available"] is True
     assert performance_trend["required_plan"] == "Solo"
     assert owner_report["available"] is True
@@ -65,6 +70,8 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert deeper_plan["required_plan"] == "Growth"
     assert profile_fleet["available"] is False
     assert profile_fleet["required_plan"] == "Growth"
+    assert automatic_review_replies["available"] is False
+    assert automatic_review_replies["required_plan"] == "Growth"
     assert data["credits"]["monthly"] == 1495
     assert data["credits"]["remaining"] == 1495
     assert data["credits"]["name"] == "Insight Credits"
