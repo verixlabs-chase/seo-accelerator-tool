@@ -17,6 +17,7 @@ from app.models.content import (
     InternalLinkMap,
 )
 from app.models.crawl import CrawlPageResult, CrawlRun, Page
+from app.models.governed_ai import GovernedAIRun
 from app.models.wordpress_content_inventory import (
     WordPressContentItem,
     WordPressContentSyncRun,
@@ -245,6 +246,32 @@ def get_content_workspace(
         else []
     )
     drafts_by_brief = {item.content_brief_id: item for item in drafts}
+    suggestions_by_draft: dict[str, GovernedAIRun] = {}
+    if drafts:
+        draft_ids = {item.id for item in drafts}
+        suggestion_rows = (
+            db.query(GovernedAIRun)
+            .filter(
+                GovernedAIRun.tenant_id == tenant_id,
+                GovernedAIRun.campaign_id == campaign_id,
+                GovernedAIRun.feature == "content_draft_suggestion",
+            )
+            .order_by(GovernedAIRun.created_at.desc(), GovernedAIRun.id.desc())
+            .limit(500)
+            .all()
+        )
+        draft_revisions = {item.id: int(item.revision) for item in drafts}
+        for row in suggestion_rows:
+            action_id = str(row.selected_action_id or "")
+            if not action_id.startswith("content_draft:"):
+                continue
+            draft_id = action_id.removeprefix("content_draft:")
+            if draft_id not in draft_ids or draft_id in suggestions_by_draft:
+                continue
+            output = row.output_payload if isinstance(row.output_payload, dict) else {}
+            if row.status != "validated" or int(output.get("draft_revision") or 0) != draft_revisions[draft_id]:
+                continue
+            suggestions_by_draft[draft_id] = row
     assets = (
         db.query(ContentAsset)
         .filter(
@@ -402,7 +429,15 @@ def get_content_workspace(
         ],
         "pages": pages,
         "briefs": [
-            _serialize_workspace_brief(item, draft=drafts_by_brief.get(item.id))
+            _serialize_workspace_brief(
+                item,
+                draft=drafts_by_brief.get(item.id),
+                suggestion=(
+                    suggestions_by_draft.get(drafts_by_brief[item.id].id)
+                    if item.id in drafts_by_brief
+                    else None
+                ),
+            )
             for item in briefs
         ],
         "work": [
@@ -700,6 +735,7 @@ def _serialize_workspace_brief(
     item: ContentBrief,
     *,
     draft: ContentDraft | None = None,
+    suggestion: GovernedAIRun | None = None,
 ) -> dict:
     return {
         "id": item.id,
@@ -716,11 +752,39 @@ def _serialize_workspace_brief(
         "outline": list(item.outline or []),
         "created_at": item.created_at.isoformat(),
         "updated_at": item.updated_at.isoformat(),
-        "working_draft": _serialize_content_draft(draft) if draft is not None else None,
+        "working_draft": (
+            _serialize_content_draft(draft, suggestion=suggestion)
+            if draft is not None
+            else None
+        ),
     }
 
 
-def _serialize_content_draft(item: ContentDraft) -> dict:
+def _serialize_content_draft(
+    item: ContentDraft,
+    *,
+    suggestion: GovernedAIRun | None = None,
+) -> dict:
+    ai_suggestion = None
+    if suggestion is not None and isinstance(suggestion.output_payload, dict):
+        saved = {
+            key: value
+            for key, value in suggestion.output_payload.items()
+            if key != "draft_revision"
+        }
+        ai_suggestion = {
+            "state": "available",
+            "suggestion": saved,
+            "updated_at": (
+                suggestion.completed_at or suggestion.created_at
+            ).isoformat(),
+            "safety": {
+                "owner_draft_changed": False,
+                "approval_recorded": False,
+                "automatic_publishing_allowed": False,
+                "website_changed": False,
+            },
+        }
     return {
         "id": item.id,
         "status": item.status,
@@ -729,6 +793,7 @@ def _serialize_content_draft(item: ContentDraft) -> dict:
         "revision": int(item.revision),
         "created_at": item.created_at.isoformat(),
         "updated_at": item.updated_at.isoformat(),
+        "ai_suggestion": ai_suggestion,
         "safety": _content_draft_safety(),
     }
 

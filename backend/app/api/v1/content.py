@@ -12,10 +12,11 @@ from app.schemas.content import (
     ContentAssetOut,
     ContentAssetUpdateIn,
     ContentBriefReviewIn,
+    ContentDraftAISuggestionIn,
     ContentDraftCreateIn,
     ContentDraftUpdateIn,
 )
-from app.services import content_service, infra_service
+from app.services import content_draft_ai_service, content_service, infra_service
 from app.tasks.tasks import content_generate_plan, content_refresh_internal_link_map, content_run_qc_checks
 
 content_router = APIRouter(prefix="/content", tags=["content"])
@@ -136,6 +137,24 @@ def update_content_draft(
         title=body.title,
         sections=[item.model_dump() for item in body.sections],
         actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/drafts/{draft_id}/ai-suggestion")
+def suggest_content_draft_wording(
+    request: Request,
+    draft_id: str,
+    body: ContentDraftAISuggestionIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_draft_ai_service.generate_content_draft_suggestion(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        requested_by_user_id=user["id"],
     )
     return envelope(request, payload)
 

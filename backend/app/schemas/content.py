@@ -27,6 +27,10 @@ class ContentDraftCreateIn(BaseModel):
     campaign_id: str = Field(min_length=1, max_length=36)
 
 
+class ContentDraftAISuggestionIn(BaseModel):
+    campaign_id: str = Field(min_length=1, max_length=36)
+
+
 class ContentDraftSectionIn(BaseModel):
     order: int = Field(ge=1, le=20)
     heading: str = Field(min_length=1, max_length=160)

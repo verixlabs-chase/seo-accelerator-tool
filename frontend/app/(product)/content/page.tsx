@@ -64,11 +64,35 @@ type WorkingContentDraft = {
   revision: number;
   created_at: string;
   updated_at: string;
+  ai_suggestion?: ContentDraftAISuggestionResult | null;
   safety: {
     ai_generated: false;
     automatic_publishing_allowed: false;
     website_changed: false;
     approval_to_publish_recorded: false;
+  };
+};
+
+type ContentDraftAISuggestion = {
+  draft_id: string;
+  suggestion_state: "ready" | "not_enough_information";
+  suggested_title: string;
+  sections: Array<{ order: number; heading: string; body: string }>;
+  evidence_used: string[];
+  uncertainties: string[];
+  approval_required: true;
+  can_publish: false;
+};
+
+type ContentDraftAISuggestionResult = {
+  state: string;
+  suggestion?: ContentDraftAISuggestion | null;
+  updated_at?: string;
+  safety: {
+    owner_draft_changed: false;
+    approval_recorded: false;
+    automatic_publishing_allowed: false;
+    website_changed: false;
   };
 };
 
@@ -164,8 +188,13 @@ function WorkingDraftEditor({
   const [title, setTitle] = useState(draft.title);
   const [sections, setSections] = useState(draft.sections);
   const [saving, setSaving] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [suggestionMessage, setSuggestionMessage] = useState("");
+
+  const hasUnsavedChanges = title !== draft.title
+    || JSON.stringify(sections) !== JSON.stringify(draft.sections);
 
   useEffect(() => {
     setTitle(draft.title);
@@ -196,6 +225,36 @@ function WorkingDraftEditor({
       setError("The working draft could not be saved. Nothing was published.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function suggestWording() {
+    if (suggesting || hasUnsavedChanges) return;
+    setSuggesting(true);
+    setSuggestionMessage("");
+    setError("");
+    try {
+      const result = (await platformApi(
+        `/content/drafts/${encodeURIComponent(draft.id)}/ai-suggestion`,
+        {
+          method: "POST",
+          body: JSON.stringify({ campaign_id: campaignId }),
+        },
+      )) as ContentDraftAISuggestionResult;
+      if (result.state === "available" && result.suggestion) {
+        setSuggestionMessage("A separate wording suggestion is ready for review. Your working draft was not changed.");
+        await onSaved("AI wording suggestion saved separately. Your working draft was not changed.");
+      } else if (result.state === "allowance_exhausted") {
+        setSuggestionMessage("The included AI writing allowance is used for this period. Your working draft was not changed.");
+      } else if (result.state === "not_configured") {
+        setSuggestionMessage("Optional AI wording is not available yet. You can keep writing and saving the draft normally.");
+      } else {
+        setSuggestionMessage("AI wording could not be prepared from the saved evidence. Your working draft was not changed.");
+      }
+    } catch {
+      setError("The optional AI wording could not be prepared. Your working draft was not changed.");
+    } finally {
+      setSuggesting(false);
     }
   }
 
@@ -260,6 +319,61 @@ function WorkingDraftEditor({
           {saving ? "Saving…" : "Save working draft"}
         </button>
         <p className="text-xs text-zinc-500">Saving stores owner-written text only. It cannot contact WordPress or publish.</p>
+      </div>
+      <div className="mt-4 rounded-lg border border-sky-500/20 bg-sky-500/5 p-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="font-medium text-sky-100">Optional AI wording</p>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-zinc-400">
+              Uses the accepted brief and saved headings and guidance. It does not read or overwrite your section text,
+              approve the draft, contact WordPress, or publish. One included AI action is used when the writing service runs.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void suggestWording()}
+            disabled={suggesting || hasUnsavedChanges}
+            className="rounded-md border border-sky-400/30 px-3 py-2 text-sm font-semibold text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {suggesting ? "Preparing suggestion…" : "Suggest wording with AI"}
+          </button>
+        </div>
+        {hasUnsavedChanges ? (
+          <p className="mt-2 text-xs text-amber-100">Save your changes first so the suggestion uses the current saved revision.</p>
+        ) : null}
+        {suggestionMessage ? <p role="status" className="mt-2 text-sm text-sky-100">{suggestionMessage}</p> : null}
+        {draft.ai_suggestion?.state === "available" && draft.ai_suggestion.suggestion ? (
+          <div className="mt-3">
+            <DetailsDisclosure
+              label="AI wording suggestion — review before using"
+              summary="Saved separately from your working draft"
+            >
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Suggested page heading</p>
+                  <p className="mt-1 font-medium text-zinc-100">{draft.ai_suggestion.suggestion.suggested_title}</p>
+                </div>
+                {draft.ai_suggestion.suggestion.sections.map((section) => (
+                  <section key={`${draft.id}-suggestion-${section.order}`} className="border-l-2 border-sky-500/30 pl-3">
+                    <p className="font-medium text-zinc-100">{section.order}. {section.heading}</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-300">{section.body}</p>
+                  </section>
+                ))}
+                <p className="text-xs leading-5 text-zinc-500">
+                  Evidence used: accepted content brief and saved headings and section guidance. This suggestion has not changed your working draft.
+                </p>
+                {draft.ai_suggestion.suggestion.uncertainties.length ? (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Check before using</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-400">
+                      {draft.ai_suggestion.suggestion.uncertainties.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            </DetailsDisclosure>
+          </div>
+        ) : null}
       </div>
       {message ? <p role="status" className="mt-3 text-sm text-emerald-100">{message}</p> : null}
       {error ? <p role="alert" className="mt-3 text-sm text-rose-100">{error}</p> : null}

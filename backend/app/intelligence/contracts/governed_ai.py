@@ -331,6 +331,91 @@ class GovernedActionDraft(BaseModel):
             )
 
 
+class GovernedContentDraftSectionSuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    order: int = Field(ge=1, le=20)
+    heading: str = Field(min_length=1, max_length=160)
+    body: str = Field(min_length=1, max_length=1500)
+
+
+class GovernedContentDraftSuggestion(BaseModel):
+    """Optional wording that remains separate from an owner-controlled draft."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    draft_id: str = Field(min_length=1, max_length=36)
+    suggestion_state: Literal["ready", "not_enough_information"]
+    suggested_title: str = Field(min_length=1, max_length=320)
+    sections: list[GovernedContentDraftSectionSuggestion] = Field(
+        default_factory=list,
+        max_length=12,
+    )
+    evidence_used: list[str] = Field(default_factory=list, max_length=12)
+    uncertainties: list[str] = Field(default_factory=list, max_length=8)
+    approval_required: bool
+    can_publish: Literal[False]
+
+    @model_validator(mode="after")
+    def suggestion_copy_is_safe(self) -> "GovernedContentDraftSuggestion":
+        if not self.approval_required:
+            raise ValueError("Every AI wording suggestion must require owner review.")
+        if self.suggestion_state == "ready":
+            if not self.evidence_used:
+                raise ValueError("Ready wording must cite supplied evidence.")
+            if not self.sections:
+                raise ValueError("Ready wording must include the requested sections.")
+            combined = " ".join(
+                [self.suggested_title]
+                + [f"{item.heading} {item.body}" for item in self.sections]
+            )
+            disallowed = find_disallowed_customer_terms(combined)
+            if disallowed:
+                raise ValueError(f"AI wording used technical language: {disallowed[0]}")
+            if re.search(r"\d", combined):
+                raise ValueError("AI wording cannot introduce numeric business claims.")
+            lowered = combined.lower()
+            unsupported = [
+                phrase
+                for phrase in UNSUPPORTED_DRAFT_CLAIM_PHRASES
+                if phrase in lowered
+            ]
+            if unsupported:
+                raise ValueError(
+                    f"AI wording contained an unsupported business claim: {unsupported[0]}"
+                )
+            for safe_phrase in SAFE_NEGATIONS:
+                lowered = lowered.replace(safe_phrase, "")
+            unsupported_outcomes = [
+                phrase for phrase in UNSUPPORTED_CLAIM_PHRASES if phrase in lowered
+            ]
+            if unsupported_outcomes:
+                raise ValueError(
+                    "AI wording contained an unsupported outcome claim: "
+                    f"{unsupported_outcomes[0]}"
+                )
+        return self
+
+    def validate_against_context(
+        self,
+        *,
+        draft_id: str,
+        section_orders: list[int],
+        evidence_ids: set[str],
+    ) -> None:
+        if self.draft_id != draft_id:
+            raise ValueError("AI output changed the working draft identifier.")
+        if self.suggestion_state == "ready":
+            returned_orders = [item.order for item in self.sections]
+            if returned_orders != section_orders:
+                raise ValueError("AI output changed the requested section order.")
+        unknown_evidence = sorted(set(self.evidence_used) - evidence_ids)
+        if unknown_evidence:
+            raise ValueError(
+                f"AI output cited evidence outside the supplied context: {unknown_evidence}"
+            )
+
+
 class GovernedKeywordRelevanceDecision(BaseModel):
     """One bounded classification of a server-selected uncertain search phrase."""
 

@@ -33,6 +33,17 @@ test("accepted briefs become owner-editable working drafts only", () => {
   assert.doesNotMatch(page, /Approve and publish/i);
 });
 
+test("optional AI wording stays separate from the owner draft", () => {
+  assert.match(page, /\/content\/drafts\/\$\{encodeURIComponent\(draft\.id\)\}\/ai-suggestion/);
+  assert.match(page, /Suggest wording with AI/);
+  assert.match(page, /does not read or overwrite your section text/);
+  assert.match(page, /AI wording suggestion — review before using/);
+  assert.match(page, /This suggestion has not changed your working draft/);
+  assert.match(page, /Save your changes first/);
+  assert.doesNotMatch(page, /Apply AI wording/i);
+  assert.doesNotMatch(page, /Publish suggestion/i);
+});
+
 test("brief review saves one explicit owner decision without changing the website", () => {
   assert.match(page, /\/content\/briefs\/\$\{encodeURIComponent\(brief\.id\)\}\/review/);
   assert.match(page, /method: "PUT"/);
