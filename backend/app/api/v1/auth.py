@@ -90,13 +90,41 @@ def sessions(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    current_session_id = auth_service.session_id_from_token(_access_token_from_request(request))
     return envelope(
         request,
         {
             "sessions": auth_service.list_active_sessions(
                 db,
                 user_id=str(user["user_id"]),
+                current_session_id=current_session_id,
             )
+        },
+    )
+
+
+@router.delete("/sessions/others")
+def revoke_other_sessions(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    current_session_id = auth_service.session_id_from_token(_access_token_from_request(request))
+    if current_session_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The current sign-in could not be identified. Sign out and sign in again before using this control.",
+        )
+    revoked_count = auth_service.revoke_other_user_sessions(
+        db,
+        user_id=str(user["user_id"]),
+        current_session_id=current_session_id,
+    )
+    return envelope(
+        request,
+        {
+            "current_session_id": current_session_id,
+            "revoked_count": revoked_count,
         },
     )
 
@@ -108,6 +136,12 @@ def revoke_session(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    current_session_id = auth_service.session_id_from_token(_access_token_from_request(request))
+    if current_session_id == session_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Use Sign out to end the current browser session.",
+        )
     revoked = auth_service.revoke_user_session(
         db,
         user_id=str(user["user_id"]),

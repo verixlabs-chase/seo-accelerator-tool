@@ -535,7 +535,23 @@ def revoke_session_from_token(db: Session, token: str) -> bool:
     return True
 
 
-def list_active_sessions(db: Session, *, user_id: str) -> list[dict[str, Any]]:
+def session_id_from_token(token: str | None) -> str | None:
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+    except HTTPException:
+        return None
+    session_id = payload.get("sid")
+    return session_id if isinstance(session_id, str) else None
+
+
+def list_active_sessions(
+    db: Session,
+    *,
+    user_id: str,
+    current_session_id: str | None = None,
+) -> list[dict[str, Any]]:
     now = datetime.now(UTC)
     rows = (
         db.query(AuthSession)
@@ -555,6 +571,7 @@ def list_active_sessions(db: Session, *, user_id: str) -> list[dict[str, Any]]:
             "created_at": row.created_at,
             "last_seen_at": row.last_seen_at,
             "expires_at": row.expires_at,
+            "current": row.id == current_session_id,
         }
         for row in rows
     ]
@@ -581,3 +598,28 @@ def revoke_user_session(
     row.revoked_at = datetime.now(UTC)
     db.commit()
     return True
+
+
+def revoke_other_user_sessions(
+    db: Session,
+    *,
+    user_id: str,
+    current_session_id: str,
+) -> int:
+    now = datetime.now(UTC)
+    rows = (
+        db.query(AuthSession)
+        .filter(
+            AuthSession.user_id == user_id,
+            AuthSession.id != current_session_id,
+            AuthSession.status == AUTH_SESSION_ACTIVE,
+            AuthSession.expires_at > now,
+        )
+        .with_for_update()
+        .all()
+    )
+    for row in rows:
+        row.status = AUTH_SESSION_REVOKED
+        row.revoked_at = now
+    db.commit()
+    return len(rows)

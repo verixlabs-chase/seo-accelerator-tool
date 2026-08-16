@@ -24,6 +24,16 @@ type Me = {
   organization_status?: string;
 };
 
+type AuthSessionSummary = {
+  id: string;
+  organization_id?: string | null;
+  status: "active";
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  current: boolean;
+};
+
 type Campaign = {
   id: string;
   name: string;
@@ -615,6 +625,7 @@ export default function SettingsPage() {
   const [payload, setPayload] = useState<ConnectionsPayload | null>(null);
   const [usageAllowance, setUsageAllowance] = useState<UsageAllowance | null>(null);
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
+  const [authSessions, setAuthSessions] = useState<AuthSessionSummary[] | null>(null);
   const [billingConfirmationState, setBillingConfirmationState] =
     useState<BillingConfirmationState>("idle");
   const [pendingBillingPlanCode, setPendingBillingPlanCode] = useState("");
@@ -823,6 +834,14 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadAuthSessions = useCallback(async () => {
+    const response = (await platformApi("/auth/sessions", {
+      method: "GET",
+    })) as { sessions?: AuthSessionSummary[] };
+    setAuthSessions(response.sessions || []);
+    return response;
+  }, []);
+
   const confirmBillingReturn = useCallback(
     async (
       orgId: string,
@@ -919,7 +938,7 @@ export default function SettingsPage() {
           throw new Error("An organization is required to manage data connections.");
         }
         setMe(currentUser);
-        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse, dataExportResponse, disconnectPreviewResponse, disconnectHistoryResponse, closurePreviewResponse, closureHistoryResponse] = await Promise.all([
+        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse, dataExportResponse, disconnectPreviewResponse, disconnectHistoryResponse, closurePreviewResponse, closureHistoryResponse, authSessionResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
           platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
@@ -953,6 +972,7 @@ export default function SettingsPage() {
                 method: "GET",
               }) as Promise<{ items?: OrganizationClosureRecord[] }>).catch(() => ({ items: [] })))
             : Promise.resolve({ items: [] as OrganizationClosureRecord[] }),
+          loadAuthSessions().catch(() => null),
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
@@ -967,6 +987,7 @@ export default function SettingsPage() {
         setProviderDisconnects(disconnectHistoryResponse.items || []);
         setClosurePreview(closurePreviewResponse.preview || null);
         setClosureHistory(closureHistoryResponse.items || []);
+        if (authSessionResponse === null) setAuthSessions(null);
         const returnParams = new URLSearchParams(window.location.search);
         const billingReturned = returnParams.get("billing");
         const returnedBillingSessionId = returnParams.get("session_id") || "";
@@ -1017,7 +1038,7 @@ export default function SettingsPage() {
       }
     }
     void loadPage();
-  }, [confirmBillingReturn, loadAnalyticsResources, loadConnections, loadProfileResources, loadResources]);
+  }, [confirmBillingReturn, loadAnalyticsResources, loadAuthSessions, loadConnections, loadProfileResources, loadResources]);
 
   async function startCheckout(planCode: string) {
     if (!organizationId) return;
@@ -1082,6 +1103,42 @@ export default function SettingsPage() {
       window.location.assign(response.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to open billing settings.");
+      setBusyAction("");
+    }
+  }
+
+  async function revokeAuthSession(sessionId: string) {
+    setBusyAction(`auth-session-${sessionId}`);
+    setError("");
+    setNotice("");
+    try {
+      await platformApi(`/auth/sessions/${sessionId}`, { method: "DELETE" });
+      await loadAuthSessions();
+      setNotice("That browser was signed out. This browser stayed signed in.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sign out that browser.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function revokeOtherAuthSessions() {
+    setBusyAction("auth-sessions-others");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi("/auth/sessions/others", {
+        method: "DELETE",
+      })) as { revoked_count: number };
+      await loadAuthSessions();
+      setNotice(
+        response.revoked_count === 0
+          ? "No other browsers were signed in."
+          : `${response.revoked_count} other ${response.revoked_count === 1 ? "browser was" : "browsers were"} signed out. This browser stayed signed in.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sign out other browsers.");
+    } finally {
       setBusyAction("");
     }
   }
@@ -2149,6 +2206,91 @@ export default function SettingsPage() {
                 ) : null}
               </section>
             ) : null}
+
+            <section aria-labelledby="active-sign-ins-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Account security
+                  </p>
+                  <h2 id="active-sign-ins-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                    Where you&apos;re signed in
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                    Review active InsightOS sign-ins. If you do not recognize one, sign it out immediately. Passwords and login tokens are never shown here.
+                  </p>
+                </div>
+                {authSessions && authSessions.some((item) => !item.current) ? (
+                  <button
+                    type="button"
+                    className={secondaryButtonClass}
+                    disabled={busyAction === "auth-sessions-others"}
+                    onClick={() => void revokeOtherAuthSessions()}
+                  >
+                    {busyAction === "auth-sessions-others" ? "Signing out..." : "Sign out all other browsers"}
+                  </button>
+                ) : null}
+              </div>
+
+              {authSessions === null ? (
+                <div className="mt-5 rounded-md border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-50">
+                  <p className="font-semibold">Active sign-ins could not be checked</p>
+                  <p className="mt-1 leading-6 text-amber-100/80">Your current session was not changed. Try checking again.</p>
+                  <button
+                    type="button"
+                    className={`${secondaryButtonClass} mt-3`}
+                    disabled={busyAction === "auth-sessions-refresh"}
+                    onClick={() => {
+                      setBusyAction("auth-sessions-refresh");
+                      setError("");
+                      void loadAuthSessions()
+                        .catch((err) => setError(err instanceof Error ? err.message : "Unable to check active sign-ins."))
+                        .finally(() => setBusyAction(""));
+                    }}
+                  >
+                    {busyAction === "auth-sessions-refresh" ? "Checking..." : "Check again"}
+                  </button>
+                </div>
+              ) : authSessions.length === 0 ? (
+                <p className="mt-5 text-sm leading-6 text-zinc-400">
+                  No active sign-in records were returned. Your current browser was not signed out.
+                </p>
+              ) : (
+                <div className="mt-5 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                  {authSessions.map((session) => (
+                    <article key={session.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-semibold text-white">
+                            {session.current ? "This browser" : "Another signed-in browser"}
+                          </h3>
+                          {session.current ? (
+                            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-100">
+                              Current
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-zinc-500">
+                          Signed in {formatTimestamp(session.created_at)} · Last active {formatTimestamp(session.last_seen_at)}
+                        </p>
+                      </div>
+                      {!session.current ? (
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === `auth-session-${session.id}`}
+                          onClick={() => void revokeAuthSession(session.id)}
+                        >
+                          {busyAction === `auth-session-${session.id}` ? "Signing out..." : "Sign out this browser"}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-zinc-500">Use the main Sign out action to end this session.</span>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
 
             {usageAllowance ? (
               <section id="plan-and-billing" aria-labelledby="current-plan-heading" className="scroll-mt-24 rounded-md border border-[#292a2f] bg-[#141518] p-5">

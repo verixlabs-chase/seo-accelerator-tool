@@ -4182,8 +4182,27 @@ Implementation status (August 14, 2026):
   events, payment recovery, and cancellation. Remaining COM1 work includes
   Stripe environment provisioning, live test-mode checkout/webhook evidence,
   portal policy configuration, allowance materialization across the remaining
-  governed capabilities, invitations, password recovery, session revocation,
-  and downgrade grace/export rules.
+  governed capabilities, invitations, password recovery, and downgrade
+  grace/export rules. Server-backed session revocation now has a customer-facing
+  Settings control: every user can identify the current sign-in, revoke one
+  other sign-in, or revoke all other sign-ins without ending the current
+  browser session or exposing login tokens.
+
+#### COM1.2C - Customer Session Control
+
+Implementation status (August 15, 2026):
+
+- Settings lists only the signed-in user's active, unexpired server sessions
+  and marks the current browser from the validated access-session identifier.
+- A user can revoke one other browser or all other browsers. The backend refuses
+  to revoke the current browser through these controls and requires the normal
+  sign-out action instead.
+- Revocation closes both access and refresh use immediately. The page shows
+  timestamps and plain-language browser labels only; passwords, cookies, login
+  tokens, and internal session identifiers are never rendered.
+- A failed session-list check is shown as unavailable and does not claim that a
+  sign-out occurred. Invitations and password recovery remain later COM1 work
+  because transactional email delivery is deliberately deferred.
 
 #### COM1.3A - Active-Location Allowance and Downgrade Safety
 
