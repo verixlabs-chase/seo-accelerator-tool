@@ -66,6 +66,7 @@ type WorkingContentDraft = {
   updated_at: string;
   ai_suggestion?: ContentDraftAISuggestionResult | null;
   metadata_recommendations?: ContentMetadataRecommendation[];
+  structured_data_recommendation?: ContentStructuredDataRecommendation | null;
   safety: {
     ai_generated: false;
     automatic_publishing_allowed: false;
@@ -90,6 +91,32 @@ type ContentMetadataRecommendation = {
   limitations: string[];
   safety: {
     owner_approval_required: true;
+    automatic_publishing_allowed: false;
+    website_changed: false;
+  };
+};
+
+type ContentStructuredDataRecommendation = {
+  state: "add" | "prepare" | "matches" | "fix_saved_code" | "not_enough_information";
+  recommended_type?: "Service" | null;
+  recommended_type_label?: string | null;
+  current_types: string[];
+  current_state: "not_saved" | "invalid" | "present" | "not_found";
+  fields: Array<{
+    code: "service_name" | "service_area" | "page_url" | "business_identity";
+    label: string;
+    value?: string | null;
+    state: "confirmed" | "missing" | "optional_not_saved" | "owner_confirmation_required";
+    required: boolean;
+  }>;
+  reason: string;
+  evidence: string[];
+  source_label?: string | null;
+  observed_at?: string | null;
+  limitations: string[];
+  safety: {
+    owner_approval_required: true;
+    publishable_code_created: false;
     automatic_publishing_allowed: false;
     website_changed: false;
   };
@@ -203,6 +230,23 @@ function metadataStateLabel(value: ContentMetadataRecommendation["state"]) {
   if (value === "matches") return "Already matches";
   if (value === "not_enough_information") return "More information needed";
   return "Review the difference";
+}
+
+function structuredDataStateLabel(value: ContentStructuredDataRecommendation["state"]) {
+  if (value === "add") return "Details recommended";
+  if (value === "prepare") return "Ready for page planning";
+  if (value === "matches") return "Already represented";
+  if (value === "fix_saved_code") return "Saved code needs review";
+  return "More information needed";
+}
+
+function structuredDataFieldStateLabel(
+  value: ContentStructuredDataRecommendation["fields"][number]["state"],
+) {
+  if (value === "confirmed") return "Confirmed";
+  if (value === "owner_confirmation_required") return "Owner confirmation needed";
+  if (value === "optional_not_saved") return "Optional — not saved";
+  return "Missing";
 }
 
 function WorkingDraftEditor({
@@ -395,6 +439,67 @@ function WorkingDraftEditor({
               <p className="text-xs leading-5 text-zinc-500">
                 Character checks are writing guidance, not Google ranking rules. Google may display different wording.
                 These recommendations have not changed the working draft or website.
+              </p>
+            </div>
+          </DetailsDisclosure>
+        </div>
+      ) : null}
+      {draft.structured_data_recommendation ? (
+        <div className="mt-4 rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
+          <DetailsDisclosure
+            label="Structured page details"
+            summary="Checks saved behind-the-scenes page details against the accepted service brief"
+          >
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-zinc-100">
+                    {draft.structured_data_recommendation.recommended_type_label || "Page details need more information"}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {draft.structured_data_recommendation.source_label
+                      ? `${draft.structured_data_recommendation.source_label} · checked ${formatDate(draft.structured_data_recommendation.observed_at)}`
+                      : "No exact current page details were saved"}
+                  </p>
+                </div>
+                <span className="rounded-full border border-violet-400/25 px-2 py-1 text-xs text-violet-100">
+                  {structuredDataStateLabel(draft.structured_data_recommendation.state)}
+                </span>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-md border border-[#303238] bg-[#111214] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Current page types</p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">
+                    {draft.structured_data_recommendation.current_types.length
+                      ? draft.structured_data_recommendation.current_types.join(" · ")
+                      : "None found in the saved check"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-[#303238] bg-[#111214] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Recommended detail type</p>
+                  <p className="mt-2 text-sm font-medium text-zinc-100">
+                    {draft.structured_data_recommendation.recommended_type_label || "Not ready yet"}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500">{draft.structured_data_recommendation.reason}</p>
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                {draft.structured_data_recommendation.fields.map((field) => (
+                  <div key={`${draft.id}-structured-${field.code}`} className="rounded-md border border-[#303238] bg-[#111214] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-zinc-200">{field.label}</p>
+                      <span className="text-xs text-zinc-500">{structuredDataFieldStateLabel(field.state)}</span>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-zinc-100">{field.value || "No confirmed value"}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs leading-5 text-zinc-500">
+                Evidence: {draft.structured_data_recommendation.evidence.join(" · ")}
+              </p>
+              <p className="text-xs leading-5 text-zinc-500">
+                This does not generate or publish website code. Structured details do not guarantee a special search result
+                or higher rankings. Confirm the public business identity and final page address before a later change preview.
               </p>
             </div>
           </DetailsDisclosure>

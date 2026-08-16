@@ -3094,8 +3094,15 @@ area, and customer search. It identifies missing, matching, and review states,
 shows the evidence date and source, and treats character counts as writing
 guidance rather than Google ranking rules. Opening the workspace creates no
 provider charge, and the recommendations cannot update the draft or website.
-The next CNT1 slices remain schema/internal-link recommendations, content
-validation, and an explicitly approved publishing handoff.
+The structured-details slice now also compares the exact schema types saved for
+the target page with the facts in the accepted service brief. It recommends a
+bounded `Service` detail set, shows which service, service-area, page-address,
+and public-business facts are confirmed or missing, and requires the owner to
+confirm business identity rather than inferring it. It does not generate or
+display JSON-LD, create publishable code, promise a special search result or
+ranking improvement, or mutate the draft or website. The next CNT1 slices
+remain internal-link recommendations, content validation, and an explicitly
+approved publishing handoff.
 
 Scope:
 

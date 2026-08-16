@@ -149,6 +149,13 @@ def get_content_workspace(
                     else "Saved page title"
                 ),
                 "description": str(item.meta_description or "").strip() or None,
+                "structured_data_types": [
+                    str(value).strip()
+                    for value in list(item.schema_types or [])
+                    if str(value).strip()
+                ],
+                "structured_data_present": bool(item.schema_present),
+                "structured_data_valid": None,
                 "source_label": "Connected website",
                 "observed_at": item.observed_at,
             }
@@ -211,6 +218,13 @@ def get_content_workspace(
                 "title": str(result.title or "").strip() or None,
                 "title_source": "Saved page title",
                 "description": str(result.meta_description or "").strip() or None,
+                "structured_data_types": [
+                    str(value).strip()
+                    for value in list(result.structured_data_types or [])
+                    if str(value).strip()
+                ],
+                "structured_data_present": bool(result.structured_data_types),
+                "structured_data_valid": bool(result.structured_data_valid),
                 "source_label": "Website scan",
                 "observed_at": result.crawled_at,
             }
@@ -833,7 +847,128 @@ def _serialize_content_draft(
             if brief is not None
             else []
         ),
+        "structured_data_recommendation": (
+            _structured_data_recommendation(brief, page_metadata=page_metadata)
+            if brief is not None
+            else None
+        ),
         "safety": _content_draft_safety(),
+    }
+
+
+def _structured_data_recommendation(
+    brief: ContentBrief,
+    *,
+    page_metadata: dict | None,
+) -> dict:
+    service = _clean_metadata_fact(brief.service_name)
+    area = _clean_metadata_fact(brief.service_area_name)
+    page_url = _clean_metadata_fact(
+        brief.target_url or ((page_metadata or {}).get("url") if page_metadata else None)
+    )
+    current_types = list(
+        dict.fromkeys(
+            _clean_metadata_fact(item)
+            for item in list((page_metadata or {}).get("structured_data_types") or [])
+            if _clean_metadata_fact(item)
+        )
+    )
+    current_type_keys = {item.casefold() for item in current_types}
+    structured_data_valid = (
+        (page_metadata or {}).get("structured_data_valid")
+        if page_metadata is not None
+        else None
+    )
+    if service is None:
+        recommendation_state = "not_enough_information"
+        recommended_type = None
+    elif structured_data_valid is False:
+        recommendation_state = "fix_saved_code"
+        recommended_type = "Service"
+    elif "service" in current_type_keys:
+        recommendation_state = "matches"
+        recommended_type = "Service"
+    elif page_metadata is None:
+        recommendation_state = "prepare"
+        recommended_type = "Service"
+    else:
+        recommendation_state = "add"
+        recommended_type = "Service"
+    fields = [
+        {
+            "code": "service_name",
+            "label": "Service name",
+            "value": service,
+            "state": "confirmed" if service else "missing",
+            "required": True,
+        },
+        {
+            "code": "service_area",
+            "label": "Area served",
+            "value": area,
+            "state": "confirmed" if area else "optional_not_saved",
+            "required": False,
+        },
+        {
+            "code": "page_url",
+            "label": "Final page address",
+            "value": page_url,
+            "state": "confirmed" if page_url else "missing",
+            "required": True,
+        },
+        {
+            "code": "business_identity",
+            "label": "Public business identity",
+            "value": None,
+            "state": "owner_confirmation_required",
+            "required": True,
+        },
+    ]
+    source_label = (
+        str((page_metadata or {}).get("source_label") or "").strip()
+        if page_metadata
+        else ""
+    )
+    observed_at = (page_metadata or {}).get("observed_at") if page_metadata else None
+    return {
+        "state": recommendation_state,
+        "recommended_type": recommended_type,
+        "recommended_type_label": "Service details" if recommended_type else None,
+        "current_types": current_types,
+        "current_state": (
+            "not_saved"
+            if page_metadata is None
+            else (
+                "invalid"
+                if structured_data_valid is False
+                else ("present" if current_types else "not_found")
+            )
+        ),
+        "fields": fields,
+        "reason": (
+            "Describe the confirmed service on this page without adding unsupported business claims."
+            if service
+            else "Confirm the service before preparing structured page details."
+        ),
+        "evidence": [
+            "Accepted content brief",
+            *([f"Confirmed service: {service}"] if service else []),
+            *([f"Confirmed service area: {area}"] if area else []),
+            *([f"Current page evidence: {source_label}"] if source_label else []),
+        ],
+        "source_label": source_label or None,
+        "observed_at": observed_at.isoformat() if observed_at is not None else None,
+        "limitations": [
+            "This recommends behind-the-scenes page details; it does not generate or publish website code.",
+            "Structured details do not guarantee a special search result or higher rankings.",
+            "Confirm the public business identity and final page address before creating a change preview.",
+        ],
+        "safety": {
+            "owner_approval_required": True,
+            "publishable_code_created": False,
+            "automatic_publishing_allowed": False,
+            "website_changed": False,
+        },
     }
 
 

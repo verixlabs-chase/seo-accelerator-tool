@@ -370,6 +370,35 @@ def test_content_workspace_combines_saved_pages_and_draft_briefs(client, db_sess
         "website_changed": False,
     }
     assert "Google ranking rule" in metadata[0]["limitations"][0]
+    structured = with_draft["briefs"][0]["working_draft"][
+        "structured_data_recommendation"
+    ]
+    assert structured["state"] == "add"
+    assert structured["recommended_type"] == "Service"
+    assert structured["recommended_type_label"] == "Service details"
+    assert structured["current_types"] == []
+    assert structured["current_state"] == "not_found"
+    fields = {item["code"]: item for item in structured["fields"]}
+    assert fields["service_name"] == {
+        "code": "service_name",
+        "label": "Service name",
+        "value": "Emergency plumbing",
+        "state": "confirmed",
+        "required": True,
+    }
+    assert fields["service_area"]["value"] == "Reno"
+    assert fields["service_area"]["state"] == "confirmed"
+    assert fields["page_url"]["value"] == "https://workspace-content.com/plumbing"
+    assert fields["page_url"]["state"] == "confirmed"
+    assert fields["business_identity"]["value"] is None
+    assert fields["business_identity"]["state"] == "owner_confirmation_required"
+    assert structured["safety"] == {
+        "owner_approval_required": True,
+        "publishable_code_created": False,
+        "automatic_publishing_allowed": False,
+        "website_changed": False,
+    }
+    assert any("higher rankings" in item for item in structured["limitations"])
     assert with_draft["next_action"]["code"] == "continue_content_draft"
 
 

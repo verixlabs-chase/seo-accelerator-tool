@@ -55,6 +55,20 @@ test("title and search-description recommendations compare saved evidence withou
   assert.doesNotMatch(page, /Update WordPress now/i);
 });
 
+test("structured page details stay evidence-backed and review-only", () => {
+  assert.match(page, /Structured page details/);
+  assert.match(page, /Checks saved behind-the-scenes page details against the accepted service brief/);
+  assert.match(page, /Current page types/);
+  assert.match(page, /Recommended detail type/);
+  assert.match(page, /Owner confirmation needed/);
+  assert.match(page, /This does not generate or publish website code/);
+  assert.match(page, /do not guarantee a special search result/);
+  assert.match(page, /draft\.structured_data_recommendation \?/);
+  assert.doesNotMatch(page, /Apply schema/i);
+  assert.doesNotMatch(page, /Generate JSON-LD/i);
+  assert.doesNotMatch(page, /Publish structured data/i);
+});
+
 test("brief review saves one explicit owner decision without changing the website", () => {
   assert.match(page, /\/content\/briefs\/\$\{encodeURIComponent\(brief\.id\)\}\/review/);
   assert.match(page, /method: "PUT"/);
