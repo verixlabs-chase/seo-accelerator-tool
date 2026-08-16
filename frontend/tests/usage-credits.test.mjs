@@ -33,6 +33,19 @@ test("settings explains the current plan and the practical reason to upgrade", (
   assert.match(settings, /usageAllowance\.upgrade\.reasons/);
 });
 
+test("settings separates automation plan eligibility from a live gateway", () => {
+  const settings = source("../app/(product)/settings/page.tsx");
+
+  assert.match(settings, /usageAllowance\.external_automation\.plan_eligible/);
+  assert.match(settings, /usageAllowance\.external_automation \? \(/);
+  assert.match(settings, /External automation requires/);
+  assert.match(settings, /Your plan is eligible, but external automation is not available yet/);
+  assert.match(settings, /Planned as a vendor-neutral connection/);
+  assert.match(settings, /No tool can connect, receive events, or run actions yet/);
+  assert.doesNotMatch(settings, />Connect n8n</);
+  assert.doesNotMatch(settings, /\/automation\/connections/);
+});
+
 test("keyword research shows the paid refresh price before it runs", () => {
   const research = source("../app/(product)/keyword-research/page.tsx");
 

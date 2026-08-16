@@ -695,6 +695,7 @@ def get_customer_credit_summary(
         ),
         "commercial_catalog_version": commercial["catalog_version"],
         "capabilities": commercial["capabilities"],
+        "external_automation": commercial["external_automation"],
         "upgrade": commercial["upgrade"],
     }
 

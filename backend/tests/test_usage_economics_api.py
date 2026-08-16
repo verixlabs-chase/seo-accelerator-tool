@@ -67,6 +67,9 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
         for item in data["capabilities"]
         if item["code"] == "listing_correction_sync"
     )
+    external_automation = next(
+        item for item in data["capabilities"] if item["code"] == "external_automation"
+    )
     assert performance_trend["available"] is True
     assert performance_trend["required_plan"] == "Solo"
     assert owner_report["available"] is True
@@ -79,6 +82,26 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert automatic_review_replies["required_plan"] == "Growth"
     assert listing_correction_sync["available"] is False
     assert listing_correction_sync["required_plan"] == "Growth"
+    assert external_automation["available"] is False
+    assert external_automation["required_plan"] == "Growth"
+    assert data["external_automation"] == {
+        "plan_eligible": False,
+        "gateway_enabled": False,
+        "automatic_actions_enabled": False,
+        "required_plan": "Growth",
+        "state": "plan_upgrade_required",
+        "summary": (
+            "External automation connections require Growth. Native InsightOS alerts, "
+            "reports, and manual workflows remain available."
+        ),
+        "planned_connection_options": [
+            "n8n",
+            "Make",
+            "Zapier",
+            "Pipedream",
+            "Generic signed webhooks",
+        ],
+    }
     assert data["credits"]["monthly"] == 1495
     assert data["credits"]["remaining"] == 1495
     assert data["credits"]["name"] == "Insight Credits"
@@ -101,6 +124,30 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert "provider_reported_cost" not in serialized
     assert "gross_margin_percent" not in data
     assert "revenue" not in data
+
+    apply_commercial_plan(
+        db_session,
+        organization_id=org.id,
+        plan_code="multi_location",
+    )
+    db_session.commit()
+    growth_response = client.get(
+        "/api/v1/usage/credits",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert growth_response.status_code == 200
+    growth = growth_response.json()["data"]
+    growth_capability = next(
+        item
+        for item in growth["capabilities"]
+        if item["code"] == "external_automation"
+    )
+    assert growth_capability["available"] is True
+    assert growth_capability["required_plan"] == "Growth"
+    assert growth["external_automation"]["plan_eligible"] is True
+    assert growth["external_automation"]["gateway_enabled"] is False
+    assert growth["external_automation"]["automatic_actions_enabled"] is False
+    assert growth["external_automation"]["state"] == "gateway_not_available"
 
 
 def test_platform_margin_view_and_versioned_allocation(client, db_session) -> None:

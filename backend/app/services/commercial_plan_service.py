@@ -117,7 +117,7 @@ FEATURES: tuple[CommercialFeature, ...] = (
         code=FEATURE_EXTERNAL_AUTOMATION,
         label="External automation connections",
         summary="Connect approved workflow tools through governed events and actions.",
-        minimum_plan_code="enterprise",
+        minimum_plan_code="multi_location",
     ),
     CommercialFeature(
         code=FEATURE_PRIVATE_AI_PROVIDER,
@@ -201,6 +201,7 @@ def get_commercial_plan_summary(
             status_code=409,
         ) from exc
     capabilities = [_feature_payload(feature, plan.code) for feature in FEATURES]
+    external_automation = _external_automation_access(plan.code)
     return {
         "catalog_version": PLAN_CATALOG_VERSION,
         "plan": {
@@ -216,6 +217,7 @@ def get_commercial_plan_summary(
             "additional_locations_require_custom_terms": plan.code == "enterprise",
         },
         "capabilities": capabilities,
+        "external_automation": external_automation,
         "upgrade": _upgrade_payload(plan.code),
     }
 
@@ -409,6 +411,33 @@ def _feature_payload(feature: CommercialFeature, plan_code: str) -> dict[str, An
         "summary": feature.summary,
         "available": _PLAN_LEVEL[plan_code] >= _PLAN_LEVEL[required_plan.code],
         "required_plan": required_plan.name,
+    }
+
+
+def _external_automation_access(plan_code: str) -> dict[str, Any]:
+    feature = _feature_or_error(FEATURE_EXTERNAL_AUTOMATION)
+    required_plan = resolve_plan_economics(feature.minimum_plan_code)
+    plan_eligible = _PLAN_LEVEL[plan_code] >= _PLAN_LEVEL[required_plan.code]
+    return {
+        "plan_eligible": plan_eligible,
+        "gateway_enabled": False,
+        "automatic_actions_enabled": False,
+        "required_plan": required_plan.name,
+        "state": "gateway_not_available" if plan_eligible else "plan_upgrade_required",
+        "summary": (
+            "Your plan is eligible for approved external automation, but the governed "
+            "automation gateway is not available yet."
+            if plan_eligible
+            else "External automation connections require Growth. Native InsightOS alerts, "
+            "reports, and manual workflows remain available."
+        ),
+        "planned_connection_options": [
+            "n8n",
+            "Make",
+            "Zapier",
+            "Pipedream",
+            "Generic signed webhooks",
+        ],
     }
 
 

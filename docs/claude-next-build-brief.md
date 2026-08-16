@@ -4368,6 +4368,30 @@ Implementation status (August 16, 2026):
   directory. Internal suppliers, provider pricing, and commercial registry
   details remain hidden.
 
+#### COM1.3F - External Automation Eligibility and Vendor-Neutral Boundary
+
+Implementation status (August 16, 2026):
+
+- The commercial catalog now matches the published packaging decision: Growth
+  is the minimum plan for standard approved external automation. Enterprise
+  remains the later custom-service-account, custom-scope, generic API, and
+  customer-hosted-client tier.
+- Plan eligibility is separate from gateway availability. Growth and
+  Enterprise report that the plan is eligible, but `gateway_enabled` and
+  `automatic_actions_enabled` remain false until AUT1 is implemented and
+  production validated. Solo receives a stable Growth-required explanation
+  while native alerts, reports, and manual workflows stay available.
+- Settings names the planned vendor-neutral options—n8n, Make, Zapier,
+  Pipedream, and generic signed webhooks—without selecting one as the platform
+  architecture or presenting a connection button. No option can receive
+  events, access customer data, hold a service credential, or run an action in
+  this slice.
+- AUT1 still owns signed event envelopes, scoped service accounts, typed action
+  commands, idempotency, replay defense, destination validation, secret
+  rotation, audit retention, per-connector QA, and customer connection flows.
+  COM1.3F does not create a placeholder token, webhook, endpoint, or execution
+  bypass before those controls exist.
+
 Packaging principle:
 
 - Solo tells the owner what is happening, what to do, and whether the work

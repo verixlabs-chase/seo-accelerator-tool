@@ -202,6 +202,15 @@ type UsageAllowance = {
     available: boolean;
     required_plan: string;
   }>;
+  external_automation?: {
+    plan_eligible: boolean;
+    gateway_enabled: false;
+    automatic_actions_enabled: false;
+    required_plan: string;
+    state: "plan_upgrade_required" | "gateway_not_available";
+    summary: string;
+    planned_connection_options: string[];
+  };
   upgrade?: {
     plan_code: string;
     plan_name: string;
@@ -3397,6 +3406,24 @@ export default function SettingsPage() {
                   <p className="mt-5 border-t border-[#292a2f] pt-4 text-xs leading-5 text-zinc-500">
                     A previous closure request was canceled. Its audit history remains, while revoked public links and canceled jobs stay closed for safety.
                   </p>
+                ) : null}
+                {usageAllowance.external_automation ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      External automation
+                    </p>
+                    <h3 className="mt-1 font-semibold text-white">
+                      {usageAllowance.external_automation.plan_eligible
+                        ? "Your plan is eligible, but external automation is not available yet"
+                        : `External automation requires ${usageAllowance.external_automation.required_plan}`}
+                    </h3>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      {usageAllowance.external_automation.summary}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      Planned as a vendor-neutral connection for {usageAllowance.external_automation.planned_connection_options.join(", ")}. No tool can connect, receive events, or run actions yet.
+                    </p>
+                  </div>
                 ) : null}
               </section>
             ) : null}
