@@ -67,6 +67,7 @@ type WorkingContentDraft = {
   ai_suggestion?: ContentDraftAISuggestionResult | null;
   metadata_recommendations?: ContentMetadataRecommendation[];
   structured_data_recommendation?: ContentStructuredDataRecommendation | null;
+  internal_link_recommendations?: ContentInternalLinkRecommendations | null;
   safety: {
     ai_generated: false;
     automatic_publishing_allowed: false;
@@ -117,6 +118,36 @@ type ContentStructuredDataRecommendation = {
   safety: {
     owner_approval_required: true;
     publishable_code_created: false;
+    automatic_publishing_allowed: false;
+    website_changed: false;
+  };
+};
+
+type ContentInternalLinkRecommendations = {
+  state:
+    | "recommendations_ready"
+    | "already_supported"
+    | "no_related_pages"
+    | "target_not_saved"
+    | "not_enough_information";
+  target: { title?: string | null; url?: string | null };
+  items: Array<{
+    state: "recommended" | "already_exists";
+    source_title: string;
+    source_url: string;
+    target_title?: string | null;
+    target_url: string;
+    suggested_anchor: string;
+    relationship_evidence: string[];
+    source_label?: string | null;
+    observed_at?: string | null;
+    existing_link_found: boolean;
+  }>;
+  reason: string;
+  limitations: string[];
+  safety: {
+    owner_approval_required: true;
+    link_insertion_allowed: false;
     automatic_publishing_allowed: false;
     website_changed: false;
   };
@@ -247,6 +278,14 @@ function structuredDataFieldStateLabel(
   if (value === "owner_confirmation_required") return "Owner confirmation needed";
   if (value === "optional_not_saved") return "Optional — not saved";
   return "Missing";
+}
+
+function internalLinkStateLabel(value: ContentInternalLinkRecommendations["state"]) {
+  if (value === "recommendations_ready") return "Links to review";
+  if (value === "already_supported") return "Links already found";
+  if (value === "target_not_saved") return "Final page address needed";
+  if (value === "not_enough_information") return "More information needed";
+  return "No safe suggestion yet";
 }
 
 function WorkingDraftEditor({
@@ -500,6 +539,67 @@ function WorkingDraftEditor({
               <p className="text-xs leading-5 text-zinc-500">
                 This does not generate or publish website code. Structured details do not guarantee a special search result
                 or higher rankings. Confirm the public business identity and final page address before a later change preview.
+              </p>
+            </div>
+          </DetailsDisclosure>
+        </div>
+      ) : null}
+      {draft.internal_link_recommendations ? (
+        <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+          <DetailsDisclosure
+            label="Helpful links between pages"
+            summary="Uses exact saved page titles and accepted service wording"
+          >
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-zinc-100">
+                    {draft.internal_link_recommendations.target.title || "Target page not named yet"}
+                  </p>
+                  <p className="mt-1 break-all text-xs text-zinc-500">
+                    {draft.internal_link_recommendations.target.url || "Save the final page address before planning links."}
+                  </p>
+                </div>
+                <span className="rounded-full border border-amber-400/25 px-2 py-1 text-xs text-amber-100">
+                  {internalLinkStateLabel(draft.internal_link_recommendations.state)}
+                </span>
+              </div>
+              <p className="text-sm leading-6 text-zinc-400">{draft.internal_link_recommendations.reason}</p>
+              {draft.internal_link_recommendations.items.length ? (
+                <div className="space-y-3">
+                  {draft.internal_link_recommendations.items.map((item) => (
+                    <article key={`${draft.id}-link-${item.source_url}-${item.target_url}`} className="rounded-md border border-[#303238] bg-[#111214] p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Link from this saved page</p>
+                          <p className="mt-1 font-medium text-zinc-100">{item.source_title}</p>
+                          <p className="mt-1 break-all text-xs text-zinc-500">{item.source_url}</p>
+                        </div>
+                        <span className="text-xs text-amber-100">
+                          {item.existing_link_found ? "Link already found" : "Review suggestion"}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Link to this page</p>
+                          <p className="mt-1 text-sm text-zinc-200">{item.target_title || item.target_url}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Suggested link wording</p>
+                          <p className="mt-1 text-sm text-zinc-200">{item.suggested_anchor}</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-xs leading-5 text-zinc-500">
+                        Evidence: {item.relationship_evidence.join(" · ")}
+                        {item.source_label ? ` · ${item.source_label} checked ${formatDate(item.observed_at)}` : ""}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+              <p className="text-xs leading-5 text-zinc-500">
+                This does not insert links, create website code, or publish anything. Review the surrounding sentence so
+                every link is useful to a person. Internal links do not guarantee higher rankings or more traffic.
               </p>
             </div>
           </DetailsDisclosure>

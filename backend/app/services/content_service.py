@@ -1,6 +1,8 @@
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
+from urllib.parse import urljoin, urlparse, urlunparse
 
 from fastapi import HTTPException, status
 from sqlalchemy import inspect
@@ -16,7 +18,7 @@ from app.models.content import (
     EditorialCalendar,
     InternalLinkMap,
 )
-from app.models.crawl import CrawlPageResult, CrawlRun, Page
+from app.models.crawl import CrawlInternalLink, CrawlPageResult, CrawlRun, Page
 from app.models.governed_ai import GovernedAIRun
 from app.models.wordpress_content_inventory import (
     WordPressContentItem,
@@ -156,6 +158,12 @@ def get_content_workspace(
                 ],
                 "structured_data_present": bool(item.schema_present),
                 "structured_data_valid": None,
+                "outgoing_internal_links": [
+                    str(value).strip()
+                    for value in list(item.internal_links or [])
+                    if str(value).strip()
+                ],
+                "eligible_for_internal_links": item.publication_status == "publish",
                 "source_label": "Connected website",
                 "observed_at": item.observed_at,
             }
@@ -205,6 +213,28 @@ def get_content_workspace(
         if crawl_run is not None
         else []
     )
+    crawl_links_by_page_id: dict[str, list[str]] = {}
+    crawl_source_page_ids = [page.id for _result, page in crawl_rows]
+    if crawl_run is not None and crawl_source_page_ids:
+        crawl_link_rows = (
+            db.query(CrawlInternalLink)
+            .filter(
+                CrawlInternalLink.tenant_id == tenant_id,
+                CrawlInternalLink.campaign_id == campaign_id,
+                CrawlInternalLink.crawl_run_id == crawl_run.id,
+                CrawlInternalLink.source_page_id.in_(crawl_source_page_ids),
+            )
+            .order_by(
+                CrawlInternalLink.source_page_id.asc(),
+                CrawlInternalLink.target_url.asc(),
+            )
+            .limit(bounded_limit * 100)
+            .all()
+        )
+        for link in crawl_link_rows:
+            crawl_links_by_page_id.setdefault(link.source_page_id, []).append(
+                link.target_url
+            )
     source_page_evidence_count = len(wordpress_items) + len(crawl_rows)
     for result, page in crawl_rows:
         url = str(result.final_url or page.url or "").strip()
@@ -225,6 +255,12 @@ def get_content_workspace(
                 ],
                 "structured_data_present": bool(result.structured_data_types),
                 "structured_data_valid": bool(result.structured_data_valid),
+                "outgoing_internal_links": list(
+                    crawl_links_by_page_id.get(page.id, [])
+                ),
+                "eligible_for_internal_links": (
+                    int(result.status_code or 0) < 400 and bool(result.is_indexable)
+                ),
                 "source_label": "Website scan",
                 "observed_at": result.crawled_at,
             }
@@ -477,6 +513,7 @@ def get_content_workspace(
                     if item.target_url
                     else None
                 ),
+                page_inventory=list(page_metadata_by_url.values()),
             )
             for item in briefs
         ],
@@ -777,6 +814,7 @@ def _serialize_workspace_brief(
     draft: ContentDraft | None = None,
     suggestion: GovernedAIRun | None = None,
     page_metadata: dict | None = None,
+    page_inventory: list[dict] | None = None,
 ) -> dict:
     return {
         "id": item.id,
@@ -799,6 +837,7 @@ def _serialize_workspace_brief(
                 suggestion=suggestion,
                 brief=item,
                 page_metadata=page_metadata,
+                page_inventory=page_inventory,
             )
             if draft is not None
             else None
@@ -812,6 +851,7 @@ def _serialize_content_draft(
     suggestion: GovernedAIRun | None = None,
     brief: ContentBrief | None = None,
     page_metadata: dict | None = None,
+    page_inventory: list[dict] | None = None,
 ) -> dict:
     ai_suggestion = None
     if suggestion is not None and isinstance(suggestion.output_payload, dict):
@@ -849,6 +889,15 @@ def _serialize_content_draft(
         ),
         "structured_data_recommendation": (
             _structured_data_recommendation(brief, page_metadata=page_metadata)
+            if brief is not None
+            else None
+        ),
+        "internal_link_recommendations": (
+            _internal_link_recommendations(
+                brief,
+                page_metadata=page_metadata,
+                page_inventory=page_inventory or [],
+            )
             if brief is not None
             else None
         ),
@@ -966,6 +1015,173 @@ def _structured_data_recommendation(
         "safety": {
             "owner_approval_required": True,
             "publishable_code_created": False,
+            "automatic_publishing_allowed": False,
+            "website_changed": False,
+        },
+    }
+
+
+_INTERNAL_LINK_STOP_WORDS = frozenset(
+    {
+        "and",
+        "business",
+        "company",
+        "emergency",
+        "for",
+        "from",
+        "help",
+        "home",
+        "local",
+        "near",
+        "our",
+        "page",
+        "service",
+        "services",
+        "the",
+        "this",
+        "with",
+        "your",
+    }
+)
+
+
+def _internal_link_terms(value: str | None) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+        if len(token) >= 3 and token not in _INTERNAL_LINK_STOP_WORDS
+    }
+
+
+def _normalized_internal_link_url(value: str, *, base_url: str | None = None) -> str:
+    raw = urljoin(str(base_url or ""), str(value or "").strip())
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return _normalized_page_url(raw)
+    path = parsed.path or "/"
+    if path != "/":
+        path = path.rstrip("/") or "/"
+    return urlunparse(
+        (
+            parsed.scheme.casefold(),
+            parsed.netloc.casefold(),
+            path,
+            parsed.params,
+            parsed.query,
+            "",
+        )
+    )
+
+
+def _internal_link_recommendations(
+    brief: ContentBrief,
+    *,
+    page_metadata: dict | None,
+    page_inventory: list[dict],
+) -> dict:
+    target_url = _clean_metadata_fact(
+        brief.target_url or ((page_metadata or {}).get("url") if page_metadata else None)
+    )
+    service = _clean_metadata_fact(brief.service_name)
+    primary_search = _clean_metadata_fact(brief.primary_keyword)
+    target_title = _clean_metadata_fact(
+        (page_metadata or {}).get("title") if page_metadata else None
+    ) or service or _clean_metadata_fact(brief.title)
+    area_terms = _internal_link_terms(brief.service_area_name)
+    accepted_terms = _internal_link_terms(
+        " ".join(value for value in [service, primary_search] if value)
+    ) - area_terms
+    suggested_anchor = service or primary_search
+    if target_url is None:
+        state = "target_not_saved"
+        items: list[dict] = []
+        reason = "Save the final page address before planning links to this page."
+    elif not accepted_terms or suggested_anchor is None:
+        state = "not_enough_information"
+        items = []
+        reason = "Confirm the service or customer search before comparing related pages."
+    else:
+        normalized_target = _normalized_internal_link_url(target_url)
+        candidates: list[dict] = []
+        for page in page_inventory:
+            source_url = _clean_metadata_fact(page.get("url"))
+            source_title = _clean_metadata_fact(page.get("title"))
+            if (
+                source_url is None
+                or source_title is None
+                or _normalized_internal_link_url(source_url) == normalized_target
+                or page.get("eligible_for_internal_links") is not True
+            ):
+                continue
+            shared_terms = sorted(_internal_link_terms(source_title) & accepted_terms)
+            if not shared_terms:
+                continue
+            outgoing_targets = {
+                _normalized_internal_link_url(value, base_url=source_url)
+                for value in list(page.get("outgoing_internal_links") or [])
+                if _clean_metadata_fact(value)
+            }
+            already_links = normalized_target in outgoing_targets
+            observed_at = page.get("observed_at")
+            candidates.append(
+                {
+                    "state": "already_exists" if already_links else "recommended",
+                    "source_title": source_title,
+                    "source_url": source_url,
+                    "target_title": target_title,
+                    "target_url": target_url,
+                    "suggested_anchor": suggested_anchor[:100],
+                    "relationship_evidence": [
+                        f"Saved source page: {source_title}",
+                        f"Shared accepted wording: {', '.join(shared_terms)}",
+                    ],
+                    "source_label": _clean_metadata_fact(page.get("source_label")),
+                    "observed_at": (
+                        observed_at.isoformat()
+                        if observed_at is not None and hasattr(observed_at, "isoformat")
+                        else _clean_metadata_fact(observed_at)
+                    ),
+                    "existing_link_found": already_links,
+                    "_shared_term_count": len(shared_terms),
+                }
+            )
+        items = sorted(
+            candidates,
+            key=lambda item: (
+                item["state"] == "already_exists",
+                -item["_shared_term_count"],
+                item["source_title"].casefold(),
+                item["source_url"].casefold(),
+            ),
+        )[:5]
+        for item in items:
+            item.pop("_shared_term_count", None)
+        if any(item["state"] == "recommended" for item in items):
+            state = "recommendations_ready"
+            reason = "These saved pages share exact accepted service wording and do not already show this link."
+        elif items:
+            state = "already_supported"
+            reason = "The related saved pages already link to this target in the latest check."
+        else:
+            state = "no_related_pages"
+            reason = "No other saved public page shared enough exact service wording for a safe link suggestion."
+    return {
+        "state": state,
+        "target": {
+            "title": target_title,
+            "url": target_url,
+        },
+        "items": items,
+        "reason": reason,
+        "limitations": [
+            "Only public pages with exact shared accepted wording are included.",
+            "Review the sentence around a link so it is useful to a person reading the page.",
+            "This does not insert links, create website code, or publish anything.",
+            "Internal links do not guarantee higher rankings or more traffic.",
+        ],
+        "safety": {
+            "owner_approval_required": True,
+            "link_insertion_allowed": False,
             "automatic_publishing_allowed": False,
             "website_changed": False,
         },

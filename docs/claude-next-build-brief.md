@@ -3100,9 +3100,15 @@ bounded `Service` detail set, shows which service, service-area, page-address,
 and public-business facts are confirmed or missing, and requires the owner to
 confirm business identity rather than inferring it. It does not generate or
 display JSON-LD, create publishable code, promise a special search result or
-ranking improvement, or mutate the draft or website. The next CNT1 slices
-remain internal-link recommendations, content validation, and an explicitly
-approved publishing handoff.
+ranking improvement, or mutate the draft or website. The internal-link slice
+now compares the accepted service wording with exact titles and URLs from the
+latest saved public-page inventory, excludes unrelated or non-public pages,
+and checks exact saved outgoing-link targets before suggesting anything. It
+shows the source page, destination page, bounded anchor wording, shared terms,
+evidence source/date, and whether the link already exists. It does not use an
+invented confidence score, insert a link, generate website code, publish, or
+promise ranking or traffic gains. The next CNT1 slices remain content
+validation and an explicitly approved publishing handoff.
 
 Scope:
 

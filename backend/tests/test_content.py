@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from app.models.campaign import Campaign
 from app.models.competitor import Competitor
 from app.models.content import ContentBrief
 from app.models.crawl import CrawlPageResult, CrawlRun, Page
 from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion
+from app.services import content_service
 
 
 def _login(client, email, password):
@@ -399,6 +401,22 @@ def test_content_workspace_combines_saved_pages_and_draft_briefs(client, db_sess
         "website_changed": False,
     }
     assert any("higher rankings" in item for item in structured["limitations"])
+    internal_links = with_draft["briefs"][0]["working_draft"][
+        "internal_link_recommendations"
+    ]
+    assert internal_links["state"] == "no_related_pages"
+    assert internal_links["target"] == {
+        "title": "Plumbing services",
+        "url": "https://workspace-content.com/plumbing",
+    }
+    assert internal_links["items"] == []
+    assert internal_links["safety"] == {
+        "owner_approval_required": True,
+        "link_insertion_allowed": False,
+        "automatic_publishing_allowed": False,
+        "website_changed": False,
+    }
+    assert any("exact shared accepted wording" in item for item in internal_links["limitations"])
     assert with_draft["next_action"]["code"] == "continue_content_draft"
 
 
@@ -417,3 +435,93 @@ def test_content_workspace_is_tenant_scoped(client):
     )
 
     assert response.status_code == 404
+
+
+def test_internal_link_recommendations_use_exact_saved_page_evidence():
+    brief = SimpleNamespace(
+        target_url="https://example.com/emergency-plumbing",
+        service_name="Emergency plumbing",
+        service_area_name="Reno",
+        primary_keyword="emergency plumber reno",
+        title="Emergency plumbing in Reno",
+    )
+    observed_at = datetime(2026, 8, 15, tzinfo=UTC)
+    result = content_service._internal_link_recommendations(
+        brief,
+        page_metadata={
+            "url": brief.target_url,
+            "title": "Emergency plumbing",
+        },
+        page_inventory=[
+            {
+                "url": brief.target_url,
+                "title": "Emergency plumbing",
+                "eligible_for_internal_links": True,
+                "outgoing_internal_links": [],
+                "source_label": "Website scan",
+                "observed_at": observed_at,
+            },
+            {
+                "url": "https://example.com/emergency-plumbing-tips",
+                "title": "Emergency plumbing tips",
+                "eligible_for_internal_links": True,
+                "outgoing_internal_links": [],
+                "source_label": "Website scan",
+                "observed_at": observed_at,
+            },
+            {
+                "url": "https://example.com/reno-emergency-guide",
+                "title": "Reno emergency guide",
+                "eligible_for_internal_links": True,
+                "outgoing_internal_links": ["/emergency-plumbing/#contact"],
+                "source_label": "Connected website",
+                "observed_at": observed_at,
+            },
+            {
+                "url": "https://example.com/plumber-options",
+                "title": "Reno plumber options",
+                "eligible_for_internal_links": True,
+                "outgoing_internal_links": ["/emergency-plumbing/#contact"],
+                "source_label": "Connected website",
+                "observed_at": observed_at,
+            },
+            {
+                "url": "https://example.com/about",
+                "title": "About the company",
+                "eligible_for_internal_links": True,
+                "outgoing_internal_links": [],
+                "source_label": "Website scan",
+                "observed_at": observed_at,
+            },
+            {
+                "url": "https://example.com/plumbing-draft",
+                "title": "Emergency plumbing draft",
+                "eligible_for_internal_links": False,
+                "outgoing_internal_links": [],
+                "source_label": "Connected website",
+                "observed_at": observed_at,
+            },
+        ],
+    )
+
+    assert result["state"] == "recommendations_ready"
+    assert [item["state"] for item in result["items"]] == [
+        "recommended",
+        "already_exists",
+    ]
+    recommendation = result["items"][0]
+    assert recommendation["source_title"] == "Emergency plumbing tips"
+    assert recommendation["source_url"] == "https://example.com/emergency-plumbing-tips"
+    assert recommendation["target_url"] == brief.target_url
+    assert recommendation["suggested_anchor"] == "Emergency plumbing"
+    assert recommendation["existing_link_found"] is False
+    assert recommendation["relationship_evidence"] == [
+        "Saved source page: Emergency plumbing tips",
+        "Shared accepted wording: plumbing",
+    ]
+    assert result["items"][1]["existing_link_found"] is True
+    assert result["items"][1]["source_title"] == "Reno plumber options"
+    assert all(item["source_title"] != "Reno emergency guide" for item in result["items"])
+    assert all(item["source_title"] != "About the company" for item in result["items"])
+    assert all(item["source_title"] != "Emergency plumbing draft" for item in result["items"])
+    assert result["safety"]["link_insertion_allowed"] is False

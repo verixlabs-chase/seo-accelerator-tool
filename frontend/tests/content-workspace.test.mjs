@@ -69,6 +69,21 @@ test("structured page details stay evidence-backed and review-only", () => {
   assert.doesNotMatch(page, /Publish structured data/i);
 });
 
+test("internal-link recommendations use exact saved pages and never insert links", () => {
+  assert.match(page, /Helpful links between pages/);
+  assert.match(page, /Uses exact saved page titles and accepted service wording/);
+  assert.match(page, /Link from this saved page/);
+  assert.match(page, /Link to this page/);
+  assert.match(page, /Suggested link wording/);
+  assert.match(page, /Link already found/);
+  assert.match(page, /This does not insert links, create website code, or publish anything/);
+  assert.match(page, /Internal links do not guarantee higher rankings or more traffic/);
+  assert.match(page, /draft\.internal_link_recommendations \?/);
+  assert.doesNotMatch(page, /Insert link now/i);
+  assert.doesNotMatch(page, /Apply internal links/i);
+  assert.doesNotMatch(page, /Publish links/i);
+});
+
 test("brief review saves one explicit owner decision without changing the website", () => {
   assert.match(page, /\/content\/briefs\/\$\{encodeURIComponent\(brief\.id\)\}\/review/);
   assert.match(page, /method: "PUT"/);
