@@ -51,6 +51,11 @@ from app.models.portfolio_fleet_run import PortfolioFleetRun, PortfolioFleetRunI
 from app.providers.execution_types import ProviderExecutionRequest
 from app.providers.google_search_console import SearchConsoleProviderAdapter
 from app.providers.retry import RetryPolicy
+from app.services.commercial_plan_service import (
+    FEATURE_PROFILE_FLEET_ACTIONS,
+    require_commercial_feature,
+)
+from app.services.cost_economics_service import CostEconomicsError
 from app.services.provider_credentials_service import (
     ProviderCredentialConfigurationError,
     get_organization_provider_credentials,
@@ -434,6 +439,22 @@ def process_fleet_job_item(*, db: Session, fleet_job_item_id: str) -> dict:
         if db.in_transaction():
             db.rollback()
         return {"status": "ignored", "fleet_job_item_id": fleet_job_item_id, "reason": "run_paused"}
+
+    if _normalize_enum_value(job.job_type) == FleetJobType.PORTFOLIO_REVIEW.value:
+        try:
+            require_commercial_feature(
+                db,
+                organization_id=str(job.organization_id),
+                feature_code=FEATURE_PROFILE_FLEET_ACTIONS,
+            )
+        except CostEconomicsError:
+            if db.in_transaction():
+                db.rollback()
+            return {
+                "status": "ignored",
+                "fleet_job_item_id": fleet_job_item_id,
+                "reason": "commercial_plan_upgrade_required",
+            }
 
     _transition_item(item=item, next_status=FleetJobItemStatus.RUNNING.value)
     if _normalize_job_status(job.status) == FleetJobStatus.QUEUED.value:

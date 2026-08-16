@@ -188,6 +188,17 @@ def test_portfolio_fleet_preflight_approval_progress_and_failed_only_retry(
     assert paused_result["status"] == "ignored"
     assert paused_result["reason"] == "run_paused"
 
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    gated_resume = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/resume",
+        headers=headers,
+        json={"expected_version": paused["version"]},
+    )
+    assert gated_resume.status_code == 403
+    assert gated_resume.json()["errors"][0]["details"]["reason_code"] == (
+        "fleet_feature_upgrade_required"
+    )
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="multi_location")
     resume_response = client.post(
         f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/resume",
         headers=headers,
@@ -198,6 +209,14 @@ def test_portfolio_fleet_preflight_approval_progress_and_failed_only_retry(
     assert resumed["status"] == "running"
     assert resumed["can_resume"] is False
 
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    gated_worker_result = process_fleet_job_item(
+        db=db_session,
+        fleet_job_item_id=first_item.id,
+    )
+    assert gated_worker_result["status"] == "ignored"
+    assert gated_worker_result["reason"] == "commercial_plan_upgrade_required"
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="multi_location")
     result = process_fleet_job_item(db=db_session, fleet_job_item_id=first_item.id)
     assert result["status"] == "succeeded"
 
@@ -232,6 +251,17 @@ def test_portfolio_fleet_preflight_approval_progress_and_failed_only_retry(
     assert "provider details" not in failed_location["message"]
     assert progress["can_retry_failed"] is True
 
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    gated_retry = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/retry-failed",
+        headers=headers,
+        json={"expected_version": progress["version"]},
+    )
+    assert gated_retry.status_code == 403
+    assert gated_retry.json()["errors"][0]["details"]["reason_code"] == (
+        "fleet_feature_upgrade_required"
+    )
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="multi_location")
     retry_response = client.post(
         f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/retry-failed",
         headers=headers,

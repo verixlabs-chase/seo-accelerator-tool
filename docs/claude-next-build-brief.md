@@ -4290,6 +4290,29 @@ Implementation status (August 16, 2026):
   user limit is invented in this slice; those require explicit published
   quantities before ledger materialization.
 
+#### COM1.3C - Canonical Bulk Business Profile Capability Gate
+
+Implementation status (August 16, 2026):
+
+- Profile-campaign creation, preflight, approval, failed-item retry, paused-run
+  resume, and delayed portfolio-review execution now resolve through the same
+  `business_profile_fleet_actions` commercial capability used by the customer
+  allowance response. Duplicate hard-coded plan comparisons are removed.
+- Growth and Enterprise can prepare governed location-group campaigns. Solo
+  keeps one-location recommendations and drafts, plus read access to every
+  previously saved campaign, but cannot start or restart bulk work.
+- A downgrade is rechecked at every resumable lifecycle boundary. Work queued
+  before the downgrade remains queued and makes no provider mutation; pause,
+  inspection, and recovery remain available.
+- The Profile campaigns page checks the server capability before showing any
+  mutation control. Owners receive a contextual Growth handoff, teammates are
+  directed to the workspace owner, and an unavailable plan check fails closed
+  without hiding saved previews.
+- Google publishing remains independently locked behind production Business
+  Profile API validation. Commercial eligibility never implies that provider
+  access, quota, profile ownership, content safety, or publishing approval has
+  passed.
+
 Packaging principle:
 
 - Solo tells the owner what is happening, what to do, and whether the work

@@ -31,3 +31,16 @@ test("profile campaigns have a dedicated icon and navigation destination", () =>
   assert.match(nav, /href: "\/profile-campaigns"/);
   assert.match(nav, /icon: "profile-campaigns"/);
 });
+
+test("profile campaign mutations follow the customer-visible Growth capability", () => {
+  assert.match(page, /\/usage\/credits/);
+  assert.match(page, /business_profile_fleet_actions/);
+  assert.match(page, /profileFleetAccessAvailable/);
+  assert.match(page, /Bulk profile campaigns need Growth/);
+  assert.match(page, /Review Growth plan/);
+  assert.match(page, /Ask the workspace owner to review the plan/);
+  assert.match(page, /Plan access could not be checked/);
+  assert.match(page, /Saved campaigns are still available to review/);
+  assert.match(page, /selectedCampaign\.can_preflight && profileFleetAccessAvailable/);
+  assert.match(page, /selectedCampaign\.can_approve && profileFleetAccessAvailable/);
+});
