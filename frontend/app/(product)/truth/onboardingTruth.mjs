@@ -73,7 +73,7 @@ function getTaskStatusMeaning(status) {
   if (status === "error") {
     return "Needs attention. This step did not finish successfully.";
   }
-  return "Queued. This step will start automatically during setup.";
+  return "Queued and waiting. This step starts when the required setup above is ready.";
 }
 
 function getTaskRecoveryGuidance(task) {
@@ -98,10 +98,10 @@ function getTaskRecoveryGuidance(task) {
   }
   if (status === "pending") {
     return {
-      owner: "InsightOS",
-      timing: "Starts after the step above",
+      owner: "You and InsightOS",
+      timing: "Starts after the required setup is ready",
       missing: null,
-      recovery: "Nothing is required from you yet.",
+      recovery: "Complete any connection or setup action shown below; otherwise nothing is required from you yet.",
     };
   }
 
@@ -131,8 +131,8 @@ function getTaskRecoveryGuidance(task) {
       recovery: "Retry the unfinished checks. If it fails again, contact support.",
     },
     baseline: {
-      missing: "The first website scan has not produced enough evidence to freeze the baseline report.",
-      recovery: "Retry the website scan, then retry the baseline analysis. Existing saved work will not be changed.",
+      missing: "The website scan or required Google Search data has not produced enough evidence to freeze the baseline report.",
+      recovery: "Check the website scan and Google Search connection, then retry the baseline analysis. Existing saved work will not be changed.",
     },
   };
   const failure = failures[taskId] || {

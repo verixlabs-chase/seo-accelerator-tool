@@ -27,14 +27,24 @@ test("guided setup requires an immutable baseline before completion", () => {
 
 
 test("baseline copy explains the evidence and missing-data contract", () => {
-  assert.match(wizard, /website, organic visibility, traffic, and performance evidence/);
-  assert.match(wizard, /Missing optional connections are labeled—not scored as zero/);
+  assert.match(wizard, /Google Search data to create the official baseline/);
+  assert.match(wizard, /Website traffic and customer activity are separate, optional details/);
+  assert.match(wizard, /missing optional data is labeled—not scored as zero/);
   assert.match(wizard, /immutable starting point/);
   assert.match(wizard, /Review baseline report/);
   assert.doesNotMatch(wizard, /guarantee(?:d|s)? rankings/i);
   assert.match(reportsPage, /Onboarding baseline/);
   assert.match(reportsPage, /immutable first report preserves the starting issues/);
   assert.match(reportsPage, /insightos-onboarding-baseline/);
+});
+
+
+test("Google Search is required without making analytics jargon mandatory", () => {
+  assert.match(wizard, /needs_search_connection/);
+  assert.match(wizard, /Connect Google Search data/);
+  assert.match(wizard, /how often the website appears in Google Search/);
+  assert.match(wizard, /Add optional website traffic details/);
+  assert.doesNotMatch(wizard, />\s*GA4\s*</);
 });
 
 

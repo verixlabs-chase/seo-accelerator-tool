@@ -109,9 +109,22 @@ type SetupTask = {
 type BackgroundSetupTaskId = "crawl" | "keyword" | "ranking";
 
 type BaselineStatus = {
-  state: "collecting" | "blocked" | "ready" | "limited" | "ready_to_generate";
+  state:
+    | "collecting"
+    | "blocked"
+    | "needs_search_connection"
+    | "ready"
+    | "limited"
+    | "ready_to_generate";
   completion_satisfied: boolean;
   message: string;
+  sources?: Array<{
+    key: string;
+    state: string;
+    detail: string;
+    optional?: boolean;
+  }>;
+  actions?: Array<{ code: string; label: string; href: string }>;
   baseline?: {
     report_id: string;
     status: "ready" | "limited";
@@ -160,7 +173,7 @@ const DEFAULT_SETUP_TASKS: SetupTask[] = [
   {
     id: "baseline",
     title: "Create your baseline analysis and first diagnosis",
-    description: "Freeze the first website, organic visibility, traffic, and performance evidence into a detailed report with scores and prioritized fixes.",
+    description: "Freeze the first website and Google Search evidence into a detailed report. Website traffic details are optional and recommended.",
     status: "pending",
   },
 ];
@@ -270,9 +283,10 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
       setPrimaryService(saved.primaryService);
       setRankingArea(saved.rankingArea);
       setSetupTasks(
-        saved.setupTasks.length === DEFAULT_SETUP_TASKS.length
-          ? saved.setupTasks
-          : DEFAULT_SETUP_TASKS,
+        DEFAULT_SETUP_TASKS.map((defaultTask) => {
+          const savedTask = saved.setupTasks.find((task) => task.id === defaultTask.id);
+          return savedTask ? { ...defaultTask, status: savedTask.status } : defaultTask;
+        }),
       );
       setScanStarted(saved.scanStarted);
       setScanDone(saved.scanDone);
@@ -340,6 +354,8 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
         updateTask("baseline", "done");
       } else if (result.state === "blocked") {
         updateTask("baseline", "error");
+      } else if (result.state === "needs_search_connection") {
+        updateTask("baseline", "pending");
       } else {
         updateTask("baseline", "running");
       }
@@ -672,6 +688,10 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
   const baselineTaskStatus =
     setupTasks.find((task) => task.id === "baseline")?.status || "pending";
   const baselineComplete = baselineTaskStatus === "done";
+  const needsSearchConnection = baselineStatus?.state === "needs_search_connection";
+  const searchConnectionAction = baselineStatus?.actions?.find(
+    (action) => action.code === "connect_google_search",
+  );
 
   useEffect(() => {
     if (
@@ -691,6 +711,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
       !scanDone ||
       !campaignId ||
       baselineComplete ||
+      needsSearchConnection ||
       baselineTaskStatus === "error"
     ) {
       return;
@@ -701,6 +722,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
     baselineComplete,
     baselineTaskStatus,
     campaignId,
+    needsSearchConnection,
     refreshBaseline,
     scanDone,
     step,
@@ -761,7 +783,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
             Set up your business
           </h2>
           <p className="mt-2.5 text-sm leading-6 text-zinc-300">
-            We&apos;ll save your business, run the first checks, and create a mandatory baseline report with your starting issues, organic metrics, score explanations, diagnosis, and prioritized fixes.
+            We&apos;ll save your business, run the first checks, connect its Google Search data, and create a mandatory baseline report with starting issues, organic metrics, score explanations, diagnosis, and prioritized fixes.
           </p>
           <p className="mt-2 text-xs leading-5 text-zinc-500">
             Your non-sensitive setup progress is saved on this device for 30 days, so you can leave this page and continue later.
@@ -837,6 +859,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
                 <li>Save the services you offer and the places you serve.</li>
                 <li>Queue your first website scan.</li>
                 <li>Add one starter search term and queue your first ranking check.</li>
+                <li>Ask you to connect the website&apos;s Google Search data before the official baseline is created.</li>
               </ul>
               <p className="mt-3 text-xs leading-5 text-zinc-500">
                 Setup finishes when these requests are accepted. Your first results may keep filling in after you land on the dashboard.
@@ -1022,7 +1045,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
 
             {!scanDone || !baselineComplete ? (
               <>
-                {baselineTaskStatus !== "error" ? (
+                {baselineTaskStatus !== "error" && !needsSearchConnection ? (
                   <div className="flex justify-center">
                     <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#26272c] border-t-accent-500" />
                   </div>
@@ -1031,6 +1054,8 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
                   <p className="text-sm font-medium text-white">
                     {baselineTaskStatus === "error"
                       ? "The baseline needs attention before setup can be completed."
+                      : needsSearchConnection
+                        ? "Connect this website's Google Search data to create the official baseline."
                       : scanDone
                         ? "Building your baseline analysis and first diagnosis..."
                         : hasStartedBackgroundChecks
@@ -1038,9 +1063,32 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
                       : "Preparing your first checks..."}
                   </p>
                   <p className="mt-1.5 text-sm leading-6 text-zinc-400">
-                    {baselineStatus?.message || "The report freezes the first website scan and every trustworthy organic metric available at the cutoff. Missing optional connections are labeled—not scored as zero."}
+                    {baselineStatus?.message || "The report freezes the first website scan and every trustworthy organic metric available at the cutoff. Website traffic details are optional and recommended; missing optional data is labeled—not scored as zero."}
                   </p>
                 </div>
+                {needsSearchConnection ? (
+                  <div className="rounded-md border border-sky-500/25 bg-sky-500/10 p-4 text-sm leading-6 text-sky-100">
+                    <p className="font-medium text-white">One connection is required</p>
+                    <p className="mt-2">
+                      This read-only connection shows how often the website appears in Google Search, how many visits it earns from search, and its average Google position. You will choose the website that belongs to this business.
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-sky-100/75">
+                      Website traffic and customer activity are separate, optional details. You can add those later without using the name GA4 during setup.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        router.push(
+                          searchConnectionAction?.href ||
+                            `/settings?setup=connections&campaign_id=${encodeURIComponent(campaignId)}#website-mappings`,
+                        )
+                      }
+                      className="mt-3 rounded-md border border-sky-200/25 bg-sky-50/10 px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      Connect Google Search data
+                    </button>
+                  </div>
+                ) : null}
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
                   <p className="font-medium text-white">Why this is required</p>
                   <p className="mt-2">
@@ -1056,7 +1104,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
                     Retry baseline analysis
                   </button>
                 ) : null}
-                {scanDone ? (
+                {scanDone && !needsSearchConnection ? (
                   <button
                     type="button"
                     onClick={leaveWhileBaselineRuns}
@@ -1137,7 +1185,7 @@ export function OnboardingWizard({ organizationId, orgRole, onComplete }: Onboar
                       onClick={() => finishSetup("connections")}
                       className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100"
                     >
-                      Connect your Google data next &rarr;
+                      Add optional website traffic details &rarr;
                     </button>
                   ) : null}
                   <button

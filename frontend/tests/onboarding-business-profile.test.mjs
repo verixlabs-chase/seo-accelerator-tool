@@ -56,7 +56,8 @@ test("guided setup restores non-sensitive progress after navigation", () => {
 });
 
 test("guided setup continues through one ordered Google connection path", () => {
-  assert.match(wizardSource, /Connect your Google data next/);
+  assert.match(wizardSource, /Connect Google Search data/);
+  assert.match(wizardSource, /Add optional website traffic details/);
   assert.match(wizardSource, /\/settings\?setup=connections&campaign_id=/);
   assert.match(settingsSource, /Work from top to bottom/);
   assert.match(settingsSource, /Approve Google access/);

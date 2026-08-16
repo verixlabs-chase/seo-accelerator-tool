@@ -8,6 +8,7 @@ from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.crawl import CrawlRun, TechnicalIssue
+from app.models.data_connection import DataConnection
 from app.models.onboarding_baseline import OnboardingBaseline
 from app.models.rank import CampaignKeyword, KeywordCluster, RankingSnapshot
 from app.models.reporting import MonthlyReport
@@ -75,8 +76,30 @@ def _completed_crawl(db_session, campaign: Campaign, *, issue_count: int = 1) ->
     return crawl
 
 
+def _synced_search_connection(db_session, campaign: Campaign) -> DataConnection:
+    now = datetime.now(UTC)
+    connection = DataConnection(
+        tenant_id=campaign.tenant_id,
+        organization_id=campaign.organization_id,
+        business_location_id=campaign.business_location_id,
+        campaign_id=campaign.id,
+        provider_name="google_search_console",
+        external_resource_id="sc-domain:baseline.example",
+        external_resource_name="baseline.example",
+        resource_scope="property",
+        status="current",
+        last_sync_started_at=now,
+        last_sync_completed_at=now,
+        last_success_at=now,
+    )
+    db_session.add(connection)
+    db_session.commit()
+    return connection
+
+
 def _complete_optional_evidence(db_session, campaign: Campaign) -> None:
     today = date.today()
+    _synced_search_connection(db_session, campaign)
     db_session.add(
         SearchConsoleDailyMetric(
             organization_id=campaign.organization_id,
@@ -159,6 +182,7 @@ def _complete_optional_evidence(db_session, campaign: Campaign) -> None:
 def test_baseline_waits_for_completed_website_scan(client, db_session) -> None:
     token, user = _login(client)
     campaign = _campaign(db_session, user, name="Collecting baseline")
+    _synced_search_connection(db_session, campaign)
     db_session.add(
         CrawlRun(
             tenant_id=campaign.tenant_id,
@@ -233,12 +257,69 @@ def test_baseline_freezes_detailed_evidence_report_and_is_idempotent(
     assert db_session.query(OnboardingBaseline).filter_by(campaign_id=campaign.id).count() == 1
 
 
-def test_baseline_is_limited_without_optional_connections_and_never_scores_missing_as_zero(
+def test_baseline_requires_google_search_connection_before_official_report(
+    client, db_session
+) -> None:
+    token, user = _login(client)
+    campaign = _campaign(db_session, user, name="Search connection required")
+    _completed_crawl(db_session, campaign)
+
+    response = client.post(
+        f"/api/v1/onboarding/baseline/{campaign.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["state"] == "needs_search_connection"
+    assert payload["completion_satisfied"] is False
+    assert payload["basic_access_blocked"] is False
+    assert payload["baseline"] is None
+    assert payload["actions"][0]["code"] == "connect_google_search"
+    assert "Google Search data" in payload["message"]
+    assert db_session.query(OnboardingBaseline).filter_by(campaign_id=campaign.id).count() == 0
+
+
+def test_baseline_waits_for_first_google_search_sync(client, db_session) -> None:
+    token, user = _login(client)
+    campaign = _campaign(db_session, user, name="Search sync required")
+    _completed_crawl(db_session, campaign)
+    db_session.add(
+        DataConnection(
+            tenant_id=campaign.tenant_id,
+            organization_id=campaign.organization_id,
+            business_location_id=campaign.business_location_id,
+            campaign_id=campaign.id,
+            provider_name="google_search_console",
+            external_resource_id="sc-domain:baseline.example",
+            external_resource_name="baseline.example",
+            resource_scope="property",
+            status="connected",
+        )
+    )
+    db_session.commit()
+
+    response = client.post(
+        f"/api/v1/onboarding/baseline/{campaign.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["state"] == "collecting"
+    assert payload["completion_satisfied"] is False
+    assert payload["baseline"] is None
+    sources = {item["key"]: item for item in payload["sources"]}
+    assert sources["search_console"]["state"] == "collecting"
+
+
+def test_baseline_is_limited_without_optional_analytics_and_never_scores_missing_as_zero(
     client, db_session
 ) -> None:
     token, user = _login(client)
     campaign = _campaign(db_session, user, name="Limited baseline")
     _completed_crawl(db_session, campaign)
+    _synced_search_connection(db_session, campaign)
 
     response = client.post(
         f"/api/v1/onboarding/baseline/{campaign.id}",
@@ -253,8 +334,10 @@ def test_baseline_is_limited_without_optional_connections_and_never_scores_missi
     assert baseline["scores"]["components"]["traffic_engagement"] is None
     assert baseline["scores"]["overall"] == baseline["scores"]["components"]["website_health"]
     sources = {item["key"]: item for item in baseline["sources"]}
-    assert sources["search_console"]["state"] == "not_connected"
+    assert sources["search_console"]["state"] == "not_enough_history"
+    assert sources["search_console"]["optional"] is False
     assert sources["analytics"]["state"] == "not_connected"
+    assert sources["analytics"]["optional"] is True
     assert "not scored as zero" in sources["analytics"]["detail"]
 
 

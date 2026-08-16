@@ -2539,9 +2539,11 @@ Implementation status (2026-08-15):
 
 - CX1.1A is implemented locally. Guided setup now includes a mandatory baseline
   task and cannot emit `onboarding.completed` until the first immutable
-  Ready/Limited baseline exists. Basic dashboard access remains available while
-  the required website scan is collecting or blocked, and saved setup progress
-  reopens the workflow until the baseline is complete.
+  Ready/Limited baseline exists. The official baseline requires both a completed
+  website scan and a location-mapped, successfully synchronized Search Console
+  connection. Basic dashboard access remains available while either required
+  source is collecting or blocked, and saved setup progress reopens the workflow
+  until the baseline is complete.
 - Migration 0157 adds one append-only, tenant/organization/location/campaign-
   scoped first baseline with RLS, database immutability, a 28-day evidence
   cutoff, exact source states, deterministic evidence and score snapshots,
@@ -2551,8 +2553,8 @@ Implementation status (2026-08-15):
   Core Web Vitals/lab evidence when measured, Search Console facts, tracked
   positions, sessions, engagement, conversions, top landing pages, traffic
   sources, and privacy-safe form-outcome counts when those sources exist.
-  Optional missing sources are labeled and excluded from scores rather than
-  converted to zero.
+  Website analytics remains optional and recommended. Optional missing sources
+  are labeled and excluded from scores rather than converted to zero.
 - The local scorecard is deterministic and explainable. Each fix includes its
   saved evidence, baseline metric when available, observation window, steps,
   and verification method. The same snapshot creates the authenticated
@@ -2574,7 +2576,9 @@ Execution order and dependencies:
 - Google Business Profile, listings, reviews, backlinks, competitor, and AI
   visibility evidence is included only when the corresponding governed source
   and location mapping is live. An unavailable optional source cannot block the
-  core website baseline or be represented as a zero.
+  baseline or be represented as a zero. Search Console is the one required
+  Google source for the official organic baseline; website analytics does not
+  block onboarding completion.
 - CX1.1 is mandatory for onboarding completion, not for basic account access.
   The owner may enter the workspace while collection is pending or limited, but
   setup stays visibly incomplete until one truthful baseline report is created
@@ -2584,7 +2588,8 @@ Scope:
 
 - Create one tenant-, organization-, and business-location-scoped baseline run
   after the owner confirms the website, location, tracked searches, and
-  supported connections. The orchestration is idempotent and retryable: browser
+  successfully synchronizes the matching Google Search website property.
+  The orchestration is idempotent and retryable: browser
   refreshes, OAuth returns, worker retries, and repeated clicks cannot create
   competing first baselines or double-charge provider usage.
 - Freeze a versioned baseline contract, cutoff timestamp, evidence identifiers,
@@ -2622,9 +2627,13 @@ Scope:
   boundary; it never silently replaces history.
 - Keep baseline collection and report generation separately recoverable. A
   failed optional collector yields an honest limited report and a specific
-  reconnect/retry step; a failed required website collector leaves setup in a
-  blocked state with the failing stage, safe error code, owner action, and
-  support path.
+  reconnect/retry step; a failed required website scan or Google Search
+  connection leaves setup in a blocked state with the failing stage, safe error
+  code, owner action, and support path.
+- Primary onboarding copy calls the required source `Google Search data` and
+  explains the owner outcome before showing the product name `Search Console`.
+  Optional Analytics is described as `website traffic and customer activity`;
+  customers are not expected to know the implementation name `GA4`.
 
 Truth, privacy, and safety constraints:
 

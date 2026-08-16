@@ -14,6 +14,7 @@ from app.events import emit_event
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.campaign import Campaign
 from app.models.crawl import CrawlRun, TechnicalIssue
+from app.models.data_connection import DataConnection
 from app.models.onboarding_baseline import OnboardingBaseline
 from app.models.rank import CampaignKeyword, RankingSnapshot
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
@@ -23,7 +24,7 @@ from app.models.website_analytics import (
     AnalyticsTrafficSourceDailyMetric,
     WebsiteFormEvent,
 )
-from app.services import premium_report_service, reporting_service
+from app.services import data_connections_service, premium_report_service, reporting_service
 
 
 ANALYSIS_VERSION = "cx1.1-baseline-v1"
@@ -171,6 +172,59 @@ def _readiness(
         )
         .one()
     )
+    search_connection = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.tenant_id == tenant_id,
+            DataConnection.organization_id == organization_id,
+            DataConnection.campaign_id == campaign.id,
+            DataConnection.business_location_id == campaign.business_location_id,
+            DataConnection.provider_name
+            == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER,
+        )
+        .one_or_none()
+    )
+    search_connection_status = (
+        data_connections_service.effective_connection_status(
+            search_connection,
+            now=checked_at,
+        )
+        if search_connection is not None
+        else "not_connected"
+    )
+    search_sync_complete = bool(
+        search_connection is not None and search_connection.last_success_at is not None
+    )
+    if search_connection is None:
+        search_state = "needs_connection"
+        search_detail = (
+            "Connect this website's Google Search data before the official baseline is created."
+        )
+    elif search_connection_status in {
+        data_connections_service.CONNECTION_STATUS_FAILED,
+        data_connections_service.CONNECTION_STATUS_RECONNECT_REQUIRED,
+        data_connections_service.CONNECTION_STATUS_DISCONNECTED,
+        data_connections_service.CONNECTION_STATUS_PAUSED_CLOSURE,
+    }:
+        search_state = "blocked"
+        search_detail = (
+            "The saved Google Search connection needs attention before the official baseline can be created."
+        )
+    elif not search_sync_complete or search_connection_status in {
+        data_connections_service.CONNECTION_STATUS_CONNECTED,
+        data_connections_service.CONNECTION_STATUS_SYNCING,
+    }:
+        search_state = "collecting"
+        search_detail = (
+            "Google Search is connected. InsightOS is waiting for the first saved search update."
+        )
+    else:
+        search_state = "measured"
+        search_detail = (
+            "Saved clicks, appearances, CTR, and average Google position are included."
+            if search_days
+            else "Google Search is connected and synchronized, but it returned no dated records for this baseline window."
+        )
     analytics_days, analytics_latest = (
         db.query(
             func.count(AnalyticsDailyMetric.id),
@@ -242,12 +296,13 @@ def _readiness(
         ),
         _source(
             "search_console",
-            "Google organic search",
-            "measured" if search_days else "not_connected",
-            "Saved clicks, appearances, CTR, and average position are included."
-            if search_days
-            else "Google Search Console is not connected yet; organic traffic is not scored as zero.",
+            "Google Search data",
+            "not_enough_history"
+            if search_state == "measured" and not search_days
+            else search_state,
+            search_detail,
             observed=int(search_days or 0),
+            optional=False,
             last_updated=search_latest,
         ),
         _source(
@@ -277,33 +332,59 @@ def _readiness(
             last_updated=rank_latest,
         ),
     ]
-    state = (
-        "ready_to_generate"
-        if completed_crawl is not None
-        else "collecting"
-        if crawl_state == "collecting"
-        else "blocked"
-    )
+    state = "ready_to_generate"
+    if search_state == "needs_connection":
+        state = "needs_search_connection"
+    elif search_state == "blocked" or crawl_state in {"blocked", "needs_setup"}:
+        state = "blocked"
+    elif search_state == "collecting" or crawl_state == "collecting":
+        state = "collecting"
     return {
         "state": state,
         "completion_required": True,
         "basic_access_blocked": False,
         "checked_at": checked_at.isoformat(),
         "message": (
-            "The website baseline can now be frozen."
+            "The official website and organic-search baseline can now be frozen."
             if state == "ready_to_generate"
+            else search_detail
+            if search_state != "measured"
             else crawl_detail
         ),
         "sources": sources,
-        "actions": [
-            {
-                "code": "retry_website_scan",
-                "label": "Retry website scan",
-                "href": "/site-health",
-            }
-        ]
-        if state == "blocked"
-        else [],
+        "actions": (
+            [
+                {
+                    "code": "connect_google_search",
+                    "label": "Connect Google Search data",
+                    "href": (
+                        "/settings?setup=connections&campaign_id="
+                        f"{campaign.id}#website-mappings"
+                    ),
+                }
+            ]
+            if state == "needs_search_connection"
+            else [
+                {
+                    "code": "repair_google_search",
+                    "label": "Check Google Search connection",
+                    "href": (
+                        "/settings?setup=connections&campaign_id="
+                        f"{campaign.id}#website-mappings"
+                    ),
+                }
+            ]
+            if search_state == "blocked"
+            else [
+                {
+                    "code": "retry_website_scan",
+                    "label": "Retry website scan",
+                    "href": "/site-health",
+                }
+            ]
+            if state == "blocked"
+            else []
+        ),
     }
 
 
@@ -743,12 +824,16 @@ def _build_evidence(
             {
                 "key": "connection:search_console",
                 "priority": "data_needed",
-                "title": "Connect Google Search Console",
-                "why": "Clicks, appearances, CTR, and Google position are not available yet and were not scored as zero.",
-                "why_it_matters": "Clicks, appearances, CTR, and Google position are not available yet and were not scored as zero.",
-                "detail": "This connection adds dated organic-search facts without changing the frozen baseline.",
-                "what_to_do": "Connect the matching website property, then create a later comparison baseline after enough dated records arrive.",
-                "steps": ["Connect the matching website property in Settings.", "Confirm that dated records belong to this location."],
+                "title": "Review Google Search data coverage",
+                "why": "The required Google Search connection synchronized, but returned no dated records for the 28-day window. Missing facts were not scored as zero.",
+                "why_it_matters": "The required Google Search connection synchronized, but returned no dated records for the 28-day window. Missing facts were not scored as zero.",
+                "detail": "The official baseline records the successful connection separately from the absence of dated search activity.",
+                "what_to_do": "Confirm that the selected website belongs to this business, then check again after Google has dated search activity to return.",
+                "steps": [
+                    "Open Settings and confirm the selected Google Search website.",
+                    "Confirm that the website belongs to this location.",
+                    "Check again after Google has dated search activity to return.",
+                ],
                 "evidence": [],
                 "measurement": {
                     "metric_id": "search_console_coverage_days",
@@ -1058,9 +1143,7 @@ def ensure_baseline(
         cutoff_at=cutoff_at,
     )
     source_states = readiness["sources"]
-    limited = any(
-        item["state"] != "measured" for item in source_states if item.get("optional")
-    )
+    limited = any(item["state"] != "measured" for item in source_states)
     baseline_status = "limited" if limited else "ready"
     report_snapshot = premium_report_service.build_report_snapshot(
         db,
