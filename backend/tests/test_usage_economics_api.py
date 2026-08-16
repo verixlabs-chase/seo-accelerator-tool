@@ -86,25 +86,23 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert external_automation["required_plan"] == "Solo"
     assert data["external_automation"] == {
         "plan_eligible": True,
-        "gateway_enabled": False,
+        "gateway_enabled": True,
         "automatic_actions_enabled": False,
         "required_plan": "Solo",
-        "state": "gateway_not_available",
+        "state": "available",
         "summary": (
-            "Your plan is eligible for approved external automation, but the governed "
-            "automation gateway is not available yet."
+            "Your plan can send signed, outbound-only events to an approved workflow "
+            "tool. Connected tools cannot approve or carry out InsightOS actions."
         ),
         "planned_connection_options": [
-            "n8n",
             "Make",
             "Zapier",
             "Pipedream",
-            "Generic signed webhooks",
         ],
         "outbound_contract": {
             "schema_version": "insightos.automation.event.v1",
-            "connection_setup_enabled": False,
-            "delivery_enabled": False,
+            "connection_setup_enabled": True,
+            "delivery_enabled": True,
             "supported_events": [
                 {
                     "code": "report.ready",
@@ -184,9 +182,9 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert growth_capability["available"] is True
     assert growth_capability["required_plan"] == "Solo"
     assert growth["external_automation"]["plan_eligible"] is True
-    assert growth["external_automation"]["gateway_enabled"] is False
+    assert growth["external_automation"]["gateway_enabled"] is True
     assert growth["external_automation"]["automatic_actions_enabled"] is False
-    assert growth["external_automation"]["state"] == "gateway_not_available"
+    assert growth["external_automation"]["state"] == "available"
 
 
 def test_platform_margin_view_and_versioned_allocation(client, db_session) -> None:

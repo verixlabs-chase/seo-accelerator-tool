@@ -4555,11 +4555,43 @@ Implementation status (August 16, 2026):
   connection setup and event delivery remain explicitly false. AUT1A stores no
   destination URL or signing secret, makes no outbound network request, exposes
   no inbound command route, and cannot activate or approve an InsightOS action.
-- AUT1B still owns encrypted connection and secret storage, destination
-  ownership proof and SSRF-safe validation, subscription filters, durable
-  delivery and retry receipts, secret rotation, disable and revoke, per-platform
-  conformance, and the first real test delivery. Typed inbound actions remain a
-  later slice after outbound delivery is production-proven.
+- AUT1B owns encrypted connection and secret storage, SSRF-safe destination
+  validation, subscription filters, durable test-delivery and retry receipts,
+  secret rotation, disconnect, and the first real delivery proof. Typed inbound
+  actions remain a later slice after outbound delivery is production-proven.
+
+#### AUT1B - Encrypted Workflow Connections and Signed Test Delivery
+
+Implementation status (August 16, 2026):
+
+- Organization owners can now save outbound Zapier, Make, or Pipedream webhook
+  connections from Settings. The destination URL and a generated HMAC signing
+  secret are encrypted with the platform credential cipher; neither is stored
+  in plaintext. The secret is returned only when created or replaced, and the
+  destination URL is never returned after it is saved.
+- Destination validation is fail-closed and provider-specific. Only HTTPS on
+  the reviewed default webhook hosts is accepted, with no user information,
+  fragment, redirect following, custom port, generic destination, localhost,
+  IP address, or customer-supplied custom domain. Custom domains, n8n, generic
+  webhooks, and customer-hosted endpoints remain deferred until their network,
+  tenancy, authentication, and support contracts are separately governed.
+- Owners can send a signed connection-health test, retry a failed or interrupted
+  test up to three total attempts, replace a signing secret, and disconnect a
+  destination. Organization users can inspect redacted connection and delivery
+  health but cannot create, test, rotate, retry, or disconnect a destination.
+- Every test uses the AUT1A canonical body and HMAC headers, refuses redirects,
+  uses a bounded timeout, revalidates the encrypted destination immediately
+  before dispatch, and persists encrypted event evidence plus append-only,
+  tenant-scoped attempt receipts. Responses retain only status, duration, and a
+  stable safe reason; response bodies, destination paths, signing secrets, and
+  raw network errors are not stored or audited.
+- This slice proves owner-controlled connection and delivery behavior only.
+  Normal product events are not yet fanned out automatically, and there is no
+  inbound automation command, approval, publish, WordPress, Google Business
+  Profile, arbitrary prompt, or other mutation route. `automatic_actions_enabled`
+  remains false. Durable background fan-out, scheduled retries, dead-letter
+  recovery, per-event subscription delivery, vendor conformance fixtures, and
+  operational health controls remain AUT1C work.
 
 Placement and packaging:
 

@@ -204,16 +204,16 @@ type UsageAllowance = {
   }>;
   external_automation?: {
     plan_eligible: boolean;
-    gateway_enabled: false;
+    gateway_enabled: boolean;
     automatic_actions_enabled: false;
     required_plan: string;
-    state: "plan_upgrade_required" | "gateway_not_available";
+    state: "plan_upgrade_required" | "gateway_not_available" | "available";
     summary: string;
     planned_connection_options: string[];
     outbound_contract?: {
       schema_version: string;
-      connection_setup_enabled: false;
-      delivery_enabled: false;
+      connection_setup_enabled: boolean;
+      delivery_enabled: boolean;
       supported_events: Array<{
         code: string;
         label: string;
@@ -256,6 +256,47 @@ type BillingSummary = {
     expires_at: string | null;
     active: boolean;
   } | null;
+};
+
+type AutomationDelivery = {
+  id: string;
+  event_id: string;
+  event_type: string;
+  status: "pending" | "delivered" | "failed";
+  attempt_count: number;
+  max_attempts: number;
+  last_reason_code?: string | null;
+  last_response_status?: number | null;
+  last_attempt_at?: string | null;
+  delivered_at?: string | null;
+  can_retry: boolean;
+};
+
+type AutomationConnection = {
+  id: string;
+  name: string;
+  provider: "zapier" | "make" | "pipedream";
+  provider_label: string;
+  status: "pending" | "active" | "unhealthy" | "disconnected";
+  endpoint_host: string;
+  event_types: string[];
+  verification_status: "not_tested" | "verified" | "failed";
+  signing_secret_version: number;
+  last_tested_at?: string | null;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+  destination_url_saved: boolean;
+  destination_url_revealed: false;
+  last_delivery?: AutomationDelivery | null;
+  automatic_actions_enabled: false;
+};
+
+type AutomationConnectionsPayload = {
+  items: AutomationConnection[];
+  supported_providers: Array<{ code: "zapier" | "make" | "pipedream"; label: string }>;
+  supported_events: Array<{ code: string; label: string; summary: string }>;
+  automatic_actions_enabled: false;
+  truth: string;
 };
 
 type BillingCheckoutAttempt = {
@@ -643,6 +684,14 @@ export default function SettingsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [payload, setPayload] = useState<ConnectionsPayload | null>(null);
   const [usageAllowance, setUsageAllowance] = useState<UsageAllowance | null>(null);
+  const [automationConnections, setAutomationConnections] = useState<AutomationConnection[]>([]);
+  const [automationProviders, setAutomationProviders] = useState<AutomationConnectionsPayload["supported_providers"]>([]);
+  const [automationEvents, setAutomationEvents] = useState<AutomationConnectionsPayload["supported_events"]>([]);
+  const [automationName, setAutomationName] = useState("");
+  const [automationProvider, setAutomationProvider] = useState<"zapier" | "make" | "pipedream">("zapier");
+  const [automationDestination, setAutomationDestination] = useState("");
+  const [automationSelectedEvents, setAutomationSelectedEvents] = useState<string[]>([]);
+  const [automationSigningSecret, setAutomationSigningSecret] = useState("");
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
   const [authSessions, setAuthSessions] = useState<AuthSessionSummary[] | null>(null);
   const [billingConfirmationState, setBillingConfirmationState] =
@@ -853,6 +902,157 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadAutomationConnections = useCallback(async () => {
+    const response = (await platformApi("/automation/connections", {
+      method: "GET",
+    })) as AutomationConnectionsPayload;
+    setAutomationConnections(response.items || []);
+    setAutomationProviders(response.supported_providers || []);
+    setAutomationEvents(response.supported_events || []);
+    setAutomationSelectedEvents((current) =>
+      current.length > 0 ? current : (response.supported_events || []).map((item) => item.code),
+    );
+    return response;
+  }, []);
+
+  const createAutomationConnection = useCallback(async () => {
+    setBusyAction("automation-create");
+    setError("");
+    setNotice("");
+    setAutomationSigningSecret("");
+    try {
+      const response = (await platformApi("/automation/connections", {
+        method: "POST",
+        body: JSON.stringify({
+          name: automationName,
+          provider: automationProvider,
+          destination_url: automationDestination,
+          event_types: automationSelectedEvents,
+        }),
+      })) as {
+        connection: AutomationConnection;
+        signing_secret: string;
+        secret_shown_once: true;
+      };
+      setAutomationSigningSecret(response.signing_secret);
+      setAutomationName("");
+      setAutomationDestination("");
+      setNotice("Connection saved. Copy the signing secret now, then send a test event.");
+      await loadAutomationConnections();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save the automation connection.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [
+    automationDestination,
+    automationName,
+    automationProvider,
+    automationSelectedEvents,
+    loadAutomationConnections,
+  ]);
+
+  const testAutomationConnection = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`automation-test-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(`/automation/connections/${connectionId}/test`, {
+          method: "POST",
+        })) as { received_by_destination: boolean };
+        setNotice(
+          response.received_by_destination
+            ? "The workflow endpoint accepted the signed test event."
+            : "The test was saved, but the workflow endpoint did not accept it.",
+        );
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to send the test event.");
+        await loadAutomationConnections().catch(() => undefined);
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const retryAutomationDelivery = useCallback(
+    async (deliveryId: string) => {
+      setBusyAction(`automation-retry-${deliveryId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(`/automation/deliveries/${deliveryId}/retry`, {
+          method: "POST",
+        })) as { received_by_destination: boolean };
+        setNotice(
+          response.received_by_destination
+            ? "The workflow endpoint accepted the retry."
+            : "The retry was saved, but the workflow endpoint did not accept it.",
+        );
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to retry this event.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const rotateAutomationSecret = useCallback(
+    async (connectionId: string) => {
+      if (!window.confirm("Replace the current signing secret? The old secret will stop working immediately.")) return;
+      setBusyAction(`automation-rotate-${connectionId}`);
+      setError("");
+      setNotice("");
+      setAutomationSigningSecret("");
+      try {
+        const response = (await platformApi(`/automation/connections/${connectionId}/rotate-secret`, {
+          method: "POST",
+        })) as { signing_secret: string };
+        setAutomationSigningSecret(response.signing_secret);
+        setNotice("Signing secret replaced. Copy the new secret now and update the workflow before testing.");
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to replace the signing secret.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const disconnectAutomationConnection = useCallback(
+    async (connectionId: string) => {
+      if (!window.confirm("Disconnect this workflow? Its saved URL and signing secret will be removed.")) return;
+      setBusyAction(`automation-disconnect-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        await platformApi(`/automation/connections/${connectionId}`, { method: "DELETE" });
+        setNotice("Workflow disconnected. Its saved URL and signing secret were removed.");
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to disconnect this workflow.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const copyAutomationSecret = useCallback(async () => {
+    if (!automationSigningSecret) return;
+    try {
+      await navigator.clipboard.writeText(automationSigningSecret);
+      setNotice("Signing secret copied. It will not be shown again after you leave this page.");
+    } catch {
+      setNotice("Select and copy the signing secret before leaving this page.");
+    }
+  }, [automationSigningSecret]);
+
   const loadAuthSessions = useCallback(async () => {
     const response = (await platformApi("/auth/sessions", {
       method: "GET",
@@ -995,6 +1195,7 @@ export default function SettingsPage() {
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
+        await loadAutomationConnections().catch(() => undefined);
         setBillingSummary(billingResponse);
         const localBillingAttempt = readBillingCheckoutAttempt(currentUser.organization_id);
         const serverBillingAttempt = billingResponse
@@ -1057,7 +1258,7 @@ export default function SettingsPage() {
       }
     }
     void loadPage();
-  }, [confirmBillingReturn, loadAnalyticsResources, loadAuthSessions, loadConnections, loadProfileResources, loadResources]);
+  }, [confirmBillingReturn, loadAnalyticsResources, loadAuthSessions, loadAutomationConnections, loadConnections, loadProfileResources, loadResources]);
 
   async function startCheckout(planCode: string) {
     if (!organizationId) return;
@@ -3418,24 +3619,208 @@ export default function SettingsPage() {
                   </p>
                 ) : null}
                 {usageAllowance.external_automation ? (
-                  <div className="mt-5 border-t border-[#292a2f] pt-4">
+                  <div id="external-automation" className="mt-5 border-t border-[#292a2f] pt-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
                       External automation
                     </p>
                     <h3 className="mt-1 font-semibold text-white">
-                      {usageAllowance.external_automation.plan_eligible
-                        ? "Your plan is eligible, but external automation is not available yet"
+                      {usageAllowance.external_automation.gateway_enabled
+                        ? "Connect reports and alerts to your workflow tool"
                         : `External automation requires ${usageAllowance.external_automation.required_plan}`}
                     </h3>
                     <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
                       {usageAllowance.external_automation.summary}
                     </p>
                     <p className="mt-2 text-xs leading-5 text-zinc-500">
-                      Planned as a vendor-neutral connection for {usageAllowance.external_automation.planned_connection_options.join(", ")}. No tool can connect, receive events, or run actions yet.
+                      Available for {usageAllowance.external_automation.planned_connection_options.join(", ")}. The saved webhook URL and signing secret are encrypted, and the URL is never shown again.
                     </p>
+
+                    {automationSigningSecret ? (
+                      <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
+                        <p className="text-sm font-semibold text-amber-100">Copy this signing secret now</p>
+                        <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                          It verifies that events came from InsightOS. It will not be shown again after you leave this page.
+                        </p>
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                          <input
+                            aria-label="Automation signing secret"
+                            readOnly
+                            className="min-w-0 flex-1 rounded-md border border-amber-500/30 bg-[#101114] px-3 py-2 font-mono text-xs text-amber-50"
+                            value={automationSigningSecret}
+                          />
+                          <button type="button" className={secondaryButtonClass} onClick={() => void copyAutomationSecret()}>
+                            Copy secret
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {usageAllowance.external_automation.gateway_enabled && me?.org_role === "org_owner" ? (
+                      <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
+                        <p className="text-sm font-semibold text-white">Add a workflow endpoint</p>
+                        <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                          <div>
+                            <label htmlFor="automation-provider" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                              Tool
+                            </label>
+                            <select
+                              id="automation-provider"
+                              className={selectClass}
+                              value={automationProvider}
+                              onChange={(event) => setAutomationProvider(event.target.value as "zapier" | "make" | "pipedream")}
+                            >
+                              {(automationProviders.length ? automationProviders : [
+                                { code: "zapier" as const, label: "Zapier" },
+                                { code: "make" as const, label: "Make" },
+                                { code: "pipedream" as const, label: "Pipedream" },
+                              ]).map((provider) => (
+                                <option key={provider.code} value={provider.code}>{provider.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label htmlFor="automation-name" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                              Connection name
+                            </label>
+                            <input
+                              id="automation-name"
+                              className={selectClass}
+                              value={automationName}
+                              maxLength={120}
+                              placeholder="Owner report workflow"
+                              onChange={(event) => setAutomationName(event.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="automation-destination" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                              Webhook URL — kept private
+                            </label>
+                            <input
+                              id="automation-destination"
+                              type="password"
+                              autoComplete="off"
+                              className={selectClass}
+                              value={automationDestination}
+                              placeholder="Paste the HTTPS webhook URL"
+                              onChange={(event) => setAutomationDestination(event.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <fieldset className="mt-4">
+                          <legend className="text-xs font-medium text-zinc-300">Events this workflow can receive</legend>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                            {automationEvents.map((event) => (
+                              <label key={event.code} className="flex items-start gap-2 rounded-md border border-[#292a2f] px-3 py-2 text-xs text-zinc-300">
+                                <input
+                                  type="checkbox"
+                                  className="mt-0.5 h-4 w-4 accent-orange-500"
+                                  checked={automationSelectedEvents.includes(event.code)}
+                                  onChange={(inputEvent) => {
+                                    setAutomationSelectedEvents((current) =>
+                                      inputEvent.target.checked
+                                        ? Array.from(new Set([...current, event.code]))
+                                        : current.filter((code) => code !== event.code),
+                                    );
+                                  }}
+                                />
+                                <span>{event.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                        <button
+                          type="button"
+                          className={`${primaryButtonClass} mt-4`}
+                          disabled={
+                            busyAction === "automation-create" ||
+                            automationName.trim().length < 2 ||
+                            !automationDestination.trim() ||
+                            automationSelectedEvents.length === 0
+                          }
+                          onClick={() => void createAutomationConnection()}
+                        >
+                          {busyAction === "automation-create" ? "Saving securely..." : "Save connection"}
+                        </button>
+                      </div>
+                    ) : usageAllowance.external_automation.gateway_enabled ? (
+                      <p className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-3 text-xs leading-5 text-zinc-400">
+                        Ask the workspace owner to add, test, rotate, or disconnect workflow endpoints.
+                      </p>
+                    ) : null}
+
+                    {automationConnections.length > 0 ? (
+                      <div className="mt-4 space-y-3">
+                        {automationConnections.map((connection) => {
+                          const delivery = connection.last_delivery;
+                          return (
+                            <div key={connection.id} className="rounded-md border border-[#303137] bg-[#101114] p-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <p className="font-medium text-white">{connection.name}</p>
+                                  <p className="mt-1 text-xs text-zinc-400">
+                                    {connection.provider_label} · {connection.endpoint_host} · {connection.status === "active" ? "Verified" : connection.status === "unhealthy" ? "Needs attention" : connection.status === "disconnected" ? "Disconnected" : "Test required"}
+                                  </p>
+                                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                    {connection.event_types.length} approved {connection.event_types.length === 1 ? "event" : "events"}. Destination URL stays private. Signing secret version {connection.signing_secret_version}.
+                                  </p>
+                                  {delivery ? (
+                                    <p className={`mt-2 text-xs ${delivery.status === "delivered" ? "text-emerald-300" : delivery.status === "failed" ? "text-rose-300" : "text-amber-300"}`}>
+                                      Last test: {delivery.status === "delivered" ? "Accepted" : delivery.status === "failed" ? "Not accepted" : "In progress"} · {delivery.attempt_count} of {delivery.max_attempts} attempts
+                                    </p>
+                                  ) : (
+                                    <p className="mt-2 text-xs text-amber-300">No test event sent yet.</p>
+                                  )}
+                                </div>
+                                {me?.org_role === "org_owner" && connection.status !== "disconnected" ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      className={secondaryButtonClass}
+                                      disabled={busyAction === `automation-test-${connection.id}`}
+                                      onClick={() => void testAutomationConnection(connection.id)}
+                                    >
+                                      {busyAction === `automation-test-${connection.id}` ? "Sending..." : "Send test"}
+                                    </button>
+                                    {delivery?.can_retry ? (
+                                      <button
+                                        type="button"
+                                        className={secondaryButtonClass}
+                                        disabled={busyAction === `automation-retry-${delivery.id}`}
+                                        onClick={() => void retryAutomationDelivery(delivery.id)}
+                                      >
+                                        {busyAction === `automation-retry-${delivery.id}` ? "Retrying..." : "Retry last test"}
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className={secondaryButtonClass}
+                                      disabled={busyAction === `automation-rotate-${connection.id}`}
+                                      onClick={() => void rotateAutomationSecret(connection.id)}
+                                    >
+                                      Replace secret
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-medium text-rose-100 disabled:opacity-50"
+                                      disabled={busyAction === `automation-disconnect-${connection.id}`}
+                                      onClick={() => void disconnectAutomationConnection(connection.id)}
+                                    >
+                                      Disconnect
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : usageAllowance.external_automation.gateway_enabled ? (
+                      <p className="mt-4 text-xs leading-5 text-zinc-500">No workflow tools connected yet.</p>
+                    ) : null}
+
                     {usageAllowance.external_automation.outbound_contract?.supported_events.length ? (
                       <div className="mt-3">
-                        <p className="text-xs font-medium text-zinc-300">Planned starter triggers</p>
+                        <p className="text-xs font-medium text-zinc-300">Available outbound triggers</p>
                         <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                           {usageAllowance.external_automation.outbound_contract?.supported_events.map((event) => (
                             <li key={event.code} className="rounded-lg border border-[#292a2f] bg-[#101114] px-3 py-2">
@@ -3446,6 +3831,9 @@ export default function SettingsPage() {
                         </ul>
                       </div>
                     ) : null}
+                    <p className="mt-4 border-t border-[#292a2f] pt-3 text-xs leading-5 text-zinc-500">
+                      Safety boundary: workflow tools receive signed notifications only. They cannot approve recommendations, publish content, edit WordPress, or change a Google Business Profile.
+                    </p>
                   </div>
                 ) : null}
               </section>

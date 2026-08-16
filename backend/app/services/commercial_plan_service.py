@@ -421,28 +421,26 @@ def _external_automation_access(plan_code: str) -> dict[str, Any]:
     plan_eligible = _PLAN_LEVEL[plan_code] >= _PLAN_LEVEL[required_plan.code]
     return {
         "plan_eligible": plan_eligible,
-        "gateway_enabled": False,
+        "gateway_enabled": plan_eligible,
         "automatic_actions_enabled": False,
         "required_plan": required_plan.name,
-        "state": "gateway_not_available" if plan_eligible else "plan_upgrade_required",
+        "state": "available" if plan_eligible else "plan_upgrade_required",
         "summary": (
-            "Your plan is eligible for approved external automation, but the governed "
-            "automation gateway is not available yet."
+            "Your plan can send signed, outbound-only events to an approved workflow tool. "
+            "Connected tools cannot approve or carry out InsightOS actions."
             if plan_eligible
             else "External automation is not included with this commercial plan. Native "
             "InsightOS alerts, reports, and manual workflows remain available."
         ),
         "planned_connection_options": [
-            "n8n",
             "Make",
             "Zapier",
             "Pipedream",
-            "Generic signed webhooks",
         ],
         "outbound_contract": {
             "schema_version": AUTOMATION_EVENT_SCHEMA_VERSION,
-            "connection_setup_enabled": False,
-            "delivery_enabled": False,
+            "connection_setup_enabled": plan_eligible,
+            "delivery_enabled": plan_eligible,
             "supported_events": automation_event_catalog(),
         },
     }

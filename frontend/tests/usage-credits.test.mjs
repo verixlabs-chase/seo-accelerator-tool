@@ -33,21 +33,29 @@ test("settings explains the current plan and the practical reason to upgrade", (
   assert.match(settings, /usageAllowance\.upgrade\.reasons/);
 });
 
-test("settings separates automation plan eligibility from a live gateway", () => {
+test("settings provides outbound-only signed workflow connections", () => {
   const settings = source("../app/(product)/settings/page.tsx");
 
-  assert.match(settings, /usageAllowance\.external_automation\.plan_eligible/);
   assert.match(settings, /usageAllowance\.external_automation \? \(/);
+  assert.match(settings, /usageAllowance\.external_automation\.gateway_enabled/);
   assert.match(settings, /External automation requires/);
-  assert.match(settings, /Your plan is eligible, but external automation is not available yet/);
-  assert.match(settings, /Planned as a vendor-neutral connection/);
-  assert.match(settings, /No tool can connect, receive events, or run actions yet/);
-  assert.match(settings, /Planned starter triggers/);
+  assert.match(settings, /Connect reports and alerts to your workflow tool/);
+  assert.match(settings, /\/automation\/connections/);
+  assert.match(settings, /\/automation\/deliveries\/\$\{deliveryId\}\/retry/);
+  assert.match(settings, /Copy this signing secret now/);
+  assert.match(settings, /Webhook URL — kept private/);
+  assert.match(settings, /The saved webhook URL and signing secret are encrypted/);
+  assert.match(settings, /Send test/);
+  assert.match(settings, /Retry last test/);
+  assert.match(settings, /Replace secret/);
+  assert.match(settings, /Disconnect/);
+  assert.match(settings, /me\?\.org_role === "org_owner"/);
+  assert.match(settings, /Available outbound triggers/);
   assert.match(settings, /outbound_contract\?\.supported_events\.length/);
   assert.match(settings, /event\.label/);
   assert.match(settings, /event\.summary/);
-  assert.doesNotMatch(settings, />Connect n8n</);
-  assert.doesNotMatch(settings, /\/automation\/connections/);
+  assert.match(settings, /cannot approve recommendations, publish content, edit WordPress, or change a Google Business Profile/);
+  assert.doesNotMatch(settings, /\/automation\/(?:approve|publish|execute|actions)/);
 });
 
 test("platform plan controls use the current 399 Solo packaging", () => {

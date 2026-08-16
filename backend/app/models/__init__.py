@@ -15,6 +15,11 @@ from app.models.action_plan import (
 from app.events.outbox.event_outbox import EventOutbox
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.auth_session import AuthSession
+from app.models.automation_webhook import (
+    AutomationWebhookConnection,
+    AutomationWebhookDelivery,
+    AutomationWebhookDeliveryAttempt,
+)
 from app.models.authority import (
     AuthorityGapResearchRun,
     AuthorityInventoryLink,
@@ -238,6 +243,9 @@ __all__ = [
     "Tenant",
     "User",
     "AuthSession",
+    "AutomationWebhookConnection",
+    "AutomationWebhookDelivery",
+    "AutomationWebhookDeliveryAttempt",
     "Role",
     "UserRole",
     "SubAccount",
