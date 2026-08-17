@@ -804,7 +804,15 @@ def _record_outcome_if_possible(session: Session, execution: RecommendationExecu
                 metric_after = float(metric_after_value)
             else:
                 metric_name = str(payload.get('metric_name', '') or '')
-                signals = assemble_signals(execution.campaign_id, db=session)
+                # Outcome bookkeeping reads the just-finished metric inside the
+                # primary action transaction. Republishing that read can invoke
+                # subscribers on a second session before the transaction releases
+                # its locks, which can stall the action that already succeeded.
+                signals = assemble_signals(
+                    execution.campaign_id,
+                    db=session,
+                    publish=False,
+                )
                 metric_after = float(signals.get(metric_name, metric_before) or metric_before)
             record_execution_outcome(
                 session,

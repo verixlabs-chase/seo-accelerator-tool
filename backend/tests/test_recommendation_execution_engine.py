@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.enums import StrategyRecommendationStatus
 from app.intelligence import recommendation_execution_engine as execution_engine
 from app.intelligence.recommendation_execution_engine import approve_execution, execute_recommendation, schedule_execution
@@ -8,6 +10,32 @@ from app.models.recommendation_execution import RecommendationExecution
 from app.services.strategy_engine.automation_engine import evaluate_campaign_for_automation
 from app.utils.enum_guard import ensure_enum
 from tests.conftest import create_test_campaign
+
+
+def test_outcome_metric_read_does_not_republish_signals(db_session, monkeypatch) -> None:
+    signal_reads: list[dict] = []
+
+    def _record_signal_read(*_args, **kwargs):
+        signal_reads.append(dict(kwargs))
+        return {"avg_rank": 7.0}
+
+    monkeypatch.setattr(execution_engine, "assemble_signals", _record_signal_read)
+    monkeypatch.setattr(
+        execution_engine,
+        "record_execution_outcome",
+        lambda *_args, **_kwargs: None,
+    )
+    execution = SimpleNamespace(
+        id="execution-test",
+        campaign_id="campaign-test",
+        execution_type="improve_internal_links",
+        execution_payload='{"metric_before": 8.0, "metric_name": "avg_rank"}',
+        status="completed",
+    )
+
+    execution_engine._record_outcome_if_possible(db_session, execution, {})
+
+    assert signal_reads == [{"db": db_session, "publish": False}]
 
 
 def test_schedule_and_execute_recommendation_idempotently(
