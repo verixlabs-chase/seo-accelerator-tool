@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import app.services.commercial_plan_service as commercial_plan_service
 import app.services.location_allowance_service as location_allowance_service
 from app.models.business_location import BusinessLocation
 from app.domain.commercial_tiers import (
@@ -35,6 +36,18 @@ class _FirstQueryMiss:
         return self
 
     def first(self):
+        return None
+
+
+class _OneQueryMiss:
+    def __init__(self, query) -> None:
+        self.query = query
+
+    def filter(self, *criteria):
+        self.query = self.query.filter(*criteria)
+        return self
+
+    def one_or_none(self):
         return None
 
 
@@ -130,6 +143,39 @@ def test_commercial_materializer_uses_published_location_limits(
     assert profile.tier_code == legacy_tier_code_for_plan(plan_code)
     assert profile.version == COMMERCIAL_LEGACY_TIER_VERSION
     assert allowance.included_locations == expected_limit
+
+
+def test_solo_materializer_recovers_when_initial_standard_profile_lookup_misses(
+    db_session, create_test_org, monkeypatch
+) -> None:
+    organization = create_test_org(name="Legacy Standard profile recovery org")
+    original_query = db_session.query
+    profile_query_count = 0
+
+    def query_with_initial_profile_miss(*entities, **kwargs):
+        nonlocal profile_query_count
+        query = original_query(*entities, **kwargs)
+        if entities == (TierProfile,):
+            profile_query_count += 1
+            if profile_query_count == 1:
+                return _OneQueryMiss(query)
+        return query
+
+    monkeypatch.setattr(db_session, "query", query_with_initial_profile_miss)
+
+    repaired, materialization = commercial_plan_service.apply_commercial_plan(
+        db_session,
+        organization_id=organization.id,
+        plan_code="solo",
+    )
+
+    assert repaired.plan_type == "solo"
+    assert materialization["tier_profile_id"] == repaired.tier_profile_id
+    assert profile_query_count >= 2
+    profile = db_session.get(TierProfile, repaired.tier_profile_id)
+    assert profile is not None
+    assert profile.tier_code == "standard"
+    assert profile.version == COMMERCIAL_LEGACY_TIER_VERSION
 
 
 def test_arbitrary_profile_cannot_override_solo_location_allowance(
