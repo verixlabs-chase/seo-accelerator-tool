@@ -23,6 +23,9 @@ from app.services import durable_job_service, job_service
 from tests.conftest import create_test_campaign
 
 
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+
 MASTER_KEY_B64 = base64.b64encode(b"automation-webhook-test-key-32!!").decode("ascii")
 
 
@@ -419,7 +422,7 @@ def test_reserved_approval_event_cannot_be_subscribed_or_fanned_out(
 
 
 def test_automation_jobs_are_cron_driven_and_registered() -> None:
-    config = json.loads(Path("backend/vercel.json").read_text(encoding="utf-8"))
+    config = json.loads((BACKEND_ROOT / "vercel.json").read_text(encoding="utf-8"))
     assert {
         "path": "/api/v1/internal/jobs/drain",
         "schedule": "*/5 * * * *",

@@ -126,7 +126,11 @@ def schedule_execution(
         if daily_count >= daily_cap:
             return _governance_block(campaign_id=recommendation.campaign_id, execution_type=execution_type, reason_code='max_daily_executions_exceeded', message='Daily execution cap exceeded by governance policy.')
         metric_name = _DEFAULT_METRIC_BY_EXECUTION_TYPE.get(execution_type, 'avg_rank')
-        signals = assemble_signals(recommendation.campaign_id, db=session)
+        # Scheduling only reads the current metrics. Publishing a signal update
+        # here recursively invokes intelligence subscribers while the caller's
+        # transaction can already hold write locks (notably on SQLite), causing
+        # request timeouts without adding any new observation.
+        signals = assemble_signals(recommendation.campaign_id, db=session, publish=False)
         metric_before = float(signals.get(metric_name, 0.0) or 0.0)
         idempotency_key = f'{recommendation.id}:{execution_type}:{day_start.date().isoformat()}'
         if managed_automation:
