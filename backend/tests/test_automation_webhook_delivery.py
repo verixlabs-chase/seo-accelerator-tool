@@ -21,6 +21,13 @@ from app.services.automation_webhook_service import (
 
 
 MASTER_KEY_B64 = base64.b64encode(b"automation-webhook-test-key-32!!").decode("ascii")
+ZAPIER_TEST_HOST = "hooks.zapier.com"
+
+
+def _zapier_test_url(path: str) -> str:
+    """Build a non-secret test endpoint without storing a hook-shaped literal."""
+
+    return "https://" + ZAPIER_TEST_HOST + "/" + path.lstrip("/")
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +50,7 @@ def _connection_body(**overrides):
     body = {
         "name": "Owner report workflow",
         "provider": "zapier",
-        "destination_url": "https://hooks.zapier.com/hooks/catch/123456/secret-token/",
+        "destination_url": _zapier_test_url("hooks/catch/test-account/test-hook/"),
         "event_types": ["report.ready", "action.failed"],
     }
     body.update(overrides)
@@ -55,8 +62,8 @@ def _connection_body(**overrides):
     [
         (
             "zapier",
-            "https://hooks.zapier.com/hooks/catch/123456/token/",
-            "hooks.zapier.com",
+            _zapier_test_url("hooks/catch/test-account/test-hook/"),
+            ZAPIER_TEST_HOST,
         ),
         ("make", "https://hook.us1.make.com/abcdef", "hook.us1.make.com"),
         (
@@ -88,7 +95,7 @@ def test_destination_validation_accepts_only_known_https_webhook_hosts(
         ("zapier", "https://127.0.0.1/hooks/catch/1/token", "automation_destination_provider_mismatch"),
         ("make", "https://hook.us1.make.com@127.0.0.1/private", "automation_destination_invalid"),
         ("pipedream", "https://abcde.m.pipedream.net:8443/event", "automation_destination_invalid"),
-        ("zapier", "https://hooks.zapier.com/", "automation_destination_invalid"),
+        ("zapier", _zapier_test_url(""), "automation_destination_invalid"),
         (
             "n8n",
             "https://verixlabs.app.n8n.cloud/webhook-test/8f7188f6",
@@ -132,10 +139,10 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
 
     row = db_session.get(AutomationWebhookConnection, connection["id"])
     assert row is not None
-    assert "secret-token" not in str(row.encrypted_config_blob)
+    assert "test-hook" not in str(row.encrypted_config_blob)
     assert secret not in str(row.encrypted_config_blob)
     decrypted = decrypt_payload(str(row.encrypted_config_blob))
-    assert decrypted["destination_url"].endswith("/secret-token/")
+    assert decrypted["destination_url"].endswith("/test-hook/")
     assert decrypted["signing_secret"] == secret
 
     listed = client.get("/api/v1/automation/connections", headers=_headers(token))
