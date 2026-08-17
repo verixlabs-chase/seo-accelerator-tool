@@ -4761,6 +4761,27 @@ Implementation status (August 17, 2026):
   test receipt and then a later accepted real product event; downloading or
   evaluating a fixture is never represented as production evidence.
 
+#### AUT1I - Monthly Delivery Visibility
+
+Implementation status (August 17, 2026):
+
+- The automation connection response now includes a calendar-month delivery
+  summary for the organization and for each saved destination. It separates
+  real product events from connection tests, counts distinct events separately
+  from HTTP attempts, and keeps accepted, waiting/retrying, dead-letter
+  recovery, and stopped states distinct.
+- Settings shows the organization summary and a compact per-connection line so
+  an owner can see whether traffic is real, test-only, retrying, or in need of
+  recovery without opening provider logs. Existing receipts remain the source
+  of truth; no external platform estimates or billing counters are inferred.
+- This first visibility slice is explicitly observational. It does not claim a
+  plan allowance, charge for attempts, or silently enforce a volume limit.
+  Versioned event allowances and server-side pre-delivery enforcement remain a
+  later commercial automation slice after packaging is approved.
+- Delivery bodies, destination URLs, signing secrets, provider response bodies,
+  customer content, and supplier-internal identifiers are not included in the
+  usage response or UI.
+
 Placement and packaging:
 
 - This is a later integration sprint after DT1 connection truth, ALT1 event

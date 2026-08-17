@@ -11,6 +11,7 @@ import uuid
 
 import httpx
 from pydantic import ValidationError
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.automation import (
@@ -95,6 +96,10 @@ def list_connections(db: Session, *, organization_id: str) -> dict[str, Any]:
     )
     return {
         "items": [_serialize_connection(db, row) for row in rows],
+        "monthly_delivery_usage": _monthly_delivery_usage(
+            db,
+            organization_id=organization_id,
+        ),
         "supported_providers": [
             {"code": code, "label": label} for code, label in _PROVIDERS.items()
         ],
@@ -1251,6 +1256,90 @@ def _serialize_connection(
         ),
         "automatic_actions_enabled": False,
         "conformance_proof": conformance_proof,
+        "monthly_delivery_usage": _monthly_delivery_usage(
+            db,
+            organization_id=row.organization_id,
+            connection_id=row.id,
+        ),
+    }
+
+
+def _monthly_delivery_usage(
+    db: Session,
+    *,
+    organization_id: str,
+    connection_id: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    period_start = current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    next_month_seed = period_start.replace(day=28) + timedelta(days=4)
+    period_end = next_month_seed.replace(day=1)
+    query = db.query(
+        func.count(AutomationWebhookDelivery.id).label("total_events"),
+        func.coalesce(func.sum(AutomationWebhookDelivery.attempt_count), 0).label(
+            "attempts"
+        ),
+        func.coalesce(
+            func.sum(
+                case((AutomationWebhookDelivery.delivery_kind == "product", 1), else_=0)
+            ),
+            0,
+        ).label("product_events"),
+        func.coalesce(
+            func.sum(
+                case((AutomationWebhookDelivery.delivery_kind == "test", 1), else_=0)
+            ),
+            0,
+        ).label("test_events"),
+        func.coalesce(
+            func.sum(
+                case((AutomationWebhookDelivery.status == "delivered", 1), else_=0)
+            ),
+            0,
+        ).label("accepted"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (AutomationWebhookDelivery.status.in_(("pending", "failed")), 1),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("waiting_or_retrying"),
+        func.coalesce(
+            func.sum(
+                case((AutomationWebhookDelivery.status == "dead_letter", 1), else_=0)
+            ),
+            0,
+        ).label("needs_recovery"),
+        func.coalesce(
+            func.sum(
+                case((AutomationWebhookDelivery.status == "cancelled", 1), else_=0)
+            ),
+            0,
+        ).label("stopped"),
+    ).filter(
+        AutomationWebhookDelivery.organization_id == organization_id,
+        AutomationWebhookDelivery.created_at >= period_start,
+        AutomationWebhookDelivery.created_at < period_end,
+    )
+    if connection_id is not None:
+        query = query.filter(AutomationWebhookDelivery.connection_id == connection_id)
+    totals = query.one()
+    return {
+        "period_start": _iso(period_start),
+        "period_end": _iso(period_end),
+        "total_events": int(totals.total_events or 0),
+        "product_events": int(totals.product_events or 0),
+        "test_events": int(totals.test_events or 0),
+        "attempts": int(totals.attempts or 0),
+        "accepted": int(totals.accepted or 0),
+        "waiting_or_retrying": int(totals.waiting_or_retrying or 0),
+        "needs_recovery": int(totals.needs_recovery or 0),
+        "stopped": int(totals.stopped or 0),
+        "usage_only": True,
+        "allowance_enforced": False,
     }
 
 

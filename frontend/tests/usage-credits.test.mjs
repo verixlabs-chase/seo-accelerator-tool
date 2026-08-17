@@ -80,6 +80,12 @@ test("settings provides outbound-only signed workflow connections", () => {
   assert.match(settings, /Real product event accepted|product_event_accepted/);
   assert.match(settings, /InsightOS proves delivery only after the signed test/);
   assert.match(settings, /The saved webhook URL and signing secret are encrypted/);
+  assert.match(settings, /monthly_delivery_usage/);
+  assert.match(settings, /Workflow delivery this month/);
+  assert.match(settings, /Distinct events are counted once/);
+  assert.match(settings, /Delivery attempts include bounded retries/);
+  assert.match(settings, /This is observed activity, not a plan allowance or billable-usage counter/);
+  assert.match(settings, /connection\.monthly_delivery_usage\.product_events/);
   assert.match(settings, /Send test/);
   assert.match(settings, /Retry last test/);
   assert.match(settings, /Automatic delivery on/);

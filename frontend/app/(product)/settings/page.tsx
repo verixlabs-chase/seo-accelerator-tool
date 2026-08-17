@@ -258,6 +258,21 @@ type BillingSummary = {
   } | null;
 };
 
+type AutomationMonthlyDeliveryUsage = {
+  period_start: string;
+  period_end: string;
+  total_events: number;
+  product_events: number;
+  test_events: number;
+  attempts: number;
+  accepted: number;
+  waiting_or_retrying: number;
+  needs_recovery: number;
+  stopped: number;
+  usage_only: true;
+  allowance_enforced: false;
+};
+
 type AutomationDelivery = {
   id: string;
   event_id: string;
@@ -299,6 +314,7 @@ type AutomationConnection = {
   recoverable_deliveries: AutomationDelivery[];
   automatic_delivery_enabled: boolean;
   automatic_actions_enabled: false;
+  monthly_delivery_usage: AutomationMonthlyDeliveryUsage;
   conformance_proof: {
     state: "not_tested" | "test_accepted" | "product_event_accepted" | "needs_attention";
     label: string;
@@ -352,6 +368,7 @@ type AutomationProviderSetup = {
 
 type AutomationConnectionsPayload = {
   items: AutomationConnection[];
+  monthly_delivery_usage: AutomationMonthlyDeliveryUsage;
   supported_providers: Array<{ code: "zapier" | "make" | "pipedream" | "n8n"; label: string }>;
   supported_events: Array<{ code: string; label: string; summary: string }>;
   live_event_types: string[];
@@ -774,6 +791,8 @@ export default function SettingsPage() {
   const [payload, setPayload] = useState<ConnectionsPayload | null>(null);
   const [usageAllowance, setUsageAllowance] = useState<UsageAllowance | null>(null);
   const [automationConnections, setAutomationConnections] = useState<AutomationConnection[]>([]);
+  const [automationMonthlyUsage, setAutomationMonthlyUsage] =
+    useState<AutomationMonthlyDeliveryUsage | null>(null);
   const [automationProviders, setAutomationProviders] = useState<AutomationConnectionsPayload["supported_providers"]>([]);
   const [automationEvents, setAutomationEvents] = useState<AutomationConnectionsPayload["supported_events"]>([]);
   const [automationRecipes, setAutomationRecipes] = useState<AutomationStarterRecipe[]>([]);
@@ -999,6 +1018,7 @@ export default function SettingsPage() {
       method: "GET",
     })) as AutomationConnectionsPayload;
     setAutomationConnections(response.items || []);
+    setAutomationMonthlyUsage(response.monthly_delivery_usage || null);
     setAutomationProviders(response.supported_providers || []);
     setAutomationEvents(response.supported_events || []);
     setAutomationRecipes(response.starter_recipes || []);
@@ -4037,6 +4057,40 @@ export default function SettingsPage() {
                       </p>
                     ) : null}
 
+                    {automationMonthlyUsage && usageAllowance.external_automation.gateway_enabled ? (
+                      <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                              Workflow delivery this month
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-500">
+                              Distinct events are counted once. Delivery attempts include bounded retries.
+                            </p>
+                          </div>
+                          <span className="text-xs text-zinc-500">
+                            Since {formatTimestamp(automationMonthlyUsage.period_start)}
+                          </span>
+                        </div>
+                        <dl className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          {[
+                            ["Product updates", automationMonthlyUsage.product_events],
+                            ["Connection tests", automationMonthlyUsage.test_events],
+                            ["Accepted", automationMonthlyUsage.accepted],
+                            ["Needs attention", automationMonthlyUsage.waiting_or_retrying + automationMonthlyUsage.needs_recovery],
+                          ].map(([label, value]) => (
+                            <div key={String(label)} className="rounded-md border border-[#292a2f] bg-[#141518] px-3 py-2">
+                              <dt className="text-xs text-zinc-500">{label}</dt>
+                              <dd className="mt-1 text-lg font-semibold text-zinc-100">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <p className="mt-3 text-xs leading-5 text-zinc-500">
+                          {automationMonthlyUsage.attempts} total delivery {automationMonthlyUsage.attempts === 1 ? "attempt" : "attempts"}. This is observed activity, not a plan allowance or billable-usage counter.
+                        </p>
+                      </div>
+                    ) : null}
+
                     {automationConnections.length > 0 ? (
                       <div className="mt-4 space-y-3">
                         {automationConnections.map((connection) => {
@@ -4051,6 +4105,9 @@ export default function SettingsPage() {
                                   </p>
                                   <p className="mt-2 text-xs leading-5 text-zinc-500">
                                     {connection.event_types.length} live {connection.event_types.length === 1 ? "event" : "events"} subscribed. Destination URL stays private. Signing secret version {connection.signing_secret_version}.
+                                  </p>
+                                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                    This month: {connection.monthly_delivery_usage.product_events} product {connection.monthly_delivery_usage.product_events === 1 ? "event" : "events"}, {connection.monthly_delivery_usage.test_events} {connection.monthly_delivery_usage.test_events === 1 ? "test" : "tests"}, {connection.monthly_delivery_usage.attempts} delivery {connection.monthly_delivery_usage.attempts === 1 ? "attempt" : "attempts"}.
                                   </p>
                                   <div className={`mt-2 rounded-md border px-3 py-2 ${connection.conformance_proof.state === "product_event_accepted" ? "border-emerald-500/20 bg-emerald-500/5" : connection.conformance_proof.state === "needs_attention" ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
                                     <p className="text-xs font-medium text-zinc-200">

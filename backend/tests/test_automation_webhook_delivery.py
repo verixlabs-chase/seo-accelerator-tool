@@ -183,6 +183,23 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
         for item in provider_setup
     )
     assert all(item["customer_supplies_webhook_url"] is True for item in provider_setup)
+    assert listed.json()["data"]["monthly_delivery_usage"] == {
+        "period_start": listed.json()["data"]["monthly_delivery_usage"]["period_start"],
+        "period_end": listed.json()["data"]["monthly_delivery_usage"]["period_end"],
+        "total_events": 0,
+        "product_events": 0,
+        "test_events": 0,
+        "attempts": 0,
+        "accepted": 0,
+        "waiting_or_retrying": 0,
+        "needs_recovery": 0,
+        "stopped": 0,
+        "usage_only": True,
+        "allowance_enforced": False,
+    }
+    assert listed.json()["data"]["items"][0]["monthly_delivery_usage"][
+        "total_events"
+    ] == 0
     assert listed.json()["data"]["items"][0]["conformance_proof"] == {
         "state": "not_tested",
         "label": "Not tested",
@@ -324,6 +341,10 @@ def test_signed_test_delivery_records_receipt_without_exposing_destination(
     assert data["delivery"]["attempts"][0]["response_status"] == 204
     assert data["connection"]["conformance_proof"]["state"] == "test_accepted"
     assert data["connection"]["conformance_proof"]["production_proven"] is False
+    assert data["connection"]["monthly_delivery_usage"]["test_events"] == 1
+    assert data["connection"]["monthly_delivery_usage"]["product_events"] == 0
+    assert data["connection"]["monthly_delivery_usage"]["attempts"] == 1
+    assert data["connection"]["monthly_delivery_usage"]["accepted"] == 1
 
     verified = verify_signed_automation_event(
         body=captured["body"],
@@ -380,6 +401,13 @@ def test_failed_delivery_retries_same_event_and_stops_after_success(
     assert retried_delivery["status"] == "delivered"
     assert retried_delivery["attempt_count"] == 2
     assert len(retried_delivery["attempts"]) == 2
+    listed = client.get("/api/v1/automation/connections", headers=_headers(token))
+    usage = listed.json()["data"]["monthly_delivery_usage"]
+    assert usage["total_events"] == 1
+    assert usage["test_events"] == 1
+    assert usage["attempts"] == 2
+    assert usage["accepted"] == 1
+    assert usage["waiting_or_retrying"] == 0
 
     duplicate = client.post(
         f"/api/v1/automation/deliveries/{first_delivery['id']}/retry",
