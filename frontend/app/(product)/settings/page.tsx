@@ -322,12 +322,30 @@ type AutomationStarterRecipe = {
 
 type AutomationProviderSetup = {
   code: "zapier" | "make" | "pipedream" | "n8n";
-  version: "insightos.automation.provider-setup.v1";
+  version: "insightos.automation.provider-setup.v2";
   label: string;
   webhook_source: string;
   production_url_note: string;
   setup_steps: string[];
-  template_status: "setup_guide_only";
+  official_docs_url: string;
+  account_note: string;
+  payload_path: string;
+  headers_path: string;
+  route_field: string;
+  workflow_steps: string[];
+  field_map: Array<{ source: string; purpose: string }>;
+  signature_contract: {
+    algorithm: "HMAC-SHA256";
+    signature_header: "X-InsightOS-Signature";
+    timestamp_header: "X-InsightOS-Timestamp";
+    event_id_header: "X-InsightOS-Event-ID";
+    signed_input: "{timestamp}.{exact_raw_request_body}";
+    signature_prefix: "v1=";
+    replay_window_seconds: 300;
+  };
+  template_status: "connection_kit_ready";
+  customer_account_required: true;
+  customer_supplies_webhook_url: true;
   signed_events_required: true;
   inbound_actions_enabled: false;
 };
@@ -339,7 +357,7 @@ type AutomationConnectionsPayload = {
   live_event_types: string[];
   recipe_catalog_version: "insightos.automation.recipes.v1";
   starter_recipes: AutomationStarterRecipe[];
-  provider_setup_version: "insightos.automation.provider-setup.v1";
+  provider_setup_version: "insightos.automation.provider-setup.v2";
   provider_setup: AutomationProviderSetup[];
   automatic_actions_enabled: false;
   truth: string;
@@ -3814,19 +3832,68 @@ export default function SettingsPage() {
                         </div>
                         {selectedAutomationProviderSetup ? (
                           <div className="mt-4 rounded-md border border-sky-500/20 bg-sky-500/5 p-3">
-                            <p className="text-xs font-semibold text-sky-100">
-                              Set up {selectedAutomationProviderSetup.webhook_source}
-                            </p>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold text-sky-100">
+                                Set up {selectedAutomationProviderSetup.webhook_source}
+                              </p>
+                              <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                                Connection kit ready
+                              </span>
+                            </div>
                             <p className="mt-1 text-xs leading-5 text-sky-100/75">
                               {selectedAutomationProviderSetup.production_url_note}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-400">
+                              {selectedAutomationProviderSetup.account_note}
                             </p>
                             <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
                               {selectedAutomationProviderSetup.setup_steps.map((step) => (
                                 <li key={step}>{step}</li>
                               ))}
                             </ol>
-                            <p className="mt-2 text-xs leading-5 text-zinc-500">
-                              This is setup guidance, not an installed external template. InsightOS proves the connection only after the signed test—and later a real product event—is accepted.
+                            <a
+                              className="mt-2 inline-flex text-xs font-medium text-sky-300 underline decoration-sky-300/40 underline-offset-4 hover:text-sky-200"
+                              href={selectedAutomationProviderSetup.official_docs_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open official {selectedAutomationProviderSetup.label} webhook documentation
+                            </a>
+                            <div className="mt-3 border-t border-sky-500/15 pt-3">
+                              <p className="text-xs font-semibold text-zinc-200">Wire the received event</p>
+                              <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+                                <div>
+                                  <dt className="text-zinc-500">Payload</dt>
+                                  <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.payload_path}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-zinc-500">Headers</dt>
+                                  <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.headers_path}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-zinc-500">Route on</dt>
+                                  <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.route_field}</dd>
+                                </div>
+                              </dl>
+                              <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
+                                {selectedAutomationProviderSetup.workflow_steps.map((step) => (
+                                  <li key={step}>{step}</li>
+                                ))}
+                              </ol>
+                              <div className="mt-3 overflow-hidden rounded-md border border-[#303137] bg-[#101114]">
+                                {selectedAutomationProviderSetup.field_map.map((field) => (
+                                  <div key={field.source} className="grid gap-1 border-b border-[#292a2f] px-3 py-2 last:border-b-0 sm:grid-cols-[9rem_1fr]">
+                                    <code className="text-[11px] text-orange-200">{field.source}</code>
+                                    <span className="text-xs leading-5 text-zinc-400">{field.purpose}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                Verification contract: {selectedAutomationProviderSetup.signature_contract.algorithm} over <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.signed_input}</code>. Compare the <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.signature_header}</code> value, reject timestamps older than {selectedAutomationProviderSetup.signature_contract.replay_window_seconds / 60} minutes, and deduplicate with <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.event_id_header}</code>.
+                              </p>
+                            </div>
+                            <p className="mt-3 text-xs leading-5 text-zinc-500">
+                              The InsightOS side is wired. The customer supplies the private webhook URL and chooses the final external action. InsightOS proves delivery only after the signed test—and later a real product event—is accepted.
                             </p>
                           </div>
                         ) : null}

@@ -169,7 +169,7 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
     assert all(item["human_approval_preserved"] is True for item in recipes)
     assert all(item["automatic_actions_enabled"] is False for item in recipes)
     assert listed.json()["data"]["provider_setup_version"] == (
-        "insightos.automation.provider-setup.v1"
+        "insightos.automation.provider-setup.v2"
     )
     provider_setup = listed.json()["data"]["provider_setup"]
     assert {item["code"] for item in provider_setup} == {
@@ -178,7 +178,11 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
         "pipedream",
         "n8n",
     }
-    assert all(item["template_status"] == "setup_guide_only" for item in provider_setup)
+    assert all(
+        item["template_status"] == "connection_kit_ready"
+        for item in provider_setup
+    )
+    assert all(item["customer_supplies_webhook_url"] is True for item in provider_setup)
     assert listed.json()["data"]["items"][0]["conformance_proof"] == {
         "state": "not_tested",
         "label": "Not tested",

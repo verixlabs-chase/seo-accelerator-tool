@@ -4709,6 +4709,35 @@ Implementation status (August 17, 2026):
   credential, command, approval, publishing, WordPress, or Business Profile
   execution path.
 
+#### AUT1G - Provider Wiring Kits
+
+Implementation status (August 17, 2026):
+
+- The provider setup contract is now version 2 and includes a complete wiring
+  kit for Zapier, Make, Pipedream, and n8n Cloud. Each kit links to the
+  provider's official webhook documentation and identifies the exact trigger,
+  payload location, request-header location, and event field used for routing.
+- Every kit supplies the same vendor-neutral field map: `event_id` for
+  duplicate protection, `event_type` for routing, `truth_state` for result
+  truth, `data.summary` for a message or task description, and
+  `resource.href` for a link back to the saved InsightOS record. Provider UI
+  differences do not create different event schemas or delivery semantics.
+- The receiving-side security contract is explicit: HMAC-SHA256 signs
+  `{timestamp}.{exact_raw_request_body}`, the signature uses the `v1=` prefix,
+  events outside a five-minute replay window are rejected, and the event ID is
+  the stable duplicate key. The one-time secret and destination URL remain
+  encrypted and are never included in the public kit.
+- Settings renders the selected provider's official documentation, account
+  responsibility, payload/header paths, workflow steps, normalized field map,
+  and signature contract before the owner saves the endpoint. The customer
+  still owns the external account, generates the private webhook URL, and
+  chooses the final Slack, email, CRM, spreadsheet, or task action.
+- `connection_kit_ready` means the InsightOS sender and customer handoff are
+  implemented; it does not claim that InsightOS created or published a workflow
+  inside another company's account. Actual provider-by-provider production
+  proof still requires a real customer-owned endpoint and remains a deployment
+  closeout item.
+
 Placement and packaging:
 
 - This is a later integration sprint after DT1 connection truth, ALT1 event
