@@ -15,12 +15,39 @@ from app.models.automation_webhook import (
     AutomationWebhookDeliveryAttempt,
 )
 from app.models.campaign import Campaign
+from app.models.tier_profile import TierProfile
 from app.models.user import User
 from scripts.verify_restore_integrity import _rls_behavior_probe
 from tests.conftest import create_test_campaign
 
 
 pytestmark = pytest.mark.postgres_required
+
+
+def test_application_role_can_read_immutable_tier_profile_catalog(
+    db_session: Session,
+) -> None:
+    user = db_session.query(User).filter(User.email == "a@example.com").one()
+    db_session.commit()
+
+    isolated = Session(bind=db_session.get_bind(), autoflush=False, autocommit=False)
+    try:
+        set_session_security_context(
+            isolated,
+            tenant_id=user.tenant_id,
+            organization_id=user.tenant_id,
+            user_id=user.id,
+            platform_access=False,
+        )
+        visible_profiles = set(
+            isolated.execute(
+                select(TierProfile.tier_code).where(TierProfile.version == 1)
+            ).scalars()
+        )
+        assert "standard" in visible_profiles
+    finally:
+        isolated.rollback()
+        isolated.close()
 
 
 def test_rls_blocks_cross_organization_reads_and_writes(db_session: Session) -> None:
