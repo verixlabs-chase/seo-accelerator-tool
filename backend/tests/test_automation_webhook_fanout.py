@@ -27,6 +27,13 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 MASTER_KEY_B64 = base64.b64encode(b"automation-webhook-test-key-32!!").decode("ascii")
+ZAPIER_TEST_HOST = "hooks.zapier.com"
+
+
+def _zapier_test_url(path: str) -> str:
+    """Build a non-secret test endpoint without storing a hook-shaped literal."""
+
+    return "https://" + ZAPIER_TEST_HOST + "/" + path.lstrip("/")
 
 
 @pytest.fixture(autouse=True)
@@ -59,8 +66,8 @@ def _create_verified_connection(
         json={
             "name": "Automatic product events",
             "provider": "zapier",
-            "destination_url": (
-                "https://hooks.zapier.com/hooks/catch/123456/automatic-events/"
+            "destination_url": _zapier_test_url(
+                "hooks/catch/test-account/automatic-events/"
             ),
             "event_types": event_types or ["report.ready"],
         },

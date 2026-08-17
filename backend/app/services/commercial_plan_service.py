@@ -29,6 +29,7 @@ from app.services.location_allowance_service import (
 )
 from app.services.provisioning_service import (
     TierProfileValidationError,
+    ensure_default_tier_profile,
     validate_commercial_profile_pointer,
 )
 
@@ -271,6 +272,19 @@ def apply_commercial_plan(
         )
         .one_or_none()
     )
+    # Older production workspaces can predate the canonical Standard v1 row.
+    # Reapplying Solo/Growth is a safe repair boundary: create or reuse the
+    # immutable legacy profile, then continue with the normal integrity check.
+    # Enterprise and internal profiles remain fail-closed because there is no
+    # equivalent canonical bootstrap for them.
+    if profile is None and legacy_tier_code == "standard":
+        try:
+            profile = ensure_default_tier_profile(db)
+        except TierProfileValidationError as exc:
+            raise CommercialPlanMaterializationError(
+                "The requested plan profile is not available.",
+                reason_code="commercial_plan_profile_unavailable",
+            ) from exc
     if profile is None or not profile.is_active:
         raise CommercialPlanMaterializationError(
             "The requested plan profile is not available.",
