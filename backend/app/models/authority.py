@@ -604,6 +604,18 @@ class DirectoryListing(Base):
     last_verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    source_type: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="live_collection", index=True
+    )
+    source_system: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_record_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_claimed_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    import_batch_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("migration_import_batches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
@@ -656,6 +668,18 @@ class DirectoryListingObservation(Base):
     evidence_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
+    )
+    source_type: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="live_collection", index=True
+    )
+    source_system: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_record_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_claimed_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    import_batch_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("migration_import_batches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
 

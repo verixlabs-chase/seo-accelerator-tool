@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.core.config import get_settings
 from app.api.v1 import (
+    ai_visibility,
     auth,
     automation,
     authority,
@@ -14,6 +15,7 @@ from app.api.v1 import (
     content,
     crawl,
     data_connections,
+    data_governance,
     debug_live_validation,
     dashboard,
     entity,
@@ -30,6 +32,7 @@ from app.api.v1 import (
     keyword_research,
     local,
     locations,
+    migration_imports,
     onboarding,
     platform_control,
     portfolio_targeting,
@@ -57,11 +60,13 @@ settings = get_settings()
 tenant_api_router.include_router(health.router)
 tenant_api_router.include_router(tenants.router)
 tenant_api_router.include_router(auth.router)
+tenant_api_router.include_router(ai_visibility.router)
 tenant_api_router.include_router(billing.router)
 tenant_api_router.include_router(automation.router)
 tenant_api_router.include_router(campaigns.router)
 tenant_api_router.include_router(crawl.router)
 tenant_api_router.include_router(data_connections.router)
+tenant_api_router.include_router(data_governance.router)
 if settings.app_env.lower() != 'production':
     tenant_api_router.include_router(debug_live_validation.router)
 tenant_api_router.include_router(entity.router)
@@ -96,6 +101,7 @@ tenant_api_router.include_router(business_locations.router)
 tenant_api_router.include_router(business_services.router)
 tenant_api_router.include_router(business_service_areas.router)
 tenant_api_router.include_router(locations.router)
+tenant_api_router.include_router(migration_imports.router)
 tenant_api_router.include_router(hierarchy_observability.router)
 tenant_api_router.include_router(portfolio_targeting.router)
 tenant_api_router.include_router(product_analytics.tenant_router)

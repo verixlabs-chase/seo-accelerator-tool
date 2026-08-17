@@ -338,6 +338,7 @@ def ensure_action_plan_occurrences(
     recommendations: list[StrategyRecommendation],
     action_plans: dict[str, dict],
     now: datetime | None = None,
+    commit: bool = True,
 ) -> dict[str, dict]:
     """Materialize one resumable, deterministic work occurrence per action."""
 
@@ -451,7 +452,10 @@ def ensure_action_plan_occurrences(
             now=resolved_now,
         )
 
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return work_items
 
 

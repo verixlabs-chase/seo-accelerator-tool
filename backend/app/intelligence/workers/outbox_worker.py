@@ -6,6 +6,7 @@ from app.db.session import SessionLocal
 from app.events.emitter import EventEnvelope
 from app.events.event_bus import event_bus
 from app.events.outbox.event_outbox import EventOutbox
+from app.services.automation_webhook_service import queue_fanout_for_outbox_event
 
 
 def process(payload: dict[str, object] | None = None) -> dict[str, object]:
@@ -16,16 +17,20 @@ def process(payload: dict[str, object] | None = None) -> dict[str, object]:
             session.query(EventOutbox)
             .filter(EventOutbox.status == 'pending')
             .order_by(EventOutbox.created_at.asc(), EventOutbox.id.asc())
+            .with_for_update(skip_locked=True)
             .limit(limit)
             .all()
         )
         processed = 0
         failed = 0
+        automation_fanout_jobs = 0
         published_event_ids: list[str] = []
         for row in rows:
             try:
                 event = EventEnvelope.model_validate_json(row.payload_json)
                 _process_learning_event(session, event=event)
+                if queue_fanout_for_outbox_event(session, event=event):
+                    automation_fanout_jobs += 1
                 event_bus.publish(event.event_type, event.model_dump(mode='python'))
                 row.status = 'processed'
                 row.processed_at = datetime.now(UTC)
@@ -41,6 +46,7 @@ def process(payload: dict[str, object] | None = None) -> dict[str, object]:
         return {
             'processed': processed,
             'failed': failed,
+            'automation_fanout_jobs': automation_fanout_jobs,
             'event_ids': published_event_ids,
         }
     finally:

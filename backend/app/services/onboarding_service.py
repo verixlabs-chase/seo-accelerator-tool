@@ -14,6 +14,7 @@ from app.models.organization_provider_credential import OrganizationProviderCred
 from app.models.reporting import MonthlyReport
 from app.models.tenant import Tenant
 from app.services import (
+    commercial_plan_service,
     crawl_service,
     intelligence_service,
     lifecycle_service,
@@ -159,6 +160,8 @@ def run_next_step(db: Session, session: OnboardingSession) -> OnboardingSession:
         else:
             raise ValueError(f"unsupported onboarding step: {target_step}")
     except Exception as exc:  # noqa: BLE001
+        # Keep failed steps retryable without committing partial customer work.
+        db.rollback()
         session.status = FAILED_STATUS
         session.current_step = FAILED
         session.retry_count += 1
@@ -224,7 +227,7 @@ def _ensure_org_ready(db: Session, session: OnboardingSession, payload: dict[str
         organization = Organization(
             id=tenant.id,
             name=org_name or f"org-{tenant.id[:8]}",
-            plan_type="standard",
+            plan_type="solo",
             billing_mode="subscription",
             status="active",
             tier_profile_id=tier_profile.id,
@@ -233,8 +236,12 @@ def _ensure_org_ready(db: Session, session: OnboardingSession, payload: dict[str
             updated_at=datetime.now(UTC),
         )
         db.add(organization)
-        db.commit()
-        db.refresh(organization)
+        db.flush()
+        commercial_plan_service.apply_commercial_plan(
+            db,
+            organization_id=organization.id,
+            plan_code="solo",
+        )
 
     provisioning_service.ensure_organization_provisioned(db, organization_id=organization.id)
     session.tenant_id = tenant.id

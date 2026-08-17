@@ -10,15 +10,17 @@ from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.fleet_job import FleetJob, FleetJobStatus
 from app.models.fleet_job_item import FleetJobItem, FleetJobItemStatus
-from app.models.organization import Organization
 from app.models.portfolio import Portfolio, PortfolioStatus
 from app.models.portfolio_fleet_run import PortfolioFleetRun, PortfolioFleetRunItem
 from app.models.portfolio_targeting import PortfolioTargetSnapshot
 from app.services.audit_service import write_audit_log
+from app.services.commercial_plan_service import (
+    FEATURE_PROFILE_FLEET_ACTIONS,
+    require_commercial_feature,
+)
 from app.services.cost_economics_service import (
     CostEconomicsError,
     get_customer_credit_summary,
-    resolve_plan_economics,
 )
 from app.services.fleet_service import (
     enqueue_pending_items_for_portfolio,
@@ -335,6 +337,7 @@ def retry_failed_portfolio_fleet_run_items(
     actor_user_id: str,
     expected_version: int,
 ) -> PortfolioFleetRun:
+    _assert_bulk_feature_plan(db, organization_id=organization_id)
     run = get_portfolio_fleet_run(
         db,
         organization_id=organization_id,
@@ -435,6 +438,7 @@ def resume_portfolio_fleet_run(
     actor_user_id: str,
     expected_version: int,
 ) -> PortfolioFleetRun:
+    _assert_bulk_feature_plan(db, organization_id=organization_id)
     run = _locked_run_or_error(db, organization_id=organization_id, run_id=run_id)
     if run.version != expected_version:
         raise PortfolioFleetError("fleet_run_version_conflict", status_code=409)
@@ -907,15 +911,16 @@ def _snapshot_or_error(
 
 
 def _assert_bulk_feature_plan(db: Session, *, organization_id: str) -> None:
-    organization = db.get(Organization, organization_id)
-    if organization is None:
-        raise PortfolioFleetError("organization_not_found", status_code=404)
     try:
-        plan = resolve_plan_economics(organization.plan_type)
+        require_commercial_feature(
+            db,
+            organization_id=organization_id,
+            feature_code=FEATURE_PROFILE_FLEET_ACTIONS,
+        )
     except CostEconomicsError as exc:
+        if exc.reason_code == "organization_not_found":
+            raise PortfolioFleetError("organization_not_found", status_code=404) from exc
         raise PortfolioFleetError("fleet_feature_upgrade_required", status_code=403) from exc
-    if plan.code not in {"multi_location", "enterprise"}:
-        raise PortfolioFleetError("fleet_feature_upgrade_required", status_code=403)
 
 
 def _run_or_error(

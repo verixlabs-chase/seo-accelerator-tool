@@ -26,6 +26,8 @@ from app.models.rank import CampaignKeyword
 from app.providers.local_rank_grid import GridTaskRequest, build_provider, normalize_domain
 from app.services import job_service, metric_contract_service
 from app.services.cost_economics_service import (
+    CostEconomicsError,
+    authorize_reserved_provider_dispatch,
     calculate_provider_cost,
     get_customer_credit_summary,
     reconcile_provider_cost,
@@ -38,8 +40,6 @@ from app.services.provider_credentials_service import (
     resolve_provider_credential_owner,
     resolve_provider_credentials,
 )
-
-
 PROVIDER_NAME = "dataforseo"
 CAPABILITY = "local_rank_grid"
 OPERATION = "google_maps_standard"
@@ -496,27 +496,153 @@ def _provider_for_run(db: Session, run: LocalRankGridRun):
     return build_provider(backend=backend, credentials=credentials)
 
 
-def dispatch_run(db: Session, *, run_id: str, tenant_id: str) -> dict[str, Any]:
-    run = db.get(LocalRankGridRun, run_id)
+def dispatch_run(
+    db: Session,
+    *,
+    run_id: str,
+    tenant_id: str,
+    job_id: str | None = None,
+    expected_worker_id: str | None = None,
+) -> dict[str, Any]:
+    with job_service.serialized_provider_run_dispatch(
+        db,
+        scope=f"local-rank-grid:{run_id}",
+    ) as durable_fence:
+        return _dispatch_run_serialized(
+            db,
+            run_id=run_id,
+            tenant_id=tenant_id,
+            durable_fence=durable_fence,
+            job_id=job_id,
+            expected_worker_id=expected_worker_id,
+        )
+
+
+def _dispatch_run_serialized(
+    db: Session,
+    *,
+    run_id: str,
+    tenant_id: str,
+    durable_fence: bool,
+    job_id: str | None,
+    expected_worker_id: str | None,
+) -> dict[str, Any]:
+    # The run row is a durable, database-backed dispatch claim.  A second
+    # worker must re-read it after acquiring the lock and may not reuse a
+    # stale queued snapshot.
+    run = (
+        db.query(LocalRankGridRun)
+        .filter(LocalRankGridRun.id == run_id)
+        .populate_existing()
+        .with_for_update()
+        .one_or_none()
+    )
     if run is None or run.tenant_id != tenant_id:
         raise ValueError("Area search run was not found.")
-    queued = (
-        db.query(LocalRankGridPoint)
-        .filter(LocalRankGridPoint.run_id == run.id, LocalRankGridPoint.status == "queued")
-        .order_by(LocalRankGridPoint.keyword_id, LocalRankGridPoint.grid_index)
-        .all()
-    )
-    if not queued:
+    if run.status == "submitting":
+        if durable_fence:
+            return _fail_ambiguous_grid_dispatch(
+                db,
+                run=run,
+                provider_call_started=True,
+                error_code="grid_dispatch_claim_abandoned",
+                error_message=(
+                    "The area check stopped before it could confirm every submitted point."
+                ),
+            )
         return {"run_id": run.id, "submitted": 0, "status": run.status}
-    provider = _provider_for_run(db, run)
+    queued_ids = [
+        row[0]
+        for row in (
+            db.query(LocalRankGridPoint)
+            .filter(
+                LocalRankGridPoint.run_id == run.id,
+                LocalRankGridPoint.status == "queued",
+            )
+            .order_by(LocalRankGridPoint.keyword_id, LocalRankGridPoint.grid_index)
+            .with_for_update()
+            .with_entities(LocalRankGridPoint.id)
+            .all()
+        )
+    ]
+    if not queued_ids:
+        return {"run_id": run.id, "submitted": 0, "status": run.status}
     run.status = "submitting"
     run.error_code = None
     run.error_message = None
     db.commit()
-    submitted = 0
     try:
-        for offset in range(0, len(queued), 100):
-            batch = queued[offset : offset + 100]
+        if job_id is not None and expected_worker_id is not None:
+            job_service.lock_claimed_job(
+                db,
+                job_id=job_id,
+                expected_worker_id=expected_worker_id,
+            )
+        if not run.reservation_id:
+            raise CostEconomicsError(
+                "This paid update does not have a saved cost reservation.",
+                reason_code="provider_reservation_required",
+                status_code=409,
+            )
+        authorize_reserved_provider_dispatch(
+            db,
+            reservation=run.reservation_id,
+        )
+    except CostEconomicsError as exc:
+        return _deny_queued_dispatch(
+            db,
+            run=run,
+            queued_ids=queued_ids,
+            error=exc,
+            provider_call_started=False,
+        )
+    submitted = 0
+    provider_call_started = False
+    try:
+        provider = _provider_for_run(db, run)
+        for offset in range(0, len(queued_ids), 100):
+            batch_ids = queued_ids[offset : offset + 100]
+            # Every batch is refreshed and locked after the prior batch's
+            # commit.  This prevents a stale ORM snapshot from submitting a
+            # point that another terminal path has already changed.
+            batch = (
+                db.query(LocalRankGridPoint)
+                .filter(
+                    LocalRankGridPoint.id.in_(batch_ids),
+                    LocalRankGridPoint.run_id == run.id,
+                    LocalRankGridPoint.status == "queued",
+                )
+                .populate_existing()
+                .with_for_update()
+                .order_by(LocalRankGridPoint.keyword_id, LocalRankGridPoint.grid_index)
+                .all()
+            )
+            if not batch:
+                continue
+            try:
+                if job_id is not None and expected_worker_id is not None:
+                    job_service.lock_claimed_job(
+                        db,
+                        job_id=job_id,
+                        expected_worker_id=expected_worker_id,
+                    )
+                authorize_reserved_provider_dispatch(
+                    db,
+                    reservation=run.reservation_id,
+                    # Once an earlier batch may have incurred supplier cost,
+                    # the denial path must settle known work rather than
+                    # returning the entire reservation.
+                    release_on_denial=not provider_call_started,
+                )
+            except CostEconomicsError as exc:
+                return _deny_queued_dispatch(
+                    db,
+                    run=run,
+                    queued_ids=queued_ids,
+                    error=exc,
+                    provider_call_started=provider_call_started,
+                )
+            provider_call_started = True
             results = provider.submit(
                 [
                     GridTaskRequest(
@@ -545,19 +671,148 @@ def dispatch_run(db: Session, *, run_id: str, tenant_id: str) -> dict[str, Any]:
                 point.updated_at = datetime.now(UTC)
                 submitted += int(point.status != "failed")
             db.commit()
-    except Exception as exc:
-        for point in queued:
-            if point.status == "queued":
-                point.status = "failed"
-                point.provider_reported_cost = Decimal("0")
-                point.provider_status_message = "This check could not be submitted."
-        run.error_code = "provider_submission_failed"
-        run.error_message = str(exc)[:1000]
-        db.commit()
+    except Exception:
+        db.rollback()
+        run = db.get(LocalRankGridRun, run_id)
+        if run is None:
+            raise
+        return _fail_ambiguous_grid_dispatch(
+            db,
+            run=run,
+            provider_call_started=provider_call_started,
+        )
     run.submitted_at = run.submitted_at or datetime.now(UTC)
     _refresh_run_totals(db, run)
     db.commit()
     return {"run_id": run.id, "submitted": submitted, "status": run.status}
+
+
+def _fail_ambiguous_grid_dispatch(
+    db: Session,
+    *,
+    run: LocalRankGridRun,
+    provider_call_started: bool,
+    error_code: str = "provider_submission_failed",
+    error_message: str = "This area check could not be submitted.",
+) -> dict[str, Any]:
+    if run.reservation_id:
+        reservation = db.get(CostLedgerEntry, run.reservation_id)
+        if reservation is not None:
+            if provider_call_started:
+                # A provider timeout after submit may still incur the reserved
+                # supplier cost. Conservatively settle the estimate rather than
+                # returning exposure that may already have been consumed.
+                reconcile_provider_cost(
+                    db,
+                    reservation=reservation,
+                    provider_reported_cost=Decimal(reservation.estimated_cost),
+                )
+            else:
+                release_provider_cost(db, reservation=reservation)
+    run = db.get(LocalRankGridRun, run.id)
+    queued = (
+        db.query(LocalRankGridPoint)
+        .filter(LocalRankGridPoint.run_id == run.id, LocalRankGridPoint.status == "queued")
+        .all()
+    )
+    for point in queued:
+        point.status = "failed"
+        point.provider_reported_cost = Decimal("0")
+        point.provider_status_message = "This check could not be submitted."
+        point.updated_at = datetime.now(UTC)
+    points = db.query(LocalRankGridPoint).filter(LocalRankGridPoint.run_id == run.id).all()
+    run.completed_checks = sum(point.status in TERMINAL_POINT_STATUSES for point in points)
+    run.failed_checks = sum(point.status == "failed" for point in points)
+    run.not_found_checks = sum(point.status == "not_found" for point in points)
+    pending_count = sum(point.status == "pending" for point in points)
+    submitted_count = sum(point.status in {"pending", "ranked", "not_found"} for point in points)
+    run.status = "partial" if pending_count or submitted_count else "failed"
+    run.error_code = error_code
+    run.error_message = error_message
+    run.submitted_at = run.submitted_at or datetime.now(UTC)
+    run.completed_at = None if pending_count else datetime.now(UTC)
+    run.updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(run)
+    return {"run_id": run.id, "submitted": submitted_count, "status": run.status}
+
+
+def _deny_queued_dispatch(
+    db: Session,
+    *,
+    run: LocalRankGridRun,
+    queued_ids: list[str],
+    error: CostEconomicsError,
+    provider_call_started: bool,
+) -> dict[str, Any]:
+    if not provider_call_started and run.reservation_id:
+        reservation = db.get(CostLedgerEntry, run.reservation_id)
+        if reservation is not None:
+            release_provider_cost(db, reservation=reservation)
+    run = db.get(LocalRankGridRun, run.id)
+    for point_id in queued_ids:
+        current = db.get(LocalRankGridPoint, point_id)
+        if current is not None and current.status == "queued":
+            current.status = "failed"
+            current.provider_reported_cost = Decimal("0")
+            current.provider_status_message = str(error)
+            current.updated_at = datetime.now(UTC)
+    run.error_code = error.reason_code
+    run.error_message = str(error)
+    points = db.query(LocalRankGridPoint).filter(LocalRankGridPoint.run_id == run.id).all()
+    run.completed_checks = sum(point.status in TERMINAL_POINT_STATUSES for point in points)
+    run.failed_checks = sum(point.status == "failed" for point in points)
+    run.not_found_checks = sum(point.status == "not_found" for point in points)
+    pending_count = sum(point.status == "pending" for point in points)
+    submitted_count = sum(point.status in {"pending", "ranked", "not_found"} for point in points)
+    if not provider_call_started:
+        # This path performs no paid call, so returning the complete reservation
+        # is both safe and idempotent.
+        run.status = "failed"
+        run.completed_at = datetime.now(UTC)
+        run.updated_at = run.completed_at
+    elif pending_count:
+        # Saved tasks still need their no-cost result fetch before the already-
+        # incurred provider amount can be settled.
+        run.status = "partial"
+        run.completed_at = None
+        run.updated_at = datetime.now(UTC)
+    else:
+        # Every prior provider result is terminal, so settle only the known
+        # nonfailed cost and close the run without retaining stale exposure.
+        actual_cost = sum(
+            (
+                Decimal(point.provider_reported_cost or 0)
+                for point in points
+                if point.status != "failed"
+            ),
+            Decimal("0"),
+        )
+        if run.reservation_id:
+            reservation = db.get(CostLedgerEntry, run.reservation_id)
+            if reservation is not None:
+                if run.failed_checks == run.total_checks:
+                    release_provider_cost(db, reservation=reservation)
+                else:
+                    reconcile_provider_cost(
+                        db,
+                        reservation=reservation,
+                        provider_reported_cost=actual_cost,
+                    )
+        run = db.get(LocalRankGridRun, run.id)
+        run.provider_reported_cost = actual_cost
+        run.status = (
+            "failed"
+            if run.failed_checks == run.total_checks
+            else "partial"
+            if run.failed_checks
+            else "completed"
+        )
+        run.completed_at = datetime.now(UTC)
+        run.updated_at = run.completed_at
+    db.commit()
+    db.refresh(run)
+    return {"run_id": run.id, "submitted": submitted_count, "status": run.status}
 
 
 def _normalized_name(value: str | None) -> str:
@@ -680,6 +935,8 @@ def refresh_run(
             LocalRankGridRun.tenant_id == tenant_id,
             LocalRankGridRun.organization_id == organization_id,
         )
+        .populate_existing()
+        .with_for_update()
         .first()
     )
     if run is None:
@@ -738,8 +995,14 @@ def _refresh_run_totals(db: Session, run: LocalRankGridRun) -> None:
     run.completed_checks = sum(point.status in TERMINAL_POINT_STATUSES for point in points)
     run.failed_checks = sum(point.status == "failed" for point in points)
     run.not_found_checks = sum(point.status == "not_found" for point in points)
+    queued_count = sum(point.status == "queued" for point in points)
     pending = sum(point.status in {"queued", "pending"} for point in points)
-    if pending:
+    if run.status == "submitting" and queued_count:
+        # A refresh may finish earlier provider tasks while the serialized
+        # dispatcher still owns later queued batches. Preserve the durable
+        # ambiguous-claim marker so crash takeover cannot resubmit those rows.
+        run.completed_at = None
+    elif pending:
         run.status = "partial" if run.completed_checks else "pending"
     else:
         run.status = "failed" if run.failed_checks == run.total_checks else "completed"

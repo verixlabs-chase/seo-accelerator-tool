@@ -20,6 +20,7 @@ from app.models.tenant import Tenant
 from app.services import onboarding_service, reporting_service
 from app.utils.enum_guard import ensure_enum
 from tests.conftest import create_test_crawl_run, create_test_page
+from tests.helpers.wordpress_automation import enable_managed_wordpress_automation
 
 MASTER_KEY_B64 = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
 
@@ -54,6 +55,15 @@ def test_full_platform_lifecycle(db_session, monkeypatch) -> None:
     campaign = db_session.get(Campaign, session.campaign_id)
     assert tenant is not None
     assert campaign is not None
+
+    enable_managed_wordpress_automation(
+        db_session,
+        tenant_id=tenant.id,
+        organization_id=campaign.organization_id,
+        campaign_id=campaign.id,
+        site_url="https://system-lifecycle.example",
+        allowed_action_types=["create_content_brief"],
+    )
 
     crawl_run_id = create_test_crawl_run(db_session, campaign.id, tenant.id)
     assert crawl_run_id

@@ -2,9 +2,12 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     JSON,
@@ -47,6 +50,13 @@ class ContentBrief(Base):
             name="uq_content_briefs_tenant_idempotency",
         ),
         Index("ix_content_briefs_campaign_created", "campaign_id", "created_at"),
+        UniqueConstraint(
+            "id",
+            "tenant_id",
+            "organization_id",
+            "campaign_id",
+            name="uq_content_briefs_id_scope",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -86,6 +96,74 @@ class ContentBrief(Base):
     outline: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class ContentDraft(Base):
+    __tablename__ = "content_drafts"
+    __table_args__ = (
+        CheckConstraint("status = 'working'", name="ck_content_drafts_status"),
+        CheckConstraint(
+            "automatic_publishing_allowed = false",
+            name="ck_content_drafts_no_automatic_publish",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "content_brief_id",
+            name="uq_content_drafts_tenant_brief",
+        ),
+        ForeignKeyConstraint(
+            ["content_brief_id", "tenant_id", "organization_id", "campaign_id"],
+            [
+                "content_briefs.id",
+                "content_briefs.tenant_id",
+                "content_briefs.organization_id",
+                "content_briefs.campaign_id",
+            ],
+            name="fk_content_drafts_brief_scope",
+            ondelete="CASCADE",
+        ),
+        Index("ix_content_drafts_campaign_updated", "campaign_id", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    business_location_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("business_locations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    content_brief_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="working")
+    title: Mapped[str] = mapped_column(String(320), nullable=False)
+    sections: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_brief_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    automatic_publishing_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)

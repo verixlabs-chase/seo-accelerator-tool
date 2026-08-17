@@ -57,3 +57,45 @@ def test_logout_revokes_access_and_refresh_session(client):
         json={"refresh_token": payload["refresh_token"]},
     )
     assert refresh_after_logout.status_code == 401
+
+
+def test_session_controls_identify_current_and_revoke_everywhere_else(client):
+    first_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "a@example.com", "password": "pass-a"},
+    ).json()["data"]
+    second_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "a@example.com", "password": "pass-a"},
+    ).json()["data"]
+    first_headers = {"Authorization": f"Bearer {first_login['access_token']}"}
+    second_headers = {"Authorization": f"Bearer {second_login['access_token']}"}
+
+    sessions = client.get("/api/v1/auth/sessions", headers=first_headers)
+    assert sessions.status_code == 200
+    active_sessions = sessions.json()["data"]["sessions"]
+    assert len(active_sessions) == 2
+    current = [item for item in active_sessions if item["current"]]
+    assert len(current) == 1
+
+    current_revoke = client.delete(
+        f"/api/v1/auth/sessions/{current[0]['id']}",
+        headers=first_headers,
+    )
+    assert current_revoke.status_code == 409
+
+    revoke_others = client.delete("/api/v1/auth/sessions/others", headers=first_headers)
+    assert revoke_others.status_code == 200
+    assert revoke_others.json()["data"]["revoked_count"] == 1
+
+    assert client.get("/api/v1/auth/me", headers=first_headers).status_code == 200
+    assert client.get("/api/v1/auth/me", headers=second_headers).status_code == 401
+    assert client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": second_login["refresh_token"]},
+    ).status_code == 401
+
+    remaining = client.get("/api/v1/auth/sessions", headers=first_headers)
+    assert remaining.status_code == 200
+    assert len(remaining.json()["data"]["sessions"]) == 1
+    assert remaining.json()["data"]["sessions"][0]["current"] is True

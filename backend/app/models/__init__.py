@@ -1,4 +1,11 @@
 from app.models.audit_log import AuditLog
+from app.models.ai_visibility import (
+    AISearchCollectionRun,
+    AISearchEngineRegistry,
+    AISearchObservation,
+    AISearchProviderContractRegistry,
+    AISearchQuestionSet,
+)
 from app.models.action_plan import (
     ActionPlanForecast,
     ActionPlanMeasurement,
@@ -8,6 +15,11 @@ from app.models.action_plan import (
 from app.events.outbox.event_outbox import EventOutbox
 from app.models.analytics_daily_metric import AnalyticsDailyMetric
 from app.models.auth_session import AuthSession
+from app.models.automation_webhook import (
+    AutomationWebhookConnection,
+    AutomationWebhookDelivery,
+    AutomationWebhookDeliveryAttempt,
+)
 from app.models.authority import (
     AuthorityGapResearchRun,
     AuthorityInventoryLink,
@@ -33,7 +45,15 @@ from app.models.billing import BillingWebhookEvent
 from app.models.campaign import Campaign
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
+from app.models.site_integrity import SearchConsoleSitemapSnapshot, UrlInspectionSnapshot
 from app.models.data_connection import DataConnection
+from app.models.data_governance import (
+    DataExportRequest,
+    OrganizationClosureRequest,
+    OrganizationDeletionTombstone,
+    OrganizationLegalHold,
+    ProviderDisconnectRequest,
+)
 from app.models.google_business_profile import (
     GoogleBusinessProfileDailyMetric,
     GoogleBusinessProfileSearchKeyword,
@@ -45,16 +65,33 @@ from app.models.google_business_profile_campaign import (  # noqa: F401
 )
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
+from app.models.commercial_feature_activation import CommercialFeatureActivation
 from app.models.content import (
     ContentAsset,
     ContentBrief,
+    ContentDraft,
     ContentQcEvent,
     EditorialCalendar,
     InternalLinkMap,
 )
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard
 from app.models.governed_ai import GovernedAIRun
-from app.models.crawl import CrawlFrontierUrl, CrawlPageResult, CrawlRun, Page, TechnicalIssue
+from app.models.governed_experiment import (
+    GovernedExperimentGuardrailCheck,
+    GovernedExperimentPlan,
+    GovernedExperimentProtocol,
+    GovernedPolicyCandidate,
+    GovernedPolicyDecision,
+    GovernedPolicyReplay,
+)
+from app.models.crawl import (
+    CrawlFrontierUrl,
+    CrawlInternalLink,
+    CrawlPageResult,
+    CrawlRun,
+    Page,
+    TechnicalIssue,
+)
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
 from app.models.engagement import AchievementGrant, AchievementPreference
@@ -93,6 +130,8 @@ from app.models.local_rank_grid import (
 )
 from app.models.onboarding_state import OnboardingState
 from app.models.onboarding_session import OnboardingSession
+from app.models.onboarding_baseline import OnboardingBaseline
+from app.models.outcome_learning import OutcomeLearningReview
 from app.models.runtime_version_lock import RuntimeVersionLock
 from app.models.location import Location
 from app.models.fleet_job import FleetJob
@@ -188,11 +227,25 @@ from app.models.wordpress_content_inventory import (
 )
 from app.models.wordpress_change_preview import WordPressChangePreview
 from app.models.wordpress_automation_policy import WordPressAutomationPolicy
+from app.models.migration_import import (
+    MigrationImportBatch,
+    MigrationImportRecord,
+    MigrationUploadChunk,
+    MigrationUploadSession,
+)
 
 __all__ = [
+    "AISearchCollectionRun",
+    "AISearchEngineRegistry",
+    "AISearchObservation",
+    "AISearchProviderContractRegistry",
+    "AISearchQuestionSet",
     "Tenant",
     "User",
     "AuthSession",
+    "AutomationWebhookConnection",
+    "AutomationWebhookDelivery",
+    "AutomationWebhookDeliveryAttempt",
     "Role",
     "UserRole",
     "SubAccount",
@@ -207,7 +260,9 @@ __all__ = [
     "FeatureImpactEdge",
     "PolicyFeatureEdge",
     "CampaignDailyMetric",
+    "CommercialFeatureActivation",
     "AnalyticsDailyMetric",
+    "OnboardingBaseline",
     "AuditLog",
     "AuthorityGapResearchRun",
     "AuthorityInventoryLink",
@@ -231,6 +286,7 @@ __all__ = [
     "CrawlPageResult",
     "TechnicalIssue",
     "CrawlFrontierUrl",
+    "CrawlInternalLink",
     "PageEntity",
     "CompetitorEntity",
     "EntityAnalysisRun",
@@ -263,6 +319,7 @@ __all__ = [
     "CompetitorSignal",
     "ContentAsset",
     "ContentBrief",
+    "ContentDraft",
     "EditorialCalendar",
     "InternalLinkMap",
     "ContentQcEvent",
@@ -270,6 +327,12 @@ __all__ = [
     "OrganizationCostAllocation",
     "ProviderPriceCard",
     "GovernedAIRun",
+    "GovernedExperimentGuardrailCheck",
+    "GovernedExperimentPlan",
+    "GovernedExperimentProtocol",
+    "GovernedPolicyCandidate",
+    "GovernedPolicyDecision",
+    "GovernedPolicyReplay",
     "LocalProfile",
     "LocalHealthSnapshot",
     "Review",
@@ -289,8 +352,16 @@ __all__ = [
     "LocalRankGridCompetitorPoint",
     "OnboardingState",
     "OnboardingSession",
+    "OutcomeLearningReview",
     "SearchConsoleDailyMetric",
+    "SearchConsoleSitemapSnapshot",
+    "UrlInspectionSnapshot",
     "DataConnection",
+    "DataExportRequest",
+    "OrganizationClosureRequest",
+    "OrganizationDeletionTombstone",
+    "OrganizationLegalHold",
+    "ProviderDisconnectRequest",
     "GoogleBusinessProfileSnapshot",
     "GoogleBusinessProfileDailyMetric",
     "GoogleBusinessProfileSearchKeyword",
@@ -374,4 +445,8 @@ __all__ = [
     "WordPressContentSyncRun",
     "WordPressChangePreview",
     "WordPressAutomationPolicy",
+    "MigrationImportBatch",
+    "MigrationImportRecord",
+    "MigrationUploadChunk",
+    "MigrationUploadSession",
 ]

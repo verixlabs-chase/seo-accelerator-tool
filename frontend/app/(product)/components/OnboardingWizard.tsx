@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { platformApi } from "../../platform/api";
+import { PlatformApiError, platformApi } from "../../platform/api";
 import { getTenantId } from "../../lib/authStorage";
 import { trackProductEvent } from "../../lib/productAnalytics";
 import {
@@ -19,6 +19,13 @@ import {
   saveOnboardingProgress,
 } from "../truth/onboardingProgress.mjs";
 import { PRODUCT_TOUR_EVENT, requestProductTour } from "../truth/productTour.mjs";
+import {
+  PlanGateNotice,
+  canActivateAnotherLocation,
+  isLocationAllowanceEnforced,
+  locationUsageLabel,
+  type LocationAllowanceSummary,
+} from "./PlanGateNotice";
 
 type OnboardingCompletion = {
   campaignId: string;
@@ -28,7 +35,18 @@ type OnboardingCompletion = {
 
 type OnboardingWizardProps = {
   organizationId: string;
+  orgRole?: string | null;
   onComplete: (payload: OnboardingCompletion) => void;
+};
+
+type ExistingBusinessLocation = {
+  id: string;
+  name: string;
+  domain?: string | null;
+  status: string;
+  city?: string | null;
+  primary_city?: string | null;
+  region?: string | null;
 };
 
 type ServiceAreaEntry = {
@@ -90,6 +108,31 @@ type SetupTask = {
 
 type BackgroundSetupTaskId = "crawl" | "keyword" | "ranking";
 
+type BaselineStatus = {
+  state:
+    | "collecting"
+    | "blocked"
+    | "needs_search_connection"
+    | "ready"
+    | "limited"
+    | "ready_to_generate";
+  completion_satisfied: boolean;
+  message: string;
+  sources?: Array<{
+    key: string;
+    state: string;
+    detail: string;
+    optional?: boolean;
+  }>;
+  actions?: Array<{ code: string; label: string; href: string }>;
+  baseline?: {
+    report_id: string;
+    status: "ready" | "limited";
+    scores: { overall?: number | null };
+    diagnosis: { headline?: string; summary?: string };
+  } | null;
+};
+
 const DEFAULT_SETUP_TASKS: SetupTask[] = [
   {
     id: "location",
@@ -125,6 +168,12 @@ const DEFAULT_SETUP_TASKS: SetupTask[] = [
     id: "ranking",
     title: "Run your first ranking check",
     description: "Queue the first ranking snapshot for your business area.",
+    status: "pending",
+  },
+  {
+    id: "baseline",
+    title: "Create your baseline analysis and first diagnosis",
+    description: "Freeze the first website and Google Search evidence into a detailed report. Website traffic details are optional and recommended.",
     status: "pending",
   },
 ];
@@ -183,13 +232,19 @@ function SetupTaskList({ tasks }: { tasks: SetupTask[] }) {
   );
 }
 
-export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizardProps) {
+export function OnboardingWizard({ organizationId, orgRole, onComplete }: OnboardingWizardProps) {
   const router = useRouter();
   const [progressRestored, setProgressRestored] = useState(false);
   const [restoredNotice, setRestoredNotice] = useState("");
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [locationAllowance, setLocationAllowance] = useState<LocationAllowanceSummary | null>(null);
+  const [locationContextLoading, setLocationContextLoading] = useState(true);
+  const [locationContextError, setLocationContextError] = useState("");
+  const [locationAllowanceDetail, setLocationAllowanceDetail] = useState("");
+  const [existingLocations, setExistingLocations] = useState<ExistingBusinessLocation[]>([]);
+  const [existingLocationsLoaded, setExistingLocationsLoaded] = useState(false);
 
   // Step 1 state
   const [businessName, setBusinessName] = useState("");
@@ -210,6 +265,8 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
   const [scanStarted, setScanStarted] = useState(false);
   const [scanDone, setScanDone] = useState(false);
   const [setupTasks, setSetupTasks] = useState<SetupTask[]>(DEFAULT_SETUP_TASKS);
+  const [baselineStatus, setBaselineStatus] = useState<BaselineStatus | null>(null);
+  const baselineRequestActive = useRef(false);
 
   useEffect(() => {
     if (!organizationId) return;
@@ -226,9 +283,10 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
       setPrimaryService(saved.primaryService);
       setRankingArea(saved.rankingArea);
       setSetupTasks(
-        saved.setupTasks.length === DEFAULT_SETUP_TASKS.length
-          ? saved.setupTasks
-          : DEFAULT_SETUP_TASKS,
+        DEFAULT_SETUP_TASKS.map((defaultTask) => {
+          const savedTask = saved.setupTasks.find((task) => task.id === defaultTask.id);
+          return savedTask ? { ...defaultTask, status: savedTask.status } : defaultTask;
+        }),
       );
       setScanStarted(saved.scanStarted);
       setScanDone(saved.scanDone);
@@ -282,6 +340,110 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     );
   }, []);
 
+  const refreshBaseline = useCallback(async () => {
+    if (!campaignId || baselineRequestActive.current) return;
+    baselineRequestActive.current = true;
+    updateTask("baseline", "running");
+    try {
+      const result = (await platformApi(
+        `/onboarding/baseline/${encodeURIComponent(campaignId)}`,
+        { method: "POST" },
+      )) as BaselineStatus;
+      setBaselineStatus(result);
+      if (result.completion_satisfied && result.baseline) {
+        updateTask("baseline", "done");
+      } else if (result.state === "blocked") {
+        updateTask("baseline", "error");
+      } else if (result.state === "needs_search_connection") {
+        updateTask("baseline", "pending");
+      } else {
+        updateTask("baseline", "running");
+      }
+    } catch (err) {
+      setBaselineStatus({
+        state: "blocked",
+        completion_satisfied: false,
+        message: err instanceof Error ? err.message : "The baseline analysis could not be checked.",
+        baseline: null,
+      });
+      updateTask("baseline", "error");
+    } finally {
+      baselineRequestActive.current = false;
+    }
+  }, [campaignId, updateTask]);
+
+  const loadLocationContext = useCallback(async () => {
+    if (!organizationId) return;
+    setLocationContextLoading(true);
+    setLocationContextError("");
+    const [allowanceResult, locationsResult] = await Promise.allSettled([
+      platformApi("/usage/credits", { method: "GET" }) as Promise<LocationAllowanceSummary>,
+      platformApi(
+        `/organizations/${encodeURIComponent(organizationId)}/business-locations`,
+        { method: "GET" },
+      ) as Promise<{ items?: ExistingBusinessLocation[] }>,
+    ]);
+
+    if (allowanceResult.status === "fulfilled") {
+      setLocationAllowance(allowanceResult.value);
+    } else {
+      setLocationAllowance(null);
+    }
+
+    if (locationsResult.status === "fulfilled") {
+      const activeLocations = (locationsResult.value?.items || []).filter(
+        (item) => item.status === "active",
+      );
+      setExistingLocations(activeLocations);
+      setExistingLocationsLoaded(true);
+      if (activeLocations.length === 1) {
+        const recovered = activeLocations[0];
+        setBusinessLocationId((current) => current || recovered.id);
+        setBusinessName((current) => current || recovered.name);
+        setWebsiteUrl((current) => current || recovered.domain || "");
+        setSetupTasks((current) =>
+          current.map((task) =>
+            task.id === "location" ? { ...task, status: "done" } : task,
+          ),
+        );
+        setRestoredNotice((current) =>
+          current || `We found ${recovered.name}, which was saved during an earlier setup. Continue here instead of creating it again.`,
+        );
+      }
+    } else {
+      setExistingLocations([]);
+      setExistingLocationsLoaded(false);
+    }
+
+    if (
+      allowanceResult.status === "rejected" ||
+      locationsResult.status === "rejected"
+    ) {
+      setLocationContextError(
+        "We could not confirm your saved locations and plan allowance. Nothing already saved was changed. Check again before adding a new location.",
+      );
+    }
+    setLocationContextLoading(false);
+  }, [organizationId]);
+
+  useEffect(() => {
+    if (!progressRestored || !organizationId) return;
+    void loadLocationContext();
+  }, [loadLocationContext, organizationId, progressRestored]);
+
+  function chooseExistingLocation(locationId: string) {
+    const location = existingLocations.find((item) => item.id === locationId);
+    setBusinessLocationId(locationId);
+    setLocationAllowanceDetail("");
+    if (location) {
+      setBusinessName(location.name);
+      setWebsiteUrl(location.domain || "");
+      updateTask("location", "done");
+      return;
+    }
+    updateTask("location", "pending");
+  }
+
   const {
     completedTasks,
     runningTasks,
@@ -291,11 +453,30 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     hasStartedBackgroundChecks,
   } = summarizeTaskCounts(setupTasks);
   const stepThreeSummary = getStepThreeSummary(setupTasks, scanDone);
+  const needsNewLocation = !businessLocationId;
+  const canCreateLocation = Boolean(
+    existingLocationsLoaded &&
+    locationAllowance &&
+    canActivateAnotherLocation(locationAllowance),
+  );
+  const newLocationCheckUnavailable = Boolean(
+    locationContextLoading ||
+    !existingLocationsLoaded ||
+    !locationAllowance,
+  );
 
   function handleStep1(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!businessName.trim() || !websiteUrl.trim()) {
       setError("Please enter your business name and website.");
+      return;
+    }
+    if (needsNewLocation && !canCreateLocation) {
+      setLocationAllowanceDetail(
+        locationAllowance
+          ? `Your ${locationAllowance.plan.name} plan has no open active-location slots. Nothing already saved was changed.`
+          : "Check your saved locations and plan before adding a new location.",
+      );
       return;
     }
     setError("");
@@ -321,6 +502,14 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     }
     if (!organizationId) {
       setError("Your organization could not be identified. Reload the page and try again.");
+      return;
+    }
+    if (!businessLocationId && !canCreateLocation) {
+      setLocationAllowanceDetail(
+        locationAllowance
+          ? `Your ${locationAllowance.plan.name} plan has no open active-location slots. Your setup answers are still here.`
+          : "Your setup answers are still here. Check your saved locations and plan before adding a new location.",
+      );
       return;
     }
 
@@ -354,6 +543,7 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
         }
         setBusinessLocationId(activeLocationId);
         updateTask("location", "done");
+        await loadLocationContext();
       }
 
       let activeCampaignId = campaignId;
@@ -401,6 +591,16 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
       setRankingArea([firstArea.name, firstArea.region].filter(Boolean).join(", "));
       setStep(3);
     } catch (err) {
+      if (
+        err instanceof PlatformApiError &&
+        err.reasonCode === "active_location_allowance_exhausted"
+      ) {
+        updateTask("location", "pending");
+        setLocationAllowanceDetail(err.message);
+        setError("");
+        await loadLocationContext();
+        return;
+      }
       setSetupTasks((current) =>
         current.map((task) =>
           task.status === "running" ? { ...task, status: "error" } : task,
@@ -473,8 +673,9 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
       }
       setScanDone(true);
       setBusy(false);
+      void refreshBaseline();
     },
-    [campaignDomain, campaignId, primaryService, rankingArea, updateTask],
+    [campaignDomain, campaignId, primaryService, rankingArea, refreshBaseline, updateTask],
   );
 
   // Step 3: fire scans on mount
@@ -483,6 +684,49 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     setScanStarted(true);
     void runFirstChecks(["crawl", "keyword", "ranking"]);
   }, [step, scanStarted, runFirstChecks]);
+
+  const baselineTaskStatus =
+    setupTasks.find((task) => task.id === "baseline")?.status || "pending";
+  const baselineComplete = baselineTaskStatus === "done";
+  const needsSearchConnection = baselineStatus?.state === "needs_search_connection";
+  const searchConnectionAction = baselineStatus?.actions?.find(
+    (action) => action.code === "connect_google_search",
+  );
+
+  useEffect(() => {
+    if (
+      step === 3 &&
+      scanDone &&
+      campaignId &&
+      !baselineComplete &&
+      baselineStatus === null
+    ) {
+      void refreshBaseline();
+    }
+  }, [baselineComplete, baselineStatus, campaignId, refreshBaseline, scanDone, step]);
+
+  useEffect(() => {
+    if (
+      step !== 3 ||
+      !scanDone ||
+      !campaignId ||
+      baselineComplete ||
+      needsSearchConnection ||
+      baselineTaskStatus === "error"
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => void refreshBaseline(), 6000);
+    return () => window.clearInterval(timer);
+  }, [
+    baselineComplete,
+    baselineTaskStatus,
+    campaignId,
+    needsSearchConnection,
+    refreshBaseline,
+    scanDone,
+    step,
+  ]);
 
   const retryableTaskIds = setupTasks
     .filter(
@@ -493,6 +737,7 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
     .map((task) => task.id);
 
   function finishSetup(destination: "dashboard" | "connections") {
+    if (!baselineComplete) return;
     void trackProductEvent({
       eventName: "onboarding.completed",
       campaignId,
@@ -512,11 +757,19 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
       campaignDomain,
       notice: hasSetupIssues
         ? "Business setup finished, but one or more first checks need attention on the dashboard."
-        : "Business setup finished. Your first checks were queued successfully and results are now filling in.",
+        : "Business setup finished. Your immutable baseline report and first diagnosis are ready.",
     });
     if (destination === "connections") {
       router.push(`/settings?setup=connections&campaign_id=${encodeURIComponent(campaignId)}`);
     }
+  }
+
+  function leaveWhileBaselineRuns() {
+    onComplete({
+      campaignId,
+      campaignDomain,
+      notice: "Your dashboard is available while the mandatory baseline finishes. Setup will reopen until the first diagnosis is ready.",
+    });
   }
 
   return (
@@ -530,7 +783,7 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
             Set up your business
           </h2>
           <p className="mt-2.5 text-sm leading-6 text-zinc-300">
-            We&apos;ll save your business, queue the first checks, and show you exactly what finished, what is still running, and what needs attention.
+            We&apos;ll save your business, run the first checks, connect its Google Search data, and create a mandatory baseline report with starting issues, organic metrics, score explanations, diagnosis, and prioritized fixes.
           </p>
           <p className="mt-2 text-xs leading-5 text-zinc-500">
             Your non-sensitive setup progress is saved on this device for 30 days, so you can leave this page and continue later.
@@ -556,6 +809,47 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
           </div>
         )}
 
+        <div className="mb-4 border-l-2 border-accent-500/45 pl-3 text-xs leading-5 text-zinc-300">
+          {locationAllowance ? (
+            <>
+              <span className="font-semibold text-white">
+                {locationUsageLabel(locationAllowance.plan)}.
+              </span>{" "}
+              {canActivateAnotherLocation(locationAllowance)
+                ? isLocationAllowanceEnforced(locationAllowance)
+                  ? `${locationAllowance.plan.remaining_locations} still available on ${locationAllowance.plan.name}.`
+                  : "You can continue setting up this location."
+                : "No open active-location slots."}
+            </>
+          ) : locationContextLoading ? (
+            "Checking your saved locations and plan..."
+          ) : (
+            "Your saved locations and plan need to be checked again."
+          )}
+        </div>
+
+        {needsNewLocation && locationContextError ? (
+          <div role="status" className="mb-4 rounded-md border border-sky-500/25 bg-sky-500/10 p-3 text-sm leading-6 text-sky-100">
+            <p>{locationContextError}</p>
+            <button
+              type="button"
+              className="mt-3 rounded-md border border-sky-200/25 bg-sky-50/10 px-3 py-1.5 text-xs font-semibold text-white"
+              onClick={() => void loadLocationContext()}
+            >
+              Check again
+            </button>
+          </div>
+        ) : null}
+
+        {needsNewLocation && locationAllowance && !canCreateLocation ? (
+          <PlanGateNotice
+            allowance={locationAllowance}
+            orgRole={orgRole}
+            detail={locationAllowanceDetail || undefined}
+            className="mb-4"
+          />
+        ) : null}
+
         {step === 1 && (
           <form onSubmit={handleStep1} className="space-y-5">
             <div className="rounded-md border border-[#26272c] bg-[#111214] p-4">
@@ -565,11 +859,41 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
                 <li>Save the services you offer and the places you serve.</li>
                 <li>Queue your first website scan.</li>
                 <li>Add one starter search term and queue your first ranking check.</li>
+                <li>Ask you to connect the website&apos;s Google Search data before the official baseline is created.</li>
               </ul>
               <p className="mt-3 text-xs leading-5 text-zinc-500">
                 Setup finishes when these requests are accepted. Your first results may keep filling in after you land on the dashboard.
               </p>
             </div>
+            {existingLocations.length > 0 ? (
+              <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4">
+                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100/75">
+                  Continue a saved location
+                  <select
+                    value={businessLocationId}
+                    onChange={(event) => chooseExistingLocation(event.target.value)}
+                    className="mt-2 w-full rounded-md border border-emerald-200/20 bg-[#0b0b0c] px-3 py-2.5 text-sm font-normal normal-case tracking-normal text-zinc-100 outline-none"
+                  >
+                    <option value="" disabled={!canCreateLocation}>
+                      {canCreateLocation
+                        ? "Set up a different new location"
+                        : "Choose a saved location"}
+                    </option>
+                    {existingLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name}
+                        {location.city || location.primary_city
+                          ? ` · ${location.city || location.primary_city}${location.region ? `, ${location.region}` : ""}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="mt-2 text-xs leading-5 text-emerald-100/75">
+                  Choose a location that was already saved to continue its setup without creating a duplicate.
+                </p>
+              </div>
+            ) : null}
             <div>
               <label className="mb-1.5 block text-xs uppercase tracking-[0.18em] text-zinc-500">
                 Business name
@@ -594,11 +918,21 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
             </div>
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || (needsNewLocation && !canCreateLocation)}
+              aria-describedby="onboarding-location-availability"
               className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Saving..." : "Continue"}
             </button>
+            <p id="onboarding-location-availability" className="text-xs leading-5 text-zinc-500">
+              {needsNewLocation
+                ? newLocationCheckUnavailable
+                  ? "Adding a new location stays paused until the plan check succeeds."
+                  : canCreateLocation
+                    ? "This setup will use one active location from your plan."
+                    : "Choose a saved location above or review your plan before continuing."
+                : "This setup will continue the saved location selected above."}
+            </p>
           </form>
         )}
 
@@ -650,7 +984,7 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
               </button>
               <button
                 type="submit"
-                disabled={busy}
+                disabled={busy || (needsNewLocation && !canCreateLocation)}
                 className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? "Saving your answers..." : "Save and start checks"}
@@ -709,24 +1043,76 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
               <p className="mt-3 text-sm font-medium text-zinc-100">Next: {stepThreeSummary.next}</p>
             </div>
 
-            {!scanDone ? (
+            {!scanDone || !baselineComplete ? (
               <>
-                <div className="flex justify-center">
-                  <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#26272c] border-t-accent-500" />
-                </div>
+                {baselineTaskStatus !== "error" && !needsSearchConnection ? (
+                  <div className="flex justify-center">
+                    <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#26272c] border-t-accent-500" />
+                  </div>
+                ) : null}
                 <div className="text-center">
                   <p className="text-sm font-medium text-white">
-                    {hasStartedBackgroundChecks
+                    {baselineTaskStatus === "error"
+                      ? "The baseline needs attention before setup can be completed."
+                      : needsSearchConnection
+                        ? "Connect this website's Google Search data to create the official baseline."
+                      : scanDone
+                        ? "Building your baseline analysis and first diagnosis..."
+                        : hasStartedBackgroundChecks
                       ? "Your first checks are being started now..."
                       : "Preparing your first checks..."}
                   </p>
                   <p className="mt-1.5 text-sm leading-6 text-zinc-400">
-                    This usually takes about 1 to 2 minutes to queue. Setup completes when the requests above finish, but the actual results may keep filling in after you reach the dashboard.
+                    {baselineStatus?.message || "The report freezes the first website scan and every trustworthy organic metric available at the cutoff. Website traffic details are optional and recommended; missing optional data is labeled—not scored as zero."}
                   </p>
                 </div>
+                {needsSearchConnection ? (
+                  <div className="rounded-md border border-sky-500/25 bg-sky-500/10 p-4 text-sm leading-6 text-sky-100">
+                    <p className="font-medium text-white">One connection is required</p>
+                    <p className="mt-2">
+                      This read-only connection shows how often the website appears in Google Search, how many visits it earns from search, and its average Google position. You will choose the website that belongs to this business.
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-sky-100/75">
+                      Website traffic and customer activity are separate, optional details. You can add those later without using the name GA4 during setup.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        router.push(
+                          searchConnectionAction?.href ||
+                            `/settings?setup=connections&campaign_id=${encodeURIComponent(campaignId)}#website-mappings`,
+                        )
+                      }
+                      className="mt-3 rounded-md border border-sky-200/25 bg-sky-50/10 px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      Connect Google Search data
+                    </button>
+                  </div>
+                ) : null}
                 <div className="rounded-md border border-[#26272c] bg-[#111214] p-4 text-sm leading-6 text-zinc-300">
-                  Next: stay here until setup finishes, then open the dashboard to see whether each first check is complete, still running, or needs attention.
+                  <p className="font-medium text-white">Why this is required</p>
+                  <p className="mt-2">
+                    This immutable starting point makes every later ranking, traffic, website, and conversion change comparable to what existed before InsightOS recommended any work.
+                  </p>
                 </div>
+                {baselineTaskStatus === "error" ? (
+                  <button
+                    type="button"
+                    onClick={() => void refreshBaseline()}
+                    className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-100"
+                  >
+                    Retry baseline analysis
+                  </button>
+                ) : null}
+                {scanDone && !needsSearchConnection ? (
+                  <button
+                    type="button"
+                    onClick={leaveWhileBaselineRuns}
+                    className="rounded-md border border-[#303137] bg-[#141518] px-4 py-2 text-sm font-medium text-zinc-200"
+                  >
+                    Open dashboard while baseline finishes
+                  </button>
+                ) : null}
               </>
             ) : (
               <>
@@ -755,7 +1141,7 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
                 <p className="text-center text-sm leading-6 text-zinc-400">
                   {hasSetupIssues
                     ? "Your business was created, but one or more first checks did not finish cleanly. The dashboard will show exactly what needs attention and what to retry."
-                    : "Your business, services, and service areas were saved, and your first checks were queued. The dashboard will show progress as scan and ranking data arrive."}
+                    : `${baselineStatus?.baseline?.diagnosis?.summary || "Your business, services, and first evidence are saved."} Your detailed baseline report is available in Reports.`}
                 </p>
                 {hasSetupIssues && retryableTaskIds.length > 0 && (
                   <button
@@ -772,7 +1158,7 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
                   <p className="mt-2">
                     {hasSetupIssues
                       ? "Go to the dashboard now. Start with the workflow status cards, then retry any step marked as needing attention."
-                      : "Go to the dashboard now. Your confirmed services and areas will keep Find Searches focused, and any ideas found on your website will wait for your approval."}
+                      : "Open Reports to review the frozen issues, metrics, score explanations, and prioritized fixes. Later reports can compare against this exact starting point."}
                   </p>
                 </div>
                 {hasSetupIssues && (
@@ -784,13 +1170,22 @@ export function OnboardingWizard({ organizationId, onComplete }: OnboardingWizar
                   </div>
                 )}
                 <div className="flex flex-wrap gap-3">
+                  {!hasSetupIssues && baselineStatus?.baseline?.report_id ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push("/reports")}
+                      className="rounded-md border border-[#303137] bg-[#141518] px-4 py-2 text-sm font-medium text-zinc-200"
+                    >
+                      Review baseline report
+                    </button>
+                  ) : null}
                   {!hasSetupIssues ? (
                     <button
                       type="button"
                       onClick={() => finishSetup("connections")}
                       className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-medium text-zinc-100"
                     >
-                      Connect your Google data next &rarr;
+                      Add optional website traffic details &rarr;
                     </button>
                   ) : null}
                   <button

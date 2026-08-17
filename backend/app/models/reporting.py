@@ -74,6 +74,17 @@ class ReportRecipient(Base):
     display_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     recipient_role: Mapped[str] = mapped_column(String(40), nullable=False, default="owner")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source_type: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="manual", index=True
+    )
+    source_system: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_record_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    import_batch_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("migration_import_batches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

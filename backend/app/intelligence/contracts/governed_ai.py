@@ -331,6 +331,91 @@ class GovernedActionDraft(BaseModel):
             )
 
 
+class GovernedContentDraftSectionSuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    order: int = Field(ge=1, le=20)
+    heading: str = Field(min_length=1, max_length=160)
+    body: str = Field(min_length=1, max_length=1500)
+
+
+class GovernedContentDraftSuggestion(BaseModel):
+    """Optional wording that remains separate from an owner-controlled draft."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    draft_id: str = Field(min_length=1, max_length=36)
+    suggestion_state: Literal["ready", "not_enough_information"]
+    suggested_title: str = Field(min_length=1, max_length=320)
+    sections: list[GovernedContentDraftSectionSuggestion] = Field(
+        default_factory=list,
+        max_length=12,
+    )
+    evidence_used: list[str] = Field(default_factory=list, max_length=12)
+    uncertainties: list[str] = Field(default_factory=list, max_length=8)
+    approval_required: bool
+    can_publish: Literal[False]
+
+    @model_validator(mode="after")
+    def suggestion_copy_is_safe(self) -> "GovernedContentDraftSuggestion":
+        if not self.approval_required:
+            raise ValueError("Every AI wording suggestion must require owner review.")
+        if self.suggestion_state == "ready":
+            if not self.evidence_used:
+                raise ValueError("Ready wording must cite supplied evidence.")
+            if not self.sections:
+                raise ValueError("Ready wording must include the requested sections.")
+            combined = " ".join(
+                [self.suggested_title]
+                + [f"{item.heading} {item.body}" for item in self.sections]
+            )
+            disallowed = find_disallowed_customer_terms(combined)
+            if disallowed:
+                raise ValueError(f"AI wording used technical language: {disallowed[0]}")
+            if re.search(r"\d", combined):
+                raise ValueError("AI wording cannot introduce numeric business claims.")
+            lowered = combined.lower()
+            unsupported = [
+                phrase
+                for phrase in UNSUPPORTED_DRAFT_CLAIM_PHRASES
+                if phrase in lowered
+            ]
+            if unsupported:
+                raise ValueError(
+                    f"AI wording contained an unsupported business claim: {unsupported[0]}"
+                )
+            for safe_phrase in SAFE_NEGATIONS:
+                lowered = lowered.replace(safe_phrase, "")
+            unsupported_outcomes = [
+                phrase for phrase in UNSUPPORTED_CLAIM_PHRASES if phrase in lowered
+            ]
+            if unsupported_outcomes:
+                raise ValueError(
+                    "AI wording contained an unsupported outcome claim: "
+                    f"{unsupported_outcomes[0]}"
+                )
+        return self
+
+    def validate_against_context(
+        self,
+        *,
+        draft_id: str,
+        section_orders: list[int],
+        evidence_ids: set[str],
+    ) -> None:
+        if self.draft_id != draft_id:
+            raise ValueError("AI output changed the working draft identifier.")
+        if self.suggestion_state == "ready":
+            returned_orders = [item.order for item in self.sections]
+            if returned_orders != section_orders:
+                raise ValueError("AI output changed the requested section order.")
+        unknown_evidence = sorted(set(self.evidence_used) - evidence_ids)
+        if unknown_evidence:
+            raise ValueError(
+                f"AI output cited evidence outside the supplied context: {unknown_evidence}"
+            )
+
+
 class GovernedKeywordRelevanceDecision(BaseModel):
     """One bounded classification of a server-selected uncertain search phrase."""
 
@@ -437,6 +522,134 @@ class GovernedKeywordRelevanceReview(BaseModel):
                 raise ValueError(
                     f"AI output cited evidence outside the supplied context: {unknown_evidence}"
                 )
+
+
+class GovernedBaselineTheme(BaseModel):
+    """One plain-language theme grounded in frozen onboarding evidence."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(min_length=1, max_length=100)
+    explanation: str = Field(min_length=1, max_length=700)
+    evidence_used: list[str] = Field(min_length=1, max_length=8)
+
+    @field_validator("title")
+    @classmethod
+    def title_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="baseline theme title",
+            max_words=12,
+            max_sentences=1,
+            require_action_start=False,
+        )
+
+    @field_validator("explanation")
+    @classmethod
+    def explanation_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="baseline theme explanation",
+            max_words=70,
+            max_sentences=3,
+            require_action_start=False,
+        )
+
+    @field_validator("evidence_used")
+    @classmethod
+    def evidence_must_be_unique(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            stripped = item.strip()
+            if not stripped:
+                raise ValueError("Evidence identifiers must not be empty.")
+            if stripped not in normalized:
+                normalized.append(stripped)
+        return normalized
+
+
+class GovernedBaselineNarrative(BaseModel):
+    """Bounded AI wording for an immutable deterministic onboarding baseline."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    headline: str = Field(min_length=1, max_length=160)
+    summary: str = Field(min_length=1, max_length=1400)
+    themes: list[GovernedBaselineTheme] = Field(default_factory=list, max_length=4)
+    priority_order: list[str] = Field(default_factory=list, max_length=10)
+    evidence_used: list[str] = Field(min_length=1, max_length=20)
+    uncertainties: list[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator("headline")
+    @classmethod
+    def headline_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="baseline headline",
+            max_words=16,
+            max_sentences=1,
+            require_action_start=False,
+        )
+
+    @field_validator("summary")
+    @classmethod
+    def summary_must_be_plain_language(cls, value: str) -> str:
+        return _validate_plain_language(
+            value,
+            field_name="baseline narrative",
+            max_words=130,
+            max_sentences=6,
+            require_action_start=False,
+        )
+
+    @field_validator("priority_order", "evidence_used", "uncertainties")
+    @classmethod
+    def list_items_must_be_unique(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            stripped = item.strip()
+            if not stripped:
+                raise ValueError("List items must not be empty.")
+            if stripped not in normalized:
+                normalized.append(stripped)
+        return normalized
+
+    def validate_against_context(
+        self,
+        *,
+        evidence_ids: set[str],
+        deterministic_fix_ids: list[str],
+    ) -> None:
+        cited_evidence = set(self.evidence_used)
+        for theme in self.themes:
+            cited_evidence.update(theme.evidence_used)
+        unknown_evidence = sorted(cited_evidence - evidence_ids)
+        if unknown_evidence:
+            raise ValueError(
+                f"AI output cited evidence outside the frozen baseline: {unknown_evidence}"
+            )
+        if self.priority_order != deterministic_fix_ids:
+            raise ValueError(
+                "AI output changed, removed, added, or reordered the deterministic fix plan."
+            )
+        combined_text = " ".join(
+            [
+                self.headline,
+                self.summary,
+                *(theme.title for theme in self.themes),
+                *(theme.explanation for theme in self.themes),
+                *self.uncertainties,
+            ]
+        ).lower()
+        for safe_phrase in SAFE_NEGATIONS:
+            combined_text = combined_text.replace(safe_phrase, "")
+        unsupported = [
+            phrase for phrase in UNSUPPORTED_CLAIM_PHRASES if phrase in combined_text
+        ]
+        if unsupported:
+            raise ValueError(
+                f"AI output contained an unsupported claim: {unsupported[0]}"
+            )
 
 
 def _validate_plain_language(

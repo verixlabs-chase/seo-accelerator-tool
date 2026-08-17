@@ -3,6 +3,7 @@ from app.models.cost_economics import CostLedgerEntry
 from app.models.audit_log import AuditLog
 from app.core.config import get_settings
 from app.services import rank_service
+from app.services.commercial_plan_service import apply_commercial_plan
 from tests.helpers.economic_setup import provision_test_organization
 
 
@@ -17,7 +18,7 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     token, tenant_id = _login(client, "org-admin@example.com", "pass-org-admin")
     org = db_session.get(Organization, tenant_id)
     assert org is not None
-    org.plan_type = "standard"
+    apply_commercial_plan(db_session, organization_id=org.id, plan_code="solo")
     db_session.commit()
 
     response = client.get(
@@ -28,9 +29,13 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["plan"]["name"] == "Solo"
-    assert data["plan"]["monthly_price"] == 299.0
+    assert data["plan"]["monthly_price"] == 399.0
     assert data["plan"]["included_locations"] == 1
-    assert data["commercial_catalog_version"] == "commercial-plans-2026-08-v1"
+    assert data["commercial_catalog_version"] == "commercial-plans-2026-08-v3"
+    assert data["plan"]["over_limit_by"] == 0
+    assert data["plan"]["can_activate_location"] is True
+    assert "tier_version" not in data["plan"]
+    assert "allowance_source" not in data["plan"]
     assert data["upgrade"]["plan_name"] == "Growth"
     assert data["upgrade"]["monthly_price"] == 699.0
     wordpress = next(
@@ -38,8 +43,106 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     )
     assert wordpress["available"] is False
     assert wordpress["required_plan"] == "Growth"
-    assert data["credits"]["monthly"] == 1495
-    assert data["credits"]["remaining"] == 1495
+    performance_trend = next(
+        item for item in data["capabilities"] if item["code"] == "performance_trend"
+    )
+    owner_report = next(
+        item for item in data["capabilities"] if item["code"] == "campaign_report"
+    )
+    deeper_plan = next(
+        item for item in data["capabilities"] if item["code"] == "campaign_strategy"
+    )
+    profile_fleet = next(
+        item
+        for item in data["capabilities"]
+        if item["code"] == "business_profile_fleet_actions"
+    )
+    automatic_review_replies = next(
+        item
+        for item in data["capabilities"]
+        if item["code"] == "automatic_review_replies"
+    )
+    listing_correction_sync = next(
+        item
+        for item in data["capabilities"]
+        if item["code"] == "listing_correction_sync"
+    )
+    external_automation = next(
+        item for item in data["capabilities"] if item["code"] == "external_automation"
+    )
+    assert performance_trend["available"] is True
+    assert performance_trend["required_plan"] == "Solo"
+    assert owner_report["available"] is True
+    assert owner_report["required_plan"] == "Solo"
+    assert deeper_plan["available"] is False
+    assert deeper_plan["required_plan"] == "Growth"
+    assert profile_fleet["available"] is False
+    assert profile_fleet["required_plan"] == "Growth"
+    assert automatic_review_replies["available"] is False
+    assert automatic_review_replies["required_plan"] == "Growth"
+    assert listing_correction_sync["available"] is False
+    assert listing_correction_sync["required_plan"] == "Growth"
+    assert external_automation["available"] is True
+    assert external_automation["required_plan"] == "Solo"
+    assert data["external_automation"] == {
+        "plan_eligible": True,
+        "gateway_enabled": True,
+        "automatic_actions_enabled": False,
+        "required_plan": "Solo",
+        "state": "available",
+        "summary": (
+            "After a successful connection test, approved product events deliver "
+            "automatically as signed, outbound-only notifications. Connected tools "
+            "cannot approve or carry out InsightOS actions."
+        ),
+            "planned_connection_options": [
+                "n8n Cloud",
+                "Make",
+                "Zapier",
+                "Pipedream",
+        ],
+        "outbound_contract": {
+            "schema_version": "insightos.automation.event.v1",
+            "connection_setup_enabled": True,
+            "delivery_enabled": True,
+            "supported_events": [
+                {
+                    "code": "report.ready",
+                    "label": "Report ready",
+                    "summary": "A saved report is ready for the owner to review or share.",
+                },
+                {
+                    "code": "recommendation.ready",
+                    "label": "Recommendation ready",
+                    "summary": (
+                        "A saved, evidence-backed recommendation is ready for review."
+                    ),
+                },
+                {
+                    "code": "approval.requested",
+                    "label": "Approval requested",
+                    "summary": "A governed action is waiting for an authorized person.",
+                },
+                {
+                    "code": "action.completed",
+                    "label": "Action completed",
+                    "summary": "An approved action finished and saved its result.",
+                },
+                {
+                    "code": "action.failed",
+                    "label": "Action needs attention",
+                    "summary": "An approved action stopped and has a saved recovery step.",
+                },
+                {
+                    "code": "connection.health_changed",
+                    "label": "Connection status changed",
+                    "summary": "A connected data source needs attention or has recovered.",
+                },
+            ],
+        },
+    }
+    assert data["credits"]["monthly"] == 1995
+    assert data["credits"]["remaining"] == 1995
     assert data["credits"]["name"] == "Insight Credits"
     assert data["catalog_version"] == "insight-credits-2026-08-v1"
     assert {item["code"] for item in data["action_prices"]} >= {
@@ -60,6 +163,30 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert "provider_reported_cost" not in serialized
     assert "gross_margin_percent" not in data
     assert "revenue" not in data
+
+    apply_commercial_plan(
+        db_session,
+        organization_id=org.id,
+        plan_code="multi_location",
+    )
+    db_session.commit()
+    growth_response = client.get(
+        "/api/v1/usage/credits",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert growth_response.status_code == 200
+    growth = growth_response.json()["data"]
+    growth_capability = next(
+        item
+        for item in growth["capabilities"]
+        if item["code"] == "external_automation"
+    )
+    assert growth_capability["available"] is True
+    assert growth_capability["required_plan"] == "Solo"
+    assert growth["external_automation"]["plan_eligible"] is True
+    assert growth["external_automation"]["gateway_enabled"] is True
+    assert growth["external_automation"]["automatic_actions_enabled"] is False
+    assert growth["external_automation"]["state"] == "available"
 
 
 def test_platform_margin_view_and_versioned_allocation(client, db_session) -> None:
@@ -149,9 +276,19 @@ def test_rank_schedule_reserves_then_reconciles_dataforseo_cost(
         assert org is not None
         provision_test_organization(db_session, org)
 
+        location = client.post(
+            f"/api/v1/organizations/{org.id}/business-locations",
+            json={"name": "Metered Rank Location"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).json()["data"]["business_location"]
+
         campaign = client.post(
             "/api/v1/campaigns",
-            json={"name": "Metered Rank Campaign", "domain": "metered.example"},
+            json={
+                "name": "Metered Rank Campaign",
+                "domain": "metered.example",
+                "business_location_id": location["id"],
+            },
             headers={"Authorization": f"Bearer {token}"},
         ).json()["data"]
         keyword = client.post(

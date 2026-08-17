@@ -27,6 +27,10 @@ test("customer review inbox is location scoped, filterable, and governed", () =>
   assert.match(page, /confirm_publish_to_google: true/);
   assert.match(page, /Post approved reply to Google/);
   assert.match(page, /Automatic replies are off/);
+  assert.match(page, /automatic_reply_access/);
+  assert.match(page, /Automatic replies require/);
+  assert.match(page, /Your plan is eligible, but automatic replies are still off/);
+  assert.match(page, /human approval, copying, and individually confirmed posting are separate from automation/);
   assert.match(page, /Pause posting/);
   assert.match(page, /Posting history stays attached/);
   assert.match(page, /reviews\/intelligence/);

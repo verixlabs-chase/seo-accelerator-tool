@@ -16,7 +16,15 @@ from app.schemas.intelligence import (
     AskIntelligenceQuestionIn,
     GenerateIntelligenceDraftIn,
     GenerateIntelligenceBriefIn,
+    GovernedExperimentPlanCreateIn,
+    GovernedExperimentPlanReviewIn,
+    GovernedExperimentProtocolAuthorizeIn,
+    GovernedExperimentProtocolRollbackIn,
+    GovernedExperimentProtocolStartIn,
+    GovernedExperimentProtocolStopIn,
+    GovernedPolicyCandidateReviewIn,
     IntelligenceScoreOut,
+    OutcomeLearningReviewIn,
     RecommendationOut,
     RecommendationTransitionIn,
 )
@@ -28,6 +36,10 @@ from app.services import (
     governed_ai_service,
     governed_ai_qa_service,
     intelligence_service,
+    governed_experiment_plan_service,
+    governed_experiment_protocol_service,
+    governed_policy_candidate_service,
+    outcome_learning_service,
     product_analytics_service,
 )
 from app.services.intelligence_runtime_service import build_intelligence_engine_state
@@ -463,6 +475,410 @@ def get_intelligence_outcomes(
         ],
     )
     return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.get("/outcome-learning")
+def get_outcome_learning(
+    request: Request,
+    campaign_id: str = Query(...),
+    limit: int = Query(default=100, ge=1, le=200),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = outcome_learning_service.get_campaign_outcome_learning(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        limit=limit,
+    )
+    latest = payload["summary"]["latest_measured_at"]
+    truth = build_truth(
+        states=["generated"] + (["unavailable"] if not payload["observations"] else []),
+        summary=(
+            "This view groups real saved before-and-after measurements. It supports human review but does not prove causation or change product rules automatically."
+        ),
+        provider_state="stored_action_measurements",
+        setup_state="configured",
+        operator_state="human_review_required",
+        freshness_state=(
+            freshness_state_from_timestamp(latest, stale_after=timedelta(days=90))
+            if latest
+            else "unknown"
+        ),
+        reasons=[
+            "direct_action_measurements_only",
+            "minimum_sample_required_before_review",
+            "automatic_policy_changes_disabled",
+            "automatic_experiments_disabled",
+            "causal_claims_disabled",
+        ],
+    )
+    return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.put("/outcome-learning/{measurement_id}/review")
+def review_outcome_learning(
+    request: Request,
+    measurement_id: str,
+    body: OutcomeLearningReviewIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    review = outcome_learning_service.review_outcome_learning(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        measurement_id=measurement_id,
+        actor_user_id=user["id"],
+        decision=body.decision,
+        confounder_codes=body.confounder_codes,
+        note=body.note,
+    )
+    return envelope(
+        request,
+        {
+            "review": review,
+            "safety": {
+                "automatic_policy_updates_enabled": False,
+                "automatic_experiments_enabled": False,
+            },
+        },
+    )
+
+
+@intelligence_router.get("/controlled-tests")
+def get_controlled_test_plans(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_plan_service.list_plans(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    truth = build_truth(
+        states=["generated"] + (["unavailable"] if not payload["items"] else []),
+        summary=(
+            "These are saved controlled-test designs. A person must approve a design, "
+            "and approval still does not launch a test or change anything."
+        ),
+        provider_state="saved_governed_designs",
+        setup_state="configured",
+        operator_state="human_review_required",
+        freshness_state="current" if payload["items"] else "unknown",
+        reasons=[
+            "human_design_review_required",
+            "launch_disabled",
+            "assignments_disabled",
+            "publishing_disabled",
+        ],
+    )
+    return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.post("/controlled-tests")
+def create_controlled_test_plan(
+    request: Request,
+    body: GovernedExperimentPlanCreateIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_plan_service.create_plan(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        actor_user_id=user["id"],
+        **body.model_dump(),
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.put("/controlled-tests/{plan_id}/review")
+def review_controlled_test_plan(
+    request: Request,
+    plan_id: str,
+    body: GovernedExperimentPlanReviewIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_plan_service.review_plan(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        plan_id=plan_id,
+        actor_user_id=user["id"],
+        decision=body.decision,
+        note=body.note,
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.get("/controlled-test-protocols")
+def get_controlled_test_protocols(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.list_protocols(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    truth = build_truth(
+        states=["generated"] + (["unavailable"] if not payload["items"] else []),
+        summary=(
+            "These protocols watch saved measurements and stop rules. They do not apply a change, "
+            "publish content, create test assignments, or undo work automatically."
+        ),
+        provider_state="saved_metric_guardrails",
+        setup_state="configured",
+        operator_state="second_owner_approval_required",
+        freshness_state="current" if payload["items"] else "unknown",
+        reasons=[
+            "approved_design_required",
+            "second_authorization_required",
+            "external_change_evidence_required",
+            "publishing_disabled",
+            "automatic_rollback_disabled",
+        ],
+    )
+    return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.post("/controlled-tests/{plan_id}/protocol")
+def prepare_controlled_test_protocol(
+    request: Request,
+    plan_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.prepare_protocol(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        plan_id=plan_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.put("/controlled-test-protocols/{protocol_id}/authorize")
+def authorize_controlled_test_protocol(
+    request: Request,
+    protocol_id: str,
+    body: GovernedExperimentProtocolAuthorizeIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    values = body.model_dump()
+    note = values.pop("note")
+    payload = governed_experiment_protocol_service.authorize_protocol(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+        acknowledgements=values,
+        note=note,
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/start")
+def start_controlled_test_monitoring(
+    request: Request,
+    protocol_id: str,
+    body: GovernedExperimentProtocolStartIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.start_monitoring(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+        **body.model_dump(),
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/check")
+def check_controlled_test_guardrails(
+    request: Request,
+    protocol_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.check_guardrails(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/stop")
+def stop_controlled_test_monitoring(
+    request: Request,
+    protocol_id: str,
+    body: GovernedExperimentProtocolStopIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.stop_protocol(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+        **body.model_dump(),
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/rollback/verify")
+def verify_controlled_test_rollback(
+    request: Request,
+    protocol_id: str,
+    body: GovernedExperimentProtocolRollbackIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_experiment_protocol_service.verify_rollback(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+        **body.model_dump(),
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.get("/policy-candidates")
+def get_policy_candidates(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_policy_candidate_service.list_candidates(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+    )
+    truth = build_truth(
+        states=["generated"] + (["unavailable"] if not payload["items"] else []),
+        summary=(
+            "These saved comparisons test whether learning should require stronger proof. "
+            "They cannot activate a rule or change customer work."
+        ),
+        provider_state="saved_action_learning_replays",
+        setup_state="configured",
+        operator_state="human_review_required",
+        freshness_state="current" if payload["items"] else "unknown",
+        reasons=[
+            "owner_included_matching_outcomes_only",
+            "deterministic_replay_only",
+            "causal_claims_disabled",
+            "live_policy_activation_disabled",
+        ],
+    )
+    return envelope(request, {**payload, "truth": truth})
+
+
+@intelligence_router.post("/controlled-test-protocols/{protocol_id}/policy-candidate")
+def create_policy_candidate(
+    request: Request,
+    protocol_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_policy_candidate_service.create_candidate(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        protocol_id=protocol_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.post("/policy-candidates/{candidate_id}/replay")
+def replay_policy_candidate(
+    request: Request,
+    candidate_id: str,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = governed_policy_candidate_service.replay_candidate(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        candidate_id=candidate_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@intelligence_router.put("/policy-candidates/{candidate_id}/review")
+def review_policy_candidate(
+    request: Request,
+    candidate_id: str,
+    body: GovernedPolicyCandidateReviewIn,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    values = body.model_dump()
+    note = values.pop("note")
+    replay_id = values.pop("replay_id")
+    decision = values.pop("decision")
+    payload = governed_policy_candidate_service.review_candidate(
+        db,
+        tenant_id=user["tenant_id"],
+        organization_id=user["organization_id"],
+        campaign_id=campaign_id,
+        candidate_id=candidate_id,
+        actor_user_id=user["id"],
+        decision=decision,
+        replay_id=replay_id,
+        acknowledgements=values,
+        note=note,
+    )
+    return envelope(request, payload)
 
 
 @intelligence_router.post("/cycles/run")

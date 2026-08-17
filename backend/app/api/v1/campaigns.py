@@ -23,7 +23,13 @@ from app.schemas.organic_value_baseline import OrganicValueBaselineOut, OrganicV
 from app.schemas.search_value import SearchValueOut
 from app.services.campaign_dashboard_service import build_campaign_dashboard
 from app.services.campaign_performance_service import build_campaign_performance_summary, build_campaign_performance_trend
-from app.services.feature_gate_service import assert_feature_available
+from app.services.commercial_plan_service import (
+    FEATURE_CAMPAIGN_REPORT,
+    FEATURE_CAMPAIGN_STRATEGY,
+    FEATURE_PERFORMANCE_TREND,
+    require_commercial_feature,
+)
+from app.services.cost_economics_service import CostEconomicsError
 from app.services.organic_value_baseline_service import (
     build_baseline as build_organic_value_baseline,
     resolve_monthly_seo_investment as resolve_organic_value_monthly_investment,
@@ -326,8 +332,11 @@ def get_campaign_performance_trend(
     campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.tenant_id == user["tenant_id"]).first()
     if campaign is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    org = _organization_or_404(db, user["tenant_id"])
-    assert_feature_available(org=org, feature_name="performance_trend")
+    _require_campaign_capability(
+        db,
+        organization_id=str(user["tenant_id"]),
+        feature_code=FEATURE_PERFORMANCE_TREND,
+    )
 
     normalized_date_from, normalized_date_to = _resolve_trend_window(date_from=date_from, date_to=date_to)
     payload = build_campaign_performance_trend(
@@ -353,8 +362,11 @@ def get_campaign_report(
     campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.tenant_id == user["tenant_id"]).first()
     if campaign is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    org = _organization_or_404(db, user["tenant_id"])
-    assert_feature_available(org=org, feature_name="campaign_report")
+    _require_campaign_capability(
+        db,
+        organization_id=str(user["tenant_id"]),
+        feature_code=FEATURE_CAMPAIGN_REPORT,
+    )
 
     summary_date_from, summary_date_to = _resolve_summary_window(date_from=date_from, date_to=date_to)
     trend_date_from, trend_date_to = _resolve_report_trend_window(
@@ -432,8 +444,11 @@ def get_campaign_strategy(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
 
     org = _organization_or_404(db, user["tenant_id"])
-    # Strategy is intentionally gated at the same Pro+ threshold as report/trend.
-    assert_feature_available(org=org, feature_name="campaign_report")
+    _require_campaign_capability(
+        db,
+        organization_id=org.id,
+        feature_code=FEATURE_CAMPAIGN_STRATEGY,
+    )
 
     summary_date_from, summary_date_to = _resolve_summary_window(date_from=date_from, date_to=date_to)
     plan_type = org.plan_type.strip().lower()
@@ -715,6 +730,25 @@ def _organization_or_404(db: Session, organization_id: str) -> Organization:
     if org is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
     return org
+
+
+def _require_campaign_capability(
+    db: Session,
+    *,
+    organization_id: str,
+    feature_code: str,
+) -> None:
+    try:
+        require_commercial_feature(
+            db,
+            organization_id=organization_id,
+            feature_code=feature_code,
+        )
+    except CostEconomicsError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "reason_code": exc.reason_code},
+        ) from exc
 
 
 def _resolve_report_trend_window(

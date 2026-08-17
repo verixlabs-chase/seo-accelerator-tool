@@ -302,7 +302,12 @@ def queue_execution(
     if draft is None:
         raise _customer_error("The approved reply was not found.", "review_reply_draft_not_found", 404)
     approved_text = str(draft.approved_text or "").strip()
-    if draft.status != "approved" or not approved_text:
+    if (
+        draft.status != "approved"
+        or not approved_text
+        or not draft.reviewed_by_user_id
+        or draft.reviewed_at is None
+    ):
         raise _customer_error(
             "Approve the reply wording before posting it.",
             "review_reply_approval_required",
@@ -479,6 +484,7 @@ def dispatch_execution(
     connection = db.get(DataConnection, row.connection_id)
     draft = db.get(ReputationResponseDraft, row.draft_id)
     review = db.get(ReputationReview, row.review_id)
+    approval_snapshot = dict(row.approval_snapshot or {})
     if capability is None or capability.status not in ACTIVE_CAPABILITY_STATUSES:
         if capability is not None:
             _block_execution(
@@ -508,6 +514,11 @@ def dispatch_execution(
     if (
         draft is None
         or draft.status != "approved"
+        or not draft.reviewed_by_user_id
+        or draft.reviewed_at is None
+        or not approval_snapshot.get("reviewed_at")
+        or str(draft.reviewed_by_user_id)
+        != str(approval_snapshot.get("reviewed_by_user_id") or "")
         or _digest(str(draft.approved_text or "").strip()) != row.approved_text_hash
     ):
         _block_execution(

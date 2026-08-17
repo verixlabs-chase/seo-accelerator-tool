@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 from app.intelligence.executors import wordpress_plugin
 from app.models.recommendation_execution import RecommendationExecution
 from app.models.wordpress_change_preview import WordPressChangePreview
+from app.services.wordpress_managed_content_validation_service import (
+    validate_managed_wordpress_changes,
+)
 
 
 WORDPRESS_MUTATION_EXECUTION_TYPES = {
@@ -45,12 +48,26 @@ def create_change_preview(
     except wordpress_plugin.WordPressExecutionError as exc:
         raise WordPressChangePreviewError(str(exc), reason_code=exc.reason_code) from exc
     changes = [item for item in delivery.get("results", []) if isinstance(item, dict)]
+    managed_validation = validate_managed_wordpress_changes(
+        db,
+        execution=execution,
+        mutations=mutations,
+    )
     conflicts = [
         conflict
         for item in changes
         for conflict in (item.get("conflicts") or [])
         if isinstance(conflict, dict)
     ]
+    conflicts.extend(
+        {
+            "type": "managed_content_validation",
+            "code": str(issue.get("code") or "wordpress_content_validation_failed"),
+            "message": str(issue.get("message") or "The proposed wording needs review."),
+        }
+        for issue in managed_validation.get("blocking_issues", [])
+        if isinstance(issue, dict)
+    )
     affected_urls = sorted(
         {
             str(item.get("target_url") or "")
@@ -69,6 +86,7 @@ def create_change_preview(
         "conflict_count": len(conflicts),
         "changes": changes,
         "conflicts": conflicts,
+        "managed_content_validation": managed_validation,
         "rollback_summary": (
             "InsightOS will save the current WordPress values before applying each approved change. "
             "Those saved values are used to reverse the change if needed."

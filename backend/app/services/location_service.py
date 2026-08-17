@@ -47,6 +47,7 @@ _BUSINESS_LOCATIONS_TABLE = sa.Table(
     _METADATA,
     sa.Column("id", sa.String(length=36)),
     sa.Column("organization_id", sa.String(length=36)),
+    sa.Column("status", sa.String(length=50)),
 )
 
 
@@ -72,6 +73,16 @@ class LocationWriteService:
         started_at = monotonic()
         success = False
         try:
+            if business_location_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": (
+                            "Choose an active business location before creating this work location."
+                        ),
+                        "reason_code": "business_location_required_for_active_location",
+                    },
+                )
             self._validate_business_location_scope(
                 db,
                 organization_id=organization_id,
@@ -164,6 +175,27 @@ class LocationWriteService:
                     detail={"message": "Location not found.", "reason_code": "location_not_found"},
                 )
 
+            if current["business_location_id"] is None:
+                if business_location_id is UNSET or business_location_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={
+                            "message": (
+                                "This older work location must be matched to an active business "
+                                "location before it can be changed."
+                            ),
+                            "reason_code": "orphan_location_requires_business_location",
+                        },
+                    )
+            elif business_location_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": "A work location cannot be unlinked from its business location.",
+                        "reason_code": "business_location_unlink_not_allowed",
+                    },
+                )
+
             next_business_location_id = current["business_location_id"]
             update_values: dict[str, object] = {}
 
@@ -222,12 +254,15 @@ class LocationWriteService:
         if business_location_id is None:
             return
 
-        business_location_org_id = db.execute(
-            sa.select(_BUSINESS_LOCATIONS_TABLE.c.organization_id).where(
+        business_location = db.execute(
+            sa.select(
+                _BUSINESS_LOCATIONS_TABLE.c.organization_id,
+                _BUSINESS_LOCATIONS_TABLE.c.status,
+            ).where(
                 _BUSINESS_LOCATIONS_TABLE.c.id == business_location_id
             )
-        ).scalar_one_or_none()
-        if business_location_org_id is None:
+        ).mappings().one_or_none()
+        if business_location is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
@@ -235,12 +270,20 @@ class LocationWriteService:
                     "reason_code": "business_location_not_found",
                 },
             )
-        if business_location_org_id != organization_id:
+        if business_location["organization_id"] != organization_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
                     "message": "BusinessLocation is outside organization scope.",
                     "reason_code": "business_location_org_mismatch",
+                },
+            )
+        if str(business_location["status"] or "").strip().lower() != "active":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Turn on the business location before adding work to it.",
+                    "reason_code": "business_location_inactive",
                 },
             )
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { platformApi } from "../../platform/api";
@@ -14,7 +15,16 @@ import {
 } from "../components";
 import { buildProductNav } from "../nav.config";
 
-type Me = { organization_id?: string };
+type Me = { organization_id?: string; org_role?: string };
+type CommercialCapability = {
+  code: string;
+  available: boolean;
+  required_plan: string;
+};
+type CommercialSummary = {
+  plan: { name: string };
+  capabilities: CommercialCapability[];
+};
 type LocationGroup = { id: string; name: string; member_count: number; status: string };
 type CampaignVariant = {
   id: string;
@@ -59,6 +69,8 @@ function statusTone(status: string) {
 export default function ProfileCampaignsPage() {
   const pathname = usePathname();
   const [organizationId, setOrganizationId] = useState("");
+  const [orgRole, setOrgRole] = useState("");
+  const [commercialSummary, setCommercialSummary] = useState<CommercialSummary | null | undefined>(undefined);
   const [groups, setGroups] = useState<LocationGroup[]>([]);
   const [campaigns, setCampaigns] = useState<ProfileCampaign[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -74,14 +86,16 @@ export default function ProfileCampaignsPage() {
   const [error, setError] = useState("");
 
   const loadWorkspace = useCallback(async (orgId: string) => {
-    const [groupResponse, campaignResponse] = await Promise.all([
+    const [groupResponse, campaignResponse, usageResponse] = await Promise.all([
       platformApi(`/organizations/${orgId}/location-groups`, { method: "GET" }),
       platformApi(`/organizations/${orgId}/profile-campaigns?limit=30`, { method: "GET" }),
+      platformApi("/usage/credits", { method: "GET" }).catch(() => null),
     ]);
     const nextGroups = ((groupResponse?.items || []) as LocationGroup[]).filter((item) => item.status === "active");
     const nextCampaigns = (campaignResponse?.items || []) as ProfileCampaign[];
     setGroups(nextGroups);
     setCampaigns(nextCampaigns);
+    setCommercialSummary(usageResponse as CommercialSummary | null);
     setSelectedGroupId((current) => current || nextGroups[0]?.id || "");
     setSelectedCampaignId((current) => current || nextCampaigns[0]?.id || "");
   }, []);
@@ -93,6 +107,7 @@ export default function ProfileCampaignsPage() {
         const orgId = (response as Me)?.organization_id || "";
         if (!orgId || cancelled) return;
         setOrganizationId(orgId);
+        setOrgRole((response as Me)?.org_role || "");
         await loadWorkspace(orgId);
       })
       .catch((caught) => {
@@ -110,6 +125,11 @@ export default function ProfileCampaignsPage() {
     () => campaigns.find((item) => item.id === selectedCampaignId) || campaigns[0] || null,
     [campaigns, selectedCampaignId],
   );
+  const fleetCapability = commercialSummary?.capabilities.find(
+    (item) => item.code === "business_profile_fleet_actions",
+  );
+  const profileFleetAccessAvailable = fleetCapability?.available === true;
+  const profileFleetAccessKnown = fleetCapability !== undefined;
 
   const runAction = useCallback(
     async (key: string, action: () => Promise<void>) => {
@@ -245,7 +265,8 @@ export default function ProfileCampaignsPage() {
 
         {!loading && groups.length > 0 ? (
           <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-            <form className={`${panelClass} p-5`} onSubmit={createCampaign}>
+            {profileFleetAccessAvailable ? (
+              <form className={`${panelClass} p-5`} onSubmit={createCampaign}>
               <div className="flex items-start gap-3">
                 <div className="grid h-10 w-10 place-items-center rounded-lg bg-accent-500/10 text-accent-400">
                   <ProductIcon name="profile-campaigns" size={21} />
@@ -300,7 +321,58 @@ export default function ProfileCampaignsPage() {
                 </button>
                 <p className="text-xs leading-5 text-zinc-500">Photo campaigns use the same safe contract, including rights and checksum checks. The customer photo library will be added before photo publishing is opened.</p>
               </div>
-            </form>
+              </form>
+            ) : (
+              <section
+                aria-labelledby="profile-campaign-plan-heading"
+                className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-amber-50"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200/75">
+                  {profileFleetAccessKnown ? "Growth feature" : "Plan check required"}
+                </p>
+                <h2 id="profile-campaign-plan-heading" className="mt-1.5 text-xl font-semibold text-white">
+                  {profileFleetAccessKnown
+                    ? "Bulk profile campaigns need Growth"
+                    : "Plan access could not be checked"}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-amber-50/85">
+                  {profileFleetAccessKnown
+                    ? `Your ${commercialSummary?.plan.name || "current"} plan and every saved campaign stay unchanged. Growth or Enterprise is required to create, recheck, approve, retry, or resume bulk profile work.`
+                    : "Saved campaigns are still available to review. New campaign actions stay paused until InsightOS can confirm this workspace's plan."}
+                </p>
+                {profileFleetAccessKnown ? (
+                  <div className="mt-4 border-t border-amber-200/15 pt-4">
+                    <p className="text-sm font-semibold text-white">Growth supports multi-location profile operations</p>
+                    <ul className="mt-2 space-y-1 text-sm leading-6 text-amber-50/80">
+                      <li>✓ Prepare one approved update across a saved location group.</li>
+                      <li>✓ Review each location&apos;s exact version before approval.</li>
+                      <li>✓ Retry or resume governed bulk work without opening every profile.</li>
+                    </ul>
+                  </div>
+                ) : null}
+                <div className="mt-4">
+                  {!profileFleetAccessKnown ? (
+                    <button
+                      className={secondaryButtonClass}
+                      disabled={busy === "plan-check"}
+                      onClick={() => void runAction("plan-check", () => loadWorkspace(organizationId))}
+                      type="button"
+                    >
+                      {busy === "plan-check" ? "Checking..." : "Check plan access again"}
+                    </button>
+                  ) : orgRole === "org_owner" ? (
+                    <Link
+                      className="inline-flex rounded-lg border border-amber-200/30 bg-amber-50/10 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-amber-50/15"
+                      href="/settings#plan-and-billing"
+                    >
+                      Review Growth plan
+                    </Link>
+                  ) : (
+                    <p className="text-sm font-medium text-amber-100">Ask the workspace owner to review the plan.</p>
+                  )}
+                </div>
+              </section>
+            )}
 
             <section className={`${panelClass} min-w-0 p-5`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -331,10 +403,15 @@ export default function ProfileCampaignsPage() {
                       <p className="mt-2 text-sm text-zinc-300">{selectedCampaign.scheduled_for ? `Planned for ${new Date(selectedCampaign.scheduled_for).toLocaleString()}` : "No publishing time has been chosen."}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {selectedCampaign.can_preflight ? <button className={secondaryButtonClass} disabled={busy === `preflight-${selectedCampaign.id}`} onClick={() => preflight(selectedCampaign)}>{busy === `preflight-${selectedCampaign.id}` ? "Checking..." : "Run checks again"}</button> : null}
-                      {selectedCampaign.can_approve ? <button className={primaryButtonClass} disabled={busy === `approve-${selectedCampaign.id}`} onClick={() => approve(selectedCampaign)}>{busy === `approve-${selectedCampaign.id}` ? "Approving..." : "Approve exact previews"}</button> : null}
+                      {selectedCampaign.can_preflight && profileFleetAccessAvailable ? <button className={secondaryButtonClass} disabled={busy === `preflight-${selectedCampaign.id}`} onClick={() => preflight(selectedCampaign)}>{busy === `preflight-${selectedCampaign.id}` ? "Checking..." : "Run checks again"}</button> : null}
+                      {selectedCampaign.can_approve && profileFleetAccessAvailable ? <button className={primaryButtonClass} disabled={busy === `approve-${selectedCampaign.id}`} onClick={() => approve(selectedCampaign)}>{busy === `approve-${selectedCampaign.id}` ? "Approving..." : "Approve exact previews"}</button> : null}
                     </div>
                   </div>
+                  {!profileFleetAccessAvailable && (selectedCampaign.can_preflight || selectedCampaign.can_approve) ? (
+                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm leading-6 text-amber-50">
+                      This saved preview remains available. Bulk actions stay paused until plan access is confirmed.
+                    </p>
+                  ) : null}
                   <div className="space-y-3">
                     {selectedCampaign.variants.map((variant) => (
                       <article key={variant.id} className="rounded-lg border border-[#2b2d33] bg-[#101114] p-4">

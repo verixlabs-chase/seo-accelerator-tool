@@ -37,6 +37,10 @@ from app.services.wordpress_change_preview_service import (
     create_change_preview,
     requires_wordpress_preview,
 )
+from app.services.wordpress_post_change_measurement_service import (
+    prepare_managed_wordpress_measurement,
+    schedule_managed_wordpress_follow_up,
+)
 from app.services.wordpress_automation_policy_service import (
     evaluate_wordpress_automation,
     is_managed_wordpress_execution,
@@ -75,6 +79,7 @@ def schedule_execution(
     db: Session | None = None,
     *,
     managed_automation: bool = False,
+    force_manual_approval: bool = False,
 ) -> RecommendationExecution | dict[str, Any] | None:
     owns_session = db is None
     session = db or SessionLocal()
@@ -121,7 +126,11 @@ def schedule_execution(
         if daily_count >= daily_cap:
             return _governance_block(campaign_id=recommendation.campaign_id, execution_type=execution_type, reason_code='max_daily_executions_exceeded', message='Daily execution cap exceeded by governance policy.')
         metric_name = _DEFAULT_METRIC_BY_EXECUTION_TYPE.get(execution_type, 'avg_rank')
-        signals = assemble_signals(recommendation.campaign_id, db=session)
+        # Scheduling only reads the current metrics. Publishing a signal update
+        # here recursively invokes intelligence subscribers while the caller's
+        # transaction can already hold write locks (notably on SQLite), causing
+        # request timeouts without adding any new observation.
+        signals = assemble_signals(recommendation.campaign_id, db=session, publish=False)
         metric_before = float(signals.get(metric_name, 0.0) or 0.0)
         idempotency_key = f'{recommendation.id}:{execution_type}:{day_start.date().isoformat()}'
         if managed_automation:
@@ -131,7 +140,7 @@ def schedule_execution(
             return existing
         scope_of_change = max(1, int((recommendation.risk_tier or 1) * 2))
         risk = score_execution_risk(session, campaign_id=recommendation.campaign_id, execution_type=execution_type, scope_of_change=scope_of_change)
-        requires_manual_approval = bool(policy['requires_manual_approval']) or bool(
+        requires_manual_approval = bool(force_manual_approval) or bool(policy['requires_manual_approval']) or bool(
             automation_decision and automation_decision.requires_manual_approval
         )
         payload = _build_execution_payload(
@@ -259,9 +268,22 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
                             reason_code='wordpress_preview_missing',
                         )
                     if preview_payload.get('status') != 'ready':
+                        validation = preview_payload.get('managed_content_validation')
+                        validation_blocked = (
+                            isinstance(validation, dict)
+                            and validation.get('status') == 'blocked'
+                        )
                         raise WordPressChangePreviewError(
-                            'The managed update preview found a conflict that needs review.',
-                            reason_code='wordpress_preview_conflict',
+                            (
+                                'The managed update did not pass its content and business-fact checks.'
+                                if validation_blocked
+                                else 'The managed update preview found a conflict that needs review.'
+                            ),
+                            reason_code=(
+                                'wordpress_content_validation_failed'
+                                if validation_blocked
+                                else 'wordpress_preview_conflict'
+                            ),
                         )
                     affected_urls = [
                         str(value)
@@ -399,6 +421,12 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
         execution.last_error = None
         session.flush()
         outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.started', payload=_execution_event_payload(execution=execution, result_summary=None))
+        if is_managed_wordpress_execution(execution):
+            _prepare_managed_measurement_if_possible(
+                session,
+                execution=execution,
+                recommendation=recommendation,
+            )
         try:
             result = _normalize_result(executor.run(payload), execution.execution_type)
             # Website delivery is external, while its mutation audit is local.
@@ -452,6 +480,12 @@ def execute_recommendation(execution_id: str, db: Session | None = None, *, dry_
         execution.status = 'completed'
         execution.last_error = None
         execution.executed_at = datetime.now(UTC)
+        if is_managed_wordpress_execution(execution):
+            result['post_change_measurement'] = _schedule_managed_follow_up_if_possible(
+                session,
+                execution=execution,
+                result=result,
+            )
         execution.result_summary = json.dumps(result, sort_keys=True)
         _set_recommendation_status_if_allowed(recommendation, StrategyRecommendationStatus.EXECUTED)
         outbox_event_write(session, tenant_id=recommendation.tenant_id, event_type='execution.completed', payload=_execution_event_payload(execution=execution, result_summary=result))
@@ -770,7 +804,15 @@ def _record_outcome_if_possible(session: Session, execution: RecommendationExecu
                 metric_after = float(metric_after_value)
             else:
                 metric_name = str(payload.get('metric_name', '') or '')
-                signals = assemble_signals(execution.campaign_id, db=session)
+                # Outcome bookkeeping reads the just-finished metric inside the
+                # primary action transaction. Republishing that read can invoke
+                # subscribers on a second session before the transaction releases
+                # its locks, which can stall the action that already succeeded.
+                signals = assemble_signals(
+                    execution.campaign_id,
+                    db=session,
+                    publish=False,
+                )
                 metric_after = float(signals.get(metric_name, metric_before) or metric_before)
             record_execution_outcome(
                 session,
@@ -788,6 +830,68 @@ def _record_outcome_if_possible(session: Session, execution: RecommendationExecu
                 'execution_type': execution.execution_type,
             },
         )
+
+
+def _prepare_managed_measurement_if_possible(
+    session: Session,
+    *,
+    execution: RecommendationExecution,
+    recommendation: StrategyRecommendation,
+) -> dict[str, Any]:
+    try:
+        with session.begin_nested():
+            return prepare_managed_wordpress_measurement(
+                session,
+                execution=execution,
+                recommendation=recommendation,
+                prepared_at=datetime.now(UTC),
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            'managed WordPress baseline capture failed; primary action can continue',
+            extra={
+                'execution_id': execution.id,
+                'campaign_id': execution.campaign_id,
+                'execution_type': execution.execution_type,
+            },
+        )
+        return {
+            'required': True,
+            'status': 'unavailable',
+            'reason_code': 'wordpress_measurement_baseline_failed',
+            'message': 'The website action can continue, but its starting measurement is unavailable.',
+        }
+
+
+def _schedule_managed_follow_up_if_possible(
+    session: Session,
+    *,
+    execution: RecommendationExecution,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        with session.begin_nested():
+            return schedule_managed_wordpress_follow_up(
+                session,
+                execution=execution,
+                result_summary=result,
+                completed_at=execution.executed_at,
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            'managed WordPress follow-up scheduling failed; primary action remains completed',
+            extra={
+                'execution_id': execution.id,
+                'campaign_id': execution.campaign_id,
+                'execution_type': execution.execution_type,
+            },
+        )
+        return {
+            'required': is_managed_wordpress_execution(execution),
+            'status': 'unavailable',
+            'reason_code': 'wordpress_measurement_schedule_failed',
+            'message': 'The website change completed, but its automatic result check could not be scheduled.',
+        }
 
 
 def _normalize_result(result: dict[str, Any], execution_type: str) -> dict[str, Any]:
@@ -900,7 +1004,24 @@ def _build_execution_payload(
         'rollback_plan': rollback_plan,
     }
     if isinstance(evidence, dict):
-        for key in ('source_url', 'target_url', 'anchor_text', 'schema_type', 'content_title', 'content_slug', 'content_target_url', 'meta_title', 'meta_description'):
+        for key in (
+            'source_url',
+            'target_url',
+            'anchor_text',
+            'schema_type',
+            'content_title',
+            'content_slug',
+            'content_target_url',
+            'meta_title',
+            'meta_description',
+            'content_generation_mode',
+            'governed_ai_run_id',
+            'content_blocks',
+            'content_draft_id',
+            'content_draft_revision',
+            'content_draft_hash',
+            'content_brief_id',
+        ):
             if key in evidence and evidence[key] is not None:
                 payload[key] = evidence[key]
     return payload

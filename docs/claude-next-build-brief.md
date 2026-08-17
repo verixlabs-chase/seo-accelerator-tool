@@ -89,12 +89,29 @@
 > status/provider-change confounders, minimized evidence, and owner-reviewed
 > investigation states. Portfolio-wide movement can create an investigation signal
 > but never be presented as knowledge of Google's private algorithm.
+> **AIV1-A: Provider-Neutral AI Visibility Foundation is implemented locally.**
+> It includes candidate-only engine and provider-contract versions,
+> provider-neutral dormant run/evidence storage, deterministic saved questions,
+> an honest beta workspace, supplier redaction, tenant isolation, and a
+> fail-closed non-executing cost/allowance preview. Live provider submit/poll,
+> full execution telemetry and price matching, credential dispatch,
+> customer-visible engines, schedules, reports, credit charging, and production
+> visibility claims remain disabled. AIV1-B will be a later operator-only live
+> provider and cost evaluation; AIV1-C will be the later governed customer
+> collection release. See
+> [AIV1 Provider and Economics Governance](./product_overview/aiv1_provider_economics_governance.md).
+> **COM1.3A active-location allowance enforcement is implemented locally.**
+> The `0155` rolling-deploy bridge and `0156` controlled activation preserve
+> saved work while enforcing Solo/Growth/Enterprise active-location limits of
+> 1/10/20 after deployment; rollback returns the system to observation without
+> deleting customer data.
 > The remaining roadmap
 > targets a focused Semrush and BrightLocal replacement for local service
 > businesses: provider truth and local operations in G1.2-G1.7 and DT1,
 > evidence-backed intelligence in I1, research/content/AI visibility in
 > MKT1-CNT1-AUTH1-AIV1, multi-location intelligence in ML1, commerce in COM1, and
-> verified progress and retention in ENG1, and Enterprise/reporting in ENT1.
+> verified progress and retention in ENG1, a mandatory first-location baseline
+> and diagnosis in CX1.1, and Enterprise/reporting in ENT1.
 > Where Sections 7-10 conflict with Sections
 > 1A-1C, Sections 1A-1C take precedence.
 
@@ -642,24 +659,25 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 26 | **RPT1 - Premium Reporting and Delivery** | Owners receive polished, visual, scheduled reports that explain progress, completed work, measured results, risks, and next actions. |
 | 27 | **CX1 - Guided Onboarding, Education, and Support — completed locally** | A non-technical owner can connect data, reach first value, understand the product, and recover from setup problems without operator help. |
 | 28 | **UX13 - Natural Product Voice and Comprehension** | Public, onboarding, product, report, notification, and AI copy sounds like a helpful business advisor and makes each screen's purpose and next action immediately clear. |
-| 29 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
+| 29 | **COM1 paid-beta slice - Checkout, Feature Gates, and Plan Enforcement - lifecycle closeout implemented locally; live Stripe evidence pending** | Invite-only customers can subscribe, understand allowances, see why an advanced capability requires Growth or Enterprise, recover payment, change plans, and cancel without operator database work. |
 | 30 | **ENG1 - Verified Progress Rewards and Healthy Habits - published in PR #50** | Owners earn useful milestones and badges for consistent work and verified organic improvements, reinforcing the behaviors that produce lasting progress and repeat product value. |
 | 31 | **G1.7 - Website Analytics and Form Events - G1.7A-G1.7B published in PR #50** | Website visits, engaged visits, landing pages, traffic sources, and privacy-minimized form outcomes connect to the location without adding CRM or call-tracking scope. |
-| 32 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
-| 33 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
-| 34 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
-| 35 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
-| 36 | **WP1.2 - WordPress Managed Autopilot** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
-| 37 | **MIG1 - Semrush/BrightLocal Migration** | New customers can bring supported locations, phrases, competitors, listing facts, and historical files into the platform without starting over. |
-| 38 | **ALT1 - In-Product Alerts First; Automated Email Later** | Customers first receive useful notices inside InsightOS. Reliable automated email and delivery tracking remain a later, behind-the-scenes platform capability and do not block the current reporting or product sprints. |
-| 39 | **GOV1 - Data Privacy, Retention, and Portability** | Customers can understand, export, retain, disconnect, and delete their data through governed workflows. |
-| 40 | **SEO2 - Advanced Search and Site Integrity** | The product closes additional Semrush-class gaps in indexation, SERP features, entities, content decay, cannibalization, and technical integrity. |
-| 41 | **I2 - Outcome Learning and Controlled Experiments** | Forecasts and recommendations improve from verified outcomes under minimum-sample, calibration, approval, and rollback controls. |
-| 42 | **AIV1 - AI Search Visibility and Entity Intelligence** | A dedicated AI Search Visibility section shows where each business and location is mentioned or cited across supported major AI answer engines, how that changes over time, which competitors appear instead, and what evidence-backed work may improve coverage. |
-| 43 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
-| 44 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
-| 45 | **AUT1 - External Automation Gateway** | Growth and Enterprise customers can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, scoped service accounts, governed workflow templates, and typed actions without granting direct database or unrestricted execution access. |
-| 46 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
+| 32 | **CX1.1 - Mandatory Onboarding Baseline and First Diagnosis** | Each newly onboarded location receives one evidence-backed baseline report covering the website and every supported organic source that is actually connected, with transparent coverage, deterministic scoring, an AI-assisted diagnosis, and prioritized measurable fixes. |
+| 33 | **MKT1.2 - Competitor and Content-Gap Research** | Owners can find real local competitors, keyword gaps, and content opportunities without moving between tools. |
+| 34 | **CNT1 - Content and On-Page Workspace** | Research and intelligence produce governed page, content, metadata, schema, and internal-link work. |
+| 35 | **AUTH1 - Backlink and Local Authority Intelligence** | New and lost referring domains, competitor link gaps, local authority opportunities, and outreach work close a major Semrush replacement gap. |
+| 36 | **WP1.1 - WordPress Connection and Safe Site Control** | The existing WordPress path becomes a hardened, observable, reversible production integration. |
+| 37 | **WP1.2 - WordPress Managed Autopilot - core implemented locally; live closeout pending** | Approved policies can safely implement bounded content and on-page changes without routine customer editing. |
+| 38 | **MIG1 - Semrush/BrightLocal Migration - governed resumable import implemented locally** | New customers can review and atomically import supported setup, qualified history, and disabled report recipients through explicit source adapters, with durable provenance, resumable verified file parts, paginated review, idempotent retries, a dependency-safe rollback, and a guided switching checklist. Production migration and live proof remain. |
+| 39 | **ALT1 - In-Product Alerts First; Automated Email Later** | Customers first receive useful notices inside InsightOS. Reliable automated email and delivery tracking remain a later, behind-the-scenes platform capability and do not block the current reporting or product sprints. |
+| 40 | **GOV1 - Data Privacy, Retention, and Portability - GOV1A-GOV1D implemented locally** | Owners can export their data, safely disconnect Google, and schedule a read-only workspace closure through two separate confirmation screens, two durable acknowledgements, and exact typed `Delete`, with an active-subscription blocker, 30-day recovery, platform-owner-only retention holds, access/credential finalization, audit proof, and a restore-safe pending-erasure tombstone. Verified primary-store, artifact/cache, and backup erasure remain later GOV1 closeout slices. |
+| 41 | **SEO2 - Advanced Search and Site Integrity - SEO2A-SEO2B implemented locally** | Google-owned index and sitemap evidence remains distinct from a richer tenant-scoped scan that now preserves redirect history, link relationships, canonical targets, exact-copy fingerprints, and JSON-LD parse evidence. It deterministically finds confirmed broken internal links, broken internal canonical targets, and exact duplicates; orphan findings require a successfully loaded same-site sitemap plus complete uncapped coverage. SERP features, content decay, cannibalization, entity coverage, and later optional Bing evidence remain. |
+| 42 | **I2 - Outcome Learning and Controlled Experiments - I2A-I2E implemented locally** | Verified action measurements and frozen forecast checks now form a minimum-sample learning record. Owners explicitly include or exclude each result, save and review a controlled-test design with mandatory stop and undo rules, run a separately authorized monitoring protocol, and compare a frozen current learning rule with a stricter proposal through deterministic replay. Human review remains separate from activation; live policy changes, publishing, assignments, and automatic execution remain disabled. |
+| 43 | **AIV1 - AI Search Visibility and Entity Intelligence - AIV1-A foundation implemented locally** | The provider-neutral slice establishes candidate-only engine/provider contracts, deterministic saved questions, dormant run/evidence storage, honest truth states, supplier redaction, a non-executing cost/allowance preview, and a location-scoped beta workspace. AIV1-B later proves the full live supplier and price contract; AIV1-C later enables governed collection and results inside that workspace. |
+| 44 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
+| 45 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 46 | **AUT1 - External Automation Gateway** | Every paid tier can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, governed workflow templates, and typed actions; higher tiers add volume, collaboration, custom scopes, and service accounts without granting direct database or unrestricted execution access. |
+| 47 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 ### External API enablement map
 
@@ -938,17 +956,20 @@ Margin guardrail:
 
 | Plan | Monthly revenue | Total software COGS ceiling at 85% margin | 5% platform-API budget |
 | --- | ---: | ---: | ---: |
-| Solo | $299 | $44.85 | $14.95 |
+| Solo | $399 | $59.85 | $19.95 |
 | Growth | $699 | $104.85 | $34.95 |
 | Enterprise starting point | $1,999 | $299.85 | $99.95 |
 
 Pricing decision:
 
-- Solo is `$299/month` and includes one active location.
+- Solo is `$399/month`, includes one active location, and will include a bounded
+  catalog of standard AUT1 recipes once the automation gateway passes its
+  production security and delivery gates.
 - Growth is `$699/month` and includes up to ten active locations. Growth is
-  positioned as the automation tier, not merely the multi-location tier, so a
-  one-location business can upgrade for execution, higher allowances, deeper
-  history, and faster monitoring without paying for a meaningless label.
+  positioned as the expanded automation and collaboration tier, not merely the
+  multi-location tier, so a one-location business can upgrade for more recipes,
+  higher allowances, deeper history, and faster monitoring without paying for
+  a meaningless label.
 - Enterprise starts at `$1,999/month`, includes 11-20 active locations by
   default, and uses custom per-location pricing above 20 or when its approved
   user, provider, data-volume, or support allowance is exceeded.
@@ -2509,6 +2530,171 @@ Acceptance criteria:
   unnecessarily.
 - Help copy uses the same governed terms as the active lexicon.
 
+### Customer Experience CX1.1 - Mandatory Onboarding Baseline and First Diagnosis
+
+Goal: make the first value delivered to every newly onboarded location a
+durable, evidence-backed baseline of its website and connected organic
+performance, followed by a clear diagnosis, explainable scoring, and a
+prioritized fix plan. The baseline becomes the comparison anchor for future
+reports and measured outcomes; it is not a disposable setup summary.
+
+Implementation status (2026-08-15):
+
+- CX1.1A is implemented locally. Guided setup now includes a mandatory baseline
+  task and cannot emit `onboarding.completed` until the first immutable
+  Ready/Limited baseline exists. The official baseline requires both a completed
+  website scan and a location-mapped, successfully synchronized Search Console
+  connection. Basic dashboard access remains available while either required
+  source is collecting or blocked, and saved setup progress reopens the workflow
+  until the baseline is complete.
+- Migration 0157 adds one append-only, tenant/organization/location/campaign-
+  scoped first baseline with RLS, database immutability, a 28-day evidence
+  cutoff, exact source states, deterministic evidence and score snapshots,
+  diagnosis/fix snapshots, and a linked frozen report/artifact hash. Repeated
+  requests reuse the same baseline and report.
+- The first report now includes the completed website crawl and grouped issues,
+  Core Web Vitals/lab evidence when measured, Search Console facts, tracked
+  positions, sessions, engagement, conversions, top landing pages, traffic
+  sources, and privacy-safe form-outcome counts when those sources exist.
+  Website analytics remains optional and recommended. Optional missing sources
+  are labeled and excluded from scores rather than converted to zero.
+- The local scorecard is deterministic and explainable. Each fix includes its
+  saved evidence, baseline metric when available, observation window, steps,
+  and verification method. The same snapshot creates the authenticated
+  HTML/PDF report, and the Reports page labels it as the onboarding baseline
+  instead of displaying `Month 0`.
+- CX1.1B is implemented locally. One metered, idempotent governed-AI request may
+  explain the minimized frozen evidence after the deterministic scores and fix
+  plan exist. A strict schema permits only plain-language headline, summary,
+  themes, cited evidence, uncertainty, and the exact existing fix order. Unknown
+  evidence, new or reordered fixes, unsupported promises, causal claims, and
+  technical customer language are rejected. The report remains deterministic
+  and usable when the provider is missing, blocked, unavailable, or returns an
+  invalid response.
+- Migration 0158 adds the versioned price card for the bounded baseline
+  explanation. Every attempt is auditable through the existing governed-AI run
+  ledger with frozen context/prompt/response hashes, token counts, allowance
+  reservation and reconciliation, and tenant/location scope. Credentials, raw
+  URLs, form contents, identities, and raw provider payloads are not included in
+  the model context. Live production-provider proof remains a release check.
+
+Execution order and dependencies:
+
+- Schedule CX1.1 after G1.7 so the baseline can include website visits,
+  engagement, landing pages, sources, and privacy-minimized form outcomes when
+  that source is connected. Reuse CX1 setup state, I1.1 website-performance
+  evidence, G1.2 tracked/local rank evidence, Search Console facts, RPT1 report
+  snapshots, I1.6 measurement contracts, DT1 freshness truth, and I1.3's
+  governed AI gateway. Do not build duplicate collectors for this sprint.
+- Google Business Profile, listings, reviews, backlinks, competitor, and AI
+  visibility evidence is included only when the corresponding governed source
+  and location mapping is live. An unavailable optional source cannot block the
+  baseline or be represented as a zero. Search Console is the one required
+  Google source for the official organic baseline; website analytics does not
+  block onboarding completion.
+- CX1.1 is mandatory for onboarding completion, not for basic account access.
+  The owner may enter the workspace while collection is pending or limited, but
+  setup stays visibly incomplete until one truthful baseline report is created
+  or a recoverable source/setup blocker is resolved.
+
+Scope:
+
+- Create one tenant-, organization-, and business-location-scoped baseline run
+  after the owner confirms the website, location, tracked searches, and
+  successfully synchronizes the matching Google Search website property.
+  The orchestration is idempotent and retryable: browser
+  refreshes, OAuth returns, worker retries, and repeated clicks cannot create
+  competing first baselines or double-charge provider usage.
+- Freeze a versioned baseline contract, cutoff timestamp, evidence identifiers,
+  collection settings, and bounded historical window. The default performance
+  window is the latest 28 complete days available before the cutoff; every
+  source retains its exact covered dates, gaps, freshness, and sample size.
+- Collect the supported website and organic evidence already owned by the
+  platform: crawl and technical issues, Core Web Vitals and lab measurements,
+  Search Console clicks/impressions/CTR/average position, tracked-search and
+  local-grid visibility, website visits/engagement/landing pages/sources, and
+  privacy-minimized form outcomes. Add profile, review, citation, competitor,
+  backlink, content, or AI-visibility sections only when trustworthy saved
+  evidence exists for that location.
+- Generate an immutable first-baseline report from the same frozen snapshot
+  used by the customer preview and downloadable artifact. Required sections
+  are: executive summary; evidence coverage and freshness; website health and
+  experience; organic visibility; traffic and engagement; connected local and
+  authority channels; confirmed issues; diagnosis; scorecard; prioritized
+  fixes; and the metric, waiting period, and verification method for each fix.
+- Produce versioned, deterministic component scores for technical health,
+  website experience, search visibility, content coverage, measurement
+  readiness, and each supported optional channel. Every score exposes its
+  inputs, rule version, evidence coverage, and reason. Show an overall score
+  only when the minimum required evidence contract is satisfied; excluded or
+  missing sources never count as zero.
+- Use the governed AI runtime to synthesize the frozen evidence into natural
+  language, explain relationships, and explain the deterministic priority
+  order without changing it. The AI may
+  label an evidence-backed hypothesis as an inference, but it cannot create a
+  measurement, alter a deterministic score, invent a cause, or authorize an
+  unsupported action. Every factual diagnosis and recommendation must resolve
+  to saved evidence plus an approved measurement/action contract.
+- Preserve the first baseline permanently as the location's starting point.
+  Later scans and monthly reports compare against it without rewriting it. An
+  explicit rebaseline creates a new version with an owner-visible reason and
+  boundary; it never silently replaces history.
+- Keep baseline collection and report generation separately recoverable. A
+  failed optional collector yields an honest limited report and a specific
+  reconnect/retry step; a failed required website scan or Google Search
+  connection leaves setup in a blocked state with the failing stage, safe error
+  code, owner action, and support path.
+- Primary onboarding copy calls the required source `Google Search data` and
+  explains the owner outcome before showing the product name `Search Console`.
+  Optional Analytics is described as `website traffic and customer activity`;
+  customers are not expected to know the implementation name `GA4`.
+
+Truth, privacy, and safety constraints:
+
+- Present only collected facts. Missing traffic, rankings, form events, or
+  provider history is labeled `Not connected`, `Not collected`, `Stale`, or
+  `Not enough history` as appropriate—never `0`, estimated, or implied healthy.
+- Separate observed facts, deterministic findings, supported inferences, and AI
+  explanation visually and in the stored contract. The report cannot claim
+  knowledge of Google's private ranking criteria, guaranteed ranking gains,
+  sales attribution, leads, revenue, or causation from correlation.
+- AI failure cannot prevent delivery of the deterministic report. In that
+  state, publish the evidence, scores, issues, and governed fixes with a clear
+  `AI explanation unavailable` notice and allow a metered retry.
+- Honor tenant/location isolation, provider allowances, data retention,
+  consent, and source terms. Do not send credentials, form contents, customer
+  identities, raw provider payloads, or unrelated page content to the model.
+- Baseline data freshness and connection state come from DT1 and remain visible
+  in the report. Stale or incomplete sources cannot produce current-looking
+  scores, diagnoses, or priorities.
+
+Acceptance criteria:
+
+- Completing onboarding for a new location starts exactly one first-baseline
+  workflow and produces either one immutable Ready/Limited report or one clear,
+  recoverable required-source blocker; retries do not duplicate evidence,
+  usage, reports, or provider charges.
+- The report shows the exact location, website, cutoff, covered dates, newest
+  usable date, source coverage, contract versions, and evidence provenance for
+  every metric and score.
+- A report with disconnected Analytics truthfully omits traffic scoring and
+  says how to connect it; a report with no rank history says measurement is
+  pending. Neither substitutes estimates or zeros, and optional gaps do not
+  erase valid website findings.
+- Every displayed issue is linked to saved evidence, every component score can
+  be recomputed from its frozen inputs, and every proposed fix names one
+  supported success metric, baseline value when available, observation window,
+  and verification method.
+- With AI enabled, the narrative contains no uncited facts and distinguishes
+  supported inferences from confirmed findings. With AI unavailable, the same
+  baseline remains complete and useful without fabricated prose.
+- Reno and Lexington—or any two test locations in one organization—receive
+  independently scoped baselines and cannot mix websites, connections,
+  rankings, traffic, issues, scores, or recommendations.
+- The original baseline remains unchanged after later crawls, connector
+  backfills, report generation, plan changes, and controlled rebaseline; every
+  new comparison or boundary is append-only and auditable.
+
 ### Market MKT1.1 - Automated Local Keyword Discovery
 
 Goal: replace the Semrush research workflows a local service business actually
@@ -2883,6 +3069,69 @@ Acceptance criteria:
 Goal: replace the most useful Semrush content and on-page workflows for local
 service businesses.
 
+Implementation status (2026-08-15): the first read-only CNT1 workspace is
+implemented locally. The new **Content** page combines the latest saved
+connected-website inventory and website scan without storing raw page bodies,
+deduplicates matching URLs, and puts pages with clear saved issues first. It
+also shows review-only content briefs created from a confirmed customer search
+and competitor gap, including the target page choice, exact saved positions,
+and proposed outline. An owner can now accept that page target for a later
+drafting step or decline the brief; the decision is terminal, idempotent,
+audited, and cannot change the frozen evidence or publish anything. Inventory
+limits and missing sources stay visible, and
+only a small customer-safe evidence contract leaves the API. This slice cannot
+automatically publish or mutate a website. An accepted
+brief can now create one idempotent working draft whose headings remain tied to
+a hash of that brief. The owner can edit and save plain-text headings and page
+sections with bounded lengths and revision numbers. Draft copy is omitted from
+audit logs, and the database enforces that automatic publishing is false. The
+workspace now also offers optional governed AI wording for the current saved
+draft revision. That request uses only the accepted brief and saved section
+headings/guidance, never sends owner-written section bodies, consumes the
+existing metered AI allowance and cost controls, validates citations and
+section order, and saves the result separately. It cannot overwrite the draft,
+record approval, contact WordPress, or publish. The deterministic metadata
+slice now also compares the latest exact saved page title and search
+description with proposed wording derived from the accepted service, service
+area, and customer search. It identifies missing, matching, and review states,
+shows the evidence date and source, and treats character counts as writing
+guidance rather than Google ranking rules. Opening the workspace creates no
+provider charge, and the recommendations cannot update the draft or website.
+The structured-details slice now also compares the exact schema types saved for
+the target page with the facts in the accepted service brief. It recommends a
+bounded `Service` detail set, shows which service, service-area, page-address,
+and public-business facts are confirmed or missing, and requires the owner to
+confirm business identity rather than inferring it. It does not generate or
+display JSON-LD, create publishable code, promise a special search result or
+ranking improvement, or mutate the draft or website. The internal-link slice
+now compares the accepted service wording with exact titles and URLs from the
+latest saved public-page inventory, excludes unrelated or non-public pages,
+and checks exact saved outgoing-link targets before suggesting anything. It
+shows the source page, destination page, bounded anchor wording, shared terms,
+evidence source/date, and whether the link already exists. It does not use an
+invented confidence score, insert a link, generate website code, publish, or
+promise ranking or traffic gains. The content-readiness slice now checks the
+saved owner draft against its accepted brief: immutable brief lineage, planned
+section coverage, completed owner wording, confirmed service and service-area
+facts, unsafe markup, and business or performance claims that require proof.
+It reports exact section and word counts without turning them into a score or
+SEO target. `Ready for owner review` is explicitly not approval or publishing
+readiness; the check cannot approve, contact WordPress, mutate the website, or
+promise writing quality or business outcomes. The explicitly approved
+publishing handoff is now implemented for new service pages. A ready saved
+revision can prepare an exact immutable WordPress change preview containing the
+owner-written title, sections, metadata, destination, expected version, and
+rollback contract. Preparing the preview changes nothing. The owner must then
+acknowledge and approve that exact preview hash, which still changes nothing,
+before a third explicit action can create a non-public WordPress draft. The
+handoff hard-codes draft status, never requests a public page, keeps automatic
+publishing disabled, and preserves the existing mutation audit and rollback
+path. A later edit creates a different revision/hash and cannot inherit the old
+approval. Existing-page replacement remains manual in this slice so the product
+cannot silently overwrite or duplicate a live page. With that boundary, the
+baseline CNT1 workspace is complete; broader existing-page editing and public
+publishing remain later governed extensions rather than implicit behavior.
+
 Scope:
 
 - Productize the existing content-plan, content-asset, internal-link, entity,
@@ -3057,7 +3306,7 @@ single-site and portfolio automation within published allowances; Enterprise
 adds custom policy, provider, team, audit, and bulk-site controls. All tiers
 retain human-readable evidence and an honest verification plan.
 
-Implementation status (2026-08-13): the first three WP1.2 safety slices are complete.
+Implementation status (2026-08-13): the core WP1.2 implementation is locally complete through eight safety slices.
 Each connected site now has a tenant-scoped, versioned policy with fail-closed
 defaults, allowed action types, an allowed URL work area, timezone-aware days
 and hours, blackout windows, a monthly update cap, a risk ceiling, an approval
@@ -3078,9 +3327,64 @@ same cap. If the public website does not match an automatically approved
 change, the system now records the failed execution, preserves the rollback
 snapshot, pauses that site's managed policy with the exact execution and
 reason, and blocks later managed work until an owner reviews and removes the
-pause. Manual WP1.1 remains unchanged. The next WP1.2 slice will add repeated
-post-change regression rules and the content/fact validation gates required
-before broader action categories can run unattended.
+pause. Manual WP1.1 remains unchanged. Managed previews now also run a versioned,
+deterministic content and business-fact gate before policy approval. It checks
+the exact action-to-field contract; title, description, link, draft, and schema
+shape; unsafe markup; unsupported outcome and business claims; owner-confirmed
+service relevance; excluded service areas; and duplicate pages against a
+complete WordPress inventory refreshed within the prior 24 hours. Every result records the recommendation,
+execution, policy version, confirmed-fact identifiers, inventory run, and
+deterministic generation mode. A failed check leaves the execution pending,
+marks the preview as blocked, explains the issue in plain language, and sends
+nothing to WordPress. Manual WP1.1 previews remain approval-first and unchanged.
+
+Measured managed changes now also have a site-scoped regression circuit breaker.
+The first governed measurement classified as worse starts a watch. A second
+consecutive worse result for the same campaign pauses only that site's managed
+policy, records the relevant measurement and execution identifiers and metric
+identifiers, and writes a durable audit event. An improved, unchanged, or
+inconclusive result resets the consecutive-worse count. The product explicitly
+states that a result observed after a website change does not prove the change
+caused the movement. Public-page verification failure remains an immediate
+pause because it proves that the requested mutation was not published as
+expected. The regression rule runs whenever a governed outcome measurement is
+recorded. Managed WordPress execution now also captures the matching governed
+action baseline before the mutation, marks the action complete only after the
+public-page verification passes, and creates one idempotent durable outcome
+check for the action's saved observation date. That future check uses the same
+tenant, location, metric contract, provider, entity scope, and waiting period
+as the baseline; it is processed by the existing database-backed Vercel job
+drain and records insufficient information rather than inventing a result when
+comparable data is unavailable. The scheduler deliberately reuses connected
+crawl, ranking, Search Console, content, and Core Web Vitals facts instead of
+buying duplicate provider checks for every website edit. When the primary
+result is missing or predates the verified website change, the result worker
+now queues only the matching connected or included source: Search Console,
+real-user website performance, Google Business Profile, owned reviews, or a
+one-page delta crawl. It records the collection job, source, recheck, and an
+explicit zero-credit decision in the measurement contract and audit history.
+It never launches a paid provider call implicitly, stops after one refresh,
+and reports insufficient information if the connected source still has not
+published comparable data. The delta crawl continues to enforce the existing
+monthly crawl-page allowance. Managed previews now also fail closed when a
+proposal identifies itself as AI-written. The governed AI run preserves the
+exact bounded input snapshot that was supplied to the model, and its saved
+context hash proves that the business facts were not substituted later. The
+WordPress content validator requires a tenant-, organization-, campaign-, and
+action-matched validated run; complete provider, model, prompt, lexicon,
+context, response, and evidence lineage; and an exact field-for-field match
+between the accepted draft and the title, description, or draft-page wording
+being previewed. That immutable lineage snapshot is copied into the WordPress
+preview. Missing records, changed copy, incomplete hashes, or unsupported
+draft/action mappings block the preview before policy approval or delivery.
+Existing deterministic actions remain unchanged. Broader unattended action
+categories may be added only after an equally exact copy-to-mutation mapping is
+implemented and tested.
+Production closeout still requires one owner-enabled, low-risk managed update
+on a live connected site, followed by public verification, the scheduled
+same-scope outcome check, customer-visible history, and a successful rollback
+drill. Until that proof is recorded, managed automation remains an explicitly
+controlled release candidate rather than a generally available promise.
 
 Scope:
 
@@ -3122,6 +3426,85 @@ Acceptance criteria:
 
 Goal: let a replacement-product customer preserve useful setup and supported
 history instead of rebuilding the account by hand.
+
+Implementation status (2026-08-13): the governed MIG1 core is implemented
+locally. Organization owners and administrators can download one
+plain CSV template, identify the source as Semrush, BrightLocal, or another
+spreadsheet, and directly review up to 2,500 location, tracked-search, competitor,
+historical-ranking, historical-listing, and report-recipient rows. The
+tenant-scoped review maps familiar column aliases, matches saved
+locations by exact normalized website or name, finds already-saved records and
+same-file duplicates, and gives each invalid or ambiguous row one concrete fix.
+The first endpoint records and reports zero writes. A second, explicit customer
+confirmation locks the normalized review hash to an idempotency key and applies
+all ready rows in one database transaction. Every batch keeps its source file
+hash, normalized row snapshot, created-entity ledger, actor, timestamps, and
+audit events. Retrying the same request returns the same batch instead of
+creating duplicates. A customer can undo only the exact records created by the
+batch; rollback fails closed if rankings or other newer work are attached, and
+the batch history remains after reversal. Historical ranking snapshots and
+unsupported-column reporting are covered by the next slice below. Qualified
+listing history and the guided switching checklist are also implemented as
+described below. Recipient configuration and provider-specific adapters are
+also implemented. A resumable path now accepts up to 25,000 reviewed rows and
+20 MB as described below; production migration and live proof remain.
+
+Historical-ranking and field-transparency slice (2026-08-13): MIG1 now accepts
+explicit `ranking` rows tied to a reviewed location and tracked phrase, with a
+whole-number position, original captured date, and optional original record ID.
+These rows create provenance-labeled `RankingSnapshot` history with the source
+system, import batch, original date, and original identifier; they do not create
+or overwrite the live `Ranking` value. Ranking APIs and the customer chart
+identify imported history and exclude it from the latest-live-check freshness
+claim. Exact phrase/date/position duplicates are skipped, conflicts require
+review, batch rollback removes imported points, and later live work blocks unsafe
+parent deletion. CSV columns that are not mapped are now reported by name,
+filled-row count, and reason in the dry run and customer UI instead of being
+silently discarded. Listing facts, recipient configuration, and explicit
+source adapters and resumable files are covered by the later slices below;
+production migration and live proof remain.
+
+Listing-history and guided-switching slice (2026-08-13): MIG1 now accepts
+explicit `listing` or `citation` rows with the directory name, original
+collection date, optional source identifier and public link, source-claimed
+status, listing details, and importance. Imported records and their observation
+history carry the source system and batch provenance, retain the original claim,
+and deliberately remain `unavailable` as current verification until InsightOS
+runs a new public check. Listing totals separate freshly checked records from
+imported history; imported claims cannot increase the confirmed or
+needs-attention counts and are labeled in the Listings UI. Exact historical
+duplicates are skipped and rollback removes both the imported observation and
+its qualified listing record. Settings now includes a state-derived switching
+checklist for importing, connecting Google, mapping live sources, and collecting
+the first fresh baseline.
+
+Recipient and export-adapter slice (2026-08-13): MIG1 now accepts explicit
+`report recipient` rows tied to a reviewed location and saves normalized email,
+display name, role, original identifier, source system, and import batch. Every
+imported recipient is disabled, no delivery job or event is created, and the
+Reports UI requires an explicit `Review and turn on` action before future
+scheduled use. That approval remains visibly provenance-labeled and prevents a
+later rollback from deleting the reviewed recipient. The CSV reader now reports
+and locks an explicit `semrush_csv_v1`, `brightlocal_csv_v1`, or standard
+InsightOS adapter into the review hash. The two provider adapters recognize
+documented familiar project, target-domain, tag, citation, live-link, and
+last-checked headings without silently reinterpreting unsupported columns.
+Production migration and live proof remain.
+
+Resumable-file slice (2026-08-13): large CSV files now use durable,
+tenant-scoped upload sessions with up to 100 ordered parts, per-part SHA-256
+checks, an optional expected whole-file hash, a 20 MB byte ceiling, and a
+seven-day expiry. Retrying the same create request or an already-saved part is
+idempotent; a different payload at the same part number fails closed. Review
+cannot begin until every part is present, locks the assembled file and review
+hash, supports up to 25,000 rows, and returns paginated row results. Apply
+reassembles and revalidates the locked file inside the existing atomic import
+contract. The Settings UI automatically chooses this path for large or
+row-heavy files, uploads only missing parts after navigation or interruption,
+stores only the non-sensitive session reference in browser storage, displays
+progress, and lets the owner page through the complete review. A nightly
+retention task deletes expired sessions and their raw file parts. Production
+migration and a real large-file interruption/resume proof remain.
 
 Scope:
 
@@ -3297,6 +3680,49 @@ Acceptance criteria:
 Goal: give customers and operators clear, enforceable control over collected
 data, credentials, generated artifacts, AI records, and deletion.
 
+Implementation status (2026-08-13): GOV1A and GOV1B are implemented locally. Migration
+`20260813_0143` adds the tenant-scoped export ledger with PostgreSQL RLS. An
+organization owner can create an idempotent JSON export, download it through an
+authenticated private endpoint, and see its durable status. The artifact is
+SHA-256 integrity checked and removed after seven days while its hash, status,
+timestamps, and audit events remain. Password hashes, sessions, connected-
+account credentials, billing-provider identifiers, report binaries, and
+internal security/legal-hold evidence are explicitly excluded. The data-class
+inventory and non-claims are documented in
+`backend/docs/architecture/customer-data-lifecycle.md`. Migration
+`20260813_0144` adds a tenant-scoped provider-disconnect ledger. Owners receive
+an exact before/after preview
+and confirmation gate; Google revocation is attempted without storing the raw
+token, the local encrypted grant is deleted regardless of outside availability,
+all Google mappings stop scheduling, queued jobs are cancelled, late worker
+failures cannot reactivate the connection, saved results remain available, and
+the outside-revocation result is shown honestly. Organization OAuth application
+configuration is not treated as the customer's Google data grant and remains
+available for a future reconnect.
+
+Migration `20260813_0145` adds organization-closure, restricted legal-hold,
+and deletion-tombstone ledgers without foreign keys that would erase lifecycle
+proof when primary data is later removed. Owners receive an exact closure
+preview and confirmation gate; active subscription billing blocks closure; the
+workspace becomes centrally read-only for a 30-day recovery window; queued
+work, scheduled reports, public report links, data mappings, and WordPress
+actions stop. Recovery restores safe connection/schedule state but does not
+recreate revoked links or canceled jobs. A nightly finalizer cannot pass an
+active platform-owner-only hold. When clear, it deletes credentials and OAuth
+client secrets, clears WordPress secrets, revokes organization sessions, and
+creates a restore-safe `pending_primary_erasure` tombstone. Primary-store,
+artifact/cache, and backup erasure are intentionally not claimed until the
+remaining inventory, dependency-order, and production restore checks exist.
+
+GOV1D hardens that workflow with migration `20260813_0146`. Account deletion now
+uses two separate confirmation screens: the first explains what stops and what
+remains, and the second requires explicit export-choice and recovery-window
+acknowledgements plus the exact case-sensitive word `Delete`. The API enforces
+all three signals, stores versioned authorization evidence and its timestamp,
+and refuses to finalize a legacy or incomplete request without that evidence.
+The typed word is not stored. This still begins the recoverable closure process;
+it does not claim immediate or verified primary-data erasure.
+
 Scope:
 
 - Inventory data classes and define purpose, owner, sensitivity, residency
@@ -3326,6 +3752,30 @@ Acceptance criteria:
 
 Goal: close the most valuable remaining Semrush-class search and technical
 coverage gaps without adding disconnected tool clutter.
+
+> **Implementation status (2026-08-13):** SEO2A and SEO2B are implemented
+> locally. SEO2A provides a tenant-scoped refresh that reads Search Console
+> sitemap health once and inspects a
+> quota-bounded set of up to 25 important crawled URLs (10 by default). It
+> preserves Google's verdict, coverage reason, crawl/indexing states,
+> Google-selected and user-selected canonicals, referring/sitemap evidence,
+> source contract, and observation time. Site Health joins that evidence to the
+> latest live crawl and presents a short, ordered list with the affected URL,
+> evidence, source, freshness, severity, confidence, and a practical next step.
+> The product deliberately ignores the deprecated sitemap `indexed` field and
+> never treats a submitted sitemap URL count as proof that pages are indexed.
+> SEO2B preserves the HTTP redirect chain, a source-to-target internal-link
+> graph, resolved canonical target, substantial visible-copy hash, word count,
+> and JSON-LD parse evidence. It derives confirmed broken internal links and
+> exact-copy duplicates from scanned evidence. Orphan-page findings require a
+> successfully loaded same-site sitemap inventory and a complete uncapped deep
+> scan. Internal canonical targets are followed and labeled broken only after a
+> failed response; an unscanned URL is not labeled missing. Redirected pages
+> are excluded from site-wide orphan claims. Website Health translates
+> each finding into owner-friendly impact, repair, and stored evidence. Live
+> production proof, content decay, cannibalization, SERP features, entity
+> comparison, semantic duplicates, and optional Bing evidence remain in later
+> SEO2 slices.
 
 Scope:
 
@@ -3361,6 +3811,73 @@ Acceptance criteria:
 Goal: improve forecasts and recommendations from verified outcomes while
 preventing premature causal claims or uncontrolled self-modification.
 
+> **I2A implemented locally 2026-08-13:** Next Steps now reads the governed
+> before-and-after measurements and frozen forecast comparisons already attached
+> to completed action plans. It groups only matching action, metric, and
+> measurement-contract versions; shows the real starting and follow-up values;
+> counts forecast ranges that matched, overperformed, or underperformed; and
+> requires five comparable examples before a group can be presented for human
+> review. The customer view uses direct business language and keeps older
+> overall-score checkpoints available only as secondary history. Automatic rule
+> changes, forecast-model changes, experiment launches, and causal claims remain
+> disabled. Later I2 slices must add approved experiment design, stop rules,
+> champion/challenger governance, activation, monitoring, and rollback.
+
+> **I2B implemented locally 2026-08-14:** Every measured result now waits for an
+> explicit owner decision before it can count toward learning. The owner can
+> record seasonal demand, unrelated website work, search changes, tracking
+> changes, other marketing, outages, or another explained influence; then use
+> the result or leave it out. Decisions are tenant- and organization-scoped,
+> durable, audited, and reversible. Pending and excluded results remain visible
+> but cannot satisfy the minimum sample or calibrate forecast checks. Automatic
+> policy updates and experiments remain disabled. I2C begins the governed
+> experiment-design work; it does not activate experiments automatically.
+
+> **I2C implemented locally 2026-08-14:** Owners can now turn a matching measured
+> action and metric into a tenant-scoped controlled-test design. The design saves
+> a plain-language expectation, comparison method, minimum sample, observation
+> window, protected measurements, mandatory safety/regression/data-quality/
+> allowance stop rules, and explicit undo steps. A draft may be prepared after
+> the first matching result, but approval is blocked until at least five matching
+> owner-reviewed results exist. Design approval is audited and deliberately does
+> not create test assignments, launch work, publish content, change a website or
+> listing, or connect to the legacy experiment engine. Later I2 slices must add a
+> separately approved execution protocol, live guardrail monitoring,
+> champion/challenger policy governance, activation, and verified rollback.
+
+> **I2D implemented locally 2026-08-14:** An approved design can now be turned
+> into a separate, frozen monitoring protocol. Preparing the protocol captures
+> the current governed primary and protected measurements, Insight Credit state,
+> stop rules, undo steps, design hash, and a new protocol hash. A second explicit
+> owner authorization is required before monitoring may begin. Starting the
+> observation window requires a reference showing where the separately approved
+> change was made; this protocol itself never edits a website or business
+> profile, publishes content, or creates legacy experiment assignments. Each
+> requested safety check appends the exact saved primary, protected, and
+> allowance evidence it evaluated. Incomplete or mismatched data, measured
+> regression, or an exhausted allowance moves the protocol to a visible stop
+> state. The owner can stop at any time, follow the frozen undo steps, and record
+> evidence that rollback was completed. Rollback remains human-executed and
+> evidence-verified rather than silently automatic. Later I2 slices must add
+> scheduled guardrail checks, eligible champion/challenger policy governance,
+> and a separately gated change executor before any supported experiment can
+> apply or reverse production work.
+
+> **I2E implemented locally 2026-08-14:** A successfully completed governed
+> monitoring protocol can now prepare one immutable comparison between the
+> current action-learning eligibility rule and a stricter proposed rule. The
+> comparison counts only distinct, matching action measurements that the owner
+> explicitly included; repeated guardrail checks never inflate the sample. A
+> deterministic replay evaluates every saved prefix, minimum sample, improved
+> and worse result ratios, and a 90% Wilson confidence bound. The exact frozen
+> candidate and replay are hashed, tenant- and organization-scoped, and
+> append-only. An owner may mark a passing proposal reviewed for a separate
+> future activation decision, reject it, or cancel it. I2E has no activation,
+> recommendation mutation, forecast mutation, legacy experiment assignment,
+> publishing, WordPress, website, or business-profile change path. A later I2
+> slice must add an independently approved shadow rollout, monitoring, pause,
+> and verified rollback before a reviewed proposal can affect live behavior.
+
 Scope:
 
 - Join pre-action baseline, intervention, execution verification, observation
@@ -3395,6 +3912,30 @@ customer product rather than a documentation-only promise. An owner should be
 able to answer `Where does my business appear in AI search?`, `For which
 questions and locations?`, `Who appears instead?`, and `What should I improve?`
 from one dedicated workspace.
+
+Implementation status (2026-08-14):
+
+- **The AIV1-A foundation is implemented locally.** It covers candidate-only
+  engine and provider-contract registries, deterministic frozen questions,
+  dormant provider-neutral run/evidence storage, supplier redaction, a
+  side-effect-free preview whose cost and allowance checks remain blocked,
+  tenant isolation, tests, and a location-scoped beta workspace that remains
+  honest when no engine is available. Full live execution telemetry,
+  capability/operation matching, observed price matching, and dispatch are
+  explicitly deferred to AIV1-B/AIV1-C.
+- **AIV1-B is later operator-only live evaluation.** It must prove credential
+  entitlement, live schemas, supported surfaces and geographies, data rights,
+  failure behavior, repeat comparability, and observed unit cost. Candidate
+  results are not customer-visible.
+- **AIV1-C is later governed customer collection.** It adds individually
+  approved engines, durable manual/scheduled checks, history, comparisons,
+  reporting, and evidence-backed actions to the existing beta workspace only
+  after AIV1-B, allowance, cost, security, and QA gates pass.
+- During AIV1-A, live credential reads, provider submit/poll, customer runs,
+  engine activation, schedules, reports, production claims, guessed price
+  cards, and credit consumption are explicitly disabled.
+- The controlling integration and economics contract is
+  [AIV1 Provider and Economics Governance](./product_overview/aiv1_provider_economics_governance.md).
 
 Scope:
 
@@ -3560,7 +4101,7 @@ Acceptance criteria:
 
 ### Commerce COM1 - Billing, Entitlements, and Self-Service Accounts
 
-Goal: make the $299, $699, and $1,999+ plans enforceable and supportable.
+Goal: make the $399, $699, and $1,999+ plans enforceable and supportable.
 
 Scope:
 
@@ -3600,7 +4141,7 @@ Implementation status (August 11, 2026):
 
 #### COM1.2 - Subscription Lifecycle and Payment Recovery
 
-Implementation status (August 12, 2026):
+Implementation status (August 14, 2026):
 
 - The first billing-lifecycle slice is implemented locally. Organization-scoped
   subscription state now records the billing customer, subscription, configured
@@ -3613,7 +4154,9 @@ Implementation status (August 12, 2026):
 - The webhook endpoint verifies the signed raw request within a bounded replay
   window. A durable receipt ledger hashes but does not retain raw provider
   payloads, rejects conflicting organization/customer identifiers, processes an
-  event ID once, and ignores older state changes that arrive late.
+  event ID once, and ignores older state changes that arrive late. Failed-event
+  retries atomically claim the receipt, while distinct events serialize their
+  organization changes under a database row lock.
 - Active or trialing subscriptions update the internal commercial plan only
   when the configured Price ID and plan metadata agree. Payment failure keeps
   the current plan and saved data while prompting recovery; a completed
@@ -3621,28 +4164,278 @@ Implementation status (August 12, 2026):
 - Settings now shows billing health, secure upgrade and management actions, and
   a plain-language payment recovery path. The application never returns secret
   keys or raw billing-provider errors to the customer.
+- Checkout retries now use an organization-scoped pending attempt. A second tab
+  or device cannot open a competing paid session, a closed checkout can reopen
+  the same attempt, and browser storage loss can recover confirmation from the
+  signed return session. A success URL alone never changes plan access; Settings
+  waits for the matching active-subscription webhook and stops polling after a
+  bounded window.
+- Subscription state and payment state now keep independent provider ordering.
+  Equal-time cancellation takes precedence over an active update, stale invoice
+  events cannot erase payment recovery, and a terminal subscriber can start a
+  new signed checkout without an operator clearing the old subscription ID.
+- The closeout migration adds nullable-unique customer and subscription
+  identities only after a non-mutating duplicate preflight, and conservatively
+  separates legacy recovery rows into active-subscription and payment-recovery
+  dimensions. Saved campaigns and customer work are never deleted by a billing
+  transition.
 - Focused lifecycle tests cover owner-only checkout, signature rejection,
-  replay rejection, duplicate delivery, plan activation, payment failure, and
-  cancellation. Remaining COM1 work includes Stripe environment provisioning,
-  live test-mode checkout/webhook evidence, portal policy configuration,
-  allowance materialization across every governed capability, invitations,
-  password recovery, session revocation, and downgrade grace/export rules.
+  replay rejection, conflicting duplicate payloads, durable checkout reuse,
+  plan activation, resubscription, out-of-order subscription and invoice
+  events, payment recovery, and cancellation. Remaining COM1 work includes
+  Stripe environment provisioning, live test-mode checkout/webhook evidence,
+  portal policy configuration, allowance materialization across the remaining
+  governed capabilities, invitations, password recovery, and downgrade
+  grace/export rules. Server-backed session revocation now has a customer-facing
+  Settings control: every user can identify the current sign-in, revoke one
+  other sign-in, or revoke all other sign-ins without ending the current
+  browser session or exposing login tokens.
+
+#### COM1.2C - Customer Session Control
+
+Implementation status (August 15, 2026):
+
+- Settings lists only the signed-in user's active, unexpired server sessions
+  and marks the current browser from the validated access-session identifier.
+- A user can revoke one other browser or all other browsers. The backend refuses
+  to revoke the current browser through these controls and requires the normal
+  sign-out action instead.
+- Revocation closes both access and refresh use immediately. The page shows
+  timestamps and plain-language browser labels only; passwords, cookies, login
+  tokens, and internal session identifiers are never rendered.
+- A failed session-list check is shown as unavailable and does not claim that a
+  sign-out occurred. Invitations and password recovery remain later COM1 work
+  because transactional email delivery is deliberately deferred.
+
+#### COM1.3A - Active-Location Allowance and Downgrade Safety
+
+Implementation status (August 15, 2026):
+
+- COM1.3A includes the `0155` expand/observe bridge and the controlled `0156`
+  enforcement migration. The bridge seeds immutable v2 Solo, Growth,
+  Enterprise, and internal
+  catalog profiles, but leaves them unreferenced and retains every existing
+  v1-compatible organization profile pointer so the previous runtime remains
+  safe during a rolling deploy. It materializes and reports canonical
+  `limit.active_locations` values of 1, 10, 20, and 20 without deleting or
+  rewriting customer data or legacy v1 templates.
+- The durable `active_location_allowance` activation record begins in
+  `observe`. In this state the backend reconciles plan truth, records active
+  counts and overage, and returns `location_allowance_enforced: false`, but it
+  does not deny creation, reactivation, imports, or paid work solely because an
+  organization is over its location count. Location/campaign mapping,
+  corrupted-profile, corrupted-entitlement, cost, and provider-safety checks
+  remain active and fail closed. Migration `0156` locks organization and
+  entitlement truth in the same order as runtime authorization, validates every
+  saved 1/10/20 allowance and integrity hash, drains in-flight decisions, and
+  then changes only this activation record to `enforced`.
+- One active `BusinessLocation` is the sole unit of location capacity.
+  Campaigns, portfolios, execution records, websites, groups, and addresses do
+  not consume extra slots. Archiving or suspending a location releases its
+  slot, while creating or reactivating a location takes the organization and
+  entitlement locks before the count-and-write operation.
+- Location creation, reactivation, governed migration imports, and the legacy
+  execution-location write path use the same lock-safe allowance resolver. New active
+  execution records must map to an active business location, so a second API
+  cannot bypass the commercial count. Existing unmapped legacy records remain
+  recoverable but cannot become a new source of paid work until mapped.
+- Signed subscription changes and platform-approved plan changes update the
+  canonical plan code and active-location row in the caller's existing
+  transaction while selecting only a previous-runtime-compatible v1 pointer;
+  this release never cuts organizations over to v2 pointers. A valid stale row
+  left by a previous-runtime plan-only transition is reconciled under the
+  organization lock. The materializer never commits, resets a usage ledger,
+  deletes a location, or silently substitutes a broken profile.
+- A downgrade below the current active-location count preserves every saved
+  location, campaign, report, measurement, and history record and reports the
+  overage. During `observe`, that overage is informational. The bridge runtime
+  already understands the future `enforced` state: then capacity-increasing
+  writes and over-limit paid work stop, synchronous and queued dispatches
+  recheck current truth immediately before the provider boundary, and safe
+  pre-call denials release their reservations without a paid call.
+- Locations and guided onboarding show the current active/included count and a
+  plain-language recovery path. A partially completed setup reuses an existing
+  saved location instead of creating a duplicate. During `observe`, the UI does
+  not block or upsell solely from the recorded count. After the server reports
+  `location_allowance_enforced: true`, an owner at the limit can review the
+  existing Growth plan surface while teammates are told to contact the
+  workspace owner. Existing locations remain readable and manageable even if
+  allowance truth is temporarily unavailable.
+- COM1.3A deliberately owns active-location cardinality only. Metered provider,
+  keyword, crawl, AI, grid, storage, export, and user entitlements remain in the
+  next COM1 materialization slice and must converge on the same versioned,
+  server-authoritative resolver before full commercial release.
+- The controlled `0156` activation is implemented locally after the bridge
+  runtime and PostgreSQL concurrency gate passed. Its downgrade changes only
+  `enforced` back to `observe`; it does not delete locations, entitlements,
+  ledgers, or catalog rows. Production remains in its previously deployed state
+  until this migration is reviewed and deployed. V2 organization-pointer
+  cutover remains a later contract migration.
+
+#### COM1.3B - Canonical Reporting and Strategy Capability Gates
+
+Implementation status (August 16, 2026):
+
+- Campaign performance trends, owner-ready reports, and deeper strategy plans
+  now resolve through the same versioned commercial-plan authority used by
+  Settings, billing transitions, WordPress, and customer upgrade explanations.
+  The contradictory legacy feature-gate service is removed from runtime.
+- Solo keeps the performance trends and owner-ready report promised by the
+  published plan. These read-only intelligence surfaces no longer return a
+  legacy Pro-only denial.
+- Deeper policy-controlled strategy remains a Growth capability. A Solo request
+  fails before strategy generation with the stable
+  `campaign_strategy_upgrade_required` reason and a customer-safe Growth
+  explanation; saved work is unchanged.
+- The customer allowance response exposes the same truth: trends and reports
+  are available on Solo, while deeper action plans identify Growth as the
+  required plan. No new numeric keyword, crawl, grid, AI, storage, export, or
+  user limit is invented in this slice; those require explicit published
+  quantities before ledger materialization.
+
+#### COM1.3C - Canonical Bulk Business Profile Capability Gate
+
+Implementation status (August 16, 2026):
+
+- Profile-campaign creation, preflight, approval, failed-item retry, paused-run
+  resume, and delayed portfolio-review execution now resolve through the same
+  `business_profile_fleet_actions` commercial capability used by the customer
+  allowance response. Duplicate hard-coded plan comparisons are removed.
+- Growth and Enterprise can prepare governed location-group campaigns. Solo
+  keeps one-location recommendations and drafts, plus read access to every
+  previously saved campaign, but cannot start or restart bulk work.
+- A downgrade is rechecked at every resumable lifecycle boundary. Work queued
+  before the downgrade remains queued and makes no provider mutation; pause,
+  inspection, and recovery remain available.
+- The Profile campaigns page checks the server capability before showing any
+  mutation control. Owners receive a contextual Growth handoff, teammates are
+  directed to the workspace owner, and an unavailable plan check fails closed
+  without hiding saved previews.
+- Google publishing remains independently locked behind production Business
+  Profile API validation. Commercial eligibility never implies that provider
+  access, quota, profile ownership, content safety, or publishing approval has
+  passed.
+
+#### COM1.3D - Review Automation Plan Truth and Human-Approval Boundary
+
+Implementation status (August 16, 2026):
+
+- The review policy response now resolves the canonical
+  `automatic_review_replies` capability and reports plan eligibility separately
+  from live automation. Solo retains monitoring, governed drafts, editing,
+  human approval, copying, and individually confirmed posting. Growth and
+  Enterprise are eligible for a later governed automation mode, but eligibility
+  never enables that mode.
+- Automatic posting remains structurally disabled for every plan until the
+  production Google review-reply capability is validated and a separate
+  explicit opt-in policy is implemented. The customer UI states both truths and
+  never suggests that upgrading alone turns automatic replies on.
+- Queueing now requires durable human-review identity and time in addition to
+  approved text and the separate public-post confirmation. The worker rechecks
+  the same human-review proof immediately before provider dispatch, so database
+  changes, stale jobs, and retries cannot convert an approved manual workflow
+  into an automatic reply.
+- Saved reviews, drafts, approvals, posting history, pause, cancel, and recovery
+  stay readable regardless of plan. Sensitive and uncertain reviews continue
+  to require a person and cannot become automation candidates.
+
+#### COM1.3E - Directory Correction Eligibility and Provider-Truth Boundary
+
+Implementation status (August 16, 2026):
+
+- Public directory discovery, saved-versus-found field comparisons, listing
+  inventory, and manual correction guidance remain available on Solo. These
+  are read-only intelligence workflows and are not relabeled as managed
+  correction or synchronization.
+- The canonical `listing_correction_sync` capability records Growth as the
+  minimum plan for future managed directory submission and synchronization.
+  Growth and Enterprise plan eligibility is reported separately from live
+  provider availability; an upgrade alone never implies that a listing can be
+  changed.
+- Live managed correction remains disabled for every plan until a separately
+  approved production listings-network provider, per-location commercial
+  terms, supported target directories, receipts, and rollback/recovery rules
+  pass validation. Solo receives a stable Growth-required denial, while an
+  eligible plan receives a distinct provider-not-approved denial.
+- The previous submission endpoint no longer creates a workflow row or queues
+  synthetic progress when no approved correction connection exists. Delayed
+  batch and refresh workers recheck the same boundary before changing saved
+  state or constructing a provider client, so stale jobs cannot bypass it.
+- Loading prior citation-request records is now read-only. It does not enqueue
+  a directory refresh, claim that a broker contacted a directory, or treat an
+  old `submitted`, `verified`, or `live` value as fresh confirmation. Existing
+  request history remains readable after plan changes.
+- The customer page explains the two independent blockers in plain language
+  and keeps the useful manual path: run a public listing check, review exact
+  field differences, open the public listing, and correct it directly with the
+  directory. Internal suppliers, provider pricing, and commercial registry
+  details remain hidden.
+
+#### COM1.3F - External Automation Eligibility and Vendor-Neutral Boundary
+
+Implementation status (August 16, 2026):
+
+- This slice first established the separation between plan eligibility and a
+  live automation gateway. Its initial Growth-minimum packaging decision is
+  superseded by COM1.3G, which extends bounded standard recipe eligibility to
+  the `$399` Solo plan while retaining Enterprise for custom service accounts,
+  scopes, API access, and customer-hosted clients.
+- `gateway_enabled` and `automatic_actions_enabled` remain false until AUT1 is
+  implemented and production validated. Changing a plan or price never makes a
+  connector, event delivery, or external action available by itself.
+- Settings names the planned vendor-neutral options—n8n, Make, Zapier,
+  Pipedream, and generic signed webhooks—without selecting one as the platform
+  architecture or presenting a connection button. No option can receive
+  events, access customer data, hold a service credential, or run an action in
+  this slice.
+- AUT1 still owns signed event envelopes, scoped service accounts, typed action
+  commands, idempotency, replay defense, destination validation, secret
+  rotation, audit retention, per-connector QA, and customer connection flows.
+  COM1.3F does not create a placeholder token, webhook, endpoint, or execution
+  bypass before those controls exist.
+
+#### COM1.3G - $399 Solo Packaging and Standard Automation Eligibility
+
+Implementation status (August 16, 2026):
+
+- The canonical Solo price is now `$399/month`. Its platform-paid API allowance
+  rises from `$14.95` to `$19.95` while the existing 10% non-API reserve keeps
+  the modeled software-usage margin floor at 85%. Existing ledger rows retain
+  their original price and revenue snapshots; new reservations use the current
+  `$399` catalog snapshot. The runtime price must not be deployed ahead of the
+  matching Stripe price or an explicit legacy-subscriber transition decision.
+- Standard external automation eligibility now begins with Solo rather than
+  Growth. Once AUT1 is production-ready, Solo receives a small catalog of
+  supported recipes with bounded event/action allowances and the same explicit
+  approval rules as the underlying InsightOS action. Growth adds larger
+  allowances, more active workflows, multi-location routing, and team approval
+  controls. Enterprise adds custom scopes, service accounts, generic API and
+  webhook access, customer-hosted clients, retention, and contractual support.
+- Eligibility still does not turn on a connector. The gateway and automatic
+  action flags remain false for every plan until signed delivery, replay
+  protection, scoped commands, destination validation, audit, privacy,
+  idempotency, per-connector QA, and production recovery pass AUT1. This pricing
+  change creates no token, webhook, route, provider call, or execution bypass.
+- Before paid checkout is enabled publicly, the configured Stripe Solo Price
+  ID must be proven to charge exactly `$399/month`; a matching internal label
+  is not accepted as evidence of the external billing amount.
 
 Packaging principle:
 
 - Solo tells the owner what is happening, what to do, and whether the work
   helped. It must remain a useful end-to-end intelligence product rather than a
   crippled trial.
-- Growth helps the owner do the work through governed automation, higher
-  allowances, more frequent monitoring, collaboration, and longer history. It
-  includes up to ten locations, but is valuable even when only one is active.
+- Growth expands governed automation through more recipes, higher allowances,
+  more frequent monitoring, collaboration, multi-location routing, and longer
+  history. It includes up to ten locations, but is valuable even when only one
+  is active.
 - Enterprise adds organization-scale governance, customer-owned infrastructure,
   customization, API access, white label, advanced roles, and contractual
   operating support.
 
 Canonical feature gates:
 
-| Capability | Solo - `$299` | Growth - `$699` | Enterprise - `$1,999+` |
+| Capability | Solo - `$399` | Growth - `$699` | Enterprise - `$1,999+` |
 | --- | --- | --- | --- |
 | Active locations | 1 | Up to 10 | 11-20 included; custom above 20 |
 | Connected Google, website-health, ranking, keyword, citation, review, and competitor intelligence | Included with standard allowances | Included with higher pooled allowances | Included with custom allowances and provider options |
@@ -3655,7 +4448,7 @@ Canonical feature gates:
 | Content and on-page work | Recommendations and limited copy-ready drafts | Full governed content workspace plus approved WordPress publishing | Multi-site policy, advanced approval, API, and custom workflow integration |
 | Alerts | Essential weekly digest and critical connection/security notices | Faster change alerts, action reminders, and configurable digests | Webhook/API delivery, routing rules, and custom escalation |
 | Reports and exports | Owner-ready monthly report and basic export | Scheduled weekly/monthly reports, comparison views, and advanced export | White label, client-safe distribution, API, durable custom reporting, and retention controls |
-| External automation | Native alerts and reports only; no external write automation | AUT1 approved recipes for supported platforms, signed outbound events, and bounded actions with standard allowances | AUT1 custom event/action scopes, location-group permissions, service accounts, customer-hosted automation clients, generic webhook/API access, larger allowances, and longer audit retention |
+| External automation | AUT1 starter recipes for supported platforms, signed outbound events, and bounded approval-preserving actions with entry allowances | More recipes, larger event/action allowances, multi-location routing, and team approval controls | Custom event/action scopes, location-group permissions, service accounts, customer-hosted clients, generic webhook/API access, contractual allowances, and longer audit retention |
 | Users and workflow | Owner plus one collaborator | Team roles, delegated location access, approvals, and bulk work | Advanced/custom roles, client access, SSO when contracted, and organization audit views |
 | Competitor, backlink, AI-visibility, and historical depth | Useful baseline limits | Higher limits, deeper history, scheduled checks, and batch comparison | Custom limits, exports, provider ownership, and portfolio analysis |
 | Support and onboarding | Guided self-service | Assisted onboarding and priority product support | Managed onboarding, named escalation, and contracted support options |
@@ -3741,21 +4534,273 @@ customer's other systems through one vendor-neutral contract without exposing
 the database, provider credentials, unrestricted AI prompts, or a way around
 product approvals.
 
+#### AUT1A - Versioned Signed Outbound Event Contract
+
+Implementation status (August 16, 2026):
+
+- The first vendor-neutral contract is implemented as a bounded, versioned
+  outbound envelope. Its initial allowlist covers report ready,
+  recommendation ready, approval requested, action completed, action failed,
+  and connection-health-changed events. Each event carries one organization,
+  optional location, truth state, same-product resource link, occurrence time,
+  and only fields approved for that exact event type.
+- Canonical JSON is signed with HMAC-SHA256 over the timestamp and exact body.
+  Verification uses constant-time comparison, binds the event and schema
+  headers to the signed body, rejects stale requests after five minutes, and
+  rejects tampering, duplicate fields, unknown event types, mismatched resource
+  types, oversized or deeply nested payloads, non-finite values, absolute
+  links, and nested credential, token, contact, raw-content, provider-payload,
+  prompt, or internal-cost fields.
+- Settings can show the approved starter triggers from the server contract, but
+  connection setup and event delivery remain explicitly false. AUT1A stores no
+  destination URL or signing secret, makes no outbound network request, exposes
+  no inbound command route, and cannot activate or approve an InsightOS action.
+- AUT1B owns encrypted connection and secret storage, SSRF-safe destination
+  validation, subscription filters, durable test-delivery and retry receipts,
+  secret rotation, disconnect, and the first real delivery proof. Typed inbound
+  actions remain a later slice after outbound delivery is production-proven.
+
+#### AUT1B - Encrypted Workflow Connections and Signed Test Delivery
+
+Implementation status (August 16, 2026):
+
+- Organization owners can now save outbound Zapier, Make, or Pipedream webhook
+  connections from Settings. The destination URL and a generated HMAC signing
+  secret are encrypted with the platform credential cipher; neither is stored
+  in plaintext. The secret is returned only when created or replaced, and the
+  destination URL is never returned after it is saved.
+- Destination validation is fail-closed and provider-specific. Only HTTPS on
+  the reviewed default webhook hosts is accepted, with no user information,
+  fragment, redirect following, custom port, generic destination, localhost,
+  IP address, or customer-supplied custom domain. Custom domains, generic
+  webhooks, and customer-hosted endpoints remain deferred until their network,
+  tenancy, authentication, and support contracts are separately governed.
+- Owners can send a signed connection-health test, retry a failed or interrupted
+  test up to three total attempts, replace a signing secret, and disconnect a
+  destination. Organization users can inspect redacted connection and delivery
+  health but cannot create, test, rotate, retry, or disconnect a destination.
+- Every test uses the AUT1A canonical body and HMAC headers, refuses redirects,
+  uses a bounded timeout, revalidates the encrypted destination immediately
+  before dispatch, and persists encrypted event evidence plus append-only,
+  tenant-scoped attempt receipts. Responses retain only status, duration, and a
+  stable safe reason; response bodies, destination paths, signing secrets, and
+  raw network errors are not stored or audited.
+- This slice proved owner-controlled connection and test-delivery behavior.
+  AUT1C now owns durable product-event fan-out, scheduled retries, connection
+  pause/resume, and dead-letter recovery. Inbound commands, approval, publish,
+  WordPress, Google Business Profile, arbitrary prompts, and other mutation
+  routes remain absent; `automatic_actions_enabled` remains false.
+
+#### AUT1C - Durable Product-Event Fan-Out and Delivery Recovery
+
+Implementation status (August 16, 2026):
+
+- Committed report-ready, recommendation-ready, action-completed, and
+  action-failed product events now enter the existing transactional outbox.
+  The outbox creates an idempotent fan-out job, and fan-out creates a separate
+  encrypted delivery plus durable job for each active, verified, subscribed
+  connection. One failed destination cannot roll back the native product event
+  or block another connection.
+- Every delivery reuses the AUT1A canonical envelope and signature. The external
+  event ID is deterministically derived from the immutable source-outbox event,
+  so an at-least-once retry keeps one stable deduplication key. Customer payloads
+  include only the saved resource ID, same-product link, plain-language state,
+  occurrence time, and the minimum event-specific facts; report snapshots,
+  recommendation evidence, mutation payloads, provider data, secrets, raw
+  errors, contacts, prompts, and internal costs do not leave InsightOS.
+- Delivery runs in the lease-based platform job queue. A non-2xx response,
+  timeout, or network failure records a safe attempt receipt and schedules
+  exponential backoff. After three total attempts the delivery becomes a
+  customer-visible dead letter. An organization owner can recover that exact
+  event with three additional bounded attempts while preserving its event ID
+  and prior attempt history.
+- Owners can pause and resume each connection. Pausing stops new fan-out and
+  turns already queued, not-yet-sent work into a cancelled receipt without a
+  network request. Disconnect still removes the encrypted URL and secret.
+  Settings shows automatic-delivery state, retry timing, exhausted events, and
+  up to five recoverable dead letters without exposing endpoint paths or raw
+  network details.
+- The internal job drain now processes committed outbox rows before claiming
+  due jobs, and the Vercel cron cadence is five minutes. Outbox rows are claimed
+  with skip-locked row locks so concurrent workers do not publish the same row
+  simultaneously; fan-out and delivery idempotency provide a second durable
+  defense.
+- `approval.requested` remains part of the reviewed AUT1A schema but cannot be
+  selected or automatically delivered yet because the product has no exact,
+  native approval-requested outbox event. The UI states that limitation rather
+  than synthesizing approval truth.
+- This remains outbound-only. No connected workflow can approve a
+  recommendation, publish content, edit WordPress, change a Google Business
+  Profile, submit an arbitrary prompt, or call a generic InsightOS action.
+  Vendor conformance fixtures, customer-hosted n8n/generic destinations,
+  service accounts, typed inbound commands, and plan-specific event-volume
+  ledgers remain later AUT1 work.
+
+#### AUT1D - Governed n8n Cloud Delivery
+
+Implementation status (August 17, 2026):
+
+- Organization owners can now connect a published n8n Cloud workflow through
+  the same encrypted, signed, outbound-only contract used by Zapier, Make, and
+  Pipedream. The connection inherits durable fan-out, bounded retries,
+  pause/resume, dead-letter recovery, secret rotation, redacted health, and the
+  existing plan gate; no separate execution path or supplier-specific payload
+  was introduced.
+- n8n validation is deliberately narrower than generic webhook support. Only a
+  production `/webhook/` URL on the exact `*.app.n8n.cloud` suffix is accepted.
+  Temporary `/webhook-test/` URLs, credentials in URLs, redirects, custom
+  ports, IP addresses, localhost, self-hosted n8n domains, and arbitrary custom
+  hosts fail closed. Settings explains that the n8n workflow must be published
+  and that its Production URL is required.
+- The destination URL and signing secret remain encrypted and hidden after
+  creation. Customer-facing records expose only the n8n Cloud label, endpoint
+  host, subscribed event names, delivery health, and safe recovery state.
+- This does not enable inbound commands or automatic InsightOS actions. Scoped
+  credentials, typed approval-preserving actions, replay protection for inbound
+  requests, action allowances, and customer-hosted/generic destinations remain
+  later AUT1 work.
+
+#### AUT1E - Versioned Starter Recipe Catalog
+
+Implementation status (August 17, 2026):
+
+- The outbound connection contract now includes a versioned, server-defined
+  starter recipe catalog for sharing new reports, routing new recommendations
+  and failed work to human review, and recording completed or failed action
+  results. Every recipe is composed only from product events that are already
+  live in AUT1C; a recipe that references a reserved or unavailable event fails
+  closed instead of appearing in Settings.
+- Settings presents the customer outcome for each recipe and applies its exact
+  event bundle to the existing connection form. The owner still creates and
+  tests the destination in Zapier, Make, Pipedream, or n8n Cloud, and can edit
+  the selected event bundle before saving.
+- Recipe selection does not create a second delivery path, store a supplier
+  template ID, or claim that a workflow has been installed in the external
+  platform. It is honest setup guidance over the same encrypted destination,
+  signed event envelope, durable retries, redacted receipts, and dead-letter
+  recovery already proven by AUT1B-AUT1D.
+- Every catalog item states that it is outbound-only, preserves human approval,
+  and cannot run an InsightOS action. Inbound service accounts, typed commands,
+  action allowances, replay protection, vendor-published templates, and
+  customer-hosted/generic destinations remain later AUT1 work.
+
+#### AUT1F - Provider Setup Guidance and Connection Proof
+
+Implementation status (August 17, 2026):
+
+- The connection API now returns a versioned setup guide for each supported
+  provider. Zapier, Make, Pipedream, and n8n Cloud each name the exact webhook
+  trigger or production endpoint to use, explain where to keep the one-time
+  signing secret, and require the owner to send a signed test before depending
+  on later workflow steps.
+- Settings labels these instructions as setup guidance rather than an installed
+  external template. InsightOS does not claim that it created, published, or
+  inspected the customer's workflow in another vendor.
+- Every saved connection now derives an evidence-backed proof state from its
+  durable delivery receipts: not tested, test needs attention, signed test
+  accepted, or real product event accepted. A connection is production-proven
+  only after a real signed product event is accepted after the current secret's
+  successful test; saving a URL or passing an older secret's test is not enough.
+- Secret rotation resets current proof until the replacement secret is tested
+  and a later product event succeeds. Endpoint URLs, signing secrets, response
+  bodies, raw provider errors, and supplier-internal identifiers remain hidden.
+- Reviewed vendor-published templates and live provider-by-provider production
+  evidence remain deployment closeout work. This slice still adds no inbound
+  credential, command, approval, publishing, WordPress, or Business Profile
+  execution path.
+
+#### AUT1G - Provider Wiring Kits
+
+Implementation status (August 17, 2026):
+
+- The provider setup contract is now version 2 and includes a complete wiring
+  kit for Zapier, Make, Pipedream, and n8n Cloud. Each kit links to the
+  provider's official webhook documentation and identifies the exact trigger,
+  payload location, request-header location, and event field used for routing.
+- Every kit supplies the same vendor-neutral field map: `event_id` for
+  duplicate protection, `event_type` for routing, `truth_state` for result
+  truth, `data.summary` for a message or task description, and
+  `resource.href` for a link back to the saved InsightOS record. Provider UI
+  differences do not create different event schemas or delivery semantics.
+- The receiving-side security contract is explicit: HMAC-SHA256 signs
+  `{timestamp}.{exact_raw_request_body}`, the signature uses the `v1=` prefix,
+  events outside a five-minute replay window are rejected, and the event ID is
+  the stable duplicate key. The one-time secret and destination URL remain
+  encrypted and are never included in the public kit.
+- Settings renders the selected provider's official documentation, account
+  responsibility, payload/header paths, workflow steps, normalized field map,
+  and signature contract before the owner saves the endpoint. The customer
+  still owns the external account, generates the private webhook URL, and
+  chooses the final Slack, email, CRM, spreadsheet, or task action.
+- `connection_kit_ready` means the InsightOS sender and customer handoff are
+  implemented; it does not claim that InsightOS created or published a workflow
+  inside another company's account. Actual provider-by-provider production
+  proof still requires a real customer-owned endpoint and remains a deployment
+  closeout item.
+
+#### AUT1H - Receiver Conformance Test Contract
+
+Implementation status (August 17, 2026):
+
+- An authenticated customer can now download a deterministic, provider-specific
+  receiver test contract for Zapier, Make, Pipedream, or n8n Cloud. The file
+  contains one canonical synthetic event, its exact raw JSON body, expected
+  headers and HMAC signature, provider field paths, expected parsed facts, and
+  a bounded validation checklist.
+- The fixture is explicitly public and test-only. It contains no tenant data,
+  live destination, customer credential, provider credential, or InsightOS
+  mutation authority, and it cannot mark a saved connection as tested or enable
+  product-event delivery.
+- The checklist proves the receiver can parse and route the contract, validate
+  HMAC-SHA256 against the exact bytes, reject a changed body, reject an expired
+  live timestamp, and deduplicate repeated event IDs before invoking an
+  external action. The same event body and safety meaning apply to all four
+  provider builders.
+- Settings offers the selected provider's JSON test contract beside the wiring
+  kit. Actual connection proof still comes only from the existing signed live
+  test receipt and then a later accepted real product event; downloading or
+  evaluating a fixture is never represented as production evidence.
+
+#### AUT1I - Monthly Delivery Visibility
+
+Implementation status (August 17, 2026):
+
+- The automation connection response now includes a calendar-month delivery
+  summary for the organization and for each saved destination. It separates
+  real product events from connection tests, counts distinct events separately
+  from HTTP attempts, and keeps accepted, waiting/retrying, dead-letter
+  recovery, and stopped states distinct.
+- Settings shows the organization summary and a compact per-connection line so
+  an owner can see whether traffic is real, test-only, retrying, or in need of
+  recovery without opening provider logs. Existing receipts remain the source
+  of truth; no external platform estimates or billing counters are inferred.
+- This first visibility slice is explicitly observational. It does not claim a
+  plan allowance, charge for attempts, or silently enforce a volume limit.
+  Versioned event allowances and server-side pre-delivery enforcement remain a
+  later commercial automation slice after packaging is approved.
+- Delivery bodies, destination URLs, signing secrets, provider response bodies,
+  customer content, and supplier-internal identifiers are not included in the
+  usage response or UI.
+
 Placement and packaging:
 
 - This is a later integration sprint after DT1 connection truth, ALT1 event
   delivery, COM1 entitlements, GOV1 privacy controls, and the governed action
   execution contracts are stable.
-- **Growth / Tier 2** receives a limited catalog of approved workflow recipes
-  for supported platforms, signed outbound events, and bounded inbound actions
-  with standard event, execution, history, and concurrency allowances.
+- **Solo / Tier 1** receives a small catalog of approved workflow recipes for
+  supported platforms, signed outbound events, and bounded inbound actions
+  with entry event, execution, history, and concurrency allowances.
+- **Growth / Tier 2** receives more recipes, larger allowances, multi-location
+  routing, and team approval controls while using the same governed contract.
 - **Enterprise / Tier 3** receives custom scoped service accounts, larger
   allowances, custom webhook destinations, organization and location-group
   filters, advanced approval roles, longer audit retention, and support for
   customer-hosted automation clients and custom integrations that use the same
   governed contract.
-- Solo does not receive external write automation. Essential reports and alerts
-  remain available through native InsightOS features.
+- No tier receives unrestricted write automation. A recipe can invoke only an
+  existing typed InsightOS action and must preserve that action's plan,
+  approval, scope, evidence, idempotency, safety, verification, and rollback
+  requirements.
 
 Outbound event contract:
 
@@ -3912,8 +4957,8 @@ Acceptance criteria:
 
 | Public plan | Price | Minimum completed sprints before general sale |
 | --- | ---: | --- |
-| Solo | $299/month · 1 active location | R1, TR1, G1.2-G1.7, DT1, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1 and AUTH1, copy-ready WordPress drafts without plugin execution, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
-| Growth | $699/month · up to 10 active locations | All Solo gates plus WP1.1-WP1.2 governed WordPress execution, ML1 portfolio intelligence, G1.4B profile campaigns inside the active-location allowance, AUT1 approved multi-platform automation recipes and bounded events/actions, higher pooled AI/provider allowances, faster monitoring, longer history, team roles, delegated location access, approval workflows, and bulk work. The plan must provide clear automation value to a one-location customer. |
+| Solo | $399/month · 1 active location | R1, TR1, G1.2-G1.7, DT1, I1.0-I1.4 with a standard governed-AI allowance, RPT1, ALT1, CX1, MKT1.1-MKT1.2, baseline CNT1 and AUTH1, AUT1 starter recipes and bounded approval-preserving events/actions, copy-ready WordPress drafts without plugin execution, MIG1, PA1, GOV1, baseline SEO2, limited AIV1, COM1 self-service billing/account recovery, and OPS1 launch readiness |
+| Growth | $699/month · up to 10 active locations | All Solo gates plus WP1.1-WP1.2 governed WordPress execution, ML1 portfolio intelligence, G1.4B profile campaigns inside the active-location allowance, expanded AUT1 recipes, allowances, multi-location routing and team approvals, higher pooled AI/provider allowances, faster monitoring, longer history, team roles, delegated location access, approval workflows, and bulk work. The plan must provide clear automation value to a one-location customer. |
 | Enterprise | From $1,999/month · 11-20 active locations | All Growth gates plus G1.4B high-volume fleet operations with a contracted profile count and validated Google quota, AUT1 custom automation service accounts, generic webhook/API access, and customer-hosted client support, ENT1 API/export, white label, advanced roles, custom limits and per-location pricing above 20, durable reporting, managed onboarding, priority-support workflows, and I1.5 customer-owned or local-model API access |
 
 An invite-only paid beta may start earlier with explicit limits and known-feature

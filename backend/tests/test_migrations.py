@@ -94,6 +94,18 @@ def test_migration_upgrade_and_downgrade():
             assert enterprise_sponsored_org[2] == "platform_sponsored"
             assert org_policy[0] == "byo_required"
             tier_profile_count = conn.execute(text("SELECT count(*) FROM tier_profiles")).scalar()
+            commercial_profile_ids = {
+                row[0]
+                for row in conn.execute(
+                    text(
+                        "SELECT id FROM tier_profiles WHERE id IN "
+                        "('d4e60a70-9c0c-4b8f-8cf9-4c7f0c690101', "
+                        "'d4e60a70-9c0c-4b8f-8cf9-4c7f0c690102', "
+                        "'d4e60a70-9c0c-4b8f-8cf9-4c7f0c690103', "
+                        "'d4e60a70-9c0c-4b8f-8cf9-4c7f0c690104')"
+                    )
+                )
+            }
             unprovisioned_org_count = conn.execute(
                 text(
                     "SELECT count(*) FROM organizations o "
@@ -101,8 +113,28 @@ def test_migration_upgrade_and_downgrade():
                     "OR (SELECT count(*) FROM entitlements e WHERE e.organization_id=o.id) < 9"
                 )
             ).scalar()
-            assert tier_profile_count == 3
+            baseline_ai_price_card = conn.execute(
+                text(
+                    "SELECT model_name, input_token_cost_per_million, "
+                    "output_token_cost_per_million FROM provider_price_cards "
+                    "WHERE provider_name='mistral' AND capability='governed_ai' "
+                    "AND operation='onboarding_baseline_narrative' AND active=1"
+                )
+            ).first()
+            # Three immutable legacy profiles remain for historical rows, while
+            # 0155 adds four versioned commercial profiles without rewriting them.
+            assert tier_profile_count == 7
+            assert commercial_profile_ids == {
+                "d4e60a70-9c0c-4b8f-8cf9-4c7f0c690101",
+                "d4e60a70-9c0c-4b8f-8cf9-4c7f0c690102",
+                "d4e60a70-9c0c-4b8f-8cf9-4c7f0c690103",
+                "d4e60a70-9c0c-4b8f-8cf9-4c7f0c690104",
+            }
             assert unprovisioned_org_count == 0
+            assert baseline_ai_price_card is not None
+            assert baseline_ai_price_card[0] == "mistral-small-2603"
+            assert float(baseline_ai_price_card[1]) == 0.15
+            assert float(baseline_ai_price_card[2]) == 0.60
         print(f"[migrations-test] alembic_revision={revision}")
         print(f"[migrations-test] table_count={len(tables)}")
 
@@ -110,11 +142,24 @@ def test_migration_upgrade_and_downgrade():
         assert "task_executions" in inspector.get_table_names()
         assert "crawl_runs" in inspector.get_table_names()
         assert "crawl_frontier_urls" in inspector.get_table_names()
+        assert "content_drafts" in inspector.get_table_names()
         assert "technical_issues" in inspector.get_table_names()
+        assert "url_inspection_snapshots" in inspector.get_table_names()
+        assert "search_console_sitemap_snapshots" in inspector.get_table_names()
+        assert "crawl_internal_links" in inspector.get_table_names()
         assert "keyword_clusters" in inspector.get_table_names()
         assert "campaign_keywords" in inspector.get_table_names()
         assert "rankings" in inspector.get_table_names()
         assert "ranking_snapshots" in inspector.get_table_names()
+        ranking_snapshot_columns = {
+            column["name"] for column in inspector.get_columns("ranking_snapshots")
+        }
+        assert {
+            "source_type",
+            "source_system",
+            "source_record_id",
+            "import_batch_id",
+        }.issubset(ranking_snapshot_columns)
         assert "competitors" in inspector.get_table_names()
         assert "competitor_rankings" in inspector.get_table_names()
         assert "competitor_pages" in inspector.get_table_names()
@@ -168,6 +213,33 @@ def test_migration_upgrade_and_downgrade():
         assert "report_delivery_events" in inspector.get_table_names()
         assert "report_template_versions" in inspector.get_table_names()
         assert "report_schedules" in inspector.get_table_names()
+        assert "migration_import_batches" in inspector.get_table_names()
+        assert "migration_import_records" in inspector.get_table_names()
+        assert "migration_upload_sessions" in inspector.get_table_names()
+        assert "migration_upload_chunks" in inspector.get_table_names()
+        assert "data_export_requests" in inspector.get_table_names()
+        assert "provider_disconnect_requests" in inspector.get_table_names()
+        assert "organization_closure_requests" in inspector.get_table_names()
+        closure_request_cols = {
+            col["name"] for col in inspector.get_columns("organization_closure_requests")
+        }
+        assert {
+            "deletion_authorization_version",
+            "data_export_choice_acknowledged",
+            "recovery_window_acknowledged",
+            "deletion_authorized_at",
+        }.issubset(closure_request_cols)
+        assert "organization_legal_holds" in inspector.get_table_names()
+        assert "organization_deletion_tombstones" in inspector.get_table_names()
+        report_recipient_cols = {
+            col["name"] for col in inspector.get_columns("report_recipients")
+        }
+        assert {
+            "source_type",
+            "source_system",
+            "source_record_id",
+            "import_batch_id",
+        }.issubset(report_recipient_cols)
         assert "reference_library_versions" in inspector.get_table_names()
         assert "reference_library_artifacts" in inspector.get_table_names()
         assert "reference_library_validation_runs" in inspector.get_table_names()

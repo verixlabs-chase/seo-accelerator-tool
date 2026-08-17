@@ -33,3 +33,16 @@ class OnboardingSessionOut(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class OnboardingBaselineStatusOut(BaseModel):
+    state: str
+    completion_required: bool
+    completion_satisfied: bool
+    basic_access_blocked: bool
+    message: str
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    baseline: dict[str, Any] | None = None
+    checked_at: str | None = None
+    created: bool | None = None

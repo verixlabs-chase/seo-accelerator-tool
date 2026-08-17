@@ -69,11 +69,14 @@ def upsert_recipient(
             organization_id=organization_id,
             campaign_id=campaign_id,
             email=normalized_email,
+            source_type="manual",
         )
         db.add(row)
     row.display_name = display_name.strip() if display_name else None
     row.recipient_role = recipient_role
     row.enabled = enabled
+    if row.source_type == "imported" and enabled:
+        row.source_type = "imported_approved"
     db.commit()
     db.refresh(row)
     return row
@@ -91,6 +94,8 @@ def set_recipient_enabled(
     if row is None or row.tenant_id != tenant_id or row.organization_id != organization_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report recipient not found")
     row.enabled = enabled
+    if row.source_type == "imported" and enabled:
+        row.source_type = "imported_approved"
     db.commit()
     db.refresh(row)
     return row

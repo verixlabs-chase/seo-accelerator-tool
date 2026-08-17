@@ -31,15 +31,22 @@ from app.services.operational_telemetry_service import reset_operational_telemet
 from app.models.authority import AuthorityGapResearchRun, AuthorityLinkChange, AuthorityLinkChangeRun, AuthorityLinkGap, Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
 from app.models.billing import BillingWebhookEvent  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
-from app.models.content import ContentAsset, ContentBrief, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
+from app.models.commercial_feature_activation import CommercialFeatureActivation
+from app.models.content import ContentAsset, ContentBrief, ContentDraft, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
 from app.models.cost_economics import CostLedgerEntry, OrganizationCostAllocation, ProviderPriceCard  # noqa: F401
-from app.models.crawl import CrawlRun, Page, TechnicalIssue  # noqa: F401
+from app.models.crawl import CrawlInternalLink, CrawlRun, Page, TechnicalIssue  # noqa: F401
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity  # noqa: F401
 from app.models.experiment import Experiment, ExperimentAssignment, ExperimentOutcome  # noqa: F401
 from app.models.causal_mechanism import FeatureImpactEdge, PolicyFeatureEdge  # noqa: F401
 from app.models.intelligence import AnomalyEvent, CampaignMilestone, IntelligenceScore, StrategyRecommendation  # noqa: F401
 from app.models.local import LocalHealthSnapshot, LocalProfile, Review, ReviewVelocitySnapshot  # noqa: F401
 from app.models.local_rank_grid import LocalRankGridCompetitorPoint, LocalRankGridPoint, LocalRankGridRun  # noqa: F401
+from app.models.migration_import import (  # noqa: F401
+    MigrationImportBatch,
+    MigrationImportRecord,
+    MigrationUploadChunk,
+    MigrationUploadSession,
+)
 from app.models.google_business_profile import (  # noqa: F401
     GoogleBusinessProfileDailyMetric,
     GoogleBusinessProfileSearchKeyword,
@@ -54,7 +61,20 @@ from app.models.industry_intelligence import IndustryIntelligenceModel  # noqa: 
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState  # noqa: F401
 from app.models.organization_membership import OrganizationMembership  # noqa: F401
 from app.models.organization_provider_credential import OrganizationProviderCredential  # noqa: F401
+from app.models.outcome_learning import OutcomeLearningReview  # noqa: F401
 from app.models.data_connection import DataConnection  # noqa: F401
+from app.models.site_integrity import (  # noqa: F401
+    SearchConsoleSitemapSnapshot,
+    UrlInspectionSnapshot,
+)
+from app.models.governed_experiment import GovernedExperimentPlan  # noqa: F401
+from app.models.data_governance import (  # noqa: F401
+    DataExportRequest,
+    OrganizationClosureRequest,
+    OrganizationDeletionTombstone,
+    OrganizationLegalHold,
+    ProviderDisconnectRequest,
+)
 from app.models.engagement import AchievementGrant, AchievementPreference  # noqa: F401
 from app.models.platform_provider_credential import PlatformProviderCredential  # noqa: F401
 from app.models.policy_performance import PolicyPerformance  # noqa: F401
@@ -184,6 +204,14 @@ def _verify_required_tables(database_url: str) -> None:
     try:
         inspector = inspect(verification_engine)
         required_tables = [
+            "ai_search_engine_registry",
+            "ai_search_provider_contract_registry",
+            "ai_search_question_sets",
+            "ai_search_collection_runs",
+            "ai_search_observations",
+            "automation_webhook_connections",
+            "automation_webhook_deliveries",
+            "automation_webhook_delivery_attempts",
             "action_plan_occurrences",
             "action_plan_steps",
             "action_plan_measurements",
@@ -195,6 +223,7 @@ def _verify_required_tables(database_url: str) -> None:
             "local_rank_grid_points",
             "local_rank_grid_competitor_points",
             "content_briefs",
+            "content_drafts",
             "authority_gap_research_runs",
             "authority_link_gaps",
             "authority_link_change_runs",
@@ -218,6 +247,7 @@ def _verify_required_tables(database_url: str) -> None:
             "experiment_outcomes",
             "experiment_assignments",
             "experiments",
+            "governed_experiment_plans",
             "policy_performance",
             "causal_feature_edges",
             "policy_feature_edges",
@@ -246,6 +276,8 @@ def _verify_required_tables(database_url: str) -> None:
             "wordpress_site_connections",
             "wordpress_content_sync_runs",
             "wordpress_content_items",
+            "migration_import_batches",
+            "migration_import_records",
         ]
         missing = [table_name for table_name in required_tables if not inspector.has_table(table_name)]
     finally:
@@ -312,6 +344,27 @@ def _reset_external_test_database(engine) -> None:
     joined_tables = ", ".join(f'"{table_name}"' for table_name in tables)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE TABLE {joined_tables} RESTART IDENTITY CASCADE"))
+        # TRUNCATE removes global registry rows as well as tenant fixtures. Keep
+        # the commercial activation singleton at its migration default so the
+        # per-test fixture can explicitly select observe or enforced behavior.
+        if "commercial_feature_activations" in tables:
+            now = datetime.now(UTC)
+            conn.execute(
+                text(
+                    "INSERT INTO commercial_feature_activations "
+                    "(code, state, catalog_version, created_at, updated_at) "
+                    "VALUES (:code, :state, :catalog_version, :created_at, :updated_at)"
+                ),
+                {
+                    "code": "active_location_allowance",
+                    "state": "observe",
+                    "catalog_version": "commercial-tiers-2026-08-v2",
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def apply_migrations() -> Generator[dict[str, object], None, None]:
     print("apply_migrations: start", flush=True)
@@ -402,6 +455,15 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
     test_session = test_session_local()
     reset_graph_write_batcher()
 
+    activation = test_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    assert activation is not None
+    activation.state = "enforced"
+    activation.updated_at = datetime.now(UTC)
+    test_session.flush()
+
     # Ensure eager Celery tasks read/write against the same committed test DB.
     db_session_module.bind_session_factory_for_tests(test_session_local)
     tasks_module.SessionLocal = db_session_module.SessionLocal
@@ -411,11 +473,11 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
 
     tenant_a = Tenant(id=str(uuid.uuid4()), name="Tenant A", created_at=datetime.now(UTC))
     tenant_b = Tenant(id=str(uuid.uuid4()), name="Tenant B", created_at=datetime.now(UTC))
-    test_tier_profile = ensure_test_tier_profile(test_session)
+    test_tier_profile = ensure_test_tier_profile(test_session, plan_code="solo")
     org_a = Organization(
         id=tenant_a.id,
         name=f"Org-{tenant_a.id[:8]}",
-        plan_type="standard",
+        plan_type="solo",
         billing_mode="subscription",
         status="active",
         tier_profile_id=test_tier_profile.id,
@@ -426,7 +488,7 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
     org_b = Organization(
         id=tenant_b.id,
         name=f"Org-{tenant_b.id[:8]}",
-        plan_type="standard",
+        plan_type="solo",
         billing_mode="subscription",
         status="active",
         tier_profile_id=test_tier_profile.id,
@@ -605,8 +667,8 @@ def db_session(apply_migrations: dict[str, object]) -> Generator[Session, None, 
         ]
     )
     test_session.commit()
-    provision_test_organization(test_session, org_a)
-    provision_test_organization(test_session, org_b)
+    provision_test_organization(test_session, org_a, plan_code="solo")
+    provision_test_organization(test_session, org_b, plan_code="solo")
     _seed_intelligence_state(test_session)
     test_session.commit()
     yield test_session
@@ -759,11 +821,11 @@ def create_test_org(
         resolved_org_id = organization_id or tenant.id
         organization = db_session.query(Organization).filter(Organization.id == resolved_org_id).one_or_none()
         if organization is None:
-            test_tier_profile = ensure_test_tier_profile(db_session)
+            test_tier_profile = ensure_test_tier_profile(db_session, plan_code="solo")
             organization = Organization(
                 id=resolved_org_id,
                 name=name or f"Org-{resolved_org_id[:8]}",
-                plan_type="standard",
+                plan_type="solo",
                 billing_mode="subscription",
                 status=status,
                 tier_profile_id=test_tier_profile.id,
@@ -773,6 +835,13 @@ def create_test_org(
             )
             db_session.add(organization)
             db_session.flush()
+            from app.services.commercial_plan_service import apply_commercial_plan
+
+            apply_commercial_plan(
+                db_session,
+                organization_id=organization.id,
+                plan_code="solo",
+            )
         return organization
 
     return _create_test_org
@@ -834,11 +903,11 @@ def create_test_campaign(
 
     organization = session.query(Organization).filter(Organization.id == org_id).one_or_none()
     if organization is None:
-        test_tier_profile = ensure_test_tier_profile(session)
+        test_tier_profile = ensure_test_tier_profile(session, plan_code="solo")
         organization = Organization(
             id=org_id,
             name=f"Org-{org_id[:8]}",
-            plan_type="standard",
+            plan_type="solo",
             billing_mode="subscription",
             status="active",
             tier_profile_id=test_tier_profile.id,
@@ -848,6 +917,13 @@ def create_test_campaign(
         )
         session.add(organization)
         session.flush()
+        from app.services.commercial_plan_service import apply_commercial_plan
+
+        apply_commercial_plan(
+            session,
+            organization_id=organization.id,
+            plan_code="solo",
+        )
 
     campaign = Campaign(
         tenant_id=tenant.id,

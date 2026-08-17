@@ -55,6 +55,17 @@ const ROUTINE_SECTIONS = [
   { key: "weekly", title: "This week", summary: "The improvements to keep moving" },
   { key: "monthly", title: "This month", summary: "Larger projects and regular upkeep" },
 ] as const;
+const OUTCOME_CONTEXT_OPTIONS = [
+  { code: "other_website_changes", label: "Other website changes happened" },
+  { code: "google_or_search_change", label: "Google or search results changed" },
+  { code: "seasonal_demand", label: "Customer demand changed with the season" },
+  { code: "tracking_change", label: "Tracking or measurement changed" },
+  { code: "other_marketing", label: "Other marketing was running" },
+  { code: "website_outage", label: "The website had an outage or major problem" },
+  { code: "other", label: "Something else" },
+] as const;
+
+type OutcomeLearningDecision = "pending" | "included" | "excluded";
 
 type Campaign = {
   id: string;
@@ -288,6 +299,253 @@ type OutcomeHistoryResponse = {
   truth?: RuntimeTruth;
 };
 
+type OutcomeLearningObservation = {
+  measurement_id: string;
+  recommendation_id: string;
+  action_label: string;
+  recommendation_reason?: string;
+  measurement_track: "website" | "google_business_profile" | string;
+  metric_id?: string | null;
+  metric_label: string;
+  baseline: {
+    status?: string;
+    value?: number | null;
+    unit?: string | null;
+    source?: string | null;
+  };
+  outcome: {
+    status?: string;
+    value?: number | null;
+    unit?: string | null;
+    source?: string | null;
+  };
+  result_classification: string;
+  evidence_quality: "strong" | "moderate" | "insufficient";
+  comparable: boolean;
+  review: {
+    decision: OutcomeLearningDecision;
+    confounder_codes: string[];
+    confounders?: Array<{ code: string; label: string }>;
+    note?: string | null;
+    reviewed_at?: string | null;
+    learning_eligible: boolean;
+  };
+  forecast_check: {
+    status: string;
+    position: string;
+  };
+  measured_at?: string | null;
+  causal_proof: false;
+};
+
+type OutcomeLearningGroup = {
+  action_id: string;
+  action_label: string;
+  measurement_track: "website" | "google_business_profile" | string;
+  metric_id?: string | null;
+  metric_label: string;
+  direction?: string | null;
+  measurement_contract_version: string;
+  sample_count: number;
+  included_count?: number;
+  pending_review_count?: number;
+  excluded_count?: number;
+  improved_count: number;
+  unchanged_count: number;
+  worse_count: number;
+  review_ready: boolean;
+  examples_needed: number;
+};
+
+type OutcomeLearningResponse = {
+  summary?: {
+    measured_actions?: number;
+    comparable_outcomes?: number;
+    learning_eligible_outcomes?: number;
+    pending_review_count?: number;
+    included_count?: number;
+    excluded_count?: number;
+    improved_count?: number;
+    unchanged_count?: number;
+    worse_count?: number;
+    insufficient_count?: number;
+    forecast_checks?: number;
+    within_range_count?: number;
+    better_than_range_count?: number;
+    worse_than_range_count?: number;
+    review_ready_groups?: number;
+  };
+  learning?: {
+    state?: "review_only";
+    minimum_comparable_outcomes?: number;
+    automatic_policy_updates_enabled?: false;
+    automatic_experiments_enabled?: false;
+    causal_claims_allowed?: false;
+    message?: string;
+  };
+  groups?: OutcomeLearningGroup[];
+  observations?: OutcomeLearningObservation[];
+  truth?: RuntimeTruth;
+};
+
+type ControlledTestPlan = {
+  id: string;
+  action_id: string;
+  metric_id: string;
+  measurement_contract_version: string;
+  hypothesis: string;
+  design_type: "content_split" | "staggered_rollout" | "holdout_comparison";
+  design_label: string;
+  status: "draft" | "approved" | "rejected" | "cancelled";
+  minimum_sample_size: number;
+  observation_window_days: number;
+  guardrail_metric_ids: string[];
+  eligibility: {
+    eligible?: boolean;
+    matching_result_count?: number;
+    required_prior_results?: number;
+    examples_needed?: number;
+    blockers?: Array<{ code: string; message: string }>;
+  };
+  stop_rules: Array<{ code: string; label: string; required: boolean }>;
+  rollback_steps: string[];
+  reviewed_at?: string | null;
+  review_note?: string | null;
+  created_at?: string | null;
+  safety: {
+    approval_is_launch: false;
+    launch_enabled: false;
+    assignments_created: false;
+    publishing_enabled: false;
+    automatic_policy_changes_enabled: false;
+  };
+};
+
+type ControlledTestsResponse = {
+  items?: ControlledTestPlan[];
+  count?: number;
+  truth?: RuntimeTruth;
+};
+
+type ControlledTestProtocol = {
+  id: string;
+  plan_id: string;
+  status:
+    | "prepared"
+    | "authorized"
+    | "monitoring"
+    | "stop_required"
+    | "rollback_pending"
+    | "rollback_verified"
+    | "completed"
+    | "cancelled";
+  baseline_snapshot: {
+    display_name?: string;
+    value?: number | null;
+    unit?: string | null;
+    measured_at?: string | null;
+  };
+  protected_baselines: Array<{ metric_id?: string; display_name?: string }>;
+  rollback_steps: string[];
+  latest_check_summary?: {
+    status?: string;
+    checked_at?: string | null;
+    triggered_rules?: Array<{ code: string; message: string }>;
+    fresh_data_available?: boolean;
+  };
+  observation_due_at?: string | null;
+  stop_reason_code?: string | null;
+  rollback_evidence?: string[];
+  safety: {
+    monitoring_only: true;
+    change_applied_by_protocol: false;
+    assignments_created: false;
+    publishing_enabled: false;
+    automatic_rollback: false;
+  };
+};
+
+type ControlledTestProtocolsResponse = {
+  items?: ControlledTestProtocol[];
+  count?: number;
+  truth?: RuntimeTruth;
+};
+
+type GovernedLearningRules = {
+  minimum_independent_results?: number;
+  minimum_sample_size?: number;
+  minimum_improvement_ratio?: number;
+  maximum_worse_ratio?: number;
+  minimum_improvement_wilson_lower_bound?: number;
+  requires_completed_protocol?: boolean;
+};
+
+type GovernedPolicyReplay = {
+  id: string;
+  status: "passed" | "blocked" | "failed";
+  independent_sample_size?: number;
+  improved_count?: number;
+  unchanged_count?: number;
+  worse_count?: number;
+  improvement_ratio?: number;
+  worse_ratio?: number;
+  final_champion_eligible?: boolean;
+  final_challenger_eligible?: boolean;
+  changed_decision_count?: number;
+  blockers?: Array<string | { code?: string; message?: string }>;
+  created_at?: string | null;
+};
+
+type GovernedPolicyDecision = {
+  id?: string;
+  decision: "approved_for_future_activation" | "rejected" | "cancelled";
+  reviewed_at?: string | null;
+};
+
+type GovernedPolicyCandidate = {
+  id: string;
+  source_protocol_id: string;
+  source_plan_id?: string;
+  policy_family: "action_learning_eligibility";
+  action_id: string;
+  metric_id: string;
+  measurement_contract_version: string;
+  champion_version?: string;
+  champion_rules: GovernedLearningRules;
+  challenger_version?: string;
+  challenger_rules: GovernedLearningRules;
+  candidate_hash?: string;
+  state?: string;
+  latest_replay?: GovernedPolicyReplay | null;
+  decision?: GovernedPolicyDecision | null;
+  created_at?: string | null;
+  safety?: {
+    automatic_policy_updates_enabled?: false;
+    live_policy_activation_enabled?: false;
+    live_policy_changed?: false;
+    execution_enabled?: false;
+    assignments_created?: false;
+    publishing_enabled?: false;
+    wordpress_changes_enabled?: false;
+    standards_activation_enabled?: false;
+    automatic_rollback_enabled?: false;
+  };
+};
+
+type GovernedPolicyCandidatesResponse = {
+  items?: GovernedPolicyCandidate[];
+  count?: number;
+  truth?: RuntimeTruth;
+};
+
+type ControlledTestStopReason =
+  | "safety_issue"
+  | "primary_metric_regression"
+  | "protected_metric_regression"
+  | "data_quality_loss"
+  | "allowance_exhausted"
+  | "owner_request";
+
 type IntelligenceCycleResponse = {
   status?: string;
   created?: boolean;
@@ -506,6 +764,13 @@ type WordPressChangePreview = {
   conflict_count?: number;
   changes?: WordPressChangePreviewItem[];
   conflicts?: Array<{ code?: string; message?: string; recovery?: string }>;
+  managed_content_validation?: {
+    required?: boolean;
+    status?: "not_required" | "passed" | "blocked";
+    validator_version?: string;
+    checks?: Array<{ code?: string; passed?: boolean; message?: string }>;
+    blocking_issues?: Array<{ code?: string; message?: string }>;
+  };
   rollback_summary?: string;
   created_at?: string;
 };
@@ -1791,6 +2056,1024 @@ function ProductFeedbackPrompt({
   );
 }
 
+function OutcomeLearningReviewPanel({
+  observation,
+  busy,
+  onSave,
+}: {
+  observation: OutcomeLearningObservation;
+  busy: boolean;
+  onSave: (
+    decision: OutcomeLearningDecision,
+    confounderCodes: string[],
+    note: string,
+  ) => Promise<void>;
+}) {
+  const [confounderCodes, setConfounderCodes] = useState<string[]>(
+    observation.review.confounder_codes || [],
+  );
+  const [note, setNote] = useState(observation.review.note || "");
+  const [validationMessage, setValidationMessage] = useState("");
+
+  useEffect(() => {
+    setConfounderCodes(observation.review.confounder_codes || []);
+    setNote(observation.review.note || "");
+    setValidationMessage("");
+  }, [
+    observation.measurement_id,
+    observation.review.confounder_codes,
+    observation.review.decision,
+    observation.review.note,
+  ]);
+
+  function toggleCode(code: string) {
+    setConfounderCodes((current) =>
+      current.includes(code)
+        ? current.filter((item) => item !== code)
+        : [...current, code],
+    );
+  }
+
+  async function save(decision: OutcomeLearningDecision) {
+    if (confounderCodes.includes("other") && !note.trim() && decision !== "pending") {
+      setValidationMessage("Add a short note about what else happened.");
+      return;
+    }
+    setValidationMessage("");
+    await onSave(decision, decision === "pending" ? [] : confounderCodes, note.trim());
+  }
+
+  const reviewLabel =
+    observation.review.decision === "included"
+      ? "Used for learning"
+      : observation.review.decision === "excluded"
+        ? "Left out of learning"
+        : "Review what else changed";
+
+  return (
+    <details className="mt-3 border-t border-[#2d2f35] pt-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-zinc-200">
+        <span>{reviewLabel}</span>
+        <span className="text-xs font-normal text-zinc-500">Owner check required</span>
+      </summary>
+      <div className="mt-3 rounded-md border border-[#303137] bg-[#0d0e10] p-4">
+        <p className="text-sm font-medium text-white">
+          Did anything else happen while we waited for this result?
+        </p>
+        <p className="mt-1 text-xs leading-5 text-zinc-400">
+          This helps keep a seasonal rush, an outage, or another marketing campaign from getting
+          credit for this work by mistake.
+        </p>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {OUTCOME_CONTEXT_OPTIONS.map((option) => (
+            <label
+              key={option.code}
+              className="flex cursor-pointer items-start gap-2 rounded-md border border-[#292b30] bg-[#141518] p-2.5 text-xs text-zinc-300"
+            >
+              <input
+                type="checkbox"
+                checked={confounderCodes.includes(option.code)}
+                onChange={() => toggleCode(option.code)}
+                disabled={busy}
+                className="mt-0.5"
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
+        </div>
+        <label className="mt-3 block text-xs font-medium text-zinc-300">
+          Anything else worth noting? <span className="font-normal text-zinc-500">Optional</span>
+          <input
+            type="text"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            maxLength={1000}
+            disabled={busy}
+            className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm text-white outline-none focus:border-accent-500/60 disabled:opacity-50"
+            placeholder="For example: We also started a mail campaign that week."
+          />
+        </label>
+        {!observation.comparable ? (
+          <p className="mt-2 text-xs text-amber-200">
+            This result does not have enough matching information to use for learning.
+          </p>
+        ) : null}
+        {validationMessage ? (
+          <p className="mt-2 text-xs text-rose-300">{validationMessage}</p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy || !observation.comparable}
+            onClick={() => void save("included")}
+            className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+          >
+            Use this result
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void save("excluded")}
+            className="rounded-md border border-[#3a3b42] bg-[#18191c] px-3 py-1.5 text-xs font-medium text-zinc-200 disabled:opacity-40"
+          >
+            Leave this result out
+          </button>
+          {observation.review.decision !== "pending" ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void save("pending")}
+              className="px-3 py-1.5 text-xs font-medium text-zinc-400 disabled:opacity-40"
+            >
+              Clear review
+            </button>
+          ) : null}
+        </div>
+        <p className="mt-3 text-xs text-zinc-500">
+          This decision only controls the learning evidence. It cannot change your website or start
+          an experiment.
+        </p>
+      </div>
+    </details>
+  );
+}
+
+function ControlledTestProtocolControls({
+  plan,
+  protocol,
+  busy,
+  onPrepare,
+  onAuthorize,
+  onStart,
+  onCheck,
+  onStop,
+  onVerifyRollback,
+}: {
+  plan: ControlledTestPlan;
+  protocol?: ControlledTestProtocol;
+  busy: boolean;
+  onPrepare: (planId: string) => Promise<void>;
+  onAuthorize: (protocolId: string) => Promise<void>;
+  onStart: (protocolId: string, evidenceReference: string) => Promise<void>;
+  onCheck: (protocolId: string) => Promise<void>;
+  onStop: (protocolId: string, reasonCode: ControlledTestStopReason) => Promise<void>;
+  onVerifyRollback: (protocolId: string, evidenceReference: string) => Promise<void>;
+}) {
+  const [acknowledgements, setAcknowledgements] = useState({
+    reviewed: false,
+    rollback: false,
+    noChange: false,
+  });
+  const [changeEvidence, setChangeEvidence] = useState("");
+  const [rollbackEvidence, setRollbackEvidence] = useState("");
+  const [rollbackConfirmed, setRollbackConfirmed] = useState(false);
+
+  if (plan.status !== "approved") return null;
+  if (!protocol) {
+    return (
+      <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/[0.05] p-3">
+        <p className="text-xs font-medium text-cyan-100">Ready to prepare the safety checks</p>
+        <p className="mt-1 text-xs leading-5 text-zinc-400">
+          This saves the starting measurement, stop rules, and undo steps. It does not make the
+          website or profile change.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void onPrepare(plan.id)}
+          className="mt-3 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 disabled:opacity-40"
+        >
+          Prepare safety checks
+        </button>
+      </div>
+    );
+  }
+
+  const triggered = protocol.latest_check_summary?.triggered_rules || [];
+  const statusLabel = protocol.status.replaceAll("_", " ");
+  return (
+    <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/[0.04] p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold text-cyan-100">Safety monitoring</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            Starting point: {protocol.baseline_snapshot.display_name || plan.metric_id}{" "}
+            {protocol.baseline_snapshot.value ?? "saved"}
+          </p>
+        </div>
+        <span className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium capitalize text-cyan-100">
+          {statusLabel}
+        </span>
+      </div>
+
+      {protocol.status === "prepared" ? (
+        <div className="mt-3 space-y-2 border-t border-cyan-500/15 pt-3">
+          {[
+            ["reviewed", "I reviewed the frozen plan and starting measurement."],
+            ["rollback", "The listed undo steps can be completed if a stop rule is hit."],
+            ["noChange", "I understand this only monitors results and makes no change."],
+          ].map(([key, label]) => (
+            <label key={key} className="flex items-start gap-2 text-xs leading-5 text-zinc-300">
+              <input
+                type="checkbox"
+                checked={acknowledgements[key as keyof typeof acknowledgements]}
+                onChange={(event) =>
+                  setAcknowledgements((current) => ({ ...current, [key]: event.target.checked }))
+                }
+                disabled={busy}
+                className="mt-1"
+              />
+              {label}
+            </label>
+          ))}
+          <button
+            type="button"
+            disabled={busy || !Object.values(acknowledgements).every(Boolean)}
+            onClick={() => void onAuthorize(protocol.id)}
+            className="mt-1 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 disabled:opacity-40"
+          >
+            Authorize monitoring
+          </button>
+        </div>
+      ) : null}
+
+      {protocol.status === "authorized" ? (
+        <div className="mt-3 border-t border-cyan-500/15 pt-3">
+          <p className="text-xs leading-5 text-zinc-400">
+            After the separately approved change is made, add a ticket, page revision, or other
+            reference so InsightOS knows when to start watching.
+          </p>
+          <input
+            type="text"
+            value={changeEvidence}
+            onChange={(event) => setChangeEvidence(event.target.value)}
+            maxLength={500}
+            disabled={busy}
+            placeholder="Example: WordPress revision 42"
+            className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-xs text-white"
+          />
+          <button
+            type="button"
+            disabled={busy || !changeEvidence.trim()}
+            onClick={() => void onStart(protocol.id, changeEvidence.trim())}
+            className="mt-2 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 disabled:opacity-40"
+          >
+            Start watching results
+          </button>
+        </div>
+      ) : null}
+
+      {protocol.status === "monitoring" ? (
+        <div className="mt-3 border-t border-cyan-500/15 pt-3">
+          <p className="text-xs leading-5 text-zinc-400">
+            {protocol.latest_check_summary?.status === "waiting_for_fresh_data"
+              ? "Waiting for a newer matching measurement. No result is being guessed."
+              : protocol.latest_check_summary?.status === "passed"
+                ? "The latest saved measurements passed the stop rules."
+                : "Run a safety check when new measurements arrive."}
+          </p>
+          {protocol.observation_due_at ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              Planned review date: {new Date(protocol.observation_due_at).toLocaleDateString()}
+            </p>
+          ) : null}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onCheck(protocol.id)}
+              className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+            >
+              Check saved results now
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onStop(protocol.id, "owner_request")}
+              className="rounded-md border border-red-500/25 bg-red-500/[0.06] px-3 py-1.5 text-xs font-medium text-red-100 disabled:opacity-40"
+            >
+              Stop and use undo plan
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {protocol.status === "stop_required" ? (
+        <div className="mt-3 rounded-md border border-red-500/25 bg-red-500/[0.06] p-3">
+          <p className="text-xs font-semibold text-red-100">A stop rule needs attention</p>
+          {triggered.map((item) => (
+            <p key={item.code} className="mt-1 text-xs leading-5 text-red-100/75">
+              {item.message}
+            </p>
+          ))}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void onStop(
+                protocol.id,
+                (protocol.stop_reason_code as ControlledTestStopReason) || "owner_request",
+              )
+            }
+            className="mt-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-100 disabled:opacity-40"
+          >
+            Stop monitoring and open undo steps
+          </button>
+        </div>
+      ) : null}
+
+      {protocol.status === "rollback_pending" ? (
+        <div className="mt-3 border-t border-cyan-500/15 pt-3">
+          <p className="text-xs font-semibold text-white">Confirm the change was undone</p>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-400">
+            {protocol.rollback_steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <input
+            type="text"
+            value={rollbackEvidence}
+            onChange={(event) => setRollbackEvidence(event.target.value)}
+            maxLength={500}
+            disabled={busy}
+            placeholder="Reference showing the original version was restored"
+            className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-xs text-white"
+          />
+          <label className="mt-2 flex items-start gap-2 text-xs leading-5 text-zinc-300">
+            <input
+              type="checkbox"
+              checked={rollbackConfirmed}
+              onChange={(event) => setRollbackConfirmed(event.target.checked)}
+              disabled={busy}
+              className="mt-1"
+            />
+            Every saved undo step was completed and checked.
+          </label>
+          <button
+            type="button"
+            disabled={busy || !rollbackConfirmed || !rollbackEvidence.trim()}
+            onClick={() => void onVerifyRollback(protocol.id, rollbackEvidence.trim())}
+            className="mt-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+          >
+            Save rollback verification
+          </button>
+        </div>
+      ) : null}
+
+      {protocol.status === "completed" || protocol.status === "rollback_verified" ? (
+        <p className="mt-3 border-t border-cyan-500/15 pt-3 text-xs leading-5 text-emerald-200">
+          {protocol.status === "completed"
+            ? "The observation window finished without a saved stop-rule failure. This is an experiment result, not automatic proof that the change caused it."
+            : "The undo steps and verification evidence were saved. InsightOS did not perform the rollback automatically."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PolicyCandidateReviewControls({
+  protocol,
+  candidate,
+  busy,
+  onPrepare,
+  onReplay,
+  onReview,
+}: {
+  protocol: ControlledTestProtocol;
+  candidate?: GovernedPolicyCandidate;
+  busy: boolean;
+  onPrepare: (protocolId: string) => Promise<void>;
+  onReplay: (candidateId: string) => Promise<void>;
+  onReview: (
+    candidateId: string,
+    decision: GovernedPolicyDecision["decision"],
+    note: string,
+  ) => Promise<void>;
+}) {
+  const [reviewedChanges, setReviewedChanges] = useState(false);
+  const [understandsNotActive, setUnderstandsNotActive] = useState(false);
+  const [understandsNoProof, setUnderstandsNoProof] = useState(false);
+  const [note, setNote] = useState("");
+
+  if (protocol.status !== "completed") return null;
+
+  if (!candidate) {
+    return (
+      <div className="mt-3 rounded-md border border-violet-500/20 bg-violet-500/[0.04] p-3">
+        <p className="text-xs font-semibold text-violet-100">
+          Review a safer way to learn from results
+        </p>
+        <p className="mt-1 text-xs leading-5 text-zinc-400">
+          Compare today&apos;s evidence check with a stricter one that waits for more independent,
+          owner-approved results. Rechecking the same measurement never counts as another result.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void onPrepare(protocol.id)}
+          className="mt-3 rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-100 disabled:opacity-40"
+        >
+          Prepare rule comparison
+        </button>
+        <p className="mt-2 text-xs text-zinc-500">
+          Preview only — this cannot change recommendations, forecasts, your website, or your
+          business profile.
+        </p>
+      </div>
+    );
+  }
+
+  const replay = candidate.latest_replay;
+  const decision = candidate.decision;
+  const currentMinimum =
+    candidate.champion_rules.minimum_independent_results ??
+    candidate.champion_rules.minimum_sample_size ??
+    5;
+  const proposedMinimum =
+    candidate.challenger_rules.minimum_independent_results ??
+    candidate.challenger_rules.minimum_sample_size ??
+    10;
+  const proposedImprovement = Math.round(
+    (candidate.challenger_rules.minimum_improvement_ratio || 0) * 100,
+  );
+  const proposedWorse = Math.round(
+    (candidate.challenger_rules.maximum_worse_ratio ?? 1) * 100,
+  );
+  const blocker = replay?.blockers?.[0];
+  const blockerMessage =
+    typeof blocker === "string"
+      ? blocker
+      : blocker?.message || "More independent, owner-approved results are needed.";
+  const canApprove =
+    replay?.status === "passed" &&
+    replay.final_challenger_eligible === true &&
+    !decision &&
+    reviewedChanges &&
+    understandsNotActive &&
+    understandsNoProof;
+
+  return (
+    <div className="mt-3 rounded-md border border-violet-500/20 bg-violet-500/[0.04] p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold text-violet-100">
+            Review a safer way to learn from results
+          </p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            This checks when saved results are strong enough to guide a future product improvement.
+          </p>
+        </div>
+        <span className="rounded-md border border-violet-500/25 bg-violet-500/10 px-2 py-1 text-[11px] font-medium text-violet-100">
+          {decision
+            ? decision.decision === "approved_for_future_activation"
+              ? "Reviewed for future use"
+              : decision.decision === "rejected"
+                ? "Current rule kept"
+                : "Comparison cancelled"
+            : replay?.status === "passed"
+              ? "Ready for review"
+              : replay?.status === "blocked"
+                ? "Needs more evidence"
+                : replay?.status === "failed"
+                  ? "Did not pass"
+                  : "Needs replay"}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-md border border-[#303137] bg-[#111214] p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            Rule in use now
+          </p>
+          <p className="mt-2 text-sm font-medium text-white">
+            Review after {currentMinimum} matching results
+          </p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            Results must be comparable and explicitly included by the owner.
+          </p>
+        </div>
+        <div className="rounded-md border border-violet-500/20 bg-[#111214] p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/70">
+            Proposed rule
+          </p>
+          <p className="mt-2 text-sm font-medium text-white">
+            Wait for at least {proposedMinimum} independent results
+          </p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            At least {proposedImprovement}% should improve, no more than {proposedWorse}% should get
+            worse, and the saved confidence check must pass.
+          </p>
+        </div>
+      </div>
+
+      {replay ? (
+        <div className="mt-3 rounded-md border border-[#303137] bg-[#111214] p-3">
+          <p className="text-xs font-semibold text-white">What the saved results showed</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            {replay.independent_sample_size || 0} independent results: {replay.improved_count || 0}{" "}
+            improved, {replay.unchanged_count || 0} had no clear change, and {replay.worse_count || 0}{" "}
+            got worse.
+          </p>
+          {replay.status === "blocked" || replay.final_challenger_eligible === false ? (
+            <p className="mt-2 text-xs leading-5 text-amber-200">{blockerMessage}</p>
+          ) : replay.status === "passed" ? (
+            <p className="mt-2 text-xs leading-5 text-emerald-200">
+              The proposed rule passed the saved-evidence check. That makes it reviewable, not active.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs leading-5 text-rose-200">
+              The saved-evidence check could not be completed safely.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      {!decision ? (
+        <div className="mt-3 border-t border-violet-500/15 pt-3">
+          {!replay ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onReplay(candidate.id)}
+              className="rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-100 disabled:opacity-40"
+            >
+              Check against saved results
+            </button>
+          ) : null}
+
+          {replay?.status === "failed" || replay?.status === "blocked" ? (
+            <p className="text-xs leading-5 text-zinc-400">
+              This saved comparison is frozen. Finish another controlled test before preparing a
+              new rule comparison with newer evidence.
+            </p>
+          ) : null}
+
+          {replay?.status === "passed" && replay.final_challenger_eligible ? (
+            <div className="mt-3 space-y-2">
+              {[
+                [
+                  reviewedChanges,
+                  setReviewedChanges,
+                  "I compared the current and proposed evidence checks.",
+                ],
+                [
+                  understandsNotActive,
+                  setUnderstandsNotActive,
+                  "I understand this review does not make the proposed rule active.",
+                ],
+                [
+                  understandsNoProof,
+                  setUnderstandsNoProof,
+                  "I understand these results do not prove the work caused the outcome.",
+                ],
+              ].map(([checked, setter, label]) => (
+                <label key={String(label)} className="flex items-start gap-2 text-xs leading-5 text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(checked)}
+                    onChange={(event) =>
+                      (setter as (value: boolean) => void)(event.target.checked)
+                    }
+                    disabled={busy}
+                    className="mt-1"
+                  />
+                  {String(label)}
+                </label>
+              ))}
+              <input
+                type="text"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                maxLength={1000}
+                disabled={busy}
+                placeholder="Optional review note"
+                className="w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-xs text-white"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy || !canApprove}
+                  onClick={() =>
+                    void onReview(candidate.id, "approved_for_future_activation", note.trim())
+                  }
+                  className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+                >
+                  Mark proposal reviewed
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void onReview(candidate.id, "rejected", note.trim())}
+                  className="rounded-md border border-[#3a3b42] px-3 py-1.5 text-xs font-medium text-zinc-300 disabled:opacity-40"
+                >
+                  Keep the current rule
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <p className="mt-3 border-t border-violet-500/15 pt-3 text-xs text-zinc-500">
+        This comparison cannot change recommendations, forecasts, your website, or your business
+        profile. A later release would require a separate activation and rollback review.
+      </p>
+    </div>
+  );
+}
+
+function ControlledTestPlanner({
+  groups,
+  plans,
+  protocols,
+  policyCandidates,
+  busy,
+  onCreate,
+  onReview,
+  onPrepareProtocol,
+  onAuthorizeProtocol,
+  onStartProtocol,
+  onCheckProtocol,
+  onStopProtocol,
+  onVerifyRollback,
+  onPreparePolicyCandidate,
+  onReplayPolicyCandidate,
+  onReviewPolicyCandidate,
+}: {
+  groups: OutcomeLearningGroup[];
+  plans: ControlledTestPlan[];
+  protocols: ControlledTestProtocol[];
+  policyCandidates: GovernedPolicyCandidate[];
+  busy: boolean;
+  onCreate: (
+    group: OutcomeLearningGroup,
+    input: {
+      hypothesis: string;
+      designType: ControlledTestPlan["design_type"];
+      minimumSampleSize: number;
+      observationWindowDays: number;
+      rollbackSteps: string[];
+    },
+  ) => Promise<void>;
+  onReview: (
+    planId: string,
+    decision: "approved" | "rejected" | "cancelled",
+    note: string,
+  ) => Promise<void>;
+  onPrepareProtocol: (planId: string) => Promise<void>;
+  onAuthorizeProtocol: (protocolId: string) => Promise<void>;
+  onStartProtocol: (protocolId: string, evidenceReference: string) => Promise<void>;
+  onCheckProtocol: (protocolId: string) => Promise<void>;
+  onStopProtocol: (protocolId: string, reasonCode: ControlledTestStopReason) => Promise<void>;
+  onVerifyRollback: (protocolId: string, evidenceReference: string) => Promise<void>;
+  onPreparePolicyCandidate: (protocolId: string) => Promise<void>;
+  onReplayPolicyCandidate: (candidateId: string) => Promise<void>;
+  onReviewPolicyCandidate: (
+    candidateId: string,
+    decision: GovernedPolicyDecision["decision"],
+    note: string,
+  ) => Promise<void>;
+}) {
+  const eligibleGroups = groups.filter((group) => Boolean(group.metric_id));
+  const [selectedKey, setSelectedKey] = useState("");
+  const [hypothesis, setHypothesis] = useState("");
+  const [designType, setDesignType] =
+    useState<ControlledTestPlan["design_type"]>("staggered_rollout");
+  const [minimumSampleSize, setMinimumSampleSize] = useState(10);
+  const [observationWindowDays, setObservationWindowDays] = useState(28);
+  const [rollbackStep, setRollbackStep] = useState("");
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const selectedGroup =
+    eligibleGroups.find(
+      (group) =>
+        `${group.action_id}::${group.metric_id}::${group.measurement_contract_version}` ===
+        selectedKey,
+    ) || eligibleGroups[0];
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    const key = `${selectedGroup.action_id}::${selectedGroup.metric_id}::${selectedGroup.measurement_contract_version}`;
+    if (!selectedKey) setSelectedKey(key);
+    setHypothesis((current) =>
+      current ||
+      `Making this improvement for a limited group will improve ${selectedGroup.metric_label} without making protected results worse.`,
+    );
+    setRollbackStep((current) =>
+      current ||
+      (selectedGroup.measurement_track === "google_business_profile"
+        ? "Restore the approved business profile information."
+        : "Restore the approved starting website version."),
+    );
+  }, [selectedGroup, selectedKey]);
+
+  function selectGroup(key: string) {
+    const group = eligibleGroups.find(
+      (item) =>
+        `${item.action_id}::${item.metric_id}::${item.measurement_contract_version}` === key,
+    );
+    setSelectedKey(key);
+    if (group) {
+      setHypothesis(
+        `Making this improvement for a limited group will improve ${group.metric_label} without making protected results worse.`,
+      );
+      setRollbackStep(
+        group.measurement_track === "google_business_profile"
+          ? "Restore the approved business profile information."
+          : "Restore the approved starting website version.",
+      );
+    }
+  }
+
+  return (
+    <details className="mt-4 rounded-md border border-violet-500/20 bg-violet-500/[0.04] p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+        <span>
+          <span className="block text-sm font-semibold text-white">Plan a controlled test</span>
+          <span className="mt-1 block text-xs font-normal text-zinc-400">
+            Compare a limited change before deciding whether it should be used more widely.
+          </span>
+        </span>
+        <span className="rounded-md border border-violet-500/25 bg-violet-500/10 px-2 py-1 text-xs font-medium text-violet-100">
+          Owner approval required
+        </span>
+      </summary>
+
+      <div className="mt-4 space-y-4 border-t border-violet-500/15 pt-4">
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.06] p-3">
+          <p className="text-sm font-medium text-amber-100">
+            Approval does not launch or publish anything.
+          </p>
+          <p className="mt-1 text-xs leading-5 text-amber-100/70">
+            This saves a test design for review. InsightOS does not create test groups, edit a
+            website, or change a business profile from this plan.
+          </p>
+        </div>
+
+        {eligibleGroups.length ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-md border border-[#2d2f35] bg-[#101113] p-4">
+              <div>
+                <p className="text-sm font-semibold text-white">1. Choose what to test</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                  Only actions with a saved before-and-after result are available here.
+                </p>
+              </div>
+              <label className="block text-xs font-medium text-zinc-300">
+                Action and result to compare
+                <select
+                  value={selectedKey}
+                  onChange={(event) => selectGroup(event.target.value)}
+                  disabled={busy}
+                  className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                >
+                  {eligibleGroups.map((group) => {
+                    const key = `${group.action_id}::${group.metric_id}::${group.measurement_contract_version}`;
+                    return (
+                      <option key={key} value={key}>
+                        {group.action_label} — {group.metric_label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              <label className="block text-xs font-medium text-zinc-300">
+                What do you expect to happen?
+                <input
+                  type="text"
+                  value={hypothesis}
+                  onChange={(event) => setHypothesis(event.target.value)}
+                  minLength={10}
+                  maxLength={1000}
+                  disabled={busy}
+                  className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                />
+              </label>
+              <label className="block text-xs font-medium text-zinc-300">
+                Safest comparison method
+                <select
+                  value={designType}
+                  onChange={(event) =>
+                    setDesignType(event.target.value as ControlledTestPlan["design_type"])
+                  }
+                  disabled={busy}
+                  className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                >
+                  <option value="staggered_rollout">Start small, then compare</option>
+                  <option value="holdout_comparison">Compare changed and unchanged groups</option>
+                  <option value="content_split">Compare two approved page versions</option>
+                </select>
+              </label>
+              <details className="rounded-md border border-[#292b30] bg-[#141518] p-3">
+                <summary className="cursor-pointer text-xs font-medium text-zinc-300">
+                  Timing and sample settings
+                </summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="text-xs text-zinc-400">
+                    Minimum examples
+                    <input
+                      type="number"
+                      min={5}
+                      max={1000}
+                      value={minimumSampleSize}
+                      onChange={(event) => setMinimumSampleSize(Number(event.target.value))}
+                      disabled={busy}
+                      className="mt-1.5 w-full rounded-md border border-[#303137] bg-[#101113] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                  <label className="text-xs text-zinc-400">
+                    Days to observe
+                    <input
+                      type="number"
+                      min={7}
+                      max={180}
+                      value={observationWindowDays}
+                      onChange={(event) => setObservationWindowDays(Number(event.target.value))}
+                      disabled={busy}
+                      className="mt-1.5 w-full rounded-md border border-[#303137] bg-[#101113] px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                </div>
+              </details>
+              <label className="block text-xs font-medium text-zinc-300">
+                How would you undo it?
+                <input
+                  type="text"
+                  value={rollbackStep}
+                  onChange={(event) => setRollbackStep(event.target.value)}
+                  maxLength={500}
+                  disabled={busy}
+                  className="mt-2 w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-sm text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                />
+              </label>
+              <div className="rounded-md border border-[#292b30] bg-[#141518] p-3 text-xs leading-5 text-zinc-400">
+                Every plan must stop if the main result gets worse, the measurement becomes
+                incomplete, a safety problem appears, or the account runs out of Insight Credits.
+              </div>
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  !selectedGroup ||
+                  hypothesis.trim().length < 10 ||
+                  !rollbackStep.trim()
+                }
+                onClick={() =>
+                  selectedGroup
+                    ? void onCreate(selectedGroup, {
+                        hypothesis: hypothesis.trim(),
+                        designType,
+                        minimumSampleSize,
+                        observationWindowDays,
+                        rollbackSteps: [rollbackStep.trim()],
+                      })
+                    : undefined
+                }
+                className="rounded-md border border-violet-500/35 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Save test plan for review
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-white">2. Review saved plans</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                  A design needs five matching owner-reviewed results before it can be approved.
+                </p>
+              </div>
+              {plans.length ? (
+                plans.map((plan) => {
+                  const note = reviewNotes[plan.id] || "";
+                  const used = plan.eligibility.matching_result_count || 0;
+                  const required = plan.eligibility.required_prior_results || 5;
+                  const protocol = protocols.find((item) => item.plan_id === plan.id);
+                  const policyCandidate = protocol
+                    ? policyCandidates.find((item) => item.source_protocol_id === protocol.id)
+                    : undefined;
+                  return (
+                    <div
+                      key={plan.id}
+                      className="rounded-md border border-[#2d2f35] bg-[#101113] p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{plan.design_label}</p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-400">{plan.hypothesis}</p>
+                        </div>
+                        <span className="rounded-md border border-[#34363c] bg-[#17181b] px-2 py-1 text-xs font-medium capitalize text-zinc-200">
+                          {plan.status}
+                        </span>
+                      </div>
+                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#25262b]">
+                        <div
+                          className="h-full rounded-full bg-violet-400"
+                          style={{ width: `${Math.min(100, (used / required) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-zinc-400">
+                        {used} of {required} matching results reviewed
+                        {plan.eligibility.eligible ? " — ready for a design decision" : ""}
+                      </p>
+                      <details className="mt-3 border-t border-[#292b30] pt-3">
+                        <summary className="cursor-pointer text-xs font-medium text-zinc-300">
+                          Safety rules and undo steps
+                        </summary>
+                        <ul className="mt-2 space-y-1 text-xs leading-5 text-zinc-400">
+                          {plan.stop_rules.map((rule) => (
+                            <li key={rule.code}>• {rule.label}</li>
+                          ))}
+                          {plan.rollback_steps.map((step) => (
+                            <li key={step}>• Undo: {step}</li>
+                          ))}
+                        </ul>
+                      </details>
+                      {plan.status === "draft" ? (
+                        <div className="mt-3 border-t border-[#292b30] pt-3">
+                          <input
+                            type="text"
+                            value={note}
+                            onChange={(event) =>
+                              setReviewNotes((current) => ({
+                                ...current,
+                                [plan.id]: event.target.value,
+                              }))
+                            }
+                            maxLength={1000}
+                            disabled={busy}
+                            placeholder="Optional approval note; required if declining"
+                            className="w-full rounded-md border border-[#303137] bg-[#141518] px-3 py-2 text-xs text-white outline-none focus:border-violet-500/60 disabled:opacity-50"
+                          />
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={busy || !plan.eligibility.eligible}
+                              onClick={() => void onReview(plan.id, "approved", note.trim())}
+                              className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 disabled:opacity-40"
+                            >
+                              Approve test design
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy || !note.trim()}
+                              onClick={() => void onReview(plan.id, "rejected", note.trim())}
+                              className="rounded-md border border-[#3a3b42] px-3 py-1.5 text-xs font-medium text-zinc-300 disabled:opacity-40"
+                            >
+                              Decline plan
+                            </button>
+                          </div>
+                          {!plan.eligibility.eligible ? (
+                            <p className="mt-2 text-xs text-amber-200">
+                              {plan.eligibility.blockers?.[0]?.message ||
+                                "More matching owner-reviewed results are needed."}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <ControlledTestProtocolControls
+                        plan={plan}
+                        protocol={protocol}
+                        busy={busy}
+                        onPrepare={onPrepareProtocol}
+                        onAuthorize={onAuthorizeProtocol}
+                        onStart={onStartProtocol}
+                        onCheck={onCheckProtocol}
+                        onStop={onStopProtocol}
+                        onVerifyRollback={onVerifyRollback}
+                      />
+                      {protocol ? (
+                        <PolicyCandidateReviewControls
+                          protocol={protocol}
+                          candidate={policyCandidate}
+                          busy={busy}
+                          onPrepare={onPreparePolicyCandidate}
+                          onReplay={onReplayPolicyCandidate}
+                          onReview={onReviewPolicyCandidate}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-md border border-dashed border-[#34363c] bg-[#101113] p-4 text-sm text-zinc-400">
+                  No controlled-test plans have been saved yet.
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-[#34363c] bg-[#101113] p-4">
+            <p className="text-sm font-medium text-white">Complete a measured action first.</p>
+            <p className="mt-1 text-xs leading-5 text-zinc-400">
+              Once an action has a matching before-and-after result, you can use it to design a
+              controlled test here.
+            </p>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 export default function OpportunitiesPage() {
   const pathname = usePathname();
   const router = useRouter();
@@ -1807,6 +3090,12 @@ export default function OpportunitiesPage() {
   const [recommendationsTruth, setRecommendationsTruth] = useState<RuntimeTruth | null>(null);
   const [engineState, setEngineState] = useState<IntelligenceEngineState | null>(null);
   const [outcomeHistory, setOutcomeHistory] = useState<OutcomeHistoryResponse | null>(null);
+  const [outcomeLearning, setOutcomeLearning] = useState<OutcomeLearningResponse | null>(null);
+  const [controlledTests, setControlledTests] = useState<ControlledTestsResponse | null>(null);
+  const [controlledTestProtocols, setControlledTestProtocols] =
+    useState<ControlledTestProtocolsResponse | null>(null);
+  const [policyCandidates, setPolicyCandidates] =
+    useState<GovernedPolicyCandidatesResponse | null>(null);
   const [intelligenceBrief, setIntelligenceBrief] =
     useState<GovernedIntelligenceBrief | null>(null);
   const [intelligenceRuntime, setIntelligenceRuntime] =
@@ -1853,6 +3142,10 @@ export default function OpportunitiesPage() {
       setRecommendationsTruth(null);
       setEngineState(null);
       setOutcomeHistory(null);
+      setOutcomeLearning(null);
+      setControlledTests(null);
+      setControlledTestProtocols(null);
+      setPolicyCandidates(null);
       setIntelligenceBrief(null);
       setIntelligenceRuntime(null);
       setIntelligenceAllowance(null);
@@ -1870,6 +3163,10 @@ export default function OpportunitiesPage() {
       summaryResponse,
       scoreResponse,
       outcomeResponse,
+      outcomeLearningResponse,
+      controlledTestsResponse,
+      controlledTestProtocolsResponse,
+      policyCandidatesResponse,
       briefResponse,
       questionResponse,
       draftResponse,
@@ -1886,6 +3183,20 @@ export default function OpportunitiesPage() {
       platformApi(`/intelligence/outcomes?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
+      platformApi(`/intelligence/outcome-learning?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }),
+      platformApi(`/intelligence/controlled-tests?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }),
+      platformApi(
+        `/intelligence/controlled-test-protocols?campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      ),
+      platformApi(
+        `/intelligence/policy-candidates?campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      ).catch(() => ({ items: [] })),
       platformApi(`/intelligence/brief?campaign_id=${encodeURIComponent(campaignId)}`, {
         method: "GET",
       }),
@@ -1915,6 +3226,14 @@ export default function OpportunitiesPage() {
         null,
     );
     setOutcomeHistory((outcomeResponse as OutcomeHistoryResponse) || null);
+    setOutcomeLearning((outcomeLearningResponse as OutcomeLearningResponse) || null);
+    setControlledTests((controlledTestsResponse as ControlledTestsResponse) || null);
+    setControlledTestProtocols(
+      (controlledTestProtocolsResponse as ControlledTestProtocolsResponse) || null,
+    );
+    setPolicyCandidates(
+      (policyCandidatesResponse as GovernedPolicyCandidatesResponse) || null,
+    );
     const normalizedBrief = (briefResponse as GovernedIntelligenceBriefResponse) || null;
     setIntelligenceBrief(normalizedBrief?.item || null);
     setIntelligenceRuntime(normalizedBrief?.runtime || null);
@@ -2253,6 +3572,264 @@ export default function OpportunitiesPage() {
       await loadOpportunities(selectedCampaignId);
       setSelectedRecommendationId(recommendationId);
       setNotice("The latest measurement was compared with the saved starting point.");
+    });
+  }
+
+  async function saveOutcomeLearningReview(
+    measurementId: string,
+    decision: OutcomeLearningDecision,
+    confounderCodes: string[],
+    note: string,
+  ) {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+
+    await runAction(`${measurementId}:outcome-review`, async () => {
+      await platformApi(
+        `/intelligence/outcome-learning/${encodeURIComponent(measurementId)}/review?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            decision,
+            confounder_codes: confounderCodes,
+            note: note || null,
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        decision === "included"
+          ? "Review saved. This result may now count toward learning after enough matching results exist."
+          : decision === "excluded"
+            ? "Review saved. This result will stay visible but will not count toward learning."
+            : "Review cleared. This result is waiting for an owner decision.",
+      );
+    });
+  }
+
+  async function createControlledTestPlan(
+    group: OutcomeLearningGroup,
+    input: {
+      hypothesis: string;
+      designType: ControlledTestPlan["design_type"];
+      minimumSampleSize: number;
+      observationWindowDays: number;
+      rollbackSteps: string[];
+    },
+  ) {
+    if (!selectedCampaignId || !group.metric_id) {
+      setError("Select a measured result first.");
+      return;
+    }
+    await runAction("controlled-test-create", async () => {
+      const response = await platformApi(
+        `/intelligence/controlled-tests?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action_id: group.action_id,
+            metric_id: group.metric_id,
+            measurement_contract_version: group.measurement_contract_version,
+            hypothesis: input.hypothesis,
+            design_type: input.designType,
+            minimum_sample_size: input.minimumSampleSize,
+            observation_window_days: input.observationWindowDays,
+            guardrail_metric_ids: [],
+            rollback_steps: input.rollbackSteps,
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        response?.created
+          ? "Test plan saved for owner review. Nothing was launched or published."
+          : "That test plan was already saved. Nothing was launched or published.",
+      );
+    });
+  }
+
+  async function reviewControlledTestPlan(
+    planId: string,
+    decision: "approved" | "rejected" | "cancelled",
+    note: string,
+  ) {
+    if (!selectedCampaignId) {
+      setError("Select a business first.");
+      return;
+    }
+    await runAction(`${planId}:controlled-test-review`, async () => {
+      await platformApi(
+        `/intelligence/controlled-tests/${encodeURIComponent(planId)}/review?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ decision, note: note || null }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        decision === "approved"
+          ? "Test design approved. It is still not running and nothing was changed."
+          : decision === "rejected"
+            ? "Test plan declined. Nothing was changed."
+            : "Test plan cancelled. Nothing was changed.",
+      );
+    });
+  }
+
+  async function prepareControlledTestProtocol(planId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${planId}:protocol-prepare`, async () => {
+      await platformApi(
+        `/intelligence/controlled-tests/${encodeURIComponent(planId)}/protocol?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("Safety checks prepared from the saved starting measurements. Nothing was changed.");
+    });
+  }
+
+  async function authorizeControlledTestProtocol(protocolId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-authorize`, async () => {
+      await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/authorize?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            reviewed_frozen_plan: true,
+            rollback_ready: true,
+            understands_no_change_is_made: true,
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("Monitoring authorized. It still has not made or published a change.");
+    });
+  }
+
+  async function startControlledTestProtocol(protocolId: string, evidenceReference: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-start`, async () => {
+      await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/start?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ evidence_references: [evidenceReference] }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("InsightOS is now watching saved measurements and stop rules for this test.");
+    });
+  }
+
+  async function checkControlledTestProtocol(protocolId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-check`, async () => {
+      const response = await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/check?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadOpportunities(selectedCampaignId);
+      const checkStatus = String(response?.check?.status || "saved").replaceAll("_", " ");
+      setNotice(`Safety check saved: ${checkStatus}. No website or profile change was made.`);
+    });
+  }
+
+  async function stopControlledTestProtocol(
+    protocolId: string,
+    reasonCode: ControlledTestStopReason,
+  ) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-stop`, async () => {
+      await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/stop?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ reason_code: reasonCode }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("Monitoring stopped. Complete the saved undo steps, then add verification evidence.");
+    });
+  }
+
+  async function verifyControlledTestRollback(protocolId: string, evidenceReference: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:protocol-rollback`, async () => {
+      await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/rollback/verify?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            rollback_steps_confirmed: true,
+            evidence_references: [evidenceReference],
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice("Rollback verification saved. InsightOS recorded the evidence but did not undo the change itself.");
+    });
+  }
+
+  async function preparePolicyCandidate(protocolId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${protocolId}:policy-candidate-prepare`, async () => {
+      const response = await platformApi(
+        `/intelligence/controlled-test-protocols/${encodeURIComponent(protocolId)}/policy-candidate?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        response?.created
+          ? "Evidence comparison prepared. It is review-only and cannot change the live system."
+          : "That evidence comparison was already prepared. Nothing in the live system changed.",
+      );
+    });
+  }
+
+  async function replayPolicyCandidate(candidateId: string) {
+    if (!selectedCampaignId) return;
+    await runAction(`${candidateId}:policy-candidate-replay`, async () => {
+      const response = await platformApi(
+        `/intelligence/policy-candidates/${encodeURIComponent(candidateId)}/replay?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        { method: "POST" },
+      );
+      await loadOpportunities(selectedCampaignId);
+      const status = String(response?.item?.latest_replay?.status || "saved").replaceAll("_", " ");
+      setNotice(`Saved-evidence check ${status}. Nothing in the live system was changed.`);
+    });
+  }
+
+  async function reviewPolicyCandidate(
+    candidateId: string,
+    decision: GovernedPolicyDecision["decision"],
+    note: string,
+  ) {
+    if (!selectedCampaignId) return;
+    await runAction(`${candidateId}:policy-candidate-review`, async () => {
+      await platformApi(
+        `/intelligence/policy-candidates/${encodeURIComponent(candidateId)}/review?campaign_id=${encodeURIComponent(selectedCampaignId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            decision,
+            note: note || null,
+            reviewed_rule_comparison: true,
+            understands_not_active: true,
+            understands_no_causal_proof: true,
+          }),
+        },
+      );
+      await loadOpportunities(selectedCampaignId);
+      setNotice(
+        decision === "approved_for_future_activation"
+          ? "Evidence proposal marked reviewed for a future release. It is still not active."
+          : decision === "rejected"
+            ? "The current evidence check was kept. Nothing changed in production."
+            : "The rule comparison was cancelled. Nothing changed in production.",
+      );
     });
   }
 
@@ -4144,50 +5721,189 @@ export default function OpportunitiesPage() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Outcome history
+                    Results over time
                   </p>
                   <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
-                    What changed after recommendations were chosen
+                    What the completed work is teaching us
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
-                    InsightOS compares saved opportunity-score checkpoints. This shows whether the
-                    overall score moved; it does not claim that one recommendation caused the
-                    change.
+                    These are real before-and-after measurements from finished checklists. Results
+                    are grouped only when the action, measurement, and rules match.
                   </p>
                 </div>
                 <span className="rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-100">
-                  Observation-only learning
+                  Reviewed before anything changes
                 </span>
               </div>
 
               <div className="mt-5 grid gap-4 md:grid-cols-4">
                 <KpiCard
-                  label="Measurements"
-                  value={String(outcomeHistory?.count || 0)}
-                  summary="Saved before-and-after score checkpoints for this business."
+                  label="Results checked"
+                  value={String(outcomeLearning?.summary?.measured_actions || 0)}
+                  summary="Finished work with a saved follow-up measurement."
                 />
                 <KpiCard
-                  label="Improved"
-                  value={String(outcomeHistory?.summary?.improved_count || 0)}
-                  summary="Measurements where the saved opportunity score increased."
+                  label="Used for learning"
+                  value={String(outcomeLearning?.summary?.included_count || 0)}
+                  summary="Owner-reviewed results that may count after enough matching examples exist."
                 />
                 <KpiCard
-                  label="No clear change"
-                  value={String(outcomeHistory?.summary?.unchanged_count || 0)}
-                  summary="Measurements where the score stayed effectively the same."
-                />
-                <KpiCard
-                  label="Declined"
-                  value={String(outcomeHistory?.summary?.declined_count || 0)}
-                  summary="Measurements that need review because the saved score decreased."
+                  label="Awaiting review"
+                  value={String(outcomeLearning?.summary?.pending_review_count || 0)}
+                  summary="Measured results that still need a quick owner check."
                   tone={
-                    (outcomeHistory?.summary?.declined_count || 0) > 0
+                    (outcomeLearning?.summary?.pending_review_count || 0) > 0
                       ? "highlight"
                       : "default"
                   }
                 />
+                <KpiCard
+                  label="Left out"
+                  value={String(outcomeLearning?.summary?.excluded_count || 0)}
+                  summary="Results kept in history but excluded from learning."
+                />
               </div>
 
+              {outcomeLearning?.observations?.length ? (
+                <div className="mt-5 space-y-3">
+                  {outcomeLearning.observations.map((observation) => {
+                    const resultLabel =
+                      observation.result_classification === "improved"
+                        ? "Helped"
+                        : observation.result_classification === "about_the_same"
+                          ? "No clear change"
+                          : observation.result_classification === "worse"
+                            ? "Needs review"
+                            : "Not enough information";
+                    const resultTone =
+                      observation.result_classification === "improved"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                        : observation.result_classification === "worse"
+                          ? "border-rose-500/30 bg-rose-500/10 text-rose-100"
+                          : observation.comparable
+                            ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-200"
+                            : "border-amber-500/30 bg-amber-500/10 text-amber-100";
+                    const forecastLabel =
+                      observation.forecast_check.position === "within_range"
+                        ? "Matched the estimate"
+                        : observation.forecast_check.position === "better_than_range"
+                          ? "Beat the estimate"
+                          : observation.forecast_check.position === "worse_than_range"
+                            ? "Below the estimate"
+                            : null;
+                    return (
+                      <div
+                        key={observation.measurement_id}
+                        className="w-full rounded-md border border-[#26272c] bg-[#111214] p-4 text-left"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedRecommendationId(observation.recommendation_id)
+                          }
+                          className="w-full text-left"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {observation.action_label}
+                            </p>
+                            <p className="mt-1 text-sm text-zinc-300">
+                              {observation.metric_label}:{" "}
+                              {formatMeasurementValue(
+                                { unit: observation.baseline.unit || "" },
+                                observation.baseline.value,
+                              )}{" "}
+                              to{" "}
+                              {formatMeasurementValue(
+                                {
+                                  unit:
+                                    observation.outcome.unit ||
+                                    observation.baseline.unit ||
+                                    "",
+                                },
+                                observation.outcome.value,
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <span
+                              className={`rounded-md border px-2 py-1 text-xs font-medium ${resultTone}`}
+                            >
+                              {resultLabel}
+                            </span>
+                            {forecastLabel ? (
+                              <span className="rounded-md border border-violet-500/25 bg-violet-500/10 px-2 py-1 text-xs font-medium text-violet-100">
+                                {forecastLabel}
+                              </span>
+                            ) : null}
+                            <span className="rounded-md border border-[#26272c] bg-[#141518] px-2 py-1 text-xs font-medium text-zinc-300">
+                              {formatRelativeTime(observation.measured_at)}
+                            </span>
+                          </div>
+                          </div>
+                        </button>
+                        <OutcomeLearningReviewPanel
+                          observation={observation}
+                          busy={busyAction !== ""}
+                          onSave={(decision, confounderCodes, note) =>
+                            saveOutcomeLearningReview(
+                              observation.measurement_id,
+                              decision,
+                              confounderCodes,
+                              note,
+                            )
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-5 rounded-md border border-dashed border-[#34363c] bg-[#111214] p-5">
+                  <p className="text-sm font-medium text-white">
+                    No completed work has a follow-up result yet.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">
+                    Start a checklist, finish the required work, and wait for the date shown on the
+                    action. InsightOS will compare the same measurement when fresh information arrives.
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-4 rounded-md border border-[#2d2f35] bg-[#101113] p-4">
+                <p className="text-sm font-medium text-white">Why InsightOS waits before learning</p>
+                <p className="mt-1 text-sm leading-6 text-zinc-400">
+                  {outcomeLearning?.learning?.message ||
+                    "InsightOS saves matching results, but a small sample cannot safely change future recommendations."}{" "}
+                  A person must review enough comparable examples before any rule or forecast can be updated.
+                </p>
+              </div>
+
+              <ControlledTestPlanner
+                groups={outcomeLearning?.groups || []}
+                plans={controlledTests?.items || []}
+                protocols={controlledTestProtocols?.items || []}
+                policyCandidates={policyCandidates?.items || []}
+                busy={busyAction !== ""}
+                onCreate={createControlledTestPlan}
+                onReview={reviewControlledTestPlan}
+                onPrepareProtocol={prepareControlledTestProtocol}
+                onAuthorizeProtocol={authorizeControlledTestProtocol}
+                onStartProtocol={startControlledTestProtocol}
+                onCheckProtocol={checkControlledTestProtocol}
+                onStopProtocol={stopControlledTestProtocol}
+                onVerifyRollback={verifyControlledTestRollback}
+                onPreparePolicyCandidate={preparePolicyCandidate}
+                onReplayPolicyCandidate={replayPolicyCandidate}
+                onReviewPolicyCandidate={reviewPolicyCandidate}
+              />
+
+              <details className="mt-4 rounded-md border border-[#26272c] bg-[#111214] p-4">
+                <summary className="cursor-pointer text-sm font-medium text-zinc-200">
+                  See older overall-score checkpoints
+                </summary>
+                <div className="mt-3 border-t border-[#26272c] pt-3">
               {outcomeHistory?.items?.length ? (
                 <div className="mt-5 space-y-3">
                   {outcomeHistory.items.map((outcome) => (
@@ -4233,10 +5949,13 @@ export default function OpportunitiesPage() {
                   </p>
                 </div>
               )}
+                </div>
+              </details>
 
               <p className="mt-4 text-xs uppercase tracking-[0.14em] text-zinc-500">
-                Policy updates disabled · Causal claims disabled ·{" "}
-                {outcomeHistory?.learning?.observations_recorded || 0} observations recorded
+                Human review required · No automatic rule changes ·{" "}
+                {outcomeLearning?.summary?.included_count || 0} included ·{" "}
+                {outcomeLearning?.summary?.pending_review_count || 0} awaiting review
               </p>
             </section>
 
@@ -4562,6 +6281,9 @@ export default function OpportunitiesPage() {
                             {wordpressAutomation.paused_reason_code ===
                             "wordpress_public_verification_failed"
                               ? "Managed updates stopped because the public website did not match an approved change. Review the failed action and use rollback if needed before removing the pause."
+                              : wordpressAutomation.paused_reason_code ===
+                                  "wordpress_repeated_measured_regression"
+                                ? "Managed updates stopped after two measured results got worse in a row. This does not prove the website changes caused the declines. Review the affected pages and measurements before removing the pause."
                               : "Managed updates are paused. Review the latest website action before removing the pause."}
                           </div>
                         ) : null}
@@ -5356,6 +7078,24 @@ export default function OpportunitiesPage() {
                                   {conflict.recovery ? <p className="mt-1 text-rose-200">Next: {conflict.recovery}</p> : null}
                                 </div>
                               ))}
+
+                              {dryRunPreview.result.preview.managed_content_validation?.required ? (
+                                <div className="rounded-md border border-sky-500/20 bg-sky-500/5 p-3">
+                                  <p className="text-sm font-semibold text-sky-100">
+                                    Automatic safety checks
+                                  </p>
+                                  <p className="mt-1 text-sm leading-6 text-zinc-400">
+                                    InsightOS checked the proposed wording against the saved business information before allowing an automatic update.
+                                  </p>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {(dryRunPreview.result.preview.managed_content_validation.checks || []).map((check, checkIndex) => (
+                                      <span key={`${check.code || "managed-check"}-${checkIndex}`} className={`rounded-full border px-2.5 py-1 text-xs ${check.passed ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-rose-500/20 bg-rose-500/10 text-rose-100"}`}>
+                                        {check.passed ? "Passed" : "Review needed"}: {check.message || "Safety check"}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
 
                               <div className="space-y-3">
                                 {(dryRunPreview.result.preview.changes || []).map((change, index) => (

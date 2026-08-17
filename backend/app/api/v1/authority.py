@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
 from app.api.response import envelope
-from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.authority import Citation
 from app.schemas.authority import (
@@ -34,8 +33,6 @@ from app.services.cost_economics_service import CostEconomicsError
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     authority_sync_backlinks,
-    citation_refresh_status,
-    citation_submit_batch,
 )
 
 authority_router = APIRouter(prefix="/authority", tags=["authority"])
@@ -52,47 +49,36 @@ def _raise_listing_discovery_error(exc: Exception) -> None:
     ) from exc
 
 
+def _raise_listing_correction_error(exc: CostEconomicsError) -> None:
+    raise HTTPException(
+        status_code=exc.status_code,
+        detail={
+            "message": str(exc),
+            "reason_code": exc.reason_code,
+        },
+    ) from exc
+
+
 def _citation_truth(
-    *, citation_count: int, live_count: int, job_queued: bool, captured_at: str | None = None
+    *, citation_count: int, live_count: int, captured_at: str | None = None
 ) -> dict:
-    settings = get_settings()
-    backend = getattr(settings, "authority_provider_backend", "synthetic").strip().lower()
-    environment = getattr(settings, "app_env", "").strip().lower()
-
-    states: list[str] = []
-    reasons: list[str] = []
-    provider_state = backend or "unknown"
-    setup_state = "configured"
-    operator_state = "self_serve"
-
-    if backend == "synthetic":
-        if environment == "test":
-            states.append("synthetic")
-            reasons.append("citation_runtime_uses_test_fixture_provider")
-            summary = "Citation refresh is using a synthetic fixture provider in test mode."
-        else:
-            states.extend(["unavailable", "operator_assisted"])
-            provider_state = "synthetic_disabled_outside_test"
-            setup_state = "provider_unavailable"
-            operator_state = "operator_assisted"
-            reasons.extend(
-                [
-                    "citation_refresh_provider_not_available_in_this_runtime",
-                    "citation_status_can_reflect_workflow_rows_without_live_directory_confirmation",
-                ]
-            )
-            summary = "Citation statuses are workflow records in this runtime. Live directory refresh is not provider-backed here."
-    else:
-        states.append("provider_backed")
-        summary = f"Citation refresh is using the configured {backend} provider."
+    states: list[str] = ["unavailable", "operator_assisted"]
+    reasons: list[str] = [
+        "listing_correction_provider_not_approved",
+        "saved_request_history_is_not_live_directory_confirmation",
+    ]
+    provider_state = "correction_provider_not_approved"
+    setup_state = "provider_unavailable"
+    operator_state = "operator_assisted"
+    summary = (
+        "Saved listing request history is shown here. Live directory submission and status "
+        "synchronization are not available yet."
+    )
 
     freshness_state = freshness_state_from_timestamp(captured_at, stale_after=timedelta(days=7))
     if freshness_state == "stale":
         states.append("stale")
         reasons.append("citation_status_is_stale")
-    if job_queued:
-        states.append("in_progress")
-        reasons.append("citation_refresh_queued")
     if citation_count > 0 and live_count == 0:
         states.append("operator_assisted")
         reasons.append("citation_status_requires_manual_directory_confirmation")
@@ -368,16 +354,16 @@ def submit_citation(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    citation = authority_service.submit_citation(
-        db,
-        tenant_id=user["tenant_id"],
-        campaign_id=body.campaign_id,
-        directory_name=body.directory_name,
-    )
     try:
-        citation_submit_batch.delay(tenant_id=user["tenant_id"], campaign_id=body.campaign_id)
-    except KombuError:
-        pass
+        citation = authority_service.submit_citation(
+            db,
+            tenant_id=user["tenant_id"],
+            campaign_id=body.campaign_id,
+            directory_name=body.directory_name,
+        )
+    except CostEconomicsError as exc:
+        db.rollback()
+        _raise_listing_correction_error(exc)
     return envelope(
         request,
         {
@@ -401,22 +387,37 @@ def get_listing_inventory(
         tenant_id=user["tenant_id"],
         campaign_id=campaign_id,
     )
+    summary = listing_inventory_service.inventory_summary(rows)
+    correction_access = authority_service.listing_correction_access(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
     return envelope(
         request,
         {
             "items": [
                 DirectoryListingOut.model_validate(row).model_dump(mode="json") for row in rows
             ],
-            "summary": listing_inventory_service.inventory_summary(rows),
+            "summary": summary,
             "truth": {
-                "classification": "provider_backed" if rows else "not_collected",
+                "classification": (
+                    "provider_backed"
+                    if summary["freshly_checked"]
+                    else "imported_history"
+                    if summary["imported_history"]
+                    else "not_collected"
+                ),
                 "summary": (
-                    "These are saved public listing observations for this business location."
-                    if rows
+                    "These are saved public listing observations for this business location. Imported history is labeled and does not count as a fresh check."
+                    if summary["freshly_checked"]
+                    else "Imported listing history is available, but a fresh public listing check has not been completed yet."
+                    if summary["imported_history"]
                     else "No public listing inventory has been collected for this business location yet."
                 ),
                 "correction_available": False,
                 "correction_reason": "A directory correction provider has not been approved.",
+                "correction_access": correction_access,
             },
         },
     )
@@ -512,10 +513,11 @@ def get_citation_status(
     user: dict = Depends(require_roles({"tenant_admin"})),
     db: Session = Depends(get_db),
 ) -> dict:
-    try:
-        task = citation_refresh_status.delay(tenant_id=user["tenant_id"], campaign_id=campaign_id)
-    except KombuError:
-        task = None
+    correction_access = authority_service.listing_correction_access(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
     rows = (
         db.query(Citation)
         .filter(Citation.tenant_id == user["tenant_id"], Citation.campaign_id == campaign_id)
@@ -528,13 +530,12 @@ def get_citation_status(
     truth = _citation_truth(
         citation_count=len(rows),
         live_count=live_count,
-        job_queued=task is not None,
         captured_at=rows[0].updated_at.isoformat() if rows and rows[0].updated_at else None,
     )
     return envelope(
         request,
         {
-            "job_id": task.id if task is not None else None,
+            "job_id": None,
             "items": [
                 {
                     "id": row.id,
@@ -545,5 +546,6 @@ def get_citation_status(
                 for row in rows
             ],
             "truth": truth,
+            "correction_access": correction_access,
         },
     )

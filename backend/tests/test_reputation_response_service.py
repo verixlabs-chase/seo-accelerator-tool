@@ -11,6 +11,7 @@ from app.models.organization_membership import OrganizationMembership
 from app.models.reputation import ReputationResponseDraft
 from app.models.user import User
 from app.services import reputation_inventory_service, reputation_response_service
+from app.services.commercial_plan_service import apply_commercial_plan
 from app.services.governed_ai_provider import GovernedAIProviderResponse
 
 
@@ -124,6 +125,56 @@ def _location_campaign_review(db_session, *, review_body: str):
         ],
     )[0]
     return user, campaign, review
+
+
+def test_review_automation_separates_plan_eligibility_from_live_activation(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(reputation_response_service, "get_settings", lambda: _settings())
+    user, campaign, _review = _location_campaign_review(
+        db_session,
+        review_body="The crew was helpful and professional.",
+    )
+
+    solo = reputation_response_service.policy_status(
+        db_session,
+        tenant_id=user.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        requested_by_user_id=user.id,
+    )
+    assert solo["mode"] == "draft_only"
+    assert solo["automatic_posting_enabled"] is False
+    assert solo["automatic_reply_access"] == {
+        "plan_eligible": False,
+        "automation_enabled": False,
+        "required_plan": "Growth",
+        "state": "plan_upgrade_required",
+        "summary": (
+            "Automatic review replies require Growth. Review monitoring, drafts, "
+            "and human approval remain available."
+        ),
+    }
+
+    apply_commercial_plan(
+        db_session,
+        organization_id=str(campaign.organization_id),
+        plan_code="multi_location",
+    )
+    growth = reputation_response_service.policy_status(
+        db_session,
+        tenant_id=user.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        requested_by_user_id=user.id,
+    )
+    assert growth["automatic_posting_enabled"] is False
+    assert growth["automatic_reply_access"]["plan_eligible"] is True
+    assert growth["automatic_reply_access"]["automation_enabled"] is False
+    assert growth["automatic_reply_access"]["state"] == (
+        "production_validation_required"
+    )
 
 
 def test_sensitive_review_requires_a_person_without_ai_or_credits(

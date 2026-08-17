@@ -7,8 +7,19 @@ from app.api.deps import require_roles
 from app.api.response import envelope
 from app.db.session import get_db
 from app.models.content import ContentAsset
-from app.schemas.content import ContentAssetCreateIn, ContentAssetOut, ContentAssetUpdateIn
-from app.services import content_service, infra_service
+from app.schemas.content import (
+    ContentAssetCreateIn,
+    ContentAssetOut,
+    ContentAssetUpdateIn,
+    ContentBriefReviewIn,
+    ContentDraftAISuggestionIn,
+    ContentDraftCreateIn,
+    ContentPublishingApprovalIn,
+    ContentPublishingDeliveryIn,
+    ContentPublishingHandoffIn,
+    ContentDraftUpdateIn,
+)
+from app.services import content_draft_ai_service, content_service, infra_service
 from app.tasks.tasks import content_generate_plan, content_refresh_internal_link_map, content_run_qc_checks
 
 content_router = APIRouter(prefix="/content", tags=["content"])
@@ -58,6 +69,153 @@ def update_content_asset(
         except KombuError:
             pass
     return envelope(request, ContentAssetOut.model_validate(asset).model_dump(mode="json"))
+
+
+@content_router.get("/workspace")
+def get_content_workspace(
+    request: Request,
+    campaign_id: str = Query(...),
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.get_content_workspace(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=campaign_id,
+    )
+    return envelope(request, payload)
+
+
+@content_router.put("/briefs/{brief_id}/review")
+def review_content_brief(
+    request: Request,
+    brief_id: str,
+    body: ContentBriefReviewIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.review_content_brief(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        brief_id=brief_id,
+        decision=body.decision,
+        note=body.note,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/briefs/{brief_id}/draft")
+def create_content_draft(
+    request: Request,
+    brief_id: str,
+    body: ContentDraftCreateIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.create_content_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        brief_id=brief_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.put("/drafts/{draft_id}")
+def update_content_draft(
+    request: Request,
+    draft_id: str,
+    body: ContentDraftUpdateIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.update_content_draft(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        title=body.title,
+        sections=[item.model_dump() for item in body.sections],
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/drafts/{draft_id}/ai-suggestion")
+def suggest_content_draft_wording(
+    request: Request,
+    draft_id: str,
+    body: ContentDraftAISuggestionIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_draft_ai_service.generate_content_draft_suggestion(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        requested_by_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/drafts/{draft_id}/publishing-handoff")
+def prepare_content_publishing_handoff(
+    request: Request,
+    draft_id: str,
+    body: ContentPublishingHandoffIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.prepare_content_publishing_handoff(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/drafts/{draft_id}/publishing-handoff/approve")
+def approve_content_publishing_handoff(
+    request: Request,
+    draft_id: str,
+    body: ContentPublishingApprovalIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.approve_content_publishing_handoff(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        preview_hash=body.preview_hash,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
+
+
+@content_router.post("/drafts/{draft_id}/publishing-handoff/deliver")
+def deliver_content_publishing_handoff(
+    request: Request,
+    draft_id: str,
+    body: ContentPublishingDeliveryIn,
+    user: dict = Depends(require_roles({"tenant_admin"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = content_service.deliver_content_publishing_handoff(
+        db,
+        tenant_id=user["tenant_id"],
+        campaign_id=body.campaign_id,
+        draft_id=draft_id,
+        preview_hash=body.preview_hash,
+        actor_user_id=user["id"],
+    )
+    return envelope(request, payload)
 
 
 @content_router.get("/plan")

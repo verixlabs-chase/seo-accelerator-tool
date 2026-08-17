@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import insert, select, update
@@ -8,6 +9,11 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.db.session import set_session_security_context
+from app.models.automation_webhook import (
+    AutomationWebhookConnection,
+    AutomationWebhookDelivery,
+    AutomationWebhookDeliveryAttempt,
+)
 from app.models.campaign import Campaign
 from app.models.user import User
 from scripts.verify_restore_integrity import _rls_behavior_probe
@@ -133,3 +139,101 @@ def test_restore_verifier_rls_probe_is_non_persistent(db_session: Session) -> No
         "persisted_rows": False,
     }
     assert db_session.query(Campaign).count() == before_count
+
+
+def test_automation_webhook_rows_are_scoped_and_attempts_are_append_only(
+    db_session: Session,
+) -> None:
+    user_a = db_session.query(User).filter(User.email == "a@example.com").one()
+    user_b = db_session.query(User).filter(User.email == "b@example.com").one()
+    now = datetime.now(UTC)
+
+    def _rows(user: User, suffix: str):
+        connection = AutomationWebhookConnection(
+            id=str(uuid.uuid4()),
+            tenant_id=user.tenant_id,
+            organization_id=user.tenant_id,
+            name=f"RLS workflow {suffix}",
+            provider="zapier",
+            status="active",
+            endpoint_host="hooks.zapier.com",
+            event_types_json='["report.ready"]',
+            encrypted_config_blob=f"encrypted-{suffix}",
+            signing_secret_version=1,
+            verification_status="verified",
+            consecutive_failures=0,
+            created_by_user_id=user.id,
+            created_at=now,
+            updated_at=now,
+        )
+        delivery = AutomationWebhookDelivery(
+            id=str(uuid.uuid4()),
+            tenant_id=user.tenant_id,
+            organization_id=user.tenant_id,
+            connection_id=connection.id,
+            event_id=f"evt_rls_{suffix}",
+            event_type="report.ready",
+            schema_version="insightos.automation.event.v1",
+            status="failed",
+            encrypted_event_blob=f"event-{suffix}",
+            event_hash=("a" if suffix == "a" else "b") * 64,
+            attempt_count=1,
+            max_attempts=3,
+            created_by_user_id=user.id,
+            created_at=now,
+            updated_at=now,
+        )
+        attempt = AutomationWebhookDeliveryAttempt(
+            id=str(uuid.uuid4()),
+            tenant_id=user.tenant_id,
+            organization_id=user.tenant_id,
+            delivery_id=delivery.id,
+            attempt_number=1,
+            status="failed",
+            reason_code="automation_destination_unreachable",
+            duration_ms=5,
+            attempted_at=now,
+        )
+        return connection, delivery, attempt
+
+    connection_a, delivery_a, attempt_a = _rows(user_a, "a")
+    connection_b, delivery_b, attempt_b = _rows(user_b, "b")
+    db_session.add_all(
+        [connection_a, delivery_a, attempt_a, connection_b, delivery_b, attempt_b]
+    )
+    db_session.commit()
+
+    isolated = Session(bind=db_session.get_bind(), autoflush=False, autocommit=False)
+    try:
+        set_session_security_context(
+            isolated,
+            tenant_id=user_a.tenant_id,
+            organization_id=user_a.tenant_id,
+            user_id=user_a.id,
+            platform_access=False,
+        )
+        assert set(isolated.execute(select(AutomationWebhookConnection.id)).scalars()) == {
+            connection_a.id
+        }
+        assert set(isolated.execute(select(AutomationWebhookDelivery.id)).scalars()) == {
+            delivery_a.id
+        }
+        assert set(
+            isolated.execute(select(AutomationWebhookDeliveryAttempt.id)).scalars()
+        ) == {attempt_a.id}
+        cross_scope = isolated.execute(
+            update(AutomationWebhookConnection)
+            .where(AutomationWebhookConnection.id == connection_b.id)
+            .values(status="unhealthy")
+        )
+        assert cross_scope.rowcount == 0
+        with pytest.raises(DBAPIError):
+            isolated.execute(
+                update(AutomationWebhookDeliveryAttempt)
+                .where(AutomationWebhookDeliveryAttempt.id == attempt_a.id)
+                .values(reason_code="changed")
+            )
+            isolated.flush()
+    finally:
+        isolated.rollback()
+        isolated.close()

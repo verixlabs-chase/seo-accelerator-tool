@@ -163,14 +163,28 @@ def get_rank_snapshots(
         raise HTTPException(status_code=404, detail="Campaign not found")
     rows = rank_service.get_snapshots(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     items = [RankingSnapshotOut.model_validate(r).model_dump(mode="json") for r in rows]
+    collected_items = [item for item in items if item["source_type"] != "imported"]
+    imported_history_count = len(items) - len(collected_items)
     truth = rank_service.build_rank_truth(
         db,
         organization_id=campaign.organization_id,
         tracked_keywords=rank_service.get_tracked_keyword_count(db, tenant_id=user["tenant_id"], campaign_id=campaign_id),
-        snapshot_count=len(items),
-        latest_captured_at=items[0]["captured_at"] if items else None,
+        snapshot_count=len(collected_items),
+        latest_captured_at=collected_items[0]["captured_at"] if collected_items else None,
     )
-    return envelope(request, {"items": items, "truth": truth})
+    return envelope(
+        request,
+        {
+            "items": items,
+            "imported_history_count": imported_history_count,
+            "history_notice": (
+                "Imported points preserve their original dates and are separate from live checks."
+                if imported_history_count
+                else None
+            ),
+            "truth": truth,
+        },
+    )
 
 
 @router.get("/trends")
@@ -185,20 +199,26 @@ def get_rank_trends(
         raise HTTPException(status_code=404, detail="Campaign not found")
     trends = rank_service.get_trends(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     snapshots = rank_service.get_snapshots(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
+    collected_snapshots = [row for row in snapshots if row.source_type != "imported"]
     truth = rank_service.build_rank_truth(
         db,
         organization_id=campaign.organization_id,
         tracked_keywords=rank_service.get_tracked_keyword_count(db, tenant_id=user["tenant_id"], campaign_id=campaign_id),
-        snapshot_count=len(snapshots),
-        latest_captured_at=snapshots[0].captured_at.isoformat() if snapshots else None,
+        snapshot_count=len(collected_snapshots),
+        latest_captured_at=(
+            collected_snapshots[0].captured_at.isoformat() if collected_snapshots else None
+        ),
     )
-    latest_captured_at = snapshots[0].captured_at.isoformat() if snapshots else None
+    latest_captured_at = (
+        collected_snapshots[0].captured_at.isoformat() if collected_snapshots else None
+    )
     return envelope(
         request,
         {
             "items": trends,
             "latest_captured_at": latest_captured_at,
             "tracked_keywords": rank_service.get_tracked_keyword_count(db, tenant_id=user["tenant_id"], campaign_id=campaign_id),
+            "imported_history_count": len(snapshots) - len(collected_snapshots),
             "truth": truth,
         },
     )

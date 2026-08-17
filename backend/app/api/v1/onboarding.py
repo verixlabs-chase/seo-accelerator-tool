@@ -1,14 +1,53 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_roles
+from app.api.deps import require_org_role, require_roles
 from app.api.response import envelope
 from app.db.session import get_db
-from app.schemas.onboarding import OnboardingSessionOut, OnboardingStartRequest
-from app.services import onboarding_service
+from app.schemas.onboarding import (
+    OnboardingBaselineStatusOut,
+    OnboardingSessionOut,
+    OnboardingStartRequest,
+)
+from app.services import onboarding_baseline_service, onboarding_service
 
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
+
+
+@router.get("/baseline/{campaign_id}")
+def get_onboarding_baseline(
+    request: Request,
+    campaign_id: str,
+    user: dict = Depends(require_org_role({"org_user"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = onboarding_baseline_service.get_status(
+        db,
+        tenant_id=str(user["tenant_id"]),
+        organization_id=str(user["organization_id"]),
+        campaign_id=campaign_id,
+    )
+    data = OnboardingBaselineStatusOut.model_validate(payload).model_dump(mode="json")
+    return envelope(request, data)
+
+
+@router.post("/baseline/{campaign_id}")
+def ensure_onboarding_baseline(
+    request: Request,
+    campaign_id: str,
+    user: dict = Depends(require_org_role({"org_user"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = onboarding_baseline_service.ensure_baseline(
+        db,
+        tenant_id=str(user["tenant_id"]),
+        organization_id=str(user["organization_id"]),
+        campaign_id=campaign_id,
+        generated_by_user_id=str(user["user_id"]),
+    )
+    data = OnboardingBaselineStatusOut.model_validate(payload).model_dump(mode="json")
+    return envelope(request, data)
 
 
 def _enforce_onboarding_session_scope(user: dict, row) -> None:

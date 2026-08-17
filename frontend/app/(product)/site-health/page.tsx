@@ -149,6 +149,49 @@ type PerformanceSummary = {
   };
 };
 
+type SiteIntegrityFinding = {
+  code?: string;
+  url?: string;
+  severity?: "high" | "medium" | "low";
+  title?: string;
+  evidence?: string;
+  action?: string;
+  source?: string;
+  observed_at?: string;
+  confidence?: string;
+};
+
+type SiteIntegritySummary = {
+  campaign_id?: string;
+  status?: "needs_connection" | "not_started" | "stale" | "attention" | "current";
+  connection?: {
+    connected?: boolean;
+    site_url?: string | null;
+    last_error?: string | null;
+  };
+  summary?: {
+    inspected_urls?: number;
+    indexed_urls?: number;
+    attention_urls?: number;
+    canonical_conflicts?: number;
+    sitemap_count?: number;
+    sitemap_errors?: number;
+    sitemap_warnings?: number;
+  };
+  findings?: SiteIntegrityFinding[];
+  freshness?: {
+    observed_at?: string | null;
+    is_stale?: boolean;
+    stale_after_days?: number;
+  };
+  next_action?: {
+    label?: string;
+    description?: string;
+    href?: string | null;
+  };
+  coverage_note?: string;
+};
+
 function formatVitalValue(metric: VitalMetric) {
   if (metric.value === null || metric.value === undefined) {
     return "Not enough data";
@@ -281,7 +324,23 @@ function issueLabel(issueCode?: string) {
     case "missing_meta_description":
       return "Missing meta description";
     case "invalid_canonical":
-      return "Invalid canonical tag";
+      return "Preferred page setting is invalid";
+    case "canonical_external":
+      return "Preferred page points to another website";
+    case "canonical_points_elsewhere":
+      return "Page points search engines to another version";
+    case "canonical_target_missing":
+      return "Preferred page does not exist in this scan";
+    case "broken_internal_link":
+      return "A website link leads to a broken page";
+    case "duplicate_content":
+      return "Two pages contain the same content";
+    case "orphan_page":
+      return "No scanned page links to this page";
+    case "redirect_chain":
+      return "Page sends visitors through several redirects";
+    case "invalid_structured_data":
+      return "Search result details contain an error";
     case "missing_h1":
       return "Missing page heading";
     case "multiple_h1":
@@ -307,6 +366,22 @@ function issueImpact(issueCode?: string) {
       return "Search snippets may be weaker and less likely to attract clicks.";
     case "invalid_canonical":
       return "Search engines may get mixed signals about the correct page version.";
+    case "canonical_external":
+      return "Search engines may treat a page on another website as the preferred version.";
+    case "canonical_points_elsewhere":
+      return "This page may be left out of search in favor of the page it points to.";
+    case "canonical_target_missing":
+      return "Search engines are being sent to a preferred page that the complete scan could not find.";
+    case "broken_internal_link":
+      return "Customers can hit a dead end while moving through the website.";
+    case "duplicate_content":
+      return "Search engines may struggle to choose which page should appear in results.";
+    case "orphan_page":
+      return "Customers and search engines may have trouble discovering this page from the pages checked in the scan.";
+    case "redirect_chain":
+      return "Extra redirects slow the trip to the final page and create more places for the path to break.";
+    case "invalid_structured_data":
+      return "Google may not be able to use the extra business details attached to this page.";
     case "missing_h1":
       return "The page structure is weaker and harder for search engines to interpret.";
     case "multiple_h1":
@@ -331,7 +406,23 @@ function issueFix(issueCode?: string) {
     case "missing_meta_description":
       return "Write a short description that explains the page and encourages clicks.";
     case "invalid_canonical":
-      return "Correct the canonical tag so it points to a full valid URL.";
+      return "Update the preferred page setting so it points to a valid page.";
+    case "canonical_external":
+      return "Confirm the other website is intentional; otherwise point to the correct page on this site.";
+    case "canonical_points_elsewhere":
+      return "Confirm which page should appear in search, then keep only that page as the preferred version.";
+    case "canonical_target_missing":
+      return "Point the preferred page setting to a working page on this website.";
+    case "broken_internal_link":
+      return "Update or remove the broken link so it leads to a working page.";
+    case "duplicate_content":
+      return "Keep one useful version, then merge, redirect, or rewrite the other page.";
+    case "orphan_page":
+      return "Link to this page from a related page, or remove it if it is no longer useful.";
+    case "redirect_chain":
+      return "Update links so they go straight to the final page in one step.";
+    case "invalid_structured_data":
+      return "Correct the page's search result details, then scan the website again.";
     case "missing_h1":
       return "Add one main page heading that matches the page topic.";
     case "multiple_h1":
@@ -357,6 +448,41 @@ function parseIssueDetails(detailsJson?: string) {
   } catch {
     return {};
   }
+}
+
+function issueDetail(details: Record<string, string | number | null>) {
+  if (typeof details.target_url === "string") {
+    const status =
+      details.status_code !== undefined && details.status_code !== null
+        ? ` (status ${details.status_code})`
+        : "";
+    return `${details.target_url}${status}`;
+  }
+  if (typeof details.duplicate_with === "string") {
+    return `Matches ${details.duplicate_with}`;
+  }
+  if (typeof details.canonical_url === "string") {
+    return `Points to ${details.canonical_url}`;
+  }
+  if (typeof details.redirect_count === "number") {
+    return `${details.redirect_count} redirects before the final page`;
+  }
+  if (typeof details.invalid_blocks === "number") {
+    return `${details.invalid_blocks} invalid search detail block${details.invalid_blocks === 1 ? "" : "s"}`;
+  }
+  if (typeof details.page_url === "string") {
+    return details.page_url;
+  }
+  if (details.status_code !== undefined) {
+    return `Status ${details.status_code}`;
+  }
+  if (typeof details.canonical === "string") {
+    return `Canonical: ${details.canonical}`;
+  }
+  if (typeof details.h1_count === "number") {
+    return `${details.h1_count} H1 tags`;
+  }
+  return "No extra details";
 }
 
 function SiteHealthTooltip({
@@ -402,9 +528,11 @@ export default function SiteHealthPage() {
   const [issues, setIssues] = useState<TechnicalIssue[]>([]);
   const [metrics, setMetrics] = useState<CrawlMetrics | null>(null);
   const [performance, setPerformance] = useState<PerformanceSummary | null>(null);
+  const [siteIntegrity, setSiteIntegrity] = useState<SiteIntegritySummary | null>(null);
   const [formFactor, setFormFactor] = useState<"mobile" | "desktop">("mobile");
   const [historyDays, setHistoryDays] = useState(90);
   const [measuring, setMeasuring] = useState(false);
+  const [checkingIndex, setCheckingIndex] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -428,10 +556,17 @@ export default function SiteHealthPage() {
       setIssues([]);
       setMetrics(null);
       setPerformance(null);
+      setSiteIntegrity(null);
       return;
     }
 
-    const [runsResponse, issuesResponse, metricsResponse, performanceResponse] = await Promise.all([
+    const [
+      runsResponse,
+      issuesResponse,
+      metricsResponse,
+      performanceResponse,
+      integrityResponse,
+    ] = await Promise.all([
       platformApi(`/crawl/runs?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi(`/crawl/issues?campaign_id=${encodeURIComponent(campaignId)}`, { method: "GET" }),
       platformApi("/crawl/metrics", { method: "GET" }),
@@ -439,13 +574,51 @@ export default function SiteHealthPage() {
         `/website-performance/summary?campaign_id=${encodeURIComponent(campaignId)}&form_factor=${formFactor}&days=${historyDays}`,
         { method: "GET" },
       ),
+      platformApi(`/crawl/site-integrity?campaign_id=${encodeURIComponent(campaignId)}`, {
+        method: "GET",
+      }),
     ]);
 
     setRuns(Array.isArray(runsResponse?.items) ? (runsResponse.items as CrawlRun[]) : []);
     setIssues(Array.isArray(issuesResponse?.items) ? (issuesResponse.items as TechnicalIssue[]) : []);
     setMetrics((metricsResponse as CrawlMetrics) || null);
     setPerformance((performanceResponse as PerformanceSummary) || null);
+    setSiteIntegrity((integrityResponse as SiteIntegritySummary) || null);
   }, [formFactor, historyDays]);
+
+  const runIndexCheck = useCallback(async () => {
+    if (!selectedCampaignId) {
+      return;
+    }
+    if (!siteIntegrity?.connection?.connected) {
+      router.push("/settings");
+      return;
+    }
+    setCheckingIndex(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await platformApi("/crawl/site-integrity/refresh", {
+        method: "POST",
+        body: JSON.stringify({ campaign_id: selectedCampaignId, max_urls: 10 }),
+      });
+      const nextIntegrity = result?.integrity as SiteIntegritySummary | undefined;
+      if (nextIntegrity) {
+        setSiteIntegrity(nextIntegrity);
+      }
+      const checked = Number(result?.refresh?.inspected_urls || 0);
+      const failed = Number(result?.refresh?.failed_urls || 0);
+      setNotice(
+        failed > 0
+          ? `Google's saved information was checked for ${checked} page${checked === 1 ? "" : "s"}. ${failed} page${failed === 1 ? " needs" : "s need"} another try.`
+          : `Google's saved information was checked for ${checked} important page${checked === 1 ? "" : "s"}.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to check Google index information.");
+    } finally {
+      setCheckingIndex(false);
+    }
+  }, [router, selectedCampaignId, siteIntegrity?.connection?.connected]);
 
   const runPerformanceCheck = useCallback(async () => {
     if (!selectedCampaignId) {
@@ -690,14 +863,7 @@ export default function SiteHealthPage() {
     () =>
       latestRunIssues.slice(0, 6).map((issue) => {
         const details = parseIssueDetails(issue.details_json);
-        const detailText =
-          details.status_code !== undefined
-            ? `Status ${details.status_code}`
-            : details.canonical
-              ? `Canonical: ${details.canonical}`
-              : details.h1_count !== undefined
-                ? `${details.h1_count} H1 tags`
-                : "No extra details";
+        const detailText = issueDetail(details);
 
         return {
           id: issue.id,
@@ -935,6 +1101,163 @@ export default function SiteHealthPage() {
                       : "neutral"
               }
             />
+
+            <section className="space-y-5 border-y border-[#26272c] bg-[#111214]/70 px-4 py-5 md:px-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-400">
+                    Google index check
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">
+                    Can Google find and keep your important pages?
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                    Compare Google&apos;s saved page information with the latest website scan. Start with
+                    the first problem below; technical evidence stays available when a developer needs it.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void runIndexCheck()}
+                  disabled={!selectedCampaignId || checkingIndex}
+                  className="rounded-md bg-accent-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {checkingIndex
+                    ? "Checking important pages…"
+                    : siteIntegrity?.connection?.connected
+                      ? siteIntegrity?.summary?.inspected_urls
+                        ? "Check again"
+                        : "Check important pages"
+                      : "Connect Google first"}
+                </button>
+              </div>
+
+              <div className="grid gap-px overflow-hidden rounded-md border border-[#26272c] bg-[#26272c] sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    label: "Pages checked",
+                    value: siteIntegrity?.summary?.inspected_urls ?? 0,
+                    detail: "Important pages with saved Google evidence",
+                  },
+                  {
+                    label: "Confirmed in Google",
+                    value: siteIntegrity?.summary?.indexed_urls ?? 0,
+                    detail: "Pages Google reported as indexed",
+                  },
+                  {
+                    label: "Need attention",
+                    value: siteIntegrity?.summary?.attention_urls ?? 0,
+                    detail: "Pages without a clear indexed result",
+                  },
+                  {
+                    label: "Sitemap problems",
+                    value:
+                      (siteIntegrity?.summary?.sitemap_errors ?? 0) +
+                      (siteIntegrity?.summary?.sitemap_warnings ?? 0),
+                    detail: "Errors and warnings reported by Google",
+                  },
+                ].map((item) => (
+                  <div key={item.label} className="bg-[#111214] px-4 py-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      {item.label}
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-white">{item.value}</p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+
+              {!siteIntegrity?.connection?.connected ? (
+                <div className="border-l-2 border-amber-400 bg-amber-400/[0.07] px-4 py-4">
+                  <h3 className="text-sm font-semibold text-amber-100">
+                    Connect Google Search Console to confirm index status
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-zinc-300">
+                    The website scan still works without it, but only Google can confirm its saved index
+                    result for a page.
+                  </p>
+                </div>
+              ) : (siteIntegrity?.findings || []).length > 0 ? (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      What to fix first
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-300">
+                      These findings point to a specific page, evidence, source, and next step.
+                    </p>
+                  </div>
+                  {(siteIntegrity?.findings || []).slice(0, 5).map((finding) => (
+                    <article
+                      key={`${finding.code}-${finding.url}`}
+                      className={`border-l-2 px-4 py-4 ${
+                        finding.severity === "high"
+                          ? "border-rose-500 bg-rose-500/[0.06]"
+                          : finding.severity === "medium"
+                            ? "border-amber-400 bg-amber-400/[0.05]"
+                            : "border-zinc-600 bg-white/[0.02]"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{finding.title}</p>
+                          <p className="mt-1 break-all text-xs text-zinc-500">{finding.url}</p>
+                        </div>
+                        <span className="text-xs font-semibold text-zinc-400">
+                          {finding.severity === "high"
+                            ? "Fix first"
+                            : finding.severity === "medium"
+                              ? "Fix next"
+                              : "Monitor"}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-zinc-300">{finding.evidence}</p>
+                      <p className="mt-2 text-sm font-medium leading-6 text-zinc-100">
+                        Next: {finding.action}
+                      </p>
+                      <p className="mt-3 text-xs leading-5 text-zinc-500">
+                        Source: {finding.source} · checked {formatRelativeTime(finding.observed_at)}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : siteIntegrity?.summary?.inspected_urls ? (
+                <div className="border-l-2 border-emerald-500 bg-emerald-500/[0.06] px-4 py-4">
+                  <h3 className="text-sm font-semibold text-emerald-100">
+                    No urgent index problem was confirmed
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-zinc-300">
+                    Keep monitoring after publishing, redirecting, or changing important pages.
+                  </p>
+                </div>
+              ) : (
+                <div className="border-l-2 border-zinc-600 bg-white/[0.02] px-4 py-4">
+                  <h3 className="text-sm font-semibold text-zinc-100">
+                    Run the first Google index check
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-zinc-300">
+                    InsightOS will check up to 10 important pages at a time to protect the connection&apos;s
+                    daily limit.
+                  </p>
+                </div>
+              )}
+
+              <details className="border-t border-[#26272c] pt-4 text-xs leading-5 text-zinc-500">
+                <summary className="cursor-pointer font-semibold text-zinc-400">
+                  How this check should be read
+                </summary>
+                <p className="mt-2 max-w-4xl">
+                  {siteIntegrity?.coverage_note ||
+                    "This checks Google's saved index information, not a live indexing test. A sitemap submission is not treated as proof that a page is indexed."}
+                </p>
+                {siteIntegrity?.freshness?.observed_at ? (
+                  <p className="mt-2">
+                    Latest saved evidence: {formatRelativeTime(siteIntegrity.freshness.observed_at)}
+                    {siteIntegrity.freshness.is_stale ? " · refresh recommended" : " · current"}
+                  </p>
+                ) : null}
+              </details>
+            </section>
 
             <section className="space-y-5 border-y border-[#26272c] bg-[#111214]/70 px-4 py-5 md:px-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

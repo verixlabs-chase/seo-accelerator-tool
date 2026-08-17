@@ -21,12 +21,15 @@ from app.services import (
     content_service,
     crawl_metrics,
     crawl_service,
+    data_governance_service,
     entity_service,
     fleet_service,
     intelligence_service,
     idempotency_service,
     local_service,
+    migration_upload_service,
     observability_service,
+    organization_closure_service,
     portfolio_usage_service,
     reference_library_service,
     rank_service,
@@ -41,6 +44,48 @@ logger = logging.getLogger("lsos.traffic.facts")
 @celery_app.task(name="ops.healthcheck.snapshot")
 def ops_healthcheck_snapshot() -> dict:
     return {"timestamp": datetime.now(UTC).isoformat(), "status": "ok"}
+
+
+@celery_app.task(name="migration.purge_expired_uploads")
+def migration_purge_expired_uploads() -> dict:
+    db = SessionLocal()
+    try:
+        result = migration_upload_service.purge_expired_upload_sessions(db)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="governance.expire_data_exports")
+def governance_expire_data_exports() -> dict:
+    db = SessionLocal()
+    try:
+        result = data_governance_service.expire_data_export_artifacts(db)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="governance.finalize_due_organization_closures")
+def governance_finalize_due_organization_closures() -> dict:
+    db = SessionLocal()
+    try:
+        result = organization_closure_service.finalize_due_organization_closures(db)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 @celery_app.task(name="analytics.rollup_daily", bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 2})

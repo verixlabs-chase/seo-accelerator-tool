@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.api.v1 import campaigns as campaigns_api
 from app.models.organization import Organization
 
 
@@ -51,7 +52,59 @@ def test_campaign_strategy_feature_gate_enforced(client, db_session) -> None:
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403
-    assert response.json()["errors"][0]["details"]["reason_code"] == "feature_not_available"
+    assert response.json()["errors"][0]["details"]["reason_code"] == "campaign_strategy_upgrade_required"
+    assert "Growth plan" in response.json()["errors"][0]["details"]["message"]
+
+
+def test_solo_keeps_promised_performance_trends_and_owner_report(client, db_session, monkeypatch) -> None:
+    token, tenant_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    _set_org_plan(db_session, tenant_id, "standard")
+    campaign = _create_campaign(client, token, "Solo Reporting", "solo-reporting.example")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def _trend(_db, *, campaign, date_from, date_to, interval):  # noqa: ANN001
+        return {
+            "campaign_id": campaign.id,
+            "date_from": date_from,
+            "date_to": date_to,
+            "interval": interval,
+            "points": [],
+        }
+
+    def _summary(_db, *, campaign, date_from, date_to):  # noqa: ANN001
+        return {
+            "campaign_id": campaign.id,
+            "date_from": date_from,
+            "date_to": date_to,
+            "clicks": 0.0,
+            "impressions": 0.0,
+            "ctr": 0.0,
+            "avg_position": None,
+            "sessions": 0.0,
+            "conversions": None,
+            "visibility_score": 0.0,
+            "traffic_growth_percent": None,
+            "position_delta": None,
+            "opportunity_flag": False,
+            "decline_flag": False,
+        }
+
+    monkeypatch.setattr(campaigns_api, "build_campaign_performance_trend", _trend)
+    monkeypatch.setattr(campaigns_api, "build_campaign_performance_summary", _summary)
+
+    trend = client.get(
+        f"/api/v1/campaigns/{campaign['id']}/performance-trend",
+        params={"date_from": "2026-02-01", "date_to": "2026-02-20"},
+        headers=headers,
+    )
+    report = client.get(
+        f"/api/v1/campaigns/{campaign['id']}/report",
+        params={"date_from": "2026-02-01T00:00:00Z", "date_to": "2026-02-20T00:00:00Z"},
+        headers=headers,
+    )
+
+    assert trend.status_code == 200
+    assert report.status_code == 200
 
 
 def test_campaign_strategy_enterprise_enables_competitor_diagnostics(client, db_session) -> None:

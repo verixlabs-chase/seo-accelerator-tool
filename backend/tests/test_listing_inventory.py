@@ -7,7 +7,8 @@ from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.organization_membership import OrganizationMembership
 from app.models.user import User
-from app.services import listing_inventory_service
+from app.services import authority_service, listing_inventory_service
+from app.services.cost_economics_service import CostEconomicsError
 
 
 def _location_campaign(db_session, *, email: str = "a@example.com") -> tuple[User, Campaign, BusinessLocation]:
@@ -160,7 +161,7 @@ def test_claimed_listing_still_reports_conflicting_business_details():
     )
 
 
-def test_listing_inventory_api_uses_customer_safe_truth(client, db_session):
+def test_listing_inventory_api_uses_customer_safe_truth(client, db_session, monkeypatch):
     user, campaign, _location = _location_campaign(db_session)
     listing_inventory_service.upsert_discovered_listings(
         db_session,
@@ -182,4 +183,36 @@ def test_listing_inventory_api_uses_customer_safe_truth(client, db_session):
     assert data["items"][0]["source_name"] == "Google Maps"
     assert "provider_name" not in data["items"][0]
     assert data["truth"]["correction_available"] is False
+    assert data["truth"]["correction_access"] == {
+        "plan_eligible": False,
+        "correction_enabled": False,
+        "required_plan": "Growth",
+        "state": "plan_upgrade_required",
+        "summary": (
+            "Managed directory corrections require Growth. Public listing checks and "
+            "manual correction guidance remain available."
+        ),
+    }
     assert "dataforseo" not in str(data).lower()
+
+    def unavailable_plan_check(*_args, **_kwargs):
+        raise CostEconomicsError(
+            "Plan truth is temporarily unavailable.",
+            reason_code="plan_truth_unavailable",
+            status_code=409,
+        )
+
+    monkeypatch.setattr(
+        authority_service,
+        "require_commercial_feature",
+        unavailable_plan_check,
+    )
+    unavailable_plan = client.get(
+        f"/api/v1/citations/inventory?campaign_id={campaign.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert unavailable_plan.status_code == 200
+    unavailable_access = unavailable_plan.json()["data"]["truth"]["correction_access"]
+    assert unavailable_access["state"] == "plan_check_unavailable"
+    assert unavailable_access["correction_enabled"] is False
+    assert unavailable_plan.json()["data"]["items"]

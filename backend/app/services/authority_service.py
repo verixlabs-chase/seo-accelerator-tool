@@ -32,9 +32,15 @@ from app.providers import get_authority_provider
 from app.providers.authority import DataForSeoAuthorityProvider
 from app.services.cost_economics_service import (
     CostEconomicsError,
+    authorize_reserved_provider_dispatch,
     reconcile_provider_cost,
     release_provider_cost,
     reserve_provider_cost,
+)
+from app.services.commercial_plan_service import (
+    FEATURE_LISTING_CORRECTION_SYNC,
+    CommercialPlanFeatureDenied,
+    require_commercial_feature,
 )
 from app.services.provider_credentials_service import (
     ProviderCredentialConfigurationError,
@@ -67,6 +73,24 @@ _RELEVANCE_CLASSES = {
     "area_match",
     "needs_review",
 }
+
+
+def _authorize_authority_provider_dispatch(
+    db: Session,
+    *,
+    reservation: Any,
+    run: Any,
+) -> None:
+    try:
+        authorize_reserved_provider_dispatch(db, reservation=reservation)
+    except CostEconomicsError as exc:
+        run.status = "failed"
+        run.error_code = exc.reason_code
+        run.completed_at = datetime.now(UTC)
+        db.commit()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 _GENERIC_MATCH_TERMS = {
     "business",
     "company",
@@ -82,6 +106,76 @@ def _campaign_or_404(db: Session, tenant_id: str, campaign_id: str) -> Campaign:
     if campaign is None or campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     return campaign
+
+
+def listing_correction_access(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+) -> dict[str, object]:
+    campaign = _campaign_or_404(db, tenant_id, campaign_id)
+    try:
+        feature = require_commercial_feature(
+            db,
+            organization_id=campaign.organization_id,
+            feature_code=FEATURE_LISTING_CORRECTION_SYNC,
+        )
+        plan_eligible = True
+        required_plan = str(feature["required_plan"])
+    except CommercialPlanFeatureDenied as exc:
+        plan_eligible = False
+        required_plan = exc.required_plan_name
+    except CostEconomicsError:
+        return {
+            "plan_eligible": False,
+            "correction_enabled": False,
+            "required_plan": "Growth",
+            "state": "plan_check_unavailable",
+            "summary": (
+                "Managed correction access could not be confirmed. Public listing checks, "
+                "saved history, and manual correction guidance remain available."
+            ),
+        }
+
+    return {
+        "plan_eligible": plan_eligible,
+        "correction_enabled": False,
+        "required_plan": required_plan,
+        "state": (
+            "provider_approval_required" if plan_eligible else "plan_upgrade_required"
+        ),
+        "summary": (
+            "Your plan is eligible for managed directory corrections, but live submission "
+            "and synchronization are not available until a production correction provider "
+            "is approved."
+            if plan_eligible
+            else "Managed directory corrections require Growth. Public listing checks and "
+            "manual correction guidance remain available."
+        ),
+    }
+
+
+def require_listing_correction_workflow(
+    db: Session,
+    *,
+    tenant_id: str,
+    campaign_id: str,
+) -> Campaign:
+    campaign = _campaign_or_404(db, tenant_id, campaign_id)
+    require_commercial_feature(
+        db,
+        organization_id=campaign.organization_id,
+        feature_code=FEATURE_LISTING_CORRECTION_SYNC,
+    )
+    raise CostEconomicsError(
+        (
+            "Managed directory corrections are not available yet. Public listing checks "
+            "and manual corrections remain available."
+        ),
+        reason_code="listing_correction_provider_not_approved",
+        status_code=409,
+    )
 
 
 def create_outreach_campaign(
@@ -291,6 +385,9 @@ def refresh_authority_link_gaps(
     db.add(run)
     db.commit()
     db.refresh(run)
+
+    if reservation is not None:
+        _authorize_authority_provider_dispatch(db, reservation=reservation, run=run)
 
     try:
         result = live_provider.page_intersection(
@@ -824,6 +921,9 @@ def refresh_authority_link_changes(
     db.commit()
     db.refresh(run)
 
+    if reservation is not None:
+        _authorize_authority_provider_dispatch(db, reservation=reservation, run=run)
+
     try:
         result = live_provider.backlink_changes(
             target=owner_domain,
@@ -1049,6 +1149,9 @@ def refresh_authority_inventory(
     db.add(run)
     db.commit()
     db.refresh(run)
+
+    if reservation is not None:
+        _authorize_authority_provider_dispatch(db, reservation=reservation, run=run)
 
     try:
         result = live_provider.authority_inventory(
@@ -2378,7 +2481,11 @@ def _iso_utc(value: datetime | None) -> str | None:
 
 
 def submit_citation(db: Session, tenant_id: str, campaign_id: str, directory_name: str) -> Citation:
-    _campaign_or_404(db, tenant_id, campaign_id)
+    require_listing_correction_workflow(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
     citation = Citation(
         tenant_id=tenant_id,
         campaign_id=campaign_id,
@@ -2393,6 +2500,11 @@ def submit_citation(db: Session, tenant_id: str, campaign_id: str, directory_nam
 
 
 def refresh_citation_status(db: Session, tenant_id: str, campaign_id: str) -> list[Citation]:
+    require_listing_correction_workflow(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
     provider = get_authority_provider()
     rows = (
         db.query(Citation)
@@ -2478,7 +2590,11 @@ def execute_outreach_sequence_step(db: Session, tenant_id: str, outreach_campaig
 
 
 def submit_citation_batch(db: Session, tenant_id: str, campaign_id: str) -> dict:
-    _campaign_or_404(db, tenant_id, campaign_id)
+    require_listing_correction_workflow(
+        db,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+    )
     rows = (
         db.query(Citation)
         .filter(Citation.tenant_id == tenant_id, Citation.campaign_id == campaign_id)

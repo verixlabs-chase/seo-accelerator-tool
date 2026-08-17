@@ -85,6 +85,12 @@ test("managed WordPress updates stay owner-scoped and fail closed", () => {
   assert.match(page, /preview, history, and rollback/);
   assert.match(page, /public website did not match an approved change/);
   assert.match(page, /Review the failed action and use rollback/);
+  assert.match(page, /two measured results got worse in a row/);
+  assert.match(page, /does not prove the website changes caused the declines/);
+  assert.match(page, /managed_content_validation/);
+  assert.match(page, /Automatic safety checks/);
+  assert.match(page, /checked the proposed wording against the saved business information/);
+  assert.match(page, /Review needed/);
 });
 
 test("next steps stays available while a location has no selected recommendation", () => {

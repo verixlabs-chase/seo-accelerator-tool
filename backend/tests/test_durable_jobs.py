@@ -246,6 +246,40 @@ def test_durable_job_health_uses_database_truth(db_session) -> None:
     assert all(health["alert_state"].values())
 
 
+def test_stale_worker_cannot_complete_a_newer_job_claim(db_session) -> None:
+    job = PlatformJob(
+        tenant_id=None,
+        job_type="test.claim-cas",
+        entity_type="test",
+        status=job_service.JOB_STATUS_RUNNING,
+        payload={},
+        available_at=datetime.now(UTC),
+        locked_by="first-worker",
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=2),
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    def replace_owner(db, _job):  # noqa: ANN001
+        current = db.get(PlatformJob, job.id)
+        current.locked_by = "replacement-worker"
+        db.commit()
+        return {"unsafe": "stale result"}
+
+    outcome = durable_job_service.execute_claimed_job(
+        db_session,
+        job_id=job.id,
+        handlers={"test.claim-cas": replace_owner},
+    )
+
+    assert outcome == {"job_id": job.id, "status": "claim_lost"}
+    db_session.expire_all()
+    current = db_session.get(PlatformJob, job.id)
+    assert current.status == job_service.JOB_STATUS_RUNNING
+    assert current.locked_by == "replacement-worker"
+    assert current.result is None
+
+
 def test_tenant_cycle_is_idempotent_and_recovers_expired_lease(
     client,
     db_session,

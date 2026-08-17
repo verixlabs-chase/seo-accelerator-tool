@@ -18,10 +18,13 @@ from app.models.google_business_profile_campaign import (
     GoogleBusinessProfileCampaign,
     GoogleBusinessProfileCampaignVariant,
 )
-from app.models.organization import Organization
 from app.models.portfolio_targeting import PortfolioTargetSnapshot
 from app.services.audit_service import write_audit_log
-from app.services.cost_economics_service import CostEconomicsError, resolve_plan_economics
+from app.services.commercial_plan_service import (
+    FEATURE_PROFILE_FLEET_ACTIONS,
+    require_commercial_feature,
+)
+from app.services.cost_economics_service import CostEconomicsError
 
 
 GOOGLE_BUSINESS_PROFILE_PROVIDER = "google_business_profile"
@@ -794,12 +797,13 @@ def _variants(db: Session, profile_campaign_id: str) -> list[GoogleBusinessProfi
 
 
 def _assert_bulk_feature_plan(db: Session, *, organization_id: str) -> None:
-    organization = db.get(Organization, organization_id)
-    if organization is None:
-        raise ProfileCampaignError("organization_not_found", status_code=404)
     try:
-        plan = resolve_plan_economics(organization.plan_type)
+        require_commercial_feature(
+            db,
+            organization_id=organization_id,
+            feature_code=FEATURE_PROFILE_FLEET_ACTIONS,
+        )
     except CostEconomicsError as exc:
+        if exc.reason_code == "organization_not_found":
+            raise ProfileCampaignError("organization_not_found", status_code=404) from exc
         raise ProfileCampaignError("profile_campaign_upgrade_required", status_code=403) from exc
-    if plan.code not in {"multi_location", "enterprise"}:
-        raise ProfileCampaignError("profile_campaign_upgrade_required", status_code=403)

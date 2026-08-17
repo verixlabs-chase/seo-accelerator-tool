@@ -14,7 +14,9 @@ const remainingRoutes = [
   "site-health",
   "citations",
   "competitors",
+  "content",
   "organic-value",
+  "ai-visibility",
   "locations",
   "reports",
   "settings",
@@ -39,7 +41,9 @@ test("the weaker routes now lead with a current result and a real next action", 
     "site-health",
     "citations",
     "competitors",
+    "content",
     "organic-value",
+    "ai-visibility",
     "locations",
     "reports",
     "settings",
@@ -73,7 +77,10 @@ test("each data-heavy route has a truthful decision visual", () => {
   assert.match(source("../app/(product)/citations/page.tsx"), /Confirmed listing progress/);
   assert.match(source("../app/(product)/competitors/page.tsx"), /Exact searches and competing pages/);
   assert.match(source("../app/(product)/competitors/page.tsx"), /No made-up gap score/);
+  assert.match(source("../app/(product)/content/page.tsx"), /Saved content facts/);
   assert.match(source("../app/(product)/organic-value/page.tsx"), /Estimated search value by scenario/);
+  assert.match(source("../app/(product)/ai-visibility/page.tsx"), /Saved AI search facts/);
+  assert.match(source("../app/(product)/ai-visibility/page.tsx"), /Missing services are not counted as zero/);
   assert.match(source("../app/(product)/locations/page.tsx"), /Locations with individual search tracking/);
   assert.match(source("../app/(product)/reports/page.tsx"), /Reports confirmed as delivered/);
   assert.match(source("../app/(product)/settings/page.tsx"), /Connected sources working normally/);

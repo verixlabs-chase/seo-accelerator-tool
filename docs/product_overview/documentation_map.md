@@ -6,6 +6,10 @@ Implementation and runtime architecture docs live under `backend/docs/`.
 ## Product and vision docs
 Product, enterprise, GTM, and whitepaper docs live under `docs/`.
 
+AI Search Visibility provider versioning, reproducibility, supplier redaction,
+and economics gates are governed by
+`docs/product_overview/aiv1_provider_economics_governance.md`.
+
 ## Authoritative locations
 - backend runtime and subsystem behavior: `backend/docs/`
 - product positioning and market narrative: `docs/`

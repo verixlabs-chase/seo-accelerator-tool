@@ -17,13 +17,18 @@ import {
   KpiCard,
   LoadingCard,
   OwnerDecisionPanel,
+  PlanGateNotice,
   ProductPageIntro,
   TruthNotice,
+  canActivateAnotherLocation,
+  isLocationAllowanceEnforced,
+  locationUsageLabel,
   useLocationContext,
+  type LocationAllowanceSummary,
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
-import { platformApi } from "../../platform/api";
+import { PlatformApiError, platformApi } from "../../platform/api";
 import {
   flattenBusinessLocations,
   getHierarchyTruth,
@@ -31,6 +36,7 @@ import {
 
 type Me = {
   organization_id?: string;
+  org_role?: string;
 };
 
 type Campaign = {
@@ -462,6 +468,10 @@ export default function LocationsPage() {
   const [locationGroups, setLocationGroups] = useState<LocationGroup[]>([]);
   const [targetSnapshots, setTargetSnapshots] = useState<TargetSnapshot[]>([]);
   const [portfolioFleetRuns, setPortfolioFleetRuns] = useState<PortfolioFleetRun[]>([]);
+  const [locationAllowance, setLocationAllowance] = useState<LocationAllowanceSummary | null>(null);
+  const [locationAllowanceLoading, setLocationAllowanceLoading] = useState(true);
+  const [locationAllowanceError, setLocationAllowanceError] = useState("");
+  const [locationAllowanceDetail, setLocationAllowanceDetail] = useState("");
   const [portfolioSort, setPortfolioSort] = useState("attention");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
@@ -497,6 +507,26 @@ export default function LocationsPage() {
 
   const organizationId = me?.organization_id || "";
 
+  const loadLocationAllowance = useCallback(async () => {
+    setLocationAllowanceLoading(true);
+    setLocationAllowanceError("");
+    try {
+      const response = (await platformApi("/usage/credits", {
+        method: "GET",
+      })) as LocationAllowanceSummary;
+      setLocationAllowance(response);
+      return response;
+    } catch {
+      setLocationAllowance(null);
+      setLocationAllowanceError(
+        "We could not confirm how many active locations this plan includes. Existing locations are still available, but adding or turning on another location is paused until this check succeeds.",
+      );
+      return null;
+    } finally {
+      setLocationAllowanceLoading(false);
+    }
+  }, []);
+
   const loadHierarchy = useCallback(async (orgId: string) => {
     const [hierarchyResponse, portfolioResponse, groupsResponse, snapshotsResponse, fleetRunsResponse] = await Promise.all([
       platformApi(`/organizations/${orgId}/hierarchy`, { method: "GET" }),
@@ -526,7 +556,10 @@ export default function LocationsPage() {
           throw new Error("An organization context is required to manage locations.");
         }
         setMe(currentUser);
-        await loadHierarchy(currentUser.organization_id);
+        await Promise.all([
+          loadHierarchy(currentUser.organization_id),
+          loadLocationAllowance(),
+        ]);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load locations.");
       } finally {
@@ -534,7 +567,7 @@ export default function LocationsPage() {
       }
     }
     void loadPage();
-  }, [loadHierarchy]);
+  }, [loadHierarchy, loadLocationAllowance]);
 
   const activeSubaccounts = useMemo(
     () => (hierarchy?.subaccounts || []).filter((item) => item.status === "active"),
@@ -615,10 +648,21 @@ export default function LocationsPage() {
       const message = await callback();
       if (organizationId) {
         await loadHierarchy(organizationId);
+        await loadLocationAllowance();
       }
+      setLocationAllowanceDetail("");
       setNotice(message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The change could not be saved.");
+      if (
+        err instanceof PlatformApiError &&
+        err.reasonCode === "active_location_allowance_exhausted"
+      ) {
+        setLocationAllowanceDetail(err.message);
+        setError("");
+        await loadLocationAllowance();
+      } else {
+        setError(err instanceof Error ? err.message : "The change could not be saved.");
+      }
     } finally {
       setBusyAction("");
     }
@@ -642,6 +686,14 @@ export default function LocationsPage() {
   async function createLocation(event: FormEvent) {
     event.preventDefault();
     if (!organizationId || !locationName.trim() || !locationSubaccountId) return;
+    if (!canActivateAnotherLocation(locationAllowance)) {
+      setLocationAllowanceDetail(
+        locationAllowance
+          ? `Your ${locationAllowance.plan.name} plan has no open active-location slots. Your location details are still here.`
+          : "Your location details are still here. Retry the plan check before adding this location.",
+      );
+      return;
+    }
     await runMutation("location", async () => {
       const response = await platformApi(
         `/organizations/${organizationId}/business-locations`,
@@ -902,6 +954,28 @@ export default function LocationsPage() {
     });
   }
 
+  async function activateLocation(location: BusinessLocation) {
+    if (!organizationId) return;
+    if (!canActivateAnotherLocation(locationAllowance)) {
+      setLocationAllowanceDetail(
+        locationAllowance
+          ? `${location.name} is still saved, but your ${locationAllowance.plan.name} plan has no open active-location slots.`
+          : `${location.name} is still saved. Retry the plan check before turning it back on.`,
+      );
+      return;
+    }
+    await runMutation(`activate-${location.id}`, async () => {
+      await platformApi(
+        `/organizations/${organizationId}/business-locations/${location.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status: "active" }),
+        },
+      );
+      return `${location.name} is active again.`;
+    });
+  }
+
   function beginEditLocation(location: BusinessLocation) {
     setEditingLocationId(location.id);
     setGeoDraft({
@@ -958,6 +1032,8 @@ export default function LocationsPage() {
 
   const totals = hierarchy?.totals || EMPTY_TOTALS;
   const hierarchyTruth = getHierarchyTruth(hierarchy);
+  const canActivateLocation = canActivateAnotherLocation(locationAllowance);
+  const locationAllowanceUnavailable = locationAllowanceLoading || !locationAllowance;
   const visibleTargetSnapshot = lastTargetSnapshot || targetSnapshots[0] || null;
   const visibleFleetRun = visibleTargetSnapshot
     ? portfolioFleetRuns.find(
@@ -2122,6 +2198,44 @@ export default function LocationsPage() {
                 <p className="mt-1 text-xs leading-5 text-zinc-400">
                   This is the physical branch users will see throughout the product.
                 </p>
+                <div className="mt-3 border-l-2 border-accent-500/45 pl-3 text-xs leading-5 text-zinc-300">
+                  {locationAllowance ? (
+                    <>
+                      <span className="font-semibold text-white">
+                        {locationUsageLabel(locationAllowance.plan)}.
+                      </span>{" "}
+                      {canActivateLocation
+                        ? isLocationAllowanceEnforced(locationAllowance)
+                          ? `${locationAllowance.plan.remaining_locations} still available on ${locationAllowance.plan.name}.`
+                          : "You can continue adding this location."
+                        : "No open active-location slots."}
+                    </>
+                  ) : locationAllowanceLoading ? (
+                    "Checking how many active locations your plan includes..."
+                  ) : (
+                    "Location allowance needs to be checked again."
+                  )}
+                </div>
+                {locationAllowanceError ? (
+                  <div role="status" className="mt-3 rounded-md border border-sky-500/25 bg-sky-500/10 p-3 text-xs leading-5 text-sky-100">
+                    <p>{locationAllowanceError}</p>
+                    <button
+                      type="button"
+                      className={`${secondaryButtonClass} mt-2`}
+                      onClick={() => void loadLocationAllowance()}
+                    >
+                      Check plan again
+                    </button>
+                  </div>
+                ) : null}
+                {locationAllowance && !canActivateLocation ? (
+                  <PlanGateNotice
+                    allowance={locationAllowance}
+                    orgRole={me?.org_role}
+                    detail={locationAllowanceDetail || undefined}
+                    className="mt-3"
+                  />
+                ) : null}
                 <label className={`${labelClass} mt-4`}>
                   Account group
                   <select
@@ -2190,12 +2304,24 @@ export default function LocationsPage() {
                   disabled={
                     !locationName.trim() ||
                     !locationSubaccountId ||
-                    busyAction === "location"
+                    busyAction === "location" ||
+                    locationAllowanceUnavailable ||
+                    !canActivateLocation
                   }
+                  aria-describedby="location-create-availability"
                   className={`${primaryButtonClass} mt-4 w-full`}
                 >
                   {busyAction === "location" ? "Creating…" : "Add location"}
                 </button>
+                <p id="location-create-availability" className="mt-2 text-xs leading-5 text-zinc-500">
+                  {locationAllowanceUnavailable
+                    ? "Adding a location stays paused until the plan check succeeds. Existing locations are not affected."
+                    : canActivateLocation
+                      ? isLocationAllowanceEnforced(locationAllowance)
+                        ? "This adds one active location to your plan."
+                        : "You can add this location while the plan allowance is being prepared."
+                      : "Review the plan above or archive an unused location before adding another."}
+                </p>
               </form>
 
               <form
@@ -2354,7 +2480,26 @@ export default function LocationsPage() {
                               >
                                 Archive
                               </button>
-                            ) : null}
+                            ) : locationAllowanceUnavailable ? (
+                              <button className={secondaryButtonClass} disabled>
+                                Checking plan…
+                              </button>
+                            ) : canActivateLocation ? (
+                              <button
+                                className={secondaryButtonClass}
+                                disabled={busyAction === `activate-${location.id}`}
+                                onClick={() => void activateLocation(location)}
+                              >
+                                {busyAction === `activate-${location.id}` ? "Turning on…" : "Turn back on"}
+                              </button>
+                            ) : (
+                              <a
+                                href={me?.org_role === "org_owner" ? "/settings#plan-and-billing" : "#location-plan-limit-heading"}
+                                className={secondaryButtonClass}
+                              >
+                                {me?.org_role === "org_owner" ? "Review plan to turn on" : "Ask owner to turn on"}
+                              </a>
+                            )}
                           </div>
                         </div>
 

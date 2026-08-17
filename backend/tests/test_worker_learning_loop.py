@@ -44,7 +44,7 @@ def test_experiment_completed_runs_async_learning_loop(db_session) -> None:
 
 
 
-def test_campaign_cycle_completes_without_running_learning_workers_inline(db_session, create_test_tenant, create_test_org, monkeypatch) -> None:
+def test_campaign_cycle_defers_learning_until_an_outcome_event(db_session, create_test_tenant, create_test_org, monkeypatch) -> None:
     reset_queue_state()
     reset_registry()
     subscribe(EventType.OUTCOME_RECORDED.value, enqueue_learning_event)
@@ -66,4 +66,26 @@ def test_campaign_cycle_completes_without_running_learning_workers_inline(db_ses
     assert summary['campaign_id'] == campaign.id
     assert summary['executions_completed'] >= 0
     assert summary['policy_learning']['recommendation_weight_count'] == 0
-    assert any(worker == 'experiment' for worker, _payload in queued) or any(worker == 'learning' for worker, _payload in queued)
+    assert queued == []
+
+    publish_event(
+        EventType.OUTCOME_RECORDED.value,
+        {
+            'campaign_id': campaign.id,
+            'recommendation_id': 'recommendation-after-cycle',
+            'outcome_id': 'outcome-after-cycle',
+            'delta': 1.0,
+        },
+    )
+
+    assert queued == [
+        (
+            'learning',
+            {
+                'campaign_id': campaign.id,
+                'recommendation_id': 'recommendation-after-cycle',
+                'outcome_id': 'outcome-after-cycle',
+                'delta': 1.0,
+            },
+        )
+    ]

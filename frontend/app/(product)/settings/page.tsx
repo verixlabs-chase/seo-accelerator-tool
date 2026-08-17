@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import {
@@ -13,7 +13,7 @@ import {
   type TrustSignal,
 } from "../components";
 import { buildProductNav } from "../nav.config";
-import { platformApi } from "../../platform/api";
+import { platformApi, platformApiFile } from "../../platform/api";
 import { getTenantId } from "../../lib/authStorage";
 import { getConnectionStatusView } from "../truth/dataConnectionsTruth.mjs";
 import { requestProductTour } from "../truth/productTour.mjs";
@@ -21,6 +21,17 @@ import { requestProductTour } from "../truth/productTour.mjs";
 type Me = {
   organization_id?: string;
   org_role?: string;
+  organization_status?: string;
+};
+
+type AuthSessionSummary = {
+  id: string;
+  organization_id?: string | null;
+  status: "active";
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  current: boolean;
 };
 
 type Campaign = {
@@ -147,6 +158,7 @@ type UsageAllowance = {
     included_locations: number;
     active_locations: number;
     remaining_locations: number;
+    location_allowance_enforced?: boolean;
     additional_locations_require_custom_terms: boolean;
   };
   period: {
@@ -190,6 +202,25 @@ type UsageAllowance = {
     available: boolean;
     required_plan: string;
   }>;
+  external_automation?: {
+    plan_eligible: boolean;
+    gateway_enabled: boolean;
+    automatic_actions_enabled: false;
+    required_plan: string;
+    state: "plan_upgrade_required" | "gateway_not_available" | "available";
+    summary: string;
+    planned_connection_options: string[];
+    outbound_contract?: {
+      schema_version: string;
+      connection_setup_enabled: boolean;
+      delivery_enabled: boolean;
+      supported_events: Array<{
+        code: string;
+        label: string;
+        summary: string;
+      }>;
+    };
+  };
   upgrade?: {
     plan_code: string;
     plan_name: string;
@@ -211,6 +242,442 @@ type BillingSummary = {
   current_period_end?: string | null;
   cancel_at_period_end: boolean;
   recovery_message?: string | null;
+  checkout_confirmation?: {
+    client_request_id?: string | null;
+    session_id?: string | null;
+    requested_plan_code?: string | null;
+    checkout_completed: boolean;
+    subscription_active: boolean;
+  } | null;
+  pending_checkout?: {
+    client_request_id: string | null;
+    session_id: string | null;
+    requested_plan_code: string | null;
+    expires_at: string | null;
+    active: boolean;
+  } | null;
+};
+
+type AutomationMonthlyDeliveryUsage = {
+  period_start: string;
+  period_end: string;
+  total_events: number;
+  product_events: number;
+  test_events: number;
+  attempts: number;
+  accepted: number;
+  waiting_or_retrying: number;
+  needs_recovery: number;
+  stopped: number;
+  usage_only: true;
+  allowance_enforced: false;
+};
+
+type AutomationDelivery = {
+  id: string;
+  event_id: string;
+  event_type: string;
+  status: "pending" | "delivered" | "failed" | "dead_letter" | "cancelled";
+  delivery_kind: "test" | "product";
+  attempt_count: number;
+  max_attempts: number;
+  recovery_count: number;
+  last_reason_code?: string | null;
+  last_response_status?: number | null;
+  last_attempt_at?: string | null;
+  delivered_at?: string | null;
+  next_attempt_at?: string | null;
+  dead_lettered_at?: string | null;
+  can_retry: boolean;
+  can_recover: boolean;
+  job_status?: string | null;
+};
+
+type AutomationConnection = {
+  id: string;
+  name: string;
+  provider: "zapier" | "make" | "pipedream" | "n8n";
+  provider_label: string;
+  status: "pending" | "active" | "unhealthy" | "paused" | "disconnected";
+  endpoint_host: string;
+  event_types: string[];
+  verification_status: "not_tested" | "verified" | "failed";
+  signing_secret_version: number;
+  last_tested_at?: string | null;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+  paused_at?: string | null;
+  destination_url_saved: boolean;
+  destination_url_revealed: false;
+  last_delivery?: AutomationDelivery | null;
+  dead_letter_count: number;
+  recoverable_deliveries: AutomationDelivery[];
+  automatic_delivery_enabled: boolean;
+  automatic_actions_enabled: false;
+  monthly_delivery_usage: AutomationMonthlyDeliveryUsage;
+  conformance_proof: {
+    state: "not_tested" | "test_accepted" | "product_event_accepted" | "needs_attention";
+    label: string;
+    summary: string;
+    evidence_at?: string | null;
+    production_proven: boolean;
+  };
+};
+
+type AutomationStarterRecipe = {
+  code: string;
+  version: "insightos.automation.recipes.v1";
+  label: string;
+  summary: string;
+  external_result: string;
+  event_types: string[];
+  outbound_only: true;
+  human_approval_preserved: true;
+  automatic_actions_enabled: false;
+};
+
+type AutomationProviderSetup = {
+  code: "zapier" | "make" | "pipedream" | "n8n";
+  version: "insightos.automation.provider-setup.v2";
+  label: string;
+  webhook_source: string;
+  production_url_note: string;
+  setup_steps: string[];
+  official_docs_url: string;
+  account_note: string;
+  payload_path: string;
+  headers_path: string;
+  route_field: string;
+  workflow_steps: string[];
+  field_map: Array<{ source: string; purpose: string }>;
+  signature_contract: {
+    algorithm: "HMAC-SHA256";
+    signature_header: "X-InsightOS-Signature";
+    timestamp_header: "X-InsightOS-Timestamp";
+    event_id_header: "X-InsightOS-Event-ID";
+    signed_input: "{timestamp}.{exact_raw_request_body}";
+    signature_prefix: "v1=";
+    replay_window_seconds: 300;
+  };
+  template_status: "connection_kit_ready";
+  customer_account_required: true;
+  customer_supplies_webhook_url: true;
+  signed_events_required: true;
+  inbound_actions_enabled: false;
+};
+
+type AutomationConnectionsPayload = {
+  items: AutomationConnection[];
+  monthly_delivery_usage: AutomationMonthlyDeliveryUsage;
+  supported_providers: Array<{ code: "zapier" | "make" | "pipedream" | "n8n"; label: string }>;
+  supported_events: Array<{ code: string; label: string; summary: string }>;
+  live_event_types: string[];
+  recipe_catalog_version: "insightos.automation.recipes.v1";
+  starter_recipes: AutomationStarterRecipe[];
+  provider_setup_version: "insightos.automation.provider-setup.v2";
+  provider_setup: AutomationProviderSetup[];
+  automatic_actions_enabled: false;
+  truth: string;
+};
+
+type AutomationConformanceKit = {
+  version: "insightos.automation.conformance.v1";
+  provider: "zapier" | "make" | "pipedream" | "n8n";
+  provider_label: string;
+  test_only: true;
+  cannot_enable_live_delivery: true;
+  fixture_signing_secret: string;
+  request: {
+    method: "POST";
+    content_type: "application/json";
+    headers: Record<string, string>;
+    exact_raw_body: string;
+    parsed_body: Record<string, unknown>;
+  };
+  provider_paths: { payload: string; headers: string; route_field: string };
+  expected: Record<string, string | boolean>;
+  checks: string[];
+  safety: {
+    contains_customer_data: false;
+    contains_live_credentials: false;
+    inbound_actions_enabled: false;
+    message: string;
+  };
+};
+
+type BillingCheckoutAttempt = {
+  organizationId: string;
+  planCode: string;
+  clientRequestId: string;
+  createdAt: number;
+  expiresAt?: string | null;
+};
+
+type BillingConfirmationState =
+  | "idle"
+  | "checking"
+  | "processing"
+  | "confirmed"
+  | "timed_out";
+
+const BILLING_CHECKOUT_ATTEMPT_KEY = "insightos:billing-checkout-attempt:v1";
+const BILLING_CHECKOUT_ATTEMPT_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+const BILLING_CONFIRMATION_DELAYS_MS = [0, 1000, 1500, 2000, 2500, 3000, 3500, 4000] as const;
+
+function safeSessionStorageGet(key: string) {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSessionStorageSet(key: string, value: string) {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // Checkout can still continue when the browser blocks session storage.
+  }
+}
+
+function safeSessionStorageRemove(key: string) {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Removing optional checkout recovery state must never block the page.
+  }
+}
+
+function readBillingCheckoutAttempt(organizationId: string) {
+  const raw = safeSessionStorageGet(BILLING_CHECKOUT_ATTEMPT_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<BillingCheckoutAttempt>;
+    if (
+      parsed.organizationId !== organizationId ||
+      typeof parsed.planCode !== "string" ||
+      typeof parsed.clientRequestId !== "string" ||
+      typeof parsed.createdAt !== "number" ||
+      (typeof parsed.expiresAt === "string"
+        ? !Number.isFinite(Date.parse(parsed.expiresAt)) || Date.parse(parsed.expiresAt) <= Date.now()
+        : Date.now() - parsed.createdAt > BILLING_CHECKOUT_ATTEMPT_MAX_AGE_MS)
+    ) {
+      safeSessionStorageRemove(BILLING_CHECKOUT_ATTEMPT_KEY);
+      return null;
+    }
+    return parsed as BillingCheckoutAttempt;
+  } catch {
+    safeSessionStorageRemove(BILLING_CHECKOUT_ATTEMPT_KEY);
+    return null;
+  }
+}
+
+function billingAttemptFromPending(
+  organizationId: string,
+  pending: BillingSummary["pending_checkout"],
+) {
+  if (
+    !pending?.active
+    || !pending.client_request_id
+    || !pending.requested_plan_code
+    || !pending.expires_at
+  ) {
+    return null;
+  }
+  return {
+    organizationId,
+    planCode: pending.requested_plan_code,
+    clientRequestId: pending.client_request_id,
+    createdAt: Date.now(),
+    expiresAt: pending.expires_at,
+  } satisfies BillingCheckoutAttempt;
+}
+
+function reconcileBillingCheckoutAttempt(
+  organizationId: string,
+  summary: BillingSummary,
+) {
+  const serverAttempt = billingAttemptFromPending(organizationId, summary.pending_checkout);
+  if (serverAttempt) return saveBillingCheckoutAttempt(serverAttempt);
+  clearBillingCheckoutAttempt(organizationId);
+  return null;
+}
+
+function saveBillingCheckoutAttempt(attempt: BillingCheckoutAttempt) {
+  safeSessionStorageSet(BILLING_CHECKOUT_ATTEMPT_KEY, JSON.stringify(attempt));
+  return attempt;
+}
+
+function checkoutAttemptForPlan(organizationId: string, planCode: string) {
+  const saved = readBillingCheckoutAttempt(organizationId);
+  if (saved?.planCode === planCode) return saved;
+  return saveBillingCheckoutAttempt({
+    organizationId,
+    planCode,
+    clientRequestId: crypto.randomUUID(),
+    createdAt: Date.now(),
+  });
+}
+
+function clearBillingCheckoutAttempt(organizationId: string) {
+  const saved = readBillingCheckoutAttempt(organizationId);
+  if (saved?.organizationId === organizationId) {
+    safeSessionStorageRemove(BILLING_CHECKOUT_ATTEMPT_KEY);
+  }
+}
+
+function waitForBillingConfirmation(delayMs: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+}
+
+type MigrationReview = {
+  mode: "dry_run";
+  adapter: string;
+  review_hash: string;
+  source_sha256: string;
+  writes_performed: number;
+  next_step: string;
+  summary: {
+    total_rows: number;
+    ready: number;
+    already_saved: number;
+    duplicates_in_file: number;
+    needs_attention: number;
+    locations: number;
+    keywords: number;
+    competitors: number;
+    ranking_history: number;
+    listing_history: number;
+    report_recipients: number;
+  };
+  ignored_columns: Array<{
+    column: string;
+    populated_rows: number;
+    reason: string;
+  }>;
+  rows: Array<{
+    row_number: number;
+    record_type: string;
+    location_name: string;
+    status: "ready" | "already_saved" | "duplicate" | "needs_attention";
+    detail: string;
+    matched_location_name?: string | null;
+    values: Record<string, string>;
+    issues: Array<{ code: string; message: string }>;
+  }>;
+  pagination?: {
+    page: number;
+    page_size: number;
+    total_rows: number;
+    total_pages: number;
+    has_more: boolean;
+  };
+};
+
+type MigrationUpload = {
+  id: string;
+  status: "uploading" | "reviewed" | "applied";
+  total_chunks: number;
+  received_chunks: number;
+  received_chunk_indexes: number[];
+  expected_sha256?: string | null;
+  review_hash?: string | null;
+  expires_at: string;
+};
+
+type MigrationBatch = {
+  id: string;
+  source_system: string;
+  source_filename?: string | null;
+  status: "applied" | "rolled_back";
+  applied_at: string;
+  rolled_back_at?: string | null;
+  rollback_available: boolean;
+  summary: MigrationReview["summary"] & {
+    records_applied?: number;
+    locations_created?: number;
+    keywords_created?: number;
+    competitors_created?: number;
+    ranking_history_created?: number;
+    listing_history_created?: number;
+    report_recipients_created?: number;
+  };
+};
+
+type DataExport = {
+  id: string;
+  status: "ready" | "failed" | "expired";
+  format: "json";
+  schema_version: string;
+  record_counts: Record<string, number>;
+  artifact_sha256?: string | null;
+  artifact_byte_size?: number | null;
+  failure_code?: string | null;
+  requested_at: string;
+  completed_at?: string | null;
+  downloaded_at?: string | null;
+  expires_at: string;
+  download_available: boolean;
+};
+
+type ProviderDisconnectPreview = {
+  provider_name: "google";
+  connected: boolean;
+  credential_present: boolean;
+  connections_total: number;
+  active_connections: number;
+  affected_locations: number;
+  preserved_record_counts: Record<string, number>;
+  what_stops: string[];
+  what_stays: string[];
+  confirmation_text: string;
+};
+
+type ProviderDisconnectRecord = {
+  id: string;
+  provider_name: "google";
+  status: "completed" | "completed_external_action_required";
+  credential_deleted: boolean;
+  external_revocation_status: "confirmed" | "not_confirmed" | "not_needed";
+  external_revocation_code?: string | null;
+  connections_disconnected: number;
+  queued_jobs_cancelled: number;
+  preserved_record_counts: Record<string, number>;
+  requested_at: string;
+  completed_at?: string | null;
+};
+
+type OrganizationClosureRecord = {
+  id: string;
+  status: "recovery_window" | "on_hold" | "cancelled" | "ready_for_verified_deletion";
+  hold_status: "clear" | "active";
+  action_counts: Record<string, number>;
+  requested_at: string;
+  recovery_until: string;
+  cancelled_at?: string | null;
+  closed_at?: string | null;
+  deletion_ready_at?: string | null;
+  deletion_authorized: boolean;
+  deletion_authorization_version: string;
+  deletion_authorized_at: string | null;
+  can_cancel: boolean;
+  primary_data_deleted: false;
+};
+
+type OrganizationClosurePreview = {
+  organization_name: string;
+  organization_status: string;
+  recovery_days: number;
+  active_legal_hold: boolean;
+  can_request: boolean;
+  blockers: Array<{ code: string; message: string }>;
+  affected_counts: Record<string, number>;
+  what_stops: string[];
+  what_stays: string[];
+  confirmation_text: string;
+  confirmation_steps: 2;
+  required_acknowledgements: string[];
+  current_request?: OrganizationClosureRecord | null;
 };
 
 const primaryButtonClass =
@@ -270,13 +737,80 @@ function toneClasses(tone: string) {
   return "border-sky-500/25 bg-sky-500/10 text-sky-100";
 }
 
+function formatFileSize(value?: number | null) {
+  if (!value || value < 1) return "Size unavailable";
+  if (value < 1024) return `${value} bytes`;
+  return `${(value / 1024).toFixed(value >= 1024 * 100 ? 0 : 1)} KB`;
+}
+
+const migrationChunkBytes = 500 * 1024;
+const resumableMigrationThreshold = 1_200_000;
+
+async function sha256Text(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function splitMigrationChunks(value: string) {
+  const encoder = new TextEncoder();
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < value.length) {
+    let low = start + 1;
+    let high = Math.min(value.length, start + migrationChunkBytes);
+    let best = low;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const candidate = value.slice(start, middle);
+      if (encoder.encode(candidate).byteLength <= migrationChunkBytes) {
+        best = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
+    }
+    if (
+      best < value.length &&
+      /[\uD800-\uDBFF]/.test(value.charAt(best - 1)) &&
+      /[\uDC00-\uDFFF]/.test(value.charAt(best))
+    ) {
+      best -= 1;
+    }
+    chunks.push(value.slice(start, best));
+    start = best;
+  }
+  return chunks;
+}
+
 export default function SettingsPage() {
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [payload, setPayload] = useState<ConnectionsPayload | null>(null);
   const [usageAllowance, setUsageAllowance] = useState<UsageAllowance | null>(null);
+  const [automationConnections, setAutomationConnections] = useState<AutomationConnection[]>([]);
+  const [automationMonthlyUsage, setAutomationMonthlyUsage] =
+    useState<AutomationMonthlyDeliveryUsage | null>(null);
+  const [automationProviders, setAutomationProviders] = useState<AutomationConnectionsPayload["supported_providers"]>([]);
+  const [automationEvents, setAutomationEvents] = useState<AutomationConnectionsPayload["supported_events"]>([]);
+  const [automationRecipes, setAutomationRecipes] = useState<AutomationStarterRecipe[]>([]);
+  const [automationProviderSetup, setAutomationProviderSetup] = useState<AutomationProviderSetup[]>([]);
+  const [automationSelectedRecipe, setAutomationSelectedRecipe] = useState("");
+  const [automationName, setAutomationName] = useState("");
+  const [automationProvider, setAutomationProvider] = useState<"zapier" | "make" | "pipedream" | "n8n">("zapier");
+  const [automationDestination, setAutomationDestination] = useState("");
+  const [automationSelectedEvents, setAutomationSelectedEvents] = useState<string[]>([]);
+  const [automationSigningSecret, setAutomationSigningSecret] = useState("");
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
+  const [authSessions, setAuthSessions] = useState<AuthSessionSummary[] | null>(null);
+  const [billingConfirmationState, setBillingConfirmationState] =
+    useState<BillingConfirmationState>("idle");
+  const [pendingBillingPlanCode, setPendingBillingPlanCode] = useState("");
+  const [pendingBillingClientRequestId, setPendingBillingClientRequestId] = useState("");
+  const [pendingBillingSessionId, setPendingBillingSessionId] = useState("");
+  const billingConfirmationRun = useRef(0);
   const [resources, setResources] = useState<SearchConsoleResource[]>([]);
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
   const [profileResources, setProfileResources] = useState<BusinessProfileResource[]>([]);
@@ -290,6 +824,28 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [guidedConnectionSetup, setGuidedConnectionSetup] = useState(false);
+  const [migrationSource, setMigrationSource] = useState<"semrush" | "brightlocal" | "other">("other");
+  const [migrationCsv, setMigrationCsv] = useState("");
+  const [migrationFileName, setMigrationFileName] = useState("");
+  const [migrationReview, setMigrationReview] = useState<MigrationReview | null>(null);
+  const [migrationConfirmed, setMigrationConfirmed] = useState(false);
+  const [migrationRequestId, setMigrationRequestId] = useState("");
+  const [migrationBatch, setMigrationBatch] = useState<MigrationBatch | null>(null);
+  const [migrationHistory, setMigrationHistory] = useState<MigrationBatch[]>([]);
+  const [migrationUploadId, setMigrationUploadId] = useState("");
+  const [migrationUploadProgress, setMigrationUploadProgress] = useState(0);
+  const [migrationFileFingerprint, setMigrationFileFingerprint] = useState("");
+  const [dataExports, setDataExports] = useState<DataExport[]>([]);
+  const [googleDisconnectPreview, setGoogleDisconnectPreview] = useState<ProviderDisconnectPreview | null>(null);
+  const [providerDisconnects, setProviderDisconnects] = useState<ProviderDisconnectRecord[]>([]);
+  const [showGoogleDisconnect, setShowGoogleDisconnect] = useState(false);
+  const [googleDisconnectConfirmation, setGoogleDisconnectConfirmation] = useState("");
+  const [closurePreview, setClosurePreview] = useState<OrganizationClosurePreview | null>(null);
+  const [closureHistory, setClosureHistory] = useState<OrganizationClosureRecord[]>([]);
+  const [closureReviewStep, setClosureReviewStep] = useState<0 | 1 | 2>(0);
+  const [closureConfirmation, setClosureConfirmation] = useState("");
+  const [closureExportChoiceAcknowledged, setClosureExportChoiceAcknowledged] = useState(false);
+  const [closureRecoveryAcknowledged, setClosureRecoveryAcknowledged] = useState(false);
 
   useEffect(() => {
     setGuidedConnectionSetup(
@@ -457,6 +1013,329 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadAutomationConnections = useCallback(async () => {
+    const response = (await platformApi("/automation/connections", {
+      method: "GET",
+    })) as AutomationConnectionsPayload;
+    setAutomationConnections(response.items || []);
+    setAutomationMonthlyUsage(response.monthly_delivery_usage || null);
+    setAutomationProviders(response.supported_providers || []);
+    setAutomationEvents(response.supported_events || []);
+    setAutomationRecipes(response.starter_recipes || []);
+    setAutomationProviderSetup(response.provider_setup || []);
+    setAutomationSelectedEvents((current) =>
+      current.length > 0 ? current : (response.supported_events || []).map((item) => item.code),
+    );
+    return response;
+  }, []);
+
+  const downloadAutomationConformanceKit = useCallback(async () => {
+    setBusyAction(`automation-conformance-${automationProvider}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/automation/conformance/${automationProvider}`,
+        { method: "GET" },
+      )) as AutomationConformanceKit;
+      const objectUrl = URL.createObjectURL(
+        new Blob([JSON.stringify(response, null, 2)], { type: "application/json" }),
+      );
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `insightos-${response.provider}-receiver-conformance-v1.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setNotice(
+        `${response.provider_label} receiver test contract downloaded. It contains synthetic data and a test-only secret.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download the receiver test contract.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [automationProvider]);
+
+  const createAutomationConnection = useCallback(async () => {
+    setBusyAction("automation-create");
+    setError("");
+    setNotice("");
+    setAutomationSigningSecret("");
+    try {
+      const response = (await platformApi("/automation/connections", {
+        method: "POST",
+        body: JSON.stringify({
+          name: automationName,
+          provider: automationProvider,
+          destination_url: automationDestination,
+          event_types: automationSelectedEvents,
+        }),
+      })) as {
+        connection: AutomationConnection;
+        signing_secret: string;
+        secret_shown_once: true;
+      };
+      setAutomationSigningSecret(response.signing_secret);
+      setAutomationName("");
+      setAutomationDestination("");
+      setAutomationSelectedRecipe("");
+      setNotice("Connection saved. Copy the signing secret now, then send a test event.");
+      await loadAutomationConnections();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save the automation connection.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [
+    automationDestination,
+    automationName,
+    automationProvider,
+    automationSelectedEvents,
+    loadAutomationConnections,
+  ]);
+
+  const testAutomationConnection = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`automation-test-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(`/automation/connections/${connectionId}/test`, {
+          method: "POST",
+        })) as { received_by_destination: boolean };
+        setNotice(
+          response.received_by_destination
+            ? "The workflow endpoint accepted the signed test event."
+            : "The test was saved, but the workflow endpoint did not accept it.",
+        );
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to send the test event.");
+        await loadAutomationConnections().catch(() => undefined);
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const retryAutomationDelivery = useCallback(
+    async (deliveryId: string) => {
+      setBusyAction(`automation-retry-${deliveryId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(`/automation/deliveries/${deliveryId}/retry`, {
+          method: "POST",
+        })) as { received_by_destination: boolean };
+        setNotice(
+          response.received_by_destination
+            ? "The workflow endpoint accepted the retry."
+            : "The retry was saved, but the workflow endpoint did not accept it.",
+        );
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to retry this event.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const rotateAutomationSecret = useCallback(
+    async (connectionId: string) => {
+      if (!window.confirm("Replace the current signing secret? The old secret will stop working immediately.")) return;
+      setBusyAction(`automation-rotate-${connectionId}`);
+      setError("");
+      setNotice("");
+      setAutomationSigningSecret("");
+      try {
+        const response = (await platformApi(`/automation/connections/${connectionId}/rotate-secret`, {
+          method: "POST",
+        })) as { signing_secret: string };
+        setAutomationSigningSecret(response.signing_secret);
+        setNotice("Signing secret replaced. Copy the new secret now and update the workflow before testing.");
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to replace the signing secret.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const disconnectAutomationConnection = useCallback(
+    async (connectionId: string) => {
+      if (!window.confirm("Disconnect this workflow? Its saved URL and signing secret will be removed.")) return;
+      setBusyAction(`automation-disconnect-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        await platformApi(`/automation/connections/${connectionId}`, { method: "DELETE" });
+        setNotice("Workflow disconnected. Its saved URL and signing secret were removed.");
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to disconnect this workflow.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const setAutomationConnectionPaused = useCallback(
+    async (connectionId: string, paused: boolean) => {
+      const action = paused ? "pause" : "resume";
+      setBusyAction(`automation-${action}-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        await platformApi(`/automation/connections/${connectionId}/${action}`, {
+          method: "POST",
+        });
+        setNotice(
+          paused
+            ? "Automatic events paused. Saved history and connection details were preserved."
+            : "Automatic events resumed. New subscribed events can be delivered again.",
+        );
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : `Unable to ${action} this workflow.`);
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const recoverAutomationDelivery = useCallback(
+    async (deliveryId: string) => {
+      setBusyAction(`automation-recover-${deliveryId}`);
+      setError("");
+      setNotice("");
+      try {
+        await platformApi(`/automation/deliveries/${deliveryId}/recover`, {
+          method: "POST",
+        });
+        setNotice("Recovery queued with three new bounded attempts. The original event ID is preserved.");
+        await loadAutomationConnections();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to recover this event.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationConnections],
+  );
+
+  const copyAutomationSecret = useCallback(async () => {
+    if (!automationSigningSecret) return;
+    try {
+      await navigator.clipboard.writeText(automationSigningSecret);
+      setNotice("Signing secret copied. It will not be shown again after you leave this page.");
+    } catch {
+      setNotice("Select and copy the signing secret before leaving this page.");
+    }
+  }, [automationSigningSecret]);
+
+  const loadAuthSessions = useCallback(async () => {
+    const response = (await platformApi("/auth/sessions", {
+      method: "GET",
+    })) as { sessions?: AuthSessionSummary[] };
+    setAuthSessions(response.sessions || []);
+    return response;
+  }, []);
+
+  const confirmBillingReturn = useCallback(
+    async (
+      orgId: string,
+      expectedPlanCode: string,
+      expectedClientRequestId: string,
+      expectedSessionId: string,
+      initialSummary: BillingSummary | null = null,
+    ) => {
+      const runId = billingConfirmationRun.current + 1;
+      billingConfirmationRun.current = runId;
+      setPendingBillingPlanCode(expectedPlanCode);
+      setPendingBillingClientRequestId(expectedClientRequestId);
+      setPendingBillingSessionId(expectedSessionId);
+      setBillingConfirmationState("checking");
+
+      for (let index = 0; index < BILLING_CONFIRMATION_DELAYS_MS.length; index += 1) {
+        const delayMs = BILLING_CONFIRMATION_DELAYS_MS[index];
+        if (delayMs > 0) await waitForBillingConfirmation(delayMs);
+        if (billingConfirmationRun.current !== runId) return;
+
+        try {
+          const nextSummary =
+            index === 0 && initialSummary
+              ? initialSummary
+              : ((await platformApi("/billing/summary", {
+                  method: "GET",
+                })) as BillingSummary);
+          if (billingConfirmationRun.current !== runId) return;
+          setBillingSummary(nextSummary);
+
+          const confirmation = nextSummary.checkout_confirmation;
+          const expectedRequestMatches = Boolean(expectedClientRequestId)
+            && confirmation?.client_request_id === expectedClientRequestId;
+          const expectedSessionMatches = Boolean(expectedSessionId)
+            && confirmation?.session_id === expectedSessionId;
+          const expectedCheckoutMatches = expectedClientRequestId
+            ? expectedRequestMatches
+            : expectedSessionMatches;
+          const confirmedRequestedPlan = confirmation?.requested_plan_code || "";
+          const checkoutPlanMatches = expectedPlanCode
+            ? confirmedRequestedPlan === expectedPlanCode
+            : Boolean(confirmedRequestedPlan);
+          const activePlanMatches = checkoutPlanMatches
+            && nextSummary.plan_code === confirmedRequestedPlan;
+          if (
+            confirmation?.subscription_active === true
+            && expectedCheckoutMatches
+            && activePlanMatches
+          ) {
+            setBillingConfirmationState("confirmed");
+            clearBillingCheckoutAttempt(orgId);
+            const refreshedAllowance = await platformApi("/usage/credits", {
+              method: "GET",
+            }).catch(() => null);
+            if (billingConfirmationRun.current === runId && refreshedAllowance) {
+              setUsageAllowance(refreshedAllowance as UsageAllowance);
+            }
+            return;
+          }
+
+          if (
+            confirmation?.checkout_completed === true
+            && expectedCheckoutMatches
+            && checkoutPlanMatches
+          ) {
+            setBillingConfirmationState("processing");
+          }
+        } catch {
+          // A temporary read failure is retried within the same bounded confirmation window.
+        }
+      }
+
+      if (billingConfirmationRun.current === runId) {
+        setBillingConfirmationState("timed_out");
+      }
+    },
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      billingConfirmationRun.current += 1;
+    },
+    [],
+  );
+
   useEffect(() => {
     async function loadPage() {
       setLoading(true);
@@ -467,24 +1346,79 @@ export default function SettingsPage() {
           throw new Error("An organization is required to manage data connections.");
         }
         setMe(currentUser);
-        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse] = await Promise.all([
+        const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse, dataExportResponse, disconnectPreviewResponse, disconnectHistoryResponse, closurePreviewResponse, closureHistoryResponse, authSessionResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
           loadConnections(currentUser.organization_id),
           platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
           (platformApi("/billing/summary", { method: "GET" }) as Promise<BillingSummary>)
             .catch(() => null),
+          (platformApi(`/organizations/${currentUser.organization_id}/migration-imports`, {
+            method: "GET",
+          }) as Promise<{ items?: MigrationBatch[] }>).catch(() => ({ items: [] })),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/exports`, {
+                method: "GET",
+              }) as Promise<{ items?: DataExport[] }>).catch(() => ({ items: [] })))
+            : Promise.resolve({ items: [] as DataExport[] }),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/provider-disconnects/google/preview`, {
+                method: "GET",
+              }) as Promise<{ preview?: ProviderDisconnectPreview }>).catch(() => ({ preview: undefined })))
+            : Promise.resolve({ preview: undefined }),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/provider-disconnects`, {
+                method: "GET",
+              }) as Promise<{ items?: ProviderDisconnectRecord[] }>).catch(() => ({ items: [] })))
+            : Promise.resolve({ items: [] as ProviderDisconnectRecord[] }),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/closures/preview`, {
+                method: "GET",
+              }) as Promise<{ preview?: OrganizationClosurePreview }>).catch(() => ({ preview: undefined })))
+            : Promise.resolve({ preview: undefined }),
+          currentUser.org_role === "org_owner"
+            ? ((platformApi(`/organizations/${currentUser.organization_id}/data-governance/closures`, {
+                method: "GET",
+              }) as Promise<{ items?: OrganizationClosureRecord[] }>).catch(() => ({ items: [] })))
+            : Promise.resolve({ items: [] as OrganizationClosureRecord[] }),
+          loadAuthSessions().catch(() => null),
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
+        await loadAutomationConnections().catch(() => undefined);
         setBillingSummary(billingResponse);
+        const localBillingAttempt = readBillingCheckoutAttempt(currentUser.organization_id);
+        const serverBillingAttempt = billingResponse
+          ? reconcileBillingCheckoutAttempt(currentUser.organization_id, billingResponse)
+          : null;
+        setMigrationHistory(migrationResponse.items || []);
+        setDataExports(dataExportResponse.items || []);
+        setGoogleDisconnectPreview(disconnectPreviewResponse.preview || null);
+        setProviderDisconnects(disconnectHistoryResponse.items || []);
+        setClosurePreview(closurePreviewResponse.preview || null);
+        setClosureHistory(closureHistoryResponse.items || []);
+        if (authSessionResponse === null) setAuthSessions(null);
         const returnParams = new URLSearchParams(window.location.search);
         const billingReturned = returnParams.get("billing");
+        const returnedBillingSessionId = returnParams.get("session_id") || "";
         const googleReturned = returnParams.get("google");
         const returnSource = returnParams.get("source");
         if (billingReturned === "success") {
-          setNotice("Checkout finished. We are confirming your plan now; access changes only after confirmation.");
+          const attempt = serverBillingAttempt || localBillingAttempt;
+          setNotice("");
           window.history.replaceState({}, "", "/settings");
+          void confirmBillingReturn(
+            currentUser.organization_id,
+            attempt?.planCode || "",
+            attempt?.clientRequestId || "",
+            returnedBillingSessionId,
+            billingResponse,
+          );
         } else if (billingReturned === "cancelled") {
+          billingConfirmationRun.current += 1;
+          setBillingConfirmationState("idle");
+          setPendingBillingPlanCode("");
+          setPendingBillingClientRequestId("");
+          setPendingBillingSessionId("");
           setNotice("Checkout was closed. Your current plan and saved work were not changed.");
           window.history.replaceState({}, "", "/settings");
         } else if (googleReturned === "connected") {
@@ -513,23 +1447,57 @@ export default function SettingsPage() {
       }
     }
     void loadPage();
-  }, [loadAnalyticsResources, loadConnections, loadProfileResources, loadResources]);
+  }, [confirmBillingReturn, loadAnalyticsResources, loadAuthSessions, loadAutomationConnections, loadConnections, loadProfileResources, loadResources]);
 
   async function startCheckout(planCode: string) {
+    if (!organizationId) return;
     setBusyAction("billing-checkout");
     setError("");
     setNotice("");
     try {
+      const serverAttempt = billingAttemptFromPending(
+        organizationId,
+        billingSummary?.pending_checkout,
+      );
+      const attempt = serverAttempt || checkoutAttemptForPlan(organizationId, planCode);
+      const requestedPlanCode = serverAttempt?.planCode || planCode;
       const response = (await platformApi("/billing/checkout", {
         method: "POST",
-        body: JSON.stringify({ plan_code: planCode }),
-      })) as { url?: string };
+        body: JSON.stringify({
+          plan_code: requestedPlanCode,
+          client_request_id: attempt.clientRequestId,
+        }),
+      })) as {
+        url?: string;
+        session_id?: string;
+        expires_at?: string;
+        client_request_id?: string;
+        requested_plan_code?: string;
+        checkout_status?: "created" | "reused";
+      };
       if (!response.url) throw new Error("The secure checkout link was not created.");
+      saveBillingCheckoutAttempt({
+        ...attempt,
+        planCode: response.requested_plan_code || attempt.planCode,
+        clientRequestId: response.client_request_id || attempt.clientRequestId,
+        expiresAt: response.expires_at || attempt.expiresAt || null,
+      });
       window.location.assign(response.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to open secure checkout.");
       setBusyAction("");
     }
+  }
+
+  function refreshBillingConfirmation() {
+    if (!organizationId) return;
+    const attempt = readBillingCheckoutAttempt(organizationId);
+    void confirmBillingReturn(
+      organizationId,
+      pendingBillingPlanCode || attempt?.planCode || "",
+      pendingBillingClientRequestId || attempt?.clientRequestId || "",
+      pendingBillingSessionId,
+    );
   }
 
   async function manageBilling() {
@@ -544,6 +1512,466 @@ export default function SettingsPage() {
       window.location.assign(response.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to open billing settings.");
+      setBusyAction("");
+    }
+  }
+
+  async function revokeAuthSession(sessionId: string) {
+    setBusyAction(`auth-session-${sessionId}`);
+    setError("");
+    setNotice("");
+    try {
+      await platformApi(`/auth/sessions/${sessionId}`, { method: "DELETE" });
+      await loadAuthSessions();
+      setNotice("That browser was signed out. This browser stayed signed in.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sign out that browser.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function revokeOtherAuthSessions() {
+    setBusyAction("auth-sessions-others");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi("/auth/sessions/others", {
+        method: "DELETE",
+      })) as { revoked_count: number };
+      await loadAuthSessions();
+      setNotice(
+        response.revoked_count === 0
+          ? "No other browsers were signed in."
+          : `${response.revoked_count} other ${response.revoked_count === 1 ? "browser was" : "browsers were"} signed out. This browser stayed signed in.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sign out other browsers.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function createAccountExport() {
+    if (!organizationId) return;
+    setBusyAction("data-export-create");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-governance/exports`,
+        {
+          method: "POST",
+          body: JSON.stringify({ client_request_id: crypto.randomUUID() }),
+        },
+      )) as { export: DataExport };
+      setDataExports((current) => [
+        response.export,
+        ...current.filter((item) => item.id !== response.export.id),
+      ]);
+      setNotice("Your account export is ready. Download it within seven days.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create your account export.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function downloadAccountExport(item: DataExport) {
+    if (!organizationId || !item.download_available) return;
+    setBusyAction(`data-export-download-${item.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/organizations/${organizationId}/data-governance/exports/${item.id}/download`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || `insightos-account-export-${item.id}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setDataExports((current) =>
+        current.map((exportItem) =>
+          exportItem.id === item.id
+            ? { ...exportItem, downloaded_at: new Date().toISOString() }
+            : exportItem,
+        ),
+      );
+      setNotice("Your account export was downloaded.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download your account export.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function disconnectGoogleProvider() {
+    if (!organizationId || !googleDisconnectPreview) return;
+    setBusyAction("google-disconnect");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-governance/provider-disconnects`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            client_request_id: crypto.randomUUID(),
+            provider_name: "google",
+            confirmation: googleDisconnectConfirmation,
+          }),
+        },
+      )) as { disconnect: ProviderDisconnectRecord };
+      const previewResponse = (await platformApi(
+        `/organizations/${organizationId}/data-governance/provider-disconnects/google/preview`,
+        { method: "GET" },
+      )) as { preview: ProviderDisconnectPreview };
+      await loadConnections(organizationId);
+      setGoogleDisconnectPreview(previewResponse.preview);
+      setProviderDisconnects((current) => [
+        response.disconnect,
+        ...current.filter((item) => item.id !== response.disconnect.id),
+      ]);
+      setResources([]);
+      setProfileResources([]);
+      setAnalyticsResources([]);
+      setWebsiteEventKeys({});
+      setShowGoogleDisconnect(false);
+      setGoogleDisconnectConfirmation("");
+      setNotice(
+        response.disconnect.external_revocation_status === "not_confirmed"
+          ? "Google is disconnected from InsightOS and the local authorization was deleted. Google could not confirm its side, so review third-party access in your Google Account."
+          : "Google is disconnected. Automatic updates stopped, the local authorization was deleted, and your saved results remain available.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to disconnect Google safely.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function scheduleWorkspaceClosure() {
+    if (!organizationId || !closurePreview) return;
+    setBusyAction("workspace-closure");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-governance/closures`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            client_request_id: crypto.randomUUID(),
+            confirmation: closureConfirmation,
+            data_export_choice_acknowledged: closureExportChoiceAcknowledged,
+            recovery_window_acknowledged: closureRecoveryAcknowledged,
+          }),
+        },
+      )) as { closure: OrganizationClosureRecord };
+      const previewResponse = (await platformApi(
+        `/organizations/${organizationId}/data-governance/closures/preview`,
+        { method: "GET" },
+      )) as { preview: OrganizationClosurePreview };
+      setClosurePreview(previewResponse.preview);
+      setClosureHistory((current) => [
+        response.closure,
+        ...current.filter((item) => item.id !== response.closure.id),
+      ]);
+      setClosureReviewStep(0);
+      setClosureConfirmation("");
+      setClosureExportChoiceAcknowledged(false);
+      setClosureRecoveryAcknowledged(false);
+      setNotice(
+        `Workspace closure is scheduled. It is now read-only, and an account owner can reopen it until ${formatTimestamp(response.closure.recovery_until)}.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to schedule workspace closure safely.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function cancelWorkspaceClosure(item: OrganizationClosureRecord) {
+    if (!organizationId) return;
+    setBusyAction("workspace-reopen");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/data-governance/closures/${item.id}/cancel`,
+        { method: "POST" },
+      )) as { closure: OrganizationClosureRecord };
+      const previewResponse = (await platformApi(
+        `/organizations/${organizationId}/data-governance/closures/preview`,
+        { method: "GET" },
+      )) as { preview: OrganizationClosurePreview };
+      setClosurePreview(previewResponse.preview);
+      setClosureHistory((current) => current.map((row) => (
+        row.id === response.closure.id ? response.closure : row
+      )));
+      setNotice(
+        "The workspace is open again. Safe connections and schedules were restored; old public report links and canceled jobs were not reopened.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to reopen this workspace.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  function downloadMigrationTemplate() {
+    const template = [
+      "Record Type,Location Name,Website,City,State,Country,Postal Code,Keyword,Group,Competitor,Position,Captured At,Source Record ID,Directory Name,Listing URL,Listing Status,Listing Business Name,Listing Address,Listing City,Listing Region,Listing Postal Code,Listing Phone,Listing Website,Primary Category,Directory Importance,Recipient Email,Recipient Name,Recipient Role",
+      "location,Reno Location,example.com,Reno,NV,US,89501,,,",
+      "keyword,Reno Location,,,,,,junk removal reno,Core service,",
+      "competitor,Reno Location,,,,,,,,competitor.com",
+      "ranking,Reno Location,,,,,,junk removal reno,,,12,2026-07-31,legacy-row-101",
+      "listing,Reno Location,,,,US,,,,,,2026-07-31,legacy-listing-101,Google Business Profile,https://example.com/profile,live,Example Junk Removal,123 Main St,Reno,NV,89501,775-555-0100,example.com,Junk Removal,essential",
+      "report recipient,Reno Location,,,,,,,,,,,legacy-recipient-101,,,,,,,,,,,,,owner@example.com,Alex Owner,owner",
+    ].join("\r\n");
+    const url = URL.createObjectURL(new Blob([template], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "insightos-migration-template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function chooseMigrationFile(file?: File) {
+    setMigrationReview(null);
+    setMigrationConfirmed(false);
+    setMigrationRequestId("");
+    setMigrationBatch(null);
+    setMigrationCsv("");
+    setMigrationFileName("");
+    setMigrationUploadId("");
+    setMigrationUploadProgress(0);
+    setMigrationFileFingerprint("");
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      setError("Choose a CSV file smaller than 20 MB.");
+      return;
+    }
+    setError("");
+    setMigrationFileName(file.name);
+    setMigrationFileFingerprint(`${file.name}:${file.size}:${file.lastModified}`);
+    setMigrationCsv(await file.text());
+  }
+
+  function migrationResumeKey() {
+    if (!organizationId || !migrationFileFingerprint) return "";
+    return `insightos:migration-upload:${organizationId}:${migrationSource}:${migrationFileFingerprint}`;
+  }
+
+  async function reviewResumableMigration() {
+    if (!organizationId || !migrationCsv) return null;
+    const chunks = splitMigrationChunks(migrationCsv);
+    if (chunks.length > 100) {
+      throw new Error("This file needs more than 100 upload parts. Choose a CSV smaller than 20 MB.");
+    }
+    const expectedSha256 = await sha256Text(migrationCsv);
+    const storageKey = migrationResumeKey();
+    let saved: { upload_id?: string; create_request_id?: string; expected_sha256?: string } = {};
+    if (storageKey) {
+      try {
+        saved = JSON.parse(window.localStorage.getItem(storageKey) || "{}") as typeof saved;
+      } catch {
+        saved = {};
+      }
+    }
+    let createRequestId =
+      saved.expected_sha256 === expectedSha256 && saved.create_request_id
+        ? saved.create_request_id
+        : crypto.randomUUID();
+
+    async function createSession(requestId: string) {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/migration-imports/uploads`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            source_system: migrationSource,
+            source_filename: migrationFileName || null,
+            total_chunks: chunks.length,
+            expected_sha256: expectedSha256,
+            client_request_id: requestId,
+          }),
+        },
+      )) as { upload: MigrationUpload };
+      return response.upload;
+    }
+
+    let upload = await createSession(createRequestId);
+    if (upload.status === "applied" || new Date(upload.expires_at).getTime() <= Date.now()) {
+      createRequestId = crypto.randomUUID();
+      upload = await createSession(createRequestId);
+    }
+    setMigrationUploadId(upload.id);
+    if (storageKey) {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          upload_id: upload.id,
+          create_request_id: createRequestId,
+          expected_sha256: expectedSha256,
+        }),
+      );
+    }
+
+    const received = new Set(upload.received_chunk_indexes || []);
+    setMigrationUploadProgress(
+      Math.round(((upload.received_chunks || 0) / upload.total_chunks) * 100),
+    );
+    if (upload.status === "uploading") {
+      for (let index = 0; index < chunks.length; index += 1) {
+        if (received.has(index)) continue;
+        const content = chunks[index];
+        await platformApi(
+          `/organizations/${organizationId}/migration-imports/uploads/${upload.id}/chunks/${index}`,
+          {
+            method: "PUT",
+            body: JSON.stringify({ content, chunk_sha256: await sha256Text(content) }),
+          },
+        );
+        received.add(index);
+        setMigrationUploadProgress(Math.round((received.size / chunks.length) * 100));
+      }
+    }
+    return (await platformApi(
+      `/organizations/${organizationId}/migration-imports/uploads/${upload.id}/review?page=1&page_size=100`,
+      { method: "POST" },
+    )) as MigrationReview;
+  }
+
+  async function reviewMigrationFile() {
+    if (!organizationId || !migrationCsv) return;
+    setBusyAction("migration-dry-run");
+    setError("");
+    setNotice("");
+    try {
+      const rowCount = (migrationCsv.match(/\r?\n/g) || []).length;
+      const useResumableUpload =
+        migrationCsv.length > resumableMigrationThreshold || rowCount > 2_501;
+      const response = useResumableUpload
+        ? await reviewResumableMigration()
+        : ((await platformApi(
+            `/organizations/${organizationId}/migration-imports/dry-run`,
+            {
+              method: "POST",
+              body: JSON.stringify({ source_system: migrationSource, csv_text: migrationCsv }),
+            },
+          )) as MigrationReview);
+      if (!response) return;
+      setMigrationReview(response);
+      setMigrationConfirmed(false);
+      setMigrationRequestId(crypto.randomUUID());
+    } catch (err) {
+      setMigrationReview(null);
+      setError(err instanceof Error ? err.message : "Unable to review this migration file.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function loadMoreMigrationReviewRows() {
+    if (!organizationId || !migrationUploadId || !migrationReview?.pagination?.has_more) return;
+    setBusyAction("migration-review-more");
+    setError("");
+    try {
+      const nextPage = migrationReview.pagination.page + 1;
+      const response = (await platformApi(
+        `/organizations/${organizationId}/migration-imports/uploads/${migrationUploadId}/review/rows?page=${nextPage}&page_size=${migrationReview.pagination.page_size}`,
+        { method: "GET" },
+      )) as MigrationReview;
+      setMigrationReview((current) =>
+        current
+          ? { ...current, rows: [...current.rows, ...response.rows], pagination: response.pagination }
+          : response,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load more review rows.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function applyMigrationFile() {
+    if (!organizationId || !migrationCsv || !migrationReview || !migrationConfirmed) return;
+    setBusyAction("migration-apply");
+    setError("");
+    setNotice("");
+    try {
+      const response = migrationUploadId
+        ? ((await platformApi(
+            `/organizations/${organizationId}/migration-imports/uploads/${migrationUploadId}/apply`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                review_hash: migrationReview.review_hash,
+                client_request_id: migrationRequestId,
+                confirmed: true,
+              }),
+            },
+          )) as { batch: MigrationBatch })
+        : ((await platformApi(
+            `/organizations/${organizationId}/migration-imports/apply`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                source_system: migrationSource,
+                source_filename: migrationFileName || null,
+                csv_text: migrationCsv,
+                review_hash: migrationReview.review_hash,
+                client_request_id: migrationRequestId,
+                confirmed: true,
+              }),
+            },
+          )) as { batch: MigrationBatch });
+      setMigrationBatch(response.batch);
+      setMigrationHistory((current) => [
+        response.batch,
+        ...current.filter((item) => item.id !== response.batch.id),
+      ]);
+      setNotice(
+        `Import complete: ${response.batch.summary.records_applied || 0} reviewed rows were added.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to apply this migration file.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function rollbackMigration(batch: MigrationBatch) {
+    if (!organizationId || !batch.rollback_available) return;
+    if (!window.confirm("Remove only the records created by this import? Newer attached work will be protected.")) {
+      return;
+    }
+    setBusyAction(`migration-rollback-${batch.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/organizations/${organizationId}/migration-imports/${batch.id}/rollback`,
+        {
+          method: "POST",
+          body: JSON.stringify({ confirmed: true }),
+        },
+      )) as { batch: MigrationBatch };
+      setMigrationBatch((current) => current?.id === batch.id ? response.batch : current);
+      setMigrationHistory((current) => current.map((item) => (
+        item.id === batch.id ? response.batch : item
+      )));
+      setNotice("The records created by this import were removed. The review history was kept.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to roll back this import.");
+    } finally {
       setBusyAction("");
     }
   }
@@ -789,6 +2217,9 @@ export default function SettingsPage() {
   }
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
+  const selectedAutomationProviderSetup = automationProviderSetup.find(
+    (item) => item.code === automationProvider,
+  );
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       {
@@ -1077,8 +2508,242 @@ export default function SettingsPage() {
               </details>
             ) : null}
 
+            {me?.org_role === "org_owner" && googleDisconnectPreview ? (
+              <section aria-labelledby="google-access-control-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Account control
+                    </p>
+                    <h2 id="google-access-control-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Google access and saved results
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      {googleDisconnectPreview.connected
+                        ? `Google is supplying updates for ${googleDisconnectPreview.affected_locations} ${googleDisconnectPreview.affected_locations === 1 ? "location" : "locations"}. You can disconnect it without erasing results already saved in InsightOS.`
+                        : "Google is not connected. Previously saved results and reports remain available, but they will not receive new Google updates."}
+                    </p>
+                  </div>
+                  {googleDisconnectPreview.connected && !showGoogleDisconnect ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/10 px-3.5 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20"
+                      onClick={() => setShowGoogleDisconnect(true)}
+                    >
+                      Review disconnect
+                    </button>
+                  ) : null}
+                </div>
+
+                {showGoogleDisconnect && googleDisconnectPreview.connected ? (
+                  <div className="mt-5 rounded-md border border-rose-500/30 bg-rose-500/5 p-5">
+                    <p className="text-base font-semibold text-rose-100">Before you disconnect Google</p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-300">
+                      This affects all Google access for this workspace. An update already running may finish, but it cannot turn the connection back on.
+                    </p>
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <p className="text-sm font-semibold text-white">These updates will stop</p>
+                        <ul className="mt-2 space-y-2 text-sm leading-5 text-zinc-300">
+                          {googleDisconnectPreview.what_stops.map((item) => (
+                            <li key={item}>× {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">This information will stay</p>
+                        <ul className="mt-2 space-y-2 text-sm leading-5 text-zinc-300">
+                          {googleDisconnectPreview.what_stays.map((item) => (
+                            <li key={item}>✓ {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="mt-5 border-t border-rose-500/20 pt-4">
+                      <label htmlFor="google-disconnect-confirmation" className="block text-sm font-semibold text-white">
+                        Type {googleDisconnectPreview.confirmation_text} to confirm
+                      </label>
+                      <input
+                        id="google-disconnect-confirmation"
+                        type="text"
+                        autoComplete="off"
+                        className="mt-2 w-full max-w-md rounded-md border border-[#3a3b41] bg-[#101114] px-3 py-2.5 text-sm text-white outline-none focus:border-rose-400/60"
+                        value={googleDisconnectConfirmation}
+                        onChange={(event) => setGoogleDisconnectConfirmation(event.target.value)}
+                      />
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={
+                            googleDisconnectConfirmation !== googleDisconnectPreview.confirmation_text ||
+                            busyAction === "google-disconnect"
+                          }
+                          onClick={() => void disconnectGoogleProvider()}
+                        >
+                          {busyAction === "google-disconnect" ? "Disconnecting safely..." : "Disconnect Google"}
+                        </button>
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === "google-disconnect"}
+                          onClick={() => {
+                            setShowGoogleDisconnect(false);
+                            setGoogleDisconnectConfirmation("");
+                          }}
+                        >
+                          Keep Google connected
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {providerDisconnects.length > 0 ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Most recent change
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      Disconnected {formatTimestamp(providerDisconnects[0].completed_at || providerDisconnects[0].requested_at)}
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-zinc-400">
+                      {providerDisconnects[0].external_revocation_status === "not_confirmed"
+                        ? "InsightOS deleted its Google authorization, but Google did not confirm the outside revocation. Review third-party access in your Google Account."
+                        : providerDisconnects[0].external_revocation_status === "confirmed"
+                          ? "Google confirmed the authorization was revoked. Saved business results were kept."
+                          : "There was no saved Google authorization to revoke. Existing saved results were kept."}
+                    </p>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            <section aria-labelledby="active-sign-ins-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Account security
+                  </p>
+                  <h2 id="active-sign-ins-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                    Where you&apos;re signed in
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                    Review active InsightOS sign-ins. If you do not recognize one, sign it out immediately. Passwords and login tokens are never shown here.
+                  </p>
+                </div>
+                {authSessions && authSessions.some((item) => !item.current) ? (
+                  <button
+                    type="button"
+                    className={secondaryButtonClass}
+                    disabled={busyAction === "auth-sessions-others"}
+                    onClick={() => void revokeOtherAuthSessions()}
+                  >
+                    {busyAction === "auth-sessions-others" ? "Signing out..." : "Sign out all other browsers"}
+                  </button>
+                ) : null}
+              </div>
+
+              {authSessions === null ? (
+                <div className="mt-5 rounded-md border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-50">
+                  <p className="font-semibold">Active sign-ins could not be checked</p>
+                  <p className="mt-1 leading-6 text-amber-100/80">Your current session was not changed. Try checking again.</p>
+                  <button
+                    type="button"
+                    className={`${secondaryButtonClass} mt-3`}
+                    disabled={busyAction === "auth-sessions-refresh"}
+                    onClick={() => {
+                      setBusyAction("auth-sessions-refresh");
+                      setError("");
+                      void loadAuthSessions()
+                        .catch((err) => setError(err instanceof Error ? err.message : "Unable to check active sign-ins."))
+                        .finally(() => setBusyAction(""));
+                    }}
+                  >
+                    {busyAction === "auth-sessions-refresh" ? "Checking..." : "Check again"}
+                  </button>
+                </div>
+              ) : authSessions.length === 0 ? (
+                <p className="mt-5 text-sm leading-6 text-zinc-400">
+                  No active sign-in records were returned. Your current browser was not signed out.
+                </p>
+              ) : (
+                <div className="mt-5 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                  {authSessions.map((session) => (
+                    <article key={session.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-semibold text-white">
+                            {session.current ? "This browser" : "Another signed-in browser"}
+                          </h3>
+                          {session.current ? (
+                            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-100">
+                              Current
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-zinc-500">
+                          Signed in {formatTimestamp(session.created_at)} · Last active {formatTimestamp(session.last_seen_at)}
+                        </p>
+                      </div>
+                      {!session.current ? (
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === `auth-session-${session.id}`}
+                          onClick={() => void revokeAuthSession(session.id)}
+                        >
+                          {busyAction === `auth-session-${session.id}` ? "Signing out..." : "Sign out this browser"}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-zinc-500">Use the main Sign out action to end this session.</span>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
             {usageAllowance ? (
-              <section aria-labelledby="current-plan-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <section id="plan-and-billing" aria-labelledby="current-plan-heading" className="scroll-mt-24 rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                {billingConfirmationState !== "idle" ? (
+                  <div
+                    role="status"
+                    className={`mb-5 rounded-md border p-4 text-sm ${
+                      billingConfirmationState === "confirmed"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-50"
+                        : "border-amber-500/30 bg-amber-500/10 text-amber-50"
+                    }`}
+                  >
+                    <p className="font-semibold">
+                      {billingConfirmationState === "confirmed"
+                        ? "Your plan is active"
+                        : billingConfirmationState === "processing"
+                          ? "Checkout is complete. Plan access is still updating"
+                          : billingConfirmationState === "timed_out"
+                            ? "Plan confirmation is taking longer than expected"
+                            : "Confirming your plan"}
+                    </p>
+                    <p className="mt-1 leading-6 opacity-80">
+                      {billingConfirmationState === "confirmed"
+                        ? `${billingSummary?.plan_name || "Your updated plan"} is confirmed and ready to use.`
+                        : billingConfirmationState === "processing"
+                          ? "The checkout is saved, but access will not change until the active plan is confirmed."
+                          : billingConfirmationState === "timed_out"
+                            ? "Your checkout may still be processing. You do not need to purchase it again. Check the plan status again, or refresh this page later."
+                            : "Checkout returned successfully. InsightOS is waiting for saved plan confirmation before changing access."}
+                    </p>
+                    {billingConfirmationState === "timed_out" ? (
+                      <button
+                        type="button"
+                        className={`${secondaryButtonClass} mt-3`}
+                        onClick={refreshBillingConfirmation}
+                      >
+                        Check plan status again
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {billingSummary?.recovery_message ? (
                   <div className="mb-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-50">
                     <p className="font-semibold">Payment needs attention</p>
@@ -1837,6 +3502,1017 @@ export default function SettingsPage() {
                 })}
               </section>
             ) : null}
+
+            {me?.org_role === "org_owner" ? (
+              <section aria-labelledby="account-data-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Your account data
+                    </p>
+                    <h2 id="account-data-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Download a copy of your saved business information
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      Create a portable JSON file containing your locations, members, tracked searches, measurements, recommendations, report records, recipients, and import history.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={primaryButtonClass}
+                    disabled={busyAction === "data-export-create"}
+                    onClick={() => void createAccountExport()}
+                  >
+                    {busyAction === "data-export-create" ? "Creating export..." : "Create account export"}
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-4 border-t border-[#292a2f] pt-5 lg:grid-cols-2">
+                  <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4">
+                    <p className="text-sm font-semibold text-emerald-100">Private by design</p>
+                    <p className="mt-1 text-sm leading-6 text-zinc-300">
+                      Passwords, login sessions, connected-account credentials, payment-provider identifiers, and internal security evidence are never placed in the file.
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-sky-500/20 bg-sky-500/5 p-4">
+                    <p className="text-sm font-semibold text-sky-100">Available for seven days</p>
+                    <p className="mt-1 text-sm leading-6 text-zinc-300">
+                      Only an account owner can create or download an export. The downloadable copy expires after seven days; its audit record remains.
+                    </p>
+                  </div>
+                </div>
+
+                {dataExports.length > 0 ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Recent exports
+                    </p>
+                    <div className="mt-3 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                      {dataExports.slice(0, 5).map((item) => {
+                        const savedRecords = Object.values(item.record_counts || {}).reduce(
+                          (total, value) => total + Number(value || 0),
+                          0,
+                        );
+                        const statusLabel = item.status === "ready"
+                          ? "Ready"
+                          : item.status === "expired"
+                            ? "Expired"
+                            : "Could not be created";
+                        return (
+                          <div key={item.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-white">{statusLabel}</p>
+                              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                Created {formatTimestamp(item.completed_at || item.requested_at)} · {savedRecords.toLocaleString()} saved records · {formatFileSize(item.artifact_byte_size)}
+                              </p>
+                              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                {item.download_available
+                                  ? `Download available until ${formatTimestamp(item.expires_at)}`
+                                  : item.failure_code
+                                    ? "This export was not stored. Create a new copy or contact support."
+                                    : "The downloadable copy is no longer stored."}
+                              </p>
+                            </div>
+                            {item.download_available ? (
+                              <button
+                                type="button"
+                                className={secondaryButtonClass}
+                                disabled={busyAction === `data-export-download-${item.id}`}
+                                onClick={() => void downloadAccountExport(item)}
+                              >
+                                {busyAction === `data-export-download-${item.id}` ? "Downloading..." : "Download JSON"}
+                              </button>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-5 border-t border-[#292a2f] pt-5 text-sm text-zinc-400">
+                    No account exports have been created yet.
+                  </p>
+                )}
+              </section>
+            ) : null}
+
+            {me?.org_role === "org_owner" && closurePreview ? (
+              <section aria-labelledby="workspace-closure-heading" className="rounded-md border border-rose-500/20 bg-[#141518] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Workspace control
+                    </p>
+                    <h2 id="workspace-closure-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Delete this workspace safely
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      Account deletion is staged so a mistake does not erase the business&apos;s history. The workspace becomes read-only for {closurePreview.recovery_days} days before credentials and login sessions are removed.
+                    </p>
+                  </div>
+                  {!closurePreview.current_request && closureReviewStep === 0 ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-rose-500/35 bg-rose-500/10 px-3.5 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!closurePreview.can_request}
+                      onClick={() => setClosureReviewStep(1)}
+                    >
+                      Review account deletion
+                    </button>
+                  ) : null}
+                </div>
+
+                {closurePreview.blockers.length > 0 ? (
+                  <div className="mt-5 rounded-md border border-amber-500/25 bg-amber-500/10 p-4">
+                    <p className="text-sm font-semibold text-amber-100">Finish this first</p>
+                    {closurePreview.blockers.map((blocker) => (
+                      <p key={blocker.code} className="mt-1 text-sm leading-6 text-amber-50/80">
+                        {blocker.message}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+
+                {closurePreview.current_request ? (
+                  <div className="mt-5 rounded-md border border-sky-500/25 bg-sky-500/5 p-5">
+                    <p className="text-base font-semibold text-white">
+                      {closurePreview.current_request.status === "recovery_window"
+                        ? "Closure scheduled — recovery window open"
+                        : closurePreview.current_request.status === "on_hold"
+                          ? "Closure paused by a retention requirement"
+                          : "Workspace closed — verified deletion is pending"}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-300">
+                      {closurePreview.current_request.status === "recovery_window"
+                        ? `The workspace is read-only. An account owner can reopen it until ${formatTimestamp(closurePreview.current_request.recovery_until)}.`
+                        : closurePreview.current_request.status === "on_hold"
+                          ? "Data cannot move to deletion while a required retention hold is active. The private reason is not shown in the customer workspace."
+                          : "Connected credentials and login sessions were removed. Primary business data is not claimed deleted until dependency-order, backup, and verification checks finish."}
+                    </p>
+                    {closurePreview.current_request.can_cancel ? (
+                      <button
+                        type="button"
+                        className={`${secondaryButtonClass} mt-4`}
+                        disabled={busyAction === "workspace-reopen"}
+                        onClick={() => void cancelWorkspaceClosure(closurePreview.current_request!)}
+                      >
+                        {busyAction === "workspace-reopen" ? "Reopening safely..." : "Keep workspace open"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {closureReviewStep === 1 && !closurePreview.current_request ? (
+                  <div className="mt-5 rounded-md border border-rose-500/30 bg-rose-500/5 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-rose-200">
+                      Step 1 of {closurePreview.confirmation_steps}
+                    </p>
+                    <p className="mt-1 text-base font-semibold text-rose-100">Review what account deletion will do</p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-300">
+                      Create and download an account export first if you need a portable copy. Starting deletion revokes public report links and cancels queued work immediately; those security actions are not reversed if you reopen the workspace.
+                    </p>
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <p className="text-sm font-semibold text-white">This stops immediately</p>
+                        <ul className="mt-2 space-y-2 text-sm leading-5 text-zinc-300">
+                          {closurePreview.what_stops.map((item) => (
+                            <li key={item}>× {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">These safeguards remain</p>
+                        <ul className="mt-2 space-y-2 text-sm leading-5 text-zinc-300">
+                          {closurePreview.what_stays.map((item) => (
+                            <li key={item}>✓ {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="mt-5 flex flex-wrap gap-3 border-t border-rose-500/20 pt-4">
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25"
+                        onClick={() => setClosureReviewStep(2)}
+                      >
+                        Continue to final confirmation
+                      </button>
+                      <button
+                        type="button"
+                        className={secondaryButtonClass}
+                        onClick={() => {
+                          setClosureReviewStep(0);
+                          setClosureConfirmation("");
+                          setClosureExportChoiceAcknowledged(false);
+                          setClosureRecoveryAcknowledged(false);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {closureReviewStep === 2 && !closurePreview.current_request ? (
+                  <div className="mt-5 rounded-md border border-rose-500/40 bg-rose-500/5 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-rose-200">
+                      Step 2 of {closurePreview.confirmation_steps}
+                    </p>
+                    <p className="mt-1 text-base font-semibold text-rose-100">Final account-deletion confirmation</p>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      This starts a {closurePreview.recovery_days}-day recovery window. The workspace becomes read-only now; permanent deletion is not claimed until the later deletion and verification work finishes.
+                    </p>
+
+                    <div className="mt-5 space-y-3">
+                      <label className="flex cursor-pointer items-start gap-3 rounded-md border border-[#303137] bg-[#101114] p-4 text-sm leading-6 text-zinc-200">
+                        <input
+                          id="closure-export-choice"
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 accent-rose-500"
+                          checked={closureExportChoiceAcknowledged}
+                          onChange={(event) => setClosureExportChoiceAcknowledged(event.target.checked)}
+                        />
+                        <span>I downloaded an account export, or I decided I do not need one.</span>
+                      </label>
+                      <label className="flex cursor-pointer items-start gap-3 rounded-md border border-[#303137] bg-[#101114] p-4 text-sm leading-6 text-zinc-200">
+                        <input
+                          id="closure-recovery-acknowledgement"
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 accent-rose-500"
+                          checked={closureRecoveryAcknowledged}
+                          onChange={(event) => setClosureRecoveryAcknowledged(event.target.checked)}
+                        />
+                        <span>
+                          I understand that I have {closurePreview.recovery_days} days to reopen the workspace before permanent deletion work can begin.
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="mt-5 border-t border-rose-500/20 pt-4">
+                      <label htmlFor="workspace-closure-confirmation" className="block text-sm font-semibold text-white">
+                        Type <span className="font-mono text-rose-200">{closurePreview.confirmation_text}</span> to confirm
+                      </label>
+                      <input
+                        id="workspace-closure-confirmation"
+                        type="text"
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="mt-2 w-full max-w-md rounded-md border border-[#3a3b41] bg-[#101114] px-3 py-2.5 text-sm text-white outline-none focus:border-rose-400/60"
+                        value={closureConfirmation}
+                        onChange={(event) => setClosureConfirmation(event.target.value)}
+                      />
+                      <p className="mt-2 text-xs leading-5 text-zinc-500">
+                        The word must match exactly, including the capital D.
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={
+                            closureConfirmation !== closurePreview.confirmation_text ||
+                            !closureExportChoiceAcknowledged ||
+                            !closureRecoveryAcknowledged ||
+                            busyAction === "workspace-closure" ||
+                            !closurePreview.can_request
+                          }
+                          onClick={() => void scheduleWorkspaceClosure()}
+                        >
+                          {busyAction === "workspace-closure" ? "Starting safely..." : "Start account deletion"}
+                        </button>
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === "workspace-closure"}
+                          onClick={() => setClosureReviewStep(1)}
+                        >
+                          Back
+                        </button>
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === "workspace-closure"}
+                          onClick={() => {
+                            setClosureReviewStep(0);
+                            setClosureConfirmation("");
+                            setClosureExportChoiceAcknowledged(false);
+                            setClosureRecoveryAcknowledged(false);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {closureHistory.some((item) => item.status === "cancelled") && !closurePreview.current_request ? (
+                  <p className="mt-5 border-t border-[#292a2f] pt-4 text-xs leading-5 text-zinc-500">
+                    A previous closure request was canceled. Its audit history remains, while revoked public links and canceled jobs stay closed for safety.
+                  </p>
+                ) : null}
+                {usageAllowance.external_automation ? (
+                  <div id="external-automation" className="mt-5 border-t border-[#292a2f] pt-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      External automation
+                    </p>
+                    <h3 className="mt-1 font-semibold text-white">
+                      {usageAllowance.external_automation.gateway_enabled
+                        ? "Send report and action updates to your workflow tool"
+                        : `External automation requires ${usageAllowance.external_automation.required_plan}`}
+                    </h3>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      {usageAllowance.external_automation.summary}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      Available for {usageAllowance.external_automation.planned_connection_options.join(", ")}. The saved webhook URL and signing secret are encrypted, and the URL is never shown again.
+                    </p>
+
+                    {automationSigningSecret ? (
+                      <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
+                        <p className="text-sm font-semibold text-amber-100">Copy this signing secret now</p>
+                        <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                          It verifies that events came from InsightOS. It will not be shown again after you leave this page.
+                        </p>
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                          <input
+                            aria-label="Automation signing secret"
+                            readOnly
+                            className="min-w-0 flex-1 rounded-md border border-amber-500/30 bg-[#101114] px-3 py-2 font-mono text-xs text-amber-50"
+                            value={automationSigningSecret}
+                          />
+                          <button type="button" className={secondaryButtonClass} onClick={() => void copyAutomationSecret()}>
+                            Copy secret
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {usageAllowance.external_automation.gateway_enabled && me?.org_role === "org_owner" ? (
+                      <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
+                        <p className="text-sm font-semibold text-white">Add a workflow endpoint</p>
+                        <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                          <div>
+                            <label htmlFor="automation-provider" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                              Tool
+                            </label>
+                            <select
+                              id="automation-provider"
+                              className={selectClass}
+                              value={automationProvider}
+                              onChange={(event) => setAutomationProvider(event.target.value as "zapier" | "make" | "pipedream" | "n8n")}
+                            >
+                              {(automationProviders.length ? automationProviders : [
+                                { code: "zapier" as const, label: "Zapier" },
+                                { code: "make" as const, label: "Make" },
+                                { code: "pipedream" as const, label: "Pipedream" },
+                                { code: "n8n" as const, label: "n8n Cloud" },
+                              ]).map((provider) => (
+                                <option key={provider.code} value={provider.code}>{provider.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label htmlFor="automation-name" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                              Connection name
+                            </label>
+                            <input
+                              id="automation-name"
+                              className={selectClass}
+                              value={automationName}
+                              maxLength={120}
+                              placeholder="Owner report workflow"
+                              onChange={(event) => setAutomationName(event.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="automation-destination" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                              Webhook URL — kept private
+                            </label>
+                            <input
+                              id="automation-destination"
+                              type="password"
+                              autoComplete="off"
+                              className={selectClass}
+                              value={automationDestination}
+                              placeholder="Paste the HTTPS webhook URL"
+                              onChange={(event) => setAutomationDestination(event.target.value)}
+                            />
+                            {automationProvider === "n8n" ? (
+                              <p className="mt-1.5 text-xs leading-5 text-zinc-500">
+                                Paste the Production URL from a published n8n Cloud Webhook node. Temporary test URLs and self-hosted domains are not accepted.
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        {selectedAutomationProviderSetup ? (
+                          <div className="mt-4 rounded-md border border-sky-500/20 bg-sky-500/5 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold text-sky-100">
+                                Set up {selectedAutomationProviderSetup.webhook_source}
+                              </p>
+                              <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                                Connection kit ready
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-sky-100/75">
+                              {selectedAutomationProviderSetup.production_url_note}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-400">
+                              {selectedAutomationProviderSetup.account_note}
+                            </p>
+                            <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
+                              {selectedAutomationProviderSetup.setup_steps.map((step) => (
+                                <li key={step}>{step}</li>
+                              ))}
+                            </ol>
+                            <a
+                              className="mt-2 inline-flex text-xs font-medium text-sky-300 underline decoration-sky-300/40 underline-offset-4 hover:text-sky-200"
+                              href={selectedAutomationProviderSetup.official_docs_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open official {selectedAutomationProviderSetup.label} webhook documentation
+                            </a>
+                            <div className="mt-3 flex flex-wrap items-center gap-3">
+                              <button
+                                type="button"
+                                className={secondaryButtonClass}
+                                disabled={busyAction === `automation-conformance-${automationProvider}`}
+                                onClick={() => void downloadAutomationConformanceKit()}
+                              >
+                                {busyAction === `automation-conformance-${automationProvider}` ? "Preparing test..." : "Download receiver test contract"}
+                              </button>
+                              <span className="text-xs leading-5 text-zinc-500">
+                                Synthetic only—contains no customer data or live credential.
+                              </span>
+                            </div>
+                            <div className="mt-3 border-t border-sky-500/15 pt-3">
+                              <p className="text-xs font-semibold text-zinc-200">Wire the received event</p>
+                              <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+                                <div>
+                                  <dt className="text-zinc-500">Payload</dt>
+                                  <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.payload_path}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-zinc-500">Headers</dt>
+                                  <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.headers_path}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-zinc-500">Route on</dt>
+                                  <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.route_field}</dd>
+                                </div>
+                              </dl>
+                              <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
+                                {selectedAutomationProviderSetup.workflow_steps.map((step) => (
+                                  <li key={step}>{step}</li>
+                                ))}
+                              </ol>
+                              <div className="mt-3 overflow-hidden rounded-md border border-[#303137] bg-[#101114]">
+                                {selectedAutomationProviderSetup.field_map.map((field) => (
+                                  <div key={field.source} className="grid gap-1 border-b border-[#292a2f] px-3 py-2 last:border-b-0 sm:grid-cols-[9rem_1fr]">
+                                    <code className="text-[11px] text-orange-200">{field.source}</code>
+                                    <span className="text-xs leading-5 text-zinc-400">{field.purpose}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                Verification contract: {selectedAutomationProviderSetup.signature_contract.algorithm} over <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.signed_input}</code>. Compare the <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.signature_header}</code> value, reject timestamps older than {selectedAutomationProviderSetup.signature_contract.replay_window_seconds / 60} minutes, and deduplicate with <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.event_id_header}</code>.
+                              </p>
+                            </div>
+                            <p className="mt-3 text-xs leading-5 text-zinc-500">
+                              The InsightOS side is wired. The customer supplies the private webhook URL and chooses the final external action. InsightOS proves delivery only after the signed test—and later a real product event—is accepted.
+                            </p>
+                          </div>
+                        ) : null}
+                        {automationRecipes.length > 0 ? (
+                          <div className="mt-4">
+                            <p className="text-xs font-medium text-zinc-300">Start with a safe event recipe</p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-500">
+                              A recipe only chooses signed outbound notifications. Finish the task or message steps inside your workflow tool; it cannot approve or run InsightOS work.
+                            </p>
+                            <div className="mt-2 grid gap-2 lg:grid-cols-3">
+                              {automationRecipes.map((recipe) => (
+                                <div key={recipe.code} className="rounded-md border border-[#292a2f] bg-[#141518] p-3">
+                                  <p className="text-xs font-semibold text-zinc-200">{recipe.label}</p>
+                                  <p className="mt-1 text-xs leading-5 text-zinc-500">{recipe.summary}</p>
+                                  <p className="mt-2 text-xs leading-5 text-zinc-400">{recipe.external_result}</p>
+                                  <button
+                                    type="button"
+                                    className={`${secondaryButtonClass} mt-3`}
+                                    aria-pressed={automationSelectedRecipe === recipe.code}
+                                    onClick={() => {
+                                      const liveEvents = new Set(automationEvents.map((event) => event.code));
+                                      setAutomationSelectedRecipe(recipe.code);
+                                      setAutomationSelectedEvents(recipe.event_types.filter((code) => liveEvents.has(code)));
+                                      setAutomationName((current) => current.trim() || recipe.label);
+                                    }}
+                                  >
+                                    {automationSelectedRecipe === recipe.code ? "Recipe selected" : "Use this recipe"}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        <fieldset className="mt-4">
+                          <legend className="text-xs font-medium text-zinc-300">Events this workflow can receive</legend>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                            {automationEvents.map((event) => (
+                              <label key={event.code} className="flex items-start gap-2 rounded-md border border-[#292a2f] px-3 py-2 text-xs text-zinc-300">
+                                <input
+                                  type="checkbox"
+                                  className="mt-0.5 h-4 w-4 accent-orange-500"
+                                  checked={automationSelectedEvents.includes(event.code)}
+                                  onChange={(inputEvent) => {
+                                    setAutomationSelectedRecipe("");
+                                    setAutomationSelectedEvents((current) =>
+                                      inputEvent.target.checked
+                                        ? Array.from(new Set([...current, event.code]))
+                                        : current.filter((code) => code !== event.code),
+                                    );
+                                  }}
+                                />
+                                <span>{event.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                        <button
+                          type="button"
+                          className={`${primaryButtonClass} mt-4`}
+                          disabled={
+                            busyAction === "automation-create" ||
+                            automationName.trim().length < 2 ||
+                            !automationDestination.trim() ||
+                            automationSelectedEvents.length === 0
+                          }
+                          onClick={() => void createAutomationConnection()}
+                        >
+                          {busyAction === "automation-create" ? "Saving securely..." : "Save connection"}
+                        </button>
+                      </div>
+                    ) : usageAllowance.external_automation.gateway_enabled ? (
+                      <p className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-3 text-xs leading-5 text-zinc-400">
+                        Ask the workspace owner to add, test, rotate, or disconnect workflow endpoints.
+                      </p>
+                    ) : null}
+
+                    {automationMonthlyUsage && usageAllowance.external_automation.gateway_enabled ? (
+                      <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                              Workflow delivery this month
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-500">
+                              Distinct events are counted once. Delivery attempts include bounded retries.
+                            </p>
+                          </div>
+                          <span className="text-xs text-zinc-500">
+                            Since {formatTimestamp(automationMonthlyUsage.period_start)}
+                          </span>
+                        </div>
+                        <dl className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          {[
+                            ["Product updates", automationMonthlyUsage.product_events],
+                            ["Connection tests", automationMonthlyUsage.test_events],
+                            ["Accepted", automationMonthlyUsage.accepted],
+                            ["Needs attention", automationMonthlyUsage.waiting_or_retrying + automationMonthlyUsage.needs_recovery],
+                          ].map(([label, value]) => (
+                            <div key={String(label)} className="rounded-md border border-[#292a2f] bg-[#141518] px-3 py-2">
+                              <dt className="text-xs text-zinc-500">{label}</dt>
+                              <dd className="mt-1 text-lg font-semibold text-zinc-100">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <p className="mt-3 text-xs leading-5 text-zinc-500">
+                          {automationMonthlyUsage.attempts} total delivery {automationMonthlyUsage.attempts === 1 ? "attempt" : "attempts"}. This is observed activity, not a plan allowance or billable-usage counter.
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {automationConnections.length > 0 ? (
+                      <div className="mt-4 space-y-3">
+                        {automationConnections.map((connection) => {
+                          const delivery = connection.last_delivery;
+                          return (
+                            <div key={connection.id} className="rounded-md border border-[#303137] bg-[#101114] p-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <p className="font-medium text-white">{connection.name}</p>
+                                  <p className="mt-1 text-xs text-zinc-400">
+                                    {connection.provider_label} · {connection.endpoint_host} · {connection.status === "active" ? "Automatic delivery on" : connection.status === "unhealthy" ? "Needs attention" : connection.status === "paused" ? "Automatic delivery paused" : connection.status === "disconnected" ? "Disconnected" : "Test required"}
+                                  </p>
+                                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                    {connection.event_types.length} live {connection.event_types.length === 1 ? "event" : "events"} subscribed. Destination URL stays private. Signing secret version {connection.signing_secret_version}.
+                                  </p>
+                                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                    This month: {connection.monthly_delivery_usage.product_events} product {connection.monthly_delivery_usage.product_events === 1 ? "event" : "events"}, {connection.monthly_delivery_usage.test_events} {connection.monthly_delivery_usage.test_events === 1 ? "test" : "tests"}, {connection.monthly_delivery_usage.attempts} delivery {connection.monthly_delivery_usage.attempts === 1 ? "attempt" : "attempts"}.
+                                  </p>
+                                  <div className={`mt-2 rounded-md border px-3 py-2 ${connection.conformance_proof.state === "product_event_accepted" ? "border-emerald-500/20 bg-emerald-500/5" : connection.conformance_proof.state === "needs_attention" ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
+                                    <p className="text-xs font-medium text-zinc-200">
+                                      Connection proof: {connection.conformance_proof.label}
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                      {connection.conformance_proof.summary}
+                                      {connection.conformance_proof.evidence_at ? ` Last evidence: ${formatTimestamp(connection.conformance_proof.evidence_at)}.` : ""}
+                                    </p>
+                                  </div>
+                                  {connection.dead_letter_count > 0 ? (
+                                    <div className="mt-2 space-y-2 rounded-md border border-rose-500/20 bg-rose-500/5 p-3">
+                                      <p className="text-xs font-medium text-rose-300">
+                                        {connection.dead_letter_count} event {connection.dead_letter_count === 1 ? "needs" : "need"} owner recovery.
+                                      </p>
+                                      {(connection.recoverable_deliveries || []).map((item) => (
+                                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
+                                          <span>{item.event_type} · {item.attempt_count} attempts exhausted</span>
+                                          {me?.org_role === "org_owner" ? (
+                                            <button
+                                              type="button"
+                                              className={secondaryButtonClass}
+                                              disabled={busyAction === `automation-recover-${item.id}`}
+                                              onClick={() => void recoverAutomationDelivery(item.id)}
+                                            >
+                                              {busyAction === `automation-recover-${item.id}` ? "Queuing..." : "Recover event"}
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  {delivery ? (
+                                    <div className="mt-2">
+                                      <p className={`text-xs ${delivery.status === "delivered" ? "text-emerald-300" : delivery.status === "failed" || delivery.status === "dead_letter" ? "text-rose-300" : "text-amber-300"}`}>
+                                        Last {delivery.delivery_kind === "test" ? "test" : "product event"}: {delivery.status === "delivered" ? "Accepted" : delivery.status === "failed" ? "Retry scheduled" : delivery.status === "dead_letter" ? "Attempts exhausted" : delivery.status === "cancelled" ? "Stopped before delivery" : "Queued"} · {delivery.attempt_count} of {delivery.max_attempts} attempts
+                                      </p>
+                                      {delivery.next_attempt_at && delivery.status === "failed" ? (
+                                        <p className="mt-1 text-xs text-zinc-500">Next bounded retry: {formatTimestamp(delivery.next_attempt_at)}</p>
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    <p className="mt-2 text-xs text-amber-300">No test event sent yet.</p>
+                                  )}
+                                </div>
+                                {me?.org_role === "org_owner" && connection.status !== "disconnected" ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    {connection.status !== "paused" ? (
+                                      <button
+                                        type="button"
+                                        className={secondaryButtonClass}
+                                        disabled={busyAction === `automation-test-${connection.id}`}
+                                        onClick={() => void testAutomationConnection(connection.id)}
+                                      >
+                                        {busyAction === `automation-test-${connection.id}` ? "Sending..." : "Send test"}
+                                      </button>
+                                    ) : null}
+                                    {delivery?.can_retry ? (
+                                      <button
+                                        type="button"
+                                        className={secondaryButtonClass}
+                                        disabled={busyAction === `automation-retry-${delivery.id}`}
+                                        onClick={() => void retryAutomationDelivery(delivery.id)}
+                                      >
+                                        {busyAction === `automation-retry-${delivery.id}` ? "Retrying..." : "Retry last test"}
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className={secondaryButtonClass}
+                                      disabled={busyAction === `automation-${connection.status === "paused" ? "resume" : "pause"}-${connection.id}`}
+                                      onClick={() => void setAutomationConnectionPaused(connection.id, connection.status !== "paused")}
+                                    >
+                                      {connection.status === "paused" ? "Resume events" : "Pause events"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={secondaryButtonClass}
+                                      disabled={busyAction === `automation-rotate-${connection.id}`}
+                                      onClick={() => void rotateAutomationSecret(connection.id)}
+                                    >
+                                      Replace secret
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-medium text-rose-100 disabled:opacity-50"
+                                      disabled={busyAction === `automation-disconnect-${connection.id}`}
+                                      onClick={() => void disconnectAutomationConnection(connection.id)}
+                                    >
+                                      Disconnect
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : usageAllowance.external_automation.gateway_enabled ? (
+                      <p className="mt-4 text-xs leading-5 text-zinc-500">No workflow tools connected yet.</p>
+                    ) : null}
+
+                    {usageAllowance.external_automation.outbound_contract?.supported_events.length ? (
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-zinc-300">Approved outbound event contract</p>
+                        <p className="mt-1 text-xs leading-5 text-zinc-500">
+                          Report, recommendation, and approved-action results deliver automatically after a successful test. Approval-requested remains reserved until an exact native approval event is available.
+                        </p>
+                        <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {usageAllowance.external_automation.outbound_contract?.supported_events.map((event) => (
+                            <li key={event.code} className="rounded-lg border border-[#292a2f] bg-[#101114] px-3 py-2">
+                              <p className="text-xs font-medium text-zinc-200">{event.label}</p>
+                              <p className="mt-1 text-xs leading-5 text-zinc-500">{event.summary}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    <p className="mt-4 border-t border-[#292a2f] pt-3 text-xs leading-5 text-zinc-500">
+                      Safety boundary: workflow tools receive signed notifications only. They cannot approve recommendations, publish content, edit WordPress, or change a Google Business Profile.
+                    </p>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            <section aria-labelledby="migration-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Moving from another SEO tool
+                  </p>
+                  <h2 id="migration-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                    Bring over your setup and useful history
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                    Add locations, searches, competitors, past rankings, listing history, and report recipients. Check every match before anything is added; imported recipients stay off.
+                  </p>
+                </div>
+                <button type="button" className={secondaryButtonClass} onClick={downloadMigrationTemplate}>
+                  Download CSV template
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-4 border-t border-[#292a2f] pt-5 lg:grid-cols-[220px_minmax(0,1fr)_auto] lg:items-end">
+                <div>
+                  <label htmlFor="migration-source" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Coming from
+                  </label>
+                  <select
+                    id="migration-source"
+                    className={selectClass}
+                    value={migrationSource}
+                    onChange={(event) => {
+                      setMigrationSource(event.target.value as "semrush" | "brightlocal" | "other");
+                      setMigrationReview(null);
+                      setMigrationConfirmed(false);
+                      setMigrationUploadId("");
+                      setMigrationUploadProgress(0);
+                    }}
+                  >
+                    <option value="other">Another spreadsheet</option>
+                    <option value="semrush">Semrush</option>
+                    <option value="brightlocal">BrightLocal</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="migration-file" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Completed template
+                  </label>
+                  <input
+                    id="migration-file"
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="block w-full rounded-md border border-[#303137] bg-[#101114] px-3 py-2 text-sm text-zinc-200 file:mr-3 file:rounded file:border-0 file:bg-accent-500/15 file:px-3 file:py-1.5 file:font-semibold file:text-accent-100"
+                    onChange={(event) => void chooseMigrationFile(event.target.files?.[0])}
+                  />
+                  <p className="mt-1.5 text-xs text-zinc-500">
+                    {migrationFileName || "CSV only · up to 25,000 rows · large files resume after an interruption · no changes are made during review"}
+                  </p>
+                  {busyAction === "migration-dry-run" && migrationUploadId ? (
+                    <p className="mt-1.5 text-xs font-medium text-sky-200" role="status">
+                      Secure upload {migrationUploadProgress}% complete. Uploaded parts are saved for seven days.
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className={primaryButtonClass}
+                  disabled={!migrationCsv || busyAction === "migration-dry-run"}
+                  onClick={() => void reviewMigrationFile()}
+                >
+                  {busyAction === "migration-dry-run" ? "Checking file..." : "Review file"}
+                </button>
+              </div>
+
+              {migrationReview ? (
+                <div className="mt-5 border-t border-[#292a2f] pt-5">
+                  <p className="mb-4 text-xs leading-5 text-zinc-500">
+                    Using {migrationReview.adapter.replaceAll("_", " ")} to match this file&apos;s familiar headings.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
+                    {[
+                      ["Ready to add", migrationReview.summary.ready, "text-emerald-200"],
+                      ["Already saved", migrationReview.summary.already_saved, "text-sky-200"],
+                      ["Repeated rows", migrationReview.summary.duplicates_in_file, "text-zinc-300"],
+                      ["Needs attention", migrationReview.summary.needs_attention, "text-amber-200"],
+                      ["Past rankings", migrationReview.summary.ranking_history, "text-violet-200"],
+                      ["Past listings", migrationReview.summary.listing_history, "text-violet-200"],
+                      ["Report recipients", migrationReview.summary.report_recipients, "text-sky-200"],
+                    ].map(([label, value, color]) => (
+                      <div key={String(label)} className="border-l-2 border-[#35363c] pl-3">
+                        <p className="text-xs text-zinc-500">{label}</p>
+                        <p className={`mt-1 text-2xl font-semibold ${color}`}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-4 text-sm leading-6 text-zinc-300">{migrationReview.next_step}</p>
+
+                  {migrationReview.ignored_columns.length > 0 ? (
+                    <div className="mt-4 rounded-md border border-amber-500/25 bg-amber-500/5 p-4">
+                      <p className="text-sm font-semibold text-amber-100">
+                        {migrationReview.ignored_columns.length} file column{migrationReview.ignored_columns.length === 1 ? " is" : "s are"} not being imported
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-zinc-300">
+                        These columns stay in your original file and are listed here so nothing is silently treated as an InsightOS measurement.
+                      </p>
+                      <ul className="mt-3 space-y-2 text-sm text-zinc-300">
+                        {migrationReview.ignored_columns.map((item) => (
+                          <li key={item.column}>
+                            <strong className="text-white">{item.column}</strong> · {item.populated_rows} filled row{item.populated_rows === 1 ? "" : "s"} · {item.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                    {migrationReview.rows
+                      .filter((row) => row.status === "needs_attention" || row.status === "duplicate")
+                      .map((row) => (
+                        <article key={`${row.row_number}-${row.record_type}`} className="grid gap-2 py-3 sm:grid-cols-[90px_minmax(0,1fr)]">
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">Row {row.row_number}</p>
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {row.location_name || "Location name missing"} · {row.record_type || "Unknown row"}
+                            </p>
+                            <p className="mt-1 text-sm text-amber-100">
+                              {row.issues[0]?.message || row.detail}
+                            </p>
+                          </div>
+                        </article>
+                      ))}
+                    {migrationReview.summary.needs_attention === 0 && migrationReview.summary.duplicates_in_file === 0 ? (
+                      <p className="py-4 text-sm font-medium text-emerald-200">
+                        Every row is ready for final review. Nothing has been imported yet.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {migrationReview.pagination?.has_more ? (
+                    <button
+                      type="button"
+                      className={`${secondaryButtonClass} mt-4`}
+                      disabled={busyAction === "migration-review-more"}
+                      onClick={() => void loadMoreMigrationReviewRows()}
+                    >
+                      {busyAction === "migration-review-more"
+                        ? "Loading more rows..."
+                        : `Review more rows (${migrationReview.rows.length} of ${migrationReview.pagination.total_rows} loaded)`}
+                    </button>
+                  ) : null}
+
+                  {migrationReview.summary.needs_attention === 0 && migrationReview.summary.ready > 0 && !migrationBatch ? (
+                    <div className="mt-5 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-4">
+                      <label className="flex cursor-pointer items-start gap-3 text-sm leading-6 text-zinc-200">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 accent-orange-500"
+                          checked={migrationConfirmed}
+                          onChange={(event) => setMigrationConfirmed(event.target.checked)}
+                        />
+                        <span>
+                          I reviewed this file. Add the {migrationReview.summary.ready} ready rows and skip anything already saved or repeated.
+                        </span>
+                      </label>
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          className={primaryButtonClass}
+                          disabled={!migrationConfirmed || !migrationRequestId || busyAction === "migration-apply"}
+                          onClick={() => void applyMigrationFile()}
+                        >
+                          {busyAction === "migration-apply" ? "Adding reviewed rows..." : "Import reviewed rows"}
+                        </button>
+                        <p className="text-xs leading-5 text-zinc-500">
+                          The reviewed file is locked to this action. If it changes, InsightOS will require a new review.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {migrationBatch ? (
+                    <div className="mt-5 flex flex-col gap-4 rounded-md border border-sky-500/25 bg-sky-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-sky-100">
+                          {migrationBatch.status === "rolled_back" ? "Import removed safely" : "Import complete"}
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-zinc-300">
+                          {migrationBatch.status === "rolled_back"
+                            ? "The records created by this import were removed, and its audit history was kept."
+                            : `${migrationBatch.summary.locations_created || 0} locations, ${migrationBatch.summary.keywords_created || 0} searches, ${migrationBatch.summary.competitors_created || 0} competitors, ${migrationBatch.summary.ranking_history_created || 0} past ranking points, ${migrationBatch.summary.listing_history_created || 0} past listing records, and ${migrationBatch.summary.report_recipients_created || 0} report recipients were added. Imported recipients are off until reviewed.`}
+                        </p>
+                      </div>
+                      {migrationBatch.rollback_available ? (
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          disabled={busyAction === `migration-rollback-${migrationBatch.id}`}
+                          onClick={() => void rollbackMigration(migrationBatch)}
+                        >
+                          {busyAction === `migration-rollback-${migrationBatch.id}` ? "Checking rollback..." : "Undo this import"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {migrationHistory.length > 0 ? (
+                <div className="mt-5 border-t border-[#292a2f] pt-5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Recent imports
+                  </p>
+                  <div className="mt-3 divide-y divide-[#292a2f] border-y border-[#292a2f]">
+                    {migrationHistory.slice(0, 5).map((batch) => (
+                      <div key={batch.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-white">
+                            {batch.source_filename || "Imported setup"}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {formatTimestamp(batch.applied_at)} · {batch.summary.records_applied || 0} rows · {batch.status === "rolled_back" ? "Undone" : "Applied"}
+                          </p>
+                        </div>
+                        {batch.rollback_available ? (
+                          <button
+                            type="button"
+                            className={secondaryButtonClass}
+                            disabled={busyAction === `migration-rollback-${batch.id}`}
+                            onClick={() => void rollbackMigration(batch)}
+                          >
+                            Undo import
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-5 border-t border-[#292a2f] pt-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                  Switching checklist
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-white">Finish the move with fresh measurements</h3>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-400">
+                  Imported rankings and listings give you background history. They never count as a new InsightOS check. Complete these steps before using the new workspace as your current source of truth.
+                </p>
+                <ol className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {[
+                    {
+                      title: "Review and import the old setup",
+                      detail: "Keep the source file and confirm every row before adding it.",
+                      done: migrationHistory.some((batch) => batch.status === "applied"),
+                    },
+                    {
+                      title: "Connect the business Google account",
+                      detail: "This allows current website and business profile data to be collected.",
+                      done: Boolean(payload?.google_oauth.connected),
+                    },
+                    {
+                      title: "Match each location to its live source",
+                      detail: "A saved location needs its own website or business profile connection.",
+                      done: connections.length > 0,
+                    },
+                    {
+                      title: "Run the first fresh checks",
+                      detail: "Use the new results as the baseline; use imported history only for context.",
+                      done: healthyConnectionItems.some((item) => Boolean(item.last_success_at)),
+                    },
+                  ].map((step, index) => (
+                    <li key={step.title} className="flex gap-3 rounded-md border border-[#292a2f] bg-[#101114] p-4">
+                      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${step.done ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100" : "border-zinc-700 text-zinc-400"}`}>
+                        {step.done ? "✓" : index + 1}
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-white">{step.title}</p>
+                        <p className="mt-1 text-sm leading-5 text-zinc-400">{step.detail}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </section>
           </>
         )}
       </section>

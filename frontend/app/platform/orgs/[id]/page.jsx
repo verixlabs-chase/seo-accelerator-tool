@@ -6,8 +6,8 @@ import { platformApi } from "../../api";
 import { setAuthSession } from "../../../lib/authStorage";
 
 const PLAN_OPTIONS = [
-  { value: "solo", label: "Solo · $299/month" },
-  { value: "multi_location", label: "Multi-location · $699/month" },
+  { value: "solo", label: "Solo · $399/month" },
+  { value: "multi_location", label: "Growth · $699/month" },
   { value: "enterprise", label: "Enterprise · starts at $1,999/month" },
   { value: "internal_anchor", label: "Internal anchor (legacy)" },
   { value: "standard", label: "Standard / Solo (legacy)" },

@@ -4,6 +4,10 @@ import uuid
 from sqlalchemy import text
 
 import app.services.business_location_service as business_location_service
+from app.models.business_location import BusinessLocation
+from app.models.commercial_feature_activation import CommercialFeatureActivation
+from app.models.portfolio import Portfolio
+from app.services.commercial_plan_service import apply_commercial_plan
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -82,6 +86,10 @@ def test_business_location_create_respects_org_scope(client) -> None:
 
 def test_business_location_conflict_does_not_create_extra_portfolio(client, db_session) -> None:
     token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    # This test exercises uniqueness after one active location already exists,
+    # so give it a real plan with another available slot.
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="multi_location")
+    db_session.commit()
 
     first = client.post(
         f"/api/v1/organizations/{org_id}/business-locations",
@@ -242,3 +250,222 @@ def test_business_location_rejects_whitespace_name(client, db_session) -> None:
 
     assert business_location_count == 0
     assert portfolio_count == 0
+
+
+def test_solo_location_allowance_denial_is_atomic_and_customer_safe(client, db_session) -> None:
+    token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    first = client.post(
+        f"/api/v1/organizations/{org_id}/business-locations",
+        json={"name": "Solo covered location"},
+        headers=headers,
+    )
+    denied = client.post(
+        f"/api/v1/organizations/{org_id}/business-locations",
+        json={"name": "Solo overage location"},
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    assert denied.status_code == 409
+    details = denied.json()["errors"][0]["details"]
+    assert details == {
+        "message": (
+            "Your Solo plan includes 1 active location. Archive another location or "
+            "choose a plan with more locations before turning this one on."
+        ),
+        "reason_code": "active_location_allowance_exhausted",
+        "plan_code": "solo",
+        "plan_name": "Solo",
+        "included_locations": 1,
+        "active_locations": 1,
+        "remaining_locations": 0,
+        "over_limit_by": 0,
+        "required_plan_code": "multi_location",
+        "required_plan_name": "Growth",
+    }
+    assert (
+        db_session.query(BusinessLocation)
+        .filter(BusinessLocation.organization_id == org_id)
+        .count()
+        == 1
+    )
+    assert (
+        db_session.query(Portfolio)
+        .filter(
+            Portfolio.organization_id == org_id,
+            Portfolio.business_location_id.is_not(None),
+        )
+        .count()
+        == 1
+    )
+
+
+def test_archive_releases_solo_slot_and_reactivation_rechecks_capacity(
+    client, db_session
+) -> None:
+    token, org_id = _login(client, "org-owner@example.com", "pass-org-owner")
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    first = client.post(
+        f"/api/v1/organizations/{org_id}/business-locations",
+        json={"name": "First solo location"},
+        headers=headers,
+    ).json()["data"]["business_location"]
+    archived = client.patch(
+        f"/api/v1/organizations/{org_id}/business-locations/{first['id']}",
+        json={"status": "archived"},
+        headers=headers,
+    )
+    second = client.post(
+        f"/api/v1/organizations/{org_id}/business-locations",
+        json={"name": "Second solo location"},
+        headers=headers,
+    ).json()["data"]["business_location"]
+    denied = client.patch(
+        f"/api/v1/organizations/{org_id}/business-locations/{first['id']}",
+        json={"status": "active"},
+        headers=headers,
+    )
+
+    assert archived.status_code == 200
+    assert denied.status_code == 409
+    assert denied.json()["errors"][0]["details"]["reason_code"] == (
+        "active_location_allowance_exhausted"
+    )
+    db_session.expire_all()
+    assert db_session.get(BusinessLocation, first["id"]).status == "archived"
+    assert db_session.get(BusinessLocation, second["id"]).status == "active"
+
+    assert (
+        client.patch(
+            f"/api/v1/organizations/{org_id}/business-locations/{second['id']}",
+            json={"status": "archived"},
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    reactivated = client.patch(
+        f"/api/v1/organizations/{org_id}/business-locations/{first['id']}",
+        json={"status": "active"},
+        headers=headers,
+    )
+    assert reactivated.status_code == 200
+    assert reactivated.json()["data"]["business_location"]["status"] == "active"
+
+
+def test_growth_to_solo_downgrade_preserves_locations_and_reports_overage(
+    client, db_session
+) -> None:
+    token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="multi_location")
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    created_ids = []
+    for name in ("Preserved north shop", "Preserved south shop"):
+        response = client.post(
+            f"/api/v1/organizations/{org_id}/business-locations",
+            json={"name": name},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        created_ids.append(response.json()["data"]["business_location"]["id"])
+
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    db_session.commit()
+    summary = client.get("/api/v1/usage/credits", headers=headers)
+
+    assert summary.status_code == 200
+    plan = summary.json()["data"]["plan"]
+    assert plan["code"] == "solo"
+    assert plan["included_locations"] == 1
+    assert plan["active_locations"] == 2
+    assert plan["remaining_locations"] == 0
+    assert plan["over_limit_by"] == 1
+    assert plan["can_activate_location"] is False
+    assert "tier_version" not in plan
+    assert "allowance_source" not in plan
+    db_session.expire_all()
+    assert {
+        db_session.get(BusinessLocation, location_id).status for location_id in created_ids
+    } == {"active"}
+    assert (
+        db_session.query(Portfolio)
+        .filter(Portfolio.business_location_id.in_(created_ids))
+        .count()
+        == 2
+    )
+
+
+def test_observe_bridge_reports_overage_but_does_not_block_location_changes(
+    client, db_session
+) -> None:
+    token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
+    activation = db_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    assert activation is not None
+    activation.state = "observe"
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    first = client.post(
+        f"/api/v1/organizations/{org_id}/business-locations",
+        json={"name": "Observed first location"},
+        headers=headers,
+    )
+    second = client.post(
+        f"/api/v1/organizations/{org_id}/business-locations",
+        json={"name": "Observed overage location"},
+        headers=headers,
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    first_id = first.json()["data"]["business_location"]["id"]
+
+    assert (
+        client.patch(
+            f"/api/v1/organizations/{org_id}/business-locations/{first_id}",
+            json={"status": "archived"},
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    assert (
+        client.patch(
+            f"/api/v1/organizations/{org_id}/business-locations/{first_id}",
+            json={"status": "active"},
+            headers=headers,
+        ).status_code
+        == 200
+    )
+
+    plan = client.get("/api/v1/usage/credits", headers=headers).json()["data"]["plan"]
+    assert plan["included_locations"] == 1
+    assert plan["active_locations"] == 2
+    assert plan["over_limit_by"] == 1
+    assert plan["location_allowance_enforced"] is False
+    assert plan["can_activate_location"] is True
+
+    activation = db_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    activation.state = "enforced"
+    db_session.commit()
+    denied = client.post(
+        f"/api/v1/organizations/{org_id}/business-locations",
+        json={"name": "Blocked after activation"},
+        headers=headers,
+    )
+    assert denied.status_code == 409
+    assert denied.json()["errors"][0]["details"]["reason_code"] == (
+        "active_location_allowance_exhausted"
+    )

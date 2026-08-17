@@ -54,4 +54,12 @@ class RankingSnapshot(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.8)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
     month_partition: Mapped[str] = mapped_column(String(7), nullable=False, index=True)
-
+    source_type: Mapped[str] = mapped_column(String(24), nullable=False, default="live_collection", index=True)
+    source_system: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_record_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    import_batch_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("migration_import_batches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )

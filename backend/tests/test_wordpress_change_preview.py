@@ -70,6 +70,7 @@ def test_wordpress_preview_is_durable_and_contains_exact_change_contract(
     assert preview["mutation_count"] == 2
     assert preview["conflict_count"] == 0
     assert preview["affected_urls"] == ["/services"]
+    assert preview["managed_content_validation"]["status"] == "not_required"
     assert all(item["expected_version"]["revision_id"] for item in preview["changes"])
     assert all(len(item["expected_version"]["content_hash"]) == 64 for item in preview["changes"])
     assert all(item["rollback_plan"]["available"] for item in preview["changes"])

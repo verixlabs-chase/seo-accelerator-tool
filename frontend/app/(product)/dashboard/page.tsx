@@ -59,6 +59,7 @@ type Me = {
   id?: string;
   tenant_id?: string;
   organization_id?: string;
+  org_role?: string;
 };
 
 type Campaign = {
@@ -2141,6 +2142,7 @@ export default function DashboardPage() {
         {showWizard ? (
           <OnboardingWizard
             organizationId={me?.organization_id || ""}
+            orgRole={me?.org_role}
             onComplete={({ campaignId, campaignDomain, notice: completionNotice }) => {
               setShowWizard(false);
               setSelectedCampaignId(campaignId);

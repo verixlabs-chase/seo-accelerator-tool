@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.security import ACCESS_TOKEN_COOKIE_NAME, decode_token
 from app.db.session import get_db, set_session_security_context
 from app.models.organization_membership import OrganizationMembership
+from app.models.organization import Organization
 from app.models.user import User
 from app.services import auth_service
 
@@ -76,6 +77,28 @@ def get_current_user(
         elif membership.role != org_role:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid organization role context")
 
+        organization = db.get(Organization, organization_id)
+        if organization is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization access denied")
+        if organization.status in {"closure_pending", "closed"}:
+            safe_method = request.method.upper() in {"GET", "HEAD", "OPTIONS"}
+            governance_recovery_path = (
+                f"/organizations/{organization_id}/data-governance/closures" in request.url.path
+                or f"/organizations/{organization_id}/data-governance/exports" in request.url.path
+            )
+            logout_path = request.url.path.endswith("/auth/logout")
+            if not safe_method and not governance_recovery_path and not logout_path:
+                raise HTTPException(
+                    status_code=status.HTTP_423_LOCKED,
+                    detail={
+                        "message": (
+                            "This workspace is read-only while closure is pending. "
+                            "An account owner can reopen it during the recovery window."
+                        ),
+                        "reason_code": "organization_closure_read_only",
+                    },
+                )
+
     request.state.tenant_id = organization_id
     request.state.organization_id = organization_id
     set_session_security_context(
@@ -91,6 +114,7 @@ def get_current_user(
         "tenant_id": organization_id,
         "organization_id": organization_id,
         "org_role": org_role,
+        "organization_status": organization.status if organization_id is not None else None,
         "platform_role": platform_role,
         "is_platform_user": user.is_platform_user,
         "roles": _effective_roles(org_role, platform_role),

@@ -187,6 +187,42 @@ def test_publish_requires_capability_and_explicit_confirmation(db_session):
     assert confirmation_error.value.detail["reason_code"] == "review_reply_publish_confirmation_required"
 
 
+def test_publish_requires_recorded_human_review_before_queue_and_dispatch(db_session):
+    user, campaign, connection, _review, draft = _approved_reply_context(db_session)
+    _authorize(db_session, user, campaign, connection)
+    reviewed_by_user_id = draft.reviewed_by_user_id
+    reviewed_at = draft.reviewed_at
+    draft.reviewed_by_user_id = None
+    draft.reviewed_at = None
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as approval_error:
+        _queue(db_session, user, campaign, draft)
+    assert approval_error.value.detail["reason_code"] == "review_reply_approval_required"
+
+    draft.reviewed_by_user_id = reviewed_by_user_id
+    draft.reviewed_at = reviewed_at
+    db_session.commit()
+    execution = _queue(db_session, user, campaign, draft)
+    different_user = db_session.query(User).filter(User.id != reviewed_by_user_id).first()
+    assert different_user is not None
+    draft.reviewed_by_user_id = different_user.id
+    db_session.commit()
+
+    class UnexpectedProvider:
+        def update_reply(self, **_kwargs):
+            raise AssertionError("A reply without current human-review proof cannot be posted.")
+
+    result = reputation_response_execution_service.dispatch_execution(
+        db_session,
+        execution_id=execution.id,
+        provider=UnexpectedProvider(),
+    )
+    assert result["status"] == "blocked"
+    assert result["dispatched"] is False
+    assert execution.error_code == "approved_reply_changed"
+
+
 def test_approved_reply_is_queued_idempotently_and_provider_receipt_is_saved(db_session):
     user, campaign, connection, review, draft = _approved_reply_context(db_session)
     capability = _authorize(db_session, user, campaign, connection)

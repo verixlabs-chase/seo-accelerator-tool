@@ -6,10 +6,13 @@ from decimal import Decimal
 from app.models.authority import DirectoryListingDiscoveryRun
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.commercial_feature_activation import CommercialFeatureActivation
 from app.models.cost_economics import CostLedgerEntry
 from app.models.organization_membership import OrganizationMembership
 from app.models.user import User
 from app.services import listing_discovery_service, listing_inventory_service
+from app.services.commercial_plan_service import apply_commercial_plan
+from app.services.cost_economics_service import get_customer_credit_summary
 
 
 def _location_campaign(db_session) -> tuple[User, Campaign, BusinessLocation]:
@@ -192,6 +195,255 @@ def test_listing_discovery_run_is_idempotent_filters_results_and_reconciles(
         .one()
     )
     assert reconciliation.provider_reported_cost == Decimal("0.01236000")
+
+
+def test_listing_provider_timeout_retains_conservative_cost_exposure(
+    db_session,
+    monkeypatch,
+):
+    user, campaign, _location = _location_campaign(db_session)
+    monkeypatch.setattr(listing_discovery_service, "_credential_owner", lambda *_args: "platform")
+    monkeypatch.setattr(
+        listing_discovery_service,
+        "resolve_provider_credentials",
+        lambda *_args: {"login": "api@example.com", "password": "secret"},
+    )
+    calls: list[str] = []
+
+    def _timeout_after_paid_call(_self, **_kwargs):
+        calls.append("started")
+        raise TimeoutError("provider response was not received")
+
+    monkeypatch.setattr(
+        listing_discovery_service.DataForSeoBusinessListingsProvider,
+        "search",
+        _timeout_after_paid_call,
+    )
+    run, _created = listing_discovery_service.create_run(
+        db_session,
+        tenant_id=user.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        requested_by_user_id=user.id,
+        idempotency_key="listing-provider-timeout",
+    )
+    reservation = db_session.get(CostLedgerEntry, run.reservation_id)
+    estimated_cost = Decimal(reservation.estimated_cost)
+
+    result = listing_discovery_service.dispatch_run(
+        db_session,
+        tenant_id=user.tenant_id,
+        run_id=run.id,
+    )
+
+    assert calls == ["started"]
+    assert result["status"] == "failed"
+    reconciliation = (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == run.reservation_id,
+            CostLedgerEntry.event_type == "reconciliation",
+        )
+        .one()
+    )
+    assert Decimal(reconciliation.provider_reported_cost) == estimated_cost
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == run.reservation_id,
+            CostLedgerEntry.event_type == "release",
+        )
+        .count()
+        == 0
+    )
+    credits = get_customer_credit_summary(
+        db_session, organization_id=str(campaign.organization_id)
+    )["credits"]
+    assert credits["reserved"] == 0
+    assert credits["used"] > 0
+
+
+def test_queued_listing_check_is_released_without_provider_call_after_downgrade(
+    db_session,
+    monkeypatch,
+):
+    user, campaign, location = _location_campaign(db_session)
+    apply_commercial_plan(
+        db_session,
+        organization_id=str(campaign.organization_id),
+        plan_code="multi_location",
+    )
+    db_session.add(
+        BusinessLocation(
+            organization_id=campaign.organization_id,
+            name="Second covered shop",
+            status="active",
+        )
+    )
+    db_session.commit()
+    monkeypatch.setattr(listing_discovery_service, "_credential_owner", lambda *_args: "platform")
+    run, _created = listing_discovery_service.create_run(
+        db_session,
+        tenant_id=user.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        requested_by_user_id=user.id,
+        idempotency_key="listing-before-downgrade",
+    )
+    apply_commercial_plan(
+        db_session,
+        organization_id=str(campaign.organization_id),
+        plan_code="solo",
+    )
+    db_session.commit()
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        listing_discovery_service.DataForSeoBusinessListingsProvider,
+        "search",
+        lambda _self, **kwargs: calls.append(kwargs),
+    )
+
+    result = listing_discovery_service.dispatch_run(
+        db_session,
+        tenant_id=user.tenant_id,
+        run_id=run.id,
+    )
+
+    assert calls == []
+    assert result["status"] == "failed"
+    refreshed = db_session.get(DirectoryListingDiscoveryRun, run.id)
+    assert refreshed.error_code == "active_location_overage_blocks_provider_work"
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == run.reservation_id,
+            CostLedgerEntry.event_type == "release",
+        )
+        .count()
+        == 1
+    )
+    assert db_session.get(BusinessLocation, location.id).status == "active"
+
+
+def test_observe_queued_listing_is_stopped_and_released_after_activation(
+    db_session,
+    monkeypatch,
+):
+    user, campaign, _location = _location_campaign(db_session)
+    activation = db_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    assert activation is not None
+    activation.state = "observe"
+    db_session.add(
+        BusinessLocation(
+            organization_id=campaign.organization_id,
+            name="Observed listing overage shop",
+            status="active",
+        )
+    )
+    db_session.commit()
+    monkeypatch.setattr(
+        listing_discovery_service,
+        "_credential_owner",
+        lambda *_args: "platform",
+    )
+    run, _created = listing_discovery_service.create_run(
+        db_session,
+        tenant_id=user.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        requested_by_user_id=user.id,
+        idempotency_key="listing-observe-before-activation",
+    )
+
+    activation = db_session.get(
+        CommercialFeatureActivation,
+        "active_location_allowance",
+    )
+    activation.state = "enforced"
+    db_session.commit()
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        listing_discovery_service.DataForSeoBusinessListingsProvider,
+        "search",
+        lambda _self, **kwargs: calls.append(kwargs),
+    )
+
+    result = listing_discovery_service.dispatch_run(
+        db_session,
+        tenant_id=user.tenant_id,
+        run_id=run.id,
+    )
+
+    assert calls == []
+    assert result["status"] == "failed"
+    assert (
+        db_session.get(DirectoryListingDiscoveryRun, run.id).error_code
+        == "active_location_overage_blocks_provider_work"
+    )
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == run.reservation_id,
+            CostLedgerEntry.event_type == "release",
+        )
+        .count()
+        == 1
+    )
+    assert get_customer_credit_summary(
+        db_session, organization_id=str(campaign.organization_id)
+    )["credits"]["reserved"] == 0
+
+
+def test_queued_listing_check_rejects_archived_target_before_provider_call(
+    db_session,
+    monkeypatch,
+):
+    user, campaign, location = _location_campaign(db_session)
+    monkeypatch.setattr(listing_discovery_service, "_credential_owner", lambda *_args: "platform")
+    run, _created = listing_discovery_service.create_run(
+        db_session,
+        tenant_id=user.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        requested_by_user_id=user.id,
+        idempotency_key="listing-before-archive",
+    )
+    location.status = "archived"
+    db_session.commit()
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        listing_discovery_service.DataForSeoBusinessListingsProvider,
+        "search",
+        lambda _self, **kwargs: calls.append(kwargs),
+    )
+
+    result = listing_discovery_service.dispatch_run(
+        db_session,
+        tenant_id=user.tenant_id,
+        run_id=run.id,
+    )
+
+    assert calls == []
+    assert result["status"] == "failed"
+    assert (
+        db_session.get(DirectoryListingDiscoveryRun, run.id).error_code
+        == "active_business_location_required_for_provider_work"
+    )
+    assert (
+        db_session.query(CostLedgerEntry)
+        .filter(
+            CostLedgerEntry.reservation_id == run.reservation_id,
+            CostLedgerEntry.event_type == "release",
+        )
+        .count()
+        == 1
+    )
+    assert get_customer_credit_summary(
+        db_session, organization_id=str(campaign.organization_id)
+    )["credits"]["reserved"] == 0
 
 
 def test_listing_discovery_api_hides_internal_provider(client, db_session, monkeypatch):

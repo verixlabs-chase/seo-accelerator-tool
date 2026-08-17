@@ -16,6 +16,12 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 
 class CheckoutIn(BaseModel):
     plan_code: str = Field(..., pattern="^(solo|standard|growth|multi_location)$")
+    client_request_id: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$",
+    )
 
 
 def _organization(db: Session, user: dict) -> Organization:
@@ -41,6 +47,18 @@ def billing_summary(
     return envelope(request, stripe_billing_service.get_billing_summary(_organization(db, user)))
 
 
+@router.get("/readiness")
+def billing_readiness(
+    request: Request,
+    user: dict = Depends(require_org_role({"org_user"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    return envelope(
+        request,
+        stripe_billing_service.get_billing_readiness(_organization(db, user)),
+    )
+
+
 @router.post("/checkout")
 def create_checkout(
     request: Request,
@@ -53,6 +71,7 @@ def create_checkout(
             db,
             organization=_organization(db, user),
             requested_plan_code=body.plan_code,
+            client_request_id=body.client_request_id,
             actor_user_id=user["id"],
         )
         db.commit()

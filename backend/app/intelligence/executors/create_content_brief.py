@@ -17,6 +17,7 @@ class CreateContentBriefExecutor(BaseExecutor):
         page_slug = str(payload.get('content_slug') or slugify(page_title))
         target_url = normalize_url_path(payload.get('content_target_url') or f'/{page_slug}')
         page_summary = str(payload.get('recommendation_rationale') or f'Publish a structured draft page for {campaign_name}.')
+        content_blocks = _content_blocks(payload.get('content_blocks'), fallback=page_summary)
         mutations = [
             build_mutation(
                 action='publish_content_page',
@@ -25,7 +26,7 @@ class CreateContentBriefExecutor(BaseExecutor):
                     'title': page_title,
                     'slug': page_slug,
                     'publication_state': 'draft',
-                    'content_blocks': [{'type': 'paragraph', 'text': page_summary}],
+                    'content_blocks': content_blocks,
                     'seo': {
                         'meta_title': str(payload.get('meta_title') or page_title),
                         'meta_description': str(payload.get('meta_description') or page_summary[:150]),
@@ -38,7 +39,13 @@ class CreateContentBriefExecutor(BaseExecutor):
             'execution_type': self.execution_type,
             'status': 'planned',
             'actions': ['publish_content_page'],
-            'artifacts': {'brief_ref': f"brief:{payload.get('campaign_id', 'pending')}", 'publication_state': 'draft'},
+            'artifacts': {
+                'brief_ref': str(payload.get('content_brief_id') or f"brief:{payload.get('campaign_id', 'pending')}"),
+                'content_draft_id': payload.get('content_draft_id'),
+                'content_draft_revision': payload.get('content_draft_revision'),
+                'content_draft_hash': payload.get('content_draft_hash'),
+                'publication_state': 'draft',
+            },
             'metrics_to_measure': self.get_metrics_to_measure(payload),
             'mutations': mutations,
             'notes': 'Structured draft content page prepared for WordPress mutation delivery.',
@@ -52,3 +59,18 @@ class CreateContentBriefExecutor(BaseExecutor):
 
     def get_metrics_to_measure(self, payload: dict[str, Any]) -> list[str]:
         return ['content_count', 'avg_rank']
+
+
+def _content_blocks(value: Any, *, fallback: str) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return [{'type': 'paragraph', 'text': fallback}]
+    normalized: list[dict[str, str]] = []
+    for item in value[:24]:
+        if not isinstance(item, dict):
+            continue
+        block_type = str(item.get('type') or '').strip().lower()
+        text = str(item.get('text') or '').strip()
+        if block_type not in {'heading', 'paragraph'} or not text:
+            continue
+        normalized.append({'type': block_type, 'text': text[:3000]})
+    return normalized or [{'type': 'paragraph', 'text': fallback}]

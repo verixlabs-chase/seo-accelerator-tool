@@ -7,10 +7,10 @@ from app.models.audit_log import AuditLog
 from app.models.campaign import Campaign
 from app.models.fleet_job import FleetJob, FleetJobStatus, FleetJobType
 from app.models.fleet_job_item import FleetJobItem, FleetJobItemStatus
-from app.models.organization import Organization
 from app.models.organization_membership import OrganizationMembership
 from app.models.portfolio import Portfolio
 from app.models.user import User
+from app.services.commercial_plan_service import apply_commercial_plan
 from app.services.fleet_service import create_schedule_job, process_fleet_job_item
 from app.services.portfolio_fleet_service import SUPPORTED_ACTIONS
 
@@ -72,9 +72,11 @@ def test_portfolio_fleet_preflight_approval_progress_and_failed_only_retry(
     db_session,
 ) -> None:
     token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
-    organization = db_session.get(Organization, org_id)
-    organization.plan_type = "multi_location"
-    db_session.commit()
+    apply_commercial_plan(
+        db_session,
+        organization_id=org_id,
+        plan_code="multi_location",
+    )
     headers = {"Authorization": f"Bearer {token}"}
     locations = [
         _create_location(
@@ -186,6 +188,17 @@ def test_portfolio_fleet_preflight_approval_progress_and_failed_only_retry(
     assert paused_result["status"] == "ignored"
     assert paused_result["reason"] == "run_paused"
 
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    gated_resume = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/resume",
+        headers=headers,
+        json={"expected_version": paused["version"]},
+    )
+    assert gated_resume.status_code == 403
+    assert gated_resume.json()["errors"][0]["details"]["reason_code"] == (
+        "fleet_feature_upgrade_required"
+    )
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="multi_location")
     resume_response = client.post(
         f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/resume",
         headers=headers,
@@ -196,6 +209,14 @@ def test_portfolio_fleet_preflight_approval_progress_and_failed_only_retry(
     assert resumed["status"] == "running"
     assert resumed["can_resume"] is False
 
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    gated_worker_result = process_fleet_job_item(
+        db=db_session,
+        fleet_job_item_id=first_item.id,
+    )
+    assert gated_worker_result["status"] == "ignored"
+    assert gated_worker_result["reason"] == "commercial_plan_upgrade_required"
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="multi_location")
     result = process_fleet_job_item(db=db_session, fleet_job_item_id=first_item.id)
     assert result["status"] == "succeeded"
 
@@ -230,6 +251,17 @@ def test_portfolio_fleet_preflight_approval_progress_and_failed_only_retry(
     assert "provider details" not in failed_location["message"]
     assert progress["can_retry_failed"] is True
 
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="solo")
+    gated_retry = client.post(
+        f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/retry-failed",
+        headers=headers,
+        json={"expected_version": progress["version"]},
+    )
+    assert gated_retry.status_code == 403
+    assert gated_retry.json()["errors"][0]["details"]["reason_code"] == (
+        "fleet_feature_upgrade_required"
+    )
+    apply_commercial_plan(db_session, organization_id=org_id, plan_code="multi_location")
     retry_response = client.post(
         f"/api/v1/organizations/{org_id}/portfolio-fleet-runs/{run['id']}/retry-failed",
         headers=headers,
@@ -260,8 +292,11 @@ def test_delegated_location_group_access_separates_operator_and_approver(
     db_session,
 ) -> None:
     admin_token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
-    organization = db_session.get(Organization, org_id)
-    organization.plan_type = "multi_location"
+    apply_commercial_plan(
+        db_session,
+        organization_id=org_id,
+        plan_code="multi_location",
+    )
     delegated_user = User(
         tenant_id=org_id,
         email="fleet-operator@example.com",
@@ -433,11 +468,16 @@ def test_delegated_location_group_access_separates_operator_and_approver(
 def test_portfolio_fleet_runs_are_organization_scoped(client, db_session) -> None:
     token_a, org_a = _login(client, "org-admin@example.com", "pass-org-admin")
     token_b, org_b = _login(client, "b@example.com", "pass-b")
-    organization_a = db_session.get(Organization, org_a)
-    organization_b = db_session.get(Organization, org_b)
-    organization_a.plan_type = "multi_location"
-    organization_b.plan_type = "multi_location"
-    db_session.commit()
+    apply_commercial_plan(
+        db_session,
+        organization_id=org_a,
+        plan_code="multi_location",
+    )
+    apply_commercial_plan(
+        db_session,
+        organization_id=org_b,
+        plan_code="multi_location",
+    )
     location = _create_location(
         client,
         token=token_a,
@@ -474,8 +514,11 @@ def test_portfolio_fleet_runs_are_organization_scoped(client, db_session) -> Non
         == "target_snapshot_not_found"
     )
 
-    organization_b.plan_type = "solo"
-    db_session.commit()
+    apply_commercial_plan(
+        db_session,
+        organization_id=org_b,
+        plan_code="solo",
+    )
     gated_response = client.post(
         f"/api/v1/organizations/{org_b}/portfolio-fleet-runs",
         headers={"Authorization": f"Bearer {token_b}"},
@@ -494,9 +537,11 @@ def test_portfolio_fleet_approval_rechecks_shared_credit_allowance(
     monkeypatch,
 ) -> None:
     token, org_id = _login(client, "org-admin@example.com", "pass-org-admin")
-    organization = db_session.get(Organization, org_id)
-    organization.plan_type = "multi_location"
-    db_session.commit()
+    apply_commercial_plan(
+        db_session,
+        organization_id=org_id,
+        plan_code="multi_location",
+    )
     location = _create_location(
         client,
         token=token,
