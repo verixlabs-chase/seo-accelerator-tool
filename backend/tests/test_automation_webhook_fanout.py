@@ -431,7 +431,7 @@ def test_automation_jobs_are_cron_driven_and_registered() -> None:
     config = json.loads((BACKEND_ROOT / "vercel.json").read_text(encoding="utf-8"))
     assert {
         "path": "/api/v1/internal/jobs/drain",
-        "schedule": "*/5 * * * *",
+        "schedule": "0 6 * * *",
     } in config["crons"]
     assert (
         webhook_service.AUTOMATION_FANOUT_JOB_TYPE
