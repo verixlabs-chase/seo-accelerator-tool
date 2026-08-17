@@ -363,6 +363,31 @@ type AutomationConnectionsPayload = {
   truth: string;
 };
 
+type AutomationConformanceKit = {
+  version: "insightos.automation.conformance.v1";
+  provider: "zapier" | "make" | "pipedream" | "n8n";
+  provider_label: string;
+  test_only: true;
+  cannot_enable_live_delivery: true;
+  fixture_signing_secret: string;
+  request: {
+    method: "POST";
+    content_type: "application/json";
+    headers: Record<string, string>;
+    exact_raw_body: string;
+    parsed_body: Record<string, unknown>;
+  };
+  provider_paths: { payload: string; headers: string; route_field: string };
+  expected: Record<string, string | boolean>;
+  checks: string[];
+  safety: {
+    contains_customer_data: false;
+    contains_live_credentials: false;
+    inbound_actions_enabled: false;
+    message: string;
+  };
+};
+
 type BillingCheckoutAttempt = {
   organizationId: string;
   planCode: string;
@@ -983,6 +1008,35 @@ export default function SettingsPage() {
     );
     return response;
   }, []);
+
+  const downloadAutomationConformanceKit = useCallback(async () => {
+    setBusyAction(`automation-conformance-${automationProvider}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi(
+        `/automation/conformance/${automationProvider}`,
+        { method: "GET" },
+      )) as AutomationConformanceKit;
+      const objectUrl = URL.createObjectURL(
+        new Blob([JSON.stringify(response, null, 2)], { type: "application/json" }),
+      );
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `insightos-${response.provider}-receiver-conformance-v1.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setNotice(
+        `${response.provider_label} receiver test contract downloaded. It contains synthetic data and a test-only secret.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download the receiver test contract.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [automationProvider]);
 
   const createAutomationConnection = useCallback(async () => {
     setBusyAction("automation-create");
@@ -3859,6 +3913,19 @@ export default function SettingsPage() {
                             >
                               Open official {selectedAutomationProviderSetup.label} webhook documentation
                             </a>
+                            <div className="mt-3 flex flex-wrap items-center gap-3">
+                              <button
+                                type="button"
+                                className={secondaryButtonClass}
+                                disabled={busyAction === `automation-conformance-${automationProvider}`}
+                                onClick={() => void downloadAutomationConformanceKit()}
+                              >
+                                {busyAction === `automation-conformance-${automationProvider}` ? "Preparing test..." : "Download receiver test contract"}
+                              </button>
+                              <span className="text-xs leading-5 text-zinc-500">
+                                Synthetic only—contains no customer data or live credential.
+                              </span>
+                            </div>
                             <div className="mt-3 border-t border-sky-500/15 pt-3">
                               <p className="text-xs font-semibold text-zinc-200">Wire the received event</p>
                               <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-3">

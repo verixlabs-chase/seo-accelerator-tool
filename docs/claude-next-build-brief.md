@@ -4738,6 +4738,29 @@ Implementation status (August 17, 2026):
   proof still requires a real customer-owned endpoint and remains a deployment
   closeout item.
 
+#### AUT1H - Receiver Conformance Test Contract
+
+Implementation status (August 17, 2026):
+
+- An authenticated customer can now download a deterministic, provider-specific
+  receiver test contract for Zapier, Make, Pipedream, or n8n Cloud. The file
+  contains one canonical synthetic event, its exact raw JSON body, expected
+  headers and HMAC signature, provider field paths, expected parsed facts, and
+  a bounded validation checklist.
+- The fixture is explicitly public and test-only. It contains no tenant data,
+  live destination, customer credential, provider credential, or InsightOS
+  mutation authority, and it cannot mark a saved connection as tested or enable
+  product-event delivery.
+- The checklist proves the receiver can parse and route the contract, validate
+  HMAC-SHA256 against the exact bytes, reject a changed body, reject an expired
+  live timestamp, and deduplicate repeated event IDs before invoking an
+  external action. The same event body and safety meaning apply to all four
+  provider builders.
+- Settings offers the selected provider's JSON test contract beside the wiring
+  kit. Actual connection proof still comes only from the existing signed live
+  test receipt and then a later accepted real product event; downloading or
+  evaluating a fixture is never represented as production evidence.
+
 Placement and packaging:
 
 - This is a later integration sprint after DT1 connection truth, ALT1 event

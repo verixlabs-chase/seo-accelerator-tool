@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_org_role, require_roles
 from app.api.response import envelope
+from app.automation import automation_provider_conformance_kit
 from app.db.session import get_db
 from app.models.campaign import Campaign
 from app.models.strategy_automation_event import StrategyAutomationEvent
@@ -27,6 +28,8 @@ from app.services.automation_webhook_service import (
 )
 
 router = APIRouter(prefix='/automation', tags=['automation'])
+
+_CONFORMANCE_PROVIDERS = frozenset({"zapier", "make", "pipedream", "n8n"})
 
 
 class AutomationConnectionIn(BaseModel):
@@ -105,6 +108,29 @@ def get_automation_connections(
         request,
         list_connections(db, organization_id=str(user['organization_id'])),
     )
+
+
+@router.get('/conformance/{provider}')
+def get_automation_provider_conformance(
+    request: Request,
+    provider: str,
+    user: dict = Depends(require_org_role({'org_user'})),
+) -> dict:
+    del user
+    try:
+        data = automation_provider_conformance_kit(
+            provider=provider,
+            supported_provider_codes=_CONFORMANCE_PROVIDERS,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "message": "This automation provider is not supported.",
+                "reason_code": "automation_provider_not_supported",
+            },
+        ) from exc
+    return envelope(request, data)
 
 
 @router.post('/connections', status_code=status.HTTP_201_CREATED)

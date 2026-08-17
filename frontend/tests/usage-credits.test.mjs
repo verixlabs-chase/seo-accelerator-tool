@@ -69,6 +69,11 @@ test("settings provides outbound-only signed workflow connections", () => {
   assert.match(settings, /selectedAutomationProviderSetup\.route_field/);
   assert.match(settings, /selectedAutomationProviderSetup\.field_map/);
   assert.match(settings, /Verification contract:/);
+  assert.match(settings, /\/automation\/conformance\/\$\{automationProvider\}/);
+  assert.match(settings, /Download receiver test contract/);
+  assert.match(settings, /Synthetic only—contains no customer data or live credential/);
+  assert.match(settings, /receiver-conformance-v1\.json/);
+  assert.match(settings, /URL\.revokeObjectURL/);
   assert.match(settings, /The InsightOS side is wired/);
   assert.match(settings, /customer supplies the private webhook URL/);
   assert.match(settings, /Connection proof:/);
