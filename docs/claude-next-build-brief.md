@@ -4684,6 +4684,31 @@ Implementation status (August 17, 2026):
   action allowances, replay protection, vendor-published templates, and
   customer-hosted/generic destinations remain later AUT1 work.
 
+#### AUT1F - Provider Setup Guidance and Connection Proof
+
+Implementation status (August 17, 2026):
+
+- The connection API now returns a versioned setup guide for each supported
+  provider. Zapier, Make, Pipedream, and n8n Cloud each name the exact webhook
+  trigger or production endpoint to use, explain where to keep the one-time
+  signing secret, and require the owner to send a signed test before depending
+  on later workflow steps.
+- Settings labels these instructions as setup guidance rather than an installed
+  external template. InsightOS does not claim that it created, published, or
+  inspected the customer's workflow in another vendor.
+- Every saved connection now derives an evidence-backed proof state from its
+  durable delivery receipts: not tested, test needs attention, signed test
+  accepted, or real product event accepted. A connection is production-proven
+  only after a real signed product event is accepted after the current secret's
+  successful test; saving a URL or passing an older secret's test is not enough.
+- Secret rotation resets current proof until the replacement secret is tested
+  and a later product event succeeds. Endpoint URLs, signing secrets, response
+  bodies, raw provider errors, and supplier-internal identifiers remain hidden.
+- Reviewed vendor-published templates and live provider-by-provider production
+  evidence remain deployment closeout work. This slice still adds no inbound
+  credential, command, approval, publishing, WordPress, or Business Profile
+  execution path.
+
 Placement and packaging:
 
 - This is a later integration sprint after DT1 connection truth, ALT1 event

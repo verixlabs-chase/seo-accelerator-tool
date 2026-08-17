@@ -15,9 +15,11 @@ from sqlalchemy.orm import Session
 
 from app.automation import (
     AUTOMATION_EVENT_SCHEMA_VERSION,
+    AUTOMATION_PROVIDER_SETUP_VERSION,
     AUTOMATION_RECIPE_CATALOG_VERSION,
     AutomationEventEnvelope,
     automation_event_catalog,
+    automation_provider_setup_catalog,
     automation_starter_recipe_catalog,
     build_automation_event,
     generate_signing_secret,
@@ -106,6 +108,10 @@ def list_connections(db: Session, *, organization_id: str) -> dict[str, Any]:
         "recipe_catalog_version": AUTOMATION_RECIPE_CATALOG_VERSION,
         "starter_recipes": automation_starter_recipe_catalog(
             live_event_types=_LIVE_SUBSCRIPTION_TYPES
+        ),
+        "provider_setup_version": AUTOMATION_PROVIDER_SETUP_VERSION,
+        "provider_setup": automation_provider_setup_catalog(
+            supported_provider_codes=frozenset(_PROVIDERS)
         ),
         "automatic_actions_enabled": False,
         "truth": (
@@ -1200,6 +1206,23 @@ def _serialize_connection(
         .limit(5)
         .all()
     )
+    accepted_product_delivery = None
+    if row.verification_status == "verified" and row.last_tested_at is not None:
+        accepted_product_delivery = (
+            db.query(AutomationWebhookDelivery)
+            .filter(
+                AutomationWebhookDelivery.connection_id == row.id,
+                AutomationWebhookDelivery.delivery_kind == "product",
+                AutomationWebhookDelivery.status == "delivered",
+                AutomationWebhookDelivery.delivered_at >= row.last_tested_at,
+            )
+            .order_by(AutomationWebhookDelivery.delivered_at.desc())
+            .first()
+        )
+    conformance_proof = _connection_conformance_proof(
+        row=row,
+        accepted_product_delivery=accepted_product_delivery,
+    )
     return {
         "id": row.id,
         "name": row.name,
@@ -1227,6 +1250,51 @@ def _serialize_connection(
             row.status == "active" and row.verification_status == "verified"
         ),
         "automatic_actions_enabled": False,
+        "conformance_proof": conformance_proof,
+    }
+
+
+def _connection_conformance_proof(
+    *,
+    row: AutomationWebhookConnection,
+    accepted_product_delivery: AutomationWebhookDelivery | None,
+) -> dict[str, Any]:
+    if row.verification_status == "failed":
+        return {
+            "state": "needs_attention",
+            "label": "Test needs attention",
+            "summary": "The saved endpoint has not accepted the current signed test.",
+            "evidence_at": _iso(row.last_tested_at),
+            "production_proven": False,
+        }
+    if row.verification_status != "verified":
+        return {
+            "state": "not_tested",
+            "label": "Not tested",
+            "summary": "Send a signed test before automatic product events can start.",
+            "evidence_at": None,
+            "production_proven": False,
+        }
+    if accepted_product_delivery is not None:
+        return {
+            "state": "product_event_accepted",
+            "label": "Real product event accepted",
+            "summary": (
+                "The endpoint accepted a signed product event after the current "
+                "connection test."
+            ),
+            "evidence_at": _iso(accepted_product_delivery.delivered_at),
+            "production_proven": True,
+        }
+    return {
+        "state": "test_accepted",
+        "label": "Signed test accepted",
+        "summary": (
+            "The endpoint accepted the current signed test. A real product event "
+            "has not been proven yet."
+        ),
+        "evidence_at": _iso(row.last_tested_at),
+        "production_proven": False,
     }
 
 

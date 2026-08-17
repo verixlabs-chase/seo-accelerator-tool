@@ -141,7 +141,7 @@ def test_committed_report_event_fans_out_once_and_delivers_minimal_signed_payloa
     db_session,
     monkeypatch,
 ) -> None:
-    _token, organization_id, signing_secret = _create_verified_connection(
+    token, organization_id, signing_secret = _create_verified_connection(
         client, monkeypatch
     )
     campaign, report, event = _create_report_event(
@@ -198,6 +198,12 @@ def test_committed_report_event_fans_out_once_and_delivers_minimal_signed_payloa
     assert "private_snapshot" not in public_json
     assert "internal-only-hash" not in public_json
     assert "provider" not in public_json.lower()
+    listed = client.get("/api/v1/automation/connections", headers=_headers(token))
+    proof = listed.json()["data"]["items"][0]["conformance_proof"]
+    assert proof["state"] == "product_event_accepted"
+    assert proof["label"] == "Real product event accepted"
+    assert proof["production_proven"] is True
+    assert proof["evidence_at"] is not None
 
 
 def test_product_delivery_retries_then_dead_letters_and_owner_recovers(

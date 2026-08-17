@@ -58,6 +58,13 @@ test("settings provides outbound-only signed workflow connections", () => {
   assert.match(settings, /Use this recipe/);
   assert.match(settings, /Recipe selected/);
   assert.match(settings, /setAutomationSelectedRecipe\(""\)/);
+  assert.match(settings, /provider_setup_version/);
+  assert.match(settings, /provider_setup/);
+  assert.match(settings, /Set up \{selectedAutomationProviderSetup\.webhook_source\}/);
+  assert.match(settings, /This is setup guidance, not an installed external template/);
+  assert.match(settings, /Connection proof:/);
+  assert.match(settings, /Real product event accepted|product_event_accepted/);
+  assert.match(settings, /InsightOS proves the connection only after the signed test/);
   assert.match(settings, /The saved webhook URL and signing secret are encrypted/);
   assert.match(settings, /Send test/);
   assert.match(settings, /Retry last test/);

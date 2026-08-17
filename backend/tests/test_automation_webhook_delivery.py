@@ -168,6 +168,24 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
     assert all(item["outbound_only"] is True for item in recipes)
     assert all(item["human_approval_preserved"] is True for item in recipes)
     assert all(item["automatic_actions_enabled"] is False for item in recipes)
+    assert listed.json()["data"]["provider_setup_version"] == (
+        "insightos.automation.provider-setup.v1"
+    )
+    provider_setup = listed.json()["data"]["provider_setup"]
+    assert {item["code"] for item in provider_setup} == {
+        "zapier",
+        "make",
+        "pipedream",
+        "n8n",
+    }
+    assert all(item["template_status"] == "setup_guide_only" for item in provider_setup)
+    assert listed.json()["data"]["items"][0]["conformance_proof"] == {
+        "state": "not_tested",
+        "label": "Not tested",
+        "summary": "Send a signed test before automatic product events can start.",
+        "evidence_at": None,
+        "production_proven": False,
+    }
 
     audit = (
         db_session.query(AuditLog)
@@ -300,6 +318,8 @@ def test_signed_test_delivery_records_receipt_without_exposing_destination(
     assert data["delivery"]["status"] == "delivered"
     assert data["delivery"]["attempt_count"] == 1
     assert data["delivery"]["attempts"][0]["response_status"] == 204
+    assert data["connection"]["conformance_proof"]["state"] == "test_accepted"
+    assert data["connection"]["conformance_proof"]["production_proven"] is False
 
     verified = verify_signed_automation_event(
         body=captured["body"],
@@ -342,6 +362,9 @@ def test_failed_delivery_retries_same_event_and_stops_after_success(
     assert first_delivery["status"] == "failed"
     assert first_delivery["can_retry"] is True
     assert first.json()["data"]["connection"]["status"] == "unhealthy"
+    assert first.json()["data"]["connection"]["conformance_proof"]["state"] == (
+        "needs_attention"
+    )
 
     retried = client.post(
         f"/api/v1/automation/deliveries/{first_delivery['id']}/retry",
@@ -425,6 +448,8 @@ def test_rotation_replaces_secret_and_disconnect_removes_encrypted_config(
     assert rotated_data["signing_secret"] != original_secret
     assert rotated_data["connection"]["signing_secret_version"] == 2
     assert rotated_data["connection"]["status"] == "pending"
+    assert rotated_data["connection"]["conformance_proof"]["state"] == "not_tested"
+    assert rotated_data["connection"]["conformance_proof"]["production_proven"] is False
 
     disconnected = client.delete(
         f"/api/v1/automation/connections/{connection_id}",

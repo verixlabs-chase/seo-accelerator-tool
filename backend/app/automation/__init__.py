@@ -12,6 +12,10 @@ from app.automation.recipe_catalog import (
     AUTOMATION_RECIPE_CATALOG_VERSION,
     automation_starter_recipe_catalog,
 )
+from app.automation.provider_setup import (
+    AUTOMATION_PROVIDER_SETUP_VERSION,
+    automation_provider_setup_catalog,
+)
 
 __all__ = [
     "AUTOMATION_EVENT_SCHEMA_VERSION",
@@ -24,4 +28,6 @@ __all__ = [
     "verify_signed_automation_event",
     "AUTOMATION_RECIPE_CATALOG_VERSION",
     "automation_starter_recipe_catalog",
+    "AUTOMATION_PROVIDER_SETUP_VERSION",
+    "automation_provider_setup_catalog",
 ]

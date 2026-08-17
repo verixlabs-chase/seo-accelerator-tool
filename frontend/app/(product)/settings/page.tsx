@@ -299,6 +299,13 @@ type AutomationConnection = {
   recoverable_deliveries: AutomationDelivery[];
   automatic_delivery_enabled: boolean;
   automatic_actions_enabled: false;
+  conformance_proof: {
+    state: "not_tested" | "test_accepted" | "product_event_accepted" | "needs_attention";
+    label: string;
+    summary: string;
+    evidence_at?: string | null;
+    production_proven: boolean;
+  };
 };
 
 type AutomationStarterRecipe = {
@@ -313,6 +320,18 @@ type AutomationStarterRecipe = {
   automatic_actions_enabled: false;
 };
 
+type AutomationProviderSetup = {
+  code: "zapier" | "make" | "pipedream" | "n8n";
+  version: "insightos.automation.provider-setup.v1";
+  label: string;
+  webhook_source: string;
+  production_url_note: string;
+  setup_steps: string[];
+  template_status: "setup_guide_only";
+  signed_events_required: true;
+  inbound_actions_enabled: false;
+};
+
 type AutomationConnectionsPayload = {
   items: AutomationConnection[];
   supported_providers: Array<{ code: "zapier" | "make" | "pipedream" | "n8n"; label: string }>;
@@ -320,6 +339,8 @@ type AutomationConnectionsPayload = {
   live_event_types: string[];
   recipe_catalog_version: "insightos.automation.recipes.v1";
   starter_recipes: AutomationStarterRecipe[];
+  provider_setup_version: "insightos.automation.provider-setup.v1";
+  provider_setup: AutomationProviderSetup[];
   automatic_actions_enabled: false;
   truth: string;
 };
@@ -713,6 +734,7 @@ export default function SettingsPage() {
   const [automationProviders, setAutomationProviders] = useState<AutomationConnectionsPayload["supported_providers"]>([]);
   const [automationEvents, setAutomationEvents] = useState<AutomationConnectionsPayload["supported_events"]>([]);
   const [automationRecipes, setAutomationRecipes] = useState<AutomationStarterRecipe[]>([]);
+  const [automationProviderSetup, setAutomationProviderSetup] = useState<AutomationProviderSetup[]>([]);
   const [automationSelectedRecipe, setAutomationSelectedRecipe] = useState("");
   const [automationName, setAutomationName] = useState("");
   const [automationProvider, setAutomationProvider] = useState<"zapier" | "make" | "pipedream" | "n8n">("zapier");
@@ -937,6 +959,7 @@ export default function SettingsPage() {
     setAutomationProviders(response.supported_providers || []);
     setAutomationEvents(response.supported_events || []);
     setAutomationRecipes(response.starter_recipes || []);
+    setAutomationProviderSetup(response.provider_setup || []);
     setAutomationSelectedEvents((current) =>
       current.length > 0 ? current : (response.supported_events || []).map((item) => item.code),
     );
@@ -2102,6 +2125,9 @@ export default function SettingsPage() {
   }
 
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
+  const selectedAutomationProviderSetup = automationProviderSetup.find(
+    (item) => item.code === automationProvider,
+  );
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       {
@@ -3786,6 +3812,24 @@ export default function SettingsPage() {
                             ) : null}
                           </div>
                         </div>
+                        {selectedAutomationProviderSetup ? (
+                          <div className="mt-4 rounded-md border border-sky-500/20 bg-sky-500/5 p-3">
+                            <p className="text-xs font-semibold text-sky-100">
+                              Set up {selectedAutomationProviderSetup.webhook_source}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-sky-100/75">
+                              {selectedAutomationProviderSetup.production_url_note}
+                            </p>
+                            <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
+                              {selectedAutomationProviderSetup.setup_steps.map((step) => (
+                                <li key={step}>{step}</li>
+                              ))}
+                            </ol>
+                            <p className="mt-2 text-xs leading-5 text-zinc-500">
+                              This is setup guidance, not an installed external template. InsightOS proves the connection only after the signed test—and later a real product event—is accepted.
+                            </p>
+                          </div>
+                        ) : null}
                         {automationRecipes.length > 0 ? (
                           <div className="mt-4">
                             <p className="text-xs font-medium text-zinc-300">Start with a safe event recipe</p>
@@ -3874,6 +3918,15 @@ export default function SettingsPage() {
                                   <p className="mt-2 text-xs leading-5 text-zinc-500">
                                     {connection.event_types.length} live {connection.event_types.length === 1 ? "event" : "events"} subscribed. Destination URL stays private. Signing secret version {connection.signing_secret_version}.
                                   </p>
+                                  <div className={`mt-2 rounded-md border px-3 py-2 ${connection.conformance_proof.state === "product_event_accepted" ? "border-emerald-500/20 bg-emerald-500/5" : connection.conformance_proof.state === "needs_attention" ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
+                                    <p className="text-xs font-medium text-zinc-200">
+                                      Connection proof: {connection.conformance_proof.label}
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                      {connection.conformance_proof.summary}
+                                      {connection.conformance_proof.evidence_at ? ` Last evidence: ${formatTimestamp(connection.conformance_proof.evidence_at)}.` : ""}
+                                    </p>
+                                  </div>
                                   {connection.dead_letter_count > 0 ? (
                                     <div className="mt-2 space-y-2 rounded-md border border-rose-500/20 bg-rose-500/5 p-3">
                                       <p className="text-xs font-medium text-rose-300">
