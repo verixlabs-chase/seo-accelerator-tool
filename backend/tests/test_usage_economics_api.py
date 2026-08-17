@@ -95,10 +95,11 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
             "automatically as signed, outbound-only notifications. Connected tools "
             "cannot approve or carry out InsightOS actions."
         ),
-        "planned_connection_options": [
-            "Make",
-            "Zapier",
-            "Pipedream",
+            "planned_connection_options": [
+                "n8n Cloud",
+                "Make",
+                "Zapier",
+                "Pipedream",
         ],
         "outbound_contract": {
             "schema_version": "insightos.automation.event.v1",

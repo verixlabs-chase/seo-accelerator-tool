@@ -78,3 +78,14 @@ def test_automation_fanout_migration_preserves_attempt_truth_and_is_reversible()
     assert "Cannot downgrade automation fanout after an owner recovery" in source
     assert 'batch_op.drop_column("paused_by_user_id")' in source
     assert '"delivery_kind",' in source
+
+
+def test_n8n_cloud_migration_expands_provider_allowlist_reversibly() -> None:
+    source = (MIGRATIONS_ROOT / "20260817_0162_automation_n8n_cloud.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'down_revision = "20260816_0161"' in source
+    assert "provider in ('zapier','make','pipedream','n8n')" in source
+    assert "WHERE provider = 'n8n'" in source
+    assert "Cannot downgrade n8n Cloud support while an n8n connection exists" in source
+    assert "provider in ('zapier','make','pipedream')" in source

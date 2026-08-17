@@ -46,6 +46,9 @@ test("settings provides outbound-only signed workflow connections", () => {
   assert.match(settings, /\/automation\/connections\/\$\{connectionId\}\/\$\{action\}/);
   assert.match(settings, /Copy this signing secret now/);
   assert.match(settings, /Webhook URL — kept private/);
+  assert.match(settings, /n8n Cloud/);
+  assert.match(settings, /Production URL from a published n8n Cloud Webhook node/);
+  assert.match(settings, /Temporary test URLs and self-hosted domains are not accepted/);
   assert.match(settings, /The saved webhook URL and signing secret are encrypted/);
   assert.match(settings, /Send test/);
   assert.match(settings, /Retry last test/);

@@ -4572,7 +4572,7 @@ Implementation status (August 16, 2026):
 - Destination validation is fail-closed and provider-specific. Only HTTPS on
   the reviewed default webhook hosts is accepted, with no user information,
   fragment, redirect following, custom port, generic destination, localhost,
-  IP address, or customer-supplied custom domain. Custom domains, n8n, generic
+  IP address, or customer-supplied custom domain. Custom domains, generic
   webhooks, and customer-hosted endpoints remain deferred until their network,
   tenancy, authentication, and support contracts are separately governed.
 - Owners can send a signed connection-health test, retry a failed or interrupted
@@ -4635,6 +4635,30 @@ Implementation status (August 16, 2026):
   Vendor conformance fixtures, customer-hosted n8n/generic destinations,
   service accounts, typed inbound commands, and plan-specific event-volume
   ledgers remain later AUT1 work.
+
+#### AUT1D - Governed n8n Cloud Delivery
+
+Implementation status (August 17, 2026):
+
+- Organization owners can now connect a published n8n Cloud workflow through
+  the same encrypted, signed, outbound-only contract used by Zapier, Make, and
+  Pipedream. The connection inherits durable fan-out, bounded retries,
+  pause/resume, dead-letter recovery, secret rotation, redacted health, and the
+  existing plan gate; no separate execution path or supplier-specific payload
+  was introduced.
+- n8n validation is deliberately narrower than generic webhook support. Only a
+  production `/webhook/` URL on the exact `*.app.n8n.cloud` suffix is accepted.
+  Temporary `/webhook-test/` URLs, credentials in URLs, redirects, custom
+  ports, IP addresses, localhost, self-hosted n8n domains, and arbitrary custom
+  hosts fail closed. Settings explains that the n8n workflow must be published
+  and that its Production URL is required.
+- The destination URL and signing secret remain encrypted and hidden after
+  creation. Customer-facing records expose only the n8n Cloud label, endpoint
+  host, subscribed event names, delivery health, and safe recovery state.
+- This does not enable inbound commands or automatic InsightOS actions. Scoped
+  credentials, typed approval-preserving actions, replay protection for inbound
+  requests, action allowances, and customer-hosted/generic destinations remain
+  later AUT1 work.
 
 Placement and packaging:
 

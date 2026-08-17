@@ -23,7 +23,7 @@ class AutomationWebhookConnection(Base):
     __tablename__ = "automation_webhook_connections"
     __table_args__ = (
         CheckConstraint(
-            "provider in ('zapier','make','pipedream')",
+            "provider in ('zapier','make','pipedream','n8n')",
             name="ck_automation_webhook_connections_provider",
         ),
         CheckConstraint(

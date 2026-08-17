@@ -64,6 +64,11 @@ def _connection_body(**overrides):
             "https://abcde.m.pipedream.net",
             "abcde.m.pipedream.net",
         ),
+        (
+            "n8n",
+            "https://verixlabs.app.n8n.cloud/webhook/8f7188f6-60d0-47fc-8d73-5d7af5d33543",
+            "verixlabs.app.n8n.cloud",
+        ),
     ],
 )
 def test_destination_validation_accepts_only_known_https_webhook_hosts(
@@ -84,6 +89,16 @@ def test_destination_validation_accepts_only_known_https_webhook_hosts(
         ("make", "https://hook.us1.make.com@127.0.0.1/private", "automation_destination_invalid"),
         ("pipedream", "https://abcde.m.pipedream.net:8443/event", "automation_destination_invalid"),
         ("zapier", "https://hooks.zapier.com/", "automation_destination_invalid"),
+        (
+            "n8n",
+            "https://verixlabs.app.n8n.cloud/webhook-test/8f7188f6",
+            "automation_destination_provider_mismatch",
+        ),
+        (
+            "n8n",
+            "https://automations.example.com/webhook/8f7188f6",
+            "automation_destination_provider_mismatch",
+        ),
         ("generic", "https://example.com/webhook", "automation_provider_not_supported"),
     ],
 )
@@ -150,6 +165,37 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
     assert "secret-token" not in audit.payload_json
     assert secret not in audit.payload_json
     assert organization_id in {audit.tenant_id, row.organization_id}
+
+
+def test_owner_can_connect_an_n8n_cloud_production_webhook(client) -> None:
+    token, _ = _login(client, "org-owner@example.com", "pass-org-owner")
+    response = client.post(
+        "/api/v1/automation/connections",
+        json=_connection_body(
+            name="n8n owner alerts",
+            provider="n8n",
+            destination_url=(
+                "https://verixlabs.app.n8n.cloud/webhook/"
+                "8f7188f6-60d0-47fc-8d73-5d7af5d33543"
+            ),
+        ),
+        headers=_headers(token),
+    )
+    assert response.status_code == 201
+    connection = response.json()["data"]["connection"]
+    assert connection["provider"] == "n8n"
+    assert connection["provider_label"] == "n8n Cloud"
+    assert connection["endpoint_host"] == "verixlabs.app.n8n.cloud"
+    assert "destination_url" not in connection
+
+    listed = client.get("/api/v1/automation/connections", headers=_headers(token))
+    assert listed.status_code == 200
+    assert {item["code"] for item in listed.json()["data"]["supported_providers"]} == {
+        "zapier",
+        "make",
+        "pipedream",
+        "n8n",
+    }
 
 
 def test_only_owner_can_create_test_pause_resume_recover_rotate_or_disconnect(client) -> None:

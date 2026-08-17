@@ -49,9 +49,17 @@ AUTOMATION_DELIVERY_TIMEOUT_SECONDS = 10.0
 AUTOMATION_DELIVERY_MAX_ATTEMPTS = 3
 AUTOMATION_FANOUT_JOB_TYPE = "automation.webhook.fanout"
 AUTOMATION_DELIVERY_JOB_TYPE = "automation.webhook.deliver"
-_PROVIDERS = {"zapier": "Zapier", "make": "Make", "pipedream": "Pipedream"}
+_PROVIDERS = {
+    "zapier": "Zapier",
+    "make": "Make",
+    "pipedream": "Pipedream",
+    "n8n": "n8n Cloud",
+}
 _PIPEDREAM_HOST = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}\.m\.pipedream\.net$")
 _MAKE_HOST = re.compile(r"^hook(?:\.[a-z0-9-]+)?\.make\.com$")
+_N8N_CLOUD_HOST = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.app\.n8n\.cloud$"
+)
 _PRODUCT_EVENT_TYPES = {
     "report.generated": "report.ready",
     "report.regenerated": "report.ready",
@@ -635,7 +643,7 @@ def list_deliveries(
 def validate_automation_destination(*, provider: str, destination_url: str) -> tuple[str, str]:
     if provider not in _PROVIDERS:
         raise AutomationWebhookError(
-            "Choose Zapier, Make, or Pipedream.",
+            "Choose Zapier, Make, Pipedream, or n8n Cloud.",
             reason_code="automation_provider_not_supported",
             status_code=422,
         )
@@ -666,6 +674,12 @@ def validate_automation_destination(*, provider: str, destination_url: str) -> t
         valid = _MAKE_HOST.fullmatch(host) is not None and parsed.path not in {"", "/"}
     elif provider == "pipedream":
         valid = _PIPEDREAM_HOST.fullmatch(host) is not None
+    elif provider == "n8n":
+        valid = (
+            _N8N_CLOUD_HOST.fullmatch(host) is not None
+            and parsed.path.startswith("/webhook/")
+            and len(parsed.path) > len("/webhook/")
+        )
     if not valid:
         raise AutomationWebhookError(
             f"This is not a supported {_PROVIDERS[provider]} webhook URL.",
@@ -1368,7 +1382,7 @@ def _decrypt_config(blob: str | None) -> dict[str, Any]:
 
 def _destination_error() -> AutomationWebhookError:
     return AutomationWebhookError(
-        "Use the complete HTTPS webhook URL supplied by Zapier, Make, or Pipedream.",
+        "Use the complete HTTPS production webhook URL supplied by Zapier, Make, Pipedream, or n8n Cloud.",
         reason_code="automation_destination_invalid",
         status_code=422,
     )

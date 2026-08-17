@@ -281,7 +281,7 @@ type AutomationDelivery = {
 type AutomationConnection = {
   id: string;
   name: string;
-  provider: "zapier" | "make" | "pipedream";
+  provider: "zapier" | "make" | "pipedream" | "n8n";
   provider_label: string;
   status: "pending" | "active" | "unhealthy" | "paused" | "disconnected";
   endpoint_host: string;
@@ -303,7 +303,7 @@ type AutomationConnection = {
 
 type AutomationConnectionsPayload = {
   items: AutomationConnection[];
-  supported_providers: Array<{ code: "zapier" | "make" | "pipedream"; label: string }>;
+  supported_providers: Array<{ code: "zapier" | "make" | "pipedream" | "n8n"; label: string }>;
   supported_events: Array<{ code: string; label: string; summary: string }>;
   live_event_types: string[];
   automatic_actions_enabled: false;
@@ -699,7 +699,7 @@ export default function SettingsPage() {
   const [automationProviders, setAutomationProviders] = useState<AutomationConnectionsPayload["supported_providers"]>([]);
   const [automationEvents, setAutomationEvents] = useState<AutomationConnectionsPayload["supported_events"]>([]);
   const [automationName, setAutomationName] = useState("");
-  const [automationProvider, setAutomationProvider] = useState<"zapier" | "make" | "pipedream">("zapier");
+  const [automationProvider, setAutomationProvider] = useState<"zapier" | "make" | "pipedream" | "n8n">("zapier");
   const [automationDestination, setAutomationDestination] = useState("");
   const [automationSelectedEvents, setAutomationSelectedEvents] = useState<string[]>([]);
   const [automationSigningSecret, setAutomationSigningSecret] = useState("");
@@ -3723,12 +3723,13 @@ export default function SettingsPage() {
                               id="automation-provider"
                               className={selectClass}
                               value={automationProvider}
-                              onChange={(event) => setAutomationProvider(event.target.value as "zapier" | "make" | "pipedream")}
+                              onChange={(event) => setAutomationProvider(event.target.value as "zapier" | "make" | "pipedream" | "n8n")}
                             >
                               {(automationProviders.length ? automationProviders : [
                                 { code: "zapier" as const, label: "Zapier" },
                                 { code: "make" as const, label: "Make" },
                                 { code: "pipedream" as const, label: "Pipedream" },
+                                { code: "n8n" as const, label: "n8n Cloud" },
                               ]).map((provider) => (
                                 <option key={provider.code} value={provider.code}>{provider.label}</option>
                               ))}
@@ -3760,6 +3761,11 @@ export default function SettingsPage() {
                               placeholder="Paste the HTTPS webhook URL"
                               onChange={(event) => setAutomationDestination(event.target.value)}
                             />
+                            {automationProvider === "n8n" ? (
+                              <p className="mt-1.5 text-xs leading-5 text-zinc-500">
+                                Paste the Production URL from a published n8n Cloud Webhook node. Temporary test URLs and self-hosted domains are not accepted.
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                         <fieldset className="mt-4">

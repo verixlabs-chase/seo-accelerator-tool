@@ -434,6 +434,7 @@ def _external_automation_access(plan_code: str) -> dict[str, Any]:
             "InsightOS alerts, reports, and manual workflows remain available."
         ),
         "planned_connection_options": [
+            "n8n Cloud",
             "Make",
             "Zapier",
             "Pipedream",
