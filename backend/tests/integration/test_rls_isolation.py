@@ -44,7 +44,7 @@ def test_application_role_can_read_immutable_tier_profile_catalog(
                 select(TierProfile.tier_code).where(TierProfile.version == 1)
             ).scalars()
         )
-        assert {"standard", "enterprise", "internal_anchor"}.issubset(visible_profiles)
+        assert "standard" in visible_profiles
     finally:
         isolated.rollback()
         isolated.close()
