@@ -156,6 +156,18 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
     assert "approval.requested" in {
         item["code"] for item in listed.json()["data"]["contract_events"]
     }
+    assert listed.json()["data"]["recipe_catalog_version"] == (
+        "insightos.automation.recipes.v1"
+    )
+    recipes = listed.json()["data"]["starter_recipes"]
+    assert {item["code"] for item in recipes} == {
+        "owner_report_ready",
+        "review_new_work",
+        "track_action_results",
+    }
+    assert all(item["outbound_only"] is True for item in recipes)
+    assert all(item["human_approval_preserved"] is True for item in recipes)
+    assert all(item["automatic_actions_enabled"] is False for item in recipes)
 
     audit = (
         db_session.query(AuditLog)

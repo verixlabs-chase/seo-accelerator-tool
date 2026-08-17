@@ -4660,6 +4660,30 @@ Implementation status (August 17, 2026):
   requests, action allowances, and customer-hosted/generic destinations remain
   later AUT1 work.
 
+#### AUT1E - Versioned Starter Recipe Catalog
+
+Implementation status (August 17, 2026):
+
+- The outbound connection contract now includes a versioned, server-defined
+  starter recipe catalog for sharing new reports, routing new recommendations
+  and failed work to human review, and recording completed or failed action
+  results. Every recipe is composed only from product events that are already
+  live in AUT1C; a recipe that references a reserved or unavailable event fails
+  closed instead of appearing in Settings.
+- Settings presents the customer outcome for each recipe and applies its exact
+  event bundle to the existing connection form. The owner still creates and
+  tests the destination in Zapier, Make, Pipedream, or n8n Cloud, and can edit
+  the selected event bundle before saving.
+- Recipe selection does not create a second delivery path, store a supplier
+  template ID, or claim that a workflow has been installed in the external
+  platform. It is honest setup guidance over the same encrypted destination,
+  signed event envelope, durable retries, redacted receipts, and dead-letter
+  recovery already proven by AUT1B-AUT1D.
+- Every catalog item states that it is outbound-only, preserves human approval,
+  and cannot run an InsightOS action. Inbound service accounts, typed commands,
+  action allowances, replay protection, vendor-published templates, and
+  customer-hosted/generic destinations remain later AUT1 work.
+
 Placement and packaging:
 
 - This is a later integration sprint after DT1 connection truth, ALT1 event

@@ -15,8 +15,10 @@ from sqlalchemy.orm import Session
 
 from app.automation import (
     AUTOMATION_EVENT_SCHEMA_VERSION,
+    AUTOMATION_RECIPE_CATALOG_VERSION,
     AutomationEventEnvelope,
     automation_event_catalog,
+    automation_starter_recipe_catalog,
     build_automation_event,
     generate_signing_secret,
     sign_automation_event,
@@ -101,6 +103,10 @@ def list_connections(db: Session, *, organization_id: str) -> dict[str, Any]:
         ],
         "contract_events": automation_event_catalog(),
         "live_event_types": sorted(set(_PRODUCT_EVENT_TYPES.values())),
+        "recipe_catalog_version": AUTOMATION_RECIPE_CATALOG_VERSION,
+        "starter_recipes": automation_starter_recipe_catalog(
+            live_event_types=_LIVE_SUBSCRIPTION_TYPES
+        ),
         "automatic_actions_enabled": False,
         "truth": (
             "Approved product events are delivered as signed outbound notifications. "

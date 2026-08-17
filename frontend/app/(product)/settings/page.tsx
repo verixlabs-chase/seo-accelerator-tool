@@ -301,11 +301,25 @@ type AutomationConnection = {
   automatic_actions_enabled: false;
 };
 
+type AutomationStarterRecipe = {
+  code: string;
+  version: "insightos.automation.recipes.v1";
+  label: string;
+  summary: string;
+  external_result: string;
+  event_types: string[];
+  outbound_only: true;
+  human_approval_preserved: true;
+  automatic_actions_enabled: false;
+};
+
 type AutomationConnectionsPayload = {
   items: AutomationConnection[];
   supported_providers: Array<{ code: "zapier" | "make" | "pipedream" | "n8n"; label: string }>;
   supported_events: Array<{ code: string; label: string; summary: string }>;
   live_event_types: string[];
+  recipe_catalog_version: "insightos.automation.recipes.v1";
+  starter_recipes: AutomationStarterRecipe[];
   automatic_actions_enabled: false;
   truth: string;
 };
@@ -698,6 +712,8 @@ export default function SettingsPage() {
   const [automationConnections, setAutomationConnections] = useState<AutomationConnection[]>([]);
   const [automationProviders, setAutomationProviders] = useState<AutomationConnectionsPayload["supported_providers"]>([]);
   const [automationEvents, setAutomationEvents] = useState<AutomationConnectionsPayload["supported_events"]>([]);
+  const [automationRecipes, setAutomationRecipes] = useState<AutomationStarterRecipe[]>([]);
+  const [automationSelectedRecipe, setAutomationSelectedRecipe] = useState("");
   const [automationName, setAutomationName] = useState("");
   const [automationProvider, setAutomationProvider] = useState<"zapier" | "make" | "pipedream" | "n8n">("zapier");
   const [automationDestination, setAutomationDestination] = useState("");
@@ -920,6 +936,7 @@ export default function SettingsPage() {
     setAutomationConnections(response.items || []);
     setAutomationProviders(response.supported_providers || []);
     setAutomationEvents(response.supported_events || []);
+    setAutomationRecipes(response.starter_recipes || []);
     setAutomationSelectedEvents((current) =>
       current.length > 0 ? current : (response.supported_events || []).map((item) => item.code),
     );
@@ -948,6 +965,7 @@ export default function SettingsPage() {
       setAutomationSigningSecret(response.signing_secret);
       setAutomationName("");
       setAutomationDestination("");
+      setAutomationSelectedRecipe("");
       setNotice("Connection saved. Copy the signing secret now, then send a test event.");
       await loadAutomationConnections();
     } catch (err) {
@@ -3768,6 +3786,36 @@ export default function SettingsPage() {
                             ) : null}
                           </div>
                         </div>
+                        {automationRecipes.length > 0 ? (
+                          <div className="mt-4">
+                            <p className="text-xs font-medium text-zinc-300">Start with a safe event recipe</p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-500">
+                              A recipe only chooses signed outbound notifications. Finish the task or message steps inside your workflow tool; it cannot approve or run InsightOS work.
+                            </p>
+                            <div className="mt-2 grid gap-2 lg:grid-cols-3">
+                              {automationRecipes.map((recipe) => (
+                                <div key={recipe.code} className="rounded-md border border-[#292a2f] bg-[#141518] p-3">
+                                  <p className="text-xs font-semibold text-zinc-200">{recipe.label}</p>
+                                  <p className="mt-1 text-xs leading-5 text-zinc-500">{recipe.summary}</p>
+                                  <p className="mt-2 text-xs leading-5 text-zinc-400">{recipe.external_result}</p>
+                                  <button
+                                    type="button"
+                                    className={`${secondaryButtonClass} mt-3`}
+                                    aria-pressed={automationSelectedRecipe === recipe.code}
+                                    onClick={() => {
+                                      const liveEvents = new Set(automationEvents.map((event) => event.code));
+                                      setAutomationSelectedRecipe(recipe.code);
+                                      setAutomationSelectedEvents(recipe.event_types.filter((code) => liveEvents.has(code)));
+                                      setAutomationName((current) => current.trim() || recipe.label);
+                                    }}
+                                  >
+                                    {automationSelectedRecipe === recipe.code ? "Recipe selected" : "Use this recipe"}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                         <fieldset className="mt-4">
                           <legend className="text-xs font-medium text-zinc-300">Events this workflow can receive</legend>
                           <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -3778,6 +3826,7 @@ export default function SettingsPage() {
                                   className="mt-0.5 h-4 w-4 accent-orange-500"
                                   checked={automationSelectedEvents.includes(event.code)}
                                   onChange={(inputEvent) => {
+                                    setAutomationSelectedRecipe("");
                                     setAutomationSelectedEvents((current) =>
                                       inputEvent.target.checked
                                         ? Array.from(new Set([...current, event.code]))

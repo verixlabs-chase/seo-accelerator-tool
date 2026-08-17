@@ -49,6 +49,15 @@ test("settings provides outbound-only signed workflow connections", () => {
   assert.match(settings, /n8n Cloud/);
   assert.match(settings, /Production URL from a published n8n Cloud Webhook node/);
   assert.match(settings, /Temporary test URLs and self-hosted domains are not accepted/);
+  assert.match(settings, /Start with a safe event recipe/);
+  assert.match(settings, /recipe_catalog_version/);
+  assert.match(settings, /starter_recipes/);
+  assert.match(settings, /Share new reports|recipe\.label/);
+  assert.match(settings, /A recipe only chooses signed outbound notifications/);
+  assert.match(settings, /it cannot approve or run InsightOS work/);
+  assert.match(settings, /Use this recipe/);
+  assert.match(settings, /Recipe selected/);
+  assert.match(settings, /setAutomationSelectedRecipe\(""\)/);
   assert.match(settings, /The saved webhook URL and signing secret are encrypted/);
   assert.match(settings, /Send test/);
   assert.match(settings, /Retry last test/);
