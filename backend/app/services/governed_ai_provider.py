@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ipaddress
 import json
+import re
 import time
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -115,6 +118,7 @@ class GovernedAIBaselineProvider(Protocol):
 
 class MistralGovernedAIProvider:
     name = "mistral"
+    display_name = "Mistral"
 
     def __init__(
         self,
@@ -356,34 +360,15 @@ class MistralGovernedAIProvider:
     ) -> GovernedAIProviderResponse:
         if not self.api_key:
             raise GovernedAIProviderError(
-                "Mistral is not configured.",
+                f"{self.display_name} is not configured.",
                 code="ai_provider_not_configured",
             )
-        request_payload = {
-            "model": self.model_name,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_instruction,
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(context, sort_keys=True, separators=(",", ":")),
-                },
-            ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": schema_name,
-                    "schema": output_schema,
-                    "strict": True,
-                },
-            },
-            "temperature": 0,
-            "random_seed": 7,
-            "max_tokens": self.max_output_tokens,
-            "safe_prompt": True,
-        }
+        request_payload = self._build_request_payload(
+            context=context,
+            output_schema=output_schema,
+            schema_name=schema_name,
+            system_instruction=system_instruction,
+        )
         owned_client = self._client is None
         client = self._client or httpx.Client(timeout=self.timeout_seconds)
         try:
@@ -428,7 +413,7 @@ class MistralGovernedAIProvider:
                     429: "ai_provider_rate_limited",
                 }.get(response.status_code, "ai_provider_request_failed")
                 raise GovernedAIProviderError(
-                    f"Mistral returned HTTP {response.status_code}.",
+                    f"{self.display_name} returned HTTP {response.status_code}.",
                     code=code,
                     provider_may_have_processed=response.status_code >= 500,
                 )
@@ -496,11 +481,178 @@ class MistralGovernedAIProvider:
             if owned_client:
                 client.close()
 
+    def _build_request_payload(
+        self,
+        *,
+        context: dict[str, Any],
+        output_schema: dict[str, Any],
+        schema_name: str,
+        system_instruction: str,
+    ) -> dict[str, Any]:
+        return {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_instruction,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(context, sort_keys=True, separators=(",", ":")),
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "schema": output_schema,
+                    "strict": True,
+                },
+            },
+            "temperature": 0,
+            "random_seed": 7,
+            "max_tokens": self.max_output_tokens,
+            "safe_prompt": True,
+        }
+
+
+_COMPATIBLE_PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_]{1,47}$")
+_BLOCKED_COMPATIBLE_HOST_SUFFIXES = (
+    ".internal",
+    ".local",
+    ".localhost",
+    ".home.arpa",
+)
+
+
+class OpenAICompatibleGovernedAIProvider(MistralGovernedAIProvider):
+    """A dormant adapter for pre-approved OpenAI-compatible HTTPS endpoints.
+
+    This adapter deliberately does not perform DNS approval, credential storage,
+    routing, entitlement checks, or activation. Those controls belong to the
+    later provider-registry slice and must run before constructing this class.
+    """
+
+    adapter_type = "openai_compatible"
+
+    def __init__(
+        self,
+        *,
+        provider_name: str,
+        display_name: str,
+        api_key: str,
+        endpoint: str,
+        model_name: str,
+        timeout_seconds: float,
+        max_output_tokens: int,
+        max_attempts: int,
+        client: httpx.Client | None = None,
+    ) -> None:
+        normalized_name = provider_name.strip().lower()
+        if not _COMPATIBLE_PROVIDER_NAME.fullmatch(normalized_name):
+            raise GovernedAIProviderError(
+                "The AI provider identity is invalid.",
+                code="ai_provider_identity_invalid",
+            )
+        normalized_display_name = display_name.strip()
+        if not normalized_display_name or len(normalized_display_name) > 80:
+            raise GovernedAIProviderError(
+                "The AI provider label is invalid.",
+                code="ai_provider_identity_invalid",
+            )
+        normalized_model = model_name.strip()
+        if not normalized_model or len(normalized_model) > 200:
+            raise GovernedAIProviderError(
+                "The AI model identifier is invalid.",
+                code="ai_provider_model_invalid",
+            )
+        self.name = normalized_name
+        self.display_name = normalized_display_name
+        super().__init__(
+            api_key=api_key,
+            endpoint=_validate_openai_compatible_endpoint(endpoint),
+            model_name=normalized_model,
+            timeout_seconds=timeout_seconds,
+            max_output_tokens=max_output_tokens,
+            max_attempts=max_attempts,
+            client=client,
+        )
+
+    def _build_request_payload(
+        self,
+        *,
+        context: dict[str, Any],
+        output_schema: dict[str, Any],
+        schema_name: str,
+        system_instruction: str,
+    ) -> dict[str, Any]:
+        return {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {
+                    "role": "user",
+                    "content": json.dumps(context, sort_keys=True, separators=(",", ":")),
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "schema": output_schema,
+                    "strict": True,
+                },
+            },
+            "temperature": 0,
+            "seed": 7,
+            "max_tokens": self.max_output_tokens,
+        }
+
+
+def _validate_openai_compatible_endpoint(endpoint: str) -> str:
+    normalized = endpoint.strip()
+    try:
+        parsed = urlsplit(normalized)
+        port = parsed.port
+    except ValueError as exc:
+        raise GovernedAIProviderError(
+            "The AI provider endpoint is invalid.",
+            code="ai_provider_endpoint_invalid",
+        ) from exc
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    blocked_name = hostname == "localhost" or hostname.endswith(
+        _BLOCKED_COMPATIBLE_HOST_SUFFIXES
+    )
+    try:
+        ipaddress.ip_address(hostname)
+        is_ip_literal = True
+    except ValueError:
+        is_ip_literal = False
+    if (
+        parsed.scheme.lower() != "https"
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 443}
+        or parsed.query
+        or parsed.fragment
+        or blocked_name
+        or is_ip_literal
+    ):
+        raise GovernedAIProviderError(
+            "The AI provider endpoint is not an approved HTTPS destination.",
+            code="ai_provider_endpoint_invalid",
+        )
+    return normalized
+
 
 def _usage_int(payload: dict[str, Any], *keys: str) -> int:
     for key in keys:
+        value = payload.get(key)
+        if value is None or value == "":
+            continue
         try:
-            return max(0, int(payload.get(key) or 0))
+            return max(0, int(value))
         except (TypeError, ValueError):
             continue
     return 0

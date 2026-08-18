@@ -2249,6 +2249,26 @@ Scheduling note:
   model must be exposed through an approved reachable HTTPS endpoint or a
   separately installed, outbound-only customer relay.
 
+Implementation status (August 17, 2026):
+
+- I1.5A's non-activating adapter foundation is implemented locally. The
+  existing governed prompts, strict JSON-schema response contract,
+  deterministic control-field restoration, token accounting, bounded retries,
+  and safe provider errors now run through a shared transport boundary without
+  changing Mistral behavior.
+- A constrained OpenAI-compatible adapter can exercise that same governed
+  contract against an already approved HTTPS endpoint. It removes
+  Mistral-specific request fields, keeps deterministic temperature and seed
+  settings, records compatible token aliases, and rejects HTTP, credentials in
+  URLs, IP literals, loopback/local names, nonstandard ports, query strings,
+  and fragments before any request is made.
+- This slice creates no customer endpoint form, database registry, routing
+  policy, credential record, DNS approval, model activation, or local relay.
+  Enterprise owners still cannot connect or select a custom model. I1.5B owns
+  the encrypted registry, DNS/IP and redirect revalidation, entitlement and
+  role gates, health/schema/latency benchmarks, safe fallback, and auditable
+  activation before this adapter can receive customer traffic.
+
 Scope:
 
 - Add a versioned model-provider registry with adapter type, endpoint, model
