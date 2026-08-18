@@ -76,6 +76,7 @@ jobs:
           tests/integration/test_usage_credit_migration.py
           tests/integration/test_billing_webhook_concurrency.py
           tests/integration/test_active_location_allowance_concurrency.py
+          tests/integration/test_governed_ai_provider_benchmark_security.py
 
   deterministic-replay-gate:
     runs-on: windows-latest

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import json
 import logging
 import re
+from time import perf_counter
 from typing import Any
 
 from fastapi import HTTPException
@@ -27,6 +29,18 @@ from app.services.governed_ai_provider import (
     GovernedAIQuestionProvider,
     MistralGovernedAIProvider,
 )
+from app.services.governed_ai_provider_capability_service import (
+    CapabilitySelection,
+    automatic_capability_rollback,
+    authorize_question_dispatch,
+    record_capability_fallback,
+    record_capability_success,
+    select_question_capability,
+)
+from app.services.governed_ai_provider_connection_service import (
+    GovernedAIProviderConnectionError,
+    open_pinned_runtime_provider,
+)
 
 
 FEATURE = "intelligence_question"
@@ -43,6 +57,21 @@ SENSITIVE_QUESTION_PATTERNS = (
     ),
     re.compile(r"\b(?:sk|key)-[A-Za-z0-9_-]{16,}\b"),
 )
+
+
+@dataclass
+class _PrivateQuestionResult:
+    event: Any | None = None
+    output: GovernedEvidenceAnswer | None = None
+    provider_response: Any | None = None
+    provider_name: str = "private_ai"
+    model_name: str = ""
+    prompt_attempted: bool = False
+    error_code: str | None = None
+    provider_may_have_processed: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: int = 0
 
 
 def list_governed_answers(
@@ -268,12 +297,35 @@ def ask_governed_question(
     if running >= concurrency_limit:
         raise governed_ai_service._already_running_error()
 
+    capability_selection = (
+        select_question_capability(
+            db,
+            organization_id=organization_id,
+            request_key=idempotency_key,
+            now=occurred_at,
+        )
+        if provider is None
+        else None
+    )
+
     row = _new_run(
         campaign=campaign,
         organization_id=organization_id,
         requested_by_user_id=requested_by_user_id,
-        provider_name=provider.name if provider is not None else (backend or "deterministic"),
-        model_name=provider.model_name if provider is not None else model_name,
+        provider_name=(
+            "private_ai"
+            if capability_selection is not None
+            else provider.name
+            if provider is not None
+            else (backend or "deterministic")
+        ),
+        model_name=(
+            capability_selection.model_identifier
+            if capability_selection is not None
+            else provider.model_name
+            if provider is not None
+            else model_name
+        ),
         lexicon=lexicon,
         context_hash=context_hash,
         prompt_hash=prompt_hash,
@@ -397,6 +449,53 @@ def ask_governed_question(
         )
         return _response(db, row, idempotent_replay=False)
 
+    private_result = None
+    if capability_selection is not None:
+        private_result = _attempt_private_question(
+            db,
+            organization_id=organization_id,
+            selection=capability_selection,
+            request_key=idempotency_key,
+            context=context,
+            context_bundle=context_bundle,
+            normalized_question=normalized_question,
+            timeout_seconds=settings.ai_provider_timeout_seconds,
+            max_output_tokens=settings.ai_max_output_tokens,
+            now=occurred_at,
+        )
+        if private_result.output is not None and private_result.provider_response is not None:
+            cost_economics_service.release_provider_cost(
+                db,
+                reservation=reservation,
+                now=occurred_at,
+            )
+            row.provider_name = private_result.provider_name
+            row.model_name = private_result.model_name
+            row.input_tokens = private_result.input_tokens
+            row.output_tokens = private_result.output_tokens
+            row.estimated_cost = Decimal("0")
+            row.reconciled_cost = Decimal("0")
+            row.price_card_version = None
+            row.provider_request_id = private_result.provider_response.provider_request_id
+            row.response_hash = governed_ai_service._hash_payload(
+                private_result.provider_response.payload
+            )
+            row.status = "validated"
+            row.provider_state = "ready"
+            row.output_payload = _output_payload(private_result.output, context=context)
+            row.selected_action_id = (
+                private_result.output.related_action_ids[0]
+                if private_result.output.related_action_ids
+                else None
+            )
+            row.completed_at = occurred_at
+            db.commit()
+            db.refresh(row)
+            return _response(db, row, idempotent_replay=False)
+
+    row.provider_name = provider.name
+    row.model_name = provider.model_name
+
     try:
         provider_response = provider.answer_question(
             context=context,
@@ -404,6 +503,13 @@ def ask_governed_question(
             prompt_template_version=PROMPT_TEMPLATE_VERSION,
         )
     except GovernedAIProviderError as exc:
+        _record_private_question_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         if exc.provider_may_have_processed:
             terminal = cost_economics_service.reconcile_provider_cost(
                 db,
@@ -429,6 +535,13 @@ def ask_governed_question(
         )
         return _response(db, row, idempotent_replay=False)
     except Exception:
+        _record_private_question_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         logger.exception(
             "Unexpected governed AI question failure",
             extra={
@@ -470,6 +583,13 @@ def ask_governed_question(
             now=occurred_at,
         )
     except cost_economics_service.CostEconomicsError as exc:
+        _record_private_question_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         terminal = cost_economics_service.reconcile_provider_cost(
             db,
             reservation=reservation,
@@ -503,13 +623,19 @@ def ask_governed_question(
     row.provider_request_id = provider_response.provider_request_id
     row.response_hash = governed_ai_service._hash_payload(provider_response.payload)
     try:
-        output = GovernedEvidenceAnswer.model_validate(provider_response.payload)
-        output.validate_against_context(
-            original_question=normalized_question,
-            evidence_ids=set(context_bundle["evidence_ids"]),
-            allowed_action_ids=set(context_bundle["allowed_action_ids"]),
+        output = _validate_answer_output(
+            provider_response.payload,
+            normalized_question=normalized_question,
+            context_bundle=context_bundle,
         )
     except (TypeError, ValueError) as exc:
+        _record_private_question_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         row.status = "rejected"
         row.provider_state = "invalid_output"
         row.output_payload = _output_payload(fallback, context=context)
@@ -519,6 +645,14 @@ def ask_governed_question(
         db.commit()
         db.refresh(row)
         return _response(db, row, idempotent_replay=False)
+
+    _record_private_question_fallback(
+        db,
+        result=private_result,
+        request_key=idempotency_key,
+        managed_succeeded=True,
+        now=occurred_at,
+    )
 
     row.status = "validated"
     row.provider_state = "ready"
@@ -530,6 +664,139 @@ def ask_governed_question(
     db.commit()
     db.refresh(row)
     return _response(db, row, idempotent_replay=False)
+
+
+def _attempt_private_question(
+    db: Session,
+    *,
+    organization_id: str,
+    selection: CapabilitySelection,
+    request_key: str,
+    context: dict[str, Any],
+    context_bundle: dict[str, Any],
+    normalized_question: str,
+    timeout_seconds: float,
+    max_output_tokens: int,
+    now: datetime,
+) -> _PrivateQuestionResult:
+    result = _PrivateQuestionResult(model_name=selection.model_identifier)
+    started: float | None = None
+    try:
+        result.event = authorize_question_dispatch(
+            db,
+            organization_id=organization_id,
+            selection=selection,
+            now=now,
+        )
+        with open_pinned_runtime_provider(
+            db,
+            organization_id=organization_id,
+            connection_id=selection.connection_id,
+            timeout_seconds=timeout_seconds,
+            max_output_tokens=max_output_tokens,
+        ) as private_provider:
+            result.prompt_attempted = True
+            started = perf_counter()
+            response = private_provider.answer_question(
+                context=context,
+                output_schema=GovernedEvidenceAnswer.model_json_schema(),
+                prompt_template_version=PROMPT_TEMPLATE_VERSION,
+            )
+            result.duration_ms = _elapsed_ms(started)
+            result.provider_response = response
+            result.provider_name = private_provider.name
+            result.model_name = private_provider.model_name
+            result.input_tokens = max(0, response.input_tokens)
+            result.output_tokens = max(0, response.output_tokens)
+            result.output = _validate_answer_output(
+                response.payload,
+                normalized_question=normalized_question,
+                context_bundle=context_bundle,
+            )
+        record_capability_success(
+            db,
+            event=result.event,
+            request_key=request_key,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            duration_ms=result.duration_ms,
+            now=now,
+        )
+        return result
+    except GovernedAIProviderConnectionError as exc:
+        result.error_code = exc.reason_code
+    except GovernedAIProviderError as exc:
+        result.error_code = exc.code
+        result.provider_may_have_processed = exc.provider_may_have_processed
+    except (TypeError, ValueError):
+        result.error_code = "ai_output_validation_failed"
+        result.provider_may_have_processed = True
+    except Exception:
+        logger.exception(
+            "Unexpected private AI question capability failure",
+            extra={
+                "organization_id": organization_id,
+                "connection_id": selection.connection_id,
+            },
+        )
+        result.error_code = "ai_provider_unexpected_error"
+        result.provider_may_have_processed = result.prompt_attempted
+    result.duration_ms = _elapsed_ms(started)
+    result.output = None
+    result.provider_response = None
+    if result.event is not None:
+        automatic_capability_rollback(
+            db,
+            event=result.event,
+            reason_code=result.error_code or "ai_provider_unavailable",
+            now=now,
+        )
+    return result
+
+
+def _record_private_question_fallback(
+    db: Session,
+    *,
+    result: _PrivateQuestionResult | None,
+    request_key: str,
+    managed_succeeded: bool,
+    now: datetime,
+) -> None:
+    if result is None or result.event is None or not result.prompt_attempted:
+        return
+    record_capability_fallback(
+        db,
+        event=result.event,
+        request_key=request_key,
+        private_error_code=result.error_code or "ai_provider_unavailable",
+        provider_may_have_processed=result.provider_may_have_processed,
+        managed_succeeded=managed_succeeded,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        duration_ms=result.duration_ms,
+        now=now,
+    )
+
+
+def _validate_answer_output(
+    payload: dict[str, Any],
+    *,
+    normalized_question: str,
+    context_bundle: dict[str, Any],
+) -> GovernedEvidenceAnswer:
+    output = GovernedEvidenceAnswer.model_validate(payload)
+    output.validate_against_context(
+        original_question=normalized_question,
+        evidence_ids=set(context_bundle["evidence_ids"]),
+        allowed_action_ids=set(context_bundle["allowed_action_ids"]),
+    )
+    return output
+
+
+def _elapsed_ms(started: float | None) -> int:
+    if started is None:
+        return 0
+    return min(60_000, max(0, int((perf_counter() - started) * 1000)))
 
 
 def _fallback_answer(question: str) -> GovernedEvidenceAnswer:

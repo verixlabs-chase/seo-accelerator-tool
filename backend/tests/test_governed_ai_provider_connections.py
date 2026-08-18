@@ -28,6 +28,7 @@ from app.services.governed_ai_provider_connection_service import (
     create_provider_connection,
     disconnect_provider_connection,
     list_provider_connections,
+    open_pinned_runtime_provider,
     preflight_provider_connection,
     resolve_public_endpoint_addresses,
     validate_provider_connection,
@@ -423,6 +424,54 @@ def test_pinned_connection_validation_passes_without_activation_or_secret_eviden
     assert "private-validation-key" not in audit.payload_json
     assert "93.184.216.34" not in audit.payload_json
     assert "/v1/chat/completions" not in audit.payload_json
+
+
+def test_runtime_provider_requires_the_exact_validated_dns_set(
+    db_session: Session,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    _make_enterprise(db_session, organization)
+    created = create_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        actor_user_id=actor.id,
+        name="Runtime model",
+        endpoint_url="https://runtime.example.com/v1/chat/completions",
+        model_identifier="runtime-model-v1",
+        api_key="private-runtime-key",
+    )
+    validate_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        connection_id=created["item"]["id"],
+        actor_user_id=actor.id,
+        resolver=lambda *_args, **_kwargs: _dns_records("93.184.216.34"),
+        request_sender=lambda **_kwargs: _valid_connection_response(),
+    )
+
+    with open_pinned_runtime_provider(
+        db_session,
+        organization_id=organization.id,
+        connection_id=created["item"]["id"],
+        timeout_seconds=30,
+        max_output_tokens=400,
+        resolver=lambda *_args, **_kwargs: _dns_records("93.184.216.34"),
+    ) as provider:
+        assert provider.name == "private_ai"
+        assert provider.model_name == "runtime-model-v1"
+        assert provider.max_attempts == 1
+
+    with pytest.raises(GovernedAIProviderConnectionError) as raised:
+        with open_pinned_runtime_provider(
+            db_session,
+            organization_id=organization.id,
+            connection_id=created["item"]["id"],
+            timeout_seconds=30,
+            max_output_tokens=400,
+            resolver=lambda *_args, **_kwargs: _dns_records("93.184.216.35"),
+        ):
+            pass
+    assert raised.value.reason_code == "ai_provider_canary_dns_changed"
 
 
 @pytest.mark.parametrize(

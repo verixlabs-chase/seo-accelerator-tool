@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from contextlib import contextmanager
 import json
 from types import SimpleNamespace
 from uuid import uuid4
@@ -21,7 +22,10 @@ from app.models.cost_economics import CostLedgerEntry
 from app.models.governed_ai import GovernedAIRun
 from app.models.intelligence import StrategyRecommendation
 from app.services import governed_ai_service
-from app.services.governed_ai_provider import GovernedAIProviderResponse
+from app.services.governed_ai_provider import (
+    GovernedAIProviderError,
+    GovernedAIProviderResponse,
+)
 from app.services.governed_ai_provider import MistralGovernedAIProvider
 from tests.conftest import create_test_campaign
 
@@ -93,6 +97,18 @@ class ContextAwareProvider:
             model_name=self.model_name,
             input_tokens=1_000,
             output_tokens=200,
+        )
+
+
+class FailingPrivateProvider:
+    name = "private_ai"
+    model_name = "customer-model"
+
+    def generate(self, **_kwargs) -> GovernedAIProviderResponse:
+        raise GovernedAIProviderError(
+            "The private provider timed out.",
+            code="ai_provider_unavailable",
+            provider_may_have_processed=True,
         )
 
 
@@ -837,3 +853,170 @@ def test_governed_brief_api_returns_safe_fallback_without_provider(client) -> No
     assert payload["item"]["truth"]["operator_state"] == (
         "operator_review_required"
     )
+
+
+def test_private_canary_uses_customer_provider_and_releases_managed_reserve(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_service,
+        "get_settings",
+        lambda: _settings(configured=True),
+    )
+    organization, campaign = _campaign_with_lexicon_action(
+        db_session,
+        create_test_org,
+    )
+    managed = ContextAwareProvider()
+    private = ContextAwareProvider()
+    private.name = "private_ai"
+    private.model_name = "customer-model"
+    selection = SimpleNamespace(
+        event_id="canary-event",
+        connection_id="private-connection",
+        model_identifier="customer-model",
+    )
+    event = SimpleNamespace(
+        id="canary-event",
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        connection_id="private-connection",
+    )
+    recorded: list[str] = []
+
+    @contextmanager
+    def _private_context(*_args, **_kwargs):
+        yield private
+
+    monkeypatch.setattr(
+        governed_ai_service,
+        "MistralGovernedAIProvider",
+        lambda **_kwargs: managed,
+    )
+    monkeypatch.setattr(
+        governed_ai_service,
+        "open_pinned_runtime_provider",
+        _private_context,
+    )
+    monkeypatch.setattr(
+        governed_ai_service.governed_ai_provider_canary_service,
+        "select_canary_for_request",
+        lambda *_args, **_kwargs: selection,
+    )
+    monkeypatch.setattr(
+        governed_ai_service.governed_ai_provider_canary_service,
+        "authorize_canary_dispatch",
+        lambda *_args, **_kwargs: event,
+    )
+    monkeypatch.setattr(
+        governed_ai_service.governed_ai_provider_canary_service,
+        "record_private_success",
+        lambda *_args, **_kwargs: recorded.append("private_succeeded"),
+    )
+
+    payload = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        now=datetime(2026, 8, 18, 20, 0, tzinfo=UTC),
+    )
+
+    assert payload["item"]["status"] == "validated"
+    assert payload["item"]["provider_name"] == "private_ai"
+    assert payload["item"]["model_name"] == "customer-model"
+    assert payload["item"]["usage"]["estimated_cost"] == 0
+    assert payload["item"]["usage"]["reconciled_cost"] == 0
+    assert private.calls == 1
+    assert managed.calls == 0
+    assert recorded == ["private_succeeded"]
+    ledger = db_session.query(CostLedgerEntry).all()
+    assert any(row.event_type == "release" for row in ledger)
+
+
+@pytest.mark.parametrize(
+    "private_provider",
+    [
+        FailingPrivateProvider(),
+        ContextAwareProvider(invalid_action=True),
+    ],
+    ids=["network_failure", "invalid_control_field"],
+)
+def test_private_canary_failure_rolls_back_and_uses_managed_provider(
+    db_session,
+    create_test_org,
+    monkeypatch,
+    private_provider,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_service,
+        "get_settings",
+        lambda: _settings(configured=True),
+    )
+    organization, campaign = _campaign_with_lexicon_action(
+        db_session,
+        create_test_org,
+    )
+    managed = ContextAwareProvider()
+    selection = SimpleNamespace(
+        event_id="canary-event",
+        connection_id="private-connection",
+        model_identifier="customer-model",
+    )
+    event = SimpleNamespace(
+        id="canary-event",
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        connection_id="private-connection",
+    )
+    recorded: list[str] = []
+
+    @contextmanager
+    def _private_context(*_args, **_kwargs):
+        yield private_provider
+
+    monkeypatch.setattr(
+        governed_ai_service,
+        "MistralGovernedAIProvider",
+        lambda **_kwargs: managed,
+    )
+    monkeypatch.setattr(
+        governed_ai_service,
+        "open_pinned_runtime_provider",
+        _private_context,
+    )
+    monkeypatch.setattr(
+        governed_ai_service.governed_ai_provider_canary_service,
+        "select_canary_for_request",
+        lambda *_args, **_kwargs: selection,
+    )
+    monkeypatch.setattr(
+        governed_ai_service.governed_ai_provider_canary_service,
+        "authorize_canary_dispatch",
+        lambda *_args, **_kwargs: event,
+    )
+    monkeypatch.setattr(
+        governed_ai_service.governed_ai_provider_canary_service,
+        "automatic_rollback",
+        lambda *_args, **_kwargs: recorded.append("automatic_rollback"),
+    )
+    monkeypatch.setattr(
+        governed_ai_service.governed_ai_provider_canary_service,
+        "record_managed_fallback",
+        lambda *_args, **_kwargs: recorded.append("managed_fallback"),
+    )
+
+    payload = governed_ai_service.generate_governed_brief(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        now=datetime(2026, 8, 18, 21, 0, tzinfo=UTC),
+    )
+
+    assert payload["item"]["status"] == "validated"
+    assert payload["item"]["provider_name"] == "mistral"
+    assert managed.calls == 1
+    assert recorded == ["automatic_rollback", "managed_fallback"]

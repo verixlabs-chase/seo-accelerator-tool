@@ -102,6 +102,21 @@ from app.models.google_business_profile_campaign import (  # noqa: F401
     GoogleBusinessProfileCampaignVariant,
 )
 from app.models.governed_ai_provider_connection import GovernedAIProviderConnection  # noqa: F401
+from app.models.governed_ai_provider_benchmark import GovernedAIProviderBenchmark  # noqa: F401
+from app.models.governed_ai_provider_canary import (  # noqa: F401
+    GovernedAIProviderCanaryAttempt,
+    GovernedAIProviderCanaryEvent,
+    GovernedAIProviderCanaryHealthSnapshot,
+)
+from app.models.governed_ai_provider_capability import (  # noqa: F401
+    GovernedAIProviderCapabilityAttempt,
+    GovernedAIProviderCapabilityBenchmark,
+    GovernedAIProviderCapabilityEvent,
+)
+from app.models.governed_ai_provider_review import GovernedAIProviderReview  # noqa: F401
+from app.models.governed_ai_provider_routing_readiness import (  # noqa: F401
+    GovernedAIProviderRoutingReadiness,
+)
 from app.models.reputation import (  # noqa: F401
     ReputationProviderCapability,
     ReputationResponseDraft,
@@ -213,7 +228,17 @@ def _verify_required_tables(database_url: str) -> None:
             "automation_webhook_connections",
             "automation_webhook_deliveries",
             "automation_webhook_delivery_attempts",
+            "governed_ai_provider_benchmarks",
+            "governed_ai_provider_canary_attempts",
+            "governed_ai_provider_canary_events",
+            "governed_ai_provider_canary_health_snapshots",
+            "governed_ai_provider_capability_attempts",
+            "governed_ai_provider_capability_benchmarks",
+            "governed_ai_provider_capability_events",
             "governed_ai_provider_connections",
+            "governed_ai_provider_reviews",
+            "governed_ai_provider_standby_events",
+            "governed_ai_provider_routing_readiness",
             "action_plan_occurrences",
             "action_plan_steps",
             "action_plan_measurements",

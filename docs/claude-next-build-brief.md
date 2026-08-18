@@ -2250,7 +2250,7 @@ Scheduling note:
   model must be exposed through an approved reachable HTTPS endpoint or a
   separately installed, outbound-only customer relay.
 
-Implementation status (August 17, 2026):
+Implementation status (August 18, 2026):
 
 - I1.5A's non-activating adapter foundation is implemented locally. The
   existing governed prompts, strict JSON-schema response contract,
@@ -2295,10 +2295,99 @@ Implementation status (August 17, 2026):
   data. Success requires the exact OpenAI-compatible response envelope and
   schema; safe status, bounded latency, redacted evidence hashes, and an audit
   event are retained while the candidate remains database-constrained inactive.
-- I1.5B-B2B still owns bounded quality benchmarks, auditable human activation,
-  safe fallback, usage/cost attribution, the owner Settings surface, and local
-  relay. Until those gates pass, saved candidates receive zero customer prompts
-  and cannot become a routing target.
+- I1.5B-B2B1's bounded synthetic quality benchmark is implemented locally.
+  Three frozen cases check evidence-bounded action choice, owner-approval
+  control integrity, and truthful handling of missing measurements. Each run is
+  bound to the exact passing connection-evidence hash and stops at the first
+  failure. A DNS-answer change invalidates the earlier connection evidence and
+  makes zero benchmark calls until the owner revalidates. Reports are
+  tenant-scoped, idempotent, append-only under PostgreSQL RLS and immutable
+  triggers, and retain only safe case labels, pass/fail reasons, bounded
+  latency, reported token counts, and artifact hashes—never prompts, answers,
+  credentials, endpoints, or resolved addresses. A passing report means only
+  `eligible for owner review`; activation and routing remain false.
+- I1.5B-B2B2A's human-review boundary is implemented locally. An Enterprise
+  owner can permanently approve the latest exact passing benchmark for a later
+  standby-activation step or reject it. Approval requires explicit confirmation
+  that the owner reviewed the synthetic results, that the provider is not
+  active, that the managed fallback remains required, and that no automatic
+  website or profile changes are authorized. Every review is bound to the exact
+  benchmark artifact and connection-evidence hashes, tenant scoped under
+  PostgreSQL RLS, and append-only under database immutability controls. A
+  conflicting second decision is rejected; an identical retry is idempotent.
+  Approval means only `eligible for later standby activation`: the candidate
+  remains inactive, routing stays false, and automatic changes stay forbidden.
+  The owner Settings surface now exposes the same staged workflow: write-only
+  encrypted credential setup, public-network check, pinned connection
+  validation, three separately labeled synthetic checks, and the four explicit
+  review acknowledgements. It never renders raw endpoints, evidence hashes,
+  resolved addresses, or an activation control, and an unavailable provider
+  list cannot be mistaken for an empty list.
+- I1.5B-B2B2B1's zero-traffic standby boundary is implemented locally. After an
+  exact owner-approved benchmark, an Enterprise owner can register one current
+  candidate as the workspace standby only while the managed Mistral route is
+  configured and all four standby acknowledgements are explicit. Enable and
+  disable actions are tenant-scoped, idempotent, append-only events bound to the
+  exact connection, benchmark, review, and evidence hashes. Database checks
+  freeze the mode to `zero_traffic_standby`, the traffic share to 0%, customer
+  prompt access to false, and automatic-change authority to false. Settings
+  exposes the same truthful state and manual removal path; an unavailable state
+  fails closed, and stale or disconnected evidence releases the current standby
+  slot without deleting its history. Mistral remains the only live route.
+- I1.5B-B2B2B2A's managed-fallback readiness evidence is implemented locally.
+  An Enterprise owner can snapshot whether the exact current zero-traffic
+  standby still has a recent successful managed-AI result and an intact rollback
+  path. The append-only, tenant-scoped proof uses saved governed-AI runs rather
+  than making another provider call, records plain blockers and a safe 30-day
+  managed usage summary, and is database-constrained to zero candidate runs,
+  zero traffic, no customer prompts, and no automatic-change authority. A pass
+  means only `ready for a later routing review`; Settings exposes no live-route
+  or traffic control.
+- I1.5B-B2B2B2B1's first nonzero canary is implemented locally. An Enterprise
+  owner with an exact current standby and passing fallback-readiness record can
+  explicitly start one fixed canary for the daily explanation only. The share
+  is database-constrained to 5%, with no configurable percentage and a second
+  hard ceiling of one private prompt per workspace per day. The owner must
+  acknowledge the real-customer-prompt boundary, managed fallback, automatic
+  rollback, and no-change authority. Immediately before dispatch the runtime
+  rechecks the owner event and readiness under the organization lock, resolves
+  and pins the exact previously approved public DNS set, blocks redirects,
+  proxies, retries, oversized responses, and requests over ten seconds, and
+  reserves the managed route first. Any private transport, structured-response,
+  evidence, or control-field failure appends an automatic rollback to 0% and
+  retries the same explanation through managed AI. Immutable attempt evidence
+  retains only safe outcome, fallback, rollback, and token-usage facts; the
+  customer owns private-provider charges and platform provider cost is fixed to
+  zero. No canary can edit a website, listing, or business profile.
+- I1.5B-B2B2B2B2A's multi-run health evidence is implemented locally. The
+  owner can freeze an append-only 30-day review of the fixed canary without
+  making another provider call. Eligibility for a separate later capability
+  review requires private successes on three distinct UTC days, no managed
+  fallback or automatic rollback in the window, an intact current canary and
+  safety boundary, and no successful response slower than eight seconds. Each
+  snapshot records only safe counts, blockers, latency, and an artifact hash
+  under tenant RLS and database immutability controls. `Collecting`, `blocked`,
+  and `eligible for later review` are evidence states only: database checks
+  forbid traffic, capability, activation, or automatic-change authority, and
+  the Settings surface exposes no expansion control.
+- I1.5B-B2B2B2B2B's first separately approved capability route is implemented
+  locally for `intelligence_question`. It is limited to questions answered from
+  the location's already-saved evidence and action IDs. The owner must first
+  save eligible multi-run health evidence, then pass one synthetic compatibility
+  check that sends no customer prompt, and then complete five explicit
+  acknowledgements. The question route is independently append-only and fixed
+  at 5%, while sharing the workspace-wide one-private-prompt-per-day ceiling
+  with daily explanations. The managed route is reserved first; any network,
+  schema, evidence, or safety failure automatically stops only this capability
+  and retries through managed AI. Private answers are deterministically checked
+  against the exact saved question, evidence IDs, and allowed action IDs. They
+  cannot create, approve, publish, or execute work, and customer-owned provider
+  cost remains zero to InsightOS.
+- I1.5B-B2B2B2B2C still owns any additional capability routes, production
+  private-provider billing reconciliation where InsightOS pays the supplier,
+  and the outbound-only local relay. Those later controls cannot raise either
+  fixed canary above 5%, remove the shared daily ceiling, or add another prompt
+  type without another reviewed migration and owner approval surface.
 
 Scope:
 
@@ -4547,7 +4636,9 @@ Acceptance criteria:
 ### Operations OPS1 - Customer Support and Launch Operations
 
 Goal: make the paid product supportable, demonstrable, and honest on launch
-day—not merely deployable.
+day—not merely deployable. This is also the final whole-product usability gate:
+the system must be understandable to a non-technical service-business owner,
+not only complete for the team that built it.
 
 Scope:
 
@@ -4566,6 +4657,31 @@ Scope:
 - Require a go/no-go scorecard covering product truth, critical journeys,
   security, recovery, provider health, data freshness, support readiness,
   pricing, and known limitations.
+- Inventory and test every customer-visible route, navigation menu, section,
+  dialog, empty state, error state, and connected-tool setup on desktop and
+  mobile. Organize each screen around the owner's job, one clear first action,
+  and a small number of familiar sections; remove duplicated panels and move
+  diagnostics, identifiers, schemas, signatures, delivery counters, and other
+  specialist details behind clearly labeled optional disclosures.
+- Run moderated first-use tests with non-technical home-service and local-
+  business owners. A participant must be able to connect Google, understand
+  connection health, add a location, read the baseline, find the next action,
+  connect Zapier/Make/n8n from a provider-generated URL, send a test, understand
+  what the workflow can and cannot do, manage billing, and sign out another
+  browser without coaching or knowledge of OAuth, GA4, webhooks, HMAC, payload
+  paths, provider ledgers, schemas, or internal SEO terminology.
+- Split Settings into a short task-based overview and properly grouped areas:
+  business data connections, workflow tools, plan and billing, account and
+  security, imports, privacy, and advanced/Enterprise controls. Long records
+  such as `Where you're signed in`, delivery attempts, healthy sources,
+  provider evidence, and technical wiring contracts stay summarized and
+  collapsed until the owner asks to inspect them.
+- Give each external automation tool an explicit numbered setup path using the
+  tool's customer-facing words: choose a tool and recipe, create its webhook
+  step, paste the production URL into InsightOS, save the one-time secret,
+  send a test, and confirm receipt. Keep signature verification and field maps
+  available for advanced users without making them prerequisites for the normal
+  Zapier, Make, Pipedream, or n8n Cloud connection path.
 
 Acceptance criteria:
 
@@ -4575,6 +4691,15 @@ Acceptance criteria:
   procedure, evidence timeline, and corrective-action record.
 - Demo and sales claims are generated from a maintained capability matrix and
   cannot describe synthetic, fixture-only, or disabled functionality as live.
+- Every customer menu and primary workflow passes a final copy, information-
+  architecture, responsive-layout, keyboard, screen-reader, empty/error/loading,
+  and first-use comprehension review. No primary screen is released with a
+  wall of records, unexplained technical language, or several equally prominent
+  actions when one owner decision can lead.
+- At least five representative non-technical participants can complete the
+  critical Solo launch journey and the supported workflow-tool connection test
+  without staff operating the product for them. Observed confusion is tracked
+  to closure in the launch scorecard rather than accepted as training debt.
 - A paid launch cannot proceed while critical TR1, billing, provider,
   WordPress, data-integrity, or support-readiness gates are red.
 

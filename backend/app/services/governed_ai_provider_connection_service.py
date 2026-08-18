@@ -5,11 +5,12 @@ import json
 import socket
 import ssl
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from time import perf_counter
-from typing import Any
+from typing import Any, Iterator
 from urllib.parse import urlsplit
 
 import httpcore
@@ -27,6 +28,7 @@ from app.services.commercial_plan_service import (
 )
 from app.services.governed_ai_provider import (
     GovernedAIProviderError,
+    OpenAICompatibleGovernedAIProvider,
     validate_openai_compatible_endpoint,
 )
 
@@ -205,11 +207,13 @@ def list_provider_connections(
         "truth": {
             "state": "candidate_only",
             "summary": (
-                "Saved private AI providers are inactive until connection, safety, "
-                "schema, quality, and latency checks pass in a later review."
+                "A saved private AI provider is only a candidate identity. Its "
+                "separately governed standby and limited-routing state determines "
+                "whether it may receive a bounded prompt."
             ),
         },
         "routing_enabled": False,
+        "routing_state_is_separate": True,
         "automatic_activation_allowed": False,
     }
 
@@ -448,12 +452,12 @@ def preflight_provider_connection(
     }
 
 
-def send_pinned_validation_request(
+def send_pinned_structured_request(
     *,
     endpoint_url: str,
-    model_identifier: str,
     api_key: str,
     approved_addresses: tuple[str, ...],
+    payload: dict[str, Any],
 ) -> ProviderValidationHTTPResult:
     hostname = (urlsplit(endpoint_url).hostname or "").lower().rstrip(".")
     transport = _PinnedHTTPTransport(
@@ -467,6 +471,117 @@ def send_pinned_validation_request(
     }
     if api_key:
         headers["authorization"] = f"Bearer {api_key}"
+    started = perf_counter()
+    with httpx.Client(
+        transport=transport,
+        follow_redirects=False,
+        trust_env=False,
+        timeout=httpx.Timeout(_VALIDATION_TIMEOUT_SECONDS),
+    ) as client:
+        response = client.post(endpoint_url, headers=headers, json=payload)
+    elapsed_ms = min(60_000, max(0, round((perf_counter() - started) * 1000)))
+    return ProviderValidationHTTPResult(
+        status_code=int(response.status_code),
+        headers={key.lower(): value for key, value in response.headers.items()},
+        body=response.content,
+        elapsed_ms=elapsed_ms,
+    )
+
+
+@contextmanager
+def open_pinned_runtime_provider(
+    db: Session,
+    *,
+    organization_id: str,
+    connection_id: str,
+    timeout_seconds: float,
+    max_output_tokens: int,
+    resolver: Callable[..., list[tuple[object, ...]]] = socket.getaddrinfo,
+) -> Iterator[OpenAICompatibleGovernedAIProvider]:
+    """Build a one-attempt runtime adapter pinned to the current approved DNS set."""
+
+    row = (
+        db.query(GovernedAIProviderConnection)
+        .filter(
+            GovernedAIProviderConnection.id == connection_id,
+            GovernedAIProviderConnection.organization_id == organization_id,
+            GovernedAIProviderConnection.status == "candidate",
+            GovernedAIProviderConnection.validation_status == "passed",
+            GovernedAIProviderConnection.network_validation_status == "passed",
+        )
+        .one_or_none()
+    )
+    if row is None or not row.encrypted_config_blob or not row.resolved_address_hash:
+        raise GovernedAIProviderConnectionError(
+            "The private AI provider is no longer ready for a canary request.",
+            reason_code="ai_provider_canary_connection_not_current",
+            status_code=409,
+        )
+    try:
+        config = decrypt_payload(row.encrypted_config_blob)
+    except CredentialCryptoError as exc:
+        raise GovernedAIProviderConnectionError(
+            "The private AI provider configuration is unavailable.",
+            reason_code="ai_provider_configuration_unavailable",
+            status_code=409,
+        ) from exc
+    endpoint_url = config.get("endpoint_url")
+    api_key = config.get("api_key")
+    if not isinstance(endpoint_url, str) or not isinstance(api_key, str) or not api_key:
+        raise GovernedAIProviderConnectionError(
+            "The private AI provider credential is unavailable.",
+            reason_code="ai_provider_configuration_unavailable",
+            status_code=409,
+        )
+    try:
+        addresses = resolve_public_endpoint_addresses(endpoint_url, resolver=resolver)
+    except GovernedAIEndpointSafetyError as exc:
+        raise GovernedAIProviderConnectionError(
+            "The private AI endpoint no longer passes the public-network safety check.",
+            reason_code=exc.reason_code,
+            status_code=409,
+        ) from exc
+    current_hash = sha256(",".join(addresses).encode("utf-8")).hexdigest()
+    if current_hash != row.resolved_address_hash:
+        raise GovernedAIProviderConnectionError(
+            "The private AI endpoint changed and must be validated again.",
+            reason_code="ai_provider_canary_dns_changed",
+            status_code=409,
+        )
+    hostname = (urlsplit(endpoint_url).hostname or "").lower().rstrip(".")
+    transport = _PinnedHTTPTransport(
+        hostname=hostname,
+        approved_addresses=addresses,
+    )
+    client = httpx.Client(
+        transport=transport,
+        follow_redirects=False,
+        trust_env=False,
+        timeout=httpx.Timeout(min(10.0, max(1.0, timeout_seconds))),
+    )
+    try:
+        yield OpenAICompatibleGovernedAIProvider(
+            provider_name="private_ai",
+            display_name="Private AI",
+            api_key=api_key,
+            endpoint=endpoint_url,
+            model_name=row.model_identifier,
+            timeout_seconds=min(10.0, max(1.0, timeout_seconds)),
+            max_output_tokens=max_output_tokens,
+            max_attempts=1,
+            client=client,
+        )
+    finally:
+        client.close()
+
+
+def send_pinned_validation_request(
+    *,
+    endpoint_url: str,
+    model_identifier: str,
+    api_key: str,
+    approved_addresses: tuple[str, ...],
+) -> ProviderValidationHTTPResult:
     payload = {
         "model": model_identifier,
         "messages": [
@@ -506,20 +621,11 @@ def send_pinned_validation_request(
         "seed": 7,
         "max_tokens": 32,
     }
-    started = perf_counter()
-    with httpx.Client(
-        transport=transport,
-        follow_redirects=False,
-        trust_env=False,
-        timeout=httpx.Timeout(_VALIDATION_TIMEOUT_SECONDS),
-    ) as client:
-        response = client.post(endpoint_url, headers=headers, json=payload)
-    elapsed_ms = min(60_000, max(0, round((perf_counter() - started) * 1000)))
-    return ProviderValidationHTTPResult(
-        status_code=int(response.status_code),
-        headers={key.lower(): value for key, value in response.headers.items()},
-        body=response.content,
-        elapsed_ms=elapsed_ms,
+    return send_pinned_structured_request(
+        endpoint_url=endpoint_url,
+        api_key=api_key,
+        approved_addresses=approved_addresses,
+        payload=payload,
     )
 
 
