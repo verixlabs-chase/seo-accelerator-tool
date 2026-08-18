@@ -570,7 +570,7 @@ class OpenAICompatibleGovernedAIProvider(MistralGovernedAIProvider):
         self.display_name = normalized_display_name
         super().__init__(
             api_key=api_key,
-            endpoint=_validate_openai_compatible_endpoint(endpoint),
+            endpoint=validate_openai_compatible_endpoint(endpoint),
             model_name=normalized_model,
             timeout_seconds=timeout_seconds,
             max_output_tokens=max_output_tokens,
@@ -609,7 +609,7 @@ class OpenAICompatibleGovernedAIProvider(MistralGovernedAIProvider):
         }
 
 
-def _validate_openai_compatible_endpoint(endpoint: str) -> str:
+def validate_openai_compatible_endpoint(endpoint: str) -> str:
     normalized = endpoint.strip()
     try:
         parsed = urlsplit(normalized)

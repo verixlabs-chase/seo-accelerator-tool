@@ -63,6 +63,7 @@ from app.models.google_business_profile_campaign import (  # noqa: F401
     GoogleBusinessProfileCampaign,
     GoogleBusinessProfileCampaignVariant,
 )
+from app.models.governed_ai_provider_connection import GovernedAIProviderConnection
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
 from app.models.commercial_feature_activation import CommercialFeatureActivation
@@ -327,6 +328,7 @@ __all__ = [
     "OrganizationCostAllocation",
     "ProviderPriceCard",
     "GovernedAIRun",
+    "GovernedAIProviderConnection",
     "GovernedExperimentGuardrailCheck",
     "GovernedExperimentPlan",
     "GovernedExperimentProtocol",

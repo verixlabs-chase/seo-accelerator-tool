@@ -677,7 +677,8 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 44 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
 | 45 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
 | 46 | **AUT1 - External Automation Gateway** | Every paid tier can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, governed workflow templates, and typed actions; higher tiers add volume, collaboration, custom scopes, and service accounts without granting direct database or unrestricted execution access. |
-| 47 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
+| 47 | **AUT1J - Governed Inbound Automation Commands (n8n First)** | An n8n workflow can request a small allowlist of typed InsightOS jobs through a revocable service account, while native plan, location, allowance, evidence, approval, safety, idempotency, and audit controls remain authoritative. The same vendor-neutral contract later supports Make, Zapier, Pipedream, and approved custom clients. |
+| 48 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 ### External API enablement map
 
@@ -2262,12 +2263,33 @@ Implementation status (August 17, 2026):
   settings, records compatible token aliases, and rejects HTTP, credentials in
   URLs, IP literals, loopback/local names, nonstandard ports, query strings,
   and fragments before any request is made.
-- This slice creates no customer endpoint form, database registry, routing
-  policy, credential record, DNS approval, model activation, or local relay.
-  Enterprise owners still cannot connect or select a custom model. I1.5B owns
-  the encrypted registry, DNS/IP and redirect revalidation, entitlement and
-  role gates, health/schema/latency benchmarks, safe fallback, and auditable
-  activation before this adapter can receive customer traffic.
+- I1.5B-A's candidate registry is now implemented locally. An authorized
+  Enterprise owner can save a named OpenAI-compatible provider candidate and
+  model through an owner-only API. The full endpoint and optional API key are
+  encrypted with the platform credential cipher; customer responses expose
+  only the endpoint host, model identifier, credential-present state, and
+  explicit inactive validation truth. Solo, Growth, and non-owner creation is
+  blocked by the canonical commercial feature gate.
+- Candidate records are tenant/organization scoped under PostgreSQL RLS,
+  cannot be deleted by the application role, and are database-constrained to
+  inactive/non-automatic state. Disconnect erases the encrypted endpoint and
+  credential even after a plan downgrade. No create, list, or disconnect path
+  can test, activate, route traffic, select the provider, or change the managed
+  Mistral fallback.
+- I1.5B-B1's DNS/IP safety preflight is implemented locally. An Enterprise owner
+  can ask the backend to decrypt a saved candidate and revalidate its exact
+  hostname. The preflight rejects an unavailable answer and rejects the entire
+  result set if any IPv4 or IPv6 address is loopback, private, link-local,
+  shared, reserved, multicast, unspecified, or otherwise non-global. It stores
+  only a deterministic hash of the sorted public addresses plus a safe reason,
+  never returns raw addresses, and deliberately makes no HTTP/model request.
+  Passing DNS therefore means only `public hostname checked`; full validation
+  and routing remain false.
+- I1.5B-B2 still owns a DNS-pinned, redirect-disabled request transport,
+  health/schema/latency and bounded-quality benchmarks, auditable human
+  activation, safe fallback, usage/cost attribution, the owner Settings
+  surface, and local relay. Until those gates pass, saved candidates receive
+  zero customer prompts and zero network requests.
 
 Scope:
 
@@ -4801,6 +4823,56 @@ Implementation status (August 17, 2026):
 - Delivery bodies, destination URLs, signing secrets, provider response bodies,
   customer content, and supplier-internal identifiers are not included in the
   usage response or UI.
+
+#### AUT1J - Governed Inbound Automation Commands (n8n First)
+
+Planned scope (added August 17, 2026):
+
+- Make n8n the first production proof client for a vendor-neutral inbound
+  command API. The contract must remain usable by Make, Zapier, Pipedream, and
+  approved custom clients without adding supplier-specific product logic.
+- Issue revocable organization-scoped service accounts instead of reusing a
+  person's browser cookie, Google token, password, or outbound webhook signing
+  secret. Each credential has an expiration, last-use record, allowed command
+  types, allowed locations, rotation path, and immediate revocation.
+- Start with a deliberately small typed allowlist: request a saved-data refresh,
+  request or schedule an allowance-priced check, generate a governed draft,
+  retrieve an already-authorized report, and request human approval for an
+  existing recommendation. There is no natural-language `run anything`
+  endpoint and no arbitrary provider, URL, prompt, SQL, queue, WordPress, or
+  Google Business Profile access.
+- Require a versioned schema, organization and location scope, correlation ID,
+  reason, and idempotency key on every request. Return a durable native job or
+  result reference; repeated requests with the same key produce one effect.
+- Reuse the same server-side plan, entitlement, credit, location, evidence,
+  freshness, policy, approval, provider-health, concurrency, and safety checks
+  as the InsightOS UI. n8n can request permitted work, but it cannot approve its
+  own request, bypass a blocked state, publish a draft, or silently turn a
+  recommendation into a live mutation.
+- Add an automation action ledger and customer-visible status history with the
+  service account, connection/workflow correlation, requested command, target,
+  decision, job, result, denial reason, and timestamps. Secrets, raw provider
+  payloads, prompts, internal cost details, and unrelated tenant data remain
+  excluded.
+- Ship an n8n starter workflow and conformance suite proving credential
+  handling, location scoping, idempotent retry, accepted-job polling, approval
+  preservation, revocation, wrong-tenant denial, exhausted-allowance denial,
+  and zero provider calls when a command is blocked. Publishing or activating
+  the external n8n workflow remains the customer's explicit action.
+
+Acceptance boundary:
+
+- A Solo owner can create one bounded service account for the starter command
+  set, run a permitted non-mutating or draft-producing command from n8n, and see
+  the durable result inside InsightOS without sharing a human password.
+- Growth adds larger allowances, multiple locations, and team approval routing;
+  Enterprise adds custom command/location-group scopes and customer-hosted
+  clients. No tier receives unrestricted write automation.
+- A command that would require a human approval remains waiting for that native
+  approval. Revocation, an expired credential, a replay outside the accepted
+  idempotency contract, a mismatched tenant/location, a missing entitlement, or
+  a safety/allowance failure produces no mutation, queued paid work, or provider
+  call.
 
 Placement and packaging:
 

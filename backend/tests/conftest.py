@@ -101,6 +101,7 @@ from app.models.google_business_profile_campaign import (  # noqa: F401
     GoogleBusinessProfileCampaign,
     GoogleBusinessProfileCampaignVariant,
 )
+from app.models.governed_ai_provider_connection import GovernedAIProviderConnection  # noqa: F401
 from app.models.reputation import (  # noqa: F401
     ReputationProviderCapability,
     ReputationResponseDraft,
@@ -212,6 +213,7 @@ def _verify_required_tables(database_url: str) -> None:
             "automation_webhook_connections",
             "automation_webhook_deliveries",
             "automation_webhook_delivery_attempts",
+            "governed_ai_provider_connections",
             "action_plan_occurrences",
             "action_plan_steps",
             "action_plan_measurements",
