@@ -2285,11 +2285,20 @@ Implementation status (August 17, 2026):
   never returns raw addresses, and deliberately makes no HTTP/model request.
   Passing DNS therefore means only `public hostname checked`; full validation
   and routing remain false.
-- I1.5B-B2 still owns a DNS-pinned, redirect-disabled request transport,
-  health/schema/latency and bounded-quality benchmarks, auditable human
-  activation, safe fallback, usage/cost attribution, the owner Settings
-  surface, and local relay. Until those gates pass, saved candidates receive
-  zero customer prompts and zero network requests.
+- I1.5B-B2A's bounded connection validation is implemented locally. It
+  re-resolves the saved host for each owner-triggered test, rejects the whole
+  answer set if any address is unsafe, and pins the outbound socket to that
+  approved answer while preserving the original hostname for TLS certificate
+  verification. Environment proxies, redirects, retries, non-443 destinations,
+  responses over 64 KiB, and requests over ten seconds are blocked. The only
+  payload is a synthetic structured-response marker with no customer or website
+  data. Success requires the exact OpenAI-compatible response envelope and
+  schema; safe status, bounded latency, redacted evidence hashes, and an audit
+  event are retained while the candidate remains database-constrained inactive.
+- I1.5B-B2B still owns bounded quality benchmarks, auditable human activation,
+  safe fallback, usage/cost attribution, the owner Settings surface, and local
+  relay. Until those gates pass, saved candidates receive zero customer prompts
+  and cannot become a routing target.
 
 Scope:
 

@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -36,6 +37,11 @@ class GovernedAIProviderConnection(Base):
         CheckConstraint(
             "network_validation_status in ('not_tested','failed','passed')",
             name="ck_governed_ai_provider_connections_network_validation",
+        ),
+        CheckConstraint(
+            "last_validation_latency_ms is null OR "
+            "(last_validation_latency_ms >= 0 AND last_validation_latency_ms <= 60000)",
+            name="ck_governed_ai_provider_connections_validation_latency",
         ),
         CheckConstraint(
             "activation_status = 'inactive' AND automatic_activation_allowed = false",
@@ -92,6 +98,9 @@ class GovernedAIProviderConnection(Base):
     )
     last_validation_reason: Mapped[str | None] = mapped_column(String(80))
     resolved_address_hash: Mapped[str | None] = mapped_column(String(64))
+    last_validation_latency_ms: Mapped[int | None] = mapped_column(Integer)
+    validation_schema_version: Mapped[str | None] = mapped_column(String(60))
+    validation_evidence_hash: Mapped[str | None] = mapped_column(String(64))
     activation_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="inactive"
     )

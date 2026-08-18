@@ -14,6 +14,7 @@ from app.services.governed_ai_provider_connection_service import (
     disconnect_provider_connection,
     list_provider_connections,
     preflight_provider_connection,
+    validate_provider_connection,
 )
 
 
@@ -95,6 +96,25 @@ def preflight_governed_ai_provider(
             db,
             organization_id=str(user["organization_id"]),
             connection_id=connection_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.post("/{connection_id}/validate")
+def validate_governed_ai_provider(
+    request: Request,
+    connection_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = validate_provider_connection(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
         )
     except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
         raise _http_error(exc) from exc

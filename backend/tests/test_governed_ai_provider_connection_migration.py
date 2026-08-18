@@ -9,6 +9,12 @@ MIGRATION = (
     / "versions"
     / "20260817_0165_governed_ai_provider_candidates.py"
 )
+VALIDATION_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260817_0166_governed_ai_provider_validation.py"
+)
 
 
 def test_provider_candidate_migration_is_scoped_encrypted_and_inactive() -> None:
@@ -26,3 +32,16 @@ def test_provider_candidate_migration_is_scoped_encrypted_and_inactive() -> None
     assert "current_setting('app.current_organization_id', true)" in source
     assert "REVOKE DELETE" in source
     assert "op.drop_table(table)" in source
+
+
+def test_provider_validation_migration_is_bounded_and_reversible() -> None:
+    source = VALIDATION_MIGRATION.read_text(encoding="utf-8")
+
+    assert 'down_revision = "20260817_0165"' in source
+    assert '"last_validation_latency_ms"' in source
+    assert '"validation_schema_version"' in source
+    assert '"validation_evidence_hash"' in source
+    assert "last_validation_latency_ms <= 60000" in source
+    assert 'batch.drop_column("validation_evidence_hash")' in source
+    assert 'batch.drop_column("validation_schema_version")' in source
+    assert 'batch.drop_column("last_validation_latency_ms")' in source

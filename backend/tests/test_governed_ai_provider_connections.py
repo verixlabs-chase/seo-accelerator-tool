@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import base64
+import json
 import socket
 
+import httpcore
+import httpx
 import pytest
 from sqlalchemy.orm import Session
 
 from app.core.crypto import decrypt_payload
+from app.models.audit_log import AuditLog
 from app.models.governed_ai_provider_connection import GovernedAIProviderConnection
 from app.models.organization import Organization
 from app.models.user import User
@@ -17,11 +21,16 @@ from app.services.commercial_plan_service import (
 from app.services.governed_ai_provider_connection_service import (
     GovernedAIEndpointSafetyError,
     GovernedAIProviderConnectionError,
+    GovernedAIProviderTransportError,
+    ProviderValidationHTTPResult,
+    _PinnedHTTPTransport,
+    _PinnedNetworkBackend,
     create_provider_connection,
     disconnect_provider_connection,
     list_provider_connections,
     preflight_provider_connection,
     resolve_public_endpoint_addresses,
+    validate_provider_connection,
 )
 
 
@@ -154,6 +163,59 @@ def test_api_requires_enterprise_owner_and_redacts_secrets(client, db_session: S
     assert listed.json()["data"]["count"] == 1
 
 
+def test_validation_api_is_owner_only_and_keeps_candidate_inactive(
+    client,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    owner = db_session.query(User).filter(User.email == "org-owner@example.com").one()
+    organization = db_session.get(Organization, owner.tenant_id)
+    assert organization is not None
+    _make_enterprise(db_session, organization)
+    created = create_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        actor_user_id=owner.id,
+        name="API validation model",
+        endpoint_url="https://models.example.com/v1/chat/completions",
+        model_identifier="api-model-v1",
+        api_key="api-validation-secret",
+    )
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.validate_provider_connection",
+        lambda _db, **_kwargs: {
+            "passed": True,
+            "item": {
+                **created["item"],
+                "validation_status": "passed",
+                "activation_status": "inactive",
+            },
+            "network_request_made": True,
+            "routing_enabled": False,
+            "automatic_activation_allowed": False,
+        },
+    )
+
+    denied = client.post(
+        f"/api/v1/ai/providers/{created['item']['id']}/validate",
+        headers=_headers(admin_token),
+    )
+    assert denied.status_code == 403
+    validated = client.post(
+        f"/api/v1/ai/providers/{created['item']['id']}/validate",
+        headers=_headers(owner_token),
+    )
+    assert validated.status_code == 200
+    payload = validated.json()["data"]
+    assert payload["passed"] is True
+    assert payload["routing_enabled"] is False
+    assert payload["item"]["activation_status"] == "inactive"
+    assert "api-validation-secret" not in str(payload)
+
+
 @pytest.mark.parametrize(
     "endpoint",
     [
@@ -283,6 +345,275 @@ def test_failed_dns_preflight_is_persisted_without_network_request(db_session: S
     assert row is not None
     assert row.resolved_address_hash is None
     assert row.last_validated_at is not None
+
+
+def _valid_connection_response(*, elapsed_ms: int = 125) -> ProviderValidationHTTPResult:
+    content = json.dumps(
+        {"ok": True, "marker": "insightos_provider_validation_v1"},
+        separators=(",", ":"),
+    )
+    return ProviderValidationHTTPResult(
+        status_code=200,
+        headers={"content-type": "application/json"},
+        body=json.dumps(
+            {"choices": [{"message": {"content": content}}]},
+            separators=(",", ":"),
+        ).encode("utf-8"),
+        elapsed_ms=elapsed_ms,
+    )
+
+
+def test_pinned_connection_validation_passes_without_activation_or_secret_evidence(
+    db_session: Session,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    _make_enterprise(db_session, organization)
+    created = create_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        actor_user_id=actor.id,
+        name="Validated model",
+        endpoint_url="https://models.example.com/v1/chat/completions",
+        model_identifier="model-v1",
+        api_key="private-validation-key",
+    )
+    captured: dict[str, object] = {}
+
+    def _sender(**kwargs) -> ProviderValidationHTTPResult:
+        captured.update(kwargs)
+        return _valid_connection_response()
+
+    result = validate_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        connection_id=created["item"]["id"],
+        actor_user_id=actor.id,
+        resolver=lambda *_args, **_kwargs: _dns_records("93.184.216.34"),
+        request_sender=_sender,
+    )
+
+    assert result["passed"] is True
+    assert result["network_request_made"] is True
+    assert result["routing_enabled"] is False
+    assert result["automatic_activation_allowed"] is False
+    assert result["item"]["validation_status"] == "passed"
+    assert result["item"]["last_validation_latency_ms"] == 125
+    assert result["item"]["validation_schema_version"] == (
+        "openai-compatible-connection-v1"
+    )
+    assert "validation_evidence_hash" not in result["item"]
+    assert captured["approved_addresses"] == ("93.184.216.34",)
+    assert captured["api_key"] == "private-validation-key"
+    serialized = str(result)
+    assert "private-validation-key" not in serialized
+    assert "93.184.216.34" not in serialized
+    assert "/v1/chat/completions" not in serialized
+
+    row = db_session.get(GovernedAIProviderConnection, created["item"]["id"])
+    assert row is not None
+    assert row.validation_evidence_hash is not None
+    assert len(row.validation_evidence_hash) == 64
+    assert row.activation_status == "inactive"
+    assert row.automatic_activation_allowed is False
+    audit = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "ai.provider_connection.validation_passed")
+        .one()
+    )
+    assert "private-validation-key" not in audit.payload_json
+    assert "93.184.216.34" not in audit.payload_json
+    assert "/v1/chat/completions" not in audit.payload_json
+
+
+@pytest.mark.parametrize(
+    ("response", "reason_code"),
+    [
+        (
+            ProviderValidationHTTPResult(
+                status_code=302,
+                headers={"location": "https://other.example.com/v1/chat/completions"},
+                body=b"",
+                elapsed_ms=8,
+            ),
+            "ai_provider_redirect_blocked",
+        ),
+        (
+            ProviderValidationHTTPResult(
+                status_code=401,
+                headers={"content-type": "application/json"},
+                body=b"{}",
+                elapsed_ms=9,
+            ),
+            "ai_provider_authentication_failed",
+        ),
+        (
+            ProviderValidationHTTPResult(
+                status_code=200,
+                headers={"content-type": "text/html"},
+                body=b"<html>not a model response</html>",
+                elapsed_ms=10,
+            ),
+            "ai_provider_schema_incompatible",
+        ),
+    ],
+)
+def test_connection_validation_fails_closed_on_redirect_auth_and_schema(
+    db_session: Session,
+    response: ProviderValidationHTTPResult,
+    reason_code: str,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    _make_enterprise(db_session, organization)
+    created = create_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        actor_user_id=actor.id,
+        name=f"Failure {reason_code}",
+        endpoint_url="https://models.example.com/v1/chat/completions",
+        model_identifier="model-v1",
+        api_key=None,
+    )
+
+    result = validate_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        connection_id=created["item"]["id"],
+        actor_user_id=actor.id,
+        resolver=lambda *_args, **_kwargs: _dns_records("93.184.216.34"),
+        request_sender=lambda **_kwargs: response,
+    )
+
+    assert result["passed"] is False
+    assert result["reason_code"] == reason_code
+    assert result["item"]["validation_status"] == "failed"
+    assert result["item"]["activation_status"] == "inactive"
+    row = db_session.get(GovernedAIProviderConnection, created["item"]["id"])
+    assert row is not None
+    assert row.validation_evidence_hash is None
+
+
+def test_connection_validation_blocks_dns_before_sender(db_session: Session) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    _make_enterprise(db_session, organization)
+    created = create_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        actor_user_id=actor.id,
+        name="Blocked transport model",
+        endpoint_url="https://models.example.com/v1/chat/completions",
+        model_identifier="model-v1",
+        api_key=None,
+    )
+    called = False
+
+    def _sender(**_kwargs) -> ProviderValidationHTTPResult:
+        nonlocal called
+        called = True
+        return _valid_connection_response()
+
+    result = validate_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        connection_id=created["item"]["id"],
+        actor_user_id=actor.id,
+        resolver=lambda *_args, **_kwargs: _dns_records(
+            "93.184.216.34", "169.254.169.254"
+        ),
+        request_sender=_sender,
+    )
+
+    assert result["passed"] is False
+    assert result["network_request_made"] is False
+    assert called is False
+
+
+def test_connection_validation_records_bounded_transport_failure(
+    db_session: Session,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    _make_enterprise(db_session, organization)
+    created = create_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        actor_user_id=actor.id,
+        name="Oversized model",
+        endpoint_url="https://models.example.com/v1/chat/completions",
+        model_identifier="model-v1",
+        api_key=None,
+    )
+
+    def _sender(**_kwargs) -> ProviderValidationHTTPResult:
+        raise GovernedAIProviderTransportError(
+            "too large", reason_code="ai_provider_response_too_large"
+        )
+
+    result = validate_provider_connection(
+        db_session,
+        organization_id=organization.id,
+        connection_id=created["item"]["id"],
+        actor_user_id=actor.id,
+        resolver=lambda *_args, **_kwargs: _dns_records("93.184.216.34"),
+        request_sender=_sender,
+    )
+
+    assert result["passed"] is False
+    assert result["reason_code"] == "ai_provider_response_too_large"
+    assert result["network_request_made"] is True
+    assert result["item"]["activation_status"] == "inactive"
+
+
+def test_pinned_backend_connects_only_to_the_approved_address() -> None:
+    calls: list[tuple[str, int]] = []
+    stream = object()
+
+    class _Backend:
+        def connect_tcp(self, host: str, port: int, **_kwargs):
+            calls.append((host, port))
+            return stream
+
+    backend = _PinnedNetworkBackend(
+        expected_hostname="models.example.com",
+        approved_addresses=("93.184.216.34",),
+        backend=_Backend(),  # type: ignore[arg-type]
+    )
+
+    connected = backend.connect_tcp("models.example.com", 443)
+
+    assert connected is stream
+    assert calls == [("93.184.216.34", 443)]
+    with pytest.raises(httpcore.ConnectError):
+        backend.connect_tcp("redirect.example.com", 443)
+
+
+def test_pinned_transport_enforces_response_size_limit() -> None:
+    class _Pool:
+        def handle_request(self, _request):
+            return httpcore.Response(
+                200,
+                headers=[(b"content-type", b"application/json")],
+                content=[b"12345", b"67890"],
+            )
+
+        def close(self) -> None:
+            return None
+
+    transport = _PinnedHTTPTransport(
+        hostname="models.example.com",
+        approved_addresses=("93.184.216.34",),
+        max_response_bytes=8,
+    )
+    transport._pool.close()
+    transport._pool = _Pool()  # type: ignore[assignment]
+    request = httpx.Request(
+        "POST",
+        "https://models.example.com/v1/chat/completions",
+        content=b"{}",
+    )
+
+    with pytest.raises(GovernedAIProviderTransportError) as raised:
+        transport.handle_request(request)
+
+    assert raised.value.reason_code == "ai_provider_response_too_large"
 
 
 def test_plan_downgrade_blocks_preflight_but_still_allows_disconnect(
