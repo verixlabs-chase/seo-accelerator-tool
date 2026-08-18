@@ -26,7 +26,8 @@ class GovernedAIProviderCapabilityBenchmark(Base):
     __tablename__ = "governed_ai_provider_capability_benchmarks"
     __table_args__ = (
         CheckConstraint(
-            "capability = 'intelligence_question' AND case_count = 1",
+            "capability in ('intelligence_question','intelligence_draft') "
+            "AND case_count = 1",
             name="ck_ai_provider_capability_benchmark_scope",
         ),
         CheckConstraint(
@@ -136,7 +137,8 @@ class GovernedAIProviderCapabilityEvent(Base):
             name="ck_ai_provider_capability_event_action",
         ),
         CheckConstraint(
-            "capability = 'intelligence_question' AND max_prompts_per_day = 1",
+            "capability in ('intelligence_question','intelligence_draft') "
+            "AND max_prompts_per_day = 1",
             name="ck_ai_provider_capability_event_scope",
         ),
         CheckConstraint(
@@ -255,7 +257,8 @@ class GovernedAIProviderCapabilityAttempt(Base):
             name="ck_ai_provider_capability_attempt_outcome",
         ),
         CheckConstraint(
-            "capability = 'intelligence_question' AND customer_prompt_sent = true "
+            "capability in ('intelligence_question','intelligence_draft') "
+            "AND customer_prompt_sent = true "
             "AND automatic_changes_allowed = false AND platform_provider_cost = 0",
             name="ck_ai_provider_capability_attempt_scope",
         ),

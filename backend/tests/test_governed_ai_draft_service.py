@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import UTC, datetime
 import json
 from types import SimpleNamespace
@@ -16,9 +17,11 @@ from app.models.governed_ai import GovernedAIRun
 from app.models.intelligence import StrategyRecommendation
 from app.services import governed_ai_draft_service
 from app.services.governed_ai_provider import (
+    GovernedAIProviderError,
     GovernedAIProviderResponse,
     MistralGovernedAIProvider,
 )
+from app.services.governed_ai_provider_capability_service import CapabilitySelection
 from tests.conftest import create_test_campaign
 
 
@@ -227,6 +230,156 @@ def test_valid_draft_is_metered_cited_and_idempotent(
         provider.last_context["allowed_actions"][0]
     ]
     assert provider.last_context["draft_request"]["may_execute_changes"] is False
+
+
+def test_private_draft_capability_releases_managed_reservation_after_validation(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "get_settings",
+        lambda: _settings(configured=True),
+    )
+    organization, campaign = _campaign_with_draftable_action(
+        db_session,
+        create_test_org,
+    )
+    private_provider = DraftProvider()
+    private_provider.name = "private_ai"
+    private_provider.model_name = "customer-model"
+    selection = CapabilitySelection(
+        event_id="draft-event",
+        connection_id="private-connection",
+        model_identifier="customer-model",
+    )
+    recorded: list[str] = []
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "select_draft_capability",
+        lambda *_args, **_kwargs: selection,
+    )
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "authorize_draft_dispatch",
+        lambda *_args, **_kwargs: SimpleNamespace(id="draft-event"),
+    )
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(private_provider),
+    )
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "record_draft_capability_success",
+        lambda *_args, **_kwargs: recorded.append("success"),
+    )
+
+    payload = governed_ai_draft_service.generate_governed_draft(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        action_id="reputation.launch_review_request_workflow",
+        draft_type="review_request",
+        now=datetime(2026, 8, 3, 16, 45, tzinfo=UTC),
+    )
+
+    assert payload["item"]["status"] == "validated"
+    assert payload["item"]["provider_name"] == "private_ai"
+    assert payload["item"]["usage"]["estimated_cost"] == 0
+    assert payload["item"]["usage"]["reconciled_cost"] == 0
+    assert private_provider.calls == 1
+    assert recorded == ["success"]
+    ledger = db_session.query(CostLedgerEntry).order_by(CostLedgerEntry.created_at).all()
+    assert [item.event_type for item in ledger] == ["reservation", "release"]
+
+
+def test_private_draft_failure_stops_capability_and_uses_managed_fallback(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "get_settings",
+        lambda: _settings(configured=True),
+    )
+    organization, campaign = _campaign_with_draftable_action(
+        db_session,
+        create_test_org,
+    )
+    managed_provider = DraftProvider()
+    selection = CapabilitySelection(
+        event_id="draft-event",
+        connection_id="private-connection",
+        model_identifier="customer-model",
+    )
+    event = SimpleNamespace(id="draft-event")
+    recorded: list[tuple[str, bool | str]] = []
+
+    class FailingPrivateProvider:
+        name = "private_ai"
+        model_name = "customer-model"
+
+        def draft_action(self, **_kwargs):
+            raise GovernedAIProviderError(
+                "Private provider timed out.",
+                code="ai_provider_timeout",
+                provider_may_have_processed=True,
+            )
+
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "select_draft_capability",
+        lambda *_args, **_kwargs: selection,
+    )
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "authorize_draft_dispatch",
+        lambda *_args, **_kwargs: event,
+    )
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(FailingPrivateProvider()),
+    )
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "automatic_draft_capability_rollback",
+        lambda *_args, **kwargs: recorded.append(("rollback", kwargs["reason_code"])),
+    )
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "record_draft_capability_fallback",
+        lambda *_args, **kwargs: recorded.append(
+            ("fallback", kwargs["managed_succeeded"])
+        ),
+    )
+    monkeypatch.setattr(
+        governed_ai_draft_service,
+        "MistralGovernedAIProvider",
+        lambda **_kwargs: managed_provider,
+    )
+
+    payload = governed_ai_draft_service.generate_governed_draft(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        action_id="reputation.launch_review_request_workflow",
+        draft_type="review_request",
+        now=datetime(2026, 8, 3, 17, 15, tzinfo=UTC),
+    )
+
+    assert payload["item"]["status"] == "validated"
+    assert payload["item"]["provider_name"] == "mistral"
+    assert managed_provider.calls == 1
+    assert recorded == [
+        ("rollback", "ai_provider_timeout"),
+        ("fallback", True),
+    ]
 
 
 def test_draft_rejects_invented_evidence(

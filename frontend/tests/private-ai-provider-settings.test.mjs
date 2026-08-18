@@ -135,3 +135,21 @@ test("saved-evidence questions require their own synthetic check and fixed owner
   assert.match(section, /disabled=\{!allQuestionAcknowledged/);
   assert.doesNotMatch(section, />\s*(?:Make primary|Route all questions|Automate fixes)\s*</i);
 });
+
+test("saved-action draft wording is separately checked and can never publish", () => {
+  assert.match(settings, /`\/ai\/providers\/\$\{provider\.id\}\/draft-capability`/);
+  assert.match(settings, /draft-capability\/benchmark/);
+  assert.match(settings, /`\/ai\/providers\/\$\{connectionId\}\/draft-capability`/);
+  assert.match(section, /Saved-action draft wording/);
+  assert.match(section, /uses synthetic information and sends no customer data/);
+  assert.match(section, /Start fixed 5% draft-wording check/);
+  assert.match(section, /share one total private prompt per day/);
+  assert.match(section, /Every draft still requires review/);
+  assert.match(section, /cannot approve, publish, send, or execute work/);
+  assert.match(settings, /reviewed_draft_capability_check/);
+  assert.match(settings, /understands_real_saved_action_context/);
+  assert.match(settings, /understands_draft_only_no_publish/);
+  assert.match(settings, /publishing_allowed: false/);
+  assert.match(section, /disabled=\{!allDraftAcknowledged/);
+  assert.doesNotMatch(section, />\s*(?:Publish draft|Send draft|Apply wording|Auto-publish)\s*</i);
+});

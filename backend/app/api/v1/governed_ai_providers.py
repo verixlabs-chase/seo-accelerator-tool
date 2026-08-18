@@ -45,6 +45,11 @@ from app.services.governed_ai_provider_capability_service import (
     run_question_capability_benchmark,
     set_question_capability,
 )
+from app.services.governed_ai_provider_draft_capability_service import (
+    list_draft_capability,
+    run_draft_capability_benchmark,
+    set_draft_capability,
+)
 
 
 router = APIRouter(prefix="/ai/providers", tags=["governed-ai-providers"])
@@ -87,6 +92,16 @@ class GovernedAIProviderQuestionCapabilityIn(BaseModel):
     understands_shared_daily_limit: bool = False
     understands_managed_fallback_and_rollback: bool = False
     understands_no_automatic_changes: bool = False
+
+
+class GovernedAIProviderDraftCapabilityIn(BaseModel):
+    action: Literal["enable", "disable"]
+    client_request_id: str = Field(min_length=8, max_length=64)
+    reviewed_draft_capability_check: bool = False
+    understands_real_saved_action_context: bool = False
+    understands_shared_daily_limit: bool = False
+    understands_managed_fallback_and_rollback: bool = False
+    understands_draft_only_no_publish: bool = False
 
 
 class GovernedAIProviderReviewIn(BaseModel):
@@ -541,6 +556,82 @@ def update_governed_ai_provider_question_capability(
                 ),
                 "understands_no_automatic_changes": (
                     body.understands_no_automatic_changes
+                ),
+            },
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.get("/{connection_id}/draft-capability")
+def get_governed_ai_provider_draft_capability(
+    request: Request,
+    connection_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = list_draft_capability(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.post("/{connection_id}/draft-capability/benchmark")
+def benchmark_governed_ai_provider_draft_capability(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderCanaryMonitoringIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = run_draft_capability_benchmark(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            client_request_id=body.client_request_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.put("/{connection_id}/draft-capability")
+def update_governed_ai_provider_draft_capability(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderDraftCapabilityIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = set_draft_capability(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            action=body.action,
+            client_request_id=body.client_request_id,
+            acknowledgements={
+                "reviewed_draft_capability_check": (
+                    body.reviewed_draft_capability_check
+                ),
+                "understands_real_saved_action_context": (
+                    body.understands_real_saved_action_context
+                ),
+                "understands_shared_daily_limit": body.understands_shared_daily_limit,
+                "understands_managed_fallback_and_rollback": (
+                    body.understands_managed_fallback_and_rollback
+                ),
+                "understands_draft_only_no_publish": (
+                    body.understands_draft_only_no_publish
                 ),
             },
         )

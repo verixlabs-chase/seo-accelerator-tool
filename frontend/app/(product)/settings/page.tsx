@@ -610,6 +610,45 @@ type PrivateAIQuestionCapabilityState = {
   truth: { state: string; summary: string };
 };
 
+type PrivateAIDraftCapabilityAcknowledgements = {
+  reviewed_draft_capability_check: boolean;
+  understands_real_saved_action_context: boolean;
+  understands_shared_daily_limit: boolean;
+  understands_managed_fallback_and_rollback: boolean;
+  understands_draft_only_no_publish: boolean;
+};
+
+type PrivateAIDraftCapabilityState = {
+  state: "needs_qualification" | "qualification_failed" | "eligible_for_owner_approval" | "capability_canary" | "capability_canary_elsewhere" | "needs_attention" | "unavailable";
+  capability: "intelligence_draft";
+  customer_label: "Saved-action draft wording";
+  latest_benchmark: {
+    id: string;
+    status: "passed" | "failed";
+    reason_code: string;
+    latency_ms: number;
+    customer_prompt_sent: false;
+    routing_enabled: false;
+    immutable: true;
+  } | null;
+  routing_enabled: boolean;
+  traffic_percentage: 0 | 5;
+  max_prompts_per_day: 1;
+  daily_limit_shared_with_explanations_and_questions: true;
+  customer_prompts_allowed: boolean;
+  automatic_rollback_enabled: true;
+  automatic_changes_allowed: false;
+  draft_only: true;
+  publishing_allowed: false;
+  usage: {
+    private_attempts: number;
+    private_successes: number;
+    managed_fallbacks: number;
+    automatic_rollbacks: number;
+  };
+  truth: { state: string; summary: string };
+};
+
 type BillingCheckoutAttempt = {
   organizationId: string;
   planCode: string;
@@ -657,6 +696,14 @@ const EMPTY_PRIVATE_AI_QUESTION_ACKNOWLEDGEMENTS: PrivateAIQuestionCapabilityAck
   understands_shared_daily_limit: false,
   understands_managed_fallback_and_rollback: false,
   understands_no_automatic_changes: false,
+};
+
+const EMPTY_PRIVATE_AI_DRAFT_ACKNOWLEDGEMENTS: PrivateAIDraftCapabilityAcknowledgements = {
+  reviewed_draft_capability_check: false,
+  understands_real_saved_action_context: false,
+  understands_shared_daily_limit: false,
+  understands_managed_fallback_and_rollback: false,
+  understands_draft_only_no_publish: false,
 };
 
 function privateAIRequestId(prefix: string) {
@@ -1062,6 +1109,7 @@ export default function SettingsPage() {
   const [privateAICanary, setPrivateAICanary] = useState<Record<string, PrivateAICanaryState>>({});
   const [privateAICanaryMonitoring, setPrivateAICanaryMonitoring] = useState<Record<string, PrivateAICanaryMonitoringState>>({});
   const [privateAIQuestionCapability, setPrivateAIQuestionCapability] = useState<Record<string, PrivateAIQuestionCapabilityState>>({});
+  const [privateAIDraftCapability, setPrivateAIDraftCapability] = useState<Record<string, PrivateAIDraftCapabilityState>>({});
   const [privateAIName, setPrivateAIName] = useState("");
   const [privateAIEndpoint, setPrivateAIEndpoint] = useState("");
   const [privateAIModel, setPrivateAIModel] = useState("");
@@ -1070,6 +1118,7 @@ export default function SettingsPage() {
   const [privateAIStandbyAcks, setPrivateAIStandbyAcks] = useState<Record<string, PrivateAIStandbyAcknowledgements>>({});
   const [privateAICanaryAcks, setPrivateAICanaryAcks] = useState<Record<string, PrivateAICanaryAcknowledgements>>({});
   const [privateAIQuestionAcks, setPrivateAIQuestionAcks] = useState<Record<string, PrivateAIQuestionCapabilityAcknowledgements>>({});
+  const [privateAIDraftAcks, setPrivateAIDraftAcks] = useState<Record<string, PrivateAIDraftCapabilityAcknowledgements>>({});
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
   const [authSessions, setAuthSessions] = useState<AuthSessionSummary[] | null>(null);
   const [billingConfirmationState, setBillingConfirmationState] =
@@ -1303,7 +1352,7 @@ export default function SettingsPage() {
     const items = response.items || [];
     const details = await Promise.all(
       items.map(async (provider) => {
-        const [benchmarkResponse, reviewResponse, standbyResponse, readinessResponse, canaryResponse, monitoringResponse, questionCapabilityResponse] = await Promise.all([
+        const [benchmarkResponse, reviewResponse, standbyResponse, readinessResponse, canaryResponse, monitoringResponse, questionCapabilityResponse, draftCapabilityResponse] = await Promise.all([
           (platformApi(`/ai/providers/${provider.id}/benchmarks`, {
             method: "GET",
           }) as Promise<{ items?: PrivateAIProviderBenchmark[] }>).catch(() => ({ items: [] })),
@@ -1411,6 +1460,33 @@ export default function SettingsPage() {
               summary: "Saved-question private-AI status could not be checked.",
             },
           })),
+          (platformApi(`/ai/providers/${provider.id}/draft-capability`, {
+            method: "GET",
+          }) as Promise<PrivateAIDraftCapabilityState>).catch(() => ({
+            state: "unavailable" as const,
+            capability: "intelligence_draft" as const,
+            customer_label: "Saved-action draft wording" as const,
+            latest_benchmark: null,
+            routing_enabled: false,
+            traffic_percentage: 0 as const,
+            max_prompts_per_day: 1 as const,
+            daily_limit_shared_with_explanations_and_questions: true as const,
+            customer_prompts_allowed: false,
+            automatic_rollback_enabled: true as const,
+            automatic_changes_allowed: false as const,
+            draft_only: true as const,
+            publishing_allowed: false as const,
+            usage: {
+              private_attempts: 0,
+              private_successes: 0,
+              managed_fallbacks: 0,
+              automatic_rollbacks: 0,
+            },
+            truth: {
+              state: "unavailable",
+              summary: "Draft-wording private-AI status could not be checked.",
+            },
+          })),
         ]);
         return {
           connectionId: provider.id,
@@ -1427,6 +1503,7 @@ export default function SettingsPage() {
           canary: canaryResponse,
           monitoring: monitoringResponse,
           questionCapability: questionCapabilityResponse,
+          draftCapability: draftCapabilityResponse,
         };
       }),
     );
@@ -1463,6 +1540,9 @@ export default function SettingsPage() {
     );
     setPrivateAIQuestionCapability(
       Object.fromEntries(details.map((item) => [item.connectionId, item.questionCapability])),
+    );
+    setPrivateAIDraftCapability(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.draftCapability])),
     );
     setPrivateAIProviderLoadState("ready");
     return response;
@@ -1810,6 +1890,63 @@ export default function SettingsPage() {
       }
     },
     [loadPrivateAIProviders, privateAIQuestionAcks],
+  );
+
+  const benchmarkPrivateAIDraftCapability = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-draft-benchmark-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/draft-capability/benchmark`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              client_request_id: privateAIRequestId("settings-draft-check"),
+            }),
+          },
+        )) as PrivateAIDraftCapabilityState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to check draft-wording compatibility.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const updatePrivateAIDraftCapability = useCallback(
+    async (connectionId: string, action: "enable" | "disable") => {
+      setBusyAction(`private-ai-draft-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements = action === "enable"
+          ? privateAIDraftAcks[connectionId] || EMPTY_PRIVATE_AI_DRAFT_ACKNOWLEDGEMENTS
+          : EMPTY_PRIVATE_AI_DRAFT_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/draft-capability`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              action,
+              client_request_id: privateAIRequestId(`settings-draft-${action}`),
+              ...acknowledgements,
+            }),
+          },
+        )) as PrivateAIDraftCapabilityState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to update draft-wording private AI.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAIDraftAcks],
   );
 
   const downloadAutomationConformanceKit = useCallback(async () => {
@@ -3806,12 +3943,16 @@ export default function SettingsPage() {
                       const canary = privateAICanary[provider.id];
                       const canaryMonitoring = privateAICanaryMonitoring[provider.id];
                       const questionCapability = privateAIQuestionCapability[provider.id];
+                      const draftCapability = privateAIDraftCapability[provider.id];
                       const canaryAcknowledgements = privateAICanaryAcks[provider.id]
                         || EMPTY_PRIVATE_AI_CANARY_ACKNOWLEDGEMENTS;
                       const allCanaryAcknowledged = Object.values(canaryAcknowledgements).every(Boolean);
                       const questionAcknowledgements = privateAIQuestionAcks[provider.id]
                         || EMPTY_PRIVATE_AI_QUESTION_ACKNOWLEDGEMENTS;
                       const allQuestionAcknowledged = Object.values(questionAcknowledgements).every(Boolean);
+                      const draftAcknowledgements = privateAIDraftAcks[provider.id]
+                        || EMPTY_PRIVATE_AI_DRAFT_ACKNOWLEDGEMENTS;
+                      const allDraftAcknowledged = Object.values(draftAcknowledgements).every(Boolean);
                       const acknowledgements = latestBenchmark
                         ? privateAIReviewAcks[latestBenchmark.id] || EMPTY_PRIVATE_AI_ACKNOWLEDGEMENTS
                         : EMPTY_PRIVATE_AI_ACKNOWLEDGEMENTS;
@@ -4307,6 +4448,97 @@ export default function SettingsPage() {
                                           )}
                                           <p className="mt-3 text-xs leading-5 text-zinc-500">
                                             This capability can only explain saved evidence. It cannot create, approve, publish, or execute work.
+                                          </p>
+                                        </div>
+                                      ) : null}
+                                      {canaryMonitoring?.state === "eligible_for_later_review" ? (
+                                        <div className="mt-3 rounded-md border border-fuchsia-500/20 bg-fuchsia-500/5 p-3">
+                                          <p className="font-semibold text-white">Saved-action draft wording</p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                            Check whether this provider can prepare review-only wording for one action already saved in InsightOS. The compatibility check uses synthetic information and sends no customer data.
+                                          </p>
+                                          {draftCapability?.state === "unavailable" || !draftCapability ? (
+                                            <p className="mt-2 text-sm text-amber-100">
+                                              Draft-wording status is unavailable, so InsightOS will keep using managed AI.
+                                            </p>
+                                          ) : draftCapability.state === "capability_canary" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Limited draft-wording check is on</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                Up to 5% of eligible draft requests may use this provider. Explanations, questions, and drafts share one total private prompt per day. Every draft still requires review, and any failure stops this capability and uses managed AI.
+                                              </p>
+                                              <p className="mt-2 text-xs text-zinc-400">
+                                                Private successes: {draftCapability.usage.private_successes} · Managed fallbacks: {draftCapability.usage.managed_fallbacks} · Automatic stops: {draftCapability.usage.automatic_rollbacks}
+                                              </p>
+                                              <button
+                                                type="button"
+                                                className={`${secondaryButtonClass} mt-3`}
+                                                disabled={busyAction === `private-ai-draft-${provider.id}`}
+                                                onClick={() => void updatePrivateAIDraftCapability(provider.id, "disable")}
+                                              >
+                                                {busyAction === `private-ai-draft-${provider.id}` ? "Stopping..." : "Stop draft-wording check"}
+                                              </button>
+                                            </div>
+                                          ) : draftCapability.state === "eligible_for_owner_approval" ? (
+                                            <div className="mt-3">
+                                              <p className="text-sm font-medium text-emerald-100">Synthetic draft check passed</p>
+                                              <div className="mt-3 space-y-2">
+                                                {([
+                                                  ["reviewed_draft_capability_check", "I reviewed the draft-wording compatibility result."],
+                                                  ["understands_real_saved_action_context", "I understand this can send one saved action and its supporting information to my private provider."],
+                                                  ["understands_shared_daily_limit", "I understand explanations, questions, and drafts share one private prompt per day."],
+                                                  ["understands_managed_fallback_and_rollback", "I understand managed AI remains reserved and any private failure stops this capability."],
+                                                  ["understands_draft_only_no_publish", "I understand this can only prepare a draft for review and cannot publish or make changes."],
+                                                ] as Array<[keyof PrivateAIDraftCapabilityAcknowledgements, string]>).map(([key, label]) => (
+                                                  <label key={key} className="flex items-start gap-2 text-sm leading-5 text-zinc-300">
+                                                    <input
+                                                      type="checkbox"
+                                                      className="mt-0.5"
+                                                      checked={draftAcknowledgements[key]}
+                                                      onChange={(event) => setPrivateAIDraftAcks((current) => ({
+                                                        ...current,
+                                                        [provider.id]: {
+                                                          ...draftAcknowledgements,
+                                                          [key]: event.target.checked,
+                                                        },
+                                                      }))}
+                                                    />
+                                                    <span>{label}</span>
+                                                  </label>
+                                                ))}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                className={`${primaryButtonClass} mt-3`}
+                                                disabled={!allDraftAcknowledged || busyAction === `private-ai-draft-${provider.id}`}
+                                                onClick={() => void updatePrivateAIDraftCapability(provider.id, "enable")}
+                                              >
+                                                {busyAction === `private-ai-draft-${provider.id}` ? "Starting..." : "Start fixed 5% draft-wording check"}
+                                              </button>
+                                            </div>
+                                          ) : draftCapability.state === "capability_canary_elsewhere" ? (
+                                            <p className="mt-2 text-sm text-amber-100">Another private provider already owns this limited draft-wording capability.</p>
+                                          ) : draftCapability.state === "needs_attention" ? (
+                                            <p className="mt-2 text-sm text-amber-100">
+                                              This capability stopped because its saved evidence is no longer current. Refresh the health review before checking it again.
+                                            </p>
+                                          ) : (
+                                            <div className="mt-3">
+                                              {draftCapability.state === "qualification_failed" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The last synthetic draft check did not pass. No customer information was sent.</p>
+                                              ) : null}
+                                              <button
+                                                type="button"
+                                                className={secondaryButtonClass}
+                                                disabled={busyAction === `private-ai-draft-benchmark-${provider.id}`}
+                                                onClick={() => void benchmarkPrivateAIDraftCapability(provider.id)}
+                                              >
+                                                {busyAction === `private-ai-draft-benchmark-${provider.id}` ? "Checking..." : "Check draft-wording compatibility"}
+                                              </button>
+                                            </div>
+                                          )}
+                                          <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                            This capability can only prepare review-only wording for a saved action. It cannot approve, publish, send, or execute work.
                                           </p>
                                         </div>
                                       ) : null}

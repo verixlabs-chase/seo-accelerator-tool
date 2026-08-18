@@ -57,6 +57,12 @@ QUESTION_CAPABILITY_MIGRATION = (
     / "versions"
     / "20260818_0173_private_ai_question_capability.py"
 )
+DRAFT_CAPABILITY_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260818_0174_private_ai_draft_capability.py"
+)
 
 
 def test_provider_candidate_migration_is_scoped_encrypted_and_inactive() -> None:
@@ -235,3 +241,18 @@ def test_private_ai_question_capability_is_scoped_bounded_and_reversible() -> No
     assert "op.drop_table(ATTEMPTS)" in source
     assert "op.drop_table(EVENTS)" in source
     assert "op.drop_table(BENCHMARKS)" in source
+
+
+def test_private_ai_draft_capability_expands_scope_without_publish_authority() -> None:
+    source = DRAFT_CAPABILITY_MIGRATION.read_text(encoding="utf-8")
+
+    assert 'down_revision = "20260818_0173"' in source
+    assert 'BENCHMARKS = "governed_ai_provider_capability_benchmarks"' in source
+    assert 'EVENTS = "governed_ai_provider_capability_events"' in source
+    assert 'ATTEMPTS = "governed_ai_provider_capability_attempts"' in source
+    assert "'intelligence_question','intelligence_draft'" in source
+    assert "max_prompts_per_day = 1" in source
+    assert "automatic_changes_allowed = false" in source
+    assert "platform_provider_cost = 0" in source
+    assert "_ensure_no_draft_capability_rows()" in source
+    assert "Cannot downgrade while private-AI draft capability history exists" in source

@@ -75,6 +75,13 @@ from app.services.governed_ai_provider_capability_service import (
     select_question_capability,
     set_question_capability,
 )
+from app.services.governed_ai_provider_draft_capability_service import (
+    authorize_draft_dispatch,
+    record_draft_capability_success,
+    run_draft_capability_benchmark,
+    select_draft_capability,
+    set_draft_capability,
+)
 from app.services.governed_ai_provider import GovernedAIProviderResponse
 
 
@@ -1851,6 +1858,188 @@ def test_question_capability_is_additive_when_its_schema_is_not_available(
             db_session,
             organization_id=organization.id,
             request_key="rolling-deploy-question",
+            now=datetime(2026, 8, 18, 23, 0, tzinfo=UTC),
+        )
+        is None
+    )
+
+
+def _draft_capability_acknowledgements() -> dict[str, bool]:
+    return {
+        "reviewed_draft_capability_check": True,
+        "understands_real_saved_action_context": True,
+        "understands_shared_daily_limit": True,
+        "understands_managed_fallback_and_rollback": True,
+        "understands_draft_only_no_publish": True,
+    }
+
+
+class _SyntheticDraftProvider:
+    name = "private_ai"
+    model_name = "benchmark-model-v1"
+
+    def draft_action(self, *, context, output_schema, prompt_template_version):
+        assert output_schema
+        assert prompt_template_version == "insightos-capability-draft-check-v1"
+        assert context["draft_rules"]["may_publish"] is False
+        return GovernedAIProviderResponse(
+            payload={
+                "action_id": "action:synthetic:draft-review",
+                "draft_type": "search_result",
+                "draft_state": "ready",
+                "title": "Friendly local service",
+                "body": "Clear help from a local team, prepared for your review.",
+                "evidence_used": ["evidence:synthetic:draft-review"],
+                "uncertainties": ["Confirm the wording before publishing."],
+                "approval_required": True,
+            },
+            provider_request_id="synthetic-draft-check",
+            model_name=self.model_name,
+            input_tokens=35,
+            output_tokens=18,
+        )
+
+
+def test_draft_capability_is_separate_fixed_and_shares_daily_limit(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    now = datetime(2026, 8, 18, 22, 0, tzinfo=UTC)
+    connection_id = _question_capability_ready_connection(
+        db_session,
+        organization=organization,
+        actor=actor,
+        now=now,
+    )
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_draft_capability_service.open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(_SyntheticDraftProvider()),
+    )
+
+    checked = run_draft_capability_benchmark(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        client_request_id="draft-capability-benchmark",
+        now=now,
+    )
+    assert checked["item"]["status"] == "passed"
+    assert checked["item"]["customer_prompt_sent"] is False
+    assert checked["publishing_allowed"] is False
+
+    enabled = set_draft_capability(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        action="enable",
+        client_request_id="draft-capability-enable",
+        acknowledgements=_draft_capability_acknowledgements(),
+        now=now,
+    )
+    assert enabled["routing_enabled"] is True
+    assert enabled["traffic_percentage"] == 5
+    assert enabled["max_prompts_per_day"] == 1
+    assert enabled["draft_only"] is True
+    assert enabled["publishing_allowed"] is False
+
+    next_day = now + timedelta(hours=2)
+    selection = None
+    request_key = ""
+    for index in range(500):
+        request_key = f"draft-capability-live-{index}"
+        selection = select_draft_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key=request_key,
+            now=next_day,
+        )
+        if selection is not None:
+            break
+    assert selection is not None
+    event = authorize_draft_dispatch(
+        db_session,
+        organization_id=organization.id,
+        selection=selection,
+        now=next_day,
+    )
+    record_draft_capability_success(
+        db_session,
+        event=event,
+        request_key=request_key,
+        input_tokens=60,
+        output_tokens=25,
+        duration_ms=1_100,
+        now=next_day,
+    )
+    assert (
+        select_question_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key="question-after-draft",
+            now=next_day,
+        )
+        is None
+    )
+    assert db_session.query(GovernedAIProviderCapabilityBenchmark).count() == 1
+    assert db_session.query(GovernedAIProviderCapabilityEvent).count() == 1
+    assert db_session.query(GovernedAIProviderCapabilityAttempt).count() == 1
+
+
+def test_draft_capability_api_is_owner_only_and_cannot_publish(
+    client,
+    monkeypatch,
+) -> None:
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+    response = {
+        "created": True,
+        "state": "capability_canary",
+        "routing_enabled": True,
+        "traffic_percentage": 5,
+        "max_prompts_per_day": 1,
+        "draft_only": True,
+        "publishing_allowed": False,
+        "automatic_changes_allowed": False,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.set_draft_capability",
+        lambda _db, **_kwargs: response,
+    )
+    url = "/api/v1/ai/providers/connection-id/draft-capability"
+    body = {
+        "action": "enable",
+        "client_request_id": "draft-capability-api-request",
+        **_draft_capability_acknowledgements(),
+    }
+    denied = client.put(url, json=body, headers=_headers(admin_token))
+    assert denied.status_code == 403
+    allowed = client.put(url, json=body, headers=_headers(owner_token))
+    assert allowed.status_code == 200
+    payload = allowed.json()["data"]
+    assert payload["traffic_percentage"] == 5
+    assert payload["draft_only"] is True
+    assert payload["publishing_allowed"] is False
+    assert payload["automatic_changes_allowed"] is False
+
+
+def test_draft_capability_is_additive_when_schema_is_not_available(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, _actor = _organization_and_actor(db_session)
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_draft_capability_service._draft_capability_schema_available",
+        lambda _db: False,
+    )
+
+    assert (
+        select_draft_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key="rolling-deploy-draft",
             now=datetime(2026, 8, 18, 23, 0, tzinfo=UTC),
         )
         is None

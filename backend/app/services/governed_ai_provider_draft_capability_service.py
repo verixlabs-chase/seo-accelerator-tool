@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-import json
 from time import perf_counter
 from typing import Any
 
@@ -11,9 +9,8 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.intelligence.contracts.governed_ai import GovernedEvidenceAnswer
+from app.intelligence.contracts.governed_ai import GovernedActionDraft
 from app.models.governed_ai_provider_canary import (
-    GovernedAIProviderCanaryAttempt,
     GovernedAIProviderCanaryHealthSnapshot,
 )
 from app.models.governed_ai_provider_capability import (
@@ -22,7 +19,6 @@ from app.models.governed_ai_provider_capability import (
     GovernedAIProviderCapabilityEvent,
 )
 from app.models.governed_ai_provider_connection import GovernedAIProviderConnection
-from app.models.organization import Organization
 from app.services.audit_service import write_audit_log
 from app.services.commercial_plan_service import (
     FEATURE_PRIVATE_AI_PROVIDER,
@@ -30,9 +26,22 @@ from app.services.commercial_plan_service import (
 )
 from app.services.cost_economics_service import CostEconomicsError
 from app.services.governed_ai_provider import GovernedAIProviderError
-from app.services.governed_ai_provider_canary_service import (
-    list_canary_monitoring,
-    list_provider_canary,
+from app.services.governed_ai_provider_canary_service import list_provider_canary
+from app.services.governed_ai_provider_capability_service import (
+    CapabilitySelection,
+    SHARED_DAILY_PROMPT_LIMIT,
+    TRAFFIC_PERCENTAGE,
+    _as_utc,
+    _capability_tables_available,
+    _connection,
+    _connection_or_none,
+    _current_eligible_health,
+    _error,
+    _hash,
+    _locked_organization,
+    _private_ai_allowed,
+    _request_id,
+    _shared_daily_attempts,
 )
 from app.services.governed_ai_provider_connection_service import (
     GovernedAIProviderConnectionError,
@@ -40,30 +49,21 @@ from app.services.governed_ai_provider_connection_service import (
 )
 
 
-CAPABILITY = "intelligence_question"
-CAPABILITY_SCHEMA_VERSION = "governed-evidence-answer-v1"
-TRAFFIC_PERCENTAGE = 5
-SHARED_DAILY_PROMPT_LIMIT = 1
+CAPABILITY = "intelligence_draft"
+CAPABILITY_SCHEMA_VERSION = "governed-action-draft-v1"
 _ACKS = (
-    "reviewed_question_capability_check",
-    "understands_real_customer_questions",
+    "reviewed_draft_capability_check",
+    "understands_real_saved_action_context",
     "understands_shared_daily_limit",
     "understands_managed_fallback_and_rollback",
-    "understands_no_automatic_changes",
+    "understands_draft_only_no_publish",
 )
-_SYNTHETIC_QUESTION = "Which saved action should I review first?"
-_SYNTHETIC_EVIDENCE_ID = "evidence:synthetic:action"
-_SYNTHETIC_ACTION_ID = "action:synthetic:review"
+_SYNTHETIC_ACTION_ID = "action:synthetic:draft-review"
+_SYNTHETIC_EVIDENCE_ID = "evidence:synthetic:draft-review"
+_SYNTHETIC_DRAFT_TYPE = "search_result"
 
 
-@dataclass(frozen=True)
-class CapabilitySelection:
-    event_id: str
-    connection_id: str
-    model_identifier: str
-
-
-def list_question_capability(
+def list_draft_capability(
     db: Session,
     *,
     organization_id: str,
@@ -71,13 +71,13 @@ def list_question_capability(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     occurred_at = _as_utc(now or datetime.now(UTC))
-    connection = _connection(db, organization_id=organization_id, connection_id=connection_id)
-    if not _capability_tables_available(db):
+    connection = _connection(
+        db, organization_id=organization_id, connection_id=connection_id
+    )
+    if not _draft_capability_schema_available(db):
         return _unavailable_capability()
     benchmark = _latest_benchmark(
-        db,
-        organization_id=organization_id,
-        connection_id=connection_id,
+        db, organization_id=organization_id, connection_id=connection_id
     )
     current = _latest_event(db, organization_id=organization_id)
     recorded_here = bool(
@@ -85,12 +85,7 @@ def list_question_capability(
     )
     active_here = bool(
         recorded_here
-        and _event_current(
-            db,
-            event=current,
-            connection=connection,
-            now=occurred_at,
-        )
+        and _event_current(db, event=current, connection=connection, now=occurred_at)
     )
     active_elsewhere = bool(
         current and current.action == "enabled" and current.connection_id != connection_id
@@ -104,36 +99,34 @@ def list_question_capability(
         if active_elsewhere
         else "eligible_for_owner_approval"
         if _benchmark_current(
-            db,
-            benchmark=benchmark,
-            connection=connection,
-            now=occurred_at,
+            db, benchmark=benchmark, connection=connection, now=occurred_at
         )
         else "qualification_failed"
         if benchmark is not None and benchmark.status == "failed"
         else "needs_qualification"
     )
-    attempts = _usage(db, organization_id=organization_id, now=occurred_at)
     return {
         "state": state,
         "capability": CAPABILITY,
-        "customer_label": "Saved-evidence questions",
+        "customer_label": "Saved-action draft wording",
         "latest_benchmark": _serialize_benchmark(benchmark) if benchmark else None,
         "current": _serialize_event(current) if current else None,
         "routing_enabled": active_here,
         "traffic_percentage": TRAFFIC_PERCENTAGE if active_here else 0,
         "max_prompts_per_day": SHARED_DAILY_PROMPT_LIMIT,
-        "daily_limit_shared_with_explanations": True,
+        "daily_limit_shared_with_explanations_and_questions": True,
         "customer_prompts_allowed": active_here,
         "automatic_rollback_enabled": True,
         "automatic_activation_allowed": False,
         "automatic_changes_allowed": False,
-        "usage": attempts,
+        "draft_only": True,
+        "publishing_allowed": False,
+        "usage": _usage(db, organization_id=organization_id, now=occurred_at),
         "truth": {"state": state, "summary": _summary(state)},
     }
 
 
-def run_question_capability_benchmark(
+def run_draft_capability_benchmark(
     db: Session,
     *,
     organization_id: str,
@@ -151,7 +144,9 @@ def run_question_capability_benchmark(
     request_id = _request_id(client_request_id)
     occurred_at = _as_utc(now or datetime.now(UTC))
     organization = _locked_organization(db, organization_id=organization_id)
-    connection = _connection(db, organization_id=organization_id, connection_id=connection_id)
+    connection = _connection(
+        db, organization_id=organization_id, connection_id=connection_id
+    )
     health = _current_eligible_health(
         db,
         organization_id=organization_id,
@@ -159,15 +154,14 @@ def run_question_capability_benchmark(
         now=occurred_at,
     )
     idempotency_key = _hash(
-        {"organization_id": organization_id, "request_id": request_id, "kind": "question_benchmark"}
+        {
+            "organization_id": organization_id,
+            "request_id": request_id,
+            "kind": "draft_capability_benchmark",
+        }
     )
-    existing = (
-        db.query(GovernedAIProviderCapabilityBenchmark)
-        .filter(
-            GovernedAIProviderCapabilityBenchmark.organization_id == organization_id,
-            GovernedAIProviderCapabilityBenchmark.idempotency_key == idempotency_key,
-        )
-        .one_or_none()
+    existing = _benchmark_by_idempotency(
+        db, organization_id=organization_id, idempotency_key=idempotency_key
     )
     if existing is not None:
         if existing.connection_id != connection_id:
@@ -179,25 +173,27 @@ def run_question_capability_benchmark(
         return _benchmark_response(db, existing, created=False, now=occurred_at)
 
     context = {
-        "customer_question": _SYNTHETIC_QUESTION,
-        "allowed_evidence_ids": [_SYNTHETIC_EVIDENCE_ID],
-        "allowed_actions": [{"action_id": _SYNTHETIC_ACTION_ID}],
-        "facts": {
-            "saved_action": {
-                "evidence_id": _SYNTHETIC_EVIDENCE_ID,
-                "action_id": _SYNTHETIC_ACTION_ID,
-                "summary": "Review the saved website title recommendation.",
-            }
+        "selected_action": {
+            "action_id": _SYNTHETIC_ACTION_ID,
+            "summary": "Review saved search-result wording before publishing.",
         },
-        "answer_rules": {
-            "authority": "synthetic_evidence_only",
-            "may_create_actions": False,
+        "requested_draft_type": _SYNTHETIC_DRAFT_TYPE,
+        "evidence": [
+            {
+                "evidence_id": _SYNTHETIC_EVIDENCE_ID,
+                "summary": "The saved page wording needs a clearer service description.",
+            }
+        ],
+        "draft_rules": {
+            "must_require_owner_review": True,
+            "may_publish": False,
             "may_execute_changes": False,
+            "may_introduce_numeric_claims": False,
         },
     }
     started = perf_counter()
     status = "passed"
-    reason_code = "ai_provider_question_capability_passed"
+    reason_code = "ai_provider_draft_capability_passed"
     input_tokens = 0
     output_tokens = 0
     try:
@@ -206,23 +202,25 @@ def run_question_capability_benchmark(
             organization_id=organization_id,
             connection_id=connection_id,
             timeout_seconds=10,
-            max_output_tokens=800,
+            max_output_tokens=1_200,
         ) as provider:
-            response = provider.answer_question(
+            response = provider.draft_action(
                 context=context,
-                output_schema=GovernedEvidenceAnswer.model_json_schema(),
-                prompt_template_version="insightos-capability-question-check-v1",
+                output_schema=GovernedActionDraft.model_json_schema(),
+                prompt_template_version="insightos-capability-draft-check-v1",
             )
             input_tokens = max(0, response.input_tokens)
             output_tokens = max(0, response.output_tokens)
-            answer = GovernedEvidenceAnswer.model_validate(response.payload)
-            answer.validate_against_context(
-                original_question=_SYNTHETIC_QUESTION,
+            draft = GovernedActionDraft.model_validate(response.payload)
+            draft.validate_against_context(
+                requested_action_id=_SYNTHETIC_ACTION_ID,
+                requested_draft_type=_SYNTHETIC_DRAFT_TYPE,
                 evidence_ids={_SYNTHETIC_EVIDENCE_ID},
                 allowed_action_ids={_SYNTHETIC_ACTION_ID},
+                allowed_draft_types={_SYNTHETIC_DRAFT_TYPE},
             )
-            if answer.answer_state != "answered":
-                raise ValueError("The synthetic saved evidence was not answered.")
+            if draft.draft_state != "ready" or not draft.approval_required:
+                raise ValueError("The synthetic draft was not review-ready.")
     except GovernedAIProviderConnectionError as exc:
         status = "failed"
         reason_code = exc.reason_code[:120]
@@ -231,11 +229,11 @@ def run_question_capability_benchmark(
         reason_code = exc.code[:120]
     except (TypeError, ValueError):
         status = "failed"
-        reason_code = "ai_provider_question_capability_invalid_output"
+        reason_code = "ai_provider_draft_capability_invalid_output"
     except Exception:
         status = "failed"
-        reason_code = "ai_provider_question_capability_unexpected_error"
-    latency_ms = min(60_000, max(0, int((perf_counter() - started) * 1000)))
+        reason_code = "ai_provider_draft_capability_unexpected_error"
+    latency_ms = min(60_000, max(0, int((perf_counter() - started) * 1_000)))
     artifact = {
         "connection_id": connection_id,
         "health_snapshot_id": health.id,
@@ -278,7 +276,7 @@ def run_question_capability_benchmark(
         db,
         tenant_id=organization.id,
         actor_user_id=actor_user_id,
-        event_type="ai.provider_capability.question_benchmark_created",
+        event_type="ai.provider_capability.draft_benchmark_created",
         payload={
             "connection_id": connection_id,
             "benchmark_id": row.id,
@@ -286,27 +284,23 @@ def run_question_capability_benchmark(
             "status": status,
             "reason_code": reason_code,
             "customer_prompt_sent": False,
-            "routing_enabled": False,
+            "publishing_allowed": False,
         },
     )
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        repeated = (
-            db.query(GovernedAIProviderCapabilityBenchmark)
-            .filter(
-                GovernedAIProviderCapabilityBenchmark.organization_id == organization_id,
-                GovernedAIProviderCapabilityBenchmark.idempotency_key == idempotency_key,
-            )
-            .one()
+        repeated = _benchmark_by_idempotency(
+            db, organization_id=organization_id, idempotency_key=idempotency_key
         )
+        assert repeated is not None
         return _benchmark_response(db, repeated, created=False, now=occurred_at)
     db.refresh(row)
     return _benchmark_response(db, row, created=True, now=occurred_at)
 
 
-def set_question_capability(
+def set_draft_capability(
     db: Session,
     *,
     organization_id: str,
@@ -319,7 +313,9 @@ def set_question_capability(
 ) -> dict[str, Any]:
     _require_capability_tables(db)
     if action not in {"enable", "disable"}:
-        raise _error("Choose enable or disable.", "ai_provider_capability_action_invalid", 422)
+        raise _error(
+            "Choose enable or disable.", "ai_provider_capability_action_invalid", 422
+        )
     if action == "enable":
         require_commercial_feature(
             db,
@@ -329,17 +325,18 @@ def set_question_capability(
     request_id = _request_id(client_request_id)
     occurred_at = _as_utc(now or datetime.now(UTC))
     organization = _locked_organization(db, organization_id=organization_id)
-    connection = _connection(db, organization_id=organization_id, connection_id=connection_id)
-    idempotency_key = _hash(
-        {"organization_id": organization_id, "request_id": request_id, "kind": "question_event"}
+    connection = _connection(
+        db, organization_id=organization_id, connection_id=connection_id
     )
-    existing = (
-        db.query(GovernedAIProviderCapabilityEvent)
-        .filter(
-            GovernedAIProviderCapabilityEvent.organization_id == organization_id,
-            GovernedAIProviderCapabilityEvent.idempotency_key == idempotency_key,
-        )
-        .one_or_none()
+    idempotency_key = _hash(
+        {
+            "organization_id": organization_id,
+            "request_id": request_id,
+            "kind": "draft_capability_event",
+        }
+    )
+    existing = _event_by_idempotency(
+        db, organization_id=organization_id, idempotency_key=idempotency_key
     )
     if existing is not None:
         expected = "enabled" if action == "enable" else "disabled"
@@ -356,34 +353,31 @@ def set_question_capability(
     if action == "enable":
         if not all(acknowledgements.get(key) is True for key in _ACKS):
             raise _error(
-                "Confirm every saved-question capability acknowledgement.",
-                "ai_provider_capability_acknowledgement_required",
+                "Confirm every draft-wording capability acknowledgement.",
+                "ai_provider_draft_capability_acknowledgement_required",
                 422,
             )
         if current is not None and current.action == "enabled":
             raise _error(
-                "Stop the current capability check before starting another one.",
-                "ai_provider_capability_already_enabled",
+                "Stop the current draft-wording check before starting another one.",
+                "ai_provider_draft_capability_already_enabled",
                 409,
             )
         benchmark = _latest_benchmark(
-            db,
-            organization_id=organization_id,
-            connection_id=connection_id,
+            db, organization_id=organization_id, connection_id=connection_id
         )
         if not _benchmark_current(
-            db,
-            benchmark=benchmark,
-            connection=connection,
-            now=occurred_at,
+            db, benchmark=benchmark, connection=connection, now=occurred_at
         ):
             raise _error(
-                "Run the saved-question compatibility check again before enabling it.",
-                "ai_provider_capability_benchmark_required",
+                "Run the draft-wording compatibility check again before enabling it.",
+                "ai_provider_draft_capability_benchmark_required",
                 409,
             )
         assert benchmark is not None
-        health = db.get(GovernedAIProviderCanaryHealthSnapshot, benchmark.health_snapshot_id)
+        health = db.get(
+            GovernedAIProviderCanaryHealthSnapshot, benchmark.health_snapshot_id
+        )
         if health is None:
             raise _error(
                 "The private-AI health evidence is unavailable.",
@@ -394,17 +388,25 @@ def set_question_capability(
         state = "capability_canary"
         traffic = TRAFFIC_PERCENTAGE
         prompts = True
-        reason = "ai_provider_question_capability_owner_enabled"
+        reason = "ai_provider_draft_capability_owner_enabled"
         ack_payload = {key: True for key in _ACKS}
     else:
-        if current is None or current.action != "enabled" or current.connection_id != connection_id:
+        if (
+            current is None
+            or current.action != "enabled"
+            or current.connection_id != connection_id
+        ):
             raise _error(
-                "This saved-question capability is not active.",
-                "ai_provider_capability_not_enabled",
+                "This draft-wording capability is not active.",
+                "ai_provider_draft_capability_not_enabled",
                 409,
             )
-        benchmark = db.get(GovernedAIProviderCapabilityBenchmark, current.benchmark_id)
-        health = db.get(GovernedAIProviderCanaryHealthSnapshot, current.health_snapshot_id)
+        benchmark = db.get(
+            GovernedAIProviderCapabilityBenchmark, current.benchmark_id
+        )
+        health = db.get(
+            GovernedAIProviderCanaryHealthSnapshot, current.health_snapshot_id
+        )
         if benchmark is None or health is None:
             raise _error(
                 "The capability evidence is unavailable.",
@@ -415,7 +417,7 @@ def set_question_capability(
         state = "inactive"
         traffic = 0
         prompts = False
-        reason = "ai_provider_question_capability_owner_disabled"
+        reason = "ai_provider_draft_capability_owner_disabled"
         ack_payload = {}
     row = _new_event(
         organization_id=organization_id,
@@ -437,7 +439,7 @@ def set_question_capability(
         db,
         tenant_id=organization.id,
         actor_user_id=actor_user_id,
-        event_type=f"ai.provider_capability.question_{row_action}",
+        event_type=f"ai.provider_capability.draft_{row_action}",
         payload={
             "connection_id": connection_id,
             "capability_event_id": row.id,
@@ -445,48 +447,40 @@ def set_question_capability(
             "traffic_percentage": traffic,
             "shared_daily_prompt_limit": SHARED_DAILY_PROMPT_LIMIT,
             "automatic_changes_allowed": False,
+            "publishing_allowed": False,
         },
     )
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        repeated = (
-            db.query(GovernedAIProviderCapabilityEvent)
-            .filter(
-                GovernedAIProviderCapabilityEvent.organization_id == organization_id,
-                GovernedAIProviderCapabilityEvent.idempotency_key == idempotency_key,
-            )
-            .one()
+        repeated = _event_by_idempotency(
+            db, organization_id=organization_id, idempotency_key=idempotency_key
         )
+        assert repeated is not None
         return _event_response(db, repeated, created=False, now=occurred_at)
     db.refresh(row)
     return _event_response(db, row, created=True, now=occurred_at)
 
 
-def select_question_capability(
+def select_draft_capability(
     db: Session,
     *,
     organization_id: str,
     request_key: str,
     now: datetime | None = None,
 ) -> CapabilitySelection | None:
-    if not _capability_tables_available(db):
+    if not _draft_capability_schema_available(db):
         return None
     occurred_at = _as_utc(now or datetime.now(UTC))
     event = _latest_event(db, organization_id=organization_id)
     if event is None or event.action != "enabled":
         return None
     connection = _connection_or_none(
-        db,
-        organization_id=organization_id,
-        connection_id=event.connection_id,
+        db, organization_id=organization_id, connection_id=event.connection_id
     )
     if connection is None or not _event_current(
-        db,
-        event=event,
-        connection=connection,
-        now=occurred_at,
+        db, event=event, connection=connection, now=occurred_at
     ):
         return None
     if _shared_daily_attempts(db, organization_id=organization_id, now=occurred_at) >= 1:
@@ -501,7 +495,7 @@ def select_question_capability(
     )
 
 
-def authorize_question_dispatch(
+def authorize_draft_dispatch(
     db: Session,
     *,
     organization_id: str,
@@ -513,9 +507,7 @@ def authorize_question_dispatch(
     _locked_organization(db, organization_id=organization_id)
     event = _latest_event(db, organization_id=organization_id)
     connection = _connection_or_none(
-        db,
-        organization_id=organization_id,
-        connection_id=selection.connection_id,
+        db, organization_id=organization_id, connection_id=selection.connection_id
     )
     if (
         event is None
@@ -525,8 +517,8 @@ def authorize_question_dispatch(
         or not _event_current(db, event=event, connection=connection, now=occurred_at)
     ):
         raise _error(
-            "The saved-question private-AI capability is no longer authorized.",
-            "ai_provider_capability_not_current",
+            "The draft-wording private-AI capability is no longer authorized.",
+            "ai_provider_draft_capability_not_current",
             409,
         )
     if _shared_daily_attempts(db, organization_id=organization_id, now=occurred_at) >= 1:
@@ -538,7 +530,7 @@ def authorize_question_dispatch(
     return event
 
 
-def automatic_capability_rollback(
+def automatic_draft_capability_rollback(
     db: Session,
     *,
     event: GovernedAIProviderCapabilityEvent,
@@ -551,7 +543,9 @@ def automatic_capability_rollback(
     latest = _latest_event(db, organization_id=event.organization_id)
     if latest is None or latest.id != event.id or latest.action != "enabled":
         return latest or event
-    health = db.get(GovernedAIProviderCanaryHealthSnapshot, event.health_snapshot_id)
+    health = db.get(
+        GovernedAIProviderCanaryHealthSnapshot, event.health_snapshot_id
+    )
     benchmark = db.get(GovernedAIProviderCapabilityBenchmark, event.benchmark_id)
     if health is None or benchmark is None:
         raise _error(
@@ -571,7 +565,11 @@ def automatic_capability_rollback(
         acknowledgements={},
         reason_code=reason_code[:120],
         idempotency_key=_hash(
-            {"event_id": event.id, "reason_code": reason_code, "kind": "capability_rollback"}
+            {
+                "event_id": event.id,
+                "reason_code": reason_code,
+                "kind": "draft_capability_rollback",
+            }
         ),
         actor_user_id=None,
         now=occurred_at,
@@ -581,7 +579,7 @@ def automatic_capability_rollback(
         db,
         tenant_id=event.organization_id,
         actor_user_id=None,
-        event_type="ai.provider_capability.question_automatic_rollback",
+        event_type="ai.provider_capability.draft_automatic_rollback",
         payload={
             "connection_id": event.connection_id,
             "previous_event_id": event.id,
@@ -589,6 +587,7 @@ def automatic_capability_rollback(
             "reason_code": reason_code[:120],
             "traffic_percentage": 0,
             "managed_fallback_required": True,
+            "publishing_allowed": False,
         },
     )
     db.commit()
@@ -596,7 +595,7 @@ def automatic_capability_rollback(
     return rollback
 
 
-def record_capability_success(
+def record_draft_capability_success(
     db: Session,
     *,
     event: GovernedAIProviderCapabilityEvent,
@@ -622,7 +621,7 @@ def record_capability_success(
     )
 
 
-def record_capability_fallback(
+def record_draft_capability_fallback(
     db: Session,
     *,
     event: GovernedAIProviderCapabilityEvent,
@@ -639,7 +638,11 @@ def record_capability_fallback(
         db,
         event=event,
         request_key=request_key,
-        outcome="managed_fallback_succeeded" if managed_succeeded else "managed_fallback_failed",
+        outcome=(
+            "managed_fallback_succeeded"
+            if managed_succeeded
+            else "managed_fallback_failed"
+        ),
         private_error_code=private_error_code[:120],
         provider_may_have_processed=provider_may_have_processed,
         managed_fallback_used=True,
@@ -670,6 +673,7 @@ def _record_attempt(
     request_hash = sha256(request_key.encode("utf-8")).hexdigest()
     artifact = {
         "event_id": event.id,
+        "capability": CAPABILITY,
         "request_key_hash": request_hash,
         "outcome": outcome,
         "private_error_code": private_error_code,
@@ -705,7 +709,7 @@ def _record_attempt(
         db,
         tenant_id=event.organization_id,
         actor_user_id=None,
-        event_type=f"ai.provider_capability.question_attempt.{outcome}",
+        event_type=f"ai.provider_capability.draft_attempt.{outcome}",
         payload={
             "connection_id": event.connection_id,
             "capability_event_id": event.id,
@@ -714,6 +718,7 @@ def _record_attempt(
             "managed_fallback_used": managed_fallback_used,
             "automatic_rollback_triggered": automatic_rollback_triggered,
             "automatic_changes_allowed": False,
+            "publishing_allowed": False,
         },
     )
     try:
@@ -723,53 +728,14 @@ def _record_attempt(
         return (
             db.query(GovernedAIProviderCapabilityAttempt)
             .filter(
-                GovernedAIProviderCapabilityAttempt.organization_id == event.organization_id,
+                GovernedAIProviderCapabilityAttempt.organization_id
+                == event.organization_id,
                 GovernedAIProviderCapabilityAttempt.request_key_hash == request_hash,
             )
             .one()
         )
     db.refresh(row)
     return row
-
-
-def _current_eligible_health(
-    db: Session,
-    *,
-    organization_id: str,
-    connection_id: str,
-    now: datetime,
-) -> GovernedAIProviderCanaryHealthSnapshot:
-    health = (
-        db.query(GovernedAIProviderCanaryHealthSnapshot)
-        .filter(
-            GovernedAIProviderCanaryHealthSnapshot.organization_id == organization_id,
-            GovernedAIProviderCanaryHealthSnapshot.connection_id == connection_id,
-        )
-        .order_by(
-            GovernedAIProviderCanaryHealthSnapshot.created_at.desc(),
-            GovernedAIProviderCanaryHealthSnapshot.id.desc(),
-        )
-        .first()
-    )
-    monitoring = list_canary_monitoring(
-        db,
-        organization_id=organization_id,
-        connection_id=connection_id,
-        now=now,
-    )
-    if (
-        health is None
-        or health.status != "eligible_for_later_review"
-        or monitoring["state"] != "eligible_for_later_review"
-        or monitoring["latest"] is None
-        or monitoring["latest"]["id"] != health.id
-    ):
-        raise _error(
-            "Collect and save the minimum private-AI health evidence first.",
-            "ai_provider_capability_health_required",
-            409,
-        )
-    return health
 
 
 def _benchmark_current(
@@ -808,7 +774,9 @@ def _event_current(
     connection: GovernedAIProviderConnection,
     now: datetime,
 ) -> bool:
-    if not _private_ai_allowed(db, organization_id=event.organization_id):
+    if event.capability != CAPABILITY or not _private_ai_allowed(
+        db, organization_id=event.organization_id
+    ):
         return False
     base = list_provider_canary(
         db,
@@ -822,92 +790,10 @@ def _event_current(
         and benchmark is not None
         and benchmark.id == event.benchmark_id
         and benchmark.health_snapshot_id == event.health_snapshot_id
-        and _benchmark_current(db, benchmark=benchmark, connection=connection, now=now)
-    )
-
-
-def _private_ai_allowed(db: Session, *, organization_id: str) -> bool:
-    try:
-        require_commercial_feature(
-            db,
-            organization_id=organization_id,
-            feature_code=FEATURE_PRIVATE_AI_PROVIDER,
-        )
-    except CostEconomicsError:
-        return False
-    return True
-
-
-def _shared_daily_attempts(db: Session, *, organization_id: str, now: datetime) -> int:
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    base_count = (
-        db.query(GovernedAIProviderCanaryAttempt)
-        .filter(
-            GovernedAIProviderCanaryAttempt.organization_id == organization_id,
-            GovernedAIProviderCanaryAttempt.created_at >= day_start,
-        )
-        .count()
-    )
-    capability_count = (
-        db.query(GovernedAIProviderCapabilityAttempt)
-        .filter(
-            GovernedAIProviderCapabilityAttempt.organization_id == organization_id,
-            GovernedAIProviderCapabilityAttempt.created_at >= day_start,
-        )
-        .count()
-    )
-    return base_count + capability_count
-
-
-def _capability_tables_available(db: Session) -> bool:
-    inspector = inspect(db.get_bind())
-    return all(
-        inspector.has_table(table)
-        for table in (
-            GovernedAIProviderCapabilityBenchmark.__tablename__,
-            GovernedAIProviderCapabilityEvent.__tablename__,
-            GovernedAIProviderCapabilityAttempt.__tablename__,
+        and _benchmark_current(
+            db, benchmark=benchmark, connection=connection, now=now
         )
     )
-
-
-def _require_capability_tables(db: Session) -> None:
-    if not _capability_tables_available(db):
-        raise _error(
-            "Saved-question private AI is not available yet.",
-            "ai_provider_question_capability_unavailable",
-            409,
-        )
-
-
-def _unavailable_capability() -> dict[str, Any]:
-    state = "unavailable"
-    return {
-        "state": state,
-        "capability": CAPABILITY,
-        "customer_label": "Saved-evidence questions",
-        "latest_benchmark": None,
-        "current": None,
-        "routing_enabled": False,
-        "traffic_percentage": 0,
-        "max_prompts_per_day": SHARED_DAILY_PROMPT_LIMIT,
-        "daily_limit_shared_with_explanations": True,
-        "customer_prompts_allowed": False,
-        "automatic_rollback_enabled": True,
-        "automatic_activation_allowed": False,
-        "automatic_changes_allowed": False,
-        "usage": {
-            "window_days": 30,
-            "private_attempts": 0,
-            "private_successes": 0,
-            "managed_fallbacks": 0,
-            "automatic_rollbacks": 0,
-        },
-        "truth": {
-            "state": state,
-            "summary": "Saved-question private AI is not available yet.",
-        },
-    }
 
 
 def _new_event(
@@ -938,6 +824,7 @@ def _new_event(
         "customer_prompts_allowed": customer_prompts_allowed,
         "automatic_rollback_enabled": True,
         "automatic_changes_allowed": False,
+        "publishing_allowed": False,
         "acknowledgements": acknowledgements,
         "reason_code": reason_code,
     }
@@ -966,10 +853,7 @@ def _new_event(
 
 
 def _latest_benchmark(
-    db: Session,
-    *,
-    organization_id: str,
-    connection_id: str,
+    db: Session, *, organization_id: str, connection_id: str
 ) -> GovernedAIProviderCapabilityBenchmark | None:
     return (
         db.query(GovernedAIProviderCapabilityBenchmark)
@@ -986,7 +870,9 @@ def _latest_benchmark(
     )
 
 
-def _latest_event(db: Session, *, organization_id: str) -> GovernedAIProviderCapabilityEvent | None:
+def _latest_event(
+    db: Session, *, organization_id: str
+) -> GovernedAIProviderCapabilityEvent | None:
     return (
         db.query(GovernedAIProviderCapabilityEvent)
         .filter(
@@ -1001,46 +887,30 @@ def _latest_event(db: Session, *, organization_id: str) -> GovernedAIProviderCap
     )
 
 
-def _connection(
-    db: Session,
-    *,
-    organization_id: str,
-    connection_id: str,
-) -> GovernedAIProviderConnection:
-    row = _connection_or_none(db, organization_id=organization_id, connection_id=connection_id)
-    if row is None:
-        raise _error("Private AI provider not found.", "ai_provider_connection_not_found", 404)
-    return row
-
-
-def _connection_or_none(
-    db: Session,
-    *,
-    organization_id: str,
-    connection_id: str,
-) -> GovernedAIProviderConnection | None:
+def _benchmark_by_idempotency(
+    db: Session, *, organization_id: str, idempotency_key: str
+) -> GovernedAIProviderCapabilityBenchmark | None:
     return (
-        db.query(GovernedAIProviderConnection)
+        db.query(GovernedAIProviderCapabilityBenchmark)
         .filter(
-            GovernedAIProviderConnection.id == connection_id,
-            GovernedAIProviderConnection.organization_id == organization_id,
+            GovernedAIProviderCapabilityBenchmark.organization_id == organization_id,
+            GovernedAIProviderCapabilityBenchmark.idempotency_key == idempotency_key,
         )
-        .populate_existing()
         .one_or_none()
     )
 
 
-def _locked_organization(db: Session, *, organization_id: str) -> Organization:
-    row = (
-        db.query(Organization)
-        .filter(Organization.id == organization_id)
-        .populate_existing()
-        .with_for_update()
+def _event_by_idempotency(
+    db: Session, *, organization_id: str, idempotency_key: str
+) -> GovernedAIProviderCapabilityEvent | None:
+    return (
+        db.query(GovernedAIProviderCapabilityEvent)
+        .filter(
+            GovernedAIProviderCapabilityEvent.organization_id == organization_id,
+            GovernedAIProviderCapabilityEvent.idempotency_key == idempotency_key,
+        )
         .one_or_none()
     )
-    if row is None:
-        raise _error("Organization not found.", "organization_not_found", 404)
-    return row
 
 
 def _usage(db: Session, *, organization_id: str, now: datetime) -> dict[str, int]:
@@ -1069,17 +939,16 @@ def _serialize_benchmark(
     return {
         "id": row.id,
         "capability": row.capability,
+        "schema_version": row.schema_version,
         "status": row.status,
         "reason_code": row.reason_code,
-        "case_count": row.case_count,
         "latency_ms": row.latency_ms,
         "input_tokens": row.input_tokens,
         "output_tokens": row.output_tokens,
         "customer_prompt_sent": False,
         "routing_enabled": False,
-        "automatic_activation_allowed": False,
         "automatic_changes_allowed": False,
-        "created_at": row.created_at.isoformat(),
+        "created_at": _as_utc(row.created_at).isoformat(),
         "immutable": True,
     }
 
@@ -1095,10 +964,10 @@ def _serialize_event(row: GovernedAIProviderCapabilityEvent) -> dict[str, Any]:
         "max_prompts_per_day": row.max_prompts_per_day,
         "customer_prompts_allowed": row.customer_prompts_allowed,
         "automatic_rollback_enabled": row.automatic_rollback_enabled,
-        "automatic_activation_allowed": False,
         "automatic_changes_allowed": False,
+        "publishing_allowed": False,
         "reason_code": row.reason_code,
-        "created_at": row.created_at.isoformat(),
+        "created_at": _as_utc(row.created_at).isoformat(),
         "immutable": True,
     }
 
@@ -1113,7 +982,7 @@ def _benchmark_response(
     return {
         "created": created,
         "item": _serialize_benchmark(row),
-        **list_question_capability(
+        **list_draft_capability(
             db,
             organization_id=row.organization_id,
             connection_id=row.connection_id,
@@ -1132,7 +1001,7 @@ def _event_response(
     return {
         "created": created,
         "item": _serialize_event(row),
-        **list_question_capability(
+        **list_draft_capability(
             db,
             organization_id=row.organization_id,
             connection_id=row.connection_id,
@@ -1141,46 +1010,71 @@ def _event_response(
     }
 
 
+def _require_capability_tables(db: Session) -> None:
+    if not _draft_capability_schema_available(db):
+        raise _error(
+            "Draft-wording private AI is not available yet.",
+            "ai_provider_draft_capability_unavailable",
+            409,
+        )
+
+
+def _draft_capability_schema_available(db: Session) -> bool:
+    if not _capability_tables_available(db):
+        return False
+    try:
+        constraints = inspect(db.get_bind()).get_check_constraints(
+            GovernedAIProviderCapabilityBenchmark.__tablename__
+        )
+    except Exception:
+        return False
+    return any(
+        "intelligence_draft" in str(item.get("sqltext") or "")
+        for item in constraints
+    )
+
+
+def _unavailable_capability() -> dict[str, Any]:
+    state = "unavailable"
+    return {
+        "state": state,
+        "capability": CAPABILITY,
+        "customer_label": "Saved-action draft wording",
+        "latest_benchmark": None,
+        "current": None,
+        "routing_enabled": False,
+        "traffic_percentage": 0,
+        "max_prompts_per_day": SHARED_DAILY_PROMPT_LIMIT,
+        "daily_limit_shared_with_explanations_and_questions": True,
+        "customer_prompts_allowed": False,
+        "automatic_rollback_enabled": True,
+        "automatic_activation_allowed": False,
+        "automatic_changes_allowed": False,
+        "draft_only": True,
+        "publishing_allowed": False,
+        "usage": {
+            "window_days": 30,
+            "private_attempts": 0,
+            "private_successes": 0,
+            "managed_fallbacks": 0,
+            "automatic_rollbacks": 0,
+        },
+        "truth": {
+            "state": state,
+            "summary": "Draft-wording private AI is not available yet.",
+        },
+    }
+
+
 def _summary(state: str) -> str:
     if state == "capability_canary":
-        return "A fixed 5% check may answer saved-evidence questions, within the shared one-prompt daily limit."
+        return "A fixed 5% draft-wording check is active with managed fallback."
     if state == "eligible_for_owner_approval":
-        return "The saved-question compatibility check passed and is ready for explicit owner review."
-    if state == "needs_attention":
-        return "The saved-question capability is paused because its evidence is no longer current."
+        return "The synthetic draft check passed and is ready for owner review."
     if state == "qualification_failed":
-        return "The saved-question compatibility check did not pass."
+        return "The synthetic draft check did not pass; no customer context was sent."
     if state == "capability_canary_elsewhere":
-        return "Another private provider already owns the saved-question capability check."
-    return "Run a synthetic saved-question compatibility check before owner review."
-
-
-def _request_id(value: str) -> str:
-    normalized = value.strip()
-    if len(normalized) < 8 or len(normalized) > 64:
-        raise _error(
-            "The request identifier is invalid.",
-            "ai_provider_capability_request_invalid",
-            422,
-        )
-    return normalized
-
-
-def _hash(payload: dict[str, Any]) -> str:
-    return sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
-
-
-def _error(message: str, reason_code: str, status_code: int) -> GovernedAIProviderConnectionError:
-    return GovernedAIProviderConnectionError(
-        message,
-        reason_code=reason_code,
-        status_code=status_code,
-    )
+        return "Another private provider owns the limited draft-wording check."
+    if state == "needs_attention":
+        return "Draft-wording private AI is paused because its evidence is no longer current."
+    return "Run the synthetic draft-wording check before considering limited use."

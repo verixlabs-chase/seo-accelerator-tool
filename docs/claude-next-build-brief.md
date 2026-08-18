@@ -2383,11 +2383,25 @@ Implementation status (August 18, 2026):
   against the exact saved question, evidence IDs, and allowed action IDs. They
   cannot create, approve, publish, or execute work, and customer-owned provider
   cost remains zero to InsightOS.
-- I1.5B-B2B2B2B2C still owns any additional capability routes, production
+- I1.5B-B2B2B2B2C1's second separately approved capability route is
+  implemented locally for `intelligence_draft`. It can prepare review-only
+  wording for exactly one deterministic saved action and its allowed evidence.
+  A separate synthetic draft check must pass before an Enterprise owner can
+  complete five explicit acknowledgements and start the fixed 5% canary. Daily
+  explanations, saved-evidence questions, and draft wording share the same hard
+  ceiling of one private prompt per workspace per day. The managed route is
+  reserved first and is used after any private transport, schema, evidence, or
+  safety failure; that failure also appends an automatic capability rollback.
+  Accepted private wording must pass the existing `GovernedActionDraft`
+  evidence, action, draft-type, language, claim, and owner-review constraints.
+  It cannot approve, publish, send, or execute work, and customer-owned provider
+  cost remains zero to InsightOS.
+- I1.5B-B2B2B2B2C still owns any further capability routes, production
   private-provider billing reconciliation where InsightOS pays the supplier,
   and the outbound-only local relay. Those later controls cannot raise either
-  fixed canary above 5%, remove the shared daily ceiling, or add another prompt
-  type without another reviewed migration and owner approval surface.
+  fixed capability canary above 5%, remove the shared daily ceiling, or add
+  another prompt type without another reviewed migration and owner approval
+  surface.
 
 Scope:
 
