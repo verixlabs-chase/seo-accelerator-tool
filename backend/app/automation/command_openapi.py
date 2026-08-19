@@ -7,6 +7,19 @@ from urllib.parse import urlsplit
 
 COMMAND_OPENAPI_VERSION = "insightos.automation.command-openapi.v1"
 
+_COMMAND_TARGET_FIELDS: dict[str, tuple[str, ...]] = {
+    "report.retrieve": ("report_id",),
+    "report.generate_saved": ("campaign_id",),
+    "recommendation.retrieve": ("recommendation_id",),
+    "recommendation.request_review": ("recommendation_id",),
+    "connection.refresh_saved": ("connection_id",),
+    "listing.check_public": ("campaign_id",),
+    "content.create_working_draft": ("campaign_id", "brief_id"),
+    "content.request_draft_review": ("campaign_id", "draft_id"),
+    "review.retrieve": ("review_id",),
+    "review.create_response_draft": ("review_id",),
+}
+
 
 def build_automation_command_openapi(
     *,
@@ -51,10 +64,15 @@ def build_automation_command_openapi(
         raise ValueError("Automation command schema must declare a command enum.")
     if not allowed_actions or not set(allowed_actions).issubset(set(schema_actions)):
         raise ValueError("Enabled automation actions must be part of the command schema.")
+    if any(action not in _COMMAND_TARGET_FIELDS for action in schema_actions):
+        raise ValueError("Every automation command must have a fixed target contract.")
     command_type["enum"] = allowed_actions
     command_type["description"] = (
         "Only actions explicitly enabled for this saved workflow key."
     )
+    root_schema["oneOf"] = [
+        _action_target_variant(action) for action in allowed_actions
+    ]
     return {
         "openapi": "3.1.0",
         "info": {
@@ -173,4 +191,25 @@ def build_automation_command_openapi(
         "x-insightos-contract-version": COMMAND_OPENAPI_VERSION,
         "x-insightos-scope": client_kit["scope"],
         "x-insightos-safety": client_kit["safety"],
+    }
+
+
+def _action_target_variant(action: str) -> dict[str, Any]:
+    target_fields = _COMMAND_TARGET_FIELDS[action]
+    return {
+        "title": f"{action} request",
+        "type": "object",
+        "properties": {
+            "command_type": {"const": action},
+            "target": {
+                "type": "object",
+                "properties": {
+                    field: {"type": "string", "format": "uuid"}
+                    for field in target_fields
+                },
+                "required": list(target_fields),
+                "additionalProperties": False,
+            },
+        },
+        "required": ["command_type", "target"],
     }

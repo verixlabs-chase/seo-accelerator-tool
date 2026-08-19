@@ -276,6 +276,16 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
         "properties"
     ]["command_type"]["enum"]
     assert command_enum == ["report.retrieve"]
+    command_variants = document["components"]["schemas"]["AutomationCommand"][
+        "oneOf"
+    ]
+    assert len(command_variants) == 1
+    assert command_variants[0]["properties"]["target"]["required"] == [
+        "report_id"
+    ]
+    assert command_variants[0]["properties"]["target"]["additionalProperties"] is (
+        False
+    )
     assert "AutomationReportTargetIn" in document["components"]["schemas"]
     openapi_serialized = json.dumps(document)
     assert secret not in openapi_serialized

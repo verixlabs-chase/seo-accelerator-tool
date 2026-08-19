@@ -5499,6 +5499,14 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   request schema or if no action is enabled. The server still rechecks the
   credential and permission on every call, so importing an older or modified
   file cannot widen authority.
+- AUT1J-W gives every canonical command an exact OpenAPI target contract and
+  emits only the variants enabled for the saved key. Builders now know, for
+  example, that `report.retrieve` requires exactly `report_id`, while accepted
+  draft creation requires exactly `campaign_id` plus `brief_id`.
+- Target variants reject additional identifiers and schema generation fails
+  closed if a future command is added without a fixed target mapping. Runtime
+  request validation remains independently authoritative, so a modified client
+  file cannot substitute another record type or location.
 
 Planned scope (added August 17, 2026):
 
