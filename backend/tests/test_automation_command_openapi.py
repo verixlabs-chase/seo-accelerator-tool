@@ -3,8 +3,23 @@ from __future__ import annotations
 import json
 
 import pytest
+from fastapi.openapi.models import OpenAPI
 
 from app.automation.command_openapi import build_automation_command_openapi
+
+
+COMMAND_TARGETS = {
+    "report.retrieve": ["report_id"],
+    "report.generate_saved": ["campaign_id"],
+    "recommendation.retrieve": ["recommendation_id"],
+    "recommendation.request_review": ["recommendation_id"],
+    "connection.refresh_saved": ["connection_id"],
+    "listing.check_public": ["campaign_id"],
+    "content.create_working_draft": ["campaign_id", "brief_id"],
+    "content.request_draft_review": ["campaign_id", "draft_id"],
+    "review.retrieve": ["review_id"],
+    "review.create_response_draft": ["review_id"],
+}
 
 
 def test_openapi_builder_is_scoped_importable_and_secret_free() -> None:
@@ -104,6 +119,7 @@ def test_openapi_builder_is_scoped_importable_and_secret_free() -> None:
     assert "workflow key" in serialized
     assert "token_value" not in serialized
     assert "customer_email" not in serialized
+    assert OpenAPI.model_validate(document).openapi == "3.1.0"
 
 
 def test_openapi_builder_rejects_non_absolute_endpoint() -> None:
@@ -182,3 +198,37 @@ def test_openapi_builder_requires_fixed_target_for_every_canonical_action() -> N
                 },
             },
         )
+
+
+@pytest.mark.parametrize("enabled_action", sorted(COMMAND_TARGETS))
+def test_every_command_generates_a_formally_valid_scoped_openapi_document(
+    enabled_action: str,
+) -> None:
+    all_actions = sorted(COMMAND_TARGETS)
+    document = build_automation_command_openapi(
+        client_kit={
+            "request": {
+                "url": "https://insightos.example/api/v1/automation/commands",
+                "verification_url": "https://insightos.example/api/v1/automation/command-access",
+                "status_url_template": "https://insightos.example/api/v1/automation/commands/{receipt_id}",
+                "artifact_url_template": "https://insightos.example/api/v1/automation/commands/{receipt_id}/artifacts/{artifact_id}",
+            },
+            "scope": {},
+            "allowed_actions": [{"code": enabled_action}],
+            "safety": {"publishing_allowed": False},
+        },
+        command_schema={
+            "type": "object",
+            "properties": {
+                "command_type": {"type": "string", "enum": all_actions}
+            },
+        },
+    )
+
+    validated = OpenAPI.model_validate(document)
+    assert validated.openapi == "3.1.0"
+    command = document["components"]["schemas"]["AutomationCommand"]
+    assert command["properties"]["command_type"]["enum"] == [enabled_action]
+    assert command["oneOf"][0]["properties"]["target"]["required"] == (
+        COMMAND_TARGETS[enabled_action]
+    )

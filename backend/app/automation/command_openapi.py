@@ -4,6 +4,8 @@ from copy import deepcopy
 from typing import Any
 from urllib.parse import urlsplit
 
+from fastapi.openapi.models import OpenAPI
+
 
 COMMAND_OPENAPI_VERSION = "insightos.automation.command-openapi.v1"
 
@@ -73,7 +75,7 @@ def build_automation_command_openapi(
     root_schema["oneOf"] = [
         _action_target_variant(action) for action in allowed_actions
     ]
-    return {
+    document = {
         "openapi": "3.1.0",
         "info": {
             "title": "InsightOS governed automation commands",
@@ -224,6 +226,8 @@ def build_automation_command_openapi(
         "x-insightos-scope": client_kit["scope"],
         "x-insightos-safety": client_kit["safety"],
     }
+    OpenAPI.model_validate(document)
+    return document
 
 
 def _action_target_variant(action: str) -> dict[str, Any]:

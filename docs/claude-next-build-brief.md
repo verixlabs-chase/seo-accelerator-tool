@@ -5524,6 +5524,15 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   validation detail, but exclude stack traces, credentials, provider payloads,
   database errors, and internal cost information. A human-facing message can
   change without breaking the stable reason-code contract.
+- AUT1J-Z makes every generated connector specification validate itself against
+  FastAPI's formal OpenAPI 3.1 model before download. Generation fails instead
+  of serving a malformed document, without adding a separate runtime package
+  or trusting only hand-written source assertions.
+- The conformance matrix generates and formally validates a singleton-scoped
+  document for every canonical command, proving its exact permission enum and
+  required target fields. This catches future schema, path, response, or
+  command additions that would make a Zapier, Make, n8n, Pipedream, or custom
+  client import ambiguous or invalid.
 
 Planned scope (added August 17, 2026):
 
