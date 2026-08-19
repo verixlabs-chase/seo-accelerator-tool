@@ -227,6 +227,26 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
     assert [item["code"] for item in access["allowed_actions"]] == [
         "report.retrieve"
     ]
+    suggested = access["suggested_test_request"]
+    assert suggested["method"] == "POST"
+    assert suggested["url"].endswith("/api/v1/automation/commands")
+    assert suggested["body"] == {
+        "schema_version": "insightos.automation.command.v1",
+        "command_type": "report.retrieve",
+        "organization_id": organization_id,
+        "location_id": scope["location_id"],
+        "correlation_id": f"connection-test-{scope['report_id']}",
+        "idempotency_key": f"connection-test-{scope['report_id']}",
+        "reason": "Verify read-only access to the latest saved report",
+        "target": {"report_id": scope["report_id"]},
+    }
+    assert suggested["truth"] == {
+        "uses_latest_saved_report": True,
+        "command_executed": False,
+        "provider_called": False,
+        "credits_used": False,
+        "customer_data_changed": False,
+    }
     assert access["truth"] == {
         "credential_valid": True,
         "workspace_available": True,
@@ -297,6 +317,7 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
         "primary_location_id",
         "allowed_location_ids",
         "allowed_actions",
+        "suggested_test_request",
         "expires_at",
         "truth",
         "safety",
