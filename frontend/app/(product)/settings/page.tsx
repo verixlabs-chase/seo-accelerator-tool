@@ -386,7 +386,7 @@ type AutomationServiceAccount = {
   status: "active" | "revoked";
   location_id: string;
   location_name: string;
-  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved">;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public">;
   token_hint: string;
   token_version: number;
   expires_at: string;
@@ -401,7 +401,7 @@ type AutomationServiceAccount = {
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
-  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved";
+  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public";
   idempotency_key: string;
   correlation_id: string;
   location_id: string;
@@ -3193,6 +3193,9 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("connection.refresh_saved")
                   ? ["connection.refresh_saved"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("listing.check_public")
+                  ? ["listing.check_public"]
+                  : []),
               ])),
             }),
           },
@@ -3240,6 +3243,9 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("connection.refresh_saved")
                   ? ["connection.refresh_saved"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("listing.check_public")
+                  ? ["listing.check_public"]
+                  : []),
               ],
             }),
           },
@@ -3281,6 +3287,9 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("recommendation.retrieve") ? ["recommendation.retrieve"] : []),
                 ...(currentAccount?.allowed_commands.includes("recommendation.request_review") ? ["recommendation.request_review"] : []),
                 ...(enabled ? ["connection.refresh_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("listing.check_public")
+                  ? ["listing.check_public"]
+                  : []),
               ],
             }),
           },
@@ -3292,6 +3301,48 @@ export default function SettingsPage() {
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change connected-source refresh access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationPublicListingCheck = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let n8n start public business-listing inventory checks for this location? Each accepted check can use Insight Credits and the plan's daily allowance. This replaces the workflow key. It cannot correct listings, publish, or change your business profile."
+        : "Remove public listing check access? This replaces the workflow key; other enabled workflow actions will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-listing-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.includes("report.generate_saved") ? ["report.generate_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.retrieve") ? ["recommendation.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.request_review") ? ["recommendation.request_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("connection.refresh_saved") ? ["connection.refresh_saved"] : []),
+                ...(enabled ? ["listing.check_public"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Public listing check access is on. Copy the replacement workflow key into n8n now."
+          : "Public listing check access is off. Copy the replacement workflow key into n8n now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change public listing check access.");
       } finally {
         setBusyAction("");
       }
@@ -8163,6 +8214,36 @@ export default function SettingsPage() {
                                     </div>
                                   ) : null}
                                 </div>
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let n8n check public business listings
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        This starts one inventory check across supported public listing sources for this location. Each accepted check uses the same Insight Credit balance, daily plan limit, price setup, and connection safeguards as the Listings screen. It cannot correct a listing, publish, or change your Business Profile.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("listing.check_public") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-listing-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationPublicListingCheck(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("listing.check_public"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-listing-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("listing.check_public")
+                                          ? "Turn off listing checks"
+                                          : "Allow public listing checks"}
+                                    </button>
+                                  </div>
+                                  <p className="mt-2 text-xs leading-5 text-amber-100/80">
+                                    This is the first workflow action that can consume Insight Credits. InsightOS safely declines it before any outside call when the allowance, daily limit, location, provider health, or price setup is unavailable.
+                                  </p>
+                                </div>
                               </div>
                             ) : null}
                           </div>
@@ -8304,6 +8385,22 @@ export default function SettingsPage() {
                                   <p>This queues only the named existing connection and returns a job status. Reusing the idempotency key cannot create a second request.</p>
                                 </>
                               ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("listing.check_public") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Run one priced public listing check</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "listing.check_public",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-listings-REPLACE",
+                                    idempotency_key: "n8n-listings-REPLACE",
+                                    reason: "Check supported public listings for this location",
+                                    target: { campaign_id: activeAutomationCampaign?.id || "REPLACE-WITH-CAMPAIGN-ID" },
+                                  }, null, 2)}</pre>
+                                  <p>Use a new stable key for each intended check. A retry with the same key returns the first run and cannot reserve credits twice.</p>
+                                </>
+                              ) : null}
                             </div>
                           </details>
                         ) : null}
@@ -8326,6 +8423,8 @@ export default function SettingsPage() {
                                           ? "Saved recommendation returned"
                                         : receipt.command_type === "connection.refresh_saved"
                                           ? "Connected data refresh accepted"
+                                        : receipt.command_type === "listing.check_public"
+                                          ? "Public listing check accepted"
                                           : "Saved report returned"
                                       : "Request safely declined"}
                                   </span>

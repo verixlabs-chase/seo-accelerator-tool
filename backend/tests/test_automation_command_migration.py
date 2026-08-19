@@ -40,6 +40,12 @@ CONNECTION_REFRESH_MIGRATION = (
     / "versions"
     / "20260819_0192_saved_connection_refresh_command.py"
 )
+PRICED_LISTING_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0193_priced_public_listing_check_command.py"
+)
 
 
 def test_inbound_automation_schema_matches_models(db_session) -> None:
@@ -145,4 +151,12 @@ def test_saved_connection_refresh_migration_is_bounded() -> None:
     assert 'revision = "20260819_0192"' in source
     assert 'down_revision = "20260819_0191"' in source
     assert "'connection.refresh_saved'" in source
+    assert "Cannot downgrade" in source
+
+
+def test_priced_public_listing_check_migration_is_bounded() -> None:
+    source = PRICED_LISTING_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0193"' in source
+    assert 'down_revision = "20260819_0192"' in source
+    assert "'listing.check_public'" in source
     assert "Cannot downgrade" in source

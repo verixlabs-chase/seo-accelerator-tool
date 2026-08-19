@@ -5355,10 +5355,22 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   errors are never returned. Settings requires an owner-confirmed key rotation
   to enable or remove refresh access and explains the exact-target contract in
   plain language.
-- AUT1J-G and later slices still own allowance-priced checks, governed drafts,
-  approval requests beyond review routing, multiple-location scopes, action
-  allowances, and broader inbound starter workflows. No broader inbound action
-  is implied by these commands.
+- AUT1J-G adds the first and only allowance-priced command in this slice:
+  `listing.check_public`. It targets the exact campaign already mapped to the
+  key's Business Location and reuses the native public-listing preview, plan
+  daily limit, Insight Credit reservation, price-card, credential-owner,
+  provider-health, active-location, idempotency, durable-job, and dispatch
+  safeguards. A blocked command produces no outside provider call.
+- The owner must rotate the key to grant or remove this scope. Settings clearly
+  identifies it as a credit-consuming action before confirmation and states
+  that it cannot correct listings, publish, or change a Business Profile.
+  Command and receipt polling expose only the native run status, estimated
+  customer credits, result count, and safe timestamps—not supplier identity,
+  raw errors, internal cost, credentials, or listing payloads.
+- AUT1J-H and later slices still own governed drafts, approval requests beyond
+  review routing, multiple-location scopes, broader action allowances, and
+  additional inbound starter workflows. No broader inbound action is implied
+  by these commands.
 
 Planned scope (added August 17, 2026):
 

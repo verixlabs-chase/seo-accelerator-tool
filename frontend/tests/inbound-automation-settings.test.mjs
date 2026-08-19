@@ -115,3 +115,14 @@ test("owners explicitly enable bounded connected-data refresh", () => {
   assert.match(settings, /cannot connect a new account, change settings, publish, or run an unrelated action/i);
   assert.match(settings, /Connected data refresh accepted/);
 });
+
+test("owners explicitly enable the first allowance-priced workflow check", () => {
+  assert.match(settings, /Let n8n check public business listings/);
+  assert.match(settings, /listing\.check_public/);
+  assert.match(settings, /Allow public listing checks/);
+  assert.match(settings, /uses the same Insight Credit balance, daily plan limit, price setup/);
+  assert.match(settings, /first workflow action that can consume Insight Credits/);
+  assert.match(settings, /REPLACE-WITH-CAMPAIGN-ID/);
+  assert.match(settings, /cannot reserve credits twice/);
+  assert.match(settings, /Public listing check accepted/);
+});

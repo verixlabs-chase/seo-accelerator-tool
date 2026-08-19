@@ -66,16 +66,16 @@ class AutomationServiceAccountIn(BaseModel):
     location_id: str = Field(min_length=36, max_length=36)
     expires_in_days: int = Field(default=30, ge=1, le=90)
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved"]
-    ] | None = Field(default=None, min_length=1, max_length=5)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public"]
+    ] | None = Field(default=None, min_length=1, max_length=6)
 
 
 class AutomationServiceAccountRotateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved"]
-    ] | None = Field(default=None, min_length=1, max_length=5)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public"]
+    ] | None = Field(default=None, min_length=1, max_length=6)
 
 
 class AutomationReportTargetIn(BaseModel):
@@ -95,6 +95,7 @@ class AutomationCommandIn(BaseModel):
         "report.retrieve", "report.generate_saved", "recommendation.retrieve",
         "recommendation.request_review",
         "connection.refresh_saved",
+        "listing.check_public",
     ]
     organization_id: str = Field(min_length=36, max_length=36)
     location_id: str = Field(min_length=36, max_length=36)
@@ -112,7 +113,7 @@ class AutomationCommandIn(BaseModel):
                 and self.target.recommendation_id is None
                 and self.target.connection_id is None
             )
-        elif self.command_type == "report.generate_saved":
+        elif self.command_type in {"report.generate_saved", "listing.check_public"}:
             valid = (
                 self.target.campaign_id is not None
                 and self.target.report_id is None

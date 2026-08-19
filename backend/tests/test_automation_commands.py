@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from app.models.audit_log import AuditLog
+from app.models.authority import DirectoryListingDiscoveryRun
 from app.models.automation_command import (
     AutomationCommandReceipt,
     AutomationServiceAccount,
@@ -18,6 +19,7 @@ from app.models.intelligence import StrategyRecommendation
 from app.models.organization_membership import OrganizationMembership
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent
 from app.enums import StrategyRecommendationStatus
+from app.services import listing_discovery_service
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -628,7 +630,7 @@ def test_recommendation_retrieval_is_explicit_read_only_and_idempotent(
     assert response.status_code == 200, response.text
     data = response.json()["data"]
     result = data["receipt"]["result"]
-    assert data["receipt"]["status"] == "succeeded"
+    assert data["receipt"]["status"] == "succeeded", data
     assert result["resource"] == {
         "type": "recommendation", "id": recommendation.id, "href": "/opportunities"
     }
@@ -813,3 +815,80 @@ def test_scoped_key_queues_one_saved_connection_refresh_and_exposes_job_status(
     polled_job = polled.json()["data"]["receipt"]["result"]["job"]
     assert polled_job["status"] == "completed"
     assert "raw_provider_payload" not in json.dumps(polled.json())
+
+
+def test_explicit_key_scope_queues_one_priced_public_listing_check(
+    client, db_session, monkeypatch
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="priced-listing-command"
+    )
+    location = db_session.get(BusinessLocation, scope["location_id"])
+    location.address_line1 = "100 Main Street"
+    location.city = "Reno"
+    location.region = "NV"
+    location.postal_code = "89501"
+    location.country_code = "US"
+    location.latitude = 39.5296
+    location.longitude = -119.8138
+    db_session.commit()
+    monkeypatch.setattr(
+        listing_discovery_service, "_credential_owner", lambda *_args: "platform"
+    )
+    account, initial_secret = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    body = {
+        "schema_version": "insightos.automation.command.v1",
+        "command_type": "listing.check_public",
+        "organization_id": organization_id,
+        "location_id": scope["location_id"],
+        "correlation_id": "n8n-listings-1",
+        "idempotency_key": "n8n-listings-command-1001",
+        "reason": "Check supported public listings for this location",
+        "target": {"campaign_id": scope["campaign_id"]},
+    }
+    denied = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(initial_secret)
+    )
+    assert denied.status_code == 200
+    assert denied.json()["data"]["receipt"]["denial_reason_code"] == "automation_command_not_allowed"
+    assert db_session.query(DirectoryListingDiscoveryRun).count() == 0
+
+    rotated = client.post(
+        f"/api/v1/automation/service-accounts/{account['id']}/rotate",
+        headers=_headers(owner_token),
+        json={"allowed_commands": ["report.retrieve", "listing.check_public"]},
+    )
+    assert rotated.status_code == 200, rotated.text
+    secret = rotated.json()["data"]["token"]
+    body["idempotency_key"] = "n8n-listings-command-1002"
+    response = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    result = data["receipt"]["result"]
+    assert data["receipt"]["status"] == "succeeded", data
+    assert result["resource"]["type"] == "public_listing_check"
+    assert result["job"]["status"] == "queued"
+    assert result["job"]["estimated_credits"] == 2
+    assert result["truth"] == {
+        "accepted": True,
+        "completed": False,
+        "uses_allowance": True,
+        "publishing_allowed": False,
+        "corrections_allowed": False,
+    }
+    assert db_session.query(DirectoryListingDiscoveryRun).count() == 1
+
+    repeated = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["created"] is False
+    assert db_session.query(DirectoryListingDiscoveryRun).count() == 1
+    assert "dataforseo" not in json.dumps(data).lower()
