@@ -3520,6 +3520,35 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const downloadN8nContentDraftWorkflow = useCallback(async (
+    serviceAccountId: string,
+    campaignId: string,
+  ) => {
+    setBusyAction(`automation-command-content-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/content-draft-review?service_account_id=${encodeURIComponent(serviceAccountId)}&campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-private-draft-review.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive private-draft workflow was downloaded. Replace the accepted brief ID, select the current workflow key, test manually, and activate it only when ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the private-draft workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
   const loadAuthSessions = useCallback(async () => {
     const response = (await platformApi("/auth/sessions", {
       method: "GET",
@@ -8327,6 +8356,26 @@ export default function SettingsPage() {
                                           : "Allow accepted draft creation"}
                                     </button>
                                   </div>
+                                  {activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft")
+                                    && activeAutomationServiceAccount.allowed_commands.includes("content.request_draft_review")
+                                    && activeAutomationCampaign ? (
+                                    <button
+                                      type="button"
+                                      className={`${secondaryButtonClass} mt-3`}
+                                      disabled={busyAction === `automation-command-content-template-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void downloadN8nContentDraftWorkflow(
+                                        activeAutomationServiceAccount.id,
+                                        activeAutomationCampaign.id,
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-content-template-${activeAutomationServiceAccount.id}`
+                                        ? "Preparing download..."
+                                        : "Download private-draft workflow"}
+                                    </button>
+                                  ) : null}
+                                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                    The download starts inactive, contains no workflow key, and requires you to replace the accepted brief ID before testing.
+                                  </p>
                                 </div>
                               </div>
                             ) : null}

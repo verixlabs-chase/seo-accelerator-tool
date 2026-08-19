@@ -11,6 +11,9 @@ N8N_RECOMMENDATION_READY_TEMPLATE_VERSION = (
 N8N_SAVED_REPORT_SCHEDULE_TEMPLATE_VERSION = (
     "insightos.n8n.saved-report-schedule.v1"
 )
+N8N_CONTENT_DRAFT_REVIEW_TEMPLATE_VERSION = (
+    "insightos.n8n.content-draft-review.v1"
+)
 
 _NAMESPACE = uuid.UUID("4f69a953-f298-4d02-9d86-2ec21b2754ef")
 
@@ -382,6 +385,148 @@ def build_n8n_recommendation_ready_workflow(
         "active": False,
         "versionId": str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:version")),
         "meta": {"templateCredsSetupCompleted": False, "insightosTemplateVersion": N8N_RECOMMENDATION_READY_TEMPLATE_VERSION},
+        "tags": [],
+    }
+
+
+def build_n8n_content_draft_review_workflow(
+    *,
+    service_account_id: str,
+    organization_id: str,
+    location_id: str,
+    location_name: str,
+    campaign_id: str,
+    api_base_url: str,
+) -> dict[str, Any]:
+    """Return an inactive n8n workflow for a private draft and owner review."""
+    workflow_key = f"{service_account_id}:{N8N_CONTENT_DRAFT_REVIEW_TEMPLATE_VERSION}"
+
+    def node_id(name: str) -> str:
+        return str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:{name}"))
+
+    start_name = "Start only after accepting a brief in InsightOS"
+    input_name = "Enter the accepted brief ID"
+    create_name = "Create the private working draft"
+    review_name = "Ask the owner to review the exact draft"
+    done_name = "Add your notification or task step here"
+    nodes = [
+        {
+            "parameters": {},
+            "id": node_id("manual-trigger"),
+            "name": start_name,
+            "type": "n8n-nodes-base.manualTrigger",
+            "typeVersion": 1,
+            "position": [-520, 120],
+        },
+        {
+            "parameters": {
+                "assignments": {
+                    "assignments": [
+                        {
+                            "id": node_id("brief-field"),
+                            "name": "accepted_brief_id",
+                            "value": "REPLACE-WITH-ACCEPTED-BRIEF-ID",
+                            "type": "string",
+                        }
+                    ]
+                },
+                "options": {},
+            },
+            "id": node_id("brief-input"),
+            "name": input_name,
+            "type": "n8n-nodes-base.set",
+            "typeVersion": 3.4,
+            "position": [-288, 120],
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": f"{api_base_url.rstrip('/')}/automation/commands",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpBearerAuth",
+                "sendBody": True,
+                "contentType": "json",
+                "specifyBody": "json",
+                "jsonBody": (
+                    "={{ { schema_version: 'insightos.automation.command.v1',"
+                    " command_type: 'content.create_working_draft',"
+                    f" organization_id: '{organization_id}', location_id: '{location_id}',"
+                    " correlation_id: 'n8n-content-draft:' + $json.accepted_brief_id,"
+                    " idempotency_key: 'content-draft:' + $json.accepted_brief_id,"
+                    " reason: 'Start the owner-accepted content brief',"
+                    f" target: {{ campaign_id: '{campaign_id}', brief_id: $json.accepted_brief_id }} }} }}"
+                ),
+                "options": {"timeout": 30000},
+            },
+            "id": node_id("create-draft"),
+            "name": create_name,
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.3,
+            "position": [-32, 120],
+            "notesInFlow": True,
+            "notes": "Select the Bearer Auth credential containing the current InsightOS workflow key.",
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": f"{api_base_url.rstrip('/')}/automation/commands",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpBearerAuth",
+                "sendBody": True,
+                "contentType": "json",
+                "specifyBody": "json",
+                "jsonBody": (
+                    "={{ { schema_version: 'insightos.automation.command.v1',"
+                    " command_type: 'content.request_draft_review',"
+                    f" organization_id: '{organization_id}', location_id: '{location_id}',"
+                    " correlation_id: 'n8n-content-review:' + $json.data.receipt.result.resource.id,"
+                    " idempotency_key: 'content-review:' + $json.data.receipt.result.resource.id,"
+                    " reason: 'Ask the owner to review the private draft',"
+                    f" target: {{ campaign_id: '{campaign_id}', draft_id: $json.data.receipt.result.resource.id }} }} }}"
+                ),
+                "options": {"timeout": 30000},
+            },
+            "id": node_id("request-review"),
+            "name": review_name,
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.3,
+            "position": [240, 120],
+            "notesInFlow": True,
+            "notes": "This requests review only. It cannot approve, schedule, publish, or change the website.",
+        },
+        {"parameters": {}, "id": node_id("done"), "name": done_name, "type": "n8n-nodes-base.noOp", "typeVersion": 1, "position": [512, 120]},
+        {
+            "parameters": {
+                "content": (
+                    "## Private content draft helper\n\n"
+                    f"Limited to **{location_name}**. Replace the accepted brief ID, select the current InsightOS Bearer credential, and test manually.\n\n"
+                    "This workflow starts inactive. It creates only a private outline and an owner-review request. It cannot write AI copy, approve, schedule, publish, or change the website."
+                ),
+                "height": 270,
+                "width": 540,
+                "color": 5,
+            },
+            "id": node_id("purpose-note"),
+            "name": "What this workflow does",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [-552, -208],
+        },
+    ]
+    return {
+        "name": f"InsightOS - Private draft review - {location_name}",
+        "nodes": nodes,
+        "connections": {
+            start_name: {"main": [[{"node": input_name, "type": "main", "index": 0}]]},
+            input_name: {"main": [[{"node": create_name, "type": "main", "index": 0}]]},
+            create_name: {"main": [[{"node": review_name, "type": "main", "index": 0}]]},
+            review_name: {"main": [[{"node": done_name, "type": "main", "index": 0}]]},
+        },
+        "pinData": {},
+        "settings": {"executionOrder": "v1"},
+        "active": False,
+        "versionId": str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:version")),
+        "meta": {"templateCredsSetupCompleted": False, "insightosTemplateVersion": N8N_CONTENT_DRAFT_REVIEW_TEMPLATE_VERSION},
         "tags": [],
     }
 

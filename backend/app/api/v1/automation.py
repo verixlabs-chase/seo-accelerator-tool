@@ -37,6 +37,7 @@ from app.services.automation_command_service import (
     get_command_receipt_for_account,
     list_command_receipts,
     list_service_accounts,
+    n8n_content_draft_review_starter_workflow,
     n8n_report_ready_starter_workflow,
     n8n_recommendation_ready_starter_workflow,
     n8n_saved_report_schedule_starter_workflow,
@@ -390,6 +391,35 @@ def download_n8n_recommendation_ready_starter_workflow(
         headers={
             "Content-Disposition": (
                 'attachment; filename="insightos-n8n-recommendation-ready.json"'
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get('/starter-workflows/n8n/content-draft-review')
+def download_n8n_content_draft_review_starter_workflow(
+    service_account_id: str,
+    campaign_id: str,
+    user: dict = Depends(require_org_role({'org_owner'})),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        workflow = n8n_content_draft_review_starter_workflow(
+            db,
+            organization_id=str(user['organization_id']),
+            service_account_id=service_account_id,
+            campaign_id=campaign_id,
+        )
+    except (AutomationCommandError, CostEconomicsError) as exc:
+        raise _automation_command_http_error(exc) from exc
+    return Response(
+        content=json.dumps(workflow, indent=2, ensure_ascii=True) + "\n",
+        media_type="application/json",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="insightos-n8n-private-draft-review.json"'
             ),
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",

@@ -144,4 +144,7 @@ test("owners explicitly enable private drafts from accepted briefs", () => {
   assert.match(settings, /Private draft review requested/);
   assert.match(content, /Review requested by a connected workflow/);
   assert.match(content, /did not approve, schedule, publish, or change your website/);
+  assert.match(settings, /Download private-draft workflow/);
+  assert.match(settings, /\/automation\/starter-workflows\/n8n\/content-draft-review\?service_account_id=/);
+  assert.match(settings, /download starts inactive, contains no workflow key/i);
 });

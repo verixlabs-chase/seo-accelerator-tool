@@ -1016,6 +1016,7 @@ def test_workflow_requests_owner_review_without_approving_draft(
         json={
             "allowed_commands": [
                 "report.retrieve",
+                "content.create_working_draft",
                 "content.request_draft_review",
             ]
         },
@@ -1051,3 +1052,23 @@ def test_workflow_requests_owner_review_without_approving_draft(
     )
     assert repeated.status_code == 200
     assert repeated.json()["data"]["created"] is False
+
+    starter = client.get(
+        "/api/v1/automation/starter-workflows/n8n/content-draft-review",
+        params={
+            "service_account_id": account["id"],
+            "campaign_id": scope["campaign_id"],
+        },
+        headers=_headers(owner_token),
+    )
+    assert starter.status_code == 200, starter.text
+    workflow = starter.json()
+    assert workflow["active"] is False
+    serialized = json.dumps(workflow)
+    assert "REPLACE-WITH-ACCEPTED-BRIEF-ID" in serialized
+    assert "content.create_working_draft" in serialized
+    assert "content.request_draft_review" in serialized
+    assert "httpBearerAuth" in serialized
+    assert "iosa_" not in serialized
+    assert "content.approve" not in serialized
+    assert "content.publish" not in serialized

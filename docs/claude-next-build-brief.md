@@ -5390,9 +5390,15 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   scoped receipts and shows the latest request beside that exact draft with a
   plain safety statement. The minimized command result returns the draft id,
   brief id, title, status, and revision without draft body copy or evidence.
-- AUT1J-J and later slices still own multiple-location scopes, broader action
-  allowances, and additional inbound starter workflows. No broader inbound
-  action or approval authority is implied by these commands.
+- AUT1J-J packages the two private-content commands as a deterministic,
+  inactive n8n starter download for the selected location. The owner must
+  replace the accepted brief id and select the separately stored Bearer
+  credential before a manual test. The template contains no workflow key,
+  customer content, automatic trigger, AI-writing step, approval, scheduling,
+  WordPress delivery, or publishing action.
+- AUT1J-K and later slices still own multiple-location scopes and broader
+  action allowances. No broader inbound action or approval authority is
+  implied by these commands or the inactive starter.
 
 Planned scope (added August 17, 2026):
 
