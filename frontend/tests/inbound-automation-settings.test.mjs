@@ -163,6 +163,12 @@ test("owners explicitly enable private drafts from accepted briefs", () => {
 test("owners can route minimized saved review facts without outside reply authority", () => {
   assert.match(settings, /Let n8n route saved review facts/);
   assert.match(settings, /review\.retrieve/);
+  assert.match(settings, /review\.create_response_draft/);
+  assert.match(settings, /Allow private reply drafts/);
+  assert.match(settings, /A person must still review and approve it/);
+  assert.match(settings, /review-response-draft/);
+  assert.match(settings, /Download private reply-draft workflow/);
+  assert.match(settings, /inactive private reply-draft workflow/);
   assert.match(settings, /Allow saved-review routing/);
   assert.match(settings, /Reviewer names and comment text stay in InsightOS/);
   assert.match(settings, /cannot create, approve, or post a reply or change your Business Profile/i);

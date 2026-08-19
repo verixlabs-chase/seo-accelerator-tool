@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.automation.n8n_starter_workflow import (
     build_n8n_content_draft_review_workflow,
     build_n8n_saved_review_routing_workflow,
+    build_n8n_review_response_draft_workflow,
     build_n8n_recommendation_ready_workflow,
     build_n8n_report_ready_workflow,
     build_n8n_saved_report_schedule_workflow,
@@ -55,6 +56,7 @@ from app.services import (
     listing_discovery_service,
     premium_report_service,
     reporting_service,
+    reputation_response_service,
 )
 
 
@@ -68,6 +70,7 @@ COMMAND_LISTING_CHECK_PUBLIC = "listing.check_public"
 COMMAND_CONTENT_CREATE_WORKING_DRAFT = "content.create_working_draft"
 COMMAND_CONTENT_REQUEST_DRAFT_REVIEW = "content.request_draft_review"
 COMMAND_REVIEW_RETRIEVE = "review.retrieve"
+COMMAND_REVIEW_CREATE_RESPONSE_DRAFT = "review.create_response_draft"
 ALLOWED_COMMANDS = (
     COMMAND_REPORT_RETRIEVE,
     COMMAND_REPORT_GENERATE_SAVED,
@@ -78,6 +81,7 @@ ALLOWED_COMMANDS = (
     COMMAND_CONTENT_CREATE_WORKING_DRAFT,
     COMMAND_CONTENT_REQUEST_DRAFT_REVIEW,
     COMMAND_REVIEW_RETRIEVE,
+    COMMAND_REVIEW_CREATE_RESPONSE_DRAFT,
 )
 DEFAULT_COMMANDS = (COMMAND_REPORT_RETRIEVE,)
 MAX_SERVICE_ACCOUNT_DAYS = 90
@@ -541,6 +545,61 @@ def n8n_saved_review_routing_starter_workflow(
     )
 
 
+def n8n_review_response_draft_starter_workflow(
+    db: Session,
+    *,
+    organization_id: str,
+    service_account_id: str,
+) -> dict[str, Any]:
+    require_commercial_feature(
+        db,
+        organization_id=organization_id,
+        feature_code=FEATURE_EXTERNAL_AUTOMATION,
+    )
+    row = (
+        db.query(AutomationServiceAccount)
+        .filter(
+            AutomationServiceAccount.id == service_account_id,
+            AutomationServiceAccount.organization_id == organization_id,
+        )
+        .one_or_none()
+    )
+    if row is None:
+        raise AutomationCommandError(
+            "Workflow command key not found.",
+            reason_code="automation_service_account_not_found",
+            status_code=404,
+        )
+    if row.status != "active" or _is_expired(row.expires_at):
+        raise AutomationCommandError(
+            "Create or replace the workflow key before downloading this starter workflow.",
+            reason_code="automation_service_account_inactive",
+            status_code=409,
+        )
+    if COMMAND_REVIEW_CREATE_RESPONSE_DRAFT not in _allowed_commands(row):
+        raise AutomationCommandError(
+            "Turn on private reply drafting before downloading this workflow.",
+            reason_code="automation_command_not_allowed",
+            status_code=409,
+        )
+    location = _active_location(
+        db,
+        organization_id=organization_id,
+        business_location_id=row.business_location_id,
+    )
+    settings = get_settings()
+    public_app_url = (
+        settings.customer_app_base_url or settings.public_base_url
+    ).strip().rstrip("/")
+    return build_n8n_review_response_draft_workflow(
+        service_account_id=row.id,
+        organization_id=row.organization_id,
+        location_id=row.business_location_id,
+        location_name=location.name,
+        api_base_url=f"{public_app_url}{settings.api_v1_prefix.rstrip('/')}",
+    )
+
+
 def rotate_service_account_token(
     db: Session,
     *,
@@ -938,6 +997,10 @@ def execute_automation_command(
         return execute_review_retrieval(
             db, account=account, request_payload=request_payload
         )
+    if request_payload["command_type"] == COMMAND_REVIEW_CREATE_RESPONSE_DRAFT:
+        return execute_review_response_draft_creation(
+            db, account=account, request_payload=request_payload
+        )
     raise AutomationCommandError(
         "This workflow command is not supported.",
         reason_code="automation_command_not_allowed",
@@ -1034,6 +1097,174 @@ def execute_review_retrieval(
         campaign_id=campaign.id if campaign is not None else None,
         schema_version=COMMAND_SCHEMA_VERSION,
         command_type=COMMAND_REVIEW_RETRIEVE,
+        idempotency_key=str(request_payload["idempotency_key"]),
+        correlation_id=str(request_payload["correlation_id"]),
+        reason=str(request_payload["reason"]),
+        request_hash=request_hash,
+        status=status_value,
+        denial_reason_code=denial_reason,
+        result_json=_json(result),
+        artifact_hash=_hash_payload(
+            {
+                "schema_version": COMMAND_SCHEMA_VERSION,
+                "service_account_id": account.id,
+                "request_hash": request_hash,
+                "status": status_value,
+                "denial_reason_code": denial_reason,
+                "result": result,
+            }
+        ),
+        created_at=now,
+        completed_at=now,
+    )
+    try:
+        with db.begin_nested():
+            db.add(receipt)
+            db.flush()
+    except IntegrityError:
+        db.expire_all()
+        duplicate = (
+            db.query(AutomationCommandReceipt)
+            .filter(
+                AutomationCommandReceipt.service_account_id == account.id,
+                AutomationCommandReceipt.idempotency_key
+                == str(request_payload["idempotency_key"]),
+            )
+            .one()
+        )
+        if not secrets.compare_digest(duplicate.request_hash, request_hash):
+            raise AutomationCommandError(
+                "This idempotency key was already used for a different command.",
+                reason_code="automation_command_idempotency_conflict",
+                status_code=409,
+            )
+        return _receipt_contract(db, duplicate, created=False)
+
+    write_audit_log(
+        db,
+        tenant_id=account.tenant_id,
+        actor_user_id=None,
+        event_type="automation.command.decided",
+        payload={
+            "service_account_id": account.id,
+            "command_receipt_id": receipt.id,
+            "command_type": receipt.command_type,
+            "business_location_id": account.business_location_id,
+            "status": status_value,
+            "denial_reason_code": denial_reason,
+        },
+    )
+    db.commit()
+    db.refresh(receipt)
+    return _receipt_contract(db, receipt, created=True)
+
+
+def execute_review_response_draft_creation(
+    db: Session,
+    *,
+    account: AutomationServiceAccount,
+    request_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Request one private reply draft without approving or posting it."""
+    request_hash = _hash_payload(request_payload)
+    existing = (
+        db.query(AutomationCommandReceipt)
+        .filter(
+            AutomationCommandReceipt.service_account_id == account.id,
+            AutomationCommandReceipt.idempotency_key
+            == str(request_payload["idempotency_key"]),
+        )
+        .one_or_none()
+    )
+    if existing is not None:
+        if not secrets.compare_digest(existing.request_hash, request_hash):
+            raise AutomationCommandError(
+                "This idempotency key was already used for a different command.",
+                reason_code="automation_command_idempotency_conflict",
+                status_code=409,
+            )
+        return _receipt_contract(db, existing, created=False)
+
+    denial_reason = _base_command_denial(db, account, request_payload)
+    review_id = str(request_payload["target"]["review_id"])
+    review: ReputationReview | None = None
+    campaign: Campaign | None = None
+    draft: dict[str, Any] | None = None
+    if denial_reason is None:
+        review = (
+            db.query(ReputationReview)
+            .join(Campaign, Campaign.id == ReputationReview.campaign_id)
+            .filter(
+                ReputationReview.id == review_id,
+                ReputationReview.tenant_id == account.tenant_id,
+                ReputationReview.organization_id == account.organization_id,
+                ReputationReview.business_location_id == account.business_location_id,
+                ReputationReview.source_type == "owned_profile",
+                Campaign.tenant_id == account.tenant_id,
+                Campaign.organization_id == account.organization_id,
+                Campaign.business_location_id == account.business_location_id,
+            )
+            .one_or_none()
+        )
+        if review is None:
+            denial_reason = "automation_review_not_found"
+        elif review.response_status == "responded":
+            denial_reason = "automation_review_already_responded"
+        else:
+            campaign = db.get(Campaign, review.campaign_id)
+
+    if denial_reason is None and review is not None and campaign is not None:
+        try:
+            draft = reputation_response_service.generate_response_draft(
+                db,
+                tenant_id=account.tenant_id,
+                organization_id=account.organization_id,
+                campaign_id=campaign.id,
+                review_id=review.id,
+                requested_by_user_id=None,
+                refresh=False,
+            )
+        except HTTPException as exc:
+            denial_reason = (
+                "automation_review_draft_unavailable"
+                if exc.status_code >= 500
+                else "automation_review_draft_not_allowed"
+            )
+
+    result = (
+        {
+            "message": "Private reply draft requested",
+            "draft": {
+                "id": str(draft["id"]),
+                "review_id": str(draft["review_id"]),
+                "status": str(draft["status"]),
+                "human_review_required": True,
+            },
+            "truth": {
+                "draft_text_shared": False,
+                "approved": False,
+                "reply_posted": False,
+                "business_profile_changed": False,
+            },
+        }
+        if denial_reason is None and draft is not None
+        else {
+            "message": _denial_message(denial_reason or "automation_command_denied"),
+            "draft": None,
+        }
+    )
+    now = datetime.now(UTC)
+    account.last_used_at = now
+    account.updated_at = now
+    status_value = "succeeded" if denial_reason is None else "denied"
+    receipt = AutomationCommandReceipt(
+        tenant_id=account.tenant_id,
+        organization_id=account.organization_id,
+        service_account_id=account.id,
+        business_location_id=account.business_location_id,
+        campaign_id=campaign.id if campaign is not None else None,
+        schema_version=COMMAND_SCHEMA_VERSION,
+        command_type=COMMAND_REVIEW_CREATE_RESPONSE_DRAFT,
         idempotency_key=str(request_payload["idempotency_key"]),
         correlation_id=str(request_payload["correlation_id"]),
         reason=str(request_payload["reason"]),
@@ -2508,6 +2739,15 @@ def _command_catalog() -> list[dict[str, Any]]:
             "approval_required": False,
             "publishing_allowed": False,
         },
+        {
+            "code": COMMAND_REVIEW_CREATE_RESPONSE_DRAFT,
+            "label": "Prepare a private review reply draft",
+            "summary": "Let a workflow request one governed draft while approval and posting stay in InsightOS.",
+            "read_only": False,
+            "paid_provider_call": True,
+            "approval_required": True,
+            "publishing_allowed": False,
+        },
     ]
 
 
@@ -2545,6 +2785,9 @@ def _denial_message(reason_code: str) -> str:
         "automation_content_draft_unavailable": "Working drafts are not available right now.",
         "automation_content_draft_not_found": "That private working draft was not found for this location.",
         "automation_review_not_found": "That saved review was not found for this location.",
+        "automation_review_already_responded": "That saved review already has a response.",
+        "automation_review_draft_not_allowed": "A private reply draft cannot be prepared for that review.",
+        "automation_review_draft_unavailable": "Private reply drafting is not available right now.",
     }
     return messages.get(reason_code, "InsightOS safely declined this workflow command.")
 

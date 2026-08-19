@@ -41,6 +41,7 @@ from app.services.automation_command_service import (
     n8n_report_ready_starter_workflow,
     n8n_recommendation_ready_starter_workflow,
     n8n_saved_review_routing_starter_workflow,
+    n8n_review_response_draft_starter_workflow,
     n8n_saved_report_schedule_starter_workflow,
     read_command_report_artifact,
     revoke_service_account,
@@ -69,16 +70,16 @@ class AutomationServiceAccountIn(BaseModel):
     additional_location_ids: list[str] = Field(default_factory=list, max_length=9)
     expires_in_days: int = Field(default=30, ge=1, le=90)
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review", "review.retrieve"]
-    ] | None = Field(default=None, min_length=1, max_length=9)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review", "review.retrieve", "review.create_response_draft"]
+    ] | None = Field(default=None, min_length=1, max_length=10)
 
 
 class AutomationServiceAccountRotateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review", "review.retrieve"]
-    ] | None = Field(default=None, min_length=1, max_length=9)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review", "review.retrieve", "review.create_response_draft"]
+    ] | None = Field(default=None, min_length=1, max_length=10)
     additional_location_ids: list[str] | None = Field(default=None, max_length=9)
 
 
@@ -106,6 +107,7 @@ class AutomationCommandIn(BaseModel):
         "content.create_working_draft",
         "content.request_draft_review",
         "review.retrieve",
+        "review.create_response_draft",
     ]
     organization_id: str = Field(min_length=36, max_length=36)
     location_id: str = Field(min_length=36, max_length=36)
@@ -126,7 +128,7 @@ class AutomationCommandIn(BaseModel):
                 and self.target.draft_id is None
                 and self.target.review_id is None
             )
-        elif self.command_type == "review.retrieve":
+        elif self.command_type in {"review.retrieve", "review.create_response_draft"}:
             valid = (
                 self.target.review_id is not None
                 and self.target.report_id is None
@@ -472,6 +474,33 @@ def download_n8n_saved_review_routing_starter_workflow(
         headers={
             "Content-Disposition": (
                 'attachment; filename="insightos-n8n-saved-review-routing.json"'
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get('/starter-workflows/n8n/review-response-draft')
+def download_n8n_review_response_draft_starter_workflow(
+    service_account_id: str,
+    user: dict = Depends(require_org_role({'org_owner'})),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        workflow = n8n_review_response_draft_starter_workflow(
+            db,
+            organization_id=str(user['organization_id']),
+            service_account_id=service_account_id,
+        )
+    except (AutomationCommandError, CostEconomicsError) as exc:
+        raise _automation_command_http_error(exc) from exc
+    return Response(
+        content=json.dumps(workflow, indent=2, ensure_ascii=True) + "\n",
+        media_type="application/json",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="insightos-n8n-private-review-reply-drafts.json"'
             ),
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",

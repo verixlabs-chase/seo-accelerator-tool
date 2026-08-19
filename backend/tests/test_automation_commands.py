@@ -264,6 +264,135 @@ def test_saved_review_retrieval_is_minimized_read_only_and_location_scoped(
     assert "reply.post" not in serialized_workflow
 
 
+def test_review_reply_draft_command_keeps_text_approval_and_posting_inside_insightos(
+    client, db_session, monkeypatch
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="review-draft"
+    )
+    review = ReputationReview(
+        id=str(uuid.uuid4()),
+        tenant_id=organization_id,
+        organization_id=organization_id,
+        campaign_id=scope["campaign_id"],
+        business_location_id=scope["location_id"],
+        source_key="google-business-profile",
+        source_name="Business Profile",
+        source_type="owned_profile",
+        provider_name="private-provider-name",
+        external_review_id="provider-review-draft-123",
+        rating=5,
+        body="Private customer praise",
+        author_name="Private Customer",
+        author_is_anonymous=False,
+        response_status="unanswered",
+        reviewed_at=datetime.now(UTC),
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(review)
+    db_session.commit()
+    account, _ = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    rotated = client.post(
+        f"/api/v1/automation/service-accounts/{account['id']}/rotate",
+        headers=_headers(owner_token),
+        json={
+            "allowed_commands": [
+                "report.retrieve",
+                "review.retrieve",
+                "review.create_response_draft",
+            ]
+        },
+    )
+    assert rotated.status_code == 200, rotated.text
+    secret = rotated.json()["data"]["token"]
+    calls: list[dict] = []
+
+    def fake_generate(_db, **kwargs):
+        calls.append(kwargs)
+        return {
+            "id": "9e606e68-ae23-41b0-9186-7ab99e6b674a",
+            "review_id": review.id,
+            "status": "drafted",
+            "draft_text": "Thank you for the private feedback.",
+        }
+
+    monkeypatch.setattr(
+        "app.services.automation_command_service.reputation_response_service.generate_response_draft",
+        fake_generate,
+    )
+    body = {
+        "schema_version": "insightos.automation.command.v1",
+        "command_type": "review.create_response_draft",
+        "organization_id": organization_id,
+        "location_id": scope["location_id"],
+        "correlation_id": "n8n-review-draft-1001",
+        "idempotency_key": "n8n-review-draft-1001",
+        "reason": "Prepare a private reply for owner review",
+        "target": {"review_id": review.id},
+    }
+    response = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()["data"]["receipt"]["result"]
+    assert result["draft"] == {
+        "id": "9e606e68-ae23-41b0-9186-7ab99e6b674a",
+        "review_id": review.id,
+        "status": "drafted",
+        "human_review_required": True,
+    }
+    assert result["truth"] == {
+        "draft_text_shared": False,
+        "approved": False,
+        "reply_posted": False,
+        "business_profile_changed": False,
+    }
+    serialized = json.dumps(response.json())
+    assert "Thank you for the private feedback" not in serialized
+    assert "Private customer praise" not in serialized
+    assert "Private Customer" not in serialized
+    assert calls[0]["requested_by_user_id"] is None
+
+    repeated = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["created"] is False
+    assert len(calls) == 1
+
+    starter = client.get(
+        "/api/v1/automation/starter-workflows/n8n/review-response-draft",
+        params={"service_account_id": account["id"]},
+        headers=_headers(owner_token),
+    )
+    assert starter.status_code == 200, starter.text
+    assert starter.headers["cache-control"] == "private, no-store"
+    workflow = starter.json()
+    assert workflow["active"] is False
+    serialized_workflow = json.dumps(workflow)
+    assert "review.saved" in serialized_workflow
+    assert "review.create_response_draft" in serialized_workflow
+    assert "response_status" in serialized_workflow
+    assert "unanswered" in serialized_workflow
+    assert scope["location_id"] in serialized_workflow
+    assert "httpBearerAuth" in serialized_workflow
+    assert "iosa_" not in serialized_workflow
+    assert "draft_text" not in serialized_workflow
+    assert "author_name" not in serialized_workflow
+    assert "comment_text" not in serialized_workflow
+    assert "reply.post" not in serialized_workflow
+    assert "review.approve" not in serialized_workflow
+    assert "response.approve" not in serialized_workflow
+
+
 def test_multi_location_key_reads_only_explicit_saved_report_scopes(
     client, db_session
 ) -> None:

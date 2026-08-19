@@ -17,6 +17,9 @@ N8N_CONTENT_DRAFT_REVIEW_TEMPLATE_VERSION = (
 N8N_SAVED_REVIEW_ROUTING_TEMPLATE_VERSION = (
     "insightos.n8n.saved-review-routing.v2"
 )
+N8N_REVIEW_RESPONSE_DRAFT_TEMPLATE_VERSION = (
+    "insightos.n8n.review-response-draft.v1"
+)
 
 _NAMESPACE = uuid.UUID("4f69a953-f298-4d02-9d86-2ec21b2754ef")
 
@@ -663,6 +666,141 @@ def build_n8n_saved_review_routing_workflow(
         "meta": {
             "templateCredsSetupCompleted": False,
             "insightosTemplateVersion": N8N_SAVED_REVIEW_ROUTING_TEMPLATE_VERSION,
+        },
+        "tags": [],
+    }
+
+
+def build_n8n_review_response_draft_workflow(
+    *,
+    service_account_id: str,
+    organization_id: str,
+    location_id: str,
+    location_name: str,
+    api_base_url: str,
+) -> dict[str, Any]:
+    """Return an inactive event-driven workflow that requests private reply drafts."""
+    workflow_key = f"{service_account_id}:{N8N_REVIEW_RESPONSE_DRAFT_TEMPLATE_VERSION}"
+
+    def node_id(name: str) -> str:
+        return str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:{name}"))
+
+    start_name = "Receive a saved review update"
+    filter_name = "Use only unanswered saved reviews for this location"
+    draft_name = "Request a private reply draft"
+    done_name = "Review and approve the draft inside InsightOS"
+    nodes = [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": f"insightos-review-draft-{service_account_id[:8]}",
+                "responseMode": "onReceived",
+                "options": {},
+            },
+            "id": node_id("webhook"),
+            "name": start_name,
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2.1,
+            "position": [-480, 120],
+            "webhookId": str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:webhook-id")),
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": True,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3,
+                    },
+                    "conditions": [
+                        _equals_condition(node_id("schema"), "={{ $json.body.schema_version }}", "insightos.automation.event.v1"),
+                        _equals_condition(node_id("type"), "={{ $json.body.event_type }}", "review.saved"),
+                        _equals_condition(node_id("truth"), "={{ $json.body.truth_state }}", "ready"),
+                        _equals_condition(node_id("resource"), "={{ $json.body.resource.type }}", "review"),
+                        _equals_condition(node_id("organization"), "={{ $json.body.organization_id }}", organization_id),
+                        _equals_condition(node_id("location"), "={{ $json.body.location_id }}", location_id),
+                        _equals_condition(node_id("unanswered"), "={{ $json.body.data.response_status }}", "unanswered"),
+                    ],
+                    "combinator": "and",
+                },
+                "options": {},
+            },
+            "id": node_id("filter"),
+            "name": filter_name,
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.2,
+            "position": [-224, 120],
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": f"{api_base_url.rstrip('/')}/automation/commands",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpBearerAuth",
+                "sendBody": True,
+                "contentType": "json",
+                "specifyBody": "json",
+                "jsonBody": (
+                    "={{ { schema_version: 'insightos.automation.command.v1',"
+                    " command_type: 'review.create_response_draft',"
+                    f" organization_id: '{organization_id}', location_id: '{location_id}',"
+                    " correlation_id: 'n8n:' + $json.body.event_id,"
+                    " idempotency_key: 'review-draft:' + $json.body.event_id,"
+                    " reason: 'Prepare one private reply draft for owner review',"
+                    " target: { review_id: $json.body.resource.id } } }}"
+                ),
+                "options": {"timeout": 30000},
+            },
+            "id": node_id("request-draft"),
+            "name": draft_name,
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.3,
+            "position": [32, 120],
+            "notesInFlow": True,
+            "notes": "Select the Bearer Auth credential containing the current InsightOS workflow key.",
+        },
+        {
+            "parameters": {},
+            "id": node_id("done"),
+            "name": done_name,
+            "type": "n8n-nodes-base.noOp",
+            "typeVersion": 1,
+            "position": [304, 120],
+        },
+        {
+            "parameters": {
+                "content": (
+                    "## Private review reply drafts\n\n"
+                    f"Limited to **{location_name}**. This inactive workflow accepts only signed `review.saved` updates for unanswered reviews at this exact location.\n\n"
+                    "It requests a private governed draft. Review text and the drafted reply stay in InsightOS. A person must review and approve it there; this workflow has no approval or posting step."
+                ),
+                "height": 280,
+                "width": 560,
+                "color": 5,
+            },
+            "id": node_id("purpose-note"),
+            "name": "What this workflow does",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [-512, -216],
+        },
+    ]
+    return {
+        "name": f"InsightOS - Prepare private review reply drafts - {location_name}",
+        "nodes": nodes,
+        "connections": {
+            start_name: {"main": [[{"node": filter_name, "type": "main", "index": 0}]]},
+            filter_name: {"main": [[{"node": draft_name, "type": "main", "index": 0}], []]},
+            draft_name: {"main": [[{"node": done_name, "type": "main", "index": 0}]]},
+        },
+        "pinData": {},
+        "settings": {"executionOrder": "v1"},
+        "active": False,
+        "versionId": str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:version")),
+        "meta": {
+            "templateCredsSetupCompleted": False,
+            "insightosTemplateVersion": N8N_REVIEW_RESPONSE_DRAFT_TEMPLATE_VERSION,
         },
         "tags": [],
     }

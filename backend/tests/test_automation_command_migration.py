@@ -71,6 +71,12 @@ SAVED_REVIEW_MIGRATION = (
     / "versions"
     / "20260819_0197_saved_review_retrieval_command.py"
 )
+REVIEW_DRAFT_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0198_review_response_draft_command.py"
+)
 
 
 def test_inbound_automation_schema_matches_models(db_session) -> None:
@@ -218,4 +224,12 @@ def test_saved_review_retrieval_migration_is_bounded() -> None:
     assert 'revision = "20260819_0197"' in source
     assert 'down_revision = "20260819_0196"' in source
     assert "'review.retrieve'" in source
+    assert "Cannot downgrade" in source
+
+
+def test_review_response_draft_command_migration_is_bounded() -> None:
+    source = REVIEW_DRAFT_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0198"' in source
+    assert 'down_revision = "20260819_0197"' in source
+    assert "'review.create_response_draft'" in source
     assert "Cannot downgrade" in source

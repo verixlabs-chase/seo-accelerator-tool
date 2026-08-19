@@ -5438,6 +5438,23 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   primary location before retrieving the same minimized facts. The event and
   starter still exclude reviewer identity, comment and reply text, provider
   data, external IDs, AI drafting, approval, and posting.
+- AUT1J-P adds `review.create_response_draft` as a separate, owner-enabled
+  command. It can request one governed private reply draft for an exact saved
+  owned-profile review, using the same evidence, sensitive-topic, AI allowance,
+  provider-health, and idempotency controls as the native Reviews workspace.
+- The command returns only the draft ID, review ID, status, and the truth that
+  human review remains required. Review text, reviewer identity, comment text,
+  prompts, provider details, and the drafted reply stay inside InsightOS. The
+  workflow cannot approve, reject, edit, post, or otherwise change the Business
+  Profile; those actions remain explicit human work in the native product.
+- AUT1J-Q packages the command as a deterministic inactive n8n starter. It
+  accepts only signed `review.saved` events for the key's exact organization
+  and primary location, filters to unanswered reviews, and derives correlation
+  and idempotency keys from the immutable event identity.
+- The download contains no workflow credential, customer or reply text, AI
+  prompt, provider field, approval, editing, or posting node. The final step
+  sends the owner back to InsightOS to review the private draft; importing or
+  activating the workflow never grants authority to publish a response.
 
 Planned scope (added August 17, 2026):
 

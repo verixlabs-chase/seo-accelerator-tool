@@ -388,7 +388,7 @@ type AutomationServiceAccount = {
   location_name: string;
   location_ids: string[];
   location_count: number;
-  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review" | "review.retrieve">;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review" | "review.retrieve" | "review.create_response_draft">;
   token_hint: string;
   token_version: number;
   expires_at: string;
@@ -403,7 +403,7 @@ type AutomationServiceAccount = {
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
-  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review" | "review.retrieve";
+  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review" | "review.retrieve" | "review.create_response_draft";
   idempotency_key: string;
   correlation_id: string;
   location_id: string;
@@ -3235,6 +3235,7 @@ export default function SettingsPage() {
                   : []),
                 ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
                 ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
               ])),
             }),
           },
@@ -3290,6 +3291,7 @@ export default function SettingsPage() {
                   : []),
                 ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
                 ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
               ],
             }),
           },
@@ -3339,6 +3341,7 @@ export default function SettingsPage() {
                   : []),
                 ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
                 ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
               ],
             }),
           },
@@ -3384,6 +3387,7 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("content.create_working_draft") ? ["content.create_working_draft"] : []),
                 ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
                 ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
               ],
             }),
           },
@@ -3428,6 +3432,7 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("listing.check_public") ? ["listing.check_public"] : []),
                 ...(enabled ? ["content.create_working_draft", "content.request_draft_review"] : []),
                 ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
               ],
             }),
           },
@@ -3480,6 +3485,47 @@ export default function SettingsPage() {
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change saved-review routing.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationReviewDraftCreation = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let n8n request a private reply draft for one exact saved review? This replaces the workflow key. Every draft stays inside InsightOS and still requires a person to review and approve it before anything can be posted."
+        : "Remove private reply-draft access? This replaces the workflow key; saved-review routing and other enabled actions will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-review-draft-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.filter((command) => (
+                  command !== "report.retrieve" && command !== "review.create_response_draft"
+                )) ?? []),
+                ...(enabled ? ["review.create_response_draft"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Private reply drafting is on. Copy the replacement workflow key into n8n now."
+          : "Private reply drafting is off. Copy the replacement workflow key into n8n now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change private reply-draft access.");
       } finally {
         setBusyAction("");
       }
@@ -3650,6 +3696,32 @@ export default function SettingsPage() {
       setNotice("The inactive saved-review workflow was downloaded. Import it, select the current workflow key, connect its Production URL to Review saved updates, and publish only when ready.");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Unable to download the saved-review workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadN8nReviewDraftWorkflow = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-review-draft-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/review-response-draft?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-private-review-reply-drafts.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive private reply-draft workflow was downloaded. Import it, select the current workflow key, connect its Production URL to Review saved updates, test it, and publish only when ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the private reply-draft workflow.");
     } finally {
       setBusyAction("");
     }
@@ -8560,6 +8632,41 @@ export default function SettingsPage() {
                                       </button>
                                     </div>
                                   ) : null}
+                                  <div className="mt-3 flex flex-col gap-3 rounded-md border border-[#303137] bg-[#141518] p-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-xs font-semibold text-white">Optionally prepare a private reply draft</p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        n8n may request one governed draft for the exact saved review. The draft text stays in InsightOS. A person must still review and approve it, and n8n cannot post it or change the Business Profile.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("review.create_response_draft") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-review-draft-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationReviewDraftCreation(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("review.create_response_draft"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-review-draft-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("review.create_response_draft")
+                                          ? "Turn off reply drafting"
+                                          : "Allow private reply drafts"}
+                                    </button>
+                                    {activeAutomationServiceAccount.allowed_commands.includes("review.create_response_draft") ? (
+                                      <button
+                                        type="button"
+                                        className={secondaryButtonClass}
+                                        disabled={busyAction === `automation-command-review-draft-template-${activeAutomationServiceAccount.id}`}
+                                        onClick={() => void downloadN8nReviewDraftWorkflow(activeAutomationServiceAccount.id)}
+                                      >
+                                        {busyAction === `automation-command-review-draft-template-${activeAutomationServiceAccount.id}`
+                                          ? "Preparing download..."
+                                          : "Download private reply-draft workflow"}
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 </div>
                               </div>
                             ) : null}
@@ -8818,6 +8925,8 @@ export default function SettingsPage() {
                                           ? "Private draft review requested"
                                         : receipt.command_type === "review.retrieve"
                                           ? "Saved review facts returned"
+                                        : receipt.command_type === "review.create_response_draft"
+                                          ? "Private reply draft requested"
                                           : "Saved report returned"
                                       : "Request safely declined"}
                                   </span>

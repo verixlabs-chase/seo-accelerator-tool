@@ -124,6 +124,13 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
                     ),
                 },
                 {
+                    "code": "review.saved",
+                    "label": "Review saved",
+                    "summary": (
+                        "A saved customer rating is ready for private workflow routing."
+                    ),
+                },
+                {
                     "code": "approval.requested",
                     "label": "Approval requested",
                     "summary": "A governed action is waiting for an authorized person.",
