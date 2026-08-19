@@ -73,4 +73,11 @@ test("the final launch sprint requires whole-product testing with non-technical 
   assert.match(ops, /connect Zapier\/Make\/n8n/);
   assert.match(ops, /At least five representative non-technical participants/);
   assert.match(ops, /wall of records, unexplained technical language/);
+  assert.match(ops, /whole-product visualization audit/);
+  assert.match(ops, /every graph must answer a named owner question/);
+  assert.match(ops, /unavailable source is never rendered as zero/);
+  assert.match(ops, /at least two comparable saved observations/);
+  assert.match(ops, /Every plotted point[\s\S]*saved source record or reproducible aggregate/);
+  assert.match(ops, /keyboard and screen-reader equivalent/);
+  assert.match(ops, /matches the numbers in tables and exported reports/);
 });

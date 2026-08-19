@@ -4915,6 +4915,46 @@ Scope:
   send a test, and confirm receipt. Keep signature verification and field maps
   available for advanced users without making them prerequisites for the normal
   Zapier, Make, Pipedream, or n8n Cloud connection path.
+- Complete a whole-product visualization audit and add decision-useful graphs
+  anywhere a trend, distribution, comparison, or relationship is materially
+  easier to understand than a number or table. Priority surfaces include
+  Search Console clicks and appearances, organic website visits and verified
+  inquiries, tracked-search movement and position buckets, local-grid coverage,
+  review volume and rating movement, referring-domain and citation changes,
+  website-health issue categories, Google Business Profile customer actions,
+  competitor gaps, and multi-location outliers. A page does not receive a chart
+  merely to look more complete; every graph must answer a named owner question
+  and lead to an evidence-backed next action or a clear no-action conclusion.
+- Use a shared chart contract across Dashboard, Rankings, Local Search, Website
+  Health, Listings, Reviews, Competitors, Organic Value, Reports, and portfolio
+  views. It must include an owner-readable title and takeaway, exact location
+  and date range, source and last-updated date, unit, timezone where relevant,
+  accessible legend, hover/focus values, data table or text equivalent, and an
+  optional explanation of how the measurement was calculated. Use consistent
+  colors and meanings across pages; improvement and decline cannot be conveyed
+  by color alone.
+- Keep unlike measurements separate. Do not blend Google Search appearances,
+  website visits, profile actions, estimated search volume, tracked rankings,
+  paid traffic, or AI-answer observations into one flattering score or shared
+  axis. Show `Not connected`, `Not checked`, `Unavailable`, `Partial`, and
+  `Stale` as different states; an unavailable source is never rendered as zero.
+  Estimates, imported history, synthetic fixtures, and live first-party facts
+  remain visibly labeled and cannot be drawn as one continuous measured line.
+- Enforce chart accuracy in the data contract, not only in presentation. A
+  trend requires at least two comparable saved observations with the same
+  metric definition, source, scope, and collection context. Period comparisons
+  use equal-length windows and aligned calendar/timezone boundaries. Missing
+  dates remain gaps rather than being interpolated or shifted; percentages show
+  their numerator and denominator; ranking averages do not hide unranked terms;
+  and totals are deduplicated before display. Every plotted point must resolve
+  to its saved source record or reproducible aggregate, and report exports must
+  use the same frozen values as the screen.
+- Let owners move between useful time ranges such as 28 days, 3 months, 6
+  months, 12 months, and a bounded custom comparison only when the source has
+  that coverage. Prefer a small metric strip plus one primary graph, then place
+  secondary distributions and detailed tables below it. Dense specialist views
+  may offer series toggles and export, but the default view must remain legible
+  on mobile and understandable without SEO vocabulary.
 
 Acceptance criteria:
 
@@ -4929,6 +4969,15 @@ Acceptance criteria:
   and first-use comprehension review. No primary screen is released with a
   wall of records, unexplained technical language, or several equally prominent
   actions when one owner decision can lead.
+- Every data-heavy customer page passes a visualization review proving that its
+  primary graph answers a real owner question, uses the authoritative scoped
+  dataset, exposes freshness and coverage, distinguishes zero from missing
+  data, has a keyboard and screen-reader equivalent, remains legible on mobile,
+  and matches the numbers in tables and exported reports. Automated contract
+  tests cover equal-period comparisons, timezone boundaries, missing dates,
+  partial sources, denominators, deduplication, stale data, and point-to-source
+  traceability; representative production-like fixtures receive a visual QA
+  review before launch.
 - At least five representative non-technical participants can complete the
   critical Solo launch journey and the supported workflow-tool connection test
   without staff operating the product for them. Observed confusion is tracked
