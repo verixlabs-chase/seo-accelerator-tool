@@ -5455,6 +5455,16 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   prompt, provider field, approval, editing, or posting node. The final step
   sends the owner back to InsightOS to review the private draft; importing or
   activating the workflow never grants authority to publish a response.
+- AUT1J-R adds one vendor-neutral connection guide for the active scoped
+  workflow key. Owners can download the exact HTTPS endpoint, Bearer-auth
+  placeholder, schema version, organization/location scope, enabled-action
+  catalog, body template, idempotency rules, and plain setup steps for Zapier,
+  Make, n8n, Pipedream, or any HTTPS client.
+- The guide never contains the one-time workflow key, customer evidence,
+  provider credentials, prompts, or broader authority. Supplier names describe
+  where the same contract can be configured; they do not create separate
+  supplier-specific command paths or weaken native plan, safety, approval, and
+  publishing controls.
 
 Planned scope (added August 17, 2026):
 

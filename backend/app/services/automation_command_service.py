@@ -232,6 +232,110 @@ def list_service_accounts(db: Session, *, organization_id: str) -> dict[str, Any
     }
 
 
+def automation_command_client_kit(
+    db: Session,
+    *,
+    organization_id: str,
+    service_account_id: str,
+) -> dict[str, Any]:
+    """Return one provider-neutral HTTPS setup contract without credential material."""
+    require_commercial_feature(
+        db,
+        organization_id=organization_id,
+        feature_code=FEATURE_EXTERNAL_AUTOMATION,
+    )
+    row = (
+        db.query(AutomationServiceAccount)
+        .filter(
+            AutomationServiceAccount.id == service_account_id,
+            AutomationServiceAccount.organization_id == organization_id,
+        )
+        .one_or_none()
+    )
+    if row is None:
+        raise AutomationCommandError(
+            "Workflow command key not found.",
+            reason_code="automation_service_account_not_found",
+            status_code=404,
+        )
+    if row.status != "active" or _is_expired(row.expires_at):
+        raise AutomationCommandError(
+            "Create or replace the workflow key before downloading this connection guide.",
+            reason_code="automation_service_account_inactive",
+            status_code=409,
+        )
+    location = _active_location(
+        db,
+        organization_id=organization_id,
+        business_location_id=row.business_location_id,
+    )
+    settings = get_settings()
+    public_app_url = (
+        settings.customer_app_base_url or settings.public_base_url
+    ).strip().rstrip("/")
+    endpoint = (
+        f"{public_app_url}{settings.api_v1_prefix.rstrip('/')}"
+        "/automation/commands"
+    )
+    allowed = set(_allowed_commands(row))
+    commands = [
+        item for item in _command_catalog() if str(item["code"]) in allowed
+    ]
+    return {
+        "version": "insightos.automation.command-client-kit.v1",
+        "name": row.name,
+        "works_with": ["Zapier", "Make", "n8n", "Pipedream", "Any HTTPS client"],
+        "scope": {
+            "service_account_id": row.id,
+            "organization_id": row.organization_id,
+            "primary_location_id": row.business_location_id,
+            "primary_location_name": location.name,
+            "allowed_location_ids": _account_location_ids(db, row.id)
+            or [row.business_location_id],
+            "expires_at": row.expires_at.isoformat(),
+        },
+        "request": {
+            "method": "POST",
+            "url": endpoint,
+            "content_type": "application/json",
+            "authentication": {
+                "type": "Bearer token",
+                "header": "Authorization: Bearer YOUR_WORKFLOW_KEY",
+                "credential_included": False,
+            },
+            "schema_version": COMMAND_SCHEMA_VERSION,
+            "body_template": {
+                "schema_version": COMMAND_SCHEMA_VERSION,
+                "command_type": "CHOOSE_ONE_ALLOWED_ACTION",
+                "organization_id": row.organization_id,
+                "location_id": row.business_location_id,
+                "correlation_id": "WORKFLOW-RUN-ID",
+                "idempotency_key": "STABLE-KEY-FOR-THIS-INTENDED-ACTION",
+                "reason": "Plain-language reason for this workflow request",
+                "target": {"required_id": "REPLACE-WITH-SAVED-RECORD-ID"},
+            },
+        },
+        "allowed_actions": commands,
+        "setup_steps": [
+            "Add an HTTPS request action in your workflow tool.",
+            "Choose POST and use the request URL in this file.",
+            "Store the one-time workflow key in the tool's private credential store and use Bearer authentication.",
+            "Choose only an allowed action and map its required saved-record ID into target.",
+            "Use one stable idempotency key for retries of the same intended action.",
+            "Test once, confirm the saved result in InsightOS, then turn on the workflow.",
+        ],
+        "safety": {
+            "contains_workflow_key": False,
+            "arbitrary_commands_allowed": False,
+            "approval_allowed": False,
+            "publishing_allowed": False,
+            "website_changes_allowed": False,
+            "business_profile_changes_allowed": False,
+            "human_review_remains_required": True,
+        },
+    }
+
+
 def n8n_report_ready_starter_workflow(
     db: Session,
     *,

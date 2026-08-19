@@ -3591,6 +3591,32 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const downloadAutomationConnectionGuide = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-guide-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/command-client-kit?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-automation-connection-guide.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The universal connection guide was downloaded. It works with Zapier, Make, n8n, Pipedream, and custom HTTPS tools, and it does not contain your workflow key.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the automation connection guide.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
   const downloadN8nMonthlyReportWorkflow = useCallback(async (
     serviceAccountId: string,
     campaignId: string,
@@ -8332,6 +8358,14 @@ export default function SettingsPage() {
                                     onClick={() => void downloadN8nReportWorkflow(activeAutomationServiceAccount.id)}
                                   >
                                     {busyAction === `automation-command-template-${activeAutomationServiceAccount.id}` ? "Downloading..." : "Download n8n starter"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={secondaryButtonClass}
+                                    disabled={busyAction === `automation-command-guide-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void downloadAutomationConnectionGuide(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-guide-${activeAutomationServiceAccount.id}` ? "Preparing..." : "Download connection guide"}
                                   </button>
                                   <button
                                     type="button"

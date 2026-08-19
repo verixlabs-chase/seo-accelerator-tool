@@ -160,6 +160,60 @@ def test_owner_creates_one_scoped_key_and_secret_is_returned_once(client, db_ses
     assert len(row.token_hash) == 64
 
 
+def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
+    client, db_session
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="client-guide"
+    )
+    account, secret = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+
+    response = client.get(
+        "/api/v1/automation/command-client-kit",
+        params={"service_account_id": account["id"]},
+        headers=_headers(owner_token),
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "insightos-automation-connection-guide.json" in response.headers[
+        "content-disposition"
+    ]
+    kit = response.json()
+    assert kit["works_with"] == [
+        "Zapier",
+        "Make",
+        "n8n",
+        "Pipedream",
+        "Any HTTPS client",
+    ]
+    assert kit["request"]["method"] == "POST"
+    assert kit["request"]["url"].endswith("/api/v1/automation/commands")
+    assert kit["request"]["authentication"]["credential_included"] is False
+    assert kit["scope"]["organization_id"] == organization_id
+    assert kit["scope"]["primary_location_id"] == scope["location_id"]
+    assert [item["code"] for item in kit["allowed_actions"]] == [
+        "report.retrieve"
+    ]
+    serialized = json.dumps(kit)
+    assert secret not in serialized
+    assert "customer_email" not in serialized
+    assert kit["safety"]["publishing_allowed"] is False
+    assert kit["safety"]["business_profile_changes_allowed"] is False
+
+    member_token, _ = _login(client, "org-admin@example.com", "pass-org-admin")
+    denied = client.get(
+        "/api/v1/automation/command-client-kit",
+        params={"service_account_id": account["id"]},
+        headers=_headers(member_token),
+    )
+    assert denied.status_code == 403
+
+
 def test_saved_review_retrieval_is_minimized_read_only_and_location_scoped(
     client, db_session
 ) -> None:

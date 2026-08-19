@@ -31,6 +31,7 @@ from app.services.automation_webhook_service import (
 from app.services.automation_command_service import (
     COMMAND_SCHEMA_VERSION,
     AutomationCommandError,
+    automation_command_client_kit,
     authenticate_service_account,
     create_service_account,
     execute_automation_command,
@@ -339,6 +340,33 @@ def get_automation_command_history(
     return envelope(
         request,
         list_command_receipts(db, organization_id=str(user['organization_id'])),
+    )
+
+
+@router.get('/command-client-kit')
+def download_automation_command_client_kit(
+    service_account_id: str,
+    user: dict = Depends(require_org_role({'org_owner'})),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        kit = automation_command_client_kit(
+            db,
+            organization_id=str(user['organization_id']),
+            service_account_id=service_account_id,
+        )
+    except (AutomationCommandError, CostEconomicsError) as exc:
+        raise _automation_command_http_error(exc) from exc
+    return Response(
+        content=json.dumps(kit, indent=2, ensure_ascii=True) + "\n",
+        media_type="application/json",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="insightos-automation-connection-guide.json"'
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

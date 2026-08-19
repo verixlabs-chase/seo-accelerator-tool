@@ -73,6 +73,13 @@ test("owners can download a safe inactive n8n starter instead of hand-building i
   assert.match(settings, /It ignores updates for other locations and creates no paid work/);
 });
 
+test("owners can download one vendor-neutral inbound connection guide", () => {
+  assert.match(settings, /Download connection guide/);
+  assert.match(settings, /\/automation\/command-client-kit\?service_account_id=/);
+  assert.match(settings, /works with Zapier, Make, n8n, Pipedream, and custom HTTPS tools/);
+  assert.match(settings, /does not contain your workflow key/);
+});
+
 test("command history uses plain results instead of internal request details", () => {
   assert.match(settings, /Recent report requests/);
   assert.match(settings, /Saved report returned/);
