@@ -65,6 +65,12 @@ MULTI_LOCATION_SCOPE_MIGRATION = (
     / "versions"
     / "20260819_0196_explicit_automation_location_scopes.py"
 )
+SAVED_REVIEW_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0197_saved_review_retrieval_command.py"
+)
 
 
 def test_inbound_automation_schema_matches_models(db_session) -> None:
@@ -204,4 +210,12 @@ def test_multi_location_scope_migration_is_explicit_and_bounded() -> None:
     assert 'down_revision = "20260819_0195"' in source
     assert "automation_service_account_locations" in source
     assert "business_location_id" in source
+    assert "Cannot downgrade" in source
+
+
+def test_saved_review_retrieval_migration_is_bounded() -> None:
+    source = SAVED_REVIEW_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0197"' in source
+    assert 'down_revision = "20260819_0196"' in source
+    assert "'review.retrieve'" in source
     assert "Cannot downgrade" in source

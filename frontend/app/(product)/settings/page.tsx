@@ -388,7 +388,7 @@ type AutomationServiceAccount = {
   location_name: string;
   location_ids: string[];
   location_count: number;
-  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review">;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review" | "review.retrieve">;
   token_hint: string;
   token_version: number;
   expires_at: string;
@@ -403,7 +403,7 @@ type AutomationServiceAccount = {
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
-  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review";
+  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review" | "review.retrieve";
   idempotency_key: string;
   correlation_id: string;
   location_id: string;
@@ -3234,6 +3234,7 @@ export default function SettingsPage() {
                   ? ["content.create_working_draft"]
                   : []),
                 ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
               ])),
             }),
           },
@@ -3288,6 +3289,7 @@ export default function SettingsPage() {
                   ? ["content.create_working_draft"]
                   : []),
                 ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
               ],
             }),
           },
@@ -3336,6 +3338,7 @@ export default function SettingsPage() {
                   ? ["content.create_working_draft"]
                   : []),
                 ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
               ],
             }),
           },
@@ -3380,6 +3383,7 @@ export default function SettingsPage() {
                 ...(enabled ? ["listing.check_public"] : []),
                 ...(currentAccount?.allowed_commands.includes("content.create_working_draft") ? ["content.create_working_draft"] : []),
                 ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
               ],
             }),
           },
@@ -3423,6 +3427,7 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("connection.refresh_saved") ? ["connection.refresh_saved"] : []),
                 ...(currentAccount?.allowed_commands.includes("listing.check_public") ? ["listing.check_public"] : []),
                 ...(enabled ? ["content.create_working_draft", "content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
               ],
             }),
           },
@@ -3434,6 +3439,47 @@ export default function SettingsPage() {
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change working-draft access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationReviewRetrieval = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let n8n route the rating, date, and reply state for one exact saved review? This replaces the workflow key. Reviewer names and comment text stay inside InsightOS, and the workflow cannot write or post a reply."
+        : "Remove saved-review routing? This replaces the workflow key; other enabled workflow actions will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-review-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.filter((command) => (
+                  command !== "report.retrieve" && command !== "review.retrieve"
+                )) ?? []),
+                ...(enabled ? ["review.retrieve"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Saved-review routing is on. Copy the replacement workflow key into n8n now."
+          : "Saved-review routing is off. Copy the replacement workflow key into n8n now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change saved-review routing.");
       } finally {
         setBusyAction("");
       }
@@ -8447,6 +8493,38 @@ export default function SettingsPage() {
                                     The download starts inactive, contains no workflow key, and requires you to replace the accepted brief ID before testing.
                                   </p>
                                 </div>
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let n8n route saved review facts
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        n8n can read the rating, review date, reply state, and whether a comment exists for one exact saved review. Reviewer names and comment text stay in InsightOS. It cannot create, approve, or post a reply or change your Business Profile.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("review.retrieve") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-review-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationReviewRetrieval(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("review.retrieve"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-review-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("review.retrieve")
+                                          ? "Turn off review routing"
+                                          : "Allow saved-review routing"}
+                                    </button>
+                                  </div>
+                                  {activeAutomationServiceAccount.allowed_commands.includes("review.retrieve") ? (
+                                    <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-5 text-emerald-50">
+                                      Use <code>review.retrieve</code> with the exact saved review ID. InsightOS returns only routing facts and never sends the reviewer&apos;s identity or comment text.
+                                    </div>
+                                  ) : null}
+                                </div>
                               </div>
                             ) : null}
                           </div>
@@ -8702,6 +8780,8 @@ export default function SettingsPage() {
                                           ? "Private working draft created"
                                         : receipt.command_type === "content.request_draft_review"
                                           ? "Private draft review requested"
+                                        : receipt.command_type === "review.retrieve"
+                                          ? "Saved review facts returned"
                                           : "Saved report returned"
                                       : "Request safely declined"}
                                   </span>

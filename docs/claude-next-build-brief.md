@@ -5413,6 +5413,15 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   replaces the allowlist, rotates the Bearer key, and invalidates the old key.
   Removing a location blocks future reads while preserving saved reports,
   receipts, and audit history.
+- AUT1J-M adds `review.retrieve` as a separately granted, primary-location-only
+  command. It returns one exact owned-profile review's rating, observation
+  date, reply state, and whether a comment exists. Reviewer identity, comment
+  text, supplier fields, external identifiers, and existing reply text remain
+  inside InsightOS.
+- This command is read-only and makes no provider call. It cannot create an AI
+  reply, approve or post a reply, sync reviews, or change a Business Profile.
+  Owners must replace the workflow key to enable or remove it, and immutable
+  receipts preserve idempotency and minimized decision history.
 
 Planned scope (added August 17, 2026):
 

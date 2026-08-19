@@ -19,6 +19,7 @@ from app.models.platform_job import PlatformJob
 from app.models.intelligence import StrategyRecommendation
 from app.models.organization_membership import OrganizationMembership
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent
+from app.models.reputation import ReputationReview
 from app.enums import StrategyRecommendationStatus
 from app.services import automation_command_service, content_service, listing_discovery_service
 
@@ -157,6 +158,90 @@ def test_owner_creates_one_scoped_key_and_secret_is_returned_once(client, db_ses
     assert row is not None
     assert secret not in row.token_hash
     assert len(row.token_hash) == 64
+
+
+def test_saved_review_retrieval_is_minimized_read_only_and_location_scoped(
+    client, db_session
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="saved-review"
+    )
+    review = ReputationReview(
+        id=str(uuid.uuid4()),
+        tenant_id=organization_id,
+        organization_id=organization_id,
+        campaign_id=scope["campaign_id"],
+        business_location_id=scope["location_id"],
+        source_key="google-business-profile",
+        source_name="Business Profile",
+        source_type="owned_profile",
+        provider_name="private-provider-name",
+        external_review_id="provider-review-123",
+        rating=2,
+        body="Private customer complaint text",
+        author_name="Private Customer Name",
+        author_is_anonymous=False,
+        response_status="unanswered",
+        reviewed_at=datetime.now(UTC),
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(review)
+    db_session.commit()
+    account, first_secret = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    rotated = client.post(
+        f"/api/v1/automation/service-accounts/{account['id']}/rotate",
+        headers=_headers(owner_token),
+        json={"allowed_commands": ["report.retrieve", "review.retrieve"]},
+    )
+    assert rotated.status_code == 200, rotated.text
+    secret = rotated.json()["data"]["token"]
+
+    body = {
+        "schema_version": "insightos.automation.command.v1",
+        "command_type": "review.retrieve",
+        "organization_id": organization_id,
+        "location_id": scope["location_id"],
+        "correlation_id": "n8n-review-1001",
+        "idempotency_key": "n8n-review-1001",
+        "reason": "Route an unanswered low rating to the service team",
+        "target": {"review_id": review.id},
+    }
+    response = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["receipt"]["result"]["review"] == {
+        "id": review.id,
+        "campaign_id": scope["campaign_id"],
+        "rating": 2.0,
+        "reviewed_at": review.reviewed_at.isoformat(),
+        "response_status": "unanswered",
+        "comment_present": True,
+    }
+    assert data["receipt"]["result"]["truth"]["comment_text_shared"] is False
+    serialized = json.dumps(data)
+    assert "Private customer complaint text" not in serialized
+    assert "Private Customer Name" not in serialized
+    assert "private-provider-name" not in serialized
+    assert "provider-review-123" not in serialized
+    assert client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(first_secret)
+    ).status_code == 401
+
+    repeated = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["created"] is False
 
 
 def test_multi_location_key_reads_only_explicit_saved_report_scopes(

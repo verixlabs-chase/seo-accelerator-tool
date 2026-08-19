@@ -144,7 +144,7 @@ class AutomationCommandReceipt(Base):
     __tablename__ = "automation_command_receipts"
     __table_args__ = (
         CheckConstraint(
-            "command_type in ('report.retrieve','report.generate_saved','recommendation.retrieve','recommendation.request_review','connection.refresh_saved','listing.check_public','content.create_working_draft','content.request_draft_review')",
+            "command_type in ('report.retrieve','report.generate_saved','recommendation.retrieve','recommendation.request_review','connection.refresh_saved','listing.check_public','content.create_working_draft','content.request_draft_review','review.retrieve')",
             name="ck_automation_command_receipts_type",
         ),
         CheckConstraint(

@@ -68,16 +68,16 @@ class AutomationServiceAccountIn(BaseModel):
     additional_location_ids: list[str] = Field(default_factory=list, max_length=9)
     expires_in_days: int = Field(default=30, ge=1, le=90)
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review"]
-    ] | None = Field(default=None, min_length=1, max_length=8)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review", "review.retrieve"]
+    ] | None = Field(default=None, min_length=1, max_length=9)
 
 
 class AutomationServiceAccountRotateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review"]
-    ] | None = Field(default=None, min_length=1, max_length=8)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review", "review.retrieve"]
+    ] | None = Field(default=None, min_length=1, max_length=9)
     additional_location_ids: list[str] | None = Field(default=None, max_length=9)
 
 
@@ -90,6 +90,7 @@ class AutomationReportTargetIn(BaseModel):
     connection_id: str | None = Field(default=None, min_length=36, max_length=36)
     brief_id: str | None = Field(default=None, min_length=36, max_length=36)
     draft_id: str | None = Field(default=None, min_length=36, max_length=36)
+    review_id: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 class AutomationCommandIn(BaseModel):
@@ -103,6 +104,7 @@ class AutomationCommandIn(BaseModel):
         "listing.check_public",
         "content.create_working_draft",
         "content.request_draft_review",
+        "review.retrieve",
     ]
     organization_id: str = Field(min_length=36, max_length=36)
     location_id: str = Field(min_length=36, max_length=36)
@@ -121,6 +123,17 @@ class AutomationCommandIn(BaseModel):
                 and self.target.connection_id is None
                 and self.target.brief_id is None
                 and self.target.draft_id is None
+                and self.target.review_id is None
+            )
+        elif self.command_type == "review.retrieve":
+            valid = (
+                self.target.review_id is not None
+                and self.target.report_id is None
+                and self.target.campaign_id is None
+                and self.target.recommendation_id is None
+                and self.target.connection_id is None
+                and self.target.brief_id is None
+                and self.target.draft_id is None
             )
         elif self.command_type in {"report.generate_saved", "listing.check_public"}:
             valid = (
@@ -130,6 +143,7 @@ class AutomationCommandIn(BaseModel):
                 and self.target.connection_id is None
                 and self.target.brief_id is None
                 and self.target.draft_id is None
+                and self.target.review_id is None
             )
         elif self.command_type == "content.create_working_draft":
             valid = (
@@ -139,6 +153,7 @@ class AutomationCommandIn(BaseModel):
                 and self.target.recommendation_id is None
                 and self.target.connection_id is None
                 and self.target.draft_id is None
+                and self.target.review_id is None
             )
         elif self.command_type == "content.request_draft_review":
             valid = (
@@ -148,6 +163,7 @@ class AutomationCommandIn(BaseModel):
                 and self.target.recommendation_id is None
                 and self.target.connection_id is None
                 and self.target.brief_id is None
+                and self.target.review_id is None
             )
         elif self.command_type == "connection.refresh_saved":
             valid = (
@@ -157,6 +173,7 @@ class AutomationCommandIn(BaseModel):
                 and self.target.recommendation_id is None
                 and self.target.brief_id is None
                 and self.target.draft_id is None
+                and self.target.review_id is None
             )
         else:
             valid = (
@@ -166,6 +183,7 @@ class AutomationCommandIn(BaseModel):
                 and self.target.connection_id is None
                 and self.target.brief_id is None
                 and self.target.draft_id is None
+                and self.target.review_id is None
             )
         if not valid:
             raise ValueError("Choose the exact target required by this workflow action.")
