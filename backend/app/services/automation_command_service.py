@@ -297,6 +297,7 @@ def automation_command_client_kit(
         "request": {
             "method": "POST",
             "url": endpoint,
+            "verification_url": endpoint.rsplit("/", 1)[0] + "/command-access",
             "content_type": "application/json",
             "authentication": {
                 "type": "Bearer token",
@@ -318,6 +319,7 @@ def automation_command_client_kit(
         "allowed_actions": commands,
         "setup_steps": [
             "Add an HTTPS request action in your workflow tool.",
+            "Test the private Bearer credential with the verification URL before configuring an action.",
             "Choose POST and use the request URL in this file.",
             "Store the one-time workflow key in the tool's private credential store and use Bearer authentication.",
             "Choose only an allowed action and map its required saved-record ID into target.",
@@ -898,6 +900,48 @@ def authenticate_service_account(
             status_code=403,
         )
     return row
+
+
+def get_service_account_access_contract(
+    db: Session,
+    *,
+    account: AutomationServiceAccount,
+) -> dict[str, Any]:
+    """Confirm the bounded credential without running work or writing customer state."""
+    require_commercial_feature(
+        db,
+        organization_id=account.organization_id,
+        feature_code=FEATURE_EXTERNAL_AUTOMATION,
+    )
+    _active_location(
+        db,
+        organization_id=account.organization_id,
+        business_location_id=account.business_location_id,
+    )
+    allowed = set(_allowed_commands(account))
+    return {
+        "connected": True,
+        "schema_version": COMMAND_SCHEMA_VERSION,
+        "service_account_id": account.id,
+        "organization_id": account.organization_id,
+        "primary_location_id": account.business_location_id,
+        "allowed_location_ids": _account_location_ids(db, account.id)
+        or [account.business_location_id],
+        "allowed_actions": [
+            item for item in _command_catalog() if str(item["code"]) in allowed
+        ],
+        "expires_at": account.expires_at.isoformat(),
+        "truth": {
+            "credential_valid": True,
+            "workspace_available": True,
+            "primary_location_available": True,
+            "command_executed": False,
+            "provider_called": False,
+            "credits_used": False,
+            "customer_data_changed": False,
+        },
+        "safety": _safety_contract(),
+    }
 
 
 def execute_report_retrieval(

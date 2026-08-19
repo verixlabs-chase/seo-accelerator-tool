@@ -9,7 +9,10 @@ from app.automation.command_openapi import build_automation_command_openapi
 
 def test_openapi_builder_is_scoped_importable_and_secret_free() -> None:
     kit = {
-        "request": {"url": "https://insightos.example/api/v1/automation/commands"},
+        "request": {
+            "url": "https://insightos.example/api/v1/automation/commands",
+            "verification_url": "https://insightos.example/api/v1/automation/command-access",
+        },
         "scope": {
             "organization_id": "org-1",
             "primary_location_id": "location-1",
@@ -34,6 +37,9 @@ def test_openapi_builder_is_scoped_importable_and_secret_free() -> None:
     assert operation["x-insightos-allowed-actions"] == ["report.retrieve"]
     assert operation["x-insightos-human-review-required"] is True
     assert document["components"]["schemas"]["Target"] == {"type": "object"}
+    verification = document["paths"]["/api/v1/automation/command-access"]["get"]
+    assert verification["x-insightos-command-executed"] is False
+    assert verification["x-insightos-provider-called"] is False
     assert "$defs" not in document["components"]["schemas"]["AutomationCommand"]
     serialized = json.dumps(document).lower()
     assert "workflow key" in serialized
@@ -45,7 +51,10 @@ def test_openapi_builder_rejects_non_absolute_endpoint() -> None:
     with pytest.raises(ValueError):
         build_automation_command_openapi(
             client_kit={
-                "request": {"url": "/api/v1/automation/commands"},
+                "request": {
+                    "url": "/api/v1/automation/commands",
+                    "verification_url": "/api/v1/automation/command-access",
+                },
                 "scope": {},
                 "allowed_actions": [],
                 "safety": {},

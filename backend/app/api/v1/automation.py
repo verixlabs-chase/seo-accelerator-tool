@@ -38,6 +38,7 @@ from app.services.automation_command_service import (
     authenticate_service_account,
     create_service_account,
     execute_automation_command,
+    get_service_account_access_contract,
     get_command_receipt_for_account,
     list_command_receipts,
     list_service_accounts,
@@ -590,6 +591,23 @@ def post_automation_command(
             request_payload=body.model_dump(mode="json", exclude_none=True),
         )
     except AutomationCommandError as exc:
+        raise _automation_command_http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.get('/command-access')
+def get_automation_command_access(
+    request: Request,
+    authorization: str = Header(default="", alias="Authorization"),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        account = authenticate_service_account(
+            db,
+            bearer_token=_bearer_token(authorization),
+        )
+        data = get_service_account_access_contract(db, account=account)
+    except (AutomationCommandError, CostEconomicsError) as exc:
         raise _automation_command_http_error(exc) from exc
     return envelope(request, data)
 

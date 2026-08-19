@@ -5473,6 +5473,14 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   cannot activate a workflow, widen the account's permissions, or turn human
   review into approval; the owner must add the separately shown key to the
   automation tool's private credential store.
+- AUT1J-T adds a Bearer-authenticated `command-access` verification operation
+  for connector setup. A workflow tool can confirm credential validity,
+  workspace and primary-location availability, expiration, saved location
+  scope, and the exact enabled-action catalog without executing a command.
+- Verification creates no command receipt or customer mutation, calls no paid
+  provider, and consumes no credits. Its minimized response excludes the key,
+  customer records, location name, prompts, and provider details; invalid,
+  expired, revoked, plan-blocked, and unavailable-location states fail closed.
 
 Planned scope (added August 17, 2026):
 

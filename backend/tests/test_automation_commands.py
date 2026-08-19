@@ -193,6 +193,9 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
     ]
     assert kit["request"]["method"] == "POST"
     assert kit["request"]["url"].endswith("/api/v1/automation/commands")
+    assert kit["request"]["verification_url"].endswith(
+        "/api/v1/automation/command-access"
+    )
     assert kit["request"]["authentication"]["credential_included"] is False
     assert kit["scope"]["organization_id"] == organization_id
     assert kit["scope"]["primary_location_id"] == scope["location_id"]
@@ -204,6 +207,33 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
     assert "customer_email" not in serialized
     assert kit["safety"]["publishing_allowed"] is False
     assert kit["safety"]["business_profile_changes_allowed"] is False
+
+    verified = client.get(
+        "/api/v1/automation/command-access",
+        headers=_headers(secret),
+    )
+    assert verified.status_code == 200, verified.text
+    access = verified.json()["data"]
+    assert access["connected"] is True
+    assert access["service_account_id"] == account["id"]
+    assert access["organization_id"] == organization_id
+    assert access["primary_location_id"] == scope["location_id"]
+    assert [item["code"] for item in access["allowed_actions"]] == [
+        "report.retrieve"
+    ]
+    assert access["truth"] == {
+        "credential_valid": True,
+        "workspace_available": True,
+        "primary_location_available": True,
+        "command_executed": False,
+        "provider_called": False,
+        "credits_used": False,
+        "customer_data_changed": False,
+    }
+    access_serialized = json.dumps(access)
+    assert secret not in access_serialized
+    assert "location_name" not in access_serialized
+    assert "customer_email" not in access_serialized
 
     openapi_response = client.get(
         "/api/v1/automation/command-openapi",
@@ -222,6 +252,9 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
     assert operation["security"] == [{"workflowKey": []}]
     assert operation["x-insightos-allowed-actions"] == ["report.retrieve"]
     assert operation["x-insightos-publishing-allowed"] is False
+    verification = document["paths"]["/api/v1/automation/command-access"]["get"]
+    assert verification["x-insightos-command-executed"] is False
+    assert verification["x-insightos-provider-called"] is False
     assert document["components"]["securitySchemes"]["workflowKey"]["scheme"] == (
         "bearer"
     )
@@ -244,6 +277,12 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
         headers=_headers(member_token),
     )
     assert denied_openapi.status_code == 403
+
+    invalid_access = client.get(
+        "/api/v1/automation/command-access",
+        headers=_headers("not-a-workflow-key"),
+    )
+    assert invalid_access.status_code == 401
 
 
 def test_saved_review_retrieval_is_minimized_read_only_and_location_scoped(

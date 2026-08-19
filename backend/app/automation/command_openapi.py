@@ -15,9 +15,17 @@ def build_automation_command_openapi(
 ) -> dict[str, Any]:
     """Build an importable OpenAPI document from the bounded command contract."""
     endpoint = str(client_kit["request"]["url"])
+    verification_endpoint = str(client_kit["request"]["verification_url"])
     parsed = urlsplit(endpoint)
+    verification = urlsplit(verification_endpoint)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc or not parsed.path:
         raise ValueError("Automation command endpoint must be an absolute HTTP URL.")
+    if (
+        verification.scheme != parsed.scheme
+        or verification.netloc != parsed.netloc
+        or not verification.path
+    ):
+        raise ValueError("Automation verification endpoint must use the command server.")
 
     root_schema = deepcopy(command_schema)
     definitions = root_schema.pop("$defs", {})
@@ -37,6 +45,21 @@ def build_automation_command_openapi(
         },
         "servers": [{"url": f"{parsed.scheme}://{parsed.netloc}"}],
         "paths": {
+            verification.path: {
+                "get": {
+                    "operationId": "verifyInsightOSWorkflowKey",
+                    "summary": "Verify the scoped workflow key without running work",
+                    "security": [{"workflowKey": []}],
+                    "responses": {
+                        "200": {"description": "Credential and bounded scope are available"},
+                        "401": {"description": "Workflow key invalid, expired, or revoked"},
+                        "403": {"description": "Workspace or plan is unavailable"},
+                        "409": {"description": "Primary location is unavailable"},
+                    },
+                    "x-insightos-command-executed": False,
+                    "x-insightos-provider-called": False,
+                }
+            },
             parsed.path: {
                 "post": {
                     "operationId": "requestInsightOSAutomationCommand",
