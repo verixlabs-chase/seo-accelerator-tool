@@ -70,3 +70,15 @@ test("owners explicitly opt into saved-data report creation with a replacement k
   assert.match(settings, /old key stops working immediately/);
   assert.match(settings, /Private report created/);
 });
+
+test("owners can download an inactive monthly private-report workflow", () => {
+  assert.match(settings, /Download monthly report workflow/);
+  assert.match(settings, /first day of each month/);
+  assert.match(settings, /review its day, time, and timezone before publishing/);
+  assert.match(
+    settings,
+    /\/automation\/starter-workflows\/n8n\/saved-report-schedule\?service_account_id=/,
+  );
+  assert.match(settings, /activeAutomationCampaign\.id/);
+  assert.match(settings, /inactive monthly-report workflow was downloaded/);
+});

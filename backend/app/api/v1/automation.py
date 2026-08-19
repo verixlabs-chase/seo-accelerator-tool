@@ -38,6 +38,7 @@ from app.services.automation_command_service import (
     list_command_receipts,
     list_service_accounts,
     n8n_report_ready_starter_workflow,
+    n8n_saved_report_schedule_starter_workflow,
     read_command_report_artifact,
     revoke_service_account,
     rotate_service_account_token,
@@ -271,6 +272,35 @@ def download_n8n_report_ready_starter_workflow(
         headers={
             "Content-Disposition": (
                 'attachment; filename="insightos-n8n-report-ready.json"'
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get('/starter-workflows/n8n/saved-report-schedule')
+def download_n8n_saved_report_schedule_starter_workflow(
+    service_account_id: str,
+    campaign_id: str,
+    user: dict = Depends(require_org_role({'org_owner'})),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        workflow = n8n_saved_report_schedule_starter_workflow(
+            db,
+            organization_id=str(user['organization_id']),
+            service_account_id=service_account_id,
+            campaign_id=campaign_id,
+        )
+    except (AutomationCommandError, CostEconomicsError) as exc:
+        raise _automation_command_http_error(exc) from exc
+    return Response(
+        content=json.dumps(workflow, indent=2, ensure_ascii=True) + "\n",
+        media_type="application/json",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="insightos-n8n-monthly-private-report.json"'
             ),
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",

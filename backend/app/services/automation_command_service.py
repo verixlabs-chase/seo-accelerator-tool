@@ -15,7 +15,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.automation.n8n_starter_workflow import build_n8n_report_ready_workflow
+from app.automation.n8n_starter_workflow import (
+    build_n8n_report_ready_workflow,
+    build_n8n_saved_report_schedule_workflow,
+)
 from app.core.config import get_settings
 from app.db.session import set_session_security_context
 from app.models.automation_command import (
@@ -205,6 +208,80 @@ def n8n_report_ready_starter_workflow(
         organization_id=row.organization_id,
         location_id=row.business_location_id,
         location_name=location.name,
+        api_base_url=api_base_url,
+    )
+
+
+def n8n_saved_report_schedule_starter_workflow(
+    db: Session,
+    *,
+    organization_id: str,
+    service_account_id: str,
+    campaign_id: str,
+) -> dict[str, Any]:
+    require_commercial_feature(
+        db,
+        organization_id=organization_id,
+        feature_code=FEATURE_EXTERNAL_AUTOMATION,
+    )
+    row = (
+        db.query(AutomationServiceAccount)
+        .filter(
+            AutomationServiceAccount.id == service_account_id,
+            AutomationServiceAccount.organization_id == organization_id,
+        )
+        .one_or_none()
+    )
+    if row is None:
+        raise AutomationCommandError(
+            "Workflow command key not found.",
+            reason_code="automation_service_account_not_found",
+            status_code=404,
+        )
+    if row.status != "active" or _is_expired(row.expires_at):
+        raise AutomationCommandError(
+            "Create or replace the workflow key before downloading this starter workflow.",
+            reason_code="automation_service_account_inactive",
+            status_code=409,
+        )
+    if COMMAND_REPORT_GENERATE_SAVED not in _allowed_commands(row):
+        raise AutomationCommandError(
+            "Turn on private report creation before downloading this workflow.",
+            reason_code="automation_command_not_allowed",
+            status_code=409,
+        )
+    location = _active_location(
+        db,
+        organization_id=organization_id,
+        business_location_id=row.business_location_id,
+    )
+    campaign = (
+        db.query(Campaign)
+        .filter(
+            Campaign.id == campaign_id,
+            Campaign.tenant_id == row.tenant_id,
+            Campaign.organization_id == organization_id,
+            Campaign.business_location_id == row.business_location_id,
+        )
+        .one_or_none()
+    )
+    if campaign is None:
+        raise AutomationCommandError(
+            "That location setup was not found for this workflow key.",
+            reason_code="automation_campaign_not_found",
+            status_code=404,
+        )
+    settings = get_settings()
+    public_app_url = (
+        settings.customer_app_base_url or settings.public_base_url
+    ).strip().rstrip("/")
+    api_base_url = f"{public_app_url}{settings.api_v1_prefix.rstrip('/')}"
+    return build_n8n_saved_report_schedule_workflow(
+        service_account_id=row.id,
+        organization_id=row.organization_id,
+        location_id=row.business_location_id,
+        location_name=location.name,
+        campaign_id=campaign.id,
         api_base_url=api_base_url,
     )
 

@@ -5318,6 +5318,13 @@ Implementation status — AUT1J-A/B/C report retrieval, n8n starter, and private
   removal, replaces the one-time key on either change, and distinguishes a
   private report creation from a saved report retrieval in history. Existing
   keys stay read-only and never gain the command silently.
+- Owners who enable private report creation can download a second reviewed n8n
+  starter. It is inactive and credential-free, fixed to the exact organization,
+  Business Location, and campaign, and defaults to the first day of each month
+  at 9:00 in the n8n workflow timezone. The owner reviews the schedule and
+  selects the current Bearer credential before publishing. A stable
+  campaign-and-month idempotency key makes manual testing and scheduled retry
+  return one report for that period instead of creating duplicates.
 - AUT1J-D and later slices still own priced checks, saved-data refreshes,
   governed drafts, approval requests, accepted-job polling, multiple-location
   scopes, action allowances, and broader inbound starter workflows. No broader

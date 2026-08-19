@@ -3260,6 +3260,35 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const downloadN8nMonthlyReportWorkflow = useCallback(async (
+    serviceAccountId: string,
+    campaignId: string,
+  ) => {
+    setBusyAction(`automation-command-monthly-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/saved-report-schedule?service_account_id=${encodeURIComponent(serviceAccountId)}&campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-monthly-private-report.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive monthly-report workflow was downloaded. Import it, select the current workflow key, review its timezone, and publish it only when ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the monthly-report workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
   const loadAuthSessions = useCallback(async () => {
     const response = (await platformApi("/auth/sessions", {
       method: "GET",
@@ -4256,6 +4285,11 @@ export default function SettingsPage() {
   const activeAutomationServiceAccount = automationServiceAccounts.find(
     (item) => item.status === "active",
   );
+  const activeAutomationCampaign = activeAutomationServiceAccount
+    ? manageableCampaigns.find(
+        (campaign) => campaign.business_location_id === activeAutomationServiceAccount.location_id,
+      )
+    : undefined;
   const privateAIProviderPlanEligible =
     usageAllowance?.capabilities.find((item) => item.code === "private_ai_provider")
       ?.available === true;
@@ -7910,6 +7944,26 @@ export default function SettingsPage() {
                                 <p className="mt-2 text-xs leading-5 text-amber-100/80">
                                   Changing this access replaces the workflow key, so the old key stops working immediately.
                                 </p>
+                                {activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved") && activeAutomationCampaign ? (
+                                  <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+                                    <p className="text-xs leading-5 text-emerald-50">
+                                      Download an inactive n8n workflow that creates this location&apos;s private report on the first day of each month. You can review its day, time, and timezone before publishing.
+                                    </p>
+                                    <button
+                                      type="button"
+                                      className={`${secondaryButtonClass} mt-3`}
+                                      disabled={busyAction === `automation-command-monthly-template-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void downloadN8nMonthlyReportWorkflow(
+                                        activeAutomationServiceAccount.id,
+                                        activeAutomationCampaign.id,
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-monthly-template-${activeAutomationServiceAccount.id}`
+                                        ? "Downloading..."
+                                        : "Download monthly report workflow"}
+                                    </button>
+                                  </div>
+                                ) : null}
                               </div>
                             ) : null}
                           </div>

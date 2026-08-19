@@ -5,6 +5,9 @@ from typing import Any
 
 
 N8N_REPORT_READY_TEMPLATE_VERSION = "insightos.n8n.report-ready.v1"
+N8N_SAVED_REPORT_SCHEDULE_TEMPLATE_VERSION = (
+    "insightos.n8n.saved-report-schedule.v1"
+)
 
 _NAMESPACE = uuid.UUID("4f69a953-f298-4d02-9d86-2ec21b2754ef")
 
@@ -217,6 +220,159 @@ def build_n8n_report_ready_workflow(
         "meta": {
             "templateCredsSetupCompleted": False,
             "insightosTemplateVersion": N8N_REPORT_READY_TEMPLATE_VERSION,
+        },
+        "tags": [],
+    }
+
+
+def build_n8n_saved_report_schedule_workflow(
+    *,
+    service_account_id: str,
+    organization_id: str,
+    location_id: str,
+    location_name: str,
+    campaign_id: str,
+    api_base_url: str,
+) -> dict[str, Any]:
+    """Return an inactive monthly n8n workflow for saved-data report creation."""
+
+    workflow_key = (
+        f"{service_account_id}:{campaign_id}:"
+        f"{N8N_SAVED_REPORT_SCHEDULE_TEMPLATE_VERSION}"
+    )
+
+    def node_id(name: str) -> str:
+        return str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:{name}"))
+
+    trigger_name = "Once a month"
+    create_name = "Create a private report from saved results"
+    ready_name = "Private report created in InsightOS"
+    command_url = f"{api_base_url.rstrip('/')}/automation/commands"
+    json_body = (
+        "={{ {"
+        " schema_version: 'insightos.automation.command.v1',"
+        " command_type: 'report.generate_saved',"
+        f" organization_id: '{organization_id}',"
+        f" location_id: '{location_id}',"
+        f" correlation_id: 'n8n-monthly:{campaign_id}:' + $now.toFormat('yyyy-MM'),"
+        f" idempotency_key: 'saved-report:{campaign_id}:' + $now.toFormat('yyyy-MM'),"
+        " reason: 'Create the monthly private report from saved InsightOS results',"
+        f" target: {{ campaign_id: '{campaign_id}' }}"
+        " } }}"
+    )
+    nodes: list[dict[str, Any]] = [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "months",
+                            "monthsInterval": 1,
+                            "triggerAtDayOfMonth": 1,
+                            "triggerAtHour": 9,
+                            "triggerAtMinute": 0,
+                        }
+                    ]
+                }
+            },
+            "id": node_id("schedule"),
+            "name": trigger_name,
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1.4,
+            "position": [-320, 80],
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": command_url,
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpBearerAuth",
+                "sendBody": True,
+                "contentType": "json",
+                "specifyBody": "json",
+                "jsonBody": json_body,
+                "options": {"timeout": 120000},
+            },
+            "id": node_id("create-report"),
+            "name": create_name,
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.3,
+            "position": [-32, 80],
+            "notesInFlow": True,
+            "notes": (
+                "Select the same Bearer Auth credential used for the one-time "
+                "InsightOS workflow key. Report-creation access must be on."
+            ),
+        },
+        {
+            "parameters": {},
+            "id": node_id("ready"),
+            "name": ready_name,
+            "type": "n8n-nodes-base.noOp",
+            "typeVersion": 1,
+            "position": [272, 80],
+        },
+        {
+            "parameters": {
+                "content": (
+                    "## Monthly private report\n\n"
+                    f"This workflow is fixed to **{location_name}**. It creates a "
+                    "private report from results InsightOS has already saved.\n\n"
+                    "It does not collect fresh data, buy a check, email the report, "
+                    "publish content, or change a website or Business Profile."
+                ),
+                "height": 250,
+                "width": 500,
+                "color": 5,
+            },
+            "id": node_id("purpose-note"),
+            "name": "What this workflow does",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [-352, -240],
+        },
+        {
+            "parameters": {
+                "content": (
+                    "## Finish setup\n\n"
+                    "1. Open **Create a private report from saved results**.\n"
+                    "2. Select the Bearer Auth credential containing the current "
+                    "InsightOS workflow key.\n"
+                    "3. Review the day, time, and workflow timezone.\n"
+                    "4. Test manually. The same month safely returns one result.\n"
+                    "5. Publish only when you want the monthly schedule to run."
+                ),
+                "height": 290,
+                "width": 500,
+                "color": 4,
+            },
+            "id": node_id("setup-note"),
+            "name": "Finish setup before publishing",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [176, -240],
+        },
+    ]
+    return {
+        "name": f"InsightOS - Monthly private report - {location_name}",
+        "nodes": nodes,
+        "connections": {
+            trigger_name: {
+                "main": [[{"node": create_name, "type": "main", "index": 0}]]
+            },
+            create_name: {
+                "main": [[{"node": ready_name, "type": "main", "index": 0}]]
+            },
+        },
+        "pinData": {},
+        "settings": {"executionOrder": "v1"},
+        "active": False,
+        "versionId": str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:version")),
+        "meta": {
+            "templateCredsSetupCompleted": False,
+            "insightosTemplateVersion": (
+                N8N_SAVED_REPORT_SCHEDULE_TEMPLATE_VERSION
+            ),
         },
         "tags": [],
     }

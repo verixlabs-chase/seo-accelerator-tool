@@ -242,6 +242,79 @@ def test_owner_downloads_inactive_credential_free_n8n_report_workflow(
     assert workflow["connections"]["Receive a saved report update"]["main"]
 
 
+def test_owner_downloads_inactive_monthly_saved_report_workflow_only_after_opt_in(
+    client, db_session
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="n8n-monthly"
+    )
+    account, secret = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    path = (
+        "/api/v1/automation/starter-workflows/n8n/saved-report-schedule"
+        f"?service_account_id={account['id']}&campaign_id={scope['campaign_id']}"
+    )
+    blocked = client.get(path, headers=_headers(owner_token))
+    assert blocked.status_code == 409
+    assert blocked.json()["errors"][0]["details"]["reason_code"] == (
+        "automation_command_not_allowed"
+    )
+
+    rotated = client.post(
+        f"/api/v1/automation/service-accounts/{account['id']}/rotate",
+        headers=_headers(owner_token),
+        json={
+            "allowed_commands": ["report.retrieve", "report.generate_saved"]
+        },
+    )
+    assert rotated.status_code == 200
+    replacement_secret = rotated.json()["data"]["token"]
+    response = client.get(path, headers=_headers(owner_token))
+    assert response.status_code == 200, response.text
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="insightos-n8n-monthly-private-report.json"'
+    )
+    workflow = response.json()
+    serialized = json.dumps(workflow)
+    assert workflow["active"] is False
+    assert workflow["meta"]["templateCredsSetupCompleted"] is False
+    assert workflow["meta"]["insightosTemplateVersion"] == (
+        "insightos.n8n.saved-report-schedule.v1"
+    )
+    assert secret not in serialized
+    assert replacement_secret not in serialized
+    assert "iosa_" not in serialized
+
+    nodes = {node["name"]: node for node in workflow["nodes"]}
+    schedule = nodes["Once a month"]
+    assert schedule["type"] == "n8n-nodes-base.scheduleTrigger"
+    interval = schedule["parameters"]["rule"]["interval"][0]
+    assert interval == {
+        "field": "months",
+        "monthsInterval": 1,
+        "triggerAtDayOfMonth": 1,
+        "triggerAtHour": 9,
+        "triggerAtMinute": 0,
+    }
+    command = nodes["Create a private report from saved results"]
+    assert command["type"] == "n8n-nodes-base.httpRequest"
+    assert command["parameters"]["authentication"] == "genericCredentialType"
+    assert command["parameters"]["genericAuthType"] == "httpBearerAuth"
+    assert scope["campaign_id"] in command["parameters"]["jsonBody"]
+    assert "report.generate_saved" in command["parameters"]["jsonBody"]
+    assert "$now.toFormat('yyyy-MM')" in command["parameters"]["jsonBody"]
+    assert set(node["type"] for node in workflow["nodes"]) <= {
+        "n8n-nodes-base.scheduleTrigger",
+        "n8n-nodes-base.httpRequest",
+        "n8n-nodes-base.noOp",
+        "n8n-nodes-base.stickyNote",
+    }
+
+
 def test_report_command_is_scoped_idempotent_downloadable_and_audited(
     client, db_session
 ) -> None:
