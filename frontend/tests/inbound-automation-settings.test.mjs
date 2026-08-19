@@ -127,10 +127,15 @@ test("owners can download an importable API definition without embedding the key
 });
 
 test("command history uses plain results instead of internal request details", () => {
-  assert.match(settings, /Recent report requests/);
+  assert.match(settings, /Recent workflow requests/);
   assert.match(settings, /Saved report returned/);
   assert.match(settings, /Request safely declined/);
+  assert.match(settings, /receipt\.result\.message/);
+  assert.match(settings, /Open saved result/);
+  assert.match(settings, /Nothing was changed/);
+  assert.match(settings, /retry with the same request key after fixing the issue/);
   assert.doesNotMatch(settings, /receipt\.request_hash|receipt\.artifact_hash|receipt\.reason/);
+  assert.doesNotMatch(settings, /\{receipt\.denial_reason_code\}/);
 });
 
 test("owners explicitly opt into saved-data report creation with a replacement key", () => {

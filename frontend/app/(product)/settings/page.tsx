@@ -9090,12 +9090,13 @@ export default function SettingsPage() {
                         {automationCommandHistory.length > 0 ? (
                           <details className="group mt-3 rounded-md border border-[#303137] bg-[#101114]">
                             <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-medium text-zinc-300">
-                              Recent report requests ({automationCommandHistory.length})
+                              Recent workflow requests ({automationCommandHistory.length})
                             </summary>
                             <div className="space-y-2 border-t border-[#292a2f] p-3">
                               {automationCommandHistory.slice(0, 10).map((receipt) => (
-                                <div key={receipt.id} className="flex flex-col gap-1 rounded-md border border-[#292a2f] bg-[#141518] px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
-                                  <span className={receipt.status === "succeeded" ? "text-emerald-300" : "text-amber-300"}>
+                                <div key={receipt.id} className="rounded-md border border-[#292a2f] bg-[#141518] px-3 py-2 text-xs">
+                                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                    <span className={receipt.status === "succeeded" ? "text-emerald-300" : "text-amber-300"}>
                                     {receipt.status === "succeeded"
                                       ? receipt.command_type === "report.generate_saved"
                                         ? "Private report created"
@@ -9117,8 +9118,19 @@ export default function SettingsPage() {
                                           ? "Private reply draft requested"
                                           : "Saved report returned"
                                       : "Request safely declined"}
-                                  </span>
-                                  <span className="text-zinc-500">{formatTimestamp(receipt.completed_at)}</span>
+                                    </span>
+                                    <span className="text-zinc-500">{formatTimestamp(receipt.completed_at)}</span>
+                                  </div>
+                                  <p className="mt-1 leading-5 text-zinc-400">{receipt.result.message}</p>
+                                  {receipt.result.resource?.href ? (
+                                    <a className="mt-1 inline-flex text-xs font-medium text-sky-300 hover:text-sky-200" href={receipt.result.resource.href}>
+                                      Open saved result
+                                    </a>
+                                  ) : receipt.status === "denied" ? (
+                                    <p className="mt-1 text-[11px] leading-4 text-zinc-500">
+                                      Nothing was changed. Review the message above, then retry with the same request key after fixing the issue.
+                                    </p>
+                                  ) : null}
                                 </div>
                               ))}
                             </div>
