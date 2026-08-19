@@ -5422,6 +5422,14 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   reply, approve or post a reply, sync reviews, or change a Business Profile.
   Owners must replace the workflow key to enable or remove it, and immutable
   receipts preserve idempotency and minimized decision history.
+- AUT1J-N packages that exact read-only command as a deterministic, inactive
+  n8n starter download. The owner replaces one saved review ID, selects the
+  separately stored Bearer credential, and tests manually before adding their
+  own notification, CRM, or task step.
+- The template contains no workflow key, reviewer identity, comment or reply
+  text, automatic trigger, provider field, AI step, approval, or posting node.
+  It is fixed to the key's primary Business Location and cannot be downloaded
+  unless the owner has explicitly enabled `review.retrieve`.
 
 Planned scope (added August 17, 2026):
 

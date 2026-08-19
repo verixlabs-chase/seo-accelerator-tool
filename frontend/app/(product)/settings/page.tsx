@@ -3629,6 +3629,32 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const downloadN8nSavedReviewWorkflow = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-review-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/saved-review-routing?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-saved-review-routing.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive saved-review workflow was downloaded. Replace the saved review ID, select the current workflow key, and test it manually before adding your own notification or task step.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the saved-review workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
   const loadAuthSessions = useCallback(async () => {
     const response = (await platformApi("/auth/sessions", {
       method: "GET",
@@ -8521,7 +8547,17 @@ export default function SettingsPage() {
                                   </div>
                                   {activeAutomationServiceAccount.allowed_commands.includes("review.retrieve") ? (
                                     <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-5 text-emerald-50">
-                                      Use <code>review.retrieve</code> with the exact saved review ID. InsightOS returns only routing facts and never sends the reviewer&apos;s identity or comment text.
+                                      <p>Use <code>review.retrieve</code> with the exact saved review ID. InsightOS returns only routing facts and never sends the reviewer&apos;s identity or comment text.</p>
+                                      <button
+                                        type="button"
+                                        className={`${secondaryButtonClass} mt-3`}
+                                        disabled={busyAction === `automation-command-review-template-${activeAutomationServiceAccount.id}`}
+                                        onClick={() => void downloadN8nSavedReviewWorkflow(activeAutomationServiceAccount.id)}
+                                      >
+                                        {busyAction === `automation-command-review-template-${activeAutomationServiceAccount.id}`
+                                          ? "Preparing download..."
+                                          : "Download saved-review workflow"}
+                                      </button>
                                     </div>
                                   ) : null}
                                 </div>

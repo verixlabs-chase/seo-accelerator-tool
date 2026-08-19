@@ -243,6 +243,24 @@ def test_saved_review_retrieval_is_minimized_read_only_and_location_scoped(
     assert repeated.status_code == 200
     assert repeated.json()["data"]["created"] is False
 
+    starter = client.get(
+        "/api/v1/automation/starter-workflows/n8n/saved-review-routing",
+        params={"service_account_id": account["id"]},
+        headers=_headers(owner_token),
+    )
+    assert starter.status_code == 200, starter.text
+    assert starter.headers["cache-control"] == "private, no-store"
+    workflow = starter.json()
+    assert workflow["active"] is False
+    serialized_workflow = json.dumps(workflow)
+    assert "REPLACE-WITH-SAVED-REVIEW-ID" in serialized_workflow
+    assert "review.retrieve" in serialized_workflow
+    assert "httpBearerAuth" in serialized_workflow
+    assert "iosa_" not in serialized_workflow
+    assert "author_name" not in serialized_workflow
+    assert "body" not in serialized_workflow
+    assert "reply.post" not in serialized_workflow
+
 
 def test_multi_location_key_reads_only_explicit_saved_report_scopes(
     client, db_session

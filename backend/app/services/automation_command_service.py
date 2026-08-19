@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.automation.n8n_starter_workflow import (
     build_n8n_content_draft_review_workflow,
+    build_n8n_saved_review_routing_workflow,
     build_n8n_recommendation_ready_workflow,
     build_n8n_report_ready_workflow,
     build_n8n_saved_report_schedule_workflow,
@@ -481,6 +482,61 @@ def n8n_content_draft_review_starter_workflow(
         location_id=row.business_location_id,
         location_name=location.name,
         campaign_id=campaign.id,
+        api_base_url=f"{public_app_url}{settings.api_v1_prefix.rstrip('/')}",
+    )
+
+
+def n8n_saved_review_routing_starter_workflow(
+    db: Session,
+    *,
+    organization_id: str,
+    service_account_id: str,
+) -> dict[str, Any]:
+    require_commercial_feature(
+        db,
+        organization_id=organization_id,
+        feature_code=FEATURE_EXTERNAL_AUTOMATION,
+    )
+    row = (
+        db.query(AutomationServiceAccount)
+        .filter(
+            AutomationServiceAccount.id == service_account_id,
+            AutomationServiceAccount.organization_id == organization_id,
+        )
+        .one_or_none()
+    )
+    if row is None:
+        raise AutomationCommandError(
+            "Workflow command key not found.",
+            reason_code="automation_service_account_not_found",
+            status_code=404,
+        )
+    if row.status != "active" or _is_expired(row.expires_at):
+        raise AutomationCommandError(
+            "Create or replace the workflow key before downloading this starter workflow.",
+            reason_code="automation_service_account_inactive",
+            status_code=409,
+        )
+    if COMMAND_REVIEW_RETRIEVE not in _allowed_commands(row):
+        raise AutomationCommandError(
+            "Turn on saved-review routing before downloading this workflow.",
+            reason_code="automation_command_not_allowed",
+            status_code=409,
+        )
+    location = _active_location(
+        db,
+        organization_id=organization_id,
+        business_location_id=row.business_location_id,
+    )
+    settings = get_settings()
+    public_app_url = (
+        settings.customer_app_base_url or settings.public_base_url
+    ).strip().rstrip("/")
+    return build_n8n_saved_review_routing_workflow(
+        service_account_id=row.id,
+        organization_id=row.organization_id,
+        location_id=row.business_location_id,
+        location_name=location.name,
         api_base_url=f"{public_app_url}{settings.api_v1_prefix.rstrip('/')}",
     )
 

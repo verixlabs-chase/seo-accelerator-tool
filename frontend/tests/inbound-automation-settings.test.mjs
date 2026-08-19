@@ -167,5 +167,8 @@ test("owners can route minimized saved review facts without outside reply author
   assert.match(settings, /Reviewer names and comment text stay in InsightOS/);
   assert.match(settings, /cannot create, approve, or post a reply or change your Business Profile/i);
   assert.match(settings, /Saved review facts returned/);
+  assert.match(settings, /Download saved-review workflow/);
+  assert.match(settings, /\/automation\/starter-workflows\/n8n\/saved-review-routing\?service_account_id=/);
+  assert.match(settings, /inactive saved-review workflow was downloaded/i);
   assert.match(settings, /Every change replaces the workflow key|This replaces the workflow key/);
 });
