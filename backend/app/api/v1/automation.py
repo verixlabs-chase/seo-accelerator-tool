@@ -66,16 +66,16 @@ class AutomationServiceAccountIn(BaseModel):
     location_id: str = Field(min_length=36, max_length=36)
     expires_in_days: int = Field(default=30, ge=1, le=90)
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review"]
-    ] | None = Field(default=None, min_length=1, max_length=4)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved"]
+    ] | None = Field(default=None, min_length=1, max_length=5)
 
 
 class AutomationServiceAccountRotateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review"]
-    ] | None = Field(default=None, min_length=1, max_length=4)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved"]
+    ] | None = Field(default=None, min_length=1, max_length=5)
 
 
 class AutomationReportTargetIn(BaseModel):
@@ -84,6 +84,7 @@ class AutomationReportTargetIn(BaseModel):
     report_id: str | None = Field(default=None, min_length=36, max_length=36)
     campaign_id: str | None = Field(default=None, min_length=36, max_length=36)
     recommendation_id: str | None = Field(default=None, min_length=36, max_length=36)
+    connection_id: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 class AutomationCommandIn(BaseModel):
@@ -93,6 +94,7 @@ class AutomationCommandIn(BaseModel):
     command_type: Literal[
         "report.retrieve", "report.generate_saved", "recommendation.retrieve",
         "recommendation.request_review",
+        "connection.refresh_saved",
     ]
     organization_id: str = Field(min_length=36, max_length=36)
     location_id: str = Field(min_length=36, max_length=36)
@@ -108,11 +110,20 @@ class AutomationCommandIn(BaseModel):
                 self.target.report_id is not None
                 and self.target.campaign_id is None
                 and self.target.recommendation_id is None
+                and self.target.connection_id is None
             )
         elif self.command_type == "report.generate_saved":
             valid = (
                 self.target.campaign_id is not None
                 and self.target.report_id is None
+                and self.target.recommendation_id is None
+                and self.target.connection_id is None
+            )
+        elif self.command_type == "connection.refresh_saved":
+            valid = (
+                self.target.connection_id is not None
+                and self.target.report_id is None
+                and self.target.campaign_id is None
                 and self.target.recommendation_id is None
             )
         else:
@@ -120,6 +131,7 @@ class AutomationCommandIn(BaseModel):
                 self.target.recommendation_id is not None
                 and self.target.report_id is None
                 and self.target.campaign_id is None
+                and self.target.connection_id is None
             )
         if not valid:
             raise ValueError("Choose the exact target required by this workflow action.")

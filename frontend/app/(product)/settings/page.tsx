@@ -386,7 +386,7 @@ type AutomationServiceAccount = {
   status: "active" | "revoked";
   location_id: string;
   location_name: string;
-  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review">;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved">;
   token_hint: string;
   token_version: number;
   expires_at: string;
@@ -401,7 +401,7 @@ type AutomationServiceAccount = {
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
-  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review";
+  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved";
   idempotency_key: string;
   correlation_id: string;
   location_id: string;
@@ -3190,6 +3190,9 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("recommendation.request_review")
                   ? ["recommendation.request_review"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("connection.refresh_saved")
+                  ? ["connection.refresh_saved"]
+                  : []),
               ])),
             }),
           },
@@ -3234,6 +3237,9 @@ export default function SettingsPage() {
                   : []),
                 ...(enabled ? ["recommendation.retrieve"] : []),
                 ...(enabled ? ["recommendation.request_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("connection.refresh_saved")
+                  ? ["connection.refresh_saved"]
+                  : []),
               ],
             }),
           },
@@ -3245,6 +3251,47 @@ export default function SettingsPage() {
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change saved recommendation access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationConnectionRefresh = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let n8n ask InsightOS to refresh data from sources already connected to this location? This replaces the workflow key. It cannot add an account, change settings, publish, or run an unrelated action."
+        : "Remove connected-source refresh access? This replaces the workflow key; report and recommendation access will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-refresh-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.includes("report.generate_saved") ? ["report.generate_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.retrieve") ? ["recommendation.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.request_review") ? ["recommendation.request_review"] : []),
+                ...(enabled ? ["connection.refresh_saved"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Connected-source refresh access is on. Copy the replacement workflow key into n8n now."
+          : "Connected-source refresh access is off. Copy the replacement workflow key into n8n now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change connected-source refresh access.");
       } finally {
         setBusyAction("");
       }
@@ -8084,6 +8131,38 @@ export default function SettingsPage() {
                                     </div>
                                   ) : null}
                                 </div>
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let n8n refresh connected data
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        n8n can request a fresh check from a Google source you already connected to this location. InsightOS keeps the request in its own job history and applies the same access and location checks as this screen. It cannot connect a new account, change settings, publish, or run an unrelated action.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-refresh-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationConnectionRefresh(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-refresh-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved")
+                                          ? "Turn off data refresh"
+                                          : "Allow connected-data refresh"}
+                                    </button>
+                                  </div>
+                                  {activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved") ? (
+                                    <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-5 text-emerald-50">
+                                      Use command <code>connection.refresh_saved</code> with the exact connected-source ID. The receipt returns a safe job ID and current queued, running, completed, or failed status for polling.
+                                    </div>
+                                  ) : null}
+                                </div>
                               </div>
                             ) : null}
                           </div>
@@ -8209,6 +8288,22 @@ export default function SettingsPage() {
                                   <p>This returns saved owner-facing facts only. It does not approve or execute the recommendation.</p>
                                 </>
                               ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Refresh one connected source</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "connection.refresh_saved",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-refresh-REPLACE",
+                                    idempotency_key: "n8n-refresh-REPLACE",
+                                    reason: "Refresh data from an existing connection",
+                                    target: { connection_id: "REPLACE-WITH-CONNECTION-ID" },
+                                  }, null, 2)}</pre>
+                                  <p>This queues only the named existing connection and returns a job status. Reusing the idempotency key cannot create a second request.</p>
+                                </>
+                              ) : null}
                             </div>
                           </details>
                         ) : null}
@@ -8229,6 +8324,8 @@ export default function SettingsPage() {
                                           ? "Owner review requested"
                                         : receipt.command_type === "recommendation.retrieve"
                                           ? "Saved recommendation returned"
+                                        : receipt.command_type === "connection.refresh_saved"
+                                          ? "Connected data refresh accepted"
                                           : "Saved report returned"
                                       : "Request safely declined"}
                                   </span>

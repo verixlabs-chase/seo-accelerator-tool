@@ -28,6 +28,8 @@ from app.models.automation_command import (
 )
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.data_connection import DataConnection
+from app.models.platform_job import PlatformJob
 from app.models.organization import Organization
 from app.models.reporting import MonthlyReport, ReportArtifact
 from app.models.intelligence import StrategyRecommendation
@@ -38,7 +40,14 @@ from app.services.commercial_plan_service import (
     require_commercial_feature,
 )
 from app.services.cost_economics_service import CostEconomicsError
-from app.services import intelligence_service, premium_report_service, reporting_service
+from app.services import (
+    data_connections_service,
+    durable_job_service,
+    google_business_profile_service,
+    intelligence_service,
+    premium_report_service,
+    reporting_service,
+)
 
 
 COMMAND_SCHEMA_VERSION = "insightos.automation.command.v1"
@@ -46,11 +55,13 @@ COMMAND_REPORT_RETRIEVE = "report.retrieve"
 COMMAND_REPORT_GENERATE_SAVED = "report.generate_saved"
 COMMAND_RECOMMENDATION_RETRIEVE = "recommendation.retrieve"
 COMMAND_RECOMMENDATION_REQUEST_REVIEW = "recommendation.request_review"
+COMMAND_CONNECTION_REFRESH_SAVED = "connection.refresh_saved"
 ALLOWED_COMMANDS = (
     COMMAND_REPORT_RETRIEVE,
     COMMAND_REPORT_GENERATE_SAVED,
     COMMAND_RECOMMENDATION_RETRIEVE,
     COMMAND_RECOMMENDATION_REQUEST_REVIEW,
+    COMMAND_CONNECTION_REFRESH_SAVED,
 )
 DEFAULT_COMMANDS = (COMMAND_REPORT_RETRIEVE,)
 MAX_SERVICE_ACCOUNT_DAYS = 90
@@ -458,7 +469,7 @@ def list_command_receipts(
         .all()
     )
     return {
-        "items": [_receipt_contract(row, created=False) for row in rows],
+        "items": [_receipt_contract(db, row, created=False) for row in rows],
         "safety": _safety_contract(),
     }
 
@@ -533,7 +544,7 @@ def execute_report_retrieval(
                 reason_code="automation_command_idempotency_conflict",
                 status_code=409,
             )
-        return _receipt_contract(existing, created=False)
+        return _receipt_contract(db, existing, created=False)
 
     now = datetime.now(UTC)
     account.last_used_at = now
@@ -646,7 +657,7 @@ def execute_report_retrieval(
                 reason_code="automation_command_idempotency_conflict",
                 status_code=409,
             )
-        return _receipt_contract(existing, created=False)
+        return _receipt_contract(db, existing, created=False)
 
     write_audit_log(
         db,
@@ -664,7 +675,7 @@ def execute_report_retrieval(
     )
     db.commit()
     db.refresh(receipt)
-    return _receipt_contract(receipt, created=True)
+    return _receipt_contract(db, receipt, created=True)
 
 
 def execute_automation_command(
@@ -686,6 +697,10 @@ def execute_automation_command(
         COMMAND_RECOMMENDATION_REQUEST_REVIEW,
     }:
         return execute_recommendation_retrieval(
+            db, account=account, request_payload=request_payload
+        )
+    if request_payload["command_type"] == COMMAND_CONNECTION_REFRESH_SAVED:
+        return execute_saved_connection_refresh(
             db, account=account, request_payload=request_payload
         )
     raise AutomationCommandError(
@@ -719,7 +734,7 @@ def execute_recommendation_retrieval(
                 reason_code="automation_command_idempotency_conflict",
                 status_code=409,
             )
-        return _receipt_contract(existing, created=False)
+        return _receipt_contract(db, existing, created=False)
 
     denial_reason = _base_command_denial(db, account, request_payload)
     recommendation_id = str(request_payload["target"]["recommendation_id"])
@@ -810,7 +825,7 @@ def execute_recommendation_retrieval(
                 reason_code="automation_command_idempotency_conflict",
                 status_code=409,
             )
-        return _receipt_contract(duplicate, created=False)
+        return _receipt_contract(db, duplicate, created=False)
     write_audit_log(
         db,
         tenant_id=account.tenant_id,
@@ -827,7 +842,139 @@ def execute_recommendation_retrieval(
     )
     db.commit()
     db.refresh(receipt)
-    return _receipt_contract(receipt, created=True)
+    return _receipt_contract(db, receipt, created=True)
+
+
+def execute_saved_connection_refresh(
+    db: Session,
+    *,
+    account: AutomationServiceAccount,
+    request_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Queue one bounded refresh for an already-connected location data source."""
+    request_hash = _hash_payload(request_payload)
+    lock_scope = f"automation-command:{account.id}:{request_payload['idempotency_key']}"
+    with _serialized_command(lock_scope, db):
+        existing = (
+            db.query(AutomationCommandReceipt)
+            .filter(
+                AutomationCommandReceipt.service_account_id == account.id,
+                AutomationCommandReceipt.idempotency_key
+                == str(request_payload["idempotency_key"]),
+            )
+            .populate_existing()
+            .one_or_none()
+        )
+        if existing is not None:
+            if not secrets.compare_digest(existing.request_hash, request_hash):
+                raise AutomationCommandError(
+                    "This idempotency key was already used for a different command.",
+                    reason_code="automation_command_idempotency_conflict",
+                    status_code=409,
+                )
+            return _receipt_contract(db, existing, created=False)
+
+        denial_reason = _base_command_denial(db, account, request_payload)
+        connection_id = str(request_payload["target"]["connection_id"])
+        connection: DataConnection | None = None
+        job: PlatformJob | None = None
+        if denial_reason is None:
+            connection = (
+                db.query(DataConnection)
+                .filter(
+                    DataConnection.id == connection_id,
+                    DataConnection.tenant_id == account.tenant_id,
+                    DataConnection.organization_id == account.organization_id,
+                    DataConnection.business_location_id == account.business_location_id,
+                    DataConnection.status
+                    != data_connections_service.CONNECTION_STATUS_DISCONNECTED,
+                )
+                .one_or_none()
+            )
+            if connection is None:
+                denial_reason = "automation_connection_not_found"
+            elif connection.provider_name == data_connections_service.GOOGLE_SEARCH_CONSOLE_PROVIDER:
+                job = durable_job_service.create_search_console_sync_job(db, connection=connection)
+            elif connection.provider_name == data_connections_service.GOOGLE_ANALYTICS_PROVIDER:
+                job = durable_job_service.create_google_analytics_sync_job(db, connection=connection)
+            elif connection.provider_name == google_business_profile_service.GOOGLE_BUSINESS_PROFILE_PROVIDER:
+                job = durable_job_service.create_business_profile_sync_job(db, connection=connection)
+            else:
+                denial_reason = "automation_connection_refresh_unsupported"
+
+        result = (
+            {
+                "message": "InsightOS accepted a refresh of this connected source.",
+                "resource": {
+                    "type": "data_connection",
+                    "id": connection.id,
+                    "href": "/settings#connections",
+                },
+                "job": _safe_job_contract(job),
+                "truth": {
+                    "accepted": True,
+                    "completed": job.status == "completed",
+                    "publishing_allowed": False,
+                },
+                "artifacts": [],
+            }
+            if denial_reason is None and connection is not None and job is not None
+            else {
+                "message": _denial_message(denial_reason or "automation_command_denied"),
+                "resource": None,
+                "job": None,
+                "artifacts": [],
+            }
+        )
+        now = datetime.now(UTC)
+        account.last_used_at = now
+        account.updated_at = now
+        status_value = "succeeded" if denial_reason is None else "denied"
+        artifact_payload = {
+            "schema_version": COMMAND_SCHEMA_VERSION,
+            "service_account_id": account.id,
+            "request_hash": request_hash,
+            "status": status_value,
+            "denial_reason_code": denial_reason,
+            "result": result,
+        }
+        receipt = AutomationCommandReceipt(
+            tenant_id=account.tenant_id,
+            organization_id=account.organization_id,
+            service_account_id=account.id,
+            business_location_id=account.business_location_id,
+            campaign_id=connection.campaign_id if connection is not None else None,
+            schema_version=COMMAND_SCHEMA_VERSION,
+            command_type=COMMAND_CONNECTION_REFRESH_SAVED,
+            idempotency_key=str(request_payload["idempotency_key"]),
+            correlation_id=str(request_payload["correlation_id"]),
+            reason=str(request_payload["reason"]),
+            request_hash=request_hash,
+            status=status_value,
+            denial_reason_code=denial_reason,
+            result_json=_json(result),
+            artifact_hash=_hash_payload(artifact_payload),
+            created_at=now,
+            completed_at=now,
+        )
+        db.add(receipt)
+        write_audit_log(
+            db,
+            tenant_id=account.tenant_id,
+            actor_user_id=None,
+            event_type="automation.command.decided",
+            payload={
+                "service_account_id": account.id,
+                "command_receipt_id": receipt.id,
+                "command_type": receipt.command_type,
+                "business_location_id": account.business_location_id,
+                "status": status_value,
+                "denial_reason_code": denial_reason,
+            },
+        )
+        db.commit()
+        db.refresh(receipt)
+        return _receipt_contract(db, receipt, created=True)
 
 
 def execute_saved_report_generation(
@@ -859,7 +1006,7 @@ def execute_saved_report_generation(
                     reason_code="automation_command_idempotency_conflict",
                     status_code=409,
                 )
-            return _receipt_contract(existing, created=False)
+            return _receipt_contract(db, existing, created=False)
 
         denial_reason = _base_command_denial(db, account, request_payload)
         campaign_id = str(request_payload["target"]["campaign_id"])
@@ -964,7 +1111,7 @@ def execute_saved_report_generation(
         )
         db.commit()
         db.refresh(receipt)
-        return _receipt_contract(receipt, created=True)
+        return _receipt_contract(db, receipt, created=True)
 
 
 def get_command_receipt_for_account(
@@ -988,7 +1135,7 @@ def get_command_receipt_for_account(
             reason_code="automation_command_not_found",
             status_code=404,
         )
-    return _receipt_contract(row, created=False)
+    return _receipt_contract(db, row, created=False)
 
 
 def read_command_report_artifact(
@@ -1154,8 +1301,25 @@ def _account_contract(db: Session, row: AutomationServiceAccount) -> dict[str, A
     }
 
 
-def _receipt_contract(row: AutomationCommandReceipt, *, created: bool) -> dict[str, Any]:
+def _receipt_contract(
+    db: Session, row: AutomationCommandReceipt, *, created: bool
+) -> dict[str, Any]:
     result = json.loads(row.result_json)
+    job_value = result.get("job")
+    if isinstance(job_value, dict) and job_value.get("id"):
+        job = (
+            db.query(PlatformJob)
+            .filter(
+                PlatformJob.id == str(job_value["id"]),
+                PlatformJob.tenant_id == row.tenant_id,
+                PlatformJob.entity_type == "data_connection",
+            )
+            .one_or_none()
+        )
+        if job is not None:
+            result["job"] = _safe_job_contract(job)
+            if isinstance(result.get("truth"), dict):
+                result["truth"]["completed"] = job.status == "completed"
     for artifact in result.get("artifacts", []):
         if isinstance(artifact, dict) and artifact.get("ready") is True:
             artifact["download_path"] = (
@@ -1178,6 +1342,16 @@ def _receipt_contract(row: AutomationCommandReceipt, *, created: bool) -> dict[s
             "completed_at": row.completed_at.isoformat(),
         },
         "safety": _safety_contract(),
+    }
+
+
+def _safe_job_contract(job: PlatformJob) -> dict[str, Any]:
+    return {
+        "id": job.id,
+        "status": job.status,
+        "created_at": job.created_at.isoformat(),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
     }
 
 
@@ -1397,6 +1571,15 @@ def _command_catalog() -> list[dict[str, Any]]:
             "approval_required": True,
             "publishing_allowed": False,
         },
+        {
+            "code": COMMAND_CONNECTION_REFRESH_SAVED,
+            "label": "Refresh a connected source",
+            "summary": "Let a workflow request one saved-data refresh for the selected location.",
+            "read_only": False,
+            "paid_provider_call": False,
+            "approval_required": False,
+            "publishing_allowed": False,
+        },
     ]
 
 
@@ -1423,6 +1606,8 @@ def _denial_message(reason_code: str) -> str:
         "automation_report_not_found": "That report was not found for the workflow key's location.",
         "automation_campaign_not_found": "That location setup was not found for this workflow key.",
         "automation_recommendation_not_found": "That recommendation was not found for the workflow key's location.",
+        "automation_connection_not_found": "That connected source was not found for the workflow key's location.",
+        "automation_connection_refresh_unsupported": "That connected source cannot be refreshed by a workflow yet.",
         "campaign_report_upgrade_required": "Report creation is not available on the current plan.",
     }
     return messages.get(reason_code, "InsightOS safely declined this workflow command.")

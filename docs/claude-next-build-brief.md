@@ -5343,10 +5343,22 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   recommendation remains generated; it is never approved, scheduled, executed,
   or published by the workflow. Opportunities shows the request beside the
   native checklist so the owner makes the decision inside InsightOS.
-- AUT1J-F and later slices still own priced checks, saved-data refreshes,
-  governed drafts, approval requests, accepted-job polling, multiple-location
-  scopes, action allowances, and broader inbound starter workflows. No broader
-  inbound action is implied by these report commands.
+- AUT1J-F adds `connection.refresh_saved` as another separately granted key
+  scope. It accepts only the exact ID of an active Search Console, website
+  analytics, or Business Profile connection already mapped to the service
+  account's organization and Business Location. It queues the existing native,
+  idempotent durable sync job; it cannot add an account, choose a provider URL,
+  alter connection settings, publish, or run unrelated work.
+- The immutable command receipt stores a minimized job reference. Receipt
+  polling refreshes only the safe queued/running/completed/failed state and
+  timestamps from the tenant-scoped native job; provider payloads and raw
+  errors are never returned. Settings requires an owner-confirmed key rotation
+  to enable or remove refresh access and explains the exact-target contract in
+  plain language.
+- AUT1J-G and later slices still own allowance-priced checks, governed drafts,
+  approval requests beyond review routing, multiple-location scopes, action
+  allowances, and broader inbound starter workflows. No broader inbound action
+  is implied by these commands.
 
 Planned scope (added August 17, 2026):
 

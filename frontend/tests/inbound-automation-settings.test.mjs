@@ -105,3 +105,13 @@ test("owners explicitly enable saved recommendation review routing", () => {
   assert.match(opportunities, /A connected workflow asked you to review this/);
   assert.match(opportunities, /did not approve, schedule, or run this recommendation/);
 });
+
+test("owners explicitly enable bounded connected-data refresh", () => {
+  assert.match(settings, /Let n8n refresh connected data/);
+  assert.match(settings, /connection\.refresh_saved/);
+  assert.match(settings, /Allow connected-data refresh/);
+  assert.match(settings, /REPLACE-WITH-CONNECTION-ID/);
+  assert.match(settings, /returns a safe job ID and current queued, running, completed, or failed status/);
+  assert.match(settings, /cannot connect a new account, change settings, publish, or run an unrelated action/i);
+  assert.match(settings, /Connected data refresh accepted/);
+});

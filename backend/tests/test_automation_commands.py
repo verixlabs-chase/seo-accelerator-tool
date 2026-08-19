@@ -12,6 +12,8 @@ from app.models.automation_command import (
 )
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.data_connection import DataConnection
+from app.models.platform_job import PlatformJob
 from app.models.intelligence import StrategyRecommendation
 from app.models.organization_membership import OrganizationMembership
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent
@@ -723,3 +725,91 @@ def test_only_owner_manages_keys_and_command_contract_rejects_extra_fields(
     )
     assert response.status_code == 422
     assert db_session.query(AutomationCommandReceipt).count() == 0
+
+
+def test_scoped_key_queues_one_saved_connection_refresh_and_exposes_job_status(
+    client, db_session
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="refresh-command"
+    )
+    connection = DataConnection(
+        id=str(uuid.uuid4()),
+        tenant_id=organization_id,
+        organization_id=organization_id,
+        business_location_id=scope["location_id"],
+        campaign_id=scope["campaign_id"],
+        provider_name="google_search_console",
+        external_resource_id="sc-domain:refresh-command.example",
+        external_resource_name="refresh-command.example",
+        resource_scope="domain",
+        status="connected",
+        next_sync_at=datetime.now(UTC),
+        sync_cursor={},
+        connection_metadata={},
+    )
+    db_session.add(connection)
+    db_session.commit()
+    account, initial_secret = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    rotated = client.post(
+        f"/api/v1/automation/service-accounts/{account['id']}/rotate",
+        headers=_headers(owner_token),
+        json={"allowed_commands": ["report.retrieve", "connection.refresh_saved"]},
+    )
+    assert rotated.status_code == 200, rotated.text
+    secret = rotated.json()["data"]["token"]
+    body = {
+        "schema_version": "insightos.automation.command.v1",
+        "command_type": "connection.refresh_saved",
+        "organization_id": organization_id,
+        "location_id": scope["location_id"],
+        "correlation_id": "n8n-refresh-1",
+        "idempotency_key": "n8n-refresh-command-1001",
+        "reason": "Refresh saved organic search facts",
+        "target": {"connection_id": connection.id},
+    }
+    denied = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(initial_secret)
+    )
+    assert denied.status_code == 401
+
+    response = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["receipt"]["status"] == "succeeded"
+    assert data["receipt"]["result"]["resource"]["id"] == connection.id
+    assert data["receipt"]["result"]["job"]["status"] == "queued"
+    assert data["receipt"]["result"]["truth"] == {
+        "accepted": True,
+        "completed": False,
+        "publishing_allowed": False,
+    }
+    assert db_session.query(PlatformJob).count() == 1
+
+    repeated = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["created"] is False
+    assert db_session.query(PlatformJob).count() == 1
+
+    job = db_session.get(PlatformJob, data["receipt"]["result"]["job"]["id"])
+    job.status = "completed"
+    job.finished_at = datetime.now(UTC)
+    job.result = {"raw_provider_payload": "must not be exposed"}
+    db_session.commit()
+    polled = client.get(
+        f"/api/v1/automation/commands/{data['receipt']['id']}",
+        headers=_headers(secret),
+    )
+    assert polled.status_code == 200
+    polled_job = polled.json()["data"]["receipt"]["result"]["job"]
+    assert polled_job["status"] == "completed"
+    assert "raw_provider_payload" not in json.dumps(polled.json())
