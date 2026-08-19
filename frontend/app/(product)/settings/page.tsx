@@ -3647,7 +3647,7 @@ export default function SettingsPage() {
       link.click();
       link.remove();
       URL.revokeObjectURL(fileUrl);
-      setNotice("The inactive saved-review workflow was downloaded. Replace the saved review ID, select the current workflow key, and test it manually before adding your own notification or task step.");
+      setNotice("The inactive saved-review workflow was downloaded. Import it, select the current workflow key, connect its Production URL to Review saved updates, and publish only when ready.");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Unable to download the saved-review workflow.");
     } finally {

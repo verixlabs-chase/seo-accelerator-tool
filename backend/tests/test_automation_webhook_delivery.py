@@ -156,6 +156,7 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
     } == {
         "report.ready",
         "recommendation.ready",
+        "review.saved",
         "action.completed",
         "action.failed",
     }

@@ -131,6 +131,7 @@ def test_catalog_is_bounded_and_does_not_enable_commands_or_delivery() -> None:
     assert [item["code"] for item in catalog] == [
         "report.ready",
         "recommendation.ready",
+        "review.saved",
         "approval.requested",
         "action.completed",
         "action.failed",

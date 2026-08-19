@@ -5430,6 +5430,14 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   text, automatic trigger, provider field, AI step, approval, or posting node.
   It is fixed to the key's primary Business Location and cannot be downloaded
   unless the owner has explicitly enabled `review.retrieve`.
+- AUT1J-O makes the starter event-driven through a new signed `review.saved`
+  outbound notification. A new or changed owned-profile observation emits one
+  minimized event with its exact review ID, rating, date, and reply state;
+  unchanged sync retries emit no new review event.
+- The n8n starter filters schema, event, truth, resource, organization, and
+  primary location before retrieving the same minimized facts. The event and
+  starter still exclude reviewer identity, comment and reply text, provider
+  data, external IDs, AI drafting, approval, and posting.
 
 Planned scope (added August 17, 2026):
 

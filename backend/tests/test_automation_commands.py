@@ -253,12 +253,14 @@ def test_saved_review_retrieval_is_minimized_read_only_and_location_scoped(
     workflow = starter.json()
     assert workflow["active"] is False
     serialized_workflow = json.dumps(workflow)
-    assert "REPLACE-WITH-SAVED-REVIEW-ID" in serialized_workflow
+    assert "review.saved" in serialized_workflow
+    assert "insightos.automation.event.v1" in serialized_workflow
+    assert scope["location_id"] in serialized_workflow
     assert "review.retrieve" in serialized_workflow
     assert "httpBearerAuth" in serialized_workflow
     assert "iosa_" not in serialized_workflow
     assert "author_name" not in serialized_workflow
-    assert "body" not in serialized_workflow
+    assert "comment_text" not in serialized_workflow
     assert "reply.post" not in serialized_workflow
 
 

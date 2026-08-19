@@ -249,6 +249,19 @@ def upsert_reviews(
                     captured_at=capture_time,
                 )
             )
+            if row.source_type == "owned_profile":
+                emit_event(
+                    db,
+                    tenant_id=tenant_id,
+                    event_type="reputation.review.saved",
+                    payload={
+                        "organization_id": organization_id,
+                        "campaign_id": campaign.id,
+                        "business_location_id": location.id,
+                        "review_id": row.id,
+                        "evidence_digest": digest,
+                    },
+                )
         saved.append(row)
 
     emit_event(

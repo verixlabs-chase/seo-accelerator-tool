@@ -15,7 +15,7 @@ N8N_CONTENT_DRAFT_REVIEW_TEMPLATE_VERSION = (
     "insightos.n8n.content-draft-review.v1"
 )
 N8N_SAVED_REVIEW_ROUTING_TEMPLATE_VERSION = (
-    "insightos.n8n.saved-review-routing.v1"
+    "insightos.n8n.saved-review-routing.v2"
 )
 
 _NAMESPACE = uuid.UUID("4f69a953-f298-4d02-9d86-2ec21b2754ef")
@@ -542,43 +542,56 @@ def build_n8n_saved_review_routing_workflow(
     location_name: str,
     api_base_url: str,
 ) -> dict[str, Any]:
-    """Return an inactive manual workflow for minimized saved-review facts."""
+    """Return an inactive event-driven workflow for minimized saved-review facts."""
     workflow_key = f"{service_account_id}:{N8N_SAVED_REVIEW_ROUTING_TEMPLATE_VERSION}"
 
     def node_id(name: str) -> str:
         return str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:{name}"))
 
-    start_name = "Start with one saved review"
-    input_name = "Enter the saved review ID"
+    start_name = "Receive a saved review update"
+    filter_name = "Use only saved reviews for this location"
     retrieve_name = "Retrieve safe review routing facts"
     done_name = "Add your notification, CRM, or task step here"
     nodes = [
         {
-            "parameters": {},
-            "id": node_id("manual-trigger"),
+            "parameters": {
+                "httpMethod": "POST",
+                "path": f"insightos-review-saved-{service_account_id[:8]}",
+                "responseMode": "onReceived",
+                "options": {},
+            },
+            "id": node_id("webhook"),
             "name": start_name,
-            "type": "n8n-nodes-base.manualTrigger",
-            "typeVersion": 1,
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2.1,
             "position": [-480, 120],
+            "webhookId": str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:webhook-id")),
         },
         {
             "parameters": {
-                "assignments": {
-                    "assignments": [
-                        {
-                            "id": node_id("review-field"),
-                            "name": "saved_review_id",
-                            "value": "REPLACE-WITH-SAVED-REVIEW-ID",
-                            "type": "string",
-                        }
-                    ]
+                "conditions": {
+                    "options": {
+                        "caseSensitive": True,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3,
+                    },
+                    "conditions": [
+                        _equals_condition(node_id("schema"), "={{ $json.body.schema_version }}", "insightos.automation.event.v1"),
+                        _equals_condition(node_id("type"), "={{ $json.body.event_type }}", "review.saved"),
+                        _equals_condition(node_id("truth"), "={{ $json.body.truth_state }}", "ready"),
+                        _equals_condition(node_id("resource"), "={{ $json.body.resource.type }}", "review"),
+                        _equals_condition(node_id("organization"), "={{ $json.body.organization_id }}", organization_id),
+                        _equals_condition(node_id("location"), "={{ $json.body.location_id }}", location_id),
+                    ],
+                    "combinator": "and",
                 },
                 "options": {},
             },
-            "id": node_id("review-input"),
-            "name": input_name,
-            "type": "n8n-nodes-base.set",
-            "typeVersion": 3.4,
+            "id": node_id("filter"),
+            "name": filter_name,
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.2,
             "position": [-240, 120],
         },
         {
@@ -594,10 +607,10 @@ def build_n8n_saved_review_routing_workflow(
                     "={{ { schema_version: 'insightos.automation.command.v1',"
                     " command_type: 'review.retrieve',"
                     f" organization_id: '{organization_id}', location_id: '{location_id}',"
-                    " correlation_id: 'n8n-review:' + $json.saved_review_id,"
-                    " idempotency_key: 'saved-review:' + $json.saved_review_id,"
+                    " correlation_id: 'n8n:' + $json.body.event_id,"
+                    " idempotency_key: 'review-saved:' + $json.body.event_id,"
                     " reason: 'Route minimized facts for one saved review',"
-                    " target: { review_id: $json.saved_review_id } } }}"
+                    " target: { review_id: $json.body.resource.id } } }}"
                 ),
                 "options": {"timeout": 30000},
             },
@@ -621,7 +634,7 @@ def build_n8n_saved_review_routing_workflow(
             "parameters": {
                 "content": (
                     "## Saved review routing helper\n\n"
-                    f"Limited to **{location_name}**. Replace the saved review ID and select the current InsightOS Bearer credential.\n\n"
+                    f"Limited to **{location_name}**. It accepts only signed `review.saved` updates for this exact workspace and location.\n\n"
                     "This inactive workflow receives only the rating, date, reply state, and whether a comment exists. Reviewer identity and comment text stay in InsightOS. It cannot create, approve, or post a reply."
                 ),
                 "height": 280,
@@ -639,8 +652,8 @@ def build_n8n_saved_review_routing_workflow(
         "name": f"InsightOS - Route saved review facts - {location_name}",
         "nodes": nodes,
         "connections": {
-            start_name: {"main": [[{"node": input_name, "type": "main", "index": 0}]]},
-            input_name: {"main": [[{"node": retrieve_name, "type": "main", "index": 0}]]},
+            start_name: {"main": [[{"node": filter_name, "type": "main", "index": 0}]]},
+            filter_name: {"main": [[{"node": retrieve_name, "type": "main", "index": 0}], []]},
             retrieve_name: {"main": [[{"node": done_name, "type": "main", "index": 0}]]},
         },
         "pinData": {},
