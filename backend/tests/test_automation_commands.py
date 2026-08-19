@@ -12,6 +12,7 @@ from app.models.automation_command import (
 )
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.organization_membership import OrganizationMembership
 from app.models.reporting import MonthlyReport, ReportArtifact
 
 
@@ -149,6 +150,96 @@ def test_owner_creates_one_scoped_key_and_secret_is_returned_once(client, db_ses
     assert row is not None
     assert secret not in row.token_hash
     assert len(row.token_hash) == 64
+
+
+def test_owner_downloads_inactive_credential_free_n8n_report_workflow(
+    client, db_session
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    admin_token, _ = _login(client, "org-admin@example.com", "pass-org-admin")
+    _other_admin_token, other_organization_id = _login(
+        client, "b@example.com", "pass-b"
+    )
+    other_membership = (
+        db_session.query(OrganizationMembership)
+        .filter(OrganizationMembership.organization_id == other_organization_id)
+        .one()
+    )
+    other_membership.role = "org_owner"
+    db_session.commit()
+    other_token, _ = _login(client, "b@example.com", "pass-b")
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="n8n-template"
+    )
+    account, secret = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    path = (
+        "/api/v1/automation/starter-workflows/n8n/report-ready"
+        f"?service_account_id={account['id']}"
+    )
+
+    forbidden = client.get(path, headers=_headers(admin_token))
+    assert forbidden.status_code == 403
+    hidden = client.get(path, headers=_headers(other_token))
+    assert hidden.status_code == 404
+
+    response = client.get(path, headers=_headers(owner_token))
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="insightos-n8n-report-ready.json"'
+    )
+    workflow = response.json()
+    serialized = json.dumps(workflow)
+    assert workflow["active"] is False
+    assert workflow["meta"]["templateCredsSetupCompleted"] is False
+    assert workflow["meta"]["insightosTemplateVersion"] == (
+        "insightos.n8n.report-ready.v1"
+    )
+    assert secret not in serialized
+    assert "iosa_" not in serialized
+    assert "arbitrary_prompt" not in serialized
+    assert "wordpress.publish" not in serialized
+
+    nodes = {node["name"]: node for node in workflow["nodes"]}
+    assert set(node["type"] for node in workflow["nodes"]) <= {
+        "n8n-nodes-base.webhook",
+        "n8n-nodes-base.if",
+        "n8n-nodes-base.httpRequest",
+        "n8n-nodes-base.noOp",
+        "n8n-nodes-base.stickyNote",
+    }
+    report_filter = nodes["Use only this location's reports"]
+    right_values = {
+        condition["rightValue"]
+        for condition in report_filter["parameters"]["conditions"]["conditions"]
+    }
+    assert {
+        "insightos.automation.event.v1",
+        "report.ready",
+        "ready",
+        "report",
+        organization_id,
+        scope["location_id"],
+    } <= right_values
+
+    request = nodes["Retrieve the saved report"]
+    parameters = request["parameters"]
+    assert parameters["url"] == "http://testserver/api/v1/automation/commands"
+    assert parameters["authentication"] == "genericCredentialType"
+    assert parameters["genericAuthType"] == "httpBearerAuth"
+    assert parameters["contentType"] == "json"
+    assert "credentials" not in request
+    assert organization_id in parameters["jsonBody"]
+    assert scope["location_id"] in parameters["jsonBody"]
+    assert "$json.body.resource.id" in parameters["jsonBody"]
+    assert "'n8n:' + $json.body.event_id" in parameters["jsonBody"]
+    assert "'report-ready:' + $json.body.event_id" in parameters["jsonBody"]
+    assert workflow["connections"]["Receive a saved report update"]["main"]
 
 
 def test_report_command_is_scoped_idempotent_downloadable_and_audited(
@@ -355,4 +446,3 @@ def test_only_owner_manages_keys_and_command_contract_rejects_extra_fields(
     )
     assert response.status_code == 422
     assert db_session.query(AutomationCommandReceipt).count() == 0
-

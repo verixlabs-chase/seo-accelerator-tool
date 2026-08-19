@@ -40,10 +40,23 @@ test("advanced n8n instructions use the fixed command contract", () => {
   assert.doesNotMatch(contract, /arbitrary_prompt|database\.query|wordpress\.publish|business_profile\.update/);
 });
 
+test("owners can download a safe inactive n8n starter instead of hand-building it", () => {
+  assert.match(settings, /Download n8n starter/);
+  assert.match(
+    settings,
+    /\/automation\/starter-workflows\/n8n\/report-ready\?service_account_id=/,
+  );
+  assert.match(settings, /choose Import from File in n8n/);
+  assert.match(settings, /select a Bearer Auth credential containing the one-time workflow key/);
+  assert.match(settings, /copy its Production URL/);
+  assert.match(settings, /select only “Report ready”/);
+  assert.match(settings, /The download is inactive and never contains your workflow key/);
+  assert.match(settings, /It ignores updates for other locations and creates no paid work/);
+});
+
 test("command history uses plain results instead of internal request details", () => {
   assert.match(settings, /Recent report requests/);
   assert.match(settings, /Saved report returned/);
   assert.match(settings, /Request safely declined/);
   assert.doesNotMatch(settings, /receipt\.request_hash|receipt\.artifact_hash|receipt\.reason/);
 });
-

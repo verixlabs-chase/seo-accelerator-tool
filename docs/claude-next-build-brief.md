@@ -5193,7 +5193,7 @@ Implementation status (August 17, 2026):
 
 #### AUT1J - Governed Inbound Automation Commands (n8n First)
 
-Implementation status — AUT1J-A report retrieval foundation (August 19, 2026):
+Implementation status — AUT1J-A/B report retrieval and n8n starter (August 19, 2026):
 
 - The first inbound command is deliberately read-only: `report.retrieve` can
   return the safe metadata and ready private artifacts for a report InsightOS
@@ -5223,10 +5223,22 @@ Implementation status — AUT1J-A report retrieval foundation (August 19, 2026):
   the credential only once, keeps the fixed HTTP contract in an advanced
   disclosure, shows plain-language result history, and reserves lifecycle
   controls for the workspace owner.
-- AUT1J-B and later slices still own priced checks, saved-data refreshes,
+- An organization owner can now download a reviewed n8n starter workflow for
+  the active service account. The generated file is inactive, contains no
+  credential, is fixed to the account's workspace and Business Location, and
+  accepts only a ready saved-report event. It derives its correlation and
+  idempotency keys from the stable outbound event identity and uses n8n's
+  Bearer credential type for the one-time InsightOS key.
+- The starter connects the existing `report.ready` delivery path to the
+  read-only `report.retrieve` command without asking an owner to copy report IDs
+  or construct JSON. It filters unrelated event, resource, truth, workspace,
+  and location values before the HTTP request and leaves the external workflow
+  inactive until the customer selects a credential, publishes it, and connects
+  its production webhook URL.
+- AUT1J-C and later slices still own priced checks, saved-data refreshes,
   governed drafts, approval requests, job polling, multiple-location scopes,
-  action allowances, and reviewed downloadable starter workflows. No broader
-  inbound action is implied by the report-retrieval proof.
+  action allowances, and broader inbound starter workflows. No broader inbound
+  action is implied by the report-retrieval proof.
 
 Planned scope (added August 17, 2026):
 

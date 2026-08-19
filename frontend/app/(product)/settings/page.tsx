@@ -3196,6 +3196,32 @@ export default function SettingsPage() {
     }
   }, [automationCommandToken]);
 
+  const downloadN8nReportWorkflow = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/report-ready?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-report-ready.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive n8n starter workflow was downloaded. Import it, add the workflow key, then publish it when you are ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the n8n starter workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
   const loadAuthSessions = useCallback(async () => {
     const response = (await platformApi("/auth/sessions", {
       method: "GET",
@@ -7787,6 +7813,14 @@ export default function SettingsPage() {
                                 <div className="flex flex-wrap gap-2">
                                   <button
                                     type="button"
+                                    className={primaryButtonClass}
+                                    disabled={busyAction === `automation-command-template-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void downloadN8nReportWorkflow(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-template-${activeAutomationServiceAccount.id}` ? "Downloading..." : "Download n8n starter"}
+                                  </button>
+                                  <button
+                                    type="button"
                                     className={secondaryButtonClass}
                                     disabled={busyAction === `automation-command-rotate-${activeAutomationServiceAccount.id}`}
                                     onClick={() => void rotateAutomationCommandAccess(activeAutomationServiceAccount.id)}
@@ -7851,6 +7885,21 @@ export default function SettingsPage() {
                           <p className="mt-3 rounded-md border border-[#303137] bg-[#101114] p-3 text-xs leading-5 text-zinc-400">
                             Ask the workspace owner to create or replace the n8n report key.
                           </p>
+                        ) : null}
+
+                        {activeAutomationServiceAccount ? (
+                          <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4">
+                            <p className="text-sm font-semibold text-emerald-100">Connect it in four steps</p>
+                            <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
+                              <li>Download the starter above, then choose Import from File in n8n.</li>
+                              <li>Open “Retrieve the saved report” and select a Bearer Auth credential containing the one-time workflow key.</li>
+                              <li>Save and publish the n8n workflow, then copy its Production URL.</li>
+                              <li>Connect that URL above and select only “Report ready”.</li>
+                            </ol>
+                            <p className="mt-2 text-xs leading-5 text-zinc-500">
+                              The download is inactive and never contains your workflow key. It ignores updates for other locations and creates no paid work.
+                            </p>
+                          </div>
                         ) : null}
 
                         {activeAutomationServiceAccount ? (
