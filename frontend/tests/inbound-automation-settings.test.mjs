@@ -60,3 +60,13 @@ test("command history uses plain results instead of internal request details", (
   assert.match(settings, /Request safely declined/);
   assert.doesNotMatch(settings, /receipt\.request_hash|receipt\.artifact_hash|receipt\.reason/);
 });
+
+test("owners explicitly opt into saved-data report creation with a replacement key", () => {
+  assert.match(settings, /Let n8n create private reports from saved results/);
+  assert.match(settings, /report\.generate_saved/);
+  assert.match(settings, /cannot start a crawl or paid check, send the report, publish content/);
+  assert.match(settings, /allowed_commands: enabled/);
+  assert.match(settings, /\["report\.retrieve", "report\.generate_saved"\]/);
+  assert.match(settings, /old key stops working immediately/);
+  assert.match(settings, /Private report created/);
+});

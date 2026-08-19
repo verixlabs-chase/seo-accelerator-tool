@@ -101,7 +101,7 @@ class AutomationCommandReceipt(Base):
     __tablename__ = "automation_command_receipts"
     __table_args__ = (
         CheckConstraint(
-            "command_type in ('report.retrieve')",
+            "command_type in ('report.retrieve','report.generate_saved')",
             name="ck_automation_command_receipts_type",
         ),
         CheckConstraint(
@@ -174,7 +174,7 @@ class AutomationCommandReceipt(Base):
     service_account_id: Mapped[str] = mapped_column(String(36), nullable=False)
     business_location_id: Mapped[str] = mapped_column(String(36), nullable=False)
     campaign_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    report_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    report_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     schema_version: Mapped[str] = mapped_column(String(80), nullable=False)
     command_type: Mapped[str] = mapped_column(String(60), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)

@@ -16,6 +16,12 @@ MIGRATION = (
     / "versions"
     / "20260819_0188_inbound_automation_service_accounts.py"
 )
+EXPANSION_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0189_saved_report_generation_command.py"
+)
 
 
 def test_inbound_automation_schema_matches_models(db_session) -> None:
@@ -54,6 +60,7 @@ def test_inbound_automation_schema_matches_models(db_session) -> None:
     }.issubset(receipt_columns)
     assert account_columns["token_hash"]["nullable"] is False
     assert receipt_columns["campaign_id"]["nullable"] is True
+    assert receipt_columns["report_id"]["nullable"] is True
 
     account_indexes = {
         item["name"] for item in inspector.get_indexes("automation_service_accounts")
@@ -83,3 +90,13 @@ def test_inbound_automation_migration_is_scoped_immutable_and_reversible() -> No
     assert 'op.drop_table(RECEIPT_TABLE)' in source
     assert 'op.drop_table(ACCOUNT_TABLE)' in source
 
+
+def test_saved_report_generation_migration_is_bounded_and_fail_closed() -> None:
+    source = EXPANSION_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0189"' in source
+    assert 'down_revision = "20260819_0188"' in source
+    assert "'report.retrieve','report.generate_saved'" in source
+    assert 'batch.alter_column("report_id"' in source
+    assert "generated_receipt" in source
+    assert "expanded_account" in source
+    assert "Cannot downgrade" in source

@@ -4,12 +4,15 @@ import hashlib
 import json
 import re
 import secrets
+from time import monotonic, sleep
 import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.automation.n8n_starter_workflow import build_n8n_report_ready_workflow
@@ -25,16 +28,19 @@ from app.models.organization import Organization
 from app.models.reporting import MonthlyReport, ReportArtifact
 from app.services.audit_service import write_audit_log
 from app.services.commercial_plan_service import (
+    FEATURE_CAMPAIGN_REPORT,
     FEATURE_EXTERNAL_AUTOMATION,
     require_commercial_feature,
 )
 from app.services.cost_economics_service import CostEconomicsError
-from app.services import reporting_service
+from app.services import premium_report_service, reporting_service
 
 
 COMMAND_SCHEMA_VERSION = "insightos.automation.command.v1"
 COMMAND_REPORT_RETRIEVE = "report.retrieve"
-ALLOWED_COMMANDS = (COMMAND_REPORT_RETRIEVE,)
+COMMAND_REPORT_GENERATE_SAVED = "report.generate_saved"
+ALLOWED_COMMANDS = (COMMAND_REPORT_RETRIEVE, COMMAND_REPORT_GENERATE_SAVED)
+DEFAULT_COMMANDS = (COMMAND_REPORT_RETRIEVE,)
 MAX_SERVICE_ACCOUNT_DAYS = 90
 TOKEN_PATTERN = re.compile(
     r"^iosa_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})_([A-Za-z0-9_-]{32,})$"
@@ -56,6 +62,7 @@ def create_service_account(
     name: str,
     business_location_id: str,
     expires_in_days: int,
+    allowed_commands: list[str] | None = None,
 ) -> dict[str, Any]:
     require_commercial_feature(
         db,
@@ -86,6 +93,7 @@ def create_service_account(
     now = datetime.now(UTC)
     account_id = str(uuid.uuid4())
     token = _new_token(account_id)
+    resolved_commands = _validated_allowed_commands(allowed_commands)
     row = AutomationServiceAccount(
         id=account_id,
         tenant_id=organization.id,
@@ -96,7 +104,7 @@ def create_service_account(
         token_hash=_hash_text(token),
         token_hint=token[-8:],
         token_version=1,
-        allowed_commands_json=_json(list(ALLOWED_COMMANDS)),
+        allowed_commands_json=_json(resolved_commands),
         expires_at=now + timedelta(days=expires_in_days),
         created_by_user_id=actor_user_id,
         created_at=now,
@@ -111,7 +119,7 @@ def create_service_account(
         payload={
             "service_account_id": row.id,
             "business_location_id": row.business_location_id,
-            "allowed_commands": list(ALLOWED_COMMANDS),
+            "allowed_commands": resolved_commands,
             "expires_at": row.expires_at.isoformat(),
         },
     )
@@ -207,6 +215,7 @@ def rotate_service_account_token(
     organization_id: str,
     service_account_id: str,
     actor_user_id: str,
+    allowed_commands: list[str] | None = None,
 ) -> dict[str, Any]:
     require_commercial_feature(
         db,
@@ -229,6 +238,10 @@ def rotate_service_account_token(
     row.token_hash = _hash_text(token)
     row.token_hint = token[-8:]
     row.token_version += 1
+    if allowed_commands is not None:
+        row.allowed_commands_json = _json(
+            _validated_allowed_commands(allowed_commands)
+        )
     row.last_rotated_at = now
     row.updated_at = now
     write_audit_log(
@@ -239,6 +252,7 @@ def rotate_service_account_token(
         payload={
             "service_account_id": row.id,
             "token_version": row.token_version,
+            "allowed_commands": _allowed_commands(row),
         },
     )
     db.commit()
@@ -509,6 +523,164 @@ def execute_report_retrieval(
     return _receipt_contract(receipt, created=True)
 
 
+def execute_automation_command(
+    db: Session,
+    *,
+    account: AutomationServiceAccount,
+    request_payload: dict[str, Any],
+) -> dict[str, Any]:
+    if request_payload["command_type"] == COMMAND_REPORT_RETRIEVE:
+        return execute_report_retrieval(
+            db, account=account, request_payload=request_payload
+        )
+    if request_payload["command_type"] == COMMAND_REPORT_GENERATE_SAVED:
+        return execute_saved_report_generation(
+            db, account=account, request_payload=request_payload
+        )
+    raise AutomationCommandError(
+        "This workflow command is not supported.",
+        reason_code="automation_command_not_allowed",
+        status_code=422,
+    )
+
+
+def execute_saved_report_generation(
+    db: Session,
+    *,
+    account: AutomationServiceAccount,
+    request_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Generate one private report from existing InsightOS evidence only."""
+    request_hash = _hash_payload(request_payload)
+    lock_scope = (
+        f"automation-command:{account.id}:{request_payload['idempotency_key']}"
+    )
+    with _serialized_command(lock_scope, db):
+        existing = (
+            db.query(AutomationCommandReceipt)
+            .filter(
+                AutomationCommandReceipt.service_account_id == account.id,
+                AutomationCommandReceipt.idempotency_key
+                == str(request_payload["idempotency_key"]),
+            )
+            .populate_existing()
+            .one_or_none()
+        )
+        if existing is not None:
+            if not secrets.compare_digest(existing.request_hash, request_hash):
+                raise AutomationCommandError(
+                    "This idempotency key was already used for a different command.",
+                    reason_code="automation_command_idempotency_conflict",
+                    status_code=409,
+                )
+            return _receipt_contract(existing, created=False)
+
+        denial_reason = _base_command_denial(db, account, request_payload)
+        campaign_id = str(request_payload["target"]["campaign_id"])
+        campaign: Campaign | None = None
+        if denial_reason is None:
+            campaign = (
+                db.query(Campaign)
+                .filter(
+                    Campaign.id == campaign_id,
+                    Campaign.tenant_id == account.tenant_id,
+                    Campaign.organization_id == account.organization_id,
+                    Campaign.business_location_id == account.business_location_id,
+                )
+                .one_or_none()
+            )
+            if campaign is None:
+                denial_reason = "automation_campaign_not_found"
+        if denial_reason is None:
+            try:
+                require_commercial_feature(
+                    db,
+                    organization_id=account.organization_id,
+                    feature_code=FEATURE_CAMPAIGN_REPORT,
+                )
+            except CostEconomicsError:
+                denial_reason = "campaign_report_upgrade_required"
+
+        report: MonthlyReport | None = None
+        if denial_reason is None and campaign is not None:
+            snapshot = premium_report_service.build_report_snapshot(
+                db,
+                tenant_id=account.tenant_id,
+                campaign=campaign,
+                month_number=campaign.month_number,
+            )
+            report = reporting_service.create_report_from_snapshot(
+                db,
+                tenant_id=account.tenant_id,
+                campaign_id=campaign.id,
+                month_number=campaign.month_number,
+                snapshot=snapshot,
+            )
+            result = _report_result(db, report=report, campaign=campaign)
+            result["message"] = (
+                "InsightOS created a private report from saved results."
+            )
+        else:
+            result = {
+                "message": _denial_message(
+                    denial_reason or "automation_command_denied"
+                ),
+                "resource": None,
+                "artifacts": [],
+            }
+
+        now = datetime.now(UTC)
+        account.last_used_at = now
+        account.updated_at = now
+        status_value = "succeeded" if denial_reason is None else "denied"
+        artifact_payload = {
+            "schema_version": COMMAND_SCHEMA_VERSION,
+            "service_account_id": account.id,
+            "request_hash": request_hash,
+            "status": status_value,
+            "denial_reason_code": denial_reason,
+            "result": result,
+        }
+        receipt = AutomationCommandReceipt(
+            tenant_id=account.tenant_id,
+            organization_id=account.organization_id,
+            service_account_id=account.id,
+            business_location_id=account.business_location_id,
+            campaign_id=campaign.id if campaign is not None else None,
+            report_id=report.id if report is not None else None,
+            schema_version=COMMAND_SCHEMA_VERSION,
+            command_type=COMMAND_REPORT_GENERATE_SAVED,
+            idempotency_key=str(request_payload["idempotency_key"]),
+            correlation_id=str(request_payload["correlation_id"]),
+            reason=str(request_payload["reason"]),
+            request_hash=request_hash,
+            status=status_value,
+            denial_reason_code=denial_reason,
+            result_json=_json(result),
+            artifact_hash=_hash_payload(artifact_payload),
+            created_at=now,
+            completed_at=now,
+        )
+        db.add(receipt)
+        write_audit_log(
+            db,
+            tenant_id=account.tenant_id,
+            actor_user_id=None,
+            event_type="automation.command.decided",
+            payload={
+                "service_account_id": account.id,
+                "command_receipt_id": receipt.id,
+                "command_type": receipt.command_type,
+                "business_location_id": account.business_location_id,
+                "status": status_value,
+                "denial_reason_code": denial_reason,
+            },
+        )
+        db.commit()
+        db.refresh(receipt)
+        return _receipt_contract(receipt, created=True)
+
+
 def get_command_receipt_for_account(
     db: Session,
     *,
@@ -750,6 +922,95 @@ def _allowed_commands(row: AutomationServiceAccount) -> list[str]:
     return [str(item) for item in value if str(item) in ALLOWED_COMMANDS]
 
 
+def _validated_allowed_commands(value: list[str] | None) -> list[str]:
+    requested = list(DEFAULT_COMMANDS if value is None else value)
+    normalized = list(dict.fromkeys(str(item) for item in requested))
+    if COMMAND_REPORT_RETRIEVE not in normalized or any(
+        item not in ALLOWED_COMMANDS for item in normalized
+    ):
+        raise AutomationCommandError(
+            "Choose only the available workflow actions. Saved-report access is required.",
+            reason_code="automation_service_account_scope_invalid",
+            status_code=422,
+        )
+    return normalized
+
+
+def _base_command_denial(
+    db: Session,
+    account: AutomationServiceAccount,
+    request_payload: dict[str, Any],
+) -> str | None:
+    if request_payload["schema_version"] != COMMAND_SCHEMA_VERSION:
+        return "automation_command_schema_unsupported"
+    if request_payload["command_type"] not in _allowed_commands(account):
+        return "automation_command_not_allowed"
+    if request_payload["organization_id"] != account.organization_id:
+        return "automation_command_scope_mismatch"
+    if request_payload["location_id"] != account.business_location_id:
+        return "automation_command_scope_mismatch"
+    try:
+        require_commercial_feature(
+            db,
+            organization_id=account.organization_id,
+            feature_code=FEATURE_EXTERNAL_AUTOMATION,
+        )
+    except CostEconomicsError:
+        return "external_automation_upgrade_required"
+    location = db.get(BusinessLocation, account.business_location_id)
+    if (
+        location is None
+        or location.organization_id != account.organization_id
+        or location.status != "active"
+    ):
+        return "automation_command_location_unavailable"
+    return None
+
+
+@contextmanager
+def _serialized_command(scope: str, db: Session):
+    """Hold a PostgreSQL session fence across report generation's commit."""
+    bind = db.get_bind()
+    if bind.dialect.name.lower() != "postgresql":
+        yield
+        return
+    engine = bind.engine if hasattr(bind, "engine") else bind
+    connection = engine.connect()
+    acquired = False
+    try:
+        deadline = monotonic() + 5.0
+        while monotonic() < deadline:
+            acquired = bool(
+                connection.execute(
+                    text(
+                        "SELECT pg_try_advisory_lock(hashtextextended(:scope, 0))"
+                    ),
+                    {"scope": scope},
+                ).scalar_one()
+            )
+            if acquired:
+                break
+            sleep(0.05)
+        if not acquired:
+            raise AutomationCommandError(
+                "This workflow request is already being handled. Try again shortly.",
+                reason_code="automation_command_in_progress",
+                status_code=409,
+            )
+        yield
+    finally:
+        try:
+            if acquired:
+                connection.execute(
+                    text(
+                        "SELECT pg_advisory_unlock(hashtextextended(:scope, 0))"
+                    ),
+                    {"scope": scope},
+                )
+        finally:
+            connection.close()
+
+
 def _command_catalog() -> list[dict[str, Any]]:
     return [
         {
@@ -760,7 +1021,16 @@ def _command_catalog() -> list[dict[str, Any]]:
             "paid_provider_call": False,
             "approval_required": False,
             "publishing_allowed": False,
-        }
+        },
+        {
+            "code": COMMAND_REPORT_GENERATE_SAVED,
+            "label": "Create a report from saved results",
+            "summary": "Let a workflow create one private report without starting new checks.",
+            "read_only": False,
+            "paid_provider_call": False,
+            "approval_required": False,
+            "publishing_allowed": False,
+        },
     ]
 
 
@@ -785,6 +1055,8 @@ def _denial_message(reason_code: str) -> str:
         "external_automation_upgrade_required": "Workflow commands are not available on the current plan.",
         "automation_command_location_unavailable": "The selected location is not active and available for workflow commands.",
         "automation_report_not_found": "That report was not found for the workflow key's location.",
+        "automation_campaign_not_found": "That location setup was not found for this workflow key.",
+        "campaign_report_upgrade_required": "Report creation is not available on the current plan.",
     }
     return messages.get(reason_code, "InsightOS safely declined this workflow command.")
 

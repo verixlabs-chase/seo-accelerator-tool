@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_org_role, require_roles
@@ -33,7 +33,7 @@ from app.services.automation_command_service import (
     AutomationCommandError,
     authenticate_service_account,
     create_service_account,
-    execute_report_retrieval,
+    execute_automation_command,
     get_command_receipt_for_account,
     list_command_receipts,
     list_service_accounts,
@@ -63,25 +63,47 @@ class AutomationServiceAccountIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     location_id: str = Field(min_length=36, max_length=36)
     expires_in_days: int = Field(default=30, ge=1, le=90)
+    allowed_commands: list[
+        Literal["report.retrieve", "report.generate_saved"]
+    ] | None = Field(default=None, min_length=1, max_length=2)
+
+
+class AutomationServiceAccountRotateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    allowed_commands: list[
+        Literal["report.retrieve", "report.generate_saved"]
+    ] | None = Field(default=None, min_length=1, max_length=2)
 
 
 class AutomationReportTargetIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    report_id: str = Field(min_length=36, max_length=36)
+    report_id: str | None = Field(default=None, min_length=36, max_length=36)
+    campaign_id: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 class AutomationCommandIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = Field(default=COMMAND_SCHEMA_VERSION, min_length=1, max_length=80)
-    command_type: Literal["report.retrieve"]
+    command_type: Literal["report.retrieve", "report.generate_saved"]
     organization_id: str = Field(min_length=36, max_length=36)
     location_id: str = Field(min_length=36, max_length=36)
     correlation_id: str = Field(min_length=3, max_length=120, pattern=r"^[A-Za-z0-9._:-]+$")
     idempotency_key: str = Field(min_length=8, max_length=120, pattern=r"^[A-Za-z0-9._:-]+$")
     reason: str = Field(min_length=3, max_length=500)
     target: AutomationReportTargetIn
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "AutomationCommandIn":
+        if self.command_type == "report.retrieve":
+            valid = self.target.report_id is not None and self.target.campaign_id is None
+        else:
+            valid = self.target.campaign_id is not None and self.target.report_id is None
+        if not valid:
+            raise ValueError("Choose the exact target required by this workflow action.")
+        return self
 
 
 def _campaign_or_404(db: Session, tenant_id: str, organization_id: str | None, campaign_id: str) -> Campaign:
@@ -170,6 +192,7 @@ def post_automation_service_account(
             name=body.name,
             business_location_id=body.location_id,
             expires_in_days=body.expires_in_days,
+            allowed_commands=body.allowed_commands,
         )
     except (AutomationCommandError, CostEconomicsError) as exc:
         raise _automation_command_http_error(exc) from exc
@@ -180,6 +203,7 @@ def post_automation_service_account(
 def rotate_automation_service_account(
     request: Request,
     service_account_id: str,
+    body: AutomationServiceAccountRotateIn | None = None,
     user: dict = Depends(require_org_role({'org_owner'})),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -189,6 +213,7 @@ def rotate_automation_service_account(
             organization_id=str(user['organization_id']),
             service_account_id=service_account_id,
             actor_user_id=str(user['id']),
+            allowed_commands=body.allowed_commands if body is not None else None,
         )
     except (AutomationCommandError, CostEconomicsError) as exc:
         raise _automation_command_http_error(exc) from exc
@@ -265,10 +290,10 @@ def post_automation_command(
             db,
             bearer_token=_bearer_token(authorization),
         )
-        data = execute_report_retrieval(
+        data = execute_automation_command(
             db,
             account=account,
-            request_payload=body.model_dump(mode="json"),
+            request_payload=body.model_dump(mode="json", exclude_none=True),
         )
     except AutomationCommandError as exc:
         raise _automation_command_http_error(exc) from exc

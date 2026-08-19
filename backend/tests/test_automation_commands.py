@@ -13,7 +13,7 @@ from app.models.automation_command import (
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.organization_membership import OrganizationMembership
-from app.models.reporting import MonthlyReport, ReportArtifact
+from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -415,6 +415,83 @@ def test_rotation_expiry_and_revocation_stop_the_old_key(client, db_session) -> 
         "/api/v1/automation/commands", json=body, headers=_headers(new_secret)
     )
     assert after_revoke.status_code == 401
+
+
+def test_owner_expands_scope_by_rotating_key_and_n8n_generates_one_private_report(
+    client, db_session
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="saved-generation"
+    )
+    account, read_only_secret = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    body = {
+        "schema_version": "insightos.automation.command.v1",
+        "command_type": "report.generate_saved",
+        "organization_id": organization_id,
+        "location_id": scope["location_id"],
+        "correlation_id": "n8n-monthly-report-2026-08",
+        "idempotency_key": "saved-report-generation-2026-08",
+        "reason": "Create this month's private report from saved results",
+        "target": {"campaign_id": scope["campaign_id"]},
+    }
+
+    denied = client.post(
+        "/api/v1/automation/commands",
+        json=body,
+        headers=_headers(read_only_secret),
+    )
+    assert denied.status_code == 200
+    assert denied.json()["data"]["receipt"]["denial_reason_code"] == (
+        "automation_command_not_allowed"
+    )
+    reports_before = db_session.query(MonthlyReport).count()
+
+    rotated = client.post(
+        f"/api/v1/automation/service-accounts/{account['id']}/rotate",
+        headers=_headers(owner_token),
+        json={
+            "allowed_commands": ["report.retrieve", "report.generate_saved"]
+        },
+    )
+    assert rotated.status_code == 200, rotated.text
+    expanded_secret = rotated.json()["data"]["token"]
+    assert rotated.json()["data"]["service_account"]["allowed_commands"] == [
+        "report.retrieve",
+        "report.generate_saved",
+    ]
+    body["idempotency_key"] = "saved-report-generation-2026-08-expanded"
+
+    generated = client.post(
+        "/api/v1/automation/commands",
+        json=body,
+        headers=_headers(expanded_secret),
+    )
+    assert generated.status_code == 200, generated.text
+    result = generated.json()["data"]
+    assert result["created"] is True
+    assert result["receipt"]["status"] == "succeeded"
+    assert result["receipt"]["command_type"] == "report.generate_saved"
+    assert result["receipt"]["result"]["report"]["id"]
+    assert result["receipt"]["result"]["resource"]["href"] == "/reports"
+    assert result["safety"]["paid_provider_calls_allowed"] is False
+    assert result["safety"]["publishing_allowed"] is False
+    assert db_session.query(MonthlyReport).count() == reports_before + 1
+    assert db_session.query(ReportDeliveryEvent).count() == 0
+
+    repeated = client.post(
+        "/api/v1/automation/commands",
+        json=body,
+        headers=_headers(expanded_secret),
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["created"] is False
+    assert repeated.json()["data"]["receipt"]["id"] == result["receipt"]["id"]
+    assert db_session.query(MonthlyReport).count() == reports_before + 1
 
 
 def test_only_owner_manages_keys_and_command_contract_rejects_extra_fields(

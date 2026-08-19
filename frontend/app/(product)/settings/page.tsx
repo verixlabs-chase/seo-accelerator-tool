@@ -386,7 +386,7 @@ type AutomationServiceAccount = {
   status: "active" | "revoked";
   location_id: string;
   location_name: string;
-  allowed_commands: Array<"report.retrieve">;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved">;
   token_hint: string;
   token_version: number;
   expires_at: string;
@@ -401,7 +401,7 @@ type AutomationServiceAccount = {
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
-  command_type: "report.retrieve";
+  command_type: "report.retrieve" | "report.generate_saved";
   idempotency_key: string;
   correlation_id: string;
   location_id: string;
@@ -3157,6 +3157,44 @@ export default function SettingsPage() {
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to replace the workflow key.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationCommandAccess],
+  );
+
+  const setAutomationReportCreation = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const warning = enabled
+        ? "Let n8n create private reports from results InsightOS has already saved? This replaces the workflow key. It will not run new checks, email anyone, or publish changes."
+        : "Remove report-creation access? This replaces the workflow key, and saved-report retrieval will continue to work.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: enabled
+                ? ["report.retrieve", "report.generate_saved"]
+                : ["report.retrieve"],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(
+          enabled
+            ? "Private report creation is on. Copy the replacement workflow key into n8n now."
+            : "Report creation is off. Copy the replacement read-only key into n8n now.",
+        );
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change n8n report access.");
       } finally {
         setBusyAction("");
       }
@@ -7762,7 +7800,9 @@ export default function SettingsPage() {
                           Let a workflow ask for a report
                         </p>
                         <h4 className="mt-1 text-sm font-semibold text-white">
-                          Give n8n read-only access to saved reports
+                          {activeAutomationServiceAccount?.allowed_commands.includes("report.generate_saved")
+                            ? "Let n8n retrieve and create private reports"
+                            : "Give n8n read-only access to saved reports"}
                         </h4>
                         <p className="mt-2 max-w-3xl text-xs leading-5 text-zinc-300">
                           Create one short-lived workflow key for one location. n8n can retrieve a report that InsightOS has already generated; it cannot start paid checks, approve work, publish content, or change your website or business profile.
@@ -7800,7 +7840,9 @@ export default function SettingsPage() {
                               <div>
                                 <p className="text-sm font-semibold text-white">{activeAutomationServiceAccount.name}</p>
                                 <p className="mt-1 text-xs leading-5 text-zinc-400">
-                                  {activeAutomationServiceAccount.location_name} · Saved reports only · Key ends in {activeAutomationServiceAccount.token_hint}
+                                  {activeAutomationServiceAccount.location_name} · {activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved")
+                                    ? "Retrieve and create private reports"
+                                    : "Saved reports only"} · Key ends in {activeAutomationServiceAccount.token_hint}
                                 </p>
                                 <p className="mt-1 text-xs leading-5 text-zinc-500">
                                   Expires {formatTimestamp(activeAutomationServiceAccount.expires_at)}
@@ -7838,6 +7880,38 @@ export default function SettingsPage() {
                                 </div>
                               ) : null}
                             </div>
+                            {me?.org_role === "org_owner" ? (
+                              <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="text-sm font-semibold text-white">
+                                      Let n8n create private reports from saved results
+                                    </p>
+                                    <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                      This can assemble a new report using data already inside InsightOS. It cannot start a crawl or paid check, send the report, publish content, or change your website or business profile.
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className={activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved") ? secondaryButtonClass : primaryButtonClass}
+                                    disabled={busyAction === `automation-command-scope-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void setAutomationReportCreation(
+                                      activeAutomationServiceAccount.id,
+                                      !activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved"),
+                                    )}
+                                  >
+                                    {busyAction === `automation-command-scope-${activeAutomationServiceAccount.id}`
+                                      ? "Updating..."
+                                      : activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved")
+                                        ? "Turn off report creation"
+                                        : "Allow private report creation"}
+                                  </button>
+                                </div>
+                                <p className="mt-2 text-xs leading-5 text-amber-100/80">
+                                  Changing this access replaces the workflow key, so the old key stops working immediately.
+                                </p>
+                              </div>
+                            ) : null}
                           </div>
                         ) : me?.org_role === "org_owner" && automationCommandLoadState === "ready" ? (
                           <div className="mt-4 grid gap-3 rounded-md border border-[#303137] bg-[#101114] p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
@@ -7927,6 +8001,24 @@ export default function SettingsPage() {
                               <p>
                                 Reusing the same idempotency key safely returns the first result instead of running the command twice. The workflow receives only saved report facts and ready file references.
                               </p>
+                              {activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Create a private report from saved results</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "report.generate_saved",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-report-month-REPLACE",
+                                    idempotency_key: "n8n-report-month-REPLACE",
+                                    reason: "Create a private report from saved InsightOS results",
+                                    target: { campaign_id: "REPLACE-WITH-CAMPAIGN-ID" },
+                                  }, null, 2)}</pre>
+                                  <p>
+                                    Use one stable idempotency key for each reporting period. This only assembles saved evidence; it does not collect fresh data or deliver the report.
+                                  </p>
+                                </>
+                              ) : null}
                             </div>
                           </details>
                         ) : null}
@@ -7940,7 +8032,11 @@ export default function SettingsPage() {
                               {automationCommandHistory.slice(0, 10).map((receipt) => (
                                 <div key={receipt.id} className="flex flex-col gap-1 rounded-md border border-[#292a2f] bg-[#141518] px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
                                   <span className={receipt.status === "succeeded" ? "text-emerald-300" : "text-amber-300"}>
-                                    {receipt.status === "succeeded" ? "Saved report returned" : "Request safely declined"}
+                                    {receipt.status === "succeeded"
+                                      ? receipt.command_type === "report.generate_saved"
+                                        ? "Private report created"
+                                        : "Saved report returned"
+                                      : "Request safely declined"}
                                   </span>
                                   <span className="text-zinc-500">{formatTimestamp(receipt.completed_at)}</span>
                                 </div>

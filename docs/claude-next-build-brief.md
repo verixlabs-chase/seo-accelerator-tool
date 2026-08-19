@@ -5193,7 +5193,7 @@ Implementation status (August 17, 2026):
 
 #### AUT1J - Governed Inbound Automation Commands (n8n First)
 
-Implementation status — AUT1J-A/B report retrieval and n8n starter (August 19, 2026):
+Implementation status — AUT1J-A/B/C report retrieval, n8n starter, and private saved-data report creation (August 19, 2026):
 
 - The first inbound command is deliberately read-only: `report.retrieve` can
   return the safe metadata and ready private artifacts for a report InsightOS
@@ -5235,10 +5235,21 @@ Implementation status — AUT1J-A/B report retrieval and n8n starter (August 19,
   and location values before the HTTP request and leaves the external workflow
   inactive until the customer selects a credential, publishes it, and connects
   its production webhook URL.
-- AUT1J-C and later slices still own priced checks, saved-data refreshes,
-  governed drafts, approval requests, job polling, multiple-location scopes,
-  action allowances, and broader inbound starter workflows. No broader inbound
-  action is implied by the report-retrieval proof.
+- AUT1J-C adds the second bounded command, `report.generate_saved`. An owner
+  must explicitly expand a read-only service account and rotate its key before
+  n8n can use it. The command creates one private report from evidence already
+  saved for the credential's exact campaign and location. It starts no crawl,
+  paid check, email delivery, publication, WordPress change, or Business
+  Profile change. A PostgreSQL session fence and immutable idempotency receipt
+  ensure a repeated workflow run produces one report effect.
+- Settings explains the scope in owner language, confirms expansion or
+  removal, replaces the one-time key on either change, and distinguishes a
+  private report creation from a saved report retrieval in history. Existing
+  keys stay read-only and never gain the command silently.
+- AUT1J-D and later slices still own priced checks, saved-data refreshes,
+  governed drafts, approval requests, accepted-job polling, multiple-location
+  scopes, action allowances, and broader inbound starter workflows. No broader
+  inbound action is implied by these report commands.
 
 Planned scope (added August 17, 2026):
 
