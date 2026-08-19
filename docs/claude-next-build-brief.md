@@ -2396,12 +2396,231 @@ Implementation status (August 18, 2026):
   evidence, action, draft-type, language, claim, and owner-review constraints.
   It cannot approve, publish, send, or execute work, and customer-owned provider
   cost remains zero to InsightOS.
-- I1.5B-B2B2B2B2C still owns any further capability routes, production
-  private-provider billing reconciliation where InsightOS pays the supplier,
-  and the outbound-only local relay. Those later controls cannot raise either
-  fixed capability canary above 5%, remove the shared daily ceiling, or add
-  another prompt type without another reviewed migration and owner approval
-  surface.
+- I1.5B-B2B2B2B2C2A's third-capability qualification boundary is implemented
+  locally for `keyword_relevance_review`. It sends one frozen, synthetic unclear
+  search, service, and work area through the existing strict relevance-review
+  schema, then requires the exact expected classification and evidence IDs. The
+  append-only result is bound to current connection and multi-run health
+  evidence and stores only safe pass/fail, latency, token-count, and artifact
+  facts. This migration expands the benchmark constraint only: database checks
+  still forbid a keyword-review capability event or attempt, customer prompts,
+  nonzero traffic, owner activation, and changes to saved searches. Settings
+  therefore exposes a compatibility check and plain zero-traffic truth, but no
+  approval or enable control. A separate reviewed sprint must add owner
+  acknowledgements, shared daily-limit enforcement, managed fallback, automatic
+  rollback, and runtime routing before any real unclear search can be sent.
+- I1.5B-B2B2B2B2C2B's separately approved unclear-search review canary is
+  implemented locally. After the exact synthetic qualification remains current,
+  an Enterprise owner must complete five explicit acknowledgements before the
+  `keyword_relevance_review` route can enter its fixed 5% canary. It shares the
+  one-private-prompt-per-workspace-per-day ceiling with daily explanations,
+  saved-evidence questions, and draft wording. The platform-managed route is
+  reserved and authorized first; any private transport, schema, identifier,
+  evidence, or context failure appends an automatic capability rollback and
+  retries through managed AI. A valid private result can only classify every
+  server-selected unclear saved search against the exact confirmed services,
+  included areas, excluded areas, and evidence IDs already supplied by the
+  owner-requested review. It can sort or hide only those reviewed saved rows; it
+  cannot add or track searches, create a Next Step, publish, or change a website
+  or business profile. Attempt evidence is immutable and customer-owned provider
+  cost remains zero to InsightOS.
+- I1.5B-B2B2B2B2C3A's website-draft qualification boundary is implemented
+  locally for `content_draft_suggestion`. It sends one frozen synthetic accepted
+  brief and two ordered synthetic sections through the existing strict optional
+  website-wording schema. Passing requires the exact draft identifier, section
+  order, complete allowed evidence set, owner-review requirement, and a false
+  publish control. The append-only result is bound to current connection and
+  multi-run health evidence and retains only safe pass/fail, latency, token, and
+  artifact facts. No customer website, working draft, search, or account data is
+  sent. This revision expands only the benchmark constraint: customer traffic,
+  runtime attempts, owner activation, owner-draft edits, and publishing remain
+  unavailable. Settings exposes the synthetic check and zero-traffic result but
+  deliberately has no approval or enable control.
+- I1.5B-B2B2B2B2C3B's separately approved website-draft suggestion canary is
+  implemented locally. After the exact synthetic qualification remains current,
+  an Enterprise owner must complete five explicit acknowledgements before the
+  `content_draft_suggestion` route can enter its fixed 5% canary. It shares the
+  one-private-prompt-per-workspace-per-day ceiling with daily explanations,
+  saved-evidence questions, draft wording, and unclear-search review. The
+  platform-managed route is reserved and authorized first. Any private
+  transport, schema, draft-identity, section-order, evidence, or safety failure
+  appends an automatic capability rollback and retries through managed AI. A
+  valid private result must match the exact owner-selected saved draft, accepted
+  brief, ordered sections, and allowed evidence. It is stored only as a separate
+  review-only suggestion: it cannot edit the owner draft, approve wording,
+  publish a page, or change a website or business profile. Attempt evidence is
+  immutable and customer-owned provider cost remains zero to InsightOS.
+- I1.5B-B2B2B2B2C4A's onboarding-baseline explanation qualification boundary
+  is implemented locally for `onboarding_baseline_narrative`. It sends one
+  frozen, made-up 28-day baseline with a made-up website summary, Google Search
+  sample, deterministic score, and two fixed priorities through the existing
+  strict baseline-narrative schema. Passing requires the exact priority order
+  and complete allowed evidence set while preserving the explanation-only,
+  missing-is-not-zero, and no-causal-proof controls. The append-only result is
+  bound to current connection and multi-run health evidence and retains only
+  safe pass/fail, latency, token, and artifact facts. No customer website,
+  Search Console, Analytics, rank, traffic, diagnosis, or account data is sent.
+  This migration expands only the benchmark constraint: runtime traffic, owner
+  activation, score or diagnosis changes, fix changes, website changes, and
+  work execution remain unavailable. Settings therefore exposes a compatibility
+  check and zero-traffic truth, but no approval or enable control. A separate
+  reviewed sprint must add owner acknowledgements, shared daily-limit
+  enforcement, managed fallback, automatic rollback, and runtime routing before
+  any real onboarding baseline can be sent.
+- I1.5B-B2B2B2B2C4B's separately approved onboarding-baseline explanation
+  canary is implemented locally. After the made-up baseline qualification stays
+  current, an Enterprise owner must complete five explicit acknowledgements
+  before `onboarding_baseline_narrative` can enter its fixed 5% canary. It
+  shares the single private prompt per workspace per day with every other
+  private-AI capability. The managed route is reserved and authorized first.
+  Any private transport, schema, evidence, priority-order, or safety failure
+  appends an automatic capability rollback and retries the same request through
+  managed AI. The private provider receives only the existing minimized frozen
+  baseline context and its response must cite only the exact saved evidence and
+  preserve the deterministic fix order. It can explain those saved results but
+  cannot change a score, diagnosis, priority, fix, website, business profile,
+  or approval/execution state. Attempt history is immutable, the customer owns
+  the private-provider cost, and InsightOS records zero platform provider cost
+  for a private attempt.
+- I1.5B-B2B2B2B2C5A's review-reply wording qualification boundary is
+  implemented locally for `review_response_draft`. It sends one made-up
+  positive review and one made-up business through the existing strict
+  `GovernedActionDraft` contract. Passing requires the exact synthetic action,
+  `review_response` draft type, complete allowed evidence set, ready state, and
+  mandatory owner review. The append-only result is bound to the current
+  connection and multi-run health evidence and retains only safe pass/fail,
+  latency, token, and artifact facts. No customer review, customer name,
+  business account, profile, or reply is sent. This revision expands only the
+  benchmark constraint: it creates no capability event or attempt, sends zero
+  customer traffic, and exposes no owner approval or enable control. It cannot
+  approve or post a reply, change review status, publish, or change a business
+  profile. A separate reviewed sprint must add explicit owner acknowledgements,
+  the shared daily limit, managed fallback, automatic rollback, and a fixed
+  draft-only canary before any real saved review may be sent.
+- I1.5B-B2B2B2B2C5B's separately approved review-reply wording canary is
+  implemented locally. After the made-up review qualification remains current,
+  an Enterprise owner must complete five explicit acknowledgements before
+  `review_response_draft` can enter its fixed 5% canary. It shares the one
+  private prompt per workspace per day with every other private-AI capability.
+  Sensitive reviews remain human-only and never enter this route. For an
+  eligible owner-requested draft, the managed route is reserved first and the
+  private provider receives only the existing minimized review and confirmed
+  business context. Any private transport, schema, action, evidence, or safety
+  failure appends an automatic capability rollback and retries through managed
+  AI. A valid result remains a separate `GovernedActionDraft` requiring owner
+  review. It cannot approve or post a reply, change review status, publish, or
+  change a business profile. Attempt evidence is immutable, the customer owns
+  private-provider cost, and InsightOS records zero platform provider cost for
+  a private attempt.
+- I1.5B-B2B2B2B2C6's versioned private-AI capability catalog is implemented
+  locally. One backend catalog now enumerates all seven managed-AI prompt uses
+  that have a separately governed private-provider route: daily explanations,
+  saved-evidence questions, saved-action draft wording, unclear-search review,
+  website-draft suggestions, onboarding-baseline explanations, and review-reply
+  drafts. New connection records and customer serializers use that catalog;
+  legacy connection metadata is presented through the same current version so
+  the backend and Settings cannot quietly disagree. Settings shows only plain
+  labels and summaries and explains that listing a use does not turn it on.
+  Every entry retains separate qualification and owner approval, fixed 5%
+  traffic, the shared one-prompt-per-workspace daily ceiling, managed fallback,
+  automatic rollback, no publishing, and no automatic changes. This catalog
+  creates no new route or activation control.
+- I1.5B-B2B2B2B2C7's current cost-ownership boundary is implemented locally.
+  Every customer-created private-provider connection is database-constrained to
+  an organization-owned credential, customer-paid provider usage, and disabled
+  platform billing. Existing immutable private attempt rows already require
+  customer cost ownership and zero InsightOS provider cost; the connection now
+  states the same rule before any traffic is possible. Settings explains only
+  that private-provider charges stay with the customer's provider account and
+  exposes no internal price card, supplier cost, or margin data. This does not
+  add a platform-paid provider: a future supplier-paid route must introduce its
+  own approved contract, price card, reservation, reconciliation, and margin
+  proof before the database constraint can be expanded.
+- I1.5B-B2B2B2B2C8's outbound local-relay enrollment foundation is implemented
+  locally. An Enterprise owner can create one revocable, one-time relay key
+  only after acknowledging that the connection is diagnostic and cannot
+  receive customer prompts, query the InsightOS database, execute work, or
+  publish changes. InsightOS stores only a SHA-256 fingerprint and a safe key
+  hint. The customer-hosted relay initiates the connection, so no inbound port
+  or public endpoint is required on the customer's computer. Its authenticated
+  heartbeat returns an empty work list unless the later synthetic transport
+  check is explicitly queued, and always returns connection-only safety flags;
+  plan loss, organization closure, or owner revocation stops future heartbeats.
+  This slice does not ship the customer relay agent, decision packets, prompts,
+  customer evidence, or model execution.
+- I1.5B-B2B2B2B2C9's signed synthetic relay-packet contract is implemented
+  locally. An Enterprise owner can prepare at most one unexpired diagnostic
+  challenge for an active relay. The heartbeat signs its canonical packet with
+  HMAC-SHA256 using the one-time relay secret, and the relay must return the
+  exact derived receipt hash plus a signed acknowledgement within five minutes.
+  Packet and acknowledgement evidence are tenant-scoped, append-only,
+  replay-idempotent, and bound through composite foreign keys to the exact relay
+  enrollment. Database checks prohibit customer data, model calls, database
+  access, business execution, and publishing in both artifacts. Revocation,
+  plan loss, workspace closure, expiry, a changed artifact, an invalid receipt,
+  or an invalid signature fails closed. This validates transport identity only
+  and does not authorize prompts; the following slice ships only the matching
+  diagnostic helper, not a model-running relay.
+- I1.5B-B2B2B2B2C10's customer-hosted diagnostic relay helper is implemented
+  locally. An Enterprise owner can download one dependency-free Python file
+  from the authenticated Settings surface, run it from a terminal, and paste
+  the one-time relay key into a hidden prompt. The helper retains the key only
+  in process memory, opens outbound HTTPS only (with an explicit localhost
+  exception for development), refuses redirects and oversized/non-JSON
+  responses, validates packet identity, version, exact shape, signature,
+  timestamps, five-minute expiry, acknowledgement destination, and every false
+  safety flag before returning the exact signed receipt. Unknown fields,
+  customer prompts, changed instructions, model requests, database access,
+  execution, or publishing requests are rejected without action. The download
+  is no-store and includes a SHA-256 response header. This helper still does not
+  import or call a model runtime and cannot process customer work.
+- I1.5B-B2B2B2B2C11's loopback-only local runtime discovery is implemented
+  locally. On startup the dependency-free helper checks only the fixed Ollama
+  tags endpoint on `127.0.0.1:11434` and the fixed LM Studio models endpoint on
+  `127.0.0.1:1234`. It makes GET requests only, refuses non-loopback addresses,
+  redirects, unexpected paths, oversized responses, and invalid JSON, and
+  never calls a generation, completion, or chat endpoint. The helper reduces
+  the local result to runtime type and total model count; model identifiers
+  stay on the customer's computer. It signs a five-minute discovery report
+  containing explicit false flags for customer data, model calls, and model
+  identifiers. InsightOS validates the exact signature and safety shape, stores
+  only append-only minimized evidence plus hashes, and shows the owner plain
+  runtime/count truth. This is discovery only: no model has been selected,
+  qualified, prompted, or authorized to process customer work.
+- I1.5B-B2B2B2B2C12's explicit synthetic local-model qualification is
+  implemented locally. The downloaded helper calls a model only when the owner
+  runs `--once --check-model`; continuous mode cannot repeat the check. It
+  selects one locally available Ollama or LM Studio model, sends one fixed
+  made-up JSON task through the runtime's fixed loopback generation endpoint,
+  and validates the exact small response contract locally. The model name,
+  prompt response, and raw runtime error never leave the computer. InsightOS
+  receives only a relay-keyed model fingerprint, runtime type, prompt version,
+  pass/fail contract facts, whether a response was received, bounded latency,
+  and explicit false flags for
+  customer data, raw identifiers, model output, customer work, and publishing.
+  Signed evidence is fresh, tenant-scoped, replay-idempotent, append-only, and
+  customer-redacted. Passing does not enable prompts, routing, website or
+  business-profile changes, execution, or publishing; any later bounded local
+  customer workload requires a separate capability-specific qualification and
+  owner approval.
+- I1.5B-B2B2B2B2C13's commercial boundary is fixed at Enterprise. Private
+  endpoints and customer-hosted local models are not part of Growth at
+  `$699/month`: setup, helper download, signed diagnostics, runtime discovery,
+  synthetic model qualification, and any future bounded private-model workload
+  all require the Enterprise `private_ai_provider` capability. A downgrade
+  preserves redacted history and manual revocation but pauses the relay token
+  before another heartbeat, discovery, or qualification can be accepted. This
+  tier boundary reflects the deployment, security, network, qualification, and
+  support obligations of customer-controlled infrastructure; managed AI and
+  its normal product automations remain governed by their existing plan rules.
+- I1.5B-B2B2B2B2C's managed prompt-type surface is now closed. I1.5 still owns
+  production private-provider billing reconciliation where InsightOS pays the
+  supplier, plus separately governed synthetic model compatibility and
+  capability-by-capability relay qualification required before a local model
+  may process any bounded work. Those later
+  controls cannot raise any fixed capability canary
+  above 5%, remove the shared daily ceiling, or add another prompt type without
+  another reviewed migration and owner approval surface.
 
 Scope:
 

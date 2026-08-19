@@ -82,6 +82,40 @@ from app.services.governed_ai_provider_draft_capability_service import (
     select_draft_capability,
     set_draft_capability,
 )
+from app.services.governed_ai_provider_keyword_capability_service import (
+    authorize_keyword_review_dispatch,
+    automatic_keyword_review_rollback,
+    record_keyword_review_fallback,
+    run_keyword_review_qualification,
+    select_keyword_review_capability,
+    set_keyword_review_capability,
+)
+from app.services.governed_ai_provider_content_draft_capability_service import (
+    automatic_content_draft_rollback,
+    authorize_content_draft_dispatch,
+    record_content_draft_fallback,
+    run_content_draft_qualification,
+    select_content_draft_capability,
+    set_content_draft_capability,
+)
+from app.services.governed_ai_provider_baseline_capability_service import (
+    automatic_baseline_rollback,
+    authorize_baseline_dispatch,
+    record_baseline_fallback,
+    run_baseline_qualification,
+    select_baseline_capability,
+    set_baseline_capability,
+)
+from app.services.governed_ai_provider_review_response_capability_service import (
+    run_review_response_qualification,
+)
+from app.services.governed_ai_provider_review_response_canary_service import (
+    automatic_review_response_rollback,
+    authorize_review_response_dispatch,
+    record_review_response_fallback,
+    select_review_response_capability,
+    set_review_response_capability,
+)
 from app.services.governed_ai_provider import GovernedAIProviderResponse
 
 
@@ -2044,3 +2078,1167 @@ def test_draft_capability_is_additive_when_schema_is_not_available(
         )
         is None
     )
+
+
+class _SyntheticKeywordReviewProvider:
+    name = "private_ai"
+    model_name = "benchmark-model-v1"
+
+    def review_keyword_relevance(
+        self, *, context, output_schema, prompt_template_version
+    ):
+        assert output_schema
+        assert prompt_template_version == "insightos-capability-keyword-review-check-v1"
+        assert context["control_policy"]["may_change_business_facts"] is False
+        return GovernedAIProviderResponse(
+            payload={
+                "decisions": [
+                    {
+                        "suggestion_id": "synthetic-search-1",
+                        "classification": "relevant",
+                        "confidence": 0.96,
+                        "matched_service_id": "synthetic-service-1",
+                        "matched_service_area_id": "synthetic-area-1",
+                        "area_basis": "included_area",
+                        "reason": "The search names the confirmed service in the confirmed work area.",
+                        "evidence_used": [
+                            "search:synthetic-search-1",
+                            "service:synthetic-service-1",
+                            "area:synthetic-area-1",
+                        ],
+                    }
+                ]
+            },
+            provider_request_id="synthetic-keyword-review-check",
+            model_name=self.model_name,
+            input_tokens=38,
+            output_tokens=17,
+        )
+
+
+def test_keyword_review_qualification_is_synthetic_and_zero_traffic(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    now = datetime(2026, 8, 18, 22, 30, tzinfo=UTC)
+    connection_id = _question_capability_ready_connection(
+        db_session,
+        organization=organization,
+        actor=actor,
+        now=now,
+    )
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_keyword_capability_service.open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(_SyntheticKeywordReviewProvider()),
+    )
+
+    checked = run_keyword_review_qualification(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        client_request_id="keyword-review-qualification",
+        now=now,
+    )
+
+    assert checked["state"] == "eligible_for_owner_approval"
+    assert checked["item"]["status"] == "passed"
+    assert checked["item"]["customer_prompt_sent"] is False
+    assert checked["item"]["routing_enabled"] is False
+    assert checked["item"]["saved_searches_changed"] is False
+    assert checked["owner_activation_available"] is True
+    assert checked["traffic_percentage"] == 0
+    assert checked["qualification_only"] is False
+    benchmark = db_session.query(GovernedAIProviderCapabilityBenchmark).one()
+    assert benchmark.capability == "keyword_relevance_review"
+    assert db_session.query(GovernedAIProviderCapabilityEvent).count() == 0
+    assert db_session.query(GovernedAIProviderCapabilityAttempt).count() == 0
+
+
+def _keyword_review_acknowledgements() -> dict[str, bool]:
+    return {
+        "reviewed_keyword_review_check": True,
+        "understands_real_saved_search_context": True,
+        "understands_shared_daily_limit": True,
+        "understands_managed_fallback_and_rollback": True,
+        "understands_saved_search_classification_only": True,
+    }
+
+
+def test_keyword_review_canary_is_fixed_shared_and_automatically_reversible(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    now = datetime(2026, 8, 18, 22, 30, tzinfo=UTC)
+    connection_id = _question_capability_ready_connection(
+        db_session,
+        organization=organization,
+        actor=actor,
+        now=now,
+    )
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_keyword_capability_service.open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(_SyntheticKeywordReviewProvider()),
+    )
+    run_keyword_review_qualification(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        client_request_id="keyword-review-canary-qualification",
+        now=now,
+    )
+
+    with pytest.raises(GovernedAIProviderConnectionError) as missing_ack:
+        set_keyword_review_capability(
+            db_session,
+            organization_id=organization.id,
+            connection_id=connection_id,
+            actor_user_id=actor.id,
+            action="enable",
+            client_request_id="keyword-review-canary-missing-ack",
+            acknowledgements={},
+            now=now,
+        )
+    assert missing_ack.value.reason_code == (
+        "ai_provider_keyword_review_acknowledgement_required"
+    )
+
+    enabled = set_keyword_review_capability(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        action="enable",
+        client_request_id="keyword-review-canary-enable",
+        acknowledgements=_keyword_review_acknowledgements(),
+        now=now,
+    )
+    assert enabled["routing_enabled"] is True
+    assert enabled["traffic_percentage"] == 5
+    assert enabled["max_prompts_per_day"] == 1
+    assert enabled["classification_only"] is True
+    assert enabled["may_add_or_track_searches"] is False
+    assert enabled["publishing_allowed"] is False
+
+    next_day = now + timedelta(hours=2)
+    selection = None
+    request_key = ""
+    for index in range(500):
+        request_key = f"keyword-review-live-{index}"
+        selection = select_keyword_review_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key=request_key,
+            now=next_day,
+        )
+        if selection is not None:
+            break
+    assert selection is not None
+    event = authorize_keyword_review_dispatch(
+        db_session,
+        organization_id=organization.id,
+        selection=selection,
+        now=next_day,
+    )
+    rollback = automatic_keyword_review_rollback(
+        db_session,
+        event=event,
+        reason_code="ai_output_validation_failed",
+        now=next_day,
+    )
+    assert rollback.action == "automatic_rollback"
+    assert rollback.traffic_percentage == 0
+    record_keyword_review_fallback(
+        db_session,
+        event=event,
+        request_key=request_key,
+        private_error_code="ai_output_validation_failed",
+        provider_may_have_processed=True,
+        managed_succeeded=True,
+        input_tokens=40,
+        output_tokens=15,
+        duration_ms=950,
+        now=next_day,
+    )
+    attempt = db_session.query(GovernedAIProviderCapabilityAttempt).one()
+    assert attempt.capability == "keyword_relevance_review"
+    assert attempt.outcome == "managed_fallback_succeeded"
+    assert attempt.managed_fallback_used is True
+    assert attempt.automatic_rollback_triggered is True
+    assert attempt.platform_provider_cost == 0
+    assert (
+        select_question_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key="question-after-keyword-review",
+            now=next_day,
+        )
+        is None
+    )
+
+
+def test_keyword_review_qualification_api_is_owner_only(client, monkeypatch) -> None:
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+    response = {
+        "created": True,
+        "state": "eligible_for_later_review",
+        "routing_enabled": False,
+        "traffic_percentage": 0,
+        "customer_prompts_allowed": False,
+        "owner_activation_available": True,
+        "saved_searches_changed": False,
+        "qualification_only": False,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.run_keyword_review_qualification",
+        lambda _db, **_kwargs: response,
+    )
+    url = "/api/v1/ai/providers/connection-id/keyword-review-capability/benchmark"
+    body = {"client_request_id": "keyword-review-api-request"}
+    denied = client.post(url, json=body, headers=_headers(admin_token))
+    assert denied.status_code == 403
+    allowed = client.post(url, json=body, headers=_headers(owner_token))
+    assert allowed.status_code == 200
+    payload = allowed.json()["data"]
+    assert payload["routing_enabled"] is False
+    assert payload["traffic_percentage"] == 0
+    assert payload["owner_activation_available"] is True
+    assert payload["saved_searches_changed"] is False
+    assert payload["qualification_only"] is False
+
+
+def test_keyword_review_canary_api_is_owner_only_and_classification_only(
+    client, monkeypatch
+) -> None:
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+    response = {
+        "created": True,
+        "state": "capability_canary",
+        "routing_enabled": True,
+        "traffic_percentage": 5,
+        "max_prompts_per_day": 1,
+        "classification_only": True,
+        "may_add_or_track_searches": False,
+        "publishing_allowed": False,
+        "automatic_changes_allowed": False,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.set_keyword_review_capability",
+        lambda _db, **_kwargs: response,
+    )
+    url = "/api/v1/ai/providers/connection-id/keyword-review-capability"
+    body = {
+        "action": "enable",
+        "client_request_id": "keyword-review-canary-api",
+        **_keyword_review_acknowledgements(),
+    }
+    denied = client.put(url, json=body, headers=_headers(admin_token))
+    assert denied.status_code == 403
+    allowed = client.put(url, json=body, headers=_headers(owner_token))
+    assert allowed.status_code == 200
+    payload = allowed.json()["data"]
+    assert payload["traffic_percentage"] == 5
+    assert payload["max_prompts_per_day"] == 1
+    assert payload["classification_only"] is True
+    assert payload["may_add_or_track_searches"] is False
+    assert payload["publishing_allowed"] is False
+    assert payload["automatic_changes_allowed"] is False
+
+
+class _SyntheticContentDraftProvider:
+    name = "private_ai"
+    model_name = "benchmark-model-v1"
+
+    def suggest_content_draft(
+        self, *, context, output_schema, prompt_template_version
+    ):
+        assert output_schema
+        assert prompt_template_version == "insightos-capability-content-draft-check-v1"
+        request = context["content_draft_request"]
+        assert request["can_edit_owner_draft"] is False
+        assert request["can_publish"] is False
+        return GovernedAIProviderResponse(
+            payload={
+                "draft_id": "synthetic-content-draft",
+                "suggestion_state": "ready",
+                "suggested_title": "Drain cleaning for Austin homes",
+                "sections": [
+                    {
+                        "order": 1,
+                        "heading": "Drain cleaning",
+                        "body": "Get clear information about help with clogged drains.",
+                    },
+                    {
+                        "order": 2,
+                        "heading": "Serving Austin",
+                        "body": "This service is available for customers in Austin.",
+                    },
+                ],
+                "evidence_used": [
+                    "accepted_content_brief",
+                    "section_1_guidance",
+                    "section_2_guidance",
+                ],
+                "uncertainties": ["The owner must review every word."],
+                "approval_required": True,
+                "can_publish": False,
+            },
+            provider_request_id="synthetic-content-draft-check",
+            model_name=self.model_name,
+            input_tokens=44,
+            output_tokens=24,
+        )
+
+
+def test_content_draft_qualification_is_synthetic_and_zero_traffic(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    now = datetime(2026, 8, 18, 23, 0, tzinfo=UTC)
+    connection_id = _question_capability_ready_connection(
+        db_session,
+        organization=organization,
+        actor=actor,
+        now=now,
+    )
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_content_draft_capability_service."
+        "open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(_SyntheticContentDraftProvider()),
+    )
+
+    checked = run_content_draft_qualification(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        client_request_id="content-draft-qualification",
+        now=now,
+    )
+
+    assert checked["state"] == "eligible_for_owner_approval"
+    assert checked["item"]["status"] == "passed"
+    assert checked["item"]["customer_prompt_sent"] is False
+    assert checked["item"]["routing_enabled"] is False
+    assert checked["item"]["owner_drafts_changed"] is False
+    assert checked["traffic_percentage"] == 0
+    assert checked["owner_activation_available"] is True
+    assert checked["suggestion_only"] is True
+    assert checked["may_edit_or_publish"] is False
+    assert checked["qualification_only"] is False
+    benchmark = db_session.query(GovernedAIProviderCapabilityBenchmark).one()
+    assert benchmark.capability == "content_draft_suggestion"
+    assert db_session.query(GovernedAIProviderCapabilityEvent).count() == 0
+    assert db_session.query(GovernedAIProviderCapabilityAttempt).count() == 0
+
+
+def test_content_draft_qualification_api_is_owner_only(client, monkeypatch) -> None:
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+    response = {
+        "created": True,
+        "state": "eligible_for_owner_approval",
+        "routing_enabled": False,
+        "traffic_percentage": 0,
+        "customer_prompts_allowed": False,
+        "owner_activation_available": True,
+        "owner_drafts_changed": False,
+        "suggestion_only": True,
+        "may_edit_or_publish": False,
+        "qualification_only": False,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.run_content_draft_qualification",
+        lambda _db, **_kwargs: response,
+    )
+    url = "/api/v1/ai/providers/connection-id/content-draft-capability/benchmark"
+    body = {"client_request_id": "content-draft-api-request"}
+    denied = client.post(url, json=body, headers=_headers(admin_token))
+    assert denied.status_code == 403
+    allowed = client.post(url, json=body, headers=_headers(owner_token))
+    assert allowed.status_code == 200
+    payload = allowed.json()["data"]
+    assert payload["routing_enabled"] is False
+    assert payload["traffic_percentage"] == 0
+    assert payload["owner_activation_available"] is True
+    assert payload["owner_drafts_changed"] is False
+    assert payload["suggestion_only"] is True
+    assert payload["may_edit_or_publish"] is False
+    assert payload["qualification_only"] is False
+
+
+def _content_draft_acknowledgements() -> dict[str, bool]:
+    return {
+        "reviewed_content_draft_check": True,
+        "understands_real_saved_website_draft_context": True,
+        "understands_shared_daily_limit": True,
+        "understands_managed_fallback_and_rollback": True,
+        "understands_suggestion_only_no_edit_or_publish": True,
+    }
+
+
+def test_content_draft_canary_is_fixed_shared_and_automatically_reversible(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    now = datetime(2026, 8, 18, 23, 0, tzinfo=UTC)
+    connection_id = _question_capability_ready_connection(
+        db_session,
+        organization=organization,
+        actor=actor,
+        now=now,
+    )
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_content_draft_capability_service."
+        "open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(_SyntheticContentDraftProvider()),
+    )
+    run_content_draft_qualification(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        client_request_id="content-draft-canary-qualification",
+        now=now,
+    )
+
+    with pytest.raises(GovernedAIProviderConnectionError) as missing_ack:
+        set_content_draft_capability(
+            db_session,
+            organization_id=organization.id,
+            connection_id=connection_id,
+            actor_user_id=actor.id,
+            action="enable",
+            client_request_id="content-draft-canary-missing-ack",
+            acknowledgements={},
+            now=now,
+        )
+    assert missing_ack.value.reason_code == (
+        "ai_provider_content_draft_acknowledgement_required"
+    )
+
+    enabled = set_content_draft_capability(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        action="enable",
+        client_request_id="content-draft-canary-enable",
+        acknowledgements=_content_draft_acknowledgements(),
+        now=now,
+    )
+    assert enabled["routing_enabled"] is True
+    assert enabled["traffic_percentage"] == 5
+    assert enabled["max_prompts_per_day"] == 1
+    assert enabled["suggestion_only"] is True
+    assert enabled["may_edit_or_publish"] is False
+    assert enabled["publishing_allowed"] is False
+
+    next_day = now + timedelta(hours=2)
+    selection = None
+    request_key = ""
+    for index in range(500):
+        request_key = f"content-draft-live-{index}"
+        selection = select_content_draft_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key=request_key,
+            now=next_day,
+        )
+        if selection is not None:
+            break
+    assert selection is not None
+    event = authorize_content_draft_dispatch(
+        db_session,
+        organization_id=organization.id,
+        selection=selection,
+        now=next_day,
+    )
+    rollback = automatic_content_draft_rollback(
+        db_session,
+        event=event,
+        reason_code="ai_output_validation_failed",
+        now=next_day,
+    )
+    assert rollback.action == "automatic_rollback"
+    assert rollback.traffic_percentage == 0
+    record_content_draft_fallback(
+        db_session,
+        event=event,
+        request_key=request_key,
+        private_error_code="ai_output_validation_failed",
+        provider_may_have_processed=True,
+        managed_succeeded=True,
+        input_tokens=45,
+        output_tokens=20,
+        duration_ms=1_000,
+        now=next_day,
+    )
+    attempt = db_session.query(GovernedAIProviderCapabilityAttempt).one()
+    assert attempt.capability == "content_draft_suggestion"
+    assert attempt.outcome == "managed_fallback_succeeded"
+    assert attempt.managed_fallback_used is True
+    assert attempt.automatic_rollback_triggered is True
+    assert attempt.platform_provider_cost == 0
+    assert (
+        select_question_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key="question-after-content-draft",
+            now=next_day,
+        )
+        is None
+    )
+
+
+def test_content_draft_canary_api_is_owner_only_and_cannot_publish(
+    client, monkeypatch
+) -> None:
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+    response = {
+        "created": True,
+        "state": "capability_canary",
+        "routing_enabled": True,
+        "traffic_percentage": 5,
+        "max_prompts_per_day": 1,
+        "suggestion_only": True,
+        "owner_drafts_changed": False,
+        "may_edit_or_publish": False,
+        "publishing_allowed": False,
+        "automatic_changes_allowed": False,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.set_content_draft_capability",
+        lambda _db, **_kwargs: response,
+    )
+    url = "/api/v1/ai/providers/connection-id/content-draft-capability"
+    body = {
+        "action": "enable",
+        "client_request_id": "content-draft-canary-api",
+        **_content_draft_acknowledgements(),
+    }
+    denied = client.put(url, json=body, headers=_headers(admin_token))
+    assert denied.status_code == 403
+    allowed = client.put(url, json=body, headers=_headers(owner_token))
+    assert allowed.status_code == 200
+    payload = allowed.json()["data"]
+    assert payload["traffic_percentage"] == 5
+    assert payload["max_prompts_per_day"] == 1
+    assert payload["suggestion_only"] is True
+    assert payload["owner_drafts_changed"] is False
+    assert payload["may_edit_or_publish"] is False
+    assert payload["publishing_allowed"] is False
+    assert payload["automatic_changes_allowed"] is False
+
+
+class _SyntheticBaselineProvider:
+    name = "private_ai"
+    model_name = "benchmark-model-v1"
+
+    def summarize_baseline(
+        self, *, context, output_schema, prompt_template_version
+    ):
+        assert output_schema
+        assert prompt_template_version == "insightos-capability-baseline-check-v1"
+        assert context["baseline_contract"]["synthetic"] is True
+        assert context["output_rules"]["explanation_only"] is True
+        assert context["output_rules"]["no_changes"] is True
+        return GovernedAIProviderResponse(
+            payload={
+                "headline": "Your saved baseline shows clear starting priorities",
+                "summary": (
+                    "Saved checks found important website work and pages already "
+                    "appearing in Google. Review the fixed priorities before choosing "
+                    "what to improve first."
+                ),
+                "themes": [
+                    {
+                        "title": "Website pages need attention",
+                        "explanation": (
+                            "Saved website checks found important page issues for the "
+                            "owner to review."
+                        ),
+                        "evidence_used": ["website:summary"],
+                    },
+                    {
+                        "title": "Google is already showing some pages",
+                        "explanation": (
+                            "Saved Google Search results show existing visibility with "
+                            "room for clearer pages."
+                        ),
+                        "evidence_used": ["organic_search:window"],
+                    },
+                ],
+                "priority_order": ["fix_website", "fix_search_visibility"],
+                "evidence_used": [
+                    "website:summary",
+                    "organic_search:window",
+                    "score:overall",
+                ],
+                "uncertainties": [
+                    "The saved sample does not represent every possible search."
+                ],
+            },
+            provider_request_id="synthetic-baseline-check",
+            model_name=self.model_name,
+            input_tokens=52,
+            output_tokens=31,
+        )
+
+
+def test_baseline_qualification_is_synthetic_explanation_only_and_zero_traffic(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    now = datetime(2026, 8, 19, 0, 30, tzinfo=UTC)
+    connection_id = _question_capability_ready_connection(
+        db_session,
+        organization=organization,
+        actor=actor,
+        now=now,
+    )
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_baseline_capability_service."
+        "open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(_SyntheticBaselineProvider()),
+    )
+
+    checked = run_baseline_qualification(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        client_request_id="baseline-qualification",
+        now=now,
+    )
+
+    assert checked["state"] == "eligible_for_owner_approval"
+    assert checked["item"]["status"] == "passed"
+    assert checked["item"]["customer_prompt_sent"] is False
+    assert checked["item"]["routing_enabled"] is False
+    assert checked["traffic_percentage"] == 0
+    assert checked["owner_activation_available"] is True
+    assert checked["explanation_only"] is True
+    assert checked["scores_changed"] is False
+    assert checked["diagnosis_changed"] is False
+    assert checked["fixes_changed"] is False
+    assert checked["website_changes_allowed"] is False
+    assert checked["qualification_only"] is False
+    benchmark = db_session.query(GovernedAIProviderCapabilityBenchmark).one()
+    assert benchmark.capability == "onboarding_baseline_narrative"
+    assert db_session.query(GovernedAIProviderCapabilityEvent).count() == 0
+    assert db_session.query(GovernedAIProviderCapabilityAttempt).count() == 0
+
+
+def test_baseline_qualification_api_is_owner_only_and_has_no_automatic_activation(
+    client, monkeypatch
+) -> None:
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+    response = {
+        "created": True,
+        "state": "eligible_for_owner_approval",
+        "routing_enabled": False,
+        "traffic_percentage": 0,
+        "customer_prompts_allowed": False,
+        "owner_activation_available": True,
+        "explanation_only": True,
+        "scores_changed": False,
+        "diagnosis_changed": False,
+        "fixes_changed": False,
+        "website_changes_allowed": False,
+        "qualification_only": False,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.run_baseline_qualification",
+        lambda _db, **_kwargs: response,
+    )
+    url = "/api/v1/ai/providers/connection-id/baseline-capability/benchmark"
+    body = {"client_request_id": "baseline-api-request"}
+    denied = client.post(url, json=body, headers=_headers(admin_token))
+    assert denied.status_code == 403
+    allowed = client.post(url, json=body, headers=_headers(owner_token))
+    assert allowed.status_code == 200
+    payload = allowed.json()["data"]
+    assert payload["routing_enabled"] is False
+    assert payload["traffic_percentage"] == 0
+    assert payload["owner_activation_available"] is True
+    assert payload["explanation_only"] is True
+    assert payload["scores_changed"] is False
+    assert payload["diagnosis_changed"] is False
+    assert payload["fixes_changed"] is False
+    assert payload["website_changes_allowed"] is False
+    assert payload["qualification_only"] is False
+
+
+def _baseline_acknowledgements() -> dict[str, bool]:
+    return {
+        "reviewed_baseline_check": True,
+        "understands_real_saved_baseline_context": True,
+        "understands_shared_daily_limit": True,
+        "understands_managed_fallback_and_rollback": True,
+        "understands_explanation_only_no_changes": True,
+    }
+
+
+def test_baseline_canary_is_fixed_shared_and_automatically_reversible(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    now = datetime(2026, 8, 18, 23, 0, tzinfo=UTC)
+    connection_id = _question_capability_ready_connection(
+        db_session,
+        organization=organization,
+        actor=actor,
+        now=now,
+    )
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_baseline_capability_service."
+        "open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(_SyntheticBaselineProvider()),
+    )
+    run_baseline_qualification(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        client_request_id="baseline-canary-qualification",
+        now=now,
+    )
+
+    with pytest.raises(GovernedAIProviderConnectionError) as missing_ack:
+        set_baseline_capability(
+            db_session,
+            organization_id=organization.id,
+            connection_id=connection_id,
+            actor_user_id=actor.id,
+            action="enable",
+            client_request_id="baseline-canary-missing-ack",
+            acknowledgements={},
+            now=now,
+        )
+    assert missing_ack.value.reason_code == "ai_provider_baseline_acknowledgement_required"
+
+    enabled = set_baseline_capability(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        action="enable",
+        client_request_id="baseline-canary-enable",
+        acknowledgements=_baseline_acknowledgements(),
+        now=now,
+    )
+    assert enabled["routing_enabled"] is True
+    assert enabled["traffic_percentage"] == 5
+    assert enabled["max_prompts_per_day"] == 1
+    assert enabled["explanation_only"] is True
+    assert enabled["scores_changed"] is False
+    assert enabled["diagnosis_changed"] is False
+    assert enabled["fixes_changed"] is False
+    assert enabled["website_changes_allowed"] is False
+
+    next_day = now + timedelta(hours=2)
+    selection = None
+    request_key = ""
+    for index in range(500):
+        request_key = f"baseline-live-{index}"
+        selection = select_baseline_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key=request_key,
+            now=next_day,
+        )
+        if selection is not None:
+            break
+    assert selection is not None
+    event = authorize_baseline_dispatch(
+        db_session,
+        organization_id=organization.id,
+        selection=selection,
+        now=next_day,
+    )
+    rollback = automatic_baseline_rollback(
+        db_session,
+        event=event,
+        reason_code="ai_output_validation_failed",
+        now=next_day,
+    )
+    assert rollback.action == "automatic_rollback"
+    assert rollback.traffic_percentage == 0
+    record_baseline_fallback(
+        db_session,
+        event=event,
+        request_key=request_key,
+        private_error_code="ai_output_validation_failed",
+        provider_may_have_processed=True,
+        managed_succeeded=True,
+        input_tokens=52,
+        output_tokens=31,
+        duration_ms=900,
+        now=next_day,
+    )
+    attempt = db_session.query(GovernedAIProviderCapabilityAttempt).one()
+    assert attempt.capability == "onboarding_baseline_narrative"
+    assert attempt.outcome == "managed_fallback_succeeded"
+    assert attempt.customer_prompt_sent is True
+    assert attempt.managed_fallback_used is True
+    assert attempt.automatic_rollback_triggered is True
+    assert attempt.automatic_changes_allowed is False
+    assert attempt.cost_owner == "customer"
+    assert attempt.platform_provider_cost == 0
+    assert (
+        select_question_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key="question-after-baseline",
+            now=next_day,
+        )
+        is None
+    )
+
+
+def test_baseline_canary_api_is_owner_only_and_explanation_only(
+    client, monkeypatch
+) -> None:
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+    response = {
+        "created": True,
+        "state": "capability_canary",
+        "routing_enabled": True,
+        "traffic_percentage": 5,
+        "max_prompts_per_day": 1,
+        "explanation_only": True,
+        "scores_changed": False,
+        "diagnosis_changed": False,
+        "fixes_changed": False,
+        "website_changes_allowed": False,
+        "automatic_changes_allowed": False,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.set_baseline_capability",
+        lambda _db, **_kwargs: response,
+    )
+    url = "/api/v1/ai/providers/connection-id/baseline-capability"
+    body = {
+        "action": "enable",
+        "client_request_id": "baseline-canary-api",
+        **_baseline_acknowledgements(),
+    }
+    denied = client.put(url, json=body, headers=_headers(admin_token))
+    assert denied.status_code == 403
+    allowed = client.put(url, json=body, headers=_headers(owner_token))
+    assert allowed.status_code == 200
+    payload = allowed.json()["data"]
+    assert payload["traffic_percentage"] == 5
+    assert payload["max_prompts_per_day"] == 1
+    assert payload["explanation_only"] is True
+    assert payload["scores_changed"] is False
+    assert payload["diagnosis_changed"] is False
+    assert payload["fixes_changed"] is False
+    assert payload["website_changes_allowed"] is False
+    assert payload["automatic_changes_allowed"] is False
+
+
+class _SyntheticReviewResponseProvider:
+    name = "private_ai"
+    model_name = "benchmark-model-v1"
+
+    def draft_action(self, *, context, output_schema, prompt_template_version):
+        assert output_schema
+        assert (
+            prompt_template_version
+            == "insightos-capability-review-response-check-v1"
+        )
+        assert context["contract"]["synthetic"] is True
+        assert context["contract"]["may_post_response"] is False
+        assert context["draft_request"]["approval_required"] is True
+        assert context["draft_request"]["may_post_response"] is False
+        return GovernedAIProviderResponse(
+            payload={
+                "action_id": "review-response:synthetic-review",
+                "draft_type": "review_response",
+                "draft_state": "ready",
+                "title": "Thank you for your review",
+                "body": (
+                    "Thank you for sharing this. We appreciate your kind words "
+                    "and are glad the team explained the work clearly."
+                ),
+                "evidence_used": [
+                    "review:synthetic-review",
+                    "location:synthetic-location",
+                ],
+                "uncertainties": [],
+                "approval_required": True,
+            },
+            provider_request_id="synthetic-review-response-check",
+            model_name=self.model_name,
+            input_tokens=38,
+            output_tokens=22,
+        )
+
+
+def test_review_response_qualification_is_made_up_and_zero_traffic(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    now = datetime(2026, 8, 19, 2, 0, tzinfo=UTC)
+    connection_id = _question_capability_ready_connection(
+        db_session,
+        organization=organization,
+        actor=actor,
+        now=now,
+    )
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_review_response_capability_service."
+        "open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(_SyntheticReviewResponseProvider()),
+    )
+
+    checked = run_review_response_qualification(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        client_request_id="review-response-qualification",
+        now=now,
+    )
+
+    assert checked["state"] == "eligible_for_later_review"
+    assert checked["item"]["status"] == "passed"
+    assert checked["item"]["customer_prompt_sent"] is False
+    assert checked["item"]["routing_enabled"] is False
+    assert checked["traffic_percentage"] == 0
+    assert checked["owner_activation_available"] is False
+    assert checked["automatic_activation_allowed"] is False
+    assert checked["automatic_changes_allowed"] is False
+    assert checked["draft_only"] is True
+    assert checked["customer_review_sent"] is False
+    assert checked["review_status_changed"] is False
+    assert checked["may_post_response"] is False
+    assert checked["publishing_allowed"] is False
+    assert checked["qualification_only"] is True
+    benchmark = db_session.query(GovernedAIProviderCapabilityBenchmark).one()
+    assert benchmark.capability == "review_response_draft"
+    assert db_session.query(GovernedAIProviderCapabilityEvent).count() == 0
+    assert db_session.query(GovernedAIProviderCapabilityAttempt).count() == 0
+
+
+def test_review_response_qualification_api_is_owner_only_and_cannot_post(
+    client, monkeypatch
+) -> None:
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+    response = {
+        "created": True,
+        "state": "eligible_for_later_review",
+        "routing_enabled": False,
+        "traffic_percentage": 0,
+        "customer_prompts_allowed": False,
+        "owner_activation_available": False,
+        "automatic_activation_allowed": False,
+        "automatic_changes_allowed": False,
+        "draft_only": True,
+        "customer_review_sent": False,
+        "review_status_changed": False,
+        "may_post_response": False,
+        "publishing_allowed": False,
+        "qualification_only": True,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.run_review_response_qualification",
+        lambda _db, **_kwargs: response,
+    )
+    url = "/api/v1/ai/providers/connection-id/review-response-capability/benchmark"
+    body = {"client_request_id": "review-response-api-request"}
+    denied = client.post(url, json=body, headers=_headers(admin_token))
+    assert denied.status_code == 403
+    allowed = client.post(url, json=body, headers=_headers(owner_token))
+    assert allowed.status_code == 200
+    payload = allowed.json()["data"]
+    assert payload["routing_enabled"] is False
+    assert payload["traffic_percentage"] == 0
+    assert payload["owner_activation_available"] is False
+    assert payload["draft_only"] is True
+    assert payload["customer_review_sent"] is False
+    assert payload["review_status_changed"] is False
+    assert payload["may_post_response"] is False
+    assert payload["publishing_allowed"] is False
+    assert payload["qualification_only"] is True
+
+
+def _review_response_acknowledgements() -> dict[str, bool]:
+    return {
+        "reviewed_review_reply_check": True,
+        "understands_real_saved_review_context": True,
+        "understands_shared_daily_limit": True,
+        "understands_managed_fallback_and_rollback": True,
+        "understands_draft_only_no_posting": True,
+    }
+
+
+def test_review_response_canary_is_fixed_shared_and_automatically_reversible(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    organization, actor = _organization_and_actor(db_session)
+    now = datetime(2026, 8, 19, 23, 0, tzinfo=UTC)
+    connection_id = _question_capability_ready_connection(
+        db_session,
+        organization=organization,
+        actor=actor,
+        now=now,
+    )
+    monkeypatch.setattr(
+        "app.services.governed_ai_provider_review_response_capability_service."
+        "open_pinned_runtime_provider",
+        lambda *_args, **_kwargs: nullcontext(_SyntheticReviewResponseProvider()),
+    )
+    run_review_response_qualification(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        client_request_id="review-response-canary-qualification",
+        now=now,
+    )
+
+    with pytest.raises(GovernedAIProviderConnectionError) as missing_ack:
+        set_review_response_capability(
+            db_session,
+            organization_id=organization.id,
+            connection_id=connection_id,
+            actor_user_id=actor.id,
+            action="enable",
+            client_request_id="review-response-canary-missing-ack",
+            acknowledgements={},
+            now=now,
+        )
+    assert (
+        missing_ack.value.reason_code
+        == "ai_provider_review_response_acknowledgement_required"
+    )
+
+    enabled = set_review_response_capability(
+        db_session,
+        organization_id=organization.id,
+        connection_id=connection_id,
+        actor_user_id=actor.id,
+        action="enable",
+        client_request_id="review-response-canary-enable",
+        acknowledgements=_review_response_acknowledgements(),
+        now=now,
+    )
+    assert enabled["routing_enabled"] is True
+    assert enabled["traffic_percentage"] == 5
+    assert enabled["max_prompts_per_day"] == 1
+    assert enabled["draft_only"] is True
+    assert enabled["customer_review_sent"] is False
+    assert enabled["review_status_changed"] is False
+    assert enabled["may_post_response"] is False
+    assert enabled["publishing_allowed"] is False
+
+    next_day = now + timedelta(hours=2)
+    selection = None
+    request_key = ""
+    for index in range(500):
+        request_key = f"review-response-live-{index}"
+        selection = select_review_response_capability(
+            db_session,
+            organization_id=organization.id,
+            request_key=request_key,
+            now=next_day,
+        )
+        if selection is not None:
+            break
+    assert selection is not None
+    event = authorize_review_response_dispatch(
+        db_session,
+        organization_id=organization.id,
+        selection=selection,
+        now=next_day,
+    )
+    rollback = automatic_review_response_rollback(
+        db_session,
+        event=event,
+        reason_code="ai_output_validation_failed",
+        now=next_day,
+    )
+    assert rollback.action == "automatic_rollback"
+    assert rollback.traffic_percentage == 0
+    record_review_response_fallback(
+        db_session,
+        event=event,
+        request_key=request_key,
+        private_error_code="ai_output_validation_failed",
+        provider_may_have_processed=True,
+        managed_succeeded=True,
+        input_tokens=45,
+        output_tokens=20,
+        duration_ms=800,
+        now=next_day,
+    )
+    attempt = db_session.query(GovernedAIProviderCapabilityAttempt).one()
+    assert attempt.capability == "review_response_draft"
+    assert attempt.outcome == "managed_fallback_succeeded"
+    assert attempt.customer_prompt_sent is True
+    assert attempt.managed_fallback_used is True
+    assert attempt.automatic_rollback_triggered is True
+    assert attempt.automatic_changes_allowed is False
+    assert attempt.cost_owner == "customer"
+    assert attempt.platform_provider_cost == 0
+
+
+def test_review_response_canary_api_is_owner_only_and_draft_only(
+    client, monkeypatch
+) -> None:
+    owner_token = _login(client, email="org-owner@example.com", password="pass-org-owner")
+    admin_token = _login(client, email="org-admin@example.com", password="pass-org-admin")
+    response = {
+        "created": True,
+        "state": "capability_canary",
+        "routing_enabled": True,
+        "traffic_percentage": 5,
+        "max_prompts_per_day": 1,
+        "draft_only": True,
+        "customer_review_sent": False,
+        "review_status_changed": False,
+        "may_post_response": False,
+        "publishing_allowed": False,
+        "automatic_changes_allowed": False,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.governed_ai_providers.set_review_response_capability",
+        lambda _db, **_kwargs: response,
+    )
+    url = "/api/v1/ai/providers/connection-id/review-response-capability"
+    body = {
+        "action": "enable",
+        "client_request_id": "review-response-canary-api",
+        **_review_response_acknowledgements(),
+    }
+    denied = client.put(url, json=body, headers=_headers(admin_token))
+    assert denied.status_code == 403
+    allowed = client.put(url, json=body, headers=_headers(owner_token))
+    assert allowed.status_code == 200
+    payload = allowed.json()["data"]
+    assert payload["traffic_percentage"] == 5
+    assert payload["max_prompts_per_day"] == 1
+    assert payload["draft_only"] is True
+    assert payload["customer_review_sent"] is False
+    assert payload["review_status_changed"] is False
+    assert payload["may_post_response"] is False
+    assert payload["publishing_allowed"] is False
+    assert payload["automatic_changes_allowed"] is False

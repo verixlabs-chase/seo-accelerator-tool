@@ -70,6 +70,9 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     external_automation = next(
         item for item in data["capabilities"] if item["code"] == "external_automation"
     )
+    private_ai_provider = next(
+        item for item in data["capabilities"] if item["code"] == "private_ai_provider"
+    )
     assert performance_trend["available"] is True
     assert performance_trend["required_plan"] == "Solo"
     assert owner_report["available"] is True
@@ -84,6 +87,8 @@ def test_customer_allowance_uses_credits_and_hides_internal_money(client, db_ses
     assert listing_correction_sync["required_plan"] == "Growth"
     assert external_automation["available"] is True
     assert external_automation["required_plan"] == "Solo"
+    assert private_ai_provider["available"] is False
+    assert private_ai_provider["required_plan"] == "Enterprise"
     assert data["external_automation"] == {
         "plan_eligible": True,
         "gateway_enabled": True,

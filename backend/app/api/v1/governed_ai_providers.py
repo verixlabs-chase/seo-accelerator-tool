@@ -50,6 +50,28 @@ from app.services.governed_ai_provider_draft_capability_service import (
     run_draft_capability_benchmark,
     set_draft_capability,
 )
+from app.services.governed_ai_provider_keyword_capability_service import (
+    list_keyword_review_qualification,
+    run_keyword_review_qualification,
+    set_keyword_review_capability,
+)
+from app.services.governed_ai_provider_content_draft_capability_service import (
+    list_content_draft_qualification,
+    run_content_draft_qualification,
+    set_content_draft_capability,
+)
+from app.services.governed_ai_provider_baseline_capability_service import (
+    list_baseline_qualification,
+    run_baseline_qualification,
+    set_baseline_capability,
+)
+from app.services.governed_ai_provider_review_response_capability_service import (
+    run_review_response_qualification,
+)
+from app.services.governed_ai_provider_review_response_canary_service import (
+    list_review_response_capability,
+    set_review_response_capability,
+)
 
 
 router = APIRouter(prefix="/ai/providers", tags=["governed-ai-providers"])
@@ -102,6 +124,46 @@ class GovernedAIProviderDraftCapabilityIn(BaseModel):
     understands_shared_daily_limit: bool = False
     understands_managed_fallback_and_rollback: bool = False
     understands_draft_only_no_publish: bool = False
+
+
+class GovernedAIProviderKeywordReviewCapabilityIn(BaseModel):
+    action: Literal["enable", "disable"]
+    client_request_id: str = Field(min_length=8, max_length=64)
+    reviewed_keyword_review_check: bool = False
+    understands_real_saved_search_context: bool = False
+    understands_shared_daily_limit: bool = False
+    understands_managed_fallback_and_rollback: bool = False
+    understands_saved_search_classification_only: bool = False
+
+
+class GovernedAIProviderContentDraftCapabilityIn(BaseModel):
+    action: Literal["enable", "disable"]
+    client_request_id: str = Field(min_length=8, max_length=64)
+    reviewed_content_draft_check: bool = False
+    understands_real_saved_website_draft_context: bool = False
+    understands_shared_daily_limit: bool = False
+    understands_managed_fallback_and_rollback: bool = False
+    understands_suggestion_only_no_edit_or_publish: bool = False
+
+
+class GovernedAIProviderBaselineCapabilityIn(BaseModel):
+    action: Literal["enable", "disable"]
+    client_request_id: str = Field(min_length=8, max_length=64)
+    reviewed_baseline_check: bool = False
+    understands_real_saved_baseline_context: bool = False
+    understands_shared_daily_limit: bool = False
+    understands_managed_fallback_and_rollback: bool = False
+    understands_explanation_only_no_changes: bool = False
+
+
+class GovernedAIProviderReviewResponseCapabilityIn(BaseModel):
+    action: Literal["enable", "disable"]
+    client_request_id: str = Field(min_length=8, max_length=64)
+    reviewed_review_reply_check: bool = False
+    understands_real_saved_review_context: bool = False
+    understands_shared_daily_limit: bool = False
+    understands_managed_fallback_and_rollback: bool = False
+    understands_draft_only_no_posting: bool = False
 
 
 class GovernedAIProviderReviewIn(BaseModel):
@@ -634,6 +696,302 @@ def update_governed_ai_provider_draft_capability(
                     body.understands_draft_only_no_publish
                 ),
             },
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.get("/{connection_id}/keyword-review-capability")
+def get_governed_ai_provider_keyword_review_qualification(
+    request: Request,
+    connection_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = list_keyword_review_qualification(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.post("/{connection_id}/keyword-review-capability/benchmark")
+def benchmark_governed_ai_provider_keyword_review_qualification(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderCanaryMonitoringIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = run_keyword_review_qualification(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            client_request_id=body.client_request_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.put("/{connection_id}/keyword-review-capability")
+def update_governed_ai_provider_keyword_review_capability(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderKeywordReviewCapabilityIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = set_keyword_review_capability(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            action=body.action,
+            client_request_id=body.client_request_id,
+            acknowledgements={
+                "reviewed_keyword_review_check": body.reviewed_keyword_review_check,
+                "understands_real_saved_search_context": (
+                    body.understands_real_saved_search_context
+                ),
+                "understands_shared_daily_limit": body.understands_shared_daily_limit,
+                "understands_managed_fallback_and_rollback": (
+                    body.understands_managed_fallback_and_rollback
+                ),
+                "understands_saved_search_classification_only": (
+                    body.understands_saved_search_classification_only
+                ),
+            },
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.get("/{connection_id}/content-draft-capability")
+def get_governed_ai_provider_content_draft_qualification(
+    request: Request,
+    connection_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = list_content_draft_qualification(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.post("/{connection_id}/content-draft-capability/benchmark")
+def benchmark_governed_ai_provider_content_draft_qualification(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderCanaryMonitoringIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = run_content_draft_qualification(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            client_request_id=body.client_request_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.put("/{connection_id}/content-draft-capability")
+def update_governed_ai_provider_content_draft_capability(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderContentDraftCapabilityIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = set_content_draft_capability(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            action=body.action,
+            client_request_id=body.client_request_id,
+            acknowledgements={
+                "reviewed_content_draft_check": body.reviewed_content_draft_check,
+                "understands_real_saved_website_draft_context": (
+                    body.understands_real_saved_website_draft_context
+                ),
+                "understands_shared_daily_limit": body.understands_shared_daily_limit,
+                "understands_managed_fallback_and_rollback": (
+                    body.understands_managed_fallback_and_rollback
+                ),
+                "understands_suggestion_only_no_edit_or_publish": (
+                    body.understands_suggestion_only_no_edit_or_publish
+                ),
+            },
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.get("/{connection_id}/baseline-capability")
+def get_governed_ai_provider_baseline_qualification(
+    request: Request,
+    connection_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = list_baseline_qualification(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.post("/{connection_id}/baseline-capability/benchmark")
+def benchmark_governed_ai_provider_baseline_qualification(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderCanaryMonitoringIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = run_baseline_qualification(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            client_request_id=body.client_request_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.put("/{connection_id}/baseline-capability")
+def update_governed_ai_provider_baseline_capability(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderBaselineCapabilityIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = set_baseline_capability(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            action=body.action,
+            client_request_id=body.client_request_id,
+            acknowledgements={
+                "reviewed_baseline_check": body.reviewed_baseline_check,
+                "understands_real_saved_baseline_context": (
+                    body.understands_real_saved_baseline_context
+                ),
+                "understands_shared_daily_limit": body.understands_shared_daily_limit,
+                "understands_managed_fallback_and_rollback": (
+                    body.understands_managed_fallback_and_rollback
+                ),
+                "understands_explanation_only_no_changes": (
+                    body.understands_explanation_only_no_changes
+                ),
+            },
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.get("/{connection_id}/review-response-capability")
+def get_governed_ai_provider_review_response_qualification(
+    request: Request,
+    connection_id: str,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = list_review_response_capability(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.put("/{connection_id}/review-response-capability")
+def update_governed_ai_provider_review_response_capability(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderReviewResponseCapabilityIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = set_review_response_capability(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            action=body.action,
+            client_request_id=body.client_request_id,
+            acknowledgements={
+                "reviewed_review_reply_check": body.reviewed_review_reply_check,
+                "understands_real_saved_review_context": (
+                    body.understands_real_saved_review_context
+                ),
+                "understands_shared_daily_limit": body.understands_shared_daily_limit,
+                "understands_managed_fallback_and_rollback": (
+                    body.understands_managed_fallback_and_rollback
+                ),
+                "understands_draft_only_no_posting": (
+                    body.understands_draft_only_no_posting
+                ),
+            },
+        )
+    except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
+        raise _http_error(exc) from exc
+    return envelope(request, data)
+
+
+@router.post("/{connection_id}/review-response-capability/benchmark")
+def benchmark_governed_ai_provider_review_response_qualification(
+    request: Request,
+    connection_id: str,
+    body: GovernedAIProviderCanaryMonitoringIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        data = run_review_response_qualification(
+            db,
+            organization_id=str(user["organization_id"]),
+            connection_id=connection_id,
+            actor_user_id=str(user["id"]),
+            client_request_id=body.client_request_id,
         )
     except (GovernedAIProviderConnectionError, CostEconomicsError) as exc:
         raise _http_error(exc) from exc

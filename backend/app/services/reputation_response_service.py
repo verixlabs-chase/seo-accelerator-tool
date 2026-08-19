@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING
 import json
 import re
+from time import perf_counter
 from typing import Any
 
 from fastapi import HTTPException
@@ -39,6 +41,18 @@ from app.services.governed_ai_provider import (
     GovernedAIProviderError,
     MistralGovernedAIProvider,
 )
+from app.services.governed_ai_provider_capability_service import CapabilitySelection
+from app.services.governed_ai_provider_connection_service import (
+    GovernedAIProviderConnectionError,
+    open_pinned_runtime_provider,
+)
+from app.services.governed_ai_provider_review_response_canary_service import (
+    automatic_review_response_rollback,
+    authorize_review_response_dispatch,
+    record_review_response_fallback,
+    record_review_response_success,
+    select_review_response_capability,
+)
 
 
 FEATURE = "review_response_draft"
@@ -47,6 +61,20 @@ POLICY_VERSION = "review-response-policy-v1"
 MISTRAL_CAPABILITY = "governed_ai"
 MISTRAL_OPERATION = "review_response_draft"
 MAX_APPROVED_RESPONSE_CHARACTERS = 600
+
+
+@dataclass
+class _PrivateReviewResponseResult:
+    event: Any = None
+    output: GovernedActionDraft | None = None
+    provider_response: Any = None
+    provider_name: str = "private_ai"
+    model_name: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: int = 0
+    error_code: str | None = None
+    provider_may_have_processed: bool = False
 
 SENSITIVE_TOPIC_LABELS = {
     "legal": "legal threat or dispute",
@@ -395,6 +423,13 @@ def generate_response_draft(
         db.refresh(row)
         return _serialize_draft(row)
 
+    capability_selection = select_review_response_capability(
+        db,
+        organization_id=organization_id,
+        request_key=idempotency_key,
+        now=occurred_at,
+    )
+
     lexicon = get_active_lexicon(db, tenant_id=tenant_id)
     backend = settings.ai_provider_backend.strip().lower()
     provider_configured = provider is not None or (
@@ -532,115 +567,179 @@ def generate_response_draft(
             now=occurred_at,
         )
 
-    try:
-        provider_response = provider.draft_action(
+    private_result = None
+    if capability_selection is not None:
+        private_result = _attempt_private_review_response(
+            db,
+            organization_id=organization_id,
+            selection=capability_selection,
+            request_key=idempotency_key,
             context=context,
-            output_schema=GovernedActionDraft.model_json_schema(),
-            prompt_template_version=PROMPT_TEMPLATE_VERSION,
+            action_id=action_id,
+            evidence_refs=set(evidence_refs),
+            timeout_seconds=settings.ai_provider_timeout_seconds,
+            max_output_tokens=settings.ai_max_output_tokens,
+            now=occurred_at,
         )
-    except GovernedAIProviderError as exc:
-        if exc.provider_may_have_processed:
+
+    if (
+        private_result is not None
+        and private_result.output is not None
+        and private_result.provider_response is not None
+    ):
+        cost_economics_service.release_provider_cost(
+            db, reservation=reservation, now=occurred_at
+        )
+        provider_response = private_result.provider_response
+        output = private_result.output
+        ai_run.provider_name = private_result.provider_name
+        ai_run.model_name = private_result.model_name
+        ai_run.input_tokens = private_result.input_tokens
+        ai_run.output_tokens = private_result.output_tokens
+        ai_run.estimated_cost = Decimal("0")
+        ai_run.reconciled_cost = Decimal("0")
+        ai_run.price_card_version = None
+        ai_run.provider_request_id = provider_response.provider_request_id
+        ai_run.response_hash = governed_ai_service._hash_payload(
+            provider_response.payload
+        )
+    else:
+        try:
+            provider_response = provider.draft_action(
+                context=context,
+                output_schema=GovernedActionDraft.model_json_schema(),
+                prompt_template_version=PROMPT_TEMPLATE_VERSION,
+            )
+        except GovernedAIProviderError as exc:
+            _record_private_review_response_fallback(
+                db,
+                result=private_result,
+                request_key=idempotency_key,
+                managed_succeeded=False,
+                now=occurred_at,
+            )
+            if exc.provider_may_have_processed:
+                cost_economics_service.reconcile_provider_cost(
+                    db,
+                    reservation=reservation,
+                    provider_reported_cost=reservation.estimated_cost,
+                    now=occurred_at,
+                )
+            else:
+                cost_economics_service.release_provider_cost(
+                    db, reservation=reservation, now=occurred_at
+                )
+            return _finalize_unavailable_draft(
+                db,
+                ai_run=ai_run,
+                review=review,
+                policy=policy,
+                context=context,
+                evidence_refs=evidence_refs,
+                idempotency_key=idempotency_key,
+                reason="A reply draft could not be prepared right now.",
+                error_code=exc.code,
+                now=occurred_at,
+            )
+        except Exception:
+            _record_private_review_response_fallback(
+                db,
+                result=private_result,
+                request_key=idempotency_key,
+                managed_succeeded=False,
+                now=occurred_at,
+            )
             cost_economics_service.reconcile_provider_cost(
                 db,
                 reservation=reservation,
                 provider_reported_cost=reservation.estimated_cost,
                 now=occurred_at,
             )
-        else:
-            cost_economics_service.release_provider_cost(
+            return _finalize_unavailable_draft(
                 db,
-                reservation=reservation,
+                ai_run=ai_run,
+                review=review,
+                policy=policy,
+                context=context,
+                evidence_refs=evidence_refs,
+                idempotency_key=idempotency_key,
+                reason="A reply draft could not be prepared right now.",
+                error_code="ai_provider_unexpected_error",
                 now=occurred_at,
             )
-        return _finalize_unavailable_draft(
-            db,
-            ai_run=ai_run,
-            review=review,
-            policy=policy,
-            context=context,
-            evidence_refs=evidence_refs,
-            idempotency_key=idempotency_key,
-            reason="A reply draft could not be prepared right now.",
-            error_code=exc.code,
-            now=occurred_at,
-        )
-    except Exception:
-        # The provider boundary did not return a classified outcome. Conservatively
-        # reconcile the reserved ceiling because the remote service may have received
-        # the request, then leave a retryable customer-facing record.
-        cost_economics_service.reconcile_provider_cost(
+
+        actual_input = provider_response.input_tokens or estimated_input_tokens
+        actual_output = provider_response.output_tokens or settings.ai_max_output_tokens
+        try:
+            actual_cost = cost_economics_service.calculate_provider_cost(
+                db,
+                provider_name=provider.name,
+                capability=MISTRAL_CAPABILITY,
+                operation=MISTRAL_OPERATION,
+                quantity=1,
+                model_name=provider.model_name,
+                input_tokens=actual_input,
+                output_tokens=actual_output,
+                now=occurred_at,
+            )
+        except cost_economics_service.CostEconomicsError:
+            actual_cost = reservation.estimated_cost
+        terminal = cost_economics_service.reconcile_provider_cost(
             db,
             reservation=reservation,
-            provider_reported_cost=reservation.estimated_cost,
+            provider_reported_cost=actual_cost,
             now=occurred_at,
         )
-        return _finalize_unavailable_draft(
-            db,
-            ai_run=ai_run,
-            review=review,
-            policy=policy,
-            context=context,
-            evidence_refs=evidence_refs,
-            idempotency_key=idempotency_key,
-            reason="A reply draft could not be prepared right now.",
-            error_code="ai_provider_unexpected_error",
-            now=occurred_at,
+        ai_run.input_tokens = actual_input
+        ai_run.output_tokens = actual_output
+        ai_run.reconciled_cost = terminal.provider_reported_cost or actual_cost
+        ai_run.provider_request_id = provider_response.provider_request_id
+        ai_run.response_hash = governed_ai_service._hash_payload(
+            provider_response.payload
         )
-
-    actual_input = provider_response.input_tokens or estimated_input_tokens
-    actual_output = provider_response.output_tokens or settings.ai_max_output_tokens
-    try:
-        actual_cost = cost_economics_service.calculate_provider_cost(
+        try:
+            output = GovernedActionDraft.model_validate(provider_response.payload)
+            output.validate_against_context(
+                requested_action_id=action_id,
+                requested_draft_type="review_response",
+                evidence_ids=set(evidence_refs),
+                allowed_action_ids={action_id},
+                allowed_draft_types={"review_response"},
+            )
+            if output.draft_state != "ready":
+                raise ValueError(
+                    "The review evidence was not enough for a safe reply draft."
+                )
+        except (TypeError, ValueError) as exc:
+            _record_private_review_response_fallback(
+                db,
+                result=private_result,
+                request_key=idempotency_key,
+                managed_succeeded=False,
+                now=occurred_at,
+            )
+            ai_run.status = "rejected"
+            ai_run.provider_state = "invalid_output"
+            ai_run.output_payload = {}
+            ai_run.error_code = "ai_output_validation_failed"
+            ai_run.rejection_reason = str(exc)[:2000]
+            ai_run.completed_at = occurred_at
+            return _create_unavailable_draft(
+                db,
+                ai_run=ai_run,
+                review=review,
+                policy=policy,
+                context=context,
+                evidence_refs=evidence_refs,
+                idempotency_key=idempotency_key,
+                reason="The suggested wording did not pass the reply safety check.",
+                now=occurred_at,
+            )
+        _record_private_review_response_fallback(
             db,
-            provider_name=provider.name,
-            capability=MISTRAL_CAPABILITY,
-            operation=MISTRAL_OPERATION,
-            quantity=1,
-            model_name=provider.model_name,
-            input_tokens=actual_input,
-            output_tokens=actual_output,
-            now=occurred_at,
-        )
-    except cost_economics_service.CostEconomicsError:
-        actual_cost = reservation.estimated_cost
-    terminal = cost_economics_service.reconcile_provider_cost(
-        db,
-        reservation=reservation,
-        provider_reported_cost=actual_cost,
-        now=occurred_at,
-    )
-    ai_run.input_tokens = actual_input
-    ai_run.output_tokens = actual_output
-    ai_run.reconciled_cost = terminal.provider_reported_cost or actual_cost
-    ai_run.provider_request_id = provider_response.provider_request_id
-    ai_run.response_hash = governed_ai_service._hash_payload(provider_response.payload)
-    try:
-        output = GovernedActionDraft.model_validate(provider_response.payload)
-        output.validate_against_context(
-            requested_action_id=action_id,
-            requested_draft_type="review_response",
-            evidence_ids=set(evidence_refs),
-            allowed_action_ids={action_id},
-            allowed_draft_types={"review_response"},
-        )
-        if output.draft_state != "ready":
-            raise ValueError("The review evidence was not enough for a safe reply draft.")
-    except (TypeError, ValueError) as exc:
-        ai_run.status = "rejected"
-        ai_run.provider_state = "invalid_output"
-        ai_run.output_payload = {}
-        ai_run.error_code = "ai_output_validation_failed"
-        ai_run.rejection_reason = str(exc)[:2000]
-        ai_run.completed_at = occurred_at
-        return _create_unavailable_draft(
-            db,
-            ai_run=ai_run,
-            review=review,
-            policy=policy,
-            context=context,
-            evidence_refs=evidence_refs,
-            idempotency_key=idempotency_key,
-            reason="The suggested wording did not pass the reply safety check.",
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=True,
             now=occurred_at,
         )
 
@@ -687,6 +786,123 @@ def generate_response_draft(
     db.commit()
     db.refresh(row)
     return _serialize_draft(row)
+
+
+def _attempt_private_review_response(
+    db: Session,
+    *,
+    organization_id: str,
+    selection: CapabilitySelection,
+    request_key: str,
+    context: dict[str, Any],
+    action_id: str,
+    evidence_refs: set[str],
+    timeout_seconds: float,
+    max_output_tokens: int,
+    now: datetime,
+) -> _PrivateReviewResponseResult:
+    result = _PrivateReviewResponseResult(model_name=selection.model_identifier)
+    started: float | None = None
+    try:
+        result.event = authorize_review_response_dispatch(
+            db,
+            organization_id=organization_id,
+            selection=selection,
+            now=now,
+        )
+        with open_pinned_runtime_provider(
+            db,
+            organization_id=organization_id,
+            connection_id=selection.connection_id,
+            timeout_seconds=timeout_seconds,
+            max_output_tokens=max_output_tokens,
+        ) as private_provider:
+            started = perf_counter()
+            response = private_provider.draft_action(
+                context=context,
+                output_schema=GovernedActionDraft.model_json_schema(),
+                prompt_template_version=PROMPT_TEMPLATE_VERSION,
+            )
+            result.duration_ms = _elapsed_ms(started)
+            result.provider_response = response
+            result.provider_name = private_provider.name
+            result.model_name = private_provider.model_name
+            result.input_tokens = max(0, response.input_tokens)
+            result.output_tokens = max(0, response.output_tokens)
+            output = GovernedActionDraft.model_validate(response.payload)
+            output.validate_against_context(
+                requested_action_id=action_id,
+                requested_draft_type="review_response",
+                evidence_ids=evidence_refs,
+                allowed_action_ids={action_id},
+                allowed_draft_types={"review_response"},
+            )
+            if output.draft_state != "ready":
+                raise ValueError(
+                    "The review evidence was not enough for a safe reply draft."
+                )
+            result.output = output
+        record_review_response_success(
+            db,
+            event=result.event,
+            request_key=request_key,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            duration_ms=result.duration_ms,
+            now=now,
+        )
+        return result
+    except GovernedAIProviderConnectionError as exc:
+        result.error_code = exc.reason_code
+    except GovernedAIProviderError as exc:
+        result.error_code = exc.code
+        result.provider_may_have_processed = exc.provider_may_have_processed
+    except (TypeError, ValueError):
+        result.error_code = "ai_output_validation_failed"
+        result.provider_may_have_processed = True
+    except Exception:
+        result.error_code = "ai_provider_unexpected_error"
+        result.provider_may_have_processed = True
+    if started is not None:
+        result.duration_ms = _elapsed_ms(started)
+    if result.event is not None:
+        automatic_review_response_rollback(
+            db,
+            event=result.event,
+            reason_code=result.error_code or "ai_provider_unexpected_error",
+            now=now,
+        )
+    result.output = None
+    result.provider_response = None
+    return result
+
+
+def _record_private_review_response_fallback(
+    db: Session,
+    *,
+    result: _PrivateReviewResponseResult | None,
+    request_key: str,
+    managed_succeeded: bool,
+    now: datetime,
+) -> None:
+    if result is None or result.event is None or result.error_code is None:
+        return
+    record_review_response_fallback(
+        db,
+        event=result.event,
+        request_key=request_key,
+        private_error_code=result.error_code,
+        provider_may_have_processed=result.provider_may_have_processed,
+        managed_succeeded=managed_succeeded,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        duration_ms=result.duration_ms,
+        now=now,
+    )
+
+
+def _elapsed_ms(started: float) -> int:
+    return min(60_000, max(0, int((perf_counter() - started) * 1_000)))
 
 
 def review_response_draft(

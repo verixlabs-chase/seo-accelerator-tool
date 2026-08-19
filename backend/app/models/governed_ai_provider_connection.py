@@ -47,6 +47,12 @@ class GovernedAIProviderConnection(Base):
             "activation_status = 'inactive' AND automatic_activation_allowed = false",
             name="ck_governed_ai_provider_connections_inactive",
         ),
+        CheckConstraint(
+            "credential_owner = 'organization' "
+            "AND cost_responsibility = 'customer' "
+            "AND platform_billing_enabled = false",
+            name="ck_governed_ai_provider_connections_cost_owner",
+        ),
         UniqueConstraint(
             "tenant_id",
             "organization_id",
@@ -88,6 +94,15 @@ class GovernedAIProviderConnection(Base):
     key_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
     key_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
     credential_configured: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    credential_owner: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="organization"
+    )
+    cost_responsibility: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="customer"
+    )
+    platform_billing_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
     validation_status: Mapped[str] = mapped_column(

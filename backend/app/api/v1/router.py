@@ -24,6 +24,7 @@ from app.api.v1 import (
     google_oauth,
     google_business_profile_campaigns,
     governed_ai_providers,
+    governed_ai_relays,
     health,
     hierarchy_observability,
     intelligence,
@@ -75,6 +76,7 @@ tenant_api_router.include_router(engagement.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
 tenant_api_router.include_router(google_business_profile_campaigns.router)
 tenant_api_router.include_router(governed_ai_providers.router)
+tenant_api_router.include_router(governed_ai_relays.tenant_router)
 tenant_api_router.include_router(rank.router)
 tenant_api_router.include_router(keyword_research.router)
 tenant_api_router.include_router(competitors.router)

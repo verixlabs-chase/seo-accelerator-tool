@@ -73,7 +73,7 @@ def _connection_body(**overrides):
         ),
         (
             "n8n",
-            "https://verixlabs.app.n8n.cloud/webhook/8f7188f6-60d0-47fc-8d73-5d7af5d33543",
+            "https://verixlabs.app.n8n.cloud/webhook/00000000-0000-4000-8000-000000000000",
             "verixlabs.app.n8n.cloud",
         ),
     ],
@@ -98,7 +98,7 @@ def test_destination_validation_accepts_only_known_https_webhook_hosts(
         ("zapier", _zapier_test_url(""), "automation_destination_invalid"),
         (
             "n8n",
-            "https://verixlabs.app.n8n.cloud/webhook-test/8f7188f6",
+            "https://verixlabs.app.n8n.cloud/webhook-test/00000000",
             "automation_destination_provider_mismatch",
         ),
         (
@@ -234,7 +234,7 @@ def test_owner_can_connect_an_n8n_cloud_production_webhook(client) -> None:
             provider="n8n",
             destination_url=(
                 "https://verixlabs.app.n8n.cloud/webhook/"
-                "8f7188f6-60d0-47fc-8d73-5d7af5d33543"
+                "00000000-0000-4000-8000-000000000000"
             ),
         ),
         headers=_headers(token),

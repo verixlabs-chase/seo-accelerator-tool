@@ -362,3 +362,161 @@ def test_mistral_content_suggestion_preserves_server_owned_safety_fields() -> No
     assert captured["response_format"]["json_schema"]["strict"] is True
     assert captured["temperature"] == 0
     assert "cannot edit, approve, or publish" in captured["messages"][0]["content"]
+
+
+def _private_suggestion(*, draft_id: str) -> GovernedContentDraftSuggestion:
+    return GovernedContentDraftSuggestion.model_validate(
+        {
+            "draft_id": draft_id,
+            "suggestion_state": "ready",
+            "suggested_title": "Helpful plumbing services in Reno",
+            "sections": [
+                {
+                    "order": 1,
+                    "heading": "How we can help",
+                    "body": "Learn how our team can help with your plumbing needs.",
+                },
+                {
+                    "order": 2,
+                    "heading": "Where we work",
+                    "body": "This service is available for customers in Reno.",
+                },
+            ],
+            "evidence_used": ["accepted_content_brief"],
+            "uncertainties": ["The owner must review every word."],
+            "approval_required": True,
+            "can_publish": False,
+        }
+    )
+
+
+def test_private_content_draft_success_skips_managed_and_cannot_change_draft(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(content_draft_ai_service, "get_settings", _settings)
+    campaign, draft = _accepted_draft(db_session, create_test_org)
+    original_title = draft.title
+    original_sections = list(draft.sections)
+    managed = ContentDraftProvider()
+    suggestion = _private_suggestion(draft_id=draft.id)
+    response = GovernedAIProviderResponse(
+        payload=suggestion.model_dump(mode="json"),
+        provider_request_id="private-content-draft",
+        model_name="customer-model",
+        input_tokens=320,
+        output_tokens=90,
+    )
+    monkeypatch.setattr(
+        content_draft_ai_service,
+        "select_content_draft_capability",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            event_id="event-id",
+            connection_id="connection-id",
+            model_identifier="customer-model",
+        ),
+    )
+    monkeypatch.setattr(
+        content_draft_ai_service,
+        "_attempt_private_content_draft",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            event=SimpleNamespace(id="event-id"),
+            output=suggestion,
+            provider_response=response,
+            provider_name="private_ai",
+            model_name="customer-model",
+            prompt_attempted=True,
+            error_code=None,
+            provider_may_have_processed=True,
+            input_tokens=320,
+            output_tokens=90,
+            duration_ms=900,
+        ),
+    )
+    monkeypatch.setattr(
+        content_draft_ai_service,
+        "MistralGovernedAIProvider",
+        lambda **_kwargs: managed,
+    )
+
+    result = content_draft_ai_service.generate_content_draft_suggestion(
+        db_session,
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        draft_id=draft.id,
+        requested_by_user_id=None,
+        now=datetime(2026, 8, 15, 14, 0, tzinfo=UTC),
+    )
+
+    db_session.refresh(draft)
+    run = db_session.query(GovernedAIRun).one()
+    assert result["state"] == "available"
+    assert result["safety"]["owner_draft_changed"] is False
+    assert result["safety"]["automatic_publishing_allowed"] is False
+    assert managed.calls == 0
+    assert run.provider_name == "private_ai"
+    assert run.model_name == "customer-model"
+    assert run.estimated_cost == 0
+    assert run.reconciled_cost == 0
+    assert draft.title == original_title
+    assert draft.sections == original_sections
+    assert draft.automatic_publishing_allowed is False
+
+
+def test_private_content_draft_failure_uses_managed_provider(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(content_draft_ai_service, "get_settings", _settings)
+    campaign, draft = _accepted_draft(db_session, create_test_org)
+    managed = ContentDraftProvider()
+    monkeypatch.setattr(
+        content_draft_ai_service,
+        "select_content_draft_capability",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            event_id="event-id",
+            connection_id="connection-id",
+            model_identifier="customer-model",
+        ),
+    )
+    monkeypatch.setattr(
+        content_draft_ai_service,
+        "_attempt_private_content_draft",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            event=None,
+            output=None,
+            provider_response=None,
+            provider_name="private_ai",
+            model_name="customer-model",
+            prompt_attempted=True,
+            error_code="ai_output_validation_failed",
+            provider_may_have_processed=True,
+            input_tokens=200,
+            output_tokens=50,
+            duration_ms=600,
+        ),
+    )
+    monkeypatch.setattr(
+        content_draft_ai_service,
+        "MistralGovernedAIProvider",
+        lambda **_kwargs: managed,
+    )
+
+    result = content_draft_ai_service.generate_content_draft_suggestion(
+        db_session,
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        draft_id=draft.id,
+        requested_by_user_id=None,
+        now=datetime(2026, 8, 15, 14, 30, tzinfo=UTC),
+    )
+
+    run = db_session.query(GovernedAIRun).one()
+    assert result["state"] == "available"
+    assert managed.calls == 1
+    assert run.provider_name == "mistral"
+    assert run.reconciled_cost > 0
+    assert result["safety"]["owner_draft_changed"] is False
+    assert result["safety"]["automatic_publishing_allowed"] is False

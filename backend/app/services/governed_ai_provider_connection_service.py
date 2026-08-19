@@ -31,9 +31,13 @@ from app.services.governed_ai_provider import (
     OpenAICompatibleGovernedAIProvider,
     validate_openai_compatible_endpoint,
 )
+from app.services.governed_ai_provider_capability_catalog import (
+    CAPABILITY_CATALOG_VERSION,
+    CAPABILITY_CODES,
+    serialize_capability_catalog,
+)
 
 
-_CAPABILITIES = ("explain", "question_answer", "draft", "keyword_filter", "baseline")
 _VALIDATION_SCHEMA_VERSION = "openai-compatible-connection-v1"
 _VALIDATION_TIMEOUT_SECONDS = 10.0
 _MAX_VALIDATION_RESPONSE_BYTES = 65_536
@@ -278,11 +282,14 @@ def create_provider_connection(
         status="candidate",
         endpoint_host=endpoint_host,
         model_identifier=normalized_model,
-        capabilities_json=json.dumps(_CAPABILITIES, separators=(",", ":")),
+        capabilities_json=json.dumps(CAPABILITY_CODES, separators=(",", ":")),
         encrypted_config_blob=encrypted_blob,
         key_reference=key_reference,
         key_version=key_version,
         credential_configured=bool(normalized_key),
+        credential_owner="organization",
+        cost_responsibility="customer",
+        platform_billing_enabled=False,
         validation_status="not_tested",
         network_validation_status="not_tested",
         last_validation_reason=None,
@@ -928,10 +935,6 @@ def resolve_public_endpoint_addresses(
 
 
 def _serialize(row: GovernedAIProviderConnection) -> dict[str, object]:
-    try:
-        capabilities = json.loads(row.capabilities_json)
-    except (TypeError, ValueError):
-        capabilities = []
     return {
         "id": row.id,
         "name": row.name,
@@ -939,8 +942,25 @@ def _serialize(row: GovernedAIProviderConnection) -> dict[str, object]:
         "status": row.status,
         "endpoint_host": row.endpoint_host,
         "model_identifier": row.model_identifier,
-        "capabilities": capabilities if isinstance(capabilities, list) else [],
+        "capability_catalog_version": CAPABILITY_CATALOG_VERSION,
+        "capabilities": list(CAPABILITY_CODES),
+        "supported_capabilities": serialize_capability_catalog(),
+        "capability_truth": {
+            "state": "separate_approval_required",
+            "summary": (
+                "Each listed use requires its own compatibility result and owner "
+                "approval. Listing a use does not turn it on."
+            ),
+        },
         "credential_configured": row.credential_configured,
+        "billing_boundary": {
+            "cost_responsibility": "customer",
+            "platform_billing_enabled": False,
+            "summary": (
+                "Usage fees for this private endpoint stay with the customer's "
+                "provider account. InsightOS does not bill or pay this provider."
+            ),
+        },
         "validation_status": row.validation_status,
         "network_validation_status": row.network_validation_status,
         "last_validation_reason": row.last_validation_reason,
