@@ -65,8 +65,8 @@ test("owners explicitly opt into saved-data report creation with a replacement k
   assert.match(settings, /Let n8n create private reports from saved results/);
   assert.match(settings, /report\.generate_saved/);
   assert.match(settings, /cannot start a crawl or paid check, send the report, publish content/);
-  assert.match(settings, /allowed_commands: enabled/);
-  assert.match(settings, /\["report\.retrieve", "report\.generate_saved"\]/);
+  assert.match(settings, /\.\.\.\(enabled \? \["report\.generate_saved"\] : \[\]\)/);
+  assert.match(settings, /"report\.retrieve"/);
   assert.match(settings, /old key stops working immediately/);
   assert.match(settings, /Private report created/);
 });
@@ -81,4 +81,19 @@ test("owners can download an inactive monthly private-report workflow", () => {
   );
   assert.match(settings, /activeAutomationCampaign\.id/);
   assert.match(settings, /inactive monthly-report workflow was downloaded/);
+});
+
+test("owners explicitly enable read-only saved recommendation retrieval", () => {
+  assert.match(settings, /Let n8n read saved recommendations/);
+  assert.match(settings, /recommendation\.retrieve/);
+  assert.match(settings, /cannot approve, schedule, execute, or publish anything/);
+  assert.match(settings, /Allow saved recommendations/);
+  assert.match(settings, /Download recommendation workflow/);
+  assert.match(
+    settings,
+    /\/automation\/starter-workflows\/n8n\/recommendation-ready\?service_account_id=/,
+  );
+  assert.match(settings, /Recommendation ready updates/);
+  assert.match(settings, /Saved recommendation returned/);
+  assert.match(settings, /target: \{ recommendation_id: "REPLACE-WITH-RECOMMENDATION-ID" \}/);
 });

@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.automation.n8n_starter_workflow import (
+    build_n8n_recommendation_ready_workflow,
     build_n8n_report_ready_workflow,
     build_n8n_saved_report_schedule_workflow,
 )
@@ -29,6 +30,7 @@ from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.organization import Organization
 from app.models.reporting import MonthlyReport, ReportArtifact
+from app.models.intelligence import StrategyRecommendation
 from app.services.audit_service import write_audit_log
 from app.services.commercial_plan_service import (
     FEATURE_CAMPAIGN_REPORT,
@@ -36,13 +38,18 @@ from app.services.commercial_plan_service import (
     require_commercial_feature,
 )
 from app.services.cost_economics_service import CostEconomicsError
-from app.services import premium_report_service, reporting_service
+from app.services import intelligence_service, premium_report_service, reporting_service
 
 
 COMMAND_SCHEMA_VERSION = "insightos.automation.command.v1"
 COMMAND_REPORT_RETRIEVE = "report.retrieve"
 COMMAND_REPORT_GENERATE_SAVED = "report.generate_saved"
-ALLOWED_COMMANDS = (COMMAND_REPORT_RETRIEVE, COMMAND_REPORT_GENERATE_SAVED)
+COMMAND_RECOMMENDATION_RETRIEVE = "recommendation.retrieve"
+ALLOWED_COMMANDS = (
+    COMMAND_REPORT_RETRIEVE,
+    COMMAND_REPORT_GENERATE_SAVED,
+    COMMAND_RECOMMENDATION_RETRIEVE,
+)
 DEFAULT_COMMANDS = (COMMAND_REPORT_RETRIEVE,)
 MAX_SERVICE_ACCOUNT_DAYS = 90
 TOKEN_PATTERN = re.compile(
@@ -283,6 +290,61 @@ def n8n_saved_report_schedule_starter_workflow(
         location_name=location.name,
         campaign_id=campaign.id,
         api_base_url=api_base_url,
+    )
+
+
+def n8n_recommendation_ready_starter_workflow(
+    db: Session,
+    *,
+    organization_id: str,
+    service_account_id: str,
+) -> dict[str, Any]:
+    require_commercial_feature(
+        db,
+        organization_id=organization_id,
+        feature_code=FEATURE_EXTERNAL_AUTOMATION,
+    )
+    row = (
+        db.query(AutomationServiceAccount)
+        .filter(
+            AutomationServiceAccount.id == service_account_id,
+            AutomationServiceAccount.organization_id == organization_id,
+        )
+        .one_or_none()
+    )
+    if row is None:
+        raise AutomationCommandError(
+            "Workflow command key not found.",
+            reason_code="automation_service_account_not_found",
+            status_code=404,
+        )
+    if row.status != "active" or _is_expired(row.expires_at):
+        raise AutomationCommandError(
+            "Create or replace the workflow key before downloading this starter workflow.",
+            reason_code="automation_service_account_inactive",
+            status_code=409,
+        )
+    if COMMAND_RECOMMENDATION_RETRIEVE not in _allowed_commands(row):
+        raise AutomationCommandError(
+            "Turn on saved recommendation access before downloading this workflow.",
+            reason_code="automation_command_not_allowed",
+            status_code=409,
+        )
+    location = _active_location(
+        db,
+        organization_id=organization_id,
+        business_location_id=row.business_location_id,
+    )
+    settings = get_settings()
+    public_app_url = (
+        settings.customer_app_base_url or settings.public_base_url
+    ).strip().rstrip("/")
+    return build_n8n_recommendation_ready_workflow(
+        service_account_id=row.id,
+        organization_id=row.organization_id,
+        location_id=row.business_location_id,
+        location_name=location.name,
+        api_base_url=f"{public_app_url}{settings.api_v1_prefix.rstrip('/')}",
     )
 
 
@@ -614,11 +676,145 @@ def execute_automation_command(
         return execute_saved_report_generation(
             db, account=account, request_payload=request_payload
         )
+    if request_payload["command_type"] == COMMAND_RECOMMENDATION_RETRIEVE:
+        return execute_recommendation_retrieval(
+            db, account=account, request_payload=request_payload
+        )
     raise AutomationCommandError(
         "This workflow command is not supported.",
         reason_code="automation_command_not_allowed",
         status_code=422,
     )
+
+
+def execute_recommendation_retrieval(
+    db: Session,
+    *,
+    account: AutomationServiceAccount,
+    request_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Return one saved recommendation without approving or executing it."""
+    request_hash = _hash_payload(request_payload)
+    existing = (
+        db.query(AutomationCommandReceipt)
+        .filter(
+            AutomationCommandReceipt.service_account_id == account.id,
+            AutomationCommandReceipt.idempotency_key
+            == str(request_payload["idempotency_key"]),
+        )
+        .one_or_none()
+    )
+    if existing is not None:
+        if not secrets.compare_digest(existing.request_hash, request_hash):
+            raise AutomationCommandError(
+                "This idempotency key was already used for a different command.",
+                reason_code="automation_command_idempotency_conflict",
+                status_code=409,
+            )
+        return _receipt_contract(existing, created=False)
+
+    denial_reason = _base_command_denial(db, account, request_payload)
+    recommendation_id = str(request_payload["target"]["recommendation_id"])
+    recommendation: StrategyRecommendation | None = None
+    campaign: Campaign | None = None
+    if denial_reason is None:
+        recommendation = (
+            db.query(StrategyRecommendation)
+            .join(Campaign, Campaign.id == StrategyRecommendation.campaign_id)
+            .filter(
+                StrategyRecommendation.id == recommendation_id,
+                StrategyRecommendation.tenant_id == account.tenant_id,
+                Campaign.tenant_id == account.tenant_id,
+                Campaign.organization_id == account.organization_id,
+                Campaign.business_location_id == account.business_location_id,
+            )
+            .one_or_none()
+        )
+        if recommendation is None:
+            denial_reason = "automation_recommendation_not_found"
+        else:
+            campaign = db.get(Campaign, recommendation.campaign_id)
+
+    result = (
+        _recommendation_result(db, recommendation)
+        if denial_reason is None and recommendation is not None
+        else {
+            "message": _denial_message(denial_reason or "automation_command_denied"),
+            "resource": None,
+            "artifacts": [],
+        }
+    )
+    now = datetime.now(UTC)
+    account.last_used_at = now
+    account.updated_at = now
+    status_value = "succeeded" if denial_reason is None else "denied"
+    artifact_payload = {
+        "schema_version": COMMAND_SCHEMA_VERSION,
+        "service_account_id": account.id,
+        "request_hash": request_hash,
+        "status": status_value,
+        "denial_reason_code": denial_reason,
+        "result": result,
+    }
+    receipt = AutomationCommandReceipt(
+        tenant_id=account.tenant_id,
+        organization_id=account.organization_id,
+        service_account_id=account.id,
+        business_location_id=account.business_location_id,
+        campaign_id=campaign.id if campaign is not None else None,
+        recommendation_id=recommendation.id if recommendation is not None else None,
+        schema_version=COMMAND_SCHEMA_VERSION,
+        command_type=COMMAND_RECOMMENDATION_RETRIEVE,
+        idempotency_key=str(request_payload["idempotency_key"]),
+        correlation_id=str(request_payload["correlation_id"]),
+        reason=str(request_payload["reason"]),
+        request_hash=request_hash,
+        status=status_value,
+        denial_reason_code=denial_reason,
+        result_json=_json(result),
+        artifact_hash=_hash_payload(artifact_payload),
+        created_at=now,
+        completed_at=now,
+    )
+    try:
+        with db.begin_nested():
+            db.add(receipt)
+            db.flush()
+    except IntegrityError:
+        db.expire_all()
+        duplicate = (
+            db.query(AutomationCommandReceipt)
+            .filter(
+                AutomationCommandReceipt.service_account_id == account.id,
+                AutomationCommandReceipt.idempotency_key
+                == str(request_payload["idempotency_key"]),
+            )
+            .one()
+        )
+        if not secrets.compare_digest(duplicate.request_hash, request_hash):
+            raise AutomationCommandError(
+                "This idempotency key was already used for a different command.",
+                reason_code="automation_command_idempotency_conflict",
+                status_code=409,
+            )
+        return _receipt_contract(duplicate, created=False)
+    write_audit_log(
+        db,
+        tenant_id=account.tenant_id,
+        actor_user_id=None,
+        event_type="automation.command.decided",
+        payload={
+            "service_account_id": account.id,
+            "command_receipt_id": receipt.id,
+            "command_type": receipt.command_type,
+            "business_location_id": account.business_location_id,
+            "status": status_value,
+            "denial_reason_code": denial_reason,
+        },
+    )
+    db.commit()
+    db.refresh(receipt)
+    return _receipt_contract(receipt, created=True)
 
 
 def execute_saved_report_generation(
@@ -854,6 +1050,60 @@ def _report_result(
             }
             for artifact in artifacts
         ],
+    }
+
+
+def _recommendation_result(
+    db: Session, recommendation: StrategyRecommendation
+) -> dict[str, Any]:
+    plans = intelligence_service.build_recommendation_action_plans(
+        db,
+        tenant_id=recommendation.tenant_id,
+        recommendations=[recommendation],
+    )
+    plan = plans.get(recommendation.id, {})
+    metrics = []
+    for metric in plan.get("success_metrics", []):
+        if not isinstance(metric, dict):
+            continue
+        metrics.append(
+            {
+                key: metric[key]
+                for key in ("display_name", "plain_language", "unit")
+                if metric.get(key) is not None
+            }
+        )
+    action = {
+        "title": str(plan.get("display_name") or "Saved recommendation"),
+        "why_it_matters": str(
+            plan.get("why_it_matters") or recommendation.rationale
+        ),
+        "steps": [str(step) for step in plan.get("steps", [])],
+        "effort": plan.get("effort"),
+        "owner_role": plan.get("owner_role"),
+        "success_metrics": metrics,
+        "observation_window_days": plan.get("observation_window_days"),
+    }
+    return {
+        "message": "InsightOS returned a saved recommendation for owner review.",
+        "recommendation": {
+            "id": recommendation.id,
+            "status": recommendation.status.value,
+            "created_at": recommendation.created_at.isoformat(),
+            "action": action,
+        },
+        "resource": {
+            "type": "recommendation",
+            "id": recommendation.id,
+            "href": "/opportunities",
+        },
+        "artifacts": [],
+        "truth": {
+            "saved_result_only": True,
+            "owner_review_required": True,
+            "approved": False,
+            "executed": False,
+        },
     }
 
 
@@ -1108,6 +1358,15 @@ def _command_catalog() -> list[dict[str, Any]]:
             "approval_required": False,
             "publishing_allowed": False,
         },
+        {
+            "code": COMMAND_RECOMMENDATION_RETRIEVE,
+            "label": "Retrieve a saved recommendation",
+            "summary": "Let a workflow read one saved recommendation for owner review.",
+            "read_only": True,
+            "paid_provider_call": False,
+            "approval_required": False,
+            "publishing_allowed": False,
+        },
     ]
 
 
@@ -1133,6 +1392,7 @@ def _denial_message(reason_code: str) -> str:
         "automation_command_location_unavailable": "The selected location is not active and available for workflow commands.",
         "automation_report_not_found": "That report was not found for the workflow key's location.",
         "automation_campaign_not_found": "That location setup was not found for this workflow key.",
+        "automation_recommendation_not_found": "That recommendation was not found for the workflow key's location.",
         "campaign_report_upgrade_required": "Report creation is not available on the current plan.",
     }
     return messages.get(reason_code, "InsightOS safely declined this workflow command.")

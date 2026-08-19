@@ -5265,7 +5265,7 @@ Implementation status (August 17, 2026):
 
 #### AUT1J - Governed Inbound Automation Commands (n8n First)
 
-Implementation status — AUT1J-A/B/C report retrieval, n8n starter, and private saved-data report creation (August 19, 2026):
+Implementation status — AUT1J-A/B/C/D saved report and recommendation retrieval (August 19, 2026):
 
 - The first inbound command is deliberately read-only: `report.retrieve` can
   return the safe metadata and ready private artifacts for a report InsightOS
@@ -5325,7 +5325,18 @@ Implementation status — AUT1J-A/B/C report retrieval, n8n starter, and private
   selects the current Bearer credential before publishing. A stable
   campaign-and-month idempotency key makes manual testing and scheduled retry
   return one report for that period instead of creating duplicates.
-- AUT1J-D and later slices still own priced checks, saved-data refreshes,
+- AUT1J-D adds `recommendation.retrieve` as a separate, explicit key scope.
+  It returns one tenant-, campaign-, and location-scoped saved recommendation
+  using the owner-facing action lexicon, without raw evidence, provider data,
+  internal hashes, approval, scheduling, execution, or publication. Existing
+  workflow keys never gain this access silently.
+- An owner who enables saved recommendation access can download an inactive,
+  credential-free n8n workflow. It accepts only exact `recommendation.ready`
+  events for the account's organization and location, retrieves the announced
+  recommendation idempotently, and leaves the customer to add their email,
+  CRM, or task step. Settings uses plain language and rotates the key whenever
+  this scope changes.
+- AUT1J-E and later slices still own priced checks, saved-data refreshes,
   governed drafts, approval requests, accepted-job polling, multiple-location
   scopes, action allowances, and broader inbound starter workflows. No broader
   inbound action is implied by these report commands.

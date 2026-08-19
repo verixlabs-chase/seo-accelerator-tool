@@ -386,7 +386,7 @@ type AutomationServiceAccount = {
   status: "active" | "revoked";
   location_id: string;
   location_name: string;
-  allowed_commands: Array<"report.retrieve" | "report.generate_saved">;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve">;
   token_hint: string;
   token_version: number;
   expires_at: string;
@@ -401,7 +401,7 @@ type AutomationServiceAccount = {
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
-  command_type: "report.retrieve" | "report.generate_saved";
+  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve";
   idempotency_key: string;
   correlation_id: string;
   location_id: string;
@@ -409,7 +409,7 @@ type AutomationCommandReceipt = {
   denial_reason_code?: string | null;
   result: {
     message: string;
-    resource?: { type: "report"; id: string; href: string } | null;
+    resource?: { type: "report" | "recommendation"; id: string; href: string } | null;
     artifacts: Array<{ id: string; type: string; ready: boolean; download_path?: string }>;
   };
   created_at: string;
@@ -3166,6 +3166,7 @@ export default function SettingsPage() {
 
   const setAutomationReportCreation = useCallback(
     async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
       const warning = enabled
         ? "Let n8n create private reports from results InsightOS has already saved? This replaces the workflow key. It will not run new checks, email anyone, or publish changes."
         : "Remove report-creation access? This replaces the workflow key, and saved-report retrieval will continue to work.";
@@ -3180,9 +3181,13 @@ export default function SettingsPage() {
           {
             method: "POST",
             body: JSON.stringify({
-              allowed_commands: enabled
-                ? ["report.retrieve", "report.generate_saved"]
-                : ["report.retrieve"],
+              allowed_commands: Array.from(new Set([
+                "report.retrieve",
+                ...(enabled ? ["report.generate_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.retrieve")
+                  ? ["recommendation.retrieve"]
+                  : []),
+              ])),
             }),
           },
         )) as { token: string; token_shown_once: true };
@@ -3199,7 +3204,48 @@ export default function SettingsPage() {
         setBusyAction("");
       }
     },
-    [loadAutomationCommandAccess],
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationRecommendationAccess = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let n8n read saved recommendations for this location? This replaces the workflow key. It cannot approve, schedule, execute, or publish the recommendation."
+        : "Remove saved recommendation access? This replaces the workflow key; report access will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-recommendation-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.includes("report.generate_saved")
+                  ? ["report.generate_saved"]
+                  : []),
+                ...(enabled ? ["recommendation.retrieve"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Saved recommendation access is on. Copy the replacement workflow key into n8n now."
+          : "Saved recommendation access is off. Copy the replacement workflow key into n8n now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change saved recommendation access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
   );
 
   const revokeAutomationCommandAccess = useCallback(
@@ -3284,6 +3330,32 @@ export default function SettingsPage() {
       setNotice("The inactive monthly-report workflow was downloaded. Import it, select the current workflow key, review its timezone, and publish it only when ready.");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Unable to download the monthly-report workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadN8nRecommendationWorkflow = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-recommendation-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/recommendation-ready?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-recommendation-ready.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive saved-recommendation workflow was downloaded. Import it, select the current workflow key, and publish only when ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the saved-recommendation workflow.");
     } finally {
       setBusyAction("");
     }
@@ -7964,6 +8036,50 @@ export default function SettingsPage() {
                                     </button>
                                   </div>
                                 ) : null}
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let n8n read saved recommendations
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        When InsightOS finds a recommendation, n8n can copy its plain-language title, steps, and measurement facts into your email, CRM, or task tool. It cannot approve, schedule, execute, or publish anything.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-recommendation-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationRecommendationAccess(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-recommendation-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve")
+                                          ? "Turn off recommendation access"
+                                          : "Allow saved recommendations"}
+                                    </button>
+                                  </div>
+                                  {activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve") ? (
+                                    <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+                                      <p className="text-xs leading-5 text-emerald-50">
+                                        Download an inactive n8n workflow that listens only for this location&apos;s Recommendation ready updates and retrieves the matching saved recommendation.
+                                      </p>
+                                      <button
+                                        type="button"
+                                        className={`${secondaryButtonClass} mt-3`}
+                                        disabled={busyAction === `automation-command-recommendation-template-${activeAutomationServiceAccount.id}`}
+                                        onClick={() => void downloadN8nRecommendationWorkflow(activeAutomationServiceAccount.id)}
+                                      >
+                                        {busyAction === `automation-command-recommendation-template-${activeAutomationServiceAccount.id}`
+                                          ? "Downloading..."
+                                          : "Download recommendation workflow"}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
                               </div>
                             ) : null}
                           </div>
@@ -8073,6 +8189,22 @@ export default function SettingsPage() {
                                   </p>
                                 </>
                               ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Retrieve a saved recommendation for owner review</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "recommendation.retrieve",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-recommendation-REPLACE",
+                                    idempotency_key: "n8n-recommendation-REPLACE",
+                                    reason: "Copy a saved recommendation into this workflow",
+                                    target: { recommendation_id: "REPLACE-WITH-RECOMMENDATION-ID" },
+                                  }, null, 2)}</pre>
+                                  <p>This returns saved owner-facing facts only. It does not approve or execute the recommendation.</p>
+                                </>
+                              ) : null}
                             </div>
                           </details>
                         ) : null}
@@ -8089,7 +8221,9 @@ export default function SettingsPage() {
                                     {receipt.status === "succeeded"
                                       ? receipt.command_type === "report.generate_saved"
                                         ? "Private report created"
-                                        : "Saved report returned"
+                                        : receipt.command_type === "recommendation.retrieve"
+                                          ? "Saved recommendation returned"
+                                          : "Saved report returned"
                                       : "Request safely declined"}
                                   </span>
                                   <span className="text-zinc-500">{formatTimestamp(receipt.completed_at)}</span>

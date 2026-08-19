@@ -101,7 +101,7 @@ class AutomationCommandReceipt(Base):
     __tablename__ = "automation_command_receipts"
     __table_args__ = (
         CheckConstraint(
-            "command_type in ('report.retrieve','report.generate_saved')",
+            "command_type in ('report.retrieve','report.generate_saved','recommendation.retrieve')",
             name="ck_automation_command_receipts_type",
         ),
         CheckConstraint(
@@ -120,6 +120,16 @@ class AutomationCommandReceipt(Base):
                 "automation_service_accounts.organization_id",
             ],
             name="fk_automation_command_receipts_account_scope",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["recommendation_id", "tenant_id", "campaign_id"],
+            [
+                "strategy_recommendations.id",
+                "strategy_recommendations.tenant_id",
+                "strategy_recommendations.campaign_id",
+            ],
+            name="fk_automation_command_receipts_recommendation_scope",
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
@@ -175,6 +185,7 @@ class AutomationCommandReceipt(Base):
     business_location_id: Mapped[str] = mapped_column(String(36), nullable=False)
     campaign_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     report_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    recommendation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     schema_version: Mapped[str] = mapped_column(String(80), nullable=False)
     command_type: Mapped[str] = mapped_column(String(60), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)

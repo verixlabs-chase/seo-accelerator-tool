@@ -22,6 +22,12 @@ EXPANSION_MIGRATION = (
     / "versions"
     / "20260819_0189_saved_report_generation_command.py"
 )
+RECOMMENDATION_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0190_saved_recommendation_command.py"
+)
 
 
 def test_inbound_automation_schema_matches_models(db_session) -> None:
@@ -51,6 +57,7 @@ def test_inbound_automation_schema_matches_models(db_session) -> None:
         "service_account_id",
         "campaign_id",
         "report_id",
+        "recommendation_id",
         "command_type",
         "idempotency_key",
         "request_hash",
@@ -61,6 +68,7 @@ def test_inbound_automation_schema_matches_models(db_session) -> None:
     assert account_columns["token_hash"]["nullable"] is False
     assert receipt_columns["campaign_id"]["nullable"] is True
     assert receipt_columns["report_id"]["nullable"] is True
+    assert receipt_columns["recommendation_id"]["nullable"] is True
 
     account_indexes = {
         item["name"] for item in inspector.get_indexes("automation_service_accounts")
@@ -99,4 +107,14 @@ def test_saved_report_generation_migration_is_bounded_and_fail_closed() -> None:
     assert 'batch.alter_column("report_id"' in source
     assert "generated_receipt" in source
     assert "expanded_account" in source
+    assert "Cannot downgrade" in source
+
+
+def test_saved_recommendation_migration_is_scoped_and_fail_closed() -> None:
+    source = RECOMMENDATION_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0190"' in source
+    assert 'down_revision = "20260819_0189"' in source
+    assert "'recommendation.retrieve'" in source
+    assert "fk_automation_command_receipts_recommendation_scope" in source
+    assert "uq_strategy_recommendations_id_scope" in source
     assert "Cannot downgrade" in source

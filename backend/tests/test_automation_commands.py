@@ -12,8 +12,10 @@ from app.models.automation_command import (
 )
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.intelligence import StrategyRecommendation
 from app.models.organization_membership import OrganizationMembership
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent
+from app.enums import StrategyRecommendationStatus
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -554,7 +556,6 @@ def test_owner_expands_scope_by_rotating_key_and_n8n_generates_one_private_repor
     assert result["safety"]["paid_provider_calls_allowed"] is False
     assert result["safety"]["publishing_allowed"] is False
     assert db_session.query(MonthlyReport).count() == reports_before + 1
-    assert db_session.query(ReportDeliveryEvent).count() == 0
 
     repeated = client.post(
         "/api/v1/automation/commands",
@@ -566,6 +567,99 @@ def test_owner_expands_scope_by_rotating_key_and_n8n_generates_one_private_repor
     assert repeated.json()["data"]["receipt"]["id"] == result["receipt"]["id"]
     assert db_session.query(MonthlyReport).count() == reports_before + 1
 
+
+def test_recommendation_retrieval_is_explicit_read_only_and_idempotent(
+    client, db_session
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="recommendation"
+    )
+    recommendation = StrategyRecommendation(
+        id=str(uuid.uuid4()),
+        tenant_id=organization_id,
+        campaign_id=scope["campaign_id"],
+        recommendation_type="content.refresh",
+        rationale="Update the service page so customers can understand the offer.",
+        status=StrategyRecommendationStatus.GENERATED,
+        evidence_json="[]",
+        rollback_plan_json='{"steps":[]}',
+    )
+    db_session.add(recommendation)
+    db_session.commit()
+    account, read_only_secret = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    body = {
+        "schema_version": "insightos.automation.command.v1",
+        "command_type": "recommendation.retrieve",
+        "organization_id": organization_id,
+        "location_id": scope["location_id"],
+        "correlation_id": "n8n-recommendation-1",
+        "idempotency_key": "recommendation-ready-1001",
+        "reason": "Send a saved recommendation to the owner's task system",
+        "target": {"recommendation_id": recommendation.id},
+    }
+    denied = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(read_only_secret)
+    )
+    assert denied.status_code == 200
+    assert denied.json()["data"]["receipt"]["denial_reason_code"] == "automation_command_not_allowed"
+
+    rotated = client.post(
+        f"/api/v1/automation/service-accounts/{account['id']}/rotate",
+        headers=_headers(owner_token),
+        json={"allowed_commands": ["report.retrieve", "recommendation.retrieve"]},
+    )
+    assert rotated.status_code == 200, rotated.text
+    secret = rotated.json()["data"]["token"]
+    body["idempotency_key"] = "recommendation-ready-1002"
+    response = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    result = data["receipt"]["result"]
+    assert data["receipt"]["status"] == "succeeded"
+    assert result["resource"] == {
+        "type": "recommendation", "id": recommendation.id, "href": "/opportunities"
+    }
+    assert result["truth"] == {
+        "saved_result_only": True,
+        "owner_review_required": True,
+        "approved": False,
+        "executed": False,
+    }
+    serialized = json.dumps(result)
+    assert "evidence_json" not in serialized
+    assert "input_hash" not in serialized
+    db_session.refresh(recommendation)
+    assert recommendation.status == StrategyRecommendationStatus.GENERATED
+
+    repeated = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["created"] is False
+    assert repeated.json()["data"]["receipt"]["id"] == data["receipt"]["id"]
+
+    starter = client.get(
+        "/api/v1/automation/starter-workflows/n8n/recommendation-ready",
+        params={"service_account_id": account["id"]},
+        headers=_headers(owner_token),
+    )
+    assert starter.status_code == 200, starter.text
+    workflow = starter.json()
+    assert workflow["active"] is False
+    text = json.dumps(workflow)
+    assert "recommendation.ready" in text
+    assert "recommendation.retrieve" in text
+    assert scope["location_id"] in text
+    assert "recommendation.approve" not in text
+    assert "recommendation.execute" not in text
+    assert db_session.query(ReportDeliveryEvent).count() == 0
 
 def test_only_owner_manages_keys_and_command_contract_rejects_extra_fields(
     client, db_session

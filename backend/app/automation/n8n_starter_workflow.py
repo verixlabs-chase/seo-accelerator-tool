@@ -5,6 +5,9 @@ from typing import Any
 
 
 N8N_REPORT_READY_TEMPLATE_VERSION = "insightos.n8n.report-ready.v1"
+N8N_RECOMMENDATION_READY_TEMPLATE_VERSION = (
+    "insightos.n8n.recommendation-ready.v1"
+)
 N8N_SAVED_REPORT_SCHEDULE_TEMPLATE_VERSION = (
     "insightos.n8n.saved-report-schedule.v1"
 )
@@ -221,6 +224,134 @@ def build_n8n_report_ready_workflow(
             "templateCredsSetupCompleted": False,
             "insightosTemplateVersion": N8N_REPORT_READY_TEMPLATE_VERSION,
         },
+        "tags": [],
+    }
+
+
+def build_n8n_recommendation_ready_workflow(
+    *,
+    service_account_id: str,
+    organization_id: str,
+    location_id: str,
+    location_name: str,
+    api_base_url: str,
+) -> dict[str, Any]:
+    """Return an inactive n8n workflow for saved recommendation retrieval."""
+    workflow_key = (
+        f"{service_account_id}:{N8N_RECOMMENDATION_READY_TEMPLATE_VERSION}"
+    )
+
+    def node_id(name: str) -> str:
+        return str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:{name}"))
+
+    webhook_name = "Receive a recommendation update"
+    filter_name = "Use only this location's recommendations"
+    retrieve_name = "Retrieve the saved recommendation"
+    ready_name = "Add your email, CRM, or task step here"
+    ignored_name = "Ignore unrelated updates safely"
+    nodes: list[dict[str, Any]] = [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": f"insightos-recommendation-ready-{service_account_id[:8]}",
+                "responseMode": "onReceived",
+                "options": {},
+            },
+            "id": node_id("webhook"),
+            "name": webhook_name,
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2.1,
+            "position": [-560, 160],
+            "webhookId": str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:webhook-id")),
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": True,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 3,
+                    },
+                    "conditions": [
+                        _equals_condition(node_id("schema"), "={{ $json.body.schema_version }}", "insightos.automation.event.v1"),
+                        _equals_condition(node_id("type"), "={{ $json.body.event_type }}", "recommendation.ready"),
+                        _equals_condition(node_id("truth"), "={{ $json.body.truth_state }}", "ready"),
+                        _equals_condition(node_id("resource"), "={{ $json.body.resource.type }}", "recommendation"),
+                        _equals_condition(node_id("organization"), "={{ $json.body.organization_id }}", organization_id),
+                        _equals_condition(node_id("location"), "={{ $json.body.location_id }}", location_id),
+                    ],
+                    "combinator": "and",
+                },
+                "options": {},
+            },
+            "id": node_id("filter"),
+            "name": filter_name,
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.2,
+            "position": [-288, 160],
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": f"{api_base_url.rstrip('/')}/automation/commands",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpBearerAuth",
+                "sendBody": True,
+                "contentType": "json",
+                "specifyBody": "json",
+                "jsonBody": (
+                    "={{ { schema_version: 'insightos.automation.command.v1',"
+                    " command_type: 'recommendation.retrieve',"
+                    f" organization_id: '{organization_id}', location_id: '{location_id}',"
+                    " correlation_id: 'n8n:' + $json.body.event_id,"
+                    " idempotency_key: 'recommendation-ready:' + $json.body.event_id,"
+                    " reason: 'Retrieve the saved recommendation announced by InsightOS',"
+                    " target: { recommendation_id: $json.body.resource.id } } }}"
+                ),
+                "options": {"timeout": 30000},
+            },
+            "id": node_id("retrieve"),
+            "name": retrieve_name,
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.3,
+            "position": [0, 64],
+            "notesInFlow": True,
+            "notes": "Select the Bearer Auth credential containing the current InsightOS workflow key.",
+        },
+        {"parameters": {}, "id": node_id("ready"), "name": ready_name, "type": "n8n-nodes-base.noOp", "typeVersion": 1, "position": [288, 64]},
+        {"parameters": {}, "id": node_id("ignored"), "name": ignored_name, "type": "n8n-nodes-base.noOp", "typeVersion": 1, "position": [0, 256]},
+        {
+            "parameters": {
+                "content": (
+                    "## Saved recommendation helper\n\n"
+                    f"Limited to **{location_name}**. It retrieves a saved recommendation for owner review.\n\n"
+                    "It cannot approve, schedule, execute, publish, buy checks, or change a website or Business Profile."
+                ),
+                "height": 250,
+                "width": 520,
+                "color": 5,
+            },
+            "id": node_id("purpose-note"),
+            "name": "What this workflow does",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [-592, -176],
+        },
+    ]
+    return {
+        "name": f"InsightOS - Retrieve saved recommendations - {location_name}",
+        "nodes": nodes,
+        "connections": {
+            webhook_name: {"main": [[{"node": filter_name, "type": "main", "index": 0}]]},
+            filter_name: {"main": [[{"node": retrieve_name, "type": "main", "index": 0}], [{"node": ignored_name, "type": "main", "index": 0}]]},
+            retrieve_name: {"main": [[{"node": ready_name, "type": "main", "index": 0}]]},
+        },
+        "pinData": {},
+        "settings": {"executionOrder": "v1"},
+        "active": False,
+        "versionId": str(uuid.uuid5(_NAMESPACE, f"{workflow_key}:version")),
+        "meta": {"templateCredsSetupCompleted": False, "insightosTemplateVersion": N8N_RECOMMENDATION_READY_TEMPLATE_VERSION},
         "tags": [],
     }
 
