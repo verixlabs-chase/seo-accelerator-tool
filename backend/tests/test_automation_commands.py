@@ -4,6 +4,7 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from app.models.audit_log import AuditLog
 from app.models.authority import DirectoryListingDiscoveryRun
@@ -19,7 +20,7 @@ from app.models.intelligence import StrategyRecommendation
 from app.models.organization_membership import OrganizationMembership
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent
 from app.enums import StrategyRecommendationStatus
-from app.services import content_service, listing_discovery_service
+from app.services import automation_command_service, content_service, listing_discovery_service
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -982,3 +983,71 @@ def test_workflow_creates_only_private_draft_from_accepted_brief(
     serialized = json.dumps(data)
     assert "sections" not in serialized
     assert "automatic_publishing_allowed" not in serialized
+
+
+def test_workflow_requests_owner_review_without_approving_draft(
+    client, db_session, monkeypatch
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="draft-review-command"
+    )
+    account, _ = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    draft_id = str(uuid.uuid4())
+    brief_id = str(uuid.uuid4())
+    monkeypatch.setattr(
+        automation_command_service,
+        "_scoped_content_draft",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            id=draft_id,
+            content_brief_id=brief_id,
+            status="working",
+            title="Emergency service page",
+            revision=3,
+        ),
+    )
+    rotated = client.post(
+        f"/api/v1/automation/service-accounts/{account['id']}/rotate",
+        headers=_headers(owner_token),
+        json={
+            "allowed_commands": [
+                "report.retrieve",
+                "content.request_draft_review",
+            ]
+        },
+    )
+    assert rotated.status_code == 200, rotated.text
+    secret = rotated.json()["data"]["token"]
+    body = {
+        "schema_version": "insightos.automation.command.v1",
+        "command_type": "content.request_draft_review",
+        "organization_id": organization_id,
+        "location_id": scope["location_id"],
+        "correlation_id": "n8n-draft-review-1",
+        "idempotency_key": "n8n-draft-review-1001",
+        "reason": "Ask the owner to review the private draft",
+        "target": {"campaign_id": scope["campaign_id"], "draft_id": draft_id},
+    }
+    response = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["receipt"]["status"] == "succeeded"
+    assert data["receipt"]["result"]["truth"] == {
+        "review_requested": True,
+        "approved": False,
+        "scheduled": False,
+        "published": False,
+        "website_changed": False,
+    }
+    assert data["receipt"]["result"]["draft"]["revision"] == 3
+    repeated = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["created"] is False

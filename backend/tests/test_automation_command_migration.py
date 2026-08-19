@@ -52,6 +52,12 @@ WORKING_DRAFT_MIGRATION = (
     / "versions"
     / "20260819_0194_governed_working_draft_command.py"
 )
+DRAFT_REVIEW_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0195_content_draft_review_request_command.py"
+)
 
 
 def test_inbound_automation_schema_matches_models(db_session) -> None:
@@ -173,4 +179,12 @@ def test_governed_working_draft_migration_is_bounded() -> None:
     assert 'revision = "20260819_0194"' in source
     assert 'down_revision = "20260819_0193"' in source
     assert "'content.create_working_draft'" in source
+    assert "Cannot downgrade" in source
+
+
+def test_content_draft_review_request_migration_is_bounded() -> None:
+    source = DRAFT_REVIEW_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0195"' in source
+    assert 'down_revision = "20260819_0194"' in source
+    assert "'content.request_draft_review'" in source
     assert "Cannot downgrade" in source

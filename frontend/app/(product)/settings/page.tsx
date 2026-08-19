@@ -386,7 +386,7 @@ type AutomationServiceAccount = {
   status: "active" | "revoked";
   location_id: string;
   location_name: string;
-  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft">;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review">;
   token_hint: string;
   token_version: number;
   expires_at: string;
@@ -401,7 +401,7 @@ type AutomationServiceAccount = {
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
-  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft";
+  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review";
   idempotency_key: string;
   correlation_id: string;
   location_id: string;
@@ -3199,6 +3199,7 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("content.create_working_draft")
                   ? ["content.create_working_draft"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
               ])),
             }),
           },
@@ -3252,6 +3253,7 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("content.create_working_draft")
                   ? ["content.create_working_draft"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
               ],
             }),
           },
@@ -3299,6 +3301,7 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("content.create_working_draft")
                   ? ["content.create_working_draft"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
               ],
             }),
           },
@@ -3342,6 +3345,7 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("connection.refresh_saved") ? ["connection.refresh_saved"] : []),
                 ...(enabled ? ["listing.check_public"] : []),
                 ...(currentAccount?.allowed_commands.includes("content.create_working_draft") ? ["content.create_working_draft"] : []),
+                ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
               ],
             }),
           },
@@ -3384,7 +3388,7 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("recommendation.request_review") ? ["recommendation.request_review"] : []),
                 ...(currentAccount?.allowed_commands.includes("connection.refresh_saved") ? ["connection.refresh_saved"] : []),
                 ...(currentAccount?.allowed_commands.includes("listing.check_public") ? ["listing.check_public"] : []),
-                ...(enabled ? ["content.create_working_draft"] : []),
+                ...(enabled ? ["content.create_working_draft", "content.request_draft_review"] : []),
               ],
             }),
           },
@@ -8301,10 +8305,10 @@ export default function SettingsPage() {
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
                                       <p className="text-sm font-semibold text-white">
-                                        Let n8n start accepted working drafts
+                                        Let n8n start accepted working drafts and request review
                                       </p>
                                       <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
-                                        After an owner accepts a saved content brief in InsightOS, n8n can create its private editable outline. The draft starts empty and still requires owner writing and review. It cannot generate AI copy, approve, schedule, publish, or change your website.
+                                        After an owner accepts a saved content brief, n8n can create its private editable outline and place an exact draft beside the owner for review. It cannot generate AI copy, approve, schedule, publish, or change your website.
                                       </p>
                                     </div>
                                     <button
@@ -8500,6 +8504,25 @@ export default function SettingsPage() {
                                   <p>A draft is created only for an already accepted brief at this location. Reusing the key returns the same private draft.</p>
                                 </>
                               ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("content.request_draft_review") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Ask the owner to review one private draft</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "content.request_draft_review",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-draft-review-REPLACE",
+                                    idempotency_key: "n8n-draft-review-REPLACE",
+                                    reason: "Ask the owner to review the private draft",
+                                    target: {
+                                      campaign_id: activeAutomationCampaign?.id || "REPLACE-WITH-CAMPAIGN-ID",
+                                      draft_id: "REPLACE-WITH-WORKING-DRAFT-ID",
+                                    },
+                                  }, null, 2)}</pre>
+                                  <p>The request appears beside that exact private draft. It cannot approve, schedule, publish, or change the website.</p>
+                                </>
+                              ) : null}
                             </div>
                           </details>
                         ) : null}
@@ -8526,6 +8549,8 @@ export default function SettingsPage() {
                                           ? "Public listing check accepted"
                                         : receipt.command_type === "content.create_working_draft"
                                           ? "Private working draft created"
+                                        : receipt.command_type === "content.request_draft_review"
+                                          ? "Private draft review requested"
                                           : "Saved report returned"
                                       : "Request safely declined"}
                                   </span>

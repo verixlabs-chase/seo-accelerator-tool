@@ -5380,9 +5380,19 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   later owner writing stay inside the native Content workspace. Replays return
   the same receipt and the native one-draft-per-brief constraint remains in
   force.
-- AUT1J-I and later slices still own approval requests beyond review routing,
-  multiple-location scopes, broader action allowances, and additional inbound
-  starter workflows. No broader inbound action is implied by these commands.
+- AUT1J-I adds `content.request_draft_review` as a separately enforced command
+  while keeping it under the same owner-facing private-draft permission. It
+  accepts only an existing working draft in the exact campaign and Business
+  Location assigned to the key. The immutable receipt is the durable review
+  request; it cannot edit the draft, record approval, schedule, publish, create
+  a WordPress draft, or change the website.
+- The native Content workspace reads only successful tenant- and campaign-
+  scoped receipts and shows the latest request beside that exact draft with a
+  plain safety statement. The minimized command result returns the draft id,
+  brief id, title, status, and revision without draft body copy or evidence.
+- AUT1J-J and later slices still own multiple-location scopes, broader action
+  allowances, and additional inbound starter workflows. No broader inbound
+  action or approval authority is implied by these commands.
 
 Planned scope (added August 17, 2026):
 

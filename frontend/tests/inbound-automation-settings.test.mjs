@@ -11,6 +11,10 @@ const opportunities = readFileSync(
   fileURLToPath(new URL("../app/(product)/opportunities/page.tsx", import.meta.url)),
   "utf8",
 );
+const content = readFileSync(
+  fileURLToPath(new URL("../app/(product)/content/page.tsx", import.meta.url)),
+  "utf8",
+);
 
 test("Settings offers one-location read-only n8n report access", () => {
   assert.match(settings, /Give n8n read-only access to saved reports/);
@@ -132,7 +136,12 @@ test("owners explicitly enable private drafts from accepted briefs", () => {
   assert.match(settings, /content\.create_working_draft/);
   assert.match(settings, /Allow accepted draft creation/);
   assert.match(settings, /REPLACE-WITH-ACCEPTED-BRIEF-ID/);
-  assert.match(settings, /draft starts empty and still requires owner writing and review/i);
+  assert.match(settings, /private editable outline and place an exact draft beside the owner for review/i);
   assert.match(settings, /cannot generate AI copy, approve, schedule, publish, or change your website/i);
   assert.match(settings, /Private working draft created/);
+  assert.match(settings, /content\.request_draft_review/);
+  assert.match(settings, /REPLACE-WITH-WORKING-DRAFT-ID/);
+  assert.match(settings, /Private draft review requested/);
+  assert.match(content, /Review requested by a connected workflow/);
+  assert.match(content, /did not approve, schedule, publish, or change your website/);
 });
