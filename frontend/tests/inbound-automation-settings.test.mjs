@@ -93,6 +93,15 @@ test("Settings explains connector compatibility without claiming a live connecti
   assert.doesNotMatch(settings, /connector\.production_connection_proven\s*\?\s*["']Connected/);
 });
 
+test("each named connector offers a synthetic safe test instead of live proof", () => {
+  assert.match(settings, /downloadAutomationConformanceKit\(connector\.code\)/);
+  assert.match(settings, /Download safe test file/);
+  assert.match(settings, /Preparing safe test/);
+  assert.match(settings, /isAutomationConformanceProvider\(connector\.code\)/);
+  assert.match(settings, /Use the universal guide to test another HTTPS client/);
+  assert.match(settings, /contains synthetic data and a test-only secret/);
+});
+
 test("owners can download an importable API definition without embedding the key", () => {
   assert.match(settings, /Download API file/);
   assert.match(settings, /\/automation\/command-openapi\?service_account_id=/);

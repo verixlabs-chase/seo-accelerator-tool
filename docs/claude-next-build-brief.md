@@ -5554,6 +5554,10 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   says the customer's own connection still needs a test. The catalog request
   is additive during rolling deployment, so an older backend cannot hide or
   break existing workflow-key controls.
+- AUT1J-AD gives each named Zapier, Make, n8n, and Pipedream card a direct safe
+  test-file download using the existing deterministic conformance fixture. The
+  download contains synthetic data and a test-only secret and never claims a
+  live connection; generic HTTPS clients continue through the universal guide.
 
 Planned scope (added August 17, 2026):
 

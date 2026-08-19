@@ -417,6 +417,12 @@ type AutomationConnectorCatalog = {
   }>;
 };
 
+function isAutomationConformanceProvider(
+  code: AutomationConnectorCatalog["items"][number]["code"],
+): code is "zapier" | "make" | "n8n" | "pipedream" {
+  return code !== "https";
+}
+
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
@@ -2922,13 +2928,20 @@ export default function SettingsPage() {
     [loadPrivateAIProviders, privateAIBaselineAcks],
   );
 
-  const downloadAutomationConformanceKit = useCallback(async () => {
-    setBusyAction(`automation-conformance-${automationProvider}`);
+  const downloadAutomationConformanceKit = useCallback(async (
+    requestedProvider?: "zapier" | "make" | "pipedream" | "n8n" | "https",
+  ) => {
+    if (requestedProvider === "https") return;
+    const provider = requestedProvider || automationProvider;
+    setBusyAction(`automation-conformance-${provider}`);
     setError("");
     setNotice("");
     try {
+      const conformanceUrl = requestedProvider
+        ? `/automation/conformance/${requestedProvider}`
+        : `/automation/conformance/${automationProvider}`;
       const response = (await platformApi(
-        `/automation/conformance/${automationProvider}`,
+        conformanceUrl,
         { method: "GET" },
       )) as AutomationConformanceKit;
       const objectUrl = URL.createObjectURL(
@@ -8374,6 +8387,22 @@ export default function SettingsPage() {
                                       ? "Optional starter available · Your connection still needs a test"
                                       : "Universal guide and API file · Your connection still needs a test"}
                                   </p>
+                                  {isAutomationConformanceProvider(connector.code) ? (
+                                    <button
+                                      type="button"
+                                      className={`${secondaryButtonClass} mt-3 w-full`}
+                                      disabled={busyAction === `automation-conformance-${connector.code}`}
+                                      onClick={() => void downloadAutomationConformanceKit(connector.code)}
+                                    >
+                                      {busyAction === `automation-conformance-${connector.code}`
+                                        ? "Preparing safe test..."
+                                        : "Download safe test file"}
+                                    </button>
+                                  ) : (
+                                    <p className="mt-3 text-[11px] leading-4 text-zinc-500">
+                                      Use the universal guide to test another HTTPS client.
+                                    </p>
+                                  )}
                                 </div>
                               ))}
                             </div>
