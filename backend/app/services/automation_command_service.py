@@ -45,10 +45,12 @@ COMMAND_SCHEMA_VERSION = "insightos.automation.command.v1"
 COMMAND_REPORT_RETRIEVE = "report.retrieve"
 COMMAND_REPORT_GENERATE_SAVED = "report.generate_saved"
 COMMAND_RECOMMENDATION_RETRIEVE = "recommendation.retrieve"
+COMMAND_RECOMMENDATION_REQUEST_REVIEW = "recommendation.request_review"
 ALLOWED_COMMANDS = (
     COMMAND_REPORT_RETRIEVE,
     COMMAND_REPORT_GENERATE_SAVED,
     COMMAND_RECOMMENDATION_RETRIEVE,
+    COMMAND_RECOMMENDATION_REQUEST_REVIEW,
 )
 DEFAULT_COMMANDS = (COMMAND_REPORT_RETRIEVE,)
 MAX_SERVICE_ACCOUNT_DAYS = 90
@@ -324,9 +326,12 @@ def n8n_recommendation_ready_starter_workflow(
             reason_code="automation_service_account_inactive",
             status_code=409,
         )
-    if COMMAND_RECOMMENDATION_RETRIEVE not in _allowed_commands(row):
+    if not {
+        COMMAND_RECOMMENDATION_RETRIEVE,
+        COMMAND_RECOMMENDATION_REQUEST_REVIEW,
+    }.issubset(set(_allowed_commands(row))):
         raise AutomationCommandError(
-            "Turn on saved recommendation access before downloading this workflow.",
+            "Turn on saved recommendation review routing before downloading this workflow.",
             reason_code="automation_command_not_allowed",
             status_code=409,
         )
@@ -676,7 +681,10 @@ def execute_automation_command(
         return execute_saved_report_generation(
             db, account=account, request_payload=request_payload
         )
-    if request_payload["command_type"] == COMMAND_RECOMMENDATION_RETRIEVE:
+    if request_payload["command_type"] in {
+        COMMAND_RECOMMENDATION_RETRIEVE,
+        COMMAND_RECOMMENDATION_REQUEST_REVIEW,
+    }:
         return execute_recommendation_retrieval(
             db, account=account, request_payload=request_payload
         )
@@ -735,8 +743,13 @@ def execute_recommendation_retrieval(
         else:
             campaign = db.get(Campaign, recommendation.campaign_id)
 
+    review_requested = (
+        request_payload["command_type"] == COMMAND_RECOMMENDATION_REQUEST_REVIEW
+    )
     result = (
-        _recommendation_result(db, recommendation)
+        _recommendation_result(
+            db, recommendation, review_requested=review_requested
+        )
         if denial_reason is None and recommendation is not None
         else {
             "message": _denial_message(denial_reason or "automation_command_denied"),
@@ -764,7 +777,7 @@ def execute_recommendation_retrieval(
         campaign_id=campaign.id if campaign is not None else None,
         recommendation_id=recommendation.id if recommendation is not None else None,
         schema_version=COMMAND_SCHEMA_VERSION,
-        command_type=COMMAND_RECOMMENDATION_RETRIEVE,
+        command_type=str(request_payload["command_type"]),
         idempotency_key=str(request_payload["idempotency_key"]),
         correlation_id=str(request_payload["correlation_id"]),
         reason=str(request_payload["reason"]),
@@ -1054,7 +1067,10 @@ def _report_result(
 
 
 def _recommendation_result(
-    db: Session, recommendation: StrategyRecommendation
+    db: Session,
+    recommendation: StrategyRecommendation,
+    *,
+    review_requested: bool = False,
 ) -> dict[str, Any]:
     plans = intelligence_service.build_recommendation_action_plans(
         db,
@@ -1085,7 +1101,11 @@ def _recommendation_result(
         "observation_window_days": plan.get("observation_window_days"),
     }
     return {
-        "message": "InsightOS returned a saved recommendation for owner review.",
+        "message": (
+            "The recommendation is waiting for owner review in InsightOS."
+            if review_requested
+            else "InsightOS returned a saved recommendation for owner review."
+        ),
         "recommendation": {
             "id": recommendation.id,
             "status": recommendation.status.value,
@@ -1101,6 +1121,7 @@ def _recommendation_result(
         "truth": {
             "saved_result_only": True,
             "owner_review_required": True,
+            "review_requested": review_requested,
             "approved": False,
             "executed": False,
         },
@@ -1365,6 +1386,15 @@ def _command_catalog() -> list[dict[str, Any]]:
             "read_only": True,
             "paid_provider_call": False,
             "approval_required": False,
+            "publishing_allowed": False,
+        },
+        {
+            "code": COMMAND_RECOMMENDATION_REQUEST_REVIEW,
+            "label": "Ask an owner to review a recommendation",
+            "summary": "Place one saved recommendation in the owner review queue without approving it.",
+            "read_only": False,
+            "paid_provider_call": False,
+            "approval_required": True,
             "publishing_allowed": False,
         },
     ]

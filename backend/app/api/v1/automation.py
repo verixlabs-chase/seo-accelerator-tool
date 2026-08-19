@@ -66,16 +66,16 @@ class AutomationServiceAccountIn(BaseModel):
     location_id: str = Field(min_length=36, max_length=36)
     expires_in_days: int = Field(default=30, ge=1, le=90)
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve"]
-    ] | None = Field(default=None, min_length=1, max_length=3)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review"]
+    ] | None = Field(default=None, min_length=1, max_length=4)
 
 
 class AutomationServiceAccountRotateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     allowed_commands: list[
-        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve"]
-    ] | None = Field(default=None, min_length=1, max_length=3)
+        Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review"]
+    ] | None = Field(default=None, min_length=1, max_length=4)
 
 
 class AutomationReportTargetIn(BaseModel):
@@ -91,7 +91,8 @@ class AutomationCommandIn(BaseModel):
 
     schema_version: str = Field(default=COMMAND_SCHEMA_VERSION, min_length=1, max_length=80)
     command_type: Literal[
-        "report.retrieve", "report.generate_saved", "recommendation.retrieve"
+        "report.retrieve", "report.generate_saved", "recommendation.retrieve",
+        "recommendation.request_review",
     ]
     organization_id: str = Field(min_length=36, max_length=36)
     location_id: str = Field(min_length=36, max_length=36)

@@ -7,6 +7,10 @@ const settings = readFileSync(
   fileURLToPath(new URL("../app/(product)/settings/page.tsx", import.meta.url)),
   "utf8",
 );
+const opportunities = readFileSync(
+  fileURLToPath(new URL("../app/(product)/opportunities/page.tsx", import.meta.url)),
+  "utf8",
+);
 
 test("Settings offers one-location read-only n8n report access", () => {
   assert.match(settings, /Give n8n read-only access to saved reports/);
@@ -83,11 +87,12 @@ test("owners can download an inactive monthly private-report workflow", () => {
   assert.match(settings, /inactive monthly-report workflow was downloaded/);
 });
 
-test("owners explicitly enable read-only saved recommendation retrieval", () => {
-  assert.match(settings, /Let n8n read saved recommendations/);
+test("owners explicitly enable saved recommendation review routing", () => {
+  assert.match(settings, /Let n8n route saved recommendations for owner review/);
   assert.match(settings, /recommendation\.retrieve/);
+  assert.match(settings, /recommendation\.request_review/);
   assert.match(settings, /cannot approve, schedule, execute, or publish anything/);
-  assert.match(settings, /Allow saved recommendations/);
+  assert.match(settings, /Allow owner-review routing/);
   assert.match(settings, /Download recommendation workflow/);
   assert.match(
     settings,
@@ -95,5 +100,8 @@ test("owners explicitly enable read-only saved recommendation retrieval", () => 
   );
   assert.match(settings, /Recommendation ready updates/);
   assert.match(settings, /Saved recommendation returned/);
+  assert.match(settings, /Owner review requested/);
   assert.match(settings, /target: \{ recommendation_id: "REPLACE-WITH-RECOMMENDATION-ID" \}/);
+  assert.match(opportunities, /A connected workflow asked you to review this/);
+  assert.match(opportunities, /did not approve, schedule, or run this recommendation/);
 });

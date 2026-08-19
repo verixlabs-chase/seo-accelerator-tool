@@ -28,6 +28,12 @@ RECOMMENDATION_MIGRATION = (
     / "versions"
     / "20260819_0190_saved_recommendation_command.py"
 )
+REVIEW_REQUEST_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0191_recommendation_review_request_command.py"
+)
 
 
 def test_inbound_automation_schema_matches_models(db_session) -> None:
@@ -117,4 +123,12 @@ def test_saved_recommendation_migration_is_scoped_and_fail_closed() -> None:
     assert "'recommendation.retrieve'" in source
     assert "fk_automation_command_receipts_recommendation_scope" in source
     assert "uq_strategy_recommendations_id_scope" in source
+    assert "Cannot downgrade" in source
+
+
+def test_recommendation_review_request_migration_is_bounded() -> None:
+    source = REVIEW_REQUEST_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0191"' in source
+    assert 'down_revision = "20260819_0190"' in source
+    assert "'recommendation.request_review'" in source
     assert "Cannot downgrade" in source

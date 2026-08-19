@@ -386,7 +386,7 @@ type AutomationServiceAccount = {
   status: "active" | "revoked";
   location_id: string;
   location_name: string;
-  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve">;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review">;
   token_hint: string;
   token_version: number;
   expires_at: string;
@@ -401,7 +401,7 @@ type AutomationServiceAccount = {
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
-  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve";
+  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review";
   idempotency_key: string;
   correlation_id: string;
   location_id: string;
@@ -3187,6 +3187,9 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("recommendation.retrieve")
                   ? ["recommendation.retrieve"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.request_review")
+                  ? ["recommendation.request_review"]
+                  : []),
               ])),
             }),
           },
@@ -3230,6 +3233,7 @@ export default function SettingsPage() {
                   ? ["report.generate_saved"]
                   : []),
                 ...(enabled ? ["recommendation.retrieve"] : []),
+                ...(enabled ? ["recommendation.request_review"] : []),
               ],
             }),
           },
@@ -8040,10 +8044,10 @@ export default function SettingsPage() {
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
                                       <p className="text-sm font-semibold text-white">
-                                        Let n8n read saved recommendations
+                                        Let n8n route saved recommendations for owner review
                                       </p>
                                       <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
-                                        When InsightOS finds a recommendation, n8n can copy its plain-language title, steps, and measurement facts into your email, CRM, or task tool. It cannot approve, schedule, execute, or publish anything.
+                                        When InsightOS finds a recommendation, n8n can retrieve its plain-language facts and place it in the InsightOS owner-review queue before continuing to your email, CRM, or task tool. It cannot approve, schedule, execute, or publish anything.
                                       </p>
                                     </div>
                                     <button
@@ -8059,7 +8063,7 @@ export default function SettingsPage() {
                                         ? "Updating..."
                                         : activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve")
                                           ? "Turn off recommendation access"
-                                          : "Allow saved recommendations"}
+                                          : "Allow owner-review routing"}
                                     </button>
                                   </div>
                                   {activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve") ? (
@@ -8221,6 +8225,8 @@ export default function SettingsPage() {
                                     {receipt.status === "succeeded"
                                       ? receipt.command_type === "report.generate_saved"
                                         ? "Private report created"
+                                        : receipt.command_type === "recommendation.request_review"
+                                          ? "Owner review requested"
                                         : receipt.command_type === "recommendation.retrieve"
                                           ? "Saved recommendation returned"
                                           : "Saved report returned"

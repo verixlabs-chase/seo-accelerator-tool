@@ -10,6 +10,7 @@ from app.api.response import envelope
 from app.core.settings import get_settings
 from app.db.session import get_db
 from app.models.campaign import Campaign
+from app.models.automation_command import AutomationCommandReceipt
 from app.schemas.intelligence import (
     ActionPlanStepUpdateIn,
     AdvanceMonthIn,
@@ -151,6 +152,27 @@ def get_intelligence_recommendations(
         task = None
     recs = intelligence_service.get_recommendations(db, tenant_id=user["tenant_id"], campaign_id=campaign_id)
     items = [RecommendationOut.model_validate(r).model_dump(mode="json") for r in recs]
+    review_receipts = (
+        db.query(AutomationCommandReceipt)
+        .filter(
+            AutomationCommandReceipt.tenant_id == user["tenant_id"],
+            AutomationCommandReceipt.organization_id == user["organization_id"],
+            AutomationCommandReceipt.campaign_id == campaign_id,
+            AutomationCommandReceipt.command_type == "recommendation.request_review",
+            AutomationCommandReceipt.status == "succeeded",
+        )
+        .order_by(AutomationCommandReceipt.completed_at.desc())
+        .all()
+    )
+    review_by_recommendation = {}
+    for receipt in review_receipts:
+        if receipt.recommendation_id and receipt.recommendation_id not in review_by_recommendation:
+            review_by_recommendation[receipt.recommendation_id] = {
+                "requested": True,
+                "requested_at": receipt.completed_at.isoformat(),
+                "source": "connected_workflow",
+                "message": "A connected workflow asked an owner to review this recommendation.",
+            }
     action_plans = intelligence_service.build_recommendation_action_plans(
         db,
         tenant_id=user["tenant_id"],
@@ -164,6 +186,7 @@ def get_intelligence_recommendations(
         action_plans=action_plans,
     )
     for item in items:
+        item["automation_review_request"] = review_by_recommendation.get(item["id"])
         item["action_plan"] = action_plans.get(item["id"])
         if item["action_plan"] is not None:
             item["action_plan"]["work_item"] = work_items.get(item["id"])

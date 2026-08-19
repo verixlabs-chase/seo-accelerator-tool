@@ -247,6 +247,7 @@ def build_n8n_recommendation_ready_workflow(
     webhook_name = "Receive a recommendation update"
     filter_name = "Use only this location's recommendations"
     retrieve_name = "Retrieve the saved recommendation"
+    request_name = "Ask the owner to review it in InsightOS"
     ready_name = "Add your email, CRM, or task step here"
     ignored_name = "Ignore unrelated updates safely"
     nodes: list[dict[str, Any]] = [
@@ -319,7 +320,35 @@ def build_n8n_recommendation_ready_workflow(
             "notesInFlow": True,
             "notes": "Select the Bearer Auth credential containing the current InsightOS workflow key.",
         },
-        {"parameters": {}, "id": node_id("ready"), "name": ready_name, "type": "n8n-nodes-base.noOp", "typeVersion": 1, "position": [288, 64]},
+        {
+            "parameters": {
+                "method": "POST",
+                "url": f"{api_base_url.rstrip('/')}/automation/commands",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpBearerAuth",
+                "sendBody": True,
+                "contentType": "json",
+                "specifyBody": "json",
+                "jsonBody": (
+                    "={{ { schema_version: 'insightos.automation.command.v1',"
+                    " command_type: 'recommendation.request_review',"
+                    f" organization_id: '{organization_id}', location_id: '{location_id}',"
+                    " correlation_id: 'n8n-review:' + $json.data.receipt.result.resource.id,"
+                    " idempotency_key: 'recommendation-review:' + $json.data.receipt.result.resource.id,"
+                    " reason: 'Ask the InsightOS owner to review this saved recommendation',"
+                    " target: { recommendation_id: $json.data.receipt.result.resource.id } } }}"
+                ),
+                "options": {"timeout": 30000},
+            },
+            "id": node_id("request-review"),
+            "name": request_name,
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.3,
+            "position": [288, 64],
+            "notesInFlow": True,
+            "notes": "This creates a review request only. The owner still approves or declines inside InsightOS.",
+        },
+        {"parameters": {}, "id": node_id("ready"), "name": ready_name, "type": "n8n-nodes-base.noOp", "typeVersion": 1, "position": [576, 64]},
         {"parameters": {}, "id": node_id("ignored"), "name": ignored_name, "type": "n8n-nodes-base.noOp", "typeVersion": 1, "position": [0, 256]},
         {
             "parameters": {
@@ -345,7 +374,8 @@ def build_n8n_recommendation_ready_workflow(
         "connections": {
             webhook_name: {"main": [[{"node": filter_name, "type": "main", "index": 0}]]},
             filter_name: {"main": [[{"node": retrieve_name, "type": "main", "index": 0}], [{"node": ignored_name, "type": "main", "index": 0}]]},
-            retrieve_name: {"main": [[{"node": ready_name, "type": "main", "index": 0}]]},
+            retrieve_name: {"main": [[{"node": request_name, "type": "main", "index": 0}]]},
+            request_name: {"main": [[{"node": ready_name, "type": "main", "index": 0}]]},
         },
         "pinData": {},
         "settings": {"executionOrder": "v1"},

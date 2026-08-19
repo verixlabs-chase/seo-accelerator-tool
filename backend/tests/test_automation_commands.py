@@ -611,7 +611,11 @@ def test_recommendation_retrieval_is_explicit_read_only_and_idempotent(
     rotated = client.post(
         f"/api/v1/automation/service-accounts/{account['id']}/rotate",
         headers=_headers(owner_token),
-        json={"allowed_commands": ["report.retrieve", "recommendation.retrieve"]},
+        json={"allowed_commands": [
+            "report.retrieve",
+            "recommendation.retrieve",
+            "recommendation.request_review",
+        ]},
     )
     assert rotated.status_code == 200, rotated.text
     secret = rotated.json()["data"]["token"]
@@ -629,6 +633,7 @@ def test_recommendation_retrieval_is_explicit_read_only_and_idempotent(
     assert result["truth"] == {
         "saved_result_only": True,
         "owner_review_required": True,
+        "review_requested": False,
         "approved": False,
         "executed": False,
     }
@@ -645,6 +650,33 @@ def test_recommendation_retrieval_is_explicit_read_only_and_idempotent(
     assert repeated.json()["data"]["created"] is False
     assert repeated.json()["data"]["receipt"]["id"] == data["receipt"]["id"]
 
+    review_body = {
+        **body,
+        "command_type": "recommendation.request_review",
+        "correlation_id": "n8n-review-1",
+        "idempotency_key": "recommendation-review-1002",
+        "reason": "Ask the owner to review this saved recommendation",
+    }
+    review = client.post(
+        "/api/v1/automation/commands", json=review_body, headers=_headers(secret)
+    )
+    assert review.status_code == 200, review.text
+    review_result = review.json()["data"]["receipt"]["result"]
+    assert review_result["truth"]["review_requested"] is True
+    assert review_result["truth"]["approved"] is False
+    db_session.refresh(recommendation)
+    assert recommendation.status == StrategyRecommendationStatus.GENERATED
+
+    visible = client.get(
+        "/api/v1/intelligence/recommendations",
+        params={"campaign_id": scope["campaign_id"]},
+        headers=_headers(owner_token),
+    )
+    assert visible.status_code == 200, visible.text
+    item = next(item for item in visible.json()["data"]["items"] if item["id"] == recommendation.id)
+    assert item["automation_review_request"]["requested"] is True
+    assert item["automation_review_request"]["source"] == "connected_workflow"
+
     starter = client.get(
         "/api/v1/automation/starter-workflows/n8n/recommendation-ready",
         params={"service_account_id": account["id"]},
@@ -656,6 +688,7 @@ def test_recommendation_retrieval_is_explicit_read_only_and_idempotent(
     text = json.dumps(workflow)
     assert "recommendation.ready" in text
     assert "recommendation.retrieve" in text
+    assert "recommendation.request_review" in text
     assert scope["location_id"] in text
     assert "recommendation.approve" not in text
     assert "recommendation.execute" not in text

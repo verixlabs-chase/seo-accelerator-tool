@@ -5265,7 +5265,7 @@ Implementation status (August 17, 2026):
 
 #### AUT1J - Governed Inbound Automation Commands (n8n First)
 
-Implementation status — AUT1J-A/B/C/D saved report and recommendation retrieval (August 19, 2026):
+Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing (August 19, 2026):
 
 - The first inbound command is deliberately read-only: `report.retrieve` can
   return the safe metadata and ready private artifacts for a report InsightOS
@@ -5336,7 +5336,14 @@ Implementation status — AUT1J-A/B/C/D saved report and recommendation retrieva
   recommendation idempotently, and leaves the customer to add their email,
   CRM, or task step. Settings uses plain language and rotates the key whenever
   this scope changes.
-- AUT1J-E and later slices still own priced checks, saved-data refreshes,
+- AUT1J-E adds `recommendation.request_review` as a separate permission and
+  uses the immutable command receipt as the durable review request. The n8n
+  starter retrieves the exact saved recommendation, requests owner review, and
+  can then continue to a customer-supplied email, CRM, or task step. The
+  recommendation remains generated; it is never approved, scheduled, executed,
+  or published by the workflow. Opportunities shows the request beside the
+  native checklist so the owner makes the decision inside InsightOS.
+- AUT1J-F and later slices still own priced checks, saved-data refreshes,
   governed drafts, approval requests, accepted-job polling, multiple-location
   scopes, action allowances, and broader inbound starter workflows. No broader
   inbound action is implied by these report commands.
