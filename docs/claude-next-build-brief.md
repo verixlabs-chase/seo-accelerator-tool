@@ -5491,6 +5491,14 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   second command, expose another account's result, enumerate storage, or turn a
   queued/denied result into success; repeated command submission still relies
   on the original stable idempotency key.
+- AUT1J-V tightens the generated OpenAPI request schema itself to the exact
+  commands enabled on the saved workflow key. The standard `command_type` enum
+  no longer advertises every product command while relying on a custom
+  extension that some automation builders might ignore.
+- Generation fails closed if the saved permission is absent from the canonical
+  request schema or if no action is enabled. The server still rechecks the
+  credential and permission on every call, so importing an older or modified
+  file cannot widen authority.
 
 Planned scope (added August 17, 2026):
 

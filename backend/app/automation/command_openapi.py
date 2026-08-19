@@ -43,6 +43,18 @@ def build_automation_command_openapi(
     allowed_actions = [
         str(item["code"]) for item in client_kit["allowed_actions"]
     ]
+    command_type = root_schema.get("properties", {}).get("command_type")
+    schema_actions = (
+        command_type.get("enum") if isinstance(command_type, dict) else None
+    )
+    if not isinstance(schema_actions, list) or not schema_actions:
+        raise ValueError("Automation command schema must declare a command enum.")
+    if not allowed_actions or not set(allowed_actions).issubset(set(schema_actions)):
+        raise ValueError("Enabled automation actions must be part of the command schema.")
+    command_type["enum"] = allowed_actions
+    command_type["description"] = (
+        "Only actions explicitly enabled for this saved workflow key."
+    )
     return {
         "openapi": "3.1.0",
         "info": {

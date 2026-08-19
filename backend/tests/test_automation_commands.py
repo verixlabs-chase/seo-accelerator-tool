@@ -272,11 +272,16 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
     assert document["components"]["securitySchemes"]["workflowKey"]["scheme"] == (
         "bearer"
     )
+    command_enum = document["components"]["schemas"]["AutomationCommand"][
+        "properties"
+    ]["command_type"]["enum"]
+    assert command_enum == ["report.retrieve"]
     assert "AutomationReportTargetIn" in document["components"]["schemas"]
     openapi_serialized = json.dumps(document)
     assert secret not in openapi_serialized
     assert "YOUR_WORKFLOW_KEY" not in openapi_serialized
     assert "customer_email" not in openapi_serialized
+    assert "listing.check_public" not in openapi_serialized
 
     member_token, _ = _login(client, "org-admin@example.com", "pass-org-admin")
     denied = client.get(
