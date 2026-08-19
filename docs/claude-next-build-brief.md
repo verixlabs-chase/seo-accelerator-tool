@@ -4925,6 +4925,23 @@ Scope:
   competitor gaps, and multi-location outliers. A page does not receive a chart
   merely to look more complete; every graph must answer a named owner question
   and lead to an evidence-backed next action or a clear no-action conclusion.
+- Treat Overview as the primary visualization surface and the fastest way to
+  understand the business's current organic performance. Above the fold, show
+  a compact current-period metric strip, one clear performance-over-time graph,
+  the comparison with the previous equal-length period, and a short written
+  takeaway that names what changed and the most useful next action. Owners must
+  be able to find visits, Search appearances and clicks, verified inquiries,
+  tracked-search movement, profile customer actions, and website-health change
+  from Overview when those sources are connected. Do not force them to visit
+  several feature pages merely to reconstruct whether performance improved.
+- Keep Overview layered rather than crowded. Its default graph shows the small
+  set of connected measurements that best answers `Are more people finding and
+  contacting this business?`; source-specific cards then link to Rankings,
+  Local Search, Website Health, Reviews, Listings, and Reports for the detailed
+  distribution, evidence table, and methodology. Owners can hide or reveal
+  series, but disconnected sources stay clearly labeled instead of silently
+  disappearing or becoming zero. The first view must remain understandable in
+  five seconds and must not resemble a dense specialist analytics console.
 - Use a shared chart contract across Dashboard, Rankings, Local Search, Website
   Health, Listings, Reviews, Competitors, Organic Value, Reports, and portfolio
   views. It must include an owner-readable title and takeaway, exact location
@@ -4978,6 +4995,12 @@ Acceptance criteria:
   partial sources, denominators, deduplication, stale data, and point-to-source
   traceability; representative production-like fixtures receive a visual QA
   review before launch.
+- Overview passes a separate first-glance test: an owner can identify the
+  selected location and period, whether meaningful organic discovery or
+  inquiry measures improved, which connected source supports that conclusion,
+  and what to do next without opening another page. The Overview totals and
+  trends must reconcile exactly with their source pages for the same scope and
+  period.
 - At least five representative non-technical participants can complete the
   critical Solo launch journey and the supported workflow-tool connection test
   without staff operating the product for them. Observed confusion is tracked

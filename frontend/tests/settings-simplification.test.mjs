@@ -80,4 +80,8 @@ test("the final launch sprint requires whole-product testing with non-technical 
   assert.match(ops, /Every plotted point[\s\S]*saved source record or reproducible aggregate/);
   assert.match(ops, /keyboard and screen-reader equivalent/);
   assert.match(ops, /matches the numbers in tables and exported reports/);
+  assert.match(ops, /Treat Overview as the primary visualization surface/);
+  assert.match(ops, /Are more people finding and[\s\S]*contacting this business/);
+  assert.match(ops, /must not resemble a dense specialist analytics console/);
+  assert.match(ops, /Overview totals and[\s\S]*reconcile exactly with their source pages/);
 });
