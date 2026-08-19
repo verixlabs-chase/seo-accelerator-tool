@@ -35,11 +35,11 @@ def automation_connector_catalog() -> dict[str, object]:
             {
                 "code": "zapier",
                 "name": "Zapier",
-                "setup": "Use Webhooks by Zapier with one private workflow key.",
+                "setup": "Use API by Zapier with one private workflow key.",
                 "setup_steps": [
-                    "Choose Webhooks by Zapier, then Custom Request.",
+                    "Choose API by Zapier, then create an API request.",
                     "Copy the request URL from the connection guide.",
-                    "Add the workflow key as a Bearer authorization header.",
+                    "Save the workflow key in the app connection as a static Bearer authorization header.",
                     "Paste one allowed action body, test it once, then turn on the Zap.",
                 ],
                 "starter_available": False,

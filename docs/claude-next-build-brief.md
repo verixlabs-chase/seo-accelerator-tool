@@ -5578,6 +5578,10 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   setup, recipes, timeline, signed delivery, fanout, and external contract.
   This keeps the 102-test automation boundary visible independently of the
   full backend suite.
+- AUT1J-AI aligns the Zapier walkthrough with its current official credential
+  model: API by Zapier stores the static Bearer header in an app connection,
+  rather than placing the workflow key directly in a Webhooks step. The other
+  connector walkthroughs retain their documented HTTP-action paths.
 
 Planned scope (added August 17, 2026):
 

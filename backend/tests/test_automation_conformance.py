@@ -140,11 +140,9 @@ def test_connector_catalog_separates_compatibility_from_customer_connection(clie
     assert all(item["production_connection_proven"] is False for item in data["items"])
     assert all(item["customer_connection_required"] is True for item in data["items"])
     assert all(len(item["setup_steps"]) == 4 for item in data["items"])
-    assert all(
-        any("Bearer" in step for step in item["setup_steps"])
-        for item in data["items"]
-    )
-    assert "Custom Request" in data["items"][0]["setup_steps"][0]
+    assert all(any("Bearer" in step for step in item["setup_steps"]) for item in data["items"])
+    assert "API by Zapier" in data["items"][0]["setup_steps"][0]
+    assert "app connection" in data["items"][0]["setup_steps"][2]
     assert "Make a request" in data["items"][1]["setup_steps"][0]
     assert (
         next(item for item in data["items"] if item["code"] == "n8n")["starter_available"] is True
