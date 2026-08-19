@@ -5507,6 +5507,15 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   closed if a future command is added without a fixed target mapping. Runtime
   request validation remains independently authoritative, so a modified client
   file cannot substitute another record type or location.
+- AUT1J-X adds machine-readable success envelopes for credential verification,
+  command submission, durable receipt polling, and binary artifact download.
+  Imported builders can map stable receipt status, denial reason, correlation
+  and idempotency IDs, minimized result facts, timestamps, and receipt-bound
+  file responses without guessing from prose or parsing internal records.
+- The formal receipt status enum remains only `succeeded|denied`; longer native
+  job state stays inside the minimized command result and is refreshed through
+  the same receipt read. Response schemas expose no token, raw provider data,
+  prompt, internal cost, customer identity, or unrelated storage path.
 
 Planned scope (added August 17, 2026):
 

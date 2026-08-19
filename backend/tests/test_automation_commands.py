@@ -269,6 +269,38 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
         "/api/v1/automation/commands/{receipt_id}/artifacts/{artifact_id}"
     ]["get"]
     assert artifact_operation["x-insightos-receipt-bound"] is True
+    assert operation["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/AutomationReceiptEnvelope"}
+    receipt_schema = document["components"]["schemas"]["AutomationReceipt"]
+    assert receipt_schema["required"] == [
+        "id",
+        "schema_version",
+        "command_type",
+        "idempotency_key",
+        "correlation_id",
+        "location_id",
+        "status",
+        "denial_reason_code",
+        "result",
+        "artifact_hash",
+        "created_at",
+        "completed_at",
+    ]
+    assert document["components"]["schemas"]["AutomationAccessEnvelope"][
+        "properties"
+    ]["data"]["required"] == [
+        "connected",
+        "schema_version",
+        "service_account_id",
+        "organization_id",
+        "primary_location_id",
+        "allowed_location_ids",
+        "allowed_actions",
+        "expires_at",
+        "truth",
+        "safety",
+    ]
     assert document["components"]["securitySchemes"]["workflowKey"]["scheme"] == (
         "bearer"
     )

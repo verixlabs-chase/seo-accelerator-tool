@@ -92,7 +92,14 @@ def build_automation_command_openapi(
                     "summary": "Verify the scoped workflow key without running work",
                     "security": [{"workflowKey": []}],
                     "responses": {
-                        "200": {"description": "Credential and bounded scope are available"},
+                        "200": {
+                            "description": "Credential and bounded scope are available",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/AutomationAccessEnvelope"}
+                                }
+                            },
+                        },
                         "401": {"description": "Workflow key invalid, expired, or revoked"},
                         "403": {"description": "Workspace or plan is unavailable"},
                         "409": {"description": "Primary location is unavailable"},
@@ -115,7 +122,14 @@ def build_automation_command_openapi(
                         },
                     },
                     "responses": {
-                        "200": {"description": "Durable command receipt or saved result"},
+                        "200": {
+                            "description": "Durable command receipt or saved result",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/AutomationReceiptEnvelope"}
+                                }
+                            },
+                        },
                         "401": {"description": "Workflow key invalid, expired, or revoked"},
                         "409": {"description": "Command safely declined or conflicts"},
                         "422": {"description": "Command body does not match the fixed schema"},
@@ -139,7 +153,14 @@ def build_automation_command_openapi(
                         }
                     ],
                     "responses": {
-                        "200": {"description": "Current durable command status or result"},
+                        "200": {
+                            "description": "Current durable command status or result",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/AutomationReceiptEnvelope"}
+                                }
+                            },
+                        },
                         "401": {"description": "Workflow key invalid, expired, or revoked"},
                         "404": {"description": "Receipt is outside this workflow key's scope"},
                     },
@@ -166,7 +187,14 @@ def build_automation_command_openapi(
                         },
                     ],
                     "responses": {
-                        "200": {"description": "Private ready report artifact"},
+                        "200": {
+                            "description": "Private ready report artifact",
+                            "content": {
+                                "application/octet-stream": {
+                                    "schema": {"type": "string", "format": "binary"}
+                                }
+                            },
+                        },
                         "401": {"description": "Workflow key invalid, expired, or revoked"},
                         "404": {"description": "Artifact is not ready or outside this receipt"},
                     },
@@ -186,7 +214,11 @@ def build_automation_command_openapi(
                     ),
                 }
             },
-            "schemas": {"AutomationCommand": root_schema, **definitions},
+            "schemas": {
+                "AutomationCommand": root_schema,
+                **definitions,
+                **_response_schemas(),
+            },
         },
         "x-insightos-contract-version": COMMAND_OPENAPI_VERSION,
         "x-insightos-scope": client_kit["scope"],
@@ -212,4 +244,121 @@ def _action_target_variant(action: str) -> dict[str, Any]:
             },
         },
         "required": ["command_type", "target"],
+    }
+
+
+def _response_schemas() -> dict[str, Any]:
+    nullable_string = {"anyOf": [{"type": "string"}, {"type": "null"}]}
+    receipt = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "id",
+            "schema_version",
+            "command_type",
+            "idempotency_key",
+            "correlation_id",
+            "location_id",
+            "status",
+            "denial_reason_code",
+            "result",
+            "artifact_hash",
+            "created_at",
+            "completed_at",
+        ],
+        "properties": {
+            "id": {"type": "string", "format": "uuid"},
+            "schema_version": {"type": "string"},
+            "command_type": {"type": "string"},
+            "idempotency_key": {"type": "string"},
+            "correlation_id": {"type": "string"},
+            "location_id": {"type": "string", "format": "uuid"},
+            "status": {"type": "string", "enum": ["succeeded", "denied"]},
+            "denial_reason_code": nullable_string,
+            "result": {
+                "type": "object",
+                "description": "Minimized command-specific result facts.",
+                "additionalProperties": True,
+            },
+            "artifact_hash": {"type": "string"},
+            "created_at": {"type": "string", "format": "date-time"},
+            "completed_at": {"type": "string", "format": "date-time"},
+        },
+    }
+    envelope_meta = {
+        "type": "object",
+        "required": ["request_id"],
+        "properties": {
+            "request_id": {"type": "string"},
+            "tenant_id": nullable_string,
+        },
+        "additionalProperties": False,
+    }
+    safety = {
+        "type": "object",
+        "additionalProperties": {"type": "boolean"},
+    }
+    return {
+        "AutomationReceipt": receipt,
+        "AutomationSafety": safety,
+        "AutomationEnvelopeMeta": envelope_meta,
+        "AutomationReceiptEnvelope": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["data", "meta", "error"],
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["created", "receipt", "safety"],
+                    "properties": {
+                        "created": {"type": "boolean"},
+                        "receipt": {"$ref": "#/components/schemas/AutomationReceipt"},
+                        "safety": {"$ref": "#/components/schemas/AutomationSafety"},
+                    },
+                },
+                "meta": {"$ref": "#/components/schemas/AutomationEnvelopeMeta"},
+                "error": {"type": "null"},
+            },
+        },
+        "AutomationAccessEnvelope": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["data", "meta", "error"],
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": [
+                        "connected",
+                        "schema_version",
+                        "service_account_id",
+                        "organization_id",
+                        "primary_location_id",
+                        "allowed_location_ids",
+                        "allowed_actions",
+                        "expires_at",
+                        "truth",
+                        "safety",
+                    ],
+                    "properties": {
+                        "connected": {"const": True},
+                        "schema_version": {"type": "string"},
+                        "service_account_id": {"type": "string", "format": "uuid"},
+                        "organization_id": {"type": "string", "format": "uuid"},
+                        "primary_location_id": {"type": "string", "format": "uuid"},
+                        "allowed_location_ids": {
+                            "type": "array",
+                            "items": {"type": "string", "format": "uuid"},
+                        },
+                        "allowed_actions": {"type": "array", "items": {"type": "object"}},
+                        "expires_at": {"type": "string", "format": "date-time"},
+                        "truth": {"type": "object", "additionalProperties": {"type": "boolean"}},
+                        "safety": {"$ref": "#/components/schemas/AutomationSafety"},
+                    },
+                },
+                "meta": {"$ref": "#/components/schemas/AutomationEnvelopeMeta"},
+                "error": {"type": "null"},
+            },
+        },
     }
