@@ -407,6 +407,7 @@ type AutomationConnectorCatalog = {
     code: "zapier" | "make" | "n8n" | "pipedream" | "https";
     name: string;
     setup: string;
+    setup_steps: [string, string, string, string];
     authentication: "Private Bearer credential";
     connection_guide_available: true;
     openapi_import_available: true;
@@ -8382,6 +8383,12 @@ export default function SettingsPage() {
                                     </span>
                                   </div>
                                   <p className="mt-1 text-xs leading-5 text-zinc-400">{connector.setup}</p>
+                                  <details className="mt-2 rounded-md border border-[#292a2f] bg-[#101114] px-2.5 py-2">
+                                    <summary className="cursor-pointer text-xs font-medium text-zinc-300">Show setup steps</summary>
+                                    <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-4 text-zinc-400">
+                                      {connector.setup_steps.map((step) => <li key={step}>{step}</li>)}
+                                    </ol>
+                                  </details>
                                   <p className="mt-2 text-[11px] leading-4 text-zinc-500">
                                     {connector.starter_available
                                       ? "Optional starter available · Your connection still needs a test"

@@ -5558,6 +5558,10 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   test-file download using the existing deterministic conformance fixture. The
   download contains synthetic data and a test-only secret and never claims a
   live connection; generic HTTPS clients continue through the universal guide.
+- AUT1J-AE adds four plain setup steps per connector, naming the platform's
+  request action, private Bearer credential placement, fixed allowed-action
+  body, one safe test, and the customer's explicit final activation. Settings
+  keeps these details collapsed until requested so the first view stays calm.
 
 Planned scope (added August 17, 2026):
 

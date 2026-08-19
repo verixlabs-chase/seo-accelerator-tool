@@ -102,6 +102,12 @@ test("each named connector offers a synthetic safe test instead of live proof", 
   assert.match(settings, /contains synthetic data and a test-only secret/);
 });
 
+test("connector cards reveal plain platform-specific setup steps", () => {
+  assert.match(settings, /Show setup steps/);
+  assert.match(settings, /connector\.setup_steps\.map/);
+  assert.match(settings, /<li key=\{step\}>\{step\}<\/li>/);
+});
+
 test("owners can download an importable API definition without embedding the key", () => {
   assert.match(settings, /Download API file/);
   assert.match(settings, /\/automation\/command-openapi\?service_account_id=/);

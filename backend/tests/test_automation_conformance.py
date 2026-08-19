@@ -108,9 +108,7 @@ def test_authenticated_customer_can_download_only_supported_conformance_kit(clie
     assert data["test_only"] is True
     assert data["request"]["headers"]["X-InsightOS-Signature"].startswith("v1=")
 
-    unsupported = client.get(
-        "/api/v1/automation/conformance/generic", headers=headers
-    )
+    unsupported = client.get("/api/v1/automation/conformance/generic", headers=headers)
     assert unsupported.status_code == 404
     assert unsupported.json()["errors"][0]["details"]["reason_code"] == (
         "automation_provider_not_supported"
@@ -141,14 +139,16 @@ def test_connector_catalog_separates_compatibility_from_customer_connection(clie
     ]
     assert all(item["production_connection_proven"] is False for item in data["items"])
     assert all(item["customer_connection_required"] is True for item in data["items"])
+    assert all(len(item["setup_steps"]) == 4 for item in data["items"])
+    assert all(
+        any("Bearer" in step for step in item["setup_steps"])
+        for item in data["items"]
+    )
+    assert "Custom Request" in data["items"][0]["setup_steps"][0]
+    assert "Make a request" in data["items"][1]["setup_steps"][0]
     assert (
-        next(item for item in data["items"] if item["code"] == "n8n")[
-            "starter_available"
-        ]
-        is True
+        next(item for item in data["items"] if item["code"] == "n8n")["starter_available"] is True
     )
     assert all(
-        item["starter_available"] is False
-        for item in data["items"]
-        if item["code"] != "n8n"
+        item["starter_available"] is False for item in data["items"] if item["code"] != "n8n"
     )
