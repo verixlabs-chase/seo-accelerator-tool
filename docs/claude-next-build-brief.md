@@ -5543,6 +5543,12 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   vendor-neutral language, while supplier-specific file names and instructions
   appear only where they are genuinely needed. No UI copy implies that an
   imported file can approve, publish, or bypass InsightOS controls.
+- AUT1J-AB adds an authenticated, versioned connector compatibility catalog
+  for Zapier, Make, n8n, Pipedream, and generic HTTPS clients. It reports the
+  available guide, OpenAPI import, conformance check, authentication method,
+  and optional starter separately. Every catalog entry explicitly remains
+  compatibility-only and unproven until the customer connects and tests their
+  own workflow; only n8n currently advertises a reviewed inactive starter.
 
 Planned scope (added August 17, 2026):
 

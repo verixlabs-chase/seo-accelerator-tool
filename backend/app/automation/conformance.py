@@ -12,6 +12,33 @@ from app.automation.provider_setup import automation_provider_setup_catalog
 
 
 AUTOMATION_CONFORMANCE_VERSION = "insightos.automation.conformance.v1"
+AUTOMATION_CONNECTOR_CATALOG_VERSION = "insightos.automation.connectors.v1"
+
+
+def automation_connector_catalog() -> dict[str, object]:
+    """Return public compatibility facts without implying a customer connection."""
+    shared = {
+        "authentication": "Private Bearer credential",
+        "connection_guide_available": True,
+        "openapi_import_available": True,
+        "conformance_check_available": True,
+        "customer_connection_required": True,
+        "production_connection_proven": False,
+    }
+    return {
+        "version": AUTOMATION_CONNECTOR_CATALOG_VERSION,
+        "truth": {
+            "state": "compatibility_only",
+            "summary": "These tools can use the InsightOS workflow contract. This list does not mean a customer workflow is connected or turned on.",
+        },
+        "items": [
+            {"code": "zapier", "name": "Zapier", "setup": "Import the API file or use Webhooks by Zapier.", "starter_available": False, **shared},
+            {"code": "make", "name": "Make", "setup": "Import the API file or use an HTTP module.", "starter_available": False, **shared},
+            {"code": "n8n", "name": "n8n", "setup": "Import the optional inactive starter or use an HTTP Request node.", "starter_available": True, **shared},
+            {"code": "pipedream", "name": "Pipedream", "setup": "Import the API file or use an HTTP action.", "starter_available": False, **shared},
+            {"code": "https", "name": "Another HTTPS tool", "setup": "Follow the connection guide and fixed request contract.", "starter_available": False, **shared},
+        ],
+    }
 _FIXTURE_SECRET = "INSIGHTOS-CONFORMANCE-ONLY-DO-NOT-CONFIGURE-v1"
 _FIXTURE_TIME = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
 

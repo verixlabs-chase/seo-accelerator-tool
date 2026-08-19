@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_org_role, require_roles
 from app.api.response import envelope
 from app.automation import (
+    automation_connector_catalog,
     automation_provider_conformance_kit,
     build_automation_command_openapi,
 )
@@ -699,6 +700,15 @@ def get_automation_provider_conformance(
             },
         ) from exc
     return envelope(request, data)
+
+
+@router.get('/connector-catalog')
+def get_automation_connector_catalog(
+    request: Request,
+    user: dict = Depends(require_org_role({'org_user'})),
+) -> dict:
+    del user
+    return envelope(request, automation_connector_catalog())
 
 
 @router.post('/connections', status_code=status.HTTP_201_CREATED)
