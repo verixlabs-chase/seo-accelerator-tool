@@ -5407,6 +5407,12 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   approvals, scheduling, execution, and publishing continue to require the
   original primary location. AUT1J-L and later slices own any broader action
   allowances; none are implied by multi-location report reading.
+- AUT1J-L lets an owner replace that explicit report-only location allowlist on
+  an existing service account. The immutable primary location cannot be
+  removed. Every scope change validates each active location, atomically
+  replaces the allowlist, rotates the Bearer key, and invalidates the old key.
+  Removing a location blocks future reads while preserving saved reports,
+  receipts, and audit history.
 
 Planned scope (added August 17, 2026):
 

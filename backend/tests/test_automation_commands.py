@@ -222,6 +222,30 @@ def test_multi_location_key_reads_only_explicit_saved_report_scopes(
     assert denied.status_code == 200
     assert denied.json()["data"]["receipt"]["denial_reason_code"] == "automation_command_scope_mismatch"
 
+    updated = client.post(
+        f"/api/v1/automation/service-accounts/{data['service_account']['id']}/rotate",
+        headers=_headers(owner_token),
+        json={"additional_location_ids": []},
+    )
+    assert updated.status_code == 200, updated.text
+    updated_data = updated.json()["data"]
+    assert updated_data["service_account"]["location_ids"] == [primary["location_id"]]
+    assert updated_data["service_account"]["command_count"] == 2
+    replacement_secret = updated_data["token"]
+    old_key = client.post(
+        "/api/v1/automation/commands",
+        json={**allowed_body, "idempotency_key": "multi-old-key-1001"},
+        headers=_headers(secret),
+    )
+    assert old_key.status_code == 401
+    removed = client.post(
+        "/api/v1/automation/commands",
+        json={**allowed_body, "idempotency_key": "multi-removed-1001"},
+        headers=_headers(replacement_secret),
+    )
+    assert removed.status_code == 200
+    assert removed.json()["data"]["receipt"]["denial_reason_code"] == "automation_command_scope_mismatch"
+
 
 def test_owner_downloads_inactive_credential_free_n8n_report_workflow(
     client, db_session

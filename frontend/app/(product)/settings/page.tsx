@@ -3168,6 +3168,36 @@ export default function SettingsPage() {
     [loadAutomationCommandAccess],
   );
 
+  const updateAutomationCommandLocations = useCallback(
+    async (serviceAccount: AutomationServiceAccount, locationIds: string[]) => {
+      const additionalLocationIds = locationIds.filter((item) => item !== serviceAccount.location_id);
+      if (!window.confirm(
+        `Replace the workflow key and allow saved-report retrieval for ${1 + additionalLocationIds.length} location${additionalLocationIds.length === 0 ? "" : "s"}? The old key will stop working immediately.`,
+      )) return;
+      setBusyAction(`automation-command-location-scope-${serviceAccount.id}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccount.id}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({ additional_location_ids: additionalLocationIds }),
+          },
+        )) as { token: string; token_shown_once: true; service_account: AutomationServiceAccount };
+        setAutomationCommandToken(response.token);
+        setNotice(`Saved-report access now covers ${response.service_account.location_count} location${response.service_account.location_count === 1 ? "" : "s"}. Copy the replacement key into n8n now.`);
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change report location access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationCommandAccess],
+  );
+
   const setAutomationReportCreation = useCallback(
     async (serviceAccountId: string, enabled: boolean) => {
       const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
@@ -8178,6 +8208,42 @@ export default function SettingsPage() {
                                 </div>
                               ) : null}
                             </div>
+                            {me?.org_role === "org_owner" && automationCommandLocations.length > 1 ? (
+                              <details className="mt-4 rounded-md border border-[#303137] bg-[#141518] p-3">
+                                <summary className="cursor-pointer text-sm font-semibold text-white">
+                                  Saved-report locations ({activeAutomationServiceAccount.location_count})
+                                </summary>
+                                <p className="mt-2 text-xs leading-5 text-zinc-400">
+                                  The primary location is always included. Check only the other locations whose saved reports this key should read.
+                                </p>
+                                <div className="mt-3 space-y-2">
+                                  {automationCommandLocations.map((location) => {
+                                    const isPrimary = location.id === activeAutomationServiceAccount.location_id;
+                                    const isChecked = activeAutomationServiceAccount.location_ids.includes(location.id);
+                                    return (
+                                      <label key={location.id} className="flex items-start gap-2 text-xs text-zinc-300">
+                                        <input
+                                          type="checkbox"
+                                          className="mt-0.5"
+                                          checked={isChecked}
+                                          disabled={isPrimary || busyAction === `automation-command-location-scope-${activeAutomationServiceAccount.id}`}
+                                          onChange={(event) => {
+                                            const next = event.target.checked
+                                              ? [...activeAutomationServiceAccount.location_ids, location.id]
+                                              : activeAutomationServiceAccount.location_ids.filter((item) => item !== location.id);
+                                            void updateAutomationCommandLocations(activeAutomationServiceAccount, next);
+                                          }}
+                                        />
+                                        <span>{location.label}{isPrimary ? " · Primary" : ""}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                                <p className="mt-3 text-xs leading-5 text-amber-100/80">
+                                  Every change replaces the workflow key. Removing a location blocks future reads immediately but preserves its reports and prior request history.
+                                </p>
+                              </details>
+                            ) : null}
                             {me?.org_role === "org_owner" ? (
                               <div className="mt-4 border-t border-[#292a2f] pt-4">
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

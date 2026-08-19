@@ -78,6 +78,7 @@ class AutomationServiceAccountRotateIn(BaseModel):
     allowed_commands: list[
         Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review"]
     ] | None = Field(default=None, min_length=1, max_length=8)
+    additional_location_ids: list[str] | None = Field(default=None, max_length=9)
 
 
 class AutomationReportTargetIn(BaseModel):
@@ -280,6 +281,9 @@ def rotate_automation_service_account(
             service_account_id=service_account_id,
             actor_user_id=str(user['id']),
             allowed_commands=body.allowed_commands if body is not None else None,
+            additional_business_location_ids=(
+                body.additional_location_ids if body is not None else None
+            ),
         )
     except (AutomationCommandError, CostEconomicsError) as exc:
         raise _automation_command_http_error(exc) from exc

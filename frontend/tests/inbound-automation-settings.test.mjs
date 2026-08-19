@@ -30,6 +30,10 @@ test("owners explicitly scope multi-location report access without broad workflo
   assert.match(settings, /additional_location_ids: automationCommandAdditionalLocationIds/);
   assert.match(settings, /Additional locations allow saved-report retrieval only/);
   assert.match(settings, /Paid checks, refreshes, recommendations, drafts, review requests, approvals, and publishing remain limited to the primary location/);
+  assert.match(settings, /Saved-report locations/);
+  assert.match(settings, /additional_location_ids: additionalLocationIds/);
+  assert.match(settings, /Every change replaces the workflow key/);
+  assert.match(settings, /Removing a location blocks future reads immediately but preserves its reports and prior request history/);
 });
 
 test("workflow key lifecycle is owner-controlled and shown only from create or rotate", () => {

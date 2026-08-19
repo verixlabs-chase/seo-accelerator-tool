@@ -489,6 +489,7 @@ def rotate_service_account_token(
     service_account_id: str,
     actor_user_id: str,
     allowed_commands: list[str] | None = None,
+    additional_business_location_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     require_commercial_feature(
         db,
@@ -515,6 +516,39 @@ def rotate_service_account_token(
         row.allowed_commands_json = _json(
             _validated_allowed_commands(allowed_commands)
         )
+    if additional_business_location_ids is not None:
+        requested_location_ids = list(
+            dict.fromkeys([row.business_location_id, *additional_business_location_ids])
+        )
+        if len(requested_location_ids) > 10:
+            raise AutomationCommandError(
+                "Choose no more than 10 locations for one workflow key.",
+                reason_code="automation_location_scope_limit_reached",
+                status_code=422,
+            )
+        locations = [
+            _active_location(
+                db,
+                organization_id=row.organization_id,
+                business_location_id=location_id,
+            )
+            for location_id in requested_location_ids
+        ]
+        (
+            db.query(AutomationServiceAccountLocation)
+            .filter(AutomationServiceAccountLocation.service_account_id == row.id)
+            .delete(synchronize_session=False)
+        )
+        for location in locations:
+            db.add(
+                AutomationServiceAccountLocation(
+                    tenant_id=row.tenant_id,
+                    organization_id=row.organization_id,
+                    service_account_id=row.id,
+                    business_location_id=location.id,
+                    created_at=now,
+                )
+            )
     row.last_rotated_at = now
     row.updated_at = now
     write_audit_log(
@@ -526,6 +560,11 @@ def rotate_service_account_token(
             "service_account_id": row.id,
             "token_version": row.token_version,
             "allowed_commands": _allowed_commands(row),
+            "business_location_ids": (
+                requested_location_ids
+                if additional_business_location_ids is not None
+                else _account_location_ids(db, row.id)
+            ),
         },
     )
     db.commit()
@@ -1857,13 +1896,7 @@ def _account_contract(db: Session, row: AutomationServiceAccount) -> dict[str, A
         .filter(AutomationCommandReceipt.service_account_id == row.id)
         .count()
     )
-    location_rows = (
-        db.query(AutomationServiceAccountLocation)
-        .filter(AutomationServiceAccountLocation.service_account_id == row.id)
-        .order_by(AutomationServiceAccountLocation.created_at, AutomationServiceAccountLocation.id)
-        .all()
-    )
-    location_ids = [item.business_location_id for item in location_rows] or [row.business_location_id]
+    location_ids = _account_location_ids(db, row.id) or [row.business_location_id]
     return {
         "id": row.id,
         "name": row.name,
@@ -1883,6 +1916,19 @@ def _account_contract(db: Session, row: AutomationServiceAccount) -> dict[str, A
         "command_count": command_count,
         "token_revealed": False,
     }
+
+
+def _account_location_ids(db: Session, service_account_id: str) -> list[str]:
+    rows = (
+        db.query(AutomationServiceAccountLocation)
+        .filter(AutomationServiceAccountLocation.service_account_id == service_account_id)
+        .order_by(
+            AutomationServiceAccountLocation.created_at,
+            AutomationServiceAccountLocation.id,
+        )
+        .all()
+    )
+    return [item.business_location_id for item in rows]
 
 
 def _account_can_read_location(
