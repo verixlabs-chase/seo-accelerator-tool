@@ -30,6 +30,7 @@ from app.services.operational_telemetry_service import reset_operational_telemet
 
 from app.models.authority import AuthorityGapResearchRun, AuthorityLinkChange, AuthorityLinkChangeRun, AuthorityLinkGap, Backlink, BacklinkOpportunity, Citation, OutreachCampaign, OutreachContact  # noqa: F401
 from app.models.billing import BillingWebhookEvent  # noqa: F401
+from app.models.automation_command import AutomationCommandReceipt, AutomationServiceAccount  # noqa: F401
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal  # noqa: F401
 from app.models.commercial_feature_activation import CommercialFeatureActivation
 from app.models.content import ContentAsset, ContentBrief, ContentDraft, ContentQcEvent, EditorialCalendar, InternalLinkMap  # noqa: F401
@@ -228,6 +229,8 @@ def _verify_required_tables(database_url: str) -> None:
             "automation_webhook_connections",
             "automation_webhook_deliveries",
             "automation_webhook_delivery_attempts",
+            "automation_service_accounts",
+            "automation_command_receipts",
             "governed_ai_provider_benchmarks",
             "governed_ai_provider_canary_attempts",
             "governed_ai_provider_canary_events",

@@ -5193,6 +5193,41 @@ Implementation status (August 17, 2026):
 
 #### AUT1J - Governed Inbound Automation Commands (n8n First)
 
+Implementation status — AUT1J-A report retrieval foundation (August 19, 2026):
+
+- The first inbound command is deliberately read-only: `report.retrieve` can
+  return the safe metadata and ready private artifacts for a report InsightOS
+  already generated. It cannot start a crawl or paid provider call, create or
+  approve a recommendation, submit an arbitrary prompt, publish content, edit
+  WordPress, or change a Google Business Profile.
+- An organization owner can create one short-lived service account scoped to
+  one active Business Location. Its random bearer key is returned once, stored
+  only as a SHA-256 fingerprint, expires within 90 days, records last use, and
+  can be rotated or revoked immediately. It does not reuse a human browser
+  session, Google token, outbound webhook secret, or provider credential.
+- Every request uses the fixed `insightos.automation.command.v1` schema with an
+  exact organization, location, correlation ID, reason, idempotency key, and
+  saved report ID. Unknown fields and command types are rejected. Reusing one
+  idempotency key with the same body returns the original receipt; reusing it
+  for different input fails closed.
+- The service rechecks the external-automation commercial gate, active
+  location, exact tenant/organization/location campaign scope, and credential
+  state before returning anything. A cross-tenant report looks not found and
+  never exposes its campaign, content, artifact, or provider data.
+- Succeeded and denied requests create immutable, tenant-scoped receipts with
+  minimized result data and stable artifact hashes. Audit events omit the
+  request reason and credential. Private artifact downloads require the same
+  live service account and exact receipt/report scope and use `private,
+  no-store` delivery.
+- Settings presents this as “Give n8n read-only access to saved reports,” shows
+  the credential only once, keeps the fixed HTTP contract in an advanced
+  disclosure, shows plain-language result history, and reserves lifecycle
+  controls for the workspace owner.
+- AUT1J-B and later slices still own priced checks, saved-data refreshes,
+  governed drafts, approval requests, job polling, multiple-location scopes,
+  action allowances, and reviewed downloadable starter workflows. No broader
+  inbound action is implied by the report-retrieval proof.
+
 Planned scope (added August 17, 2026):
 
 - Make n8n the first production proof client for a vendor-neutral inbound

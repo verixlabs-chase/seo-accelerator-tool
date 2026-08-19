@@ -380,6 +380,42 @@ type AutomationConnectionsPayload = {
   truth: string;
 };
 
+type AutomationServiceAccount = {
+  id: string;
+  name: string;
+  status: "active" | "revoked";
+  location_id: string;
+  location_name: string;
+  allowed_commands: Array<"report.retrieve">;
+  token_hint: string;
+  token_version: number;
+  expires_at: string;
+  last_used_at?: string | null;
+  last_rotated_at?: string | null;
+  created_at: string;
+  revoked_at?: string | null;
+  command_count: number;
+  token_revealed: false;
+};
+
+type AutomationCommandReceipt = {
+  id: string;
+  schema_version: "insightos.automation.command.v1";
+  command_type: "report.retrieve";
+  idempotency_key: string;
+  correlation_id: string;
+  location_id: string;
+  status: "succeeded" | "denied";
+  denial_reason_code?: string | null;
+  result: {
+    message: string;
+    resource?: { type: "report"; id: string; href: string } | null;
+    artifacts: Array<{ id: string; type: string; ready: boolean; download_path?: string }>;
+  };
+  created_at: string;
+  completed_at: string;
+};
+
 type AutomationConformanceKit = {
   version: "insightos.automation.conformance.v1";
   provider: "zapier" | "make" | "pipedream" | "n8n";
@@ -1442,6 +1478,12 @@ export default function SettingsPage() {
   const [automationDestination, setAutomationDestination] = useState("");
   const [automationSelectedEvents, setAutomationSelectedEvents] = useState<string[]>([]);
   const [automationSigningSecret, setAutomationSigningSecret] = useState("");
+  const [automationServiceAccounts, setAutomationServiceAccounts] = useState<AutomationServiceAccount[]>([]);
+  const [automationCommandHistory, setAutomationCommandHistory] = useState<AutomationCommandReceipt[]>([]);
+  const [automationCommandLoadState, setAutomationCommandLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
+  const [automationCommandName, setAutomationCommandName] = useState("n8n saved report helper");
+  const [automationCommandLocationId, setAutomationCommandLocationId] = useState("");
+  const [automationCommandToken, setAutomationCommandToken] = useState("");
   const [privateAIProviders, setPrivateAIProviders] = useState<PrivateAIProviderConnection[]>([]);
   const [privateAIProviderLoadState, setPrivateAIProviderLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
   const [privateAIBenchmarks, setPrivateAIBenchmarks] = useState<Record<string, PrivateAIProviderBenchmark[]>>({});
@@ -1532,6 +1574,20 @@ export default function SettingsPage() {
     () => campaigns.filter((campaign) => Boolean(campaign.business_location_id)),
     [campaigns],
   );
+  const automationCommandLocations = useMemo(
+    () => Array.from(
+      new Map(
+        manageableCampaigns.map((campaign) => [
+          campaign.business_location_id as string,
+          {
+            id: campaign.business_location_id as string,
+            label: campaign.name || campaign.domain || "Saved location",
+          },
+        ]),
+      ).values(),
+    ),
+    [manageableCampaigns],
+  );
   const connections = useMemo(() => payload?.connections || [], [payload?.connections]);
   const connectionHealth = payload?.health || null;
   const connectionItemsNeedingWork = useMemo(
@@ -1577,6 +1633,15 @@ export default function SettingsPage() {
     websiteMappingsComplete,
     Boolean(payload?.google_oauth.approved_access?.business_profile) && profileMappingsComplete,
   ].filter(Boolean).length;
+
+  useEffect(() => {
+    if (
+      !automationCommandLocationId &&
+      automationCommandLocations.length > 0
+    ) {
+      setAutomationCommandLocationId(automationCommandLocations[0].id);
+    }
+  }, [automationCommandLocationId, automationCommandLocations]);
 
   function scrollToConnectionStep(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1701,6 +1766,28 @@ export default function SettingsPage() {
       current.length > 0 ? current : (response.supported_events || []).map((item) => item.code),
     );
     return response;
+  }, []);
+
+  const loadAutomationCommandAccess = useCallback(async () => {
+    try {
+      const [accountResponse, historyResponse] = await Promise.all([
+        platformApi("/automation/service-accounts", { method: "GET" }) as Promise<{
+          items?: AutomationServiceAccount[];
+        }>,
+        platformApi("/automation/command-history", { method: "GET" }) as Promise<{
+          items?: Array<{ receipt: AutomationCommandReceipt }>;
+        }>,
+      ]);
+      setAutomationServiceAccounts(accountResponse.items || []);
+      setAutomationCommandHistory(
+        (historyResponse.items || []).map((item) => item.receipt),
+      );
+      setAutomationCommandLoadState("ready");
+      return accountResponse;
+    } catch (error) {
+      setAutomationCommandLoadState("unavailable");
+      throw error;
+    }
   }, []);
 
   const loadPrivateAIProviders = useCallback(async () => {
@@ -3024,6 +3111,91 @@ export default function SettingsPage() {
     }
   }, [automationSigningSecret]);
 
+  const createAutomationCommandAccess = useCallback(async () => {
+    if (!automationCommandLocationId) return;
+    setBusyAction("automation-command-create");
+    setError("");
+    setNotice("");
+    setAutomationCommandToken("");
+    try {
+      const response = (await platformApi("/automation/service-accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          name: automationCommandName,
+          location_id: automationCommandLocationId,
+          expires_in_days: 30,
+        }),
+      })) as {
+        token: string;
+        token_shown_once: true;
+        service_account: AutomationServiceAccount;
+      };
+      setAutomationCommandToken(response.token);
+      setNotice("Report access is ready. Copy the workflow key now; it will not be shown again.");
+      await loadAutomationCommandAccess();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to create report access for n8n.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [automationCommandLocationId, automationCommandName, loadAutomationCommandAccess]);
+
+  const rotateAutomationCommandAccess = useCallback(
+    async (serviceAccountId: string) => {
+      if (!window.confirm("Replace this workflow key? The old key will stop working immediately.")) return;
+      setBusyAction(`automation-command-rotate-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          { method: "POST" },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice("Workflow key replaced. Copy the new key now and update n8n before testing again.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to replace the workflow key.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationCommandAccess],
+  );
+
+  const revokeAutomationCommandAccess = useCallback(
+    async (serviceAccountId: string) => {
+      if (!window.confirm("Turn off this report connection? n8n will lose access immediately, while its activity history stays saved.")) return;
+      setBusyAction(`automation-command-revoke-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      try {
+        await platformApi(`/automation/service-accounts/${serviceAccountId}`, {
+          method: "DELETE",
+        });
+        setAutomationCommandToken("");
+        setNotice("Report access turned off. The workflow key no longer works.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to turn off report access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationCommandAccess],
+  );
+
+  const copyAutomationCommandToken = useCallback(async () => {
+    if (!automationCommandToken) return;
+    try {
+      await navigator.clipboard.writeText(automationCommandToken);
+      setNotice("Workflow key copied. Save it in n8n before leaving this page.");
+    } catch {
+      setNotice("Select and copy the workflow key before leaving this page.");
+    }
+  }, [automationCommandToken]);
+
   const loadAuthSessions = useCallback(async () => {
     const response = (await platformApi("/auth/sessions", {
       method: "GET",
@@ -3168,6 +3340,7 @@ export default function SettingsPage() {
         setUsageAllowance(allowanceResponse);
         await Promise.all([
           loadAutomationConnections().catch(() => undefined),
+          loadAutomationCommandAccess().catch(() => undefined),
           currentUser.org_role === "org_owner"
             ? loadPrivateAIProviders().catch(() => {
                 setPrivateAIProviderLoadState("unavailable");
@@ -3243,7 +3416,7 @@ export default function SettingsPage() {
       }
     }
     void loadPage();
-  }, [confirmBillingReturn, loadAnalyticsResources, loadAuthSessions, loadAutomationConnections, loadConnections, loadPrivateAIProviders, loadPrivateAIRelay, loadProfileResources, loadResources]);
+  }, [confirmBillingReturn, loadAnalyticsResources, loadAuthSessions, loadAutomationCommandAccess, loadAutomationConnections, loadConnections, loadPrivateAIProviders, loadPrivateAIRelay, loadProfileResources, loadResources]);
 
   async function startCheckout(planCode: string) {
     if (!organizationId) return;
@@ -4015,6 +4188,9 @@ export default function SettingsPage() {
   const navItems = useMemo(() => buildProductNav(pathname), [pathname]);
   const selectedAutomationProviderSetup = automationProviderSetup.find(
     (item) => item.code === automationProvider,
+  );
+  const activeAutomationServiceAccount = automationServiceAccounts.find(
+    (item) => item.status === "active",
   );
   const privateAIProviderPlanEligible =
     usageAllowance?.capabilities.find((item) => item.code === "private_ai_provider")
@@ -7552,6 +7728,178 @@ export default function SettingsPage() {
                       </div>
                     ) : usageAllowance.external_automation.gateway_enabled ? (
                       <p className="mt-4 text-xs leading-5 text-zinc-500">No workflow tools connected yet.</p>
+                    ) : null}
+
+                    {usageAllowance.external_automation.gateway_enabled ? (
+                      <div className="mt-5 rounded-md border border-sky-500/20 bg-sky-500/5 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-200/70">
+                          Let a workflow ask for a report
+                        </p>
+                        <h4 className="mt-1 text-sm font-semibold text-white">
+                          Give n8n read-only access to saved reports
+                        </h4>
+                        <p className="mt-2 max-w-3xl text-xs leading-5 text-zinc-300">
+                          Create one short-lived workflow key for one location. n8n can retrieve a report that InsightOS has already generated; it cannot start paid checks, approve work, publish content, or change your website or business profile.
+                        </p>
+
+                        {automationCommandLoadState === "unavailable" ? (
+                          <p className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-100">
+                            Report access could not be checked. Existing InsightOS work is still available, and no new workflow key was created.
+                          </p>
+                        ) : null}
+
+                        {automationCommandToken ? (
+                          <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
+                            <p className="text-sm font-semibold text-amber-100">Copy this workflow key now</p>
+                            <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                              Paste it into n8n as a Bearer credential. InsightOS stores only a protected fingerprint and will not show the key again.
+                            </p>
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                              <input
+                                aria-label="n8n workflow key"
+                                readOnly
+                                className="min-w-0 flex-1 rounded-md border border-amber-500/30 bg-[#101114] px-3 py-2 font-mono text-xs text-amber-50"
+                                value={automationCommandToken}
+                              />
+                              <button type="button" className={secondaryButtonClass} onClick={() => void copyAutomationCommandToken()}>
+                                Copy key
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {activeAutomationServiceAccount ? (
+                          <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-white">{activeAutomationServiceAccount.name}</p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                                  {activeAutomationServiceAccount.location_name} · Saved reports only · Key ends in {activeAutomationServiceAccount.token_hint}
+                                </p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                  Expires {formatTimestamp(activeAutomationServiceAccount.expires_at)}
+                                  {activeAutomationServiceAccount.last_used_at
+                                    ? ` · Last used ${formatTimestamp(activeAutomationServiceAccount.last_used_at)}`
+                                    : " · Not used yet"}
+                                </p>
+                              </div>
+                              {me?.org_role === "org_owner" ? (
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    className={secondaryButtonClass}
+                                    disabled={busyAction === `automation-command-rotate-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void rotateAutomationCommandAccess(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-rotate-${activeAutomationServiceAccount.id}` ? "Replacing..." : "Replace key"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-medium text-rose-100 disabled:opacity-50"
+                                    disabled={busyAction === `automation-command-revoke-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void revokeAutomationCommandAccess(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-revoke-${activeAutomationServiceAccount.id}` ? "Turning off..." : "Turn off access"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : me?.org_role === "org_owner" && automationCommandLoadState === "ready" ? (
+                          <div className="mt-4 grid gap-3 rounded-md border border-[#303137] bg-[#101114] p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+                            <div>
+                              <label htmlFor="automation-command-name" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                                Name this report access
+                              </label>
+                              <input
+                                id="automation-command-name"
+                                className={selectClass}
+                                value={automationCommandName}
+                                maxLength={120}
+                                onChange={(event) => setAutomationCommandName(event.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor="automation-command-location" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                                Location n8n can read
+                              </label>
+                              <select
+                                id="automation-command-location"
+                                className={selectClass}
+                                value={automationCommandLocationId}
+                                onChange={(event) => setAutomationCommandLocationId(event.target.value)}
+                              >
+                                {automationCommandLocations.map((location) => (
+                                  <option key={location.id} value={location.id}>{location.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <button
+                              type="button"
+                              className={primaryButtonClass}
+                              disabled={
+                                busyAction === "automation-command-create" ||
+                                automationCommandName.trim().length < 2 ||
+                                !automationCommandLocationId
+                              }
+                              onClick={() => void createAutomationCommandAccess()}
+                            >
+                              {busyAction === "automation-command-create" ? "Creating..." : "Create report access"}
+                            </button>
+                          </div>
+                        ) : automationCommandLoadState === "ready" ? (
+                          <p className="mt-3 rounded-md border border-[#303137] bg-[#101114] p-3 text-xs leading-5 text-zinc-400">
+                            Ask the workspace owner to create or replace the n8n report key.
+                          </p>
+                        ) : null}
+
+                        {activeAutomationServiceAccount ? (
+                          <details className="group mt-3 rounded-md border border-[#303137] bg-[#101114]">
+                            <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-medium text-zinc-300">
+                              n8n setup details (advanced)
+                            </summary>
+                            <div className="space-y-3 border-t border-[#292a2f] p-3 text-xs leading-5 text-zinc-400">
+                              <ol className="list-decimal space-y-1 pl-5">
+                                <li>Add an HTTP Request node and choose POST.</li>
+                                <li>Use <code className="text-zinc-200">/api/v1/automation/commands</code> on your InsightOS domain.</li>
+                                <li>Add an Authorization header with <code className="text-zinc-200">Bearer YOUR_WORKFLOW_KEY</code>.</li>
+                                <li>Send the JSON body below, replacing the report ID and the two run IDs.</li>
+                              </ol>
+                              <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                schema_version: "insightos.automation.command.v1",
+                                command_type: "report.retrieve",
+                                organization_id: organizationId,
+                                location_id: activeAutomationServiceAccount.location_id,
+                                correlation_id: "n8n-run-REPLACE",
+                                idempotency_key: "n8n-report-REPLACE",
+                                reason: "Copy a saved report into this workflow",
+                                target: { report_id: "REPLACE-WITH-REPORT-ID" },
+                              }, null, 2)}</pre>
+                              <p>
+                                Reusing the same idempotency key safely returns the first result instead of running the command twice. The workflow receives only saved report facts and ready file references.
+                              </p>
+                            </div>
+                          </details>
+                        ) : null}
+
+                        {automationCommandHistory.length > 0 ? (
+                          <details className="group mt-3 rounded-md border border-[#303137] bg-[#101114]">
+                            <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-medium text-zinc-300">
+                              Recent report requests ({automationCommandHistory.length})
+                            </summary>
+                            <div className="space-y-2 border-t border-[#292a2f] p-3">
+                              {automationCommandHistory.slice(0, 10).map((receipt) => (
+                                <div key={receipt.id} className="flex flex-col gap-1 rounded-md border border-[#292a2f] bg-[#141518] px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+                                  <span className={receipt.status === "succeeded" ? "text-emerald-300" : "text-amber-300"}>
+                                    {receipt.status === "succeeded" ? "Saved report returned" : "Request safely declined"}
+                                  </span>
+                                  <span className="text-zinc-500">{formatTimestamp(receipt.completed_at)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
+                      </div>
                     ) : null}
 
                     {usageAllowance.external_automation.outbound_contract?.supported_events.length ? (

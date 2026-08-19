@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from sqlalchemy import inspect
+
+from app.models.automation_command import (
+    AutomationCommandReceipt,
+    AutomationServiceAccount,
+)
+
+
+MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0188_inbound_automation_service_accounts.py"
+)
+
+
+def test_inbound_automation_schema_matches_models(db_session) -> None:
+    inspector = inspect(db_session.get_bind())
+    assert {
+        AutomationServiceAccount.__tablename__,
+        AutomationCommandReceipt.__tablename__,
+    }.issubset(set(inspector.get_table_names()))
+
+    account_columns = {
+        item["name"]: item for item in inspector.get_columns("automation_service_accounts")
+    }
+    receipt_columns = {
+        item["name"]: item for item in inspector.get_columns("automation_command_receipts")
+    }
+    assert {
+        "tenant_id",
+        "organization_id",
+        "business_location_id",
+        "token_hash",
+        "token_hint",
+        "allowed_commands_json",
+        "expires_at",
+        "revoked_at",
+    }.issubset(account_columns)
+    assert {
+        "service_account_id",
+        "campaign_id",
+        "report_id",
+        "command_type",
+        "idempotency_key",
+        "request_hash",
+        "denial_reason_code",
+        "result_json",
+        "artifact_hash",
+    }.issubset(receipt_columns)
+    assert account_columns["token_hash"]["nullable"] is False
+    assert receipt_columns["campaign_id"]["nullable"] is True
+
+    account_indexes = {
+        item["name"] for item in inspector.get_indexes("automation_service_accounts")
+    }
+    receipt_indexes = {
+        item["name"] for item in inspector.get_indexes("automation_command_receipts")
+    }
+    assert "uq_automation_service_accounts_one_active_org" in account_indexes
+    assert "ix_automation_command_receipts_account_created" in receipt_indexes
+
+
+def test_inbound_automation_migration_is_scoped_immutable_and_reversible() -> None:
+    source = MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0188"' in source
+    assert 'down_revision = "20260819_0187"' in source
+    assert 'command_type in (\'report.retrieve\')' in source
+    assert "uq_automation_service_accounts_one_active_org" in source
+    assert "fk_automation_command_receipts_account_scope" in source
+    assert "fk_automation_command_receipts_campaign_scope" in source
+    assert "ENABLE ROW LEVEL SECURITY" in source
+    assert "app.current_tenant_id" in source
+    assert "app.current_organization_id" in source
+    assert "REVOKE UPDATE, DELETE" in source
+    assert "BEFORE UPDATE OR DELETE" in source
+    assert "automation command receipts are immutable" in source
+    assert "app.platform_maintenance" in source
+    assert 'op.drop_table(RECEIPT_TABLE)' in source
+    assert 'op.drop_table(ACCOUNT_TABLE)' in source
+

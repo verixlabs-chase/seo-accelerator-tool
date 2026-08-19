@@ -20,6 +20,10 @@ from app.models.automation_webhook import (
     AutomationWebhookDelivery,
     AutomationWebhookDeliveryAttempt,
 )
+from app.models.automation_command import (
+    AutomationCommandReceipt,
+    AutomationServiceAccount,
+)
 from app.models.authority import (
     AuthorityGapResearchRun,
     AuthorityInventoryLink,
@@ -270,6 +274,8 @@ __all__ = [
     "AutomationWebhookConnection",
     "AutomationWebhookDelivery",
     "AutomationWebhookDeliveryAttempt",
+    "AutomationServiceAccount",
+    "AutomationCommandReceipt",
     "Role",
     "UserRole",
     "SubAccount",
