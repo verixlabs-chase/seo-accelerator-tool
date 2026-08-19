@@ -97,6 +97,49 @@ class AutomationServiceAccount(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class AutomationServiceAccountLocation(Base):
+    __tablename__ = "automation_service_account_locations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["service_account_id", "tenant_id", "organization_id"],
+            [
+                "automation_service_accounts.id",
+                "automation_service_accounts.tenant_id",
+                "automation_service_accounts.organization_id",
+            ],
+            name="fk_automation_account_locations_account_scope",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["business_location_id", "organization_id"],
+            ["business_locations.id", "business_locations.organization_id"],
+            name="fk_automation_account_locations_location_scope",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "service_account_id",
+            "business_location_id",
+            name="uq_automation_account_locations_scope",
+        ),
+        Index(
+            "ix_automation_account_locations_location",
+            "organization_id",
+            "business_location_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    service_account_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    business_location_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class AutomationCommandReceipt(Base):
     __tablename__ = "automation_command_receipts"
     __table_args__ = (

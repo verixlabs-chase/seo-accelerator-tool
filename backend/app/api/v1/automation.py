@@ -65,6 +65,7 @@ class AutomationServiceAccountIn(BaseModel):
 
     name: str = Field(min_length=2, max_length=120)
     location_id: str = Field(min_length=36, max_length=36)
+    additional_location_ids: list[str] = Field(default_factory=list, max_length=9)
     expires_in_days: int = Field(default=30, ge=1, le=90)
     allowed_commands: list[
         Literal["report.retrieve", "report.generate_saved", "recommendation.retrieve", "recommendation.request_review", "connection.refresh_saved", "listing.check_public", "content.create_working_draft", "content.request_draft_review"]
@@ -255,6 +256,7 @@ def post_automation_service_account(
             actor_user_id=str(user['id']),
             name=body.name,
             business_location_id=body.location_id,
+            additional_business_location_ids=body.additional_location_ids,
             expires_in_days=body.expires_in_days,
             allowed_commands=body.allowed_commands,
         )

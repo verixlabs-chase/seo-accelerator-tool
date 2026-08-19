@@ -7,6 +7,7 @@ from sqlalchemy import inspect
 from app.models.automation_command import (
     AutomationCommandReceipt,
     AutomationServiceAccount,
+    AutomationServiceAccountLocation,
 )
 
 
@@ -58,12 +59,19 @@ DRAFT_REVIEW_MIGRATION = (
     / "versions"
     / "20260819_0195_content_draft_review_request_command.py"
 )
+MULTI_LOCATION_SCOPE_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0196_explicit_automation_location_scopes.py"
+)
 
 
 def test_inbound_automation_schema_matches_models(db_session) -> None:
     inspector = inspect(db_session.get_bind())
     assert {
         AutomationServiceAccount.__tablename__,
+        AutomationServiceAccountLocation.__tablename__,
         AutomationCommandReceipt.__tablename__,
     }.issubset(set(inspector.get_table_names()))
 
@@ -187,4 +195,13 @@ def test_content_draft_review_request_migration_is_bounded() -> None:
     assert 'revision = "20260819_0195"' in source
     assert 'down_revision = "20260819_0194"' in source
     assert "'content.request_draft_review'" in source
+    assert "Cannot downgrade" in source
+
+
+def test_multi_location_scope_migration_is_explicit_and_bounded() -> None:
+    source = MULTI_LOCATION_SCOPE_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0196"' in source
+    assert 'down_revision = "20260819_0195"' in source
+    assert "automation_service_account_locations" in source
+    assert "business_location_id" in source
     assert "Cannot downgrade" in source

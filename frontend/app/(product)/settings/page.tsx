@@ -386,6 +386,8 @@ type AutomationServiceAccount = {
   status: "active" | "revoked";
   location_id: string;
   location_name: string;
+  location_ids: string[];
+  location_count: number;
   allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review">;
   token_hint: string;
   token_version: number;
@@ -1483,6 +1485,7 @@ export default function SettingsPage() {
   const [automationCommandLoadState, setAutomationCommandLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
   const [automationCommandName, setAutomationCommandName] = useState("n8n saved report helper");
   const [automationCommandLocationId, setAutomationCommandLocationId] = useState("");
+  const [automationCommandAdditionalLocationIds, setAutomationCommandAdditionalLocationIds] = useState<string[]>([]);
   const [automationCommandToken, setAutomationCommandToken] = useState("");
   const [privateAIProviders, setPrivateAIProviders] = useState<PrivateAIProviderConnection[]>([]);
   const [privateAIProviderLoadState, setPrivateAIProviderLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
@@ -3123,6 +3126,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           name: automationCommandName,
           location_id: automationCommandLocationId,
+          additional_location_ids: automationCommandAdditionalLocationIds,
           expires_in_days: 30,
         }),
       })) as {
@@ -3131,14 +3135,14 @@ export default function SettingsPage() {
         service_account: AutomationServiceAccount;
       };
       setAutomationCommandToken(response.token);
-      setNotice("Report access is ready. Copy the workflow key now; it will not be shown again.");
+      setNotice(`Report access is ready for ${response.service_account.location_count} location${response.service_account.location_count === 1 ? "" : "s"}. Copy the workflow key now; it will not be shown again.`);
       await loadAutomationCommandAccess();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Unable to create report access for n8n.");
     } finally {
       setBusyAction("");
     }
-  }, [automationCommandLocationId, automationCommandName, loadAutomationCommandAccess]);
+  }, [automationCommandAdditionalLocationIds, automationCommandLocationId, automationCommandName, loadAutomationCommandAccess]);
 
   const rotateAutomationCommandAccess = useCallback(
     async (serviceAccountId: string) => {
@@ -8402,12 +8406,44 @@ export default function SettingsPage() {
                                 id="automation-command-location"
                                 className={selectClass}
                                 value={automationCommandLocationId}
-                                onChange={(event) => setAutomationCommandLocationId(event.target.value)}
+                                onChange={(event) => {
+                                  setAutomationCommandLocationId(event.target.value);
+                                  setAutomationCommandAdditionalLocationIds((current) => current.filter((item) => item !== event.target.value));
+                                }}
                               >
                                 {automationCommandLocations.map((location) => (
                                   <option key={location.id} value={location.id}>{location.label}</option>
                                 ))}
                               </select>
+                              {automationCommandLocations.length > 1 ? (
+                                <details className="mt-2 rounded-md border border-[#303137] bg-[#141518] p-2">
+                                  <summary className="cursor-pointer text-xs font-medium text-zinc-300">
+                                    Add report access for other locations
+                                  </summary>
+                                  <div className="mt-2 space-y-2">
+                                    {automationCommandLocations
+                                      .filter((location) => location.id !== automationCommandLocationId)
+                                      .map((location) => (
+                                        <label key={location.id} className="flex items-start gap-2 text-xs text-zinc-300">
+                                          <input
+                                            type="checkbox"
+                                            className="mt-0.5"
+                                            checked={automationCommandAdditionalLocationIds.includes(location.id)}
+                                            onChange={(event) => setAutomationCommandAdditionalLocationIds((current) => (
+                                              event.target.checked
+                                                ? [...current, location.id].slice(0, 9)
+                                                : current.filter((item) => item !== location.id)
+                                            ))}
+                                          />
+                                          <span>{location.label}</span>
+                                        </label>
+                                      ))}
+                                  </div>
+                                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                    Additional locations allow saved-report retrieval only. Paid checks, refreshes, recommendations, drafts, review requests, approvals, and publishing remain limited to the primary location.
+                                  </p>
+                                </details>
+                              ) : null}
                             </div>
                             <button
                               type="button"

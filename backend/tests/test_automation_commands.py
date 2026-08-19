@@ -159,6 +159,70 @@ def test_owner_creates_one_scoped_key_and_secret_is_returned_once(client, db_ses
     assert len(row.token_hash) == 64
 
 
+def test_multi_location_key_reads_only_explicit_saved_report_scopes(
+    client, db_session
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    primary = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="multi-primary"
+    )
+    allowed = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="multi-allowed"
+    )
+    blocked = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="multi-blocked"
+    )
+    created = client.post(
+        "/api/v1/automation/service-accounts",
+        headers=_headers(owner_token),
+        json={
+            "name": "Two-location report helper",
+            "location_id": primary["location_id"],
+            "additional_location_ids": [allowed["location_id"]],
+            "expires_in_days": 30,
+        },
+    )
+    assert created.status_code == 201, created.text
+    data = created.json()["data"]
+    assert data["service_account"]["location_count"] == 2
+    assert set(data["service_account"]["location_ids"]) == {
+        primary["location_id"],
+        allowed["location_id"],
+    }
+    secret = data["token"]
+
+    allowed_body = _command_body(
+        organization_id=organization_id,
+        location_id=allowed["location_id"],
+        report_id=allowed["report_id"],
+    )
+    allowed_body["idempotency_key"] = "multi-report-allowed-1001"
+    response = client.post(
+        "/api/v1/automation/commands",
+        json=allowed_body,
+        headers=_headers(secret),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["receipt"]["status"] == "succeeded"
+    assert response.json()["data"]["receipt"]["location_id"] == allowed["location_id"]
+
+    blocked_body = _command_body(
+        organization_id=organization_id,
+        location_id=blocked["location_id"],
+        report_id=blocked["report_id"],
+    )
+    blocked_body["idempotency_key"] = "multi-report-blocked-1001"
+    denied = client.post(
+        "/api/v1/automation/commands",
+        json=blocked_body,
+        headers=_headers(secret),
+    )
+    assert denied.status_code == 200
+    assert denied.json()["data"]["receipt"]["denial_reason_code"] == "automation_command_scope_mismatch"
+
+
 def test_owner_downloads_inactive_credential_free_n8n_report_workflow(
     client, db_session
 ) -> None:

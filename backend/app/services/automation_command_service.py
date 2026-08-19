@@ -26,6 +26,7 @@ from app.db.session import set_session_security_context
 from app.models.automation_command import (
     AutomationCommandReceipt,
     AutomationServiceAccount,
+    AutomationServiceAccountLocation,
 )
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
@@ -95,6 +96,7 @@ def create_service_account(
     actor_user_id: str,
     name: str,
     business_location_id: str,
+    additional_business_location_ids: list[str] | None = None,
     expires_in_days: int,
     allowed_commands: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -109,6 +111,23 @@ def create_service_account(
         organization_id=organization.id,
         business_location_id=business_location_id,
     )
+    requested_location_ids = list(
+        dict.fromkeys([location.id, *(additional_business_location_ids or [])])
+    )
+    if len(requested_location_ids) > 10:
+        raise AutomationCommandError(
+            "Choose no more than 10 locations for one workflow key.",
+            reason_code="automation_location_scope_limit_reached",
+            status_code=422,
+        )
+    locations = [
+        _active_location(
+            db,
+            organization_id=organization.id,
+            business_location_id=location_id,
+        )
+        for location_id in requested_location_ids
+    ]
     active_account = (
         db.query(AutomationServiceAccount)
         .filter(
@@ -145,6 +164,17 @@ def create_service_account(
         updated_at=now,
     )
     db.add(row)
+    db.flush()
+    for scoped_location in locations:
+        db.add(
+            AutomationServiceAccountLocation(
+                tenant_id=organization.id,
+                organization_id=organization.id,
+                service_account_id=row.id,
+                business_location_id=scoped_location.id,
+                created_at=now,
+            )
+        )
     write_audit_log(
         db,
         tenant_id=organization.id,
@@ -153,6 +183,7 @@ def create_service_account(
         payload={
             "service_account_id": row.id,
             "business_location_id": row.business_location_id,
+            "business_location_ids": requested_location_ids,
             "allowed_commands": resolved_commands,
             "expires_at": row.expires_at.isoformat(),
         },
@@ -640,6 +671,7 @@ def execute_report_retrieval(
     denial_reason: str | None = None
     campaign: Campaign | None = None
     report: MonthlyReport | None = None
+    requested_location_id = str(request_payload["location_id"])
 
     if request_payload["schema_version"] != COMMAND_SCHEMA_VERSION:
         denial_reason = "automation_command_schema_unsupported"
@@ -647,7 +679,9 @@ def execute_report_retrieval(
         denial_reason = "automation_command_not_allowed"
     elif request_payload["organization_id"] != account.organization_id:
         denial_reason = "automation_command_scope_mismatch"
-    elif request_payload["location_id"] != account.business_location_id:
+    elif not _account_can_read_location(
+        db, account=account, business_location_id=requested_location_id
+    ):
         denial_reason = "automation_command_scope_mismatch"
     else:
         try:
@@ -659,7 +693,7 @@ def execute_report_retrieval(
         except CostEconomicsError:
             denial_reason = "external_automation_upgrade_required"
 
-    location = db.get(BusinessLocation, account.business_location_id)
+    location = db.get(BusinessLocation, requested_location_id)
     if denial_reason is None and (
         location is None
         or location.organization_id != account.organization_id
@@ -676,7 +710,7 @@ def execute_report_retrieval(
                 MonthlyReport.tenant_id == account.tenant_id,
                 Campaign.tenant_id == account.tenant_id,
                 Campaign.organization_id == account.organization_id,
-                Campaign.business_location_id == account.business_location_id,
+                Campaign.business_location_id == requested_location_id,
             )
             .one_or_none()
         )
@@ -707,7 +741,7 @@ def execute_report_retrieval(
         tenant_id=account.tenant_id,
         organization_id=account.organization_id,
         service_account_id=account.id,
-        business_location_id=account.business_location_id,
+        business_location_id=requested_location_id,
         campaign_id=campaign.id if campaign is not None else None,
         report_id=report_id,
         schema_version=COMMAND_SCHEMA_VERSION,
@@ -755,7 +789,7 @@ def execute_report_retrieval(
             "service_account_id": account.id,
             "command_receipt_id": receipt.id,
             "command_type": receipt.command_type,
-            "business_location_id": account.business_location_id,
+            "business_location_id": requested_location_id,
             "status": status_value,
             "denial_reason_code": denial_reason,
         },
@@ -1823,12 +1857,21 @@ def _account_contract(db: Session, row: AutomationServiceAccount) -> dict[str, A
         .filter(AutomationCommandReceipt.service_account_id == row.id)
         .count()
     )
+    location_rows = (
+        db.query(AutomationServiceAccountLocation)
+        .filter(AutomationServiceAccountLocation.service_account_id == row.id)
+        .order_by(AutomationServiceAccountLocation.created_at, AutomationServiceAccountLocation.id)
+        .all()
+    )
+    location_ids = [item.business_location_id for item in location_rows] or [row.business_location_id]
     return {
         "id": row.id,
         "name": row.name,
         "status": row.status,
         "location_id": row.business_location_id,
         "location_name": location.name if location is not None else "Saved location",
+        "location_ids": location_ids,
+        "location_count": len(location_ids),
         "allowed_commands": _allowed_commands(row),
         "token_hint": row.token_hint,
         "token_version": row.token_version,
@@ -1840,6 +1883,25 @@ def _account_contract(db: Session, row: AutomationServiceAccount) -> dict[str, A
         "command_count": command_count,
         "token_revealed": False,
     }
+
+
+def _account_can_read_location(
+    db: Session,
+    *,
+    account: AutomationServiceAccount,
+    business_location_id: str,
+) -> bool:
+    return (
+        db.query(AutomationServiceAccountLocation.id)
+        .filter(
+            AutomationServiceAccountLocation.service_account_id == account.id,
+            AutomationServiceAccountLocation.tenant_id == account.tenant_id,
+            AutomationServiceAccountLocation.organization_id == account.organization_id,
+            AutomationServiceAccountLocation.business_location_id == business_location_id,
+        )
+        .first()
+        is not None
+    )
 
 
 def _receipt_contract(

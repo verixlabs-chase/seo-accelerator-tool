@@ -5396,9 +5396,17 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   credential before a manual test. The template contains no workflow key,
   customer content, automatic trigger, AI-writing step, approval, scheduling,
   WordPress delivery, or publishing action.
-- AUT1J-K and later slices still own multiple-location scopes and broader
-  action allowances. No broader inbound action or approval authority is
-  implied by these commands or the inactive starter.
+- AUT1J-K introduces explicit multi-location read scopes for saved-report
+  retrieval only. A normalized tenant- and organization-scoped allowlist row
+  is required for every location; migration backfills every existing key with
+  exactly its former primary location, so deployment never broadens access.
+  Owners may select up to nine additional active locations when creating a key.
+- The request still names one location, the saved report must belong to that
+  exact allowed location, and the immutable receipt records it. Paid checks,
+  connected-data refreshes, recommendations, content actions, review requests,
+  approvals, scheduling, execution, and publishing continue to require the
+  original primary location. AUT1J-L and later slices own any broader action
+  allowances; none are implied by multi-location report reading.
 
 Planned scope (added August 17, 2026):
 

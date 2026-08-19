@@ -25,6 +25,13 @@ test("Settings offers one-location read-only n8n report access", () => {
   assert.match(settings, /Create report access/);
 });
 
+test("owners explicitly scope multi-location report access without broad workflow authority", () => {
+  assert.match(settings, /Add report access for other locations/);
+  assert.match(settings, /additional_location_ids: automationCommandAdditionalLocationIds/);
+  assert.match(settings, /Additional locations allow saved-report retrieval only/);
+  assert.match(settings, /Paid checks, refreshes, recommendations, drafts, review requests, approvals, and publishing remain limited to the primary location/);
+});
+
 test("workflow key lifecycle is owner-controlled and shown only from create or rotate", () => {
   assert.match(settings, /platformApi\("\/automation\/service-accounts"/);
   assert.match(settings, /\/automation\/service-accounts\/\$\{serviceAccountId\}\/rotate/);
