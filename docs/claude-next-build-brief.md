@@ -5516,6 +5516,14 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   job state stays inside the minimized command result and is refreshed through
   the same receipt read. Response schemas expose no token, raw provider data,
   prompt, internal cost, customer identity, or unrelated storage path.
+- AUT1J-Y adds the customer-safe failure envelope to every documented
+  authentication, permission, validation, scope, receipt, and artifact error.
+  Compatible workflows can branch on HTTP status plus
+  `errors[0].details.reason_code` instead of parsing English messages.
+- Error schemas preserve request correlation and status while allowing bounded
+  validation detail, but exclude stack traces, credentials, provider payloads,
+  database errors, and internal cost information. A human-facing message can
+  change without breaking the stable reason-code contract.
 
 Planned scope (added August 17, 2026):
 

@@ -100,9 +100,9 @@ def build_automation_command_openapi(
                                 }
                             },
                         },
-                        "401": {"description": "Workflow key invalid, expired, or revoked"},
-                        "403": {"description": "Workspace or plan is unavailable"},
-                        "409": {"description": "Primary location is unavailable"},
+                        "401": _error_response("Workflow key invalid, expired, or revoked"),
+                        "403": _error_response("Workspace or plan is unavailable"),
+                        "409": _error_response("Primary location is unavailable"),
                     },
                     "x-insightos-command-executed": False,
                     "x-insightos-provider-called": False,
@@ -130,9 +130,9 @@ def build_automation_command_openapi(
                                 }
                             },
                         },
-                        "401": {"description": "Workflow key invalid, expired, or revoked"},
-                        "409": {"description": "Command safely declined or conflicts"},
-                        "422": {"description": "Command body does not match the fixed schema"},
+                        "401": _error_response("Workflow key invalid, expired, or revoked"),
+                        "409": _error_response("Command safely declined or conflicts"),
+                        "422": _error_response("Command body does not match the fixed schema"),
                     },
                     "x-insightos-allowed-actions": allowed_actions,
                     "x-insightos-human-review-required": True,
@@ -161,8 +161,8 @@ def build_automation_command_openapi(
                                 }
                             },
                         },
-                        "401": {"description": "Workflow key invalid, expired, or revoked"},
-                        "404": {"description": "Receipt is outside this workflow key's scope"},
+                        "401": _error_response("Workflow key invalid, expired, or revoked"),
+                        "404": _error_response("Receipt is outside this workflow key's scope"),
                     },
                     "x-insightos-read-only": True,
                 }
@@ -195,8 +195,8 @@ def build_automation_command_openapi(
                                 }
                             },
                         },
-                        "401": {"description": "Workflow key invalid, expired, or revoked"},
-                        "404": {"description": "Artifact is not ready or outside this receipt"},
+                        "401": _error_response("Workflow key invalid, expired, or revoked"),
+                        "404": _error_response("Artifact is not ready or outside this receipt"),
                     },
                     "x-insightos-read-only": True,
                     "x-insightos-receipt-bound": True,
@@ -360,5 +360,58 @@ def _response_schemas() -> dict[str, Any]:
                 "meta": {"$ref": "#/components/schemas/AutomationEnvelopeMeta"},
                 "error": {"type": "null"},
             },
+        },
+        "AutomationErrorEnvelope": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["success", "errors", "meta"],
+            "properties": {
+                "success": {"const": False},
+                "errors": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["code", "message", "details"],
+                        "properties": {
+                            "code": {"type": "string"},
+                            "message": {"type": "string"},
+                            "details": {
+                                "type": "object",
+                                "description": (
+                                    "Customer-safe details. Command failures place the "
+                                    "stable reason code in details.reason_code."
+                                ),
+                                "additionalProperties": True,
+                                "properties": {
+                                    "reason_code": {"type": "string"}
+                                },
+                            },
+                        },
+                    },
+                },
+                "meta": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["request_id", "tenant_id", "status_code"],
+                    "properties": {
+                        "request_id": {"type": "string"},
+                        "tenant_id": nullable_string,
+                        "status_code": {"type": "integer"},
+                    },
+                },
+            },
+        },
+    }
+
+
+def _error_response(description: str) -> dict[str, Any]:
+    return {
+        "description": description,
+        "content": {
+            "application/json": {
+                "schema": {"$ref": "#/components/schemas/AutomationErrorEnvelope"}
+            }
         },
     }

@@ -90,6 +90,15 @@ def test_openapi_builder_is_scoped_importable_and_secret_free() -> None:
     assert receipt_schema["properties"]["result"]["description"] == (
         "Minimized command-specific result facts."
     )
+    assert operation["responses"]["409"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/AutomationErrorEnvelope"}
+    error_schema = document["components"]["schemas"]["AutomationErrorEnvelope"]
+    assert error_schema["properties"]["success"] == {"const": False}
+    error_item = error_schema["properties"]["errors"]["items"]
+    assert error_item["properties"]["details"]["properties"]["reason_code"] == {
+        "type": "string"
+    }
     assert "$defs" not in document["components"]["schemas"]["AutomationCommand"]
     serialized = json.dumps(document).lower()
     assert "workflow key" in serialized

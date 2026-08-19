@@ -301,6 +301,9 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
         "truth",
         "safety",
     ]
+    assert operation["responses"]["422"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/AutomationErrorEnvelope"}
     assert document["components"]["securitySchemes"]["workflowKey"]["scheme"] == (
         "bearer"
     )
@@ -344,6 +347,13 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
         headers=_headers("not-a-workflow-key"),
     )
     assert invalid_access.status_code == 401
+    error = invalid_access.json()
+    assert error["success"] is False
+    assert error["errors"][0]["code"] == "http_401"
+    assert error["errors"][0]["details"]["reason_code"] == (
+        "automation_service_account_token_invalid"
+    )
+    assert error["meta"]["status_code"] == 401
 
 
 def test_saved_review_retrieval_is_minimized_read_only_and_location_scoped(
