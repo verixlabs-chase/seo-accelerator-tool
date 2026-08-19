@@ -16,9 +16,9 @@ const content = readFileSync(
   "utf8",
 );
 
-test("Settings offers one-location read-only n8n report access", () => {
-  assert.match(settings, /Give n8n read-only access to saved reports/);
-  assert.match(settings, /Create one short-lived workflow key for one location/);
+test("Settings offers one-location read-only workflow-tool report access", () => {
+  assert.match(settings, /Give a workflow tool read-only access to saved reports/);
+  assert.match(settings, /Create one short-lived workflow key for Zapier, Make, n8n, Pipedream/);
   assert.match(settings, /cannot start paid checks, approve work, publish content/);
   assert.match(settings, /location_id: automationCommandLocationId/);
   assert.match(settings, /expires_in_days: 30/);
@@ -42,12 +42,12 @@ test("workflow key lifecycle is owner-controlled and shown only from create or r
   assert.match(settings, /method: "DELETE"/);
   assert.match(settings, /Copy this workflow key now/);
   assert.match(settings, /will not show the key again/);
-  assert.match(settings, /Ask the workspace owner to create or replace the n8n report key/);
+  assert.match(settings, /Ask the workspace owner to create or replace the workflow key/);
   assert.doesNotMatch(settings, /setAutomationCommandToken\(activeAutomationServiceAccount/);
 });
 
-test("advanced n8n instructions use the fixed command contract", () => {
-  const start = settings.indexOf("n8n setup details (advanced)");
+test("advanced workflow instructions use the fixed command contract", () => {
+  const start = settings.indexOf("Manual request examples (advanced)");
   const contract = settings.slice(start, start + 5000);
   assert.ok(start >= 0);
   assert.match(contract, /\/api\/v1\/automation\/commands/);
@@ -65,12 +65,10 @@ test("owners can download a safe inactive n8n starter instead of hand-building i
     settings,
     /\/automation\/starter-workflows\/n8n\/report-ready\?service_account_id=/,
   );
-  assert.match(settings, /choose Import from File in n8n/);
-  assert.match(settings, /select a Bearer Auth credential containing the one-time workflow key/);
-  assert.match(settings, /copy its Production URL/);
-  assert.match(settings, /select only “Report ready”/);
-  assert.match(settings, /The download is inactive and never contains your workflow key/);
-  assert.match(settings, /It ignores updates for other locations and creates no paid work/);
+  assert.match(settings, /inactive n8n starter workflow was downloaded/);
+  assert.match(settings, /Import it, add the workflow key/);
+  assert.match(settings, /separate n8n starter remains available as an optional shortcut/);
+  assert.match(settings, /downloads never contain your workflow key/);
 });
 
 test("owners can download one vendor-neutral inbound connection guide", () => {
@@ -78,6 +76,10 @@ test("owners can download one vendor-neutral inbound connection guide", () => {
   assert.match(settings, /\/automation\/command-client-kit\?service_account_id=/);
   assert.match(settings, /works with Zapier, Make, n8n, Pipedream, and custom HTTPS tools/);
   assert.match(settings, /does not contain your workflow key/);
+  assert.match(settings, /Connect any supported workflow tool/);
+  assert.match(settings, /import the API file into a compatible builder/);
+  assert.match(settings, /Run the safe connection check/);
+  assert.match(settings, /separate n8n starter remains available as an optional shortcut/);
 });
 
 test("owners can download an importable API definition without embedding the key", () => {
@@ -95,7 +97,7 @@ test("command history uses plain results instead of internal request details", (
 });
 
 test("owners explicitly opt into saved-data report creation with a replacement key", () => {
-  assert.match(settings, /Let n8n create private reports from saved results/);
+  assert.match(settings, /Let a workflow tool create private reports from saved results/);
   assert.match(settings, /report\.generate_saved/);
   assert.match(settings, /cannot start a crawl or paid check, send the report, publish content/);
   assert.match(settings, /\.\.\.\(enabled \? \["report\.generate_saved"\] : \[\]\)/);
@@ -117,7 +119,7 @@ test("owners can download an inactive monthly private-report workflow", () => {
 });
 
 test("owners explicitly enable saved recommendation review routing", () => {
-  assert.match(settings, /Let n8n route saved recommendations for owner review/);
+  assert.match(settings, /Let a workflow tool route saved recommendations for owner review/);
   assert.match(settings, /recommendation\.retrieve/);
   assert.match(settings, /recommendation\.request_review/);
   assert.match(settings, /cannot approve, schedule, execute, or publish anything/);
@@ -136,7 +138,7 @@ test("owners explicitly enable saved recommendation review routing", () => {
 });
 
 test("owners explicitly enable bounded connected-data refresh", () => {
-  assert.match(settings, /Let n8n refresh connected data/);
+  assert.match(settings, /Let a workflow tool refresh connected data/);
   assert.match(settings, /connection\.refresh_saved/);
   assert.match(settings, /Allow connected-data refresh/);
   assert.match(settings, /REPLACE-WITH-CONNECTION-ID/);
@@ -146,7 +148,7 @@ test("owners explicitly enable bounded connected-data refresh", () => {
 });
 
 test("owners explicitly enable the first allowance-priced workflow check", () => {
-  assert.match(settings, /Let n8n check public business listings/);
+  assert.match(settings, /Let a workflow tool check public business listings/);
   assert.match(settings, /listing\.check_public/);
   assert.match(settings, /Allow public listing checks/);
   assert.match(settings, /uses the same Insight Credit balance, daily plan limit, price setup/);
@@ -157,7 +159,7 @@ test("owners explicitly enable the first allowance-priced workflow check", () =>
 });
 
 test("owners explicitly enable private drafts from accepted briefs", () => {
-  assert.match(settings, /Let n8n start accepted working drafts/);
+  assert.match(settings, /Let a workflow tool start accepted working drafts/);
   assert.match(settings, /content\.create_working_draft/);
   assert.match(settings, /Allow accepted draft creation/);
   assert.match(settings, /REPLACE-WITH-ACCEPTED-BRIEF-ID/);
@@ -175,7 +177,7 @@ test("owners explicitly enable private drafts from accepted briefs", () => {
 });
 
 test("owners can route minimized saved review facts without outside reply authority", () => {
-  assert.match(settings, /Let n8n route saved review facts/);
+  assert.match(settings, /Let a workflow tool route saved review facts/);
   assert.match(settings, /review\.retrieve/);
   assert.match(settings, /review\.create_response_draft/);
   assert.match(settings, /Allow private reply drafts/);

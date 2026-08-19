@@ -5533,6 +5533,16 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   required target fields. This catches future schema, path, response, or
   command additions that would make a Zapier, Make, n8n, Pipedream, or custom
   client import ambiguous or invalid.
+- AUT1J-AA rewrites the inbound Settings entry point around a generic workflow
+  tool instead of presenting n8n as the product boundary. Owners now see one
+  plain four-step path for Zapier, Make, n8n, Pipedream, and compatible HTTPS
+  clients: download/import, save the private key, run the safe connection
+  check, test once, then turn the workflow on.
+- The n8n starter remains an explicitly optional shortcut. Permission labels,
+  confirmations, rotation notices, location copy, and advanced examples use
+  vendor-neutral language, while supplier-specific file names and instructions
+  appear only where they are genuinely needed. No UI copy implies that an
+  imported file can approve, publish, or bypass InsightOS controls.
 
 Planned scope (added August 17, 2026):
 

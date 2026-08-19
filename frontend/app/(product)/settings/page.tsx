@@ -1483,7 +1483,7 @@ export default function SettingsPage() {
   const [automationServiceAccounts, setAutomationServiceAccounts] = useState<AutomationServiceAccount[]>([]);
   const [automationCommandHistory, setAutomationCommandHistory] = useState<AutomationCommandReceipt[]>([]);
   const [automationCommandLoadState, setAutomationCommandLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
-  const [automationCommandName, setAutomationCommandName] = useState("n8n saved report helper");
+  const [automationCommandName, setAutomationCommandName] = useState("Saved report workflow");
   const [automationCommandLocationId, setAutomationCommandLocationId] = useState("");
   const [automationCommandAdditionalLocationIds, setAutomationCommandAdditionalLocationIds] = useState<string[]>([]);
   const [automationCommandToken, setAutomationCommandToken] = useState("");
@@ -3138,7 +3138,7 @@ export default function SettingsPage() {
       setNotice(`Report access is ready for ${response.service_account.location_count} location${response.service_account.location_count === 1 ? "" : "s"}. Copy the workflow key now; it will not be shown again.`);
       await loadAutomationCommandAccess();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Unable to create report access for n8n.");
+      setError(error instanceof Error ? error.message : "Unable to create workflow access.");
     } finally {
       setBusyAction("");
     }
@@ -3157,7 +3157,7 @@ export default function SettingsPage() {
           { method: "POST" },
         )) as { token: string; token_shown_once: true };
         setAutomationCommandToken(response.token);
-        setNotice("Workflow key replaced. Copy the new key now and update n8n before testing again.");
+        setNotice("Workflow key replaced. Copy the new key now and update your workflow tool before testing again.");
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to replace the workflow key.");
@@ -3187,7 +3187,7 @@ export default function SettingsPage() {
           },
         )) as { token: string; token_shown_once: true; service_account: AutomationServiceAccount };
         setAutomationCommandToken(response.token);
-        setNotice(`Saved-report access now covers ${response.service_account.location_count} location${response.service_account.location_count === 1 ? "" : "s"}. Copy the replacement key into n8n now.`);
+        setNotice(`Saved-report access now covers ${response.service_account.location_count} location${response.service_account.location_count === 1 ? "" : "s"}. Copy the replacement key into your workflow tool now.`);
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change report location access.");
@@ -3202,7 +3202,7 @@ export default function SettingsPage() {
     async (serviceAccountId: string, enabled: boolean) => {
       const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
       const warning = enabled
-        ? "Let n8n create private reports from results InsightOS has already saved? This replaces the workflow key. It will not run new checks, email anyone, or publish changes."
+        ? "Let this workflow tool create private reports from results InsightOS has already saved? This replaces the workflow key. It will not run new checks, email anyone, or publish changes."
         : "Remove report-creation access? This replaces the workflow key, and saved-report retrieval will continue to work.";
       if (!window.confirm(warning)) return;
       setBusyAction(`automation-command-scope-${serviceAccountId}`);
@@ -3243,12 +3243,12 @@ export default function SettingsPage() {
         setAutomationCommandToken(response.token);
         setNotice(
           enabled
-            ? "Private report creation is on. Copy the replacement workflow key into n8n now."
-            : "Report creation is off. Copy the replacement read-only key into n8n now.",
+            ? "Private report creation is on. Copy the replacement workflow key into your workflow tool now."
+            : "Report creation is off. Copy the replacement read-only key into your workflow tool now.",
         );
         await loadAutomationCommandAccess();
       } catch (error) {
-        setError(error instanceof Error ? error.message : "Unable to change n8n report access.");
+        setError(error instanceof Error ? error.message : "Unable to change workflow report access.");
       } finally {
         setBusyAction("");
       }
@@ -3260,7 +3260,7 @@ export default function SettingsPage() {
     async (serviceAccountId: string, enabled: boolean) => {
       const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
       const warning = enabled
-        ? "Let n8n read saved recommendations for this location? This replaces the workflow key. It cannot approve, schedule, execute, or publish the recommendation."
+        ? "Let this workflow tool read saved recommendations for this location? This replaces the workflow key. It cannot approve, schedule, execute, or publish the recommendation."
         : "Remove saved recommendation access? This replaces the workflow key; report access will continue.";
       if (!window.confirm(warning)) return;
       setBusyAction(`automation-command-recommendation-scope-${serviceAccountId}`);
@@ -3298,8 +3298,8 @@ export default function SettingsPage() {
         )) as { token: string; token_shown_once: true };
         setAutomationCommandToken(response.token);
         setNotice(enabled
-          ? "Saved recommendation access is on. Copy the replacement workflow key into n8n now."
-          : "Saved recommendation access is off. Copy the replacement workflow key into n8n now.");
+          ? "Saved recommendation access is on. Copy the replacement workflow key into your workflow tool now."
+          : "Saved recommendation access is off. Copy the replacement workflow key into your workflow tool now.");
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change saved recommendation access.");
@@ -3314,7 +3314,7 @@ export default function SettingsPage() {
     async (serviceAccountId: string, enabled: boolean) => {
       const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
       const warning = enabled
-        ? "Let n8n ask InsightOS to refresh data from sources already connected to this location? This replaces the workflow key. It cannot add an account, change settings, publish, or run an unrelated action."
+        ? "Let this workflow tool ask InsightOS to refresh data from sources already connected to this location? This replaces the workflow key. It cannot add an account, change settings, publish, or run an unrelated action."
         : "Remove connected-source refresh access? This replaces the workflow key; report and recommendation access will continue.";
       if (!window.confirm(warning)) return;
       setBusyAction(`automation-command-refresh-scope-${serviceAccountId}`);
@@ -3348,8 +3348,8 @@ export default function SettingsPage() {
         )) as { token: string; token_shown_once: true };
         setAutomationCommandToken(response.token);
         setNotice(enabled
-          ? "Connected-source refresh access is on. Copy the replacement workflow key into n8n now."
-          : "Connected-source refresh access is off. Copy the replacement workflow key into n8n now.");
+          ? "Connected-source refresh access is on. Copy the replacement workflow key into your workflow tool now."
+          : "Connected-source refresh access is off. Copy the replacement workflow key into your workflow tool now.");
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change connected-source refresh access.");
@@ -3364,7 +3364,7 @@ export default function SettingsPage() {
     async (serviceAccountId: string, enabled: boolean) => {
       const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
       const warning = enabled
-        ? "Let n8n start public business-listing inventory checks for this location? Each accepted check can use Insight Credits and the plan's daily allowance. This replaces the workflow key. It cannot correct listings, publish, or change your business profile."
+        ? "Let this workflow tool start public business-listing inventory checks for this location? Each accepted check can use Insight Credits and the plan's daily allowance. This replaces the workflow key. It cannot correct listings, publish, or change your business profile."
         : "Remove public listing check access? This replaces the workflow key; other enabled workflow actions will continue.";
       if (!window.confirm(warning)) return;
       setBusyAction(`automation-command-listing-scope-${serviceAccountId}`);
@@ -3394,8 +3394,8 @@ export default function SettingsPage() {
         )) as { token: string; token_shown_once: true };
         setAutomationCommandToken(response.token);
         setNotice(enabled
-          ? "Public listing check access is on. Copy the replacement workflow key into n8n now."
-          : "Public listing check access is off. Copy the replacement workflow key into n8n now.");
+          ? "Public listing check access is on. Copy the replacement workflow key into your workflow tool now."
+          : "Public listing check access is off. Copy the replacement workflow key into your workflow tool now.");
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change public listing check access.");
@@ -3410,7 +3410,7 @@ export default function SettingsPage() {
     async (serviceAccountId: string, enabled: boolean) => {
       const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
       const warning = enabled
-        ? "Let n8n start a private working draft only after you have accepted its saved content brief? This replaces the workflow key. It creates an empty editable outline and cannot write AI copy, approve, schedule, publish, or change your website."
+        ? "Let this workflow tool start a private working draft only after you have accepted its saved content brief? This replaces the workflow key. It creates an empty editable outline and cannot write AI copy, approve, schedule, publish, or change your website."
         : "Remove working-draft creation access? This replaces the workflow key; other enabled workflow actions will continue.";
       if (!window.confirm(warning)) return;
       setBusyAction(`automation-command-draft-scope-${serviceAccountId}`);
@@ -3439,8 +3439,8 @@ export default function SettingsPage() {
         )) as { token: string; token_shown_once: true };
         setAutomationCommandToken(response.token);
         setNotice(enabled
-          ? "Working-draft creation is on. Copy the replacement workflow key into n8n now."
-          : "Working-draft creation is off. Copy the replacement workflow key into n8n now.");
+          ? "Working-draft creation is on. Copy the replacement workflow key into your workflow tool now."
+          : "Working-draft creation is off. Copy the replacement workflow key into your workflow tool now.");
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change working-draft access.");
@@ -3455,7 +3455,7 @@ export default function SettingsPage() {
     async (serviceAccountId: string, enabled: boolean) => {
       const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
       const warning = enabled
-        ? "Let n8n route the rating, date, and reply state for one exact saved review? This replaces the workflow key. Reviewer names and comment text stay inside InsightOS, and the workflow cannot write or post a reply."
+        ? "Let this workflow tool route the rating, date, and reply state for one exact saved review? This replaces the workflow key. Reviewer names and comment text stay inside InsightOS, and the workflow cannot write or post a reply."
         : "Remove saved-review routing? This replaces the workflow key; other enabled workflow actions will continue.";
       if (!window.confirm(warning)) return;
       setBusyAction(`automation-command-review-scope-${serviceAccountId}`);
@@ -3480,8 +3480,8 @@ export default function SettingsPage() {
         )) as { token: string; token_shown_once: true };
         setAutomationCommandToken(response.token);
         setNotice(enabled
-          ? "Saved-review routing is on. Copy the replacement workflow key into n8n now."
-          : "Saved-review routing is off. Copy the replacement workflow key into n8n now.");
+          ? "Saved-review routing is on. Copy the replacement workflow key into your workflow tool now."
+          : "Saved-review routing is off. Copy the replacement workflow key into your workflow tool now.");
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change saved-review routing.");
@@ -3496,7 +3496,7 @@ export default function SettingsPage() {
     async (serviceAccountId: string, enabled: boolean) => {
       const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
       const warning = enabled
-        ? "Let n8n request a private reply draft for one exact saved review? This replaces the workflow key. Every draft stays inside InsightOS and still requires a person to review and approve it before anything can be posted."
+        ? "Let this workflow tool request a private reply draft for one exact saved review? This replaces the workflow key. Every draft stays inside InsightOS and still requires a person to review and approve it before anything can be posted."
         : "Remove private reply-draft access? This replaces the workflow key; saved-review routing and other enabled actions will continue.";
       if (!window.confirm(warning)) return;
       setBusyAction(`automation-command-review-draft-scope-${serviceAccountId}`);
@@ -3521,8 +3521,8 @@ export default function SettingsPage() {
         )) as { token: string; token_shown_once: true };
         setAutomationCommandToken(response.token);
         setNotice(enabled
-          ? "Private reply drafting is on. Copy the replacement workflow key into n8n now."
-          : "Private reply drafting is off. Copy the replacement workflow key into n8n now.");
+          ? "Private reply drafting is on. Copy the replacement workflow key into your workflow tool now."
+          : "Private reply drafting is off. Copy the replacement workflow key into your workflow tool now.");
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change private reply-draft access.");
@@ -3535,7 +3535,7 @@ export default function SettingsPage() {
 
   const revokeAutomationCommandAccess = useCallback(
     async (serviceAccountId: string) => {
-      if (!window.confirm("Turn off this report connection? n8n will lose access immediately, while its activity history stays saved.")) return;
+      if (!window.confirm("Turn off this report connection? The workflow tool will lose access immediately, while its activity history stays saved.")) return;
       setBusyAction(`automation-command-revoke-${serviceAccountId}`);
       setError("");
       setNotice("");
@@ -3559,7 +3559,7 @@ export default function SettingsPage() {
     if (!automationCommandToken) return;
     try {
       await navigator.clipboard.writeText(automationCommandToken);
-      setNotice("Workflow key copied. Save it in n8n before leaving this page.");
+      setNotice("Workflow key copied. Save it in your workflow tool before leaving this page.");
     } catch {
       setNotice("Select and copy the workflow key before leaving this page.");
     }
@@ -8325,11 +8325,11 @@ export default function SettingsPage() {
                         </p>
                         <h4 className="mt-1 text-sm font-semibold text-white">
                           {activeAutomationServiceAccount?.allowed_commands.includes("report.generate_saved")
-                            ? "Let n8n retrieve and create private reports"
-                            : "Give n8n read-only access to saved reports"}
+                            ? "Let a workflow tool retrieve and create private reports"
+                            : "Give a workflow tool read-only access to saved reports"}
                         </h4>
                         <p className="mt-2 max-w-3xl text-xs leading-5 text-zinc-300">
-                          Create one short-lived workflow key for one location. n8n can retrieve a report that InsightOS has already generated; it cannot start paid checks, approve work, publish content, or change your website or business profile.
+                          Create one short-lived workflow key for Zapier, Make, n8n, Pipedream, or another HTTPS tool. It can retrieve a report InsightOS already generated; it cannot start paid checks, approve work, publish content, or change your website or business profile.
                         </p>
 
                         {automationCommandLoadState === "unavailable" ? (
@@ -8342,11 +8342,11 @@ export default function SettingsPage() {
                           <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
                             <p className="text-sm font-semibold text-amber-100">Copy this workflow key now</p>
                             <p className="mt-1 text-xs leading-5 text-amber-100/80">
-                              Paste it into n8n as a Bearer credential. InsightOS stores only a protected fingerprint and will not show the key again.
+                              Save it in your workflow tool as a private Bearer credential. InsightOS stores only a protected fingerprint and will not show the key again.
                             </p>
                             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                               <input
-                                aria-label="n8n workflow key"
+                                aria-label="workflow tool key"
                                 readOnly
                                 className="min-w-0 flex-1 rounded-md border border-amber-500/30 bg-[#101114] px-3 py-2 font-mono text-xs text-amber-50"
                                 value={automationCommandToken}
@@ -8461,7 +8461,7 @@ export default function SettingsPage() {
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                   <div>
                                     <p className="text-sm font-semibold text-white">
-                                      Let n8n create private reports from saved results
+                                      Let a workflow tool create private reports from saved results
                                     </p>
                                     <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
                                       This can assemble a new report using data already inside InsightOS. It cannot start a crawl or paid check, send the report, publish content, or change your website or business profile.
@@ -8510,10 +8510,10 @@ export default function SettingsPage() {
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
                                       <p className="text-sm font-semibold text-white">
-                                        Let n8n route saved recommendations for owner review
+                                        Let a workflow tool route saved recommendations for owner review
                                       </p>
                                       <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
-                                        When InsightOS finds a recommendation, n8n can retrieve its plain-language facts and place it in the InsightOS owner-review queue before continuing to your email, CRM, or task tool. It cannot approve, schedule, execute, or publish anything.
+                                        When InsightOS finds a recommendation, your workflow can retrieve its plain-language facts and place it in the InsightOS owner-review queue before continuing to email, CRM, or a task tool. It cannot approve, schedule, execute, or publish anything.
                                       </p>
                                     </div>
                                     <button
@@ -8554,10 +8554,10 @@ export default function SettingsPage() {
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
                                       <p className="text-sm font-semibold text-white">
-                                        Let n8n refresh connected data
+                                        Let a workflow tool refresh connected data
                                       </p>
                                       <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
-                                        n8n can request a fresh check from a Google source you already connected to this location. InsightOS keeps the request in its own job history and applies the same access and location checks as this screen. It cannot connect a new account, change settings, publish, or run an unrelated action.
+                                        Your workflow can request a fresh check from a Google source you already connected to this location. InsightOS keeps the request in its own job history and applies the same access and location checks as this screen. It cannot connect a new account, change settings, publish, or run an unrelated action.
                                       </p>
                                     </div>
                                     <button
@@ -8586,7 +8586,7 @@ export default function SettingsPage() {
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
                                       <p className="text-sm font-semibold text-white">
-                                        Let n8n check public business listings
+                                        Let a workflow tool check public business listings
                                       </p>
                                       <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
                                         This starts one inventory check across supported public listing sources for this location. Each accepted check uses the same Insight Credit balance, daily plan limit, price setup, and connection safeguards as the Listings screen. It cannot correct a listing, publish, or change your Business Profile.
@@ -8616,10 +8616,10 @@ export default function SettingsPage() {
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
                                       <p className="text-sm font-semibold text-white">
-                                        Let n8n start accepted working drafts and request review
+                                        Let a workflow tool start accepted working drafts and request review
                                       </p>
                                       <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
-                                        After an owner accepts a saved content brief, n8n can create its private editable outline and place an exact draft beside the owner for review. It cannot generate AI copy, approve, schedule, publish, or change your website.
+                                        After an owner accepts a saved content brief, your workflow can create its private editable outline and place an exact draft beside the owner for review. It cannot generate AI copy, approve, schedule, publish, or change your website.
                                       </p>
                                     </div>
                                     <button
@@ -8663,10 +8663,10 @@ export default function SettingsPage() {
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
                                       <p className="text-sm font-semibold text-white">
-                                        Let n8n route saved review facts
+                                        Let a workflow tool route saved review facts
                                       </p>
                                       <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
-                                        n8n can read the rating, review date, reply state, and whether a comment exists for one exact saved review. Reviewer names and comment text stay in InsightOS. It cannot create, approve, or post a reply or change your Business Profile.
+                                        Your workflow can read the rating, review date, reply state, and whether a comment exists for one exact saved review. Reviewer names and comment text stay in InsightOS. It cannot create, approve, or post a reply or change your Business Profile.
                                       </p>
                                     </div>
                                     <button
@@ -8704,7 +8704,7 @@ export default function SettingsPage() {
                                     <div>
                                       <p className="text-xs font-semibold text-white">Optionally prepare a private reply draft</p>
                                       <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
-                                        n8n may request one governed draft for the exact saved review. The draft text stays in InsightOS. A person must still review and approve it, and n8n cannot post it or change the Business Profile.
+                                        Your workflow may request one governed draft for the exact saved review. The draft text stays in InsightOS. A person must still review and approve it, and the workflow cannot post it or change the Business Profile.
                                       </p>
                                     </div>
                                     <button
@@ -8755,7 +8755,7 @@ export default function SettingsPage() {
                             </div>
                             <div>
                               <label htmlFor="automation-command-location" className="mb-1.5 block text-xs font-medium text-zinc-300">
-                                Location n8n can read
+                                Primary location for this workflow
                               </label>
                               <select
                                 id="automation-command-location"
@@ -8815,21 +8815,21 @@ export default function SettingsPage() {
                           </div>
                         ) : automationCommandLoadState === "ready" ? (
                           <p className="mt-3 rounded-md border border-[#303137] bg-[#101114] p-3 text-xs leading-5 text-zinc-400">
-                            Ask the workspace owner to create or replace the n8n report key.
+                            Ask the workspace owner to create or replace the workflow key.
                           </p>
                         ) : null}
 
                         {activeAutomationServiceAccount ? (
                           <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4">
-                            <p className="text-sm font-semibold text-emerald-100">Connect it in four steps</p>
+                            <p className="text-sm font-semibold text-emerald-100">Connect any supported workflow tool</p>
                             <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
-                              <li>Download the starter above, then choose Import from File in n8n.</li>
-                              <li>Open “Retrieve the saved report” and select a Bearer Auth credential containing the one-time workflow key.</li>
-                              <li>Save and publish the n8n workflow, then copy its Production URL.</li>
-                              <li>Connect that URL above and select only “Report ready”.</li>
+                              <li>Download the connection guide, or import the API file into a compatible builder.</li>
+                              <li>Save the one-time workflow key in the tool&apos;s private Bearer credential setting.</li>
+                              <li>Run the safe connection check before choosing an enabled action.</li>
+                              <li>Test the workflow once, then turn it on only when the saved result looks correct.</li>
                             </ol>
                             <p className="mt-2 text-xs leading-5 text-zinc-500">
-                              The download is inactive and never contains your workflow key. It ignores updates for other locations and creates no paid work.
+                              The downloads never contain your workflow key. The separate n8n starter remains available as an optional shortcut.
                             </p>
                           </div>
                         ) : null}
@@ -8837,7 +8837,7 @@ export default function SettingsPage() {
                         {activeAutomationServiceAccount ? (
                           <details className="group mt-3 rounded-md border border-[#303137] bg-[#101114]">
                             <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-medium text-zinc-300">
-                              n8n setup details (advanced)
+                              Manual request examples (advanced)
                             </summary>
                             <div className="space-y-3 border-t border-[#292a2f] p-3 text-xs leading-5 text-zinc-400">
                               <ol className="list-decimal space-y-1 pl-5">
