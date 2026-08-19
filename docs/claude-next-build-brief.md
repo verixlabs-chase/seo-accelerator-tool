@@ -5572,6 +5572,12 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   items may link to the exact saved result; declined items state that nothing
   changed and explain a same-key retry after recovery without exposing internal
   denial codes, provider details, or request payloads.
+- AUT1J-AH adds a dedicated GitHub automation-conformance job covering the
+  command migrations, exact OpenAPI contract, scoped credentials, idempotency,
+  conformance fixtures, export redaction, manual locks, observability, provider
+  setup, recipes, timeline, signed delivery, fanout, and external contract.
+  This keeps the 102-test automation boundary visible independently of the
+  full backend suite.
 
 Planned scope (added August 17, 2026):
 
