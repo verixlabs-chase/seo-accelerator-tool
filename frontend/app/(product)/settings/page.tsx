@@ -3617,6 +3617,32 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const downloadAutomationOpenApi = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-openapi-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/command-openapi?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-automation-openapi.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The OpenAPI file was downloaded. Import it into a compatible automation builder, then add the workflow key in that tool's private credential settings.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the automation API file.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
   const downloadN8nMonthlyReportWorkflow = useCallback(async (
     serviceAccountId: string,
     campaignId: string,
@@ -8366,6 +8392,14 @@ export default function SettingsPage() {
                                     onClick={() => void downloadAutomationConnectionGuide(activeAutomationServiceAccount.id)}
                                   >
                                     {busyAction === `automation-command-guide-${activeAutomationServiceAccount.id}` ? "Preparing..." : "Download connection guide"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={secondaryButtonClass}
+                                    disabled={busyAction === `automation-command-openapi-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void downloadAutomationOpenApi(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-openapi-${activeAutomationServiceAccount.id}` ? "Preparing..." : "Download API file"}
                                   </button>
                                   <button
                                     type="button"

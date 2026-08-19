@@ -80,6 +80,13 @@ test("owners can download one vendor-neutral inbound connection guide", () => {
   assert.match(settings, /does not contain your workflow key/);
 });
 
+test("owners can download an importable API definition without embedding the key", () => {
+  assert.match(settings, /Download API file/);
+  assert.match(settings, /\/automation\/command-openapi\?service_account_id=/);
+  assert.match(settings, /Import it into a compatible automation builder/);
+  assert.match(settings, /private credential settings/);
+});
+
 test("command history uses plain results instead of internal request details", () => {
   assert.match(settings, /Recent report requests/);
   assert.match(settings, /Saved report returned/);

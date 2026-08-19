@@ -205,6 +205,32 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
     assert kit["safety"]["publishing_allowed"] is False
     assert kit["safety"]["business_profile_changes_allowed"] is False
 
+    openapi_response = client.get(
+        "/api/v1/automation/command-openapi",
+        params={"service_account_id": account["id"]},
+        headers=_headers(owner_token),
+    )
+    assert openapi_response.status_code == 200, openapi_response.text
+    assert openapi_response.headers["cache-control"] == "private, no-store"
+    assert "insightos-automation-openapi.json" in openapi_response.headers[
+        "content-disposition"
+    ]
+    document = openapi_response.json()
+    assert document["openapi"] == "3.1.0"
+    assert document["servers"][0]["url"].startswith("http")
+    operation = document["paths"]["/api/v1/automation/commands"]["post"]
+    assert operation["security"] == [{"workflowKey": []}]
+    assert operation["x-insightos-allowed-actions"] == ["report.retrieve"]
+    assert operation["x-insightos-publishing-allowed"] is False
+    assert document["components"]["securitySchemes"]["workflowKey"]["scheme"] == (
+        "bearer"
+    )
+    assert "AutomationReportTargetIn" in document["components"]["schemas"]
+    openapi_serialized = json.dumps(document)
+    assert secret not in openapi_serialized
+    assert "YOUR_WORKFLOW_KEY" not in openapi_serialized
+    assert "customer_email" not in openapi_serialized
+
     member_token, _ = _login(client, "org-admin@example.com", "pass-org-admin")
     denied = client.get(
         "/api/v1/automation/command-client-kit",
@@ -212,6 +238,12 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
         headers=_headers(member_token),
     )
     assert denied.status_code == 403
+    denied_openapi = client.get(
+        "/api/v1/automation/command-openapi",
+        params={"service_account_id": account["id"]},
+        headers=_headers(member_token),
+    )
+    assert denied_openapi.status_code == 403
 
 
 def test_saved_review_retrieval_is_minimized_read_only_and_location_scoped(

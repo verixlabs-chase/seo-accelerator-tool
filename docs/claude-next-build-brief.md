@@ -5465,6 +5465,14 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   where the same contract can be configured; they do not create separate
   supplier-specific command paths or weaken native plan, safety, approval, and
   publishing controls.
+- AUT1J-S adds an owner-only OpenAPI 3.1 download for the same scoped command
+  account. Compatible builders can import the fixed request schema, Bearer
+  authentication method, command endpoint, enabled-action extension, response
+  states, organization/location scope, and explicit no-publishing safety facts.
+- The specification contains no workflow key or customer record. Importing it
+  cannot activate a workflow, widen the account's permissions, or turn human
+  review into approval; the owner must add the separately shown key to the
+  automation tool's private credential store.
 
 Planned scope (added August 17, 2026):
 

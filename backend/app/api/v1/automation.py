@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_org_role, require_roles
 from app.api.response import envelope
-from app.automation import automation_provider_conformance_kit
+from app.automation import (
+    automation_provider_conformance_kit,
+    build_automation_command_openapi,
+)
 from app.db.session import get_db
 from app.models.campaign import Campaign
 from app.models.strategy_automation_event import StrategyAutomationEvent
@@ -363,6 +366,39 @@ def download_automation_command_client_kit(
         headers={
             "Content-Disposition": (
                 'attachment; filename="insightos-automation-connection-guide.json"'
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get('/command-openapi')
+def download_automation_command_openapi(
+    service_account_id: str,
+    user: dict = Depends(require_org_role({'org_owner'})),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        kit = automation_command_client_kit(
+            db,
+            organization_id=str(user['organization_id']),
+            service_account_id=service_account_id,
+        )
+        document = build_automation_command_openapi(
+            client_kit=kit,
+            command_schema=AutomationCommandIn.model_json_schema(
+                ref_template="#/components/schemas/{model}"
+            ),
+        )
+    except (AutomationCommandError, CostEconomicsError) as exc:
+        raise _automation_command_http_error(exc) from exc
+    return Response(
+        content=json.dumps(document, indent=2, ensure_ascii=True) + "\n",
+        media_type="application/vnd.oai.openapi+json;version=3.1",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="insightos-automation-openapi.json"'
             ),
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
