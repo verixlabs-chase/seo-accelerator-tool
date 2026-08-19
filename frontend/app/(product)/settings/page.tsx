@@ -8504,6 +8504,42 @@ export default function SettingsPage() {
                                 </div>
                               ) : null}
                             </div>
+                            <div className="mt-4 rounded-md border border-[#292a2f] bg-[#141518] p-3">
+                              <p className="text-xs font-semibold text-zinc-200">Workflow setup progress</p>
+                              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                                {[
+                                  {
+                                    label: "Private key ready",
+                                    complete: true,
+                                    detail: "Created in InsightOS",
+                                  },
+                                  {
+                                    label: "InsightOS contacted",
+                                    complete: Boolean(activeAutomationServiceAccount.last_used_at),
+                                    detail: activeAutomationServiceAccount.last_used_at
+                                      ? `Last contact ${formatTimestamp(activeAutomationServiceAccount.last_used_at)}`
+                                      : "Run the safe connection check",
+                                  },
+                                  {
+                                    label: "First request saved",
+                                    complete: activeAutomationServiceAccount.command_count > 0,
+                                    detail: activeAutomationServiceAccount.command_count > 0
+                                      ? `${activeAutomationServiceAccount.command_count} saved request${activeAutomationServiceAccount.command_count === 1 ? "" : "s"}`
+                                      : "Test one allowed action",
+                                  },
+                                ].map((step) => (
+                                  <div key={step.label} className="rounded-md border border-[#303137] bg-[#101114] p-2.5">
+                                    <p className={`text-xs font-medium ${step.complete ? "text-emerald-100" : "text-zinc-300"}`}>
+                                      {step.complete ? "Complete" : "Next"} · {step.label}
+                                    </p>
+                                    <p className="mt-1 text-[11px] leading-4 text-zinc-500">{step.detail}</p>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-[11px] leading-4 text-zinc-500">
+                                These milestones confirm only what InsightOS has received. Turn on the external workflow yourself after its saved result looks correct.
+                              </p>
+                            </div>
                             {me?.org_role === "org_owner" && automationCommandLocations.length > 1 ? (
                               <details className="mt-4 rounded-md border border-[#303137] bg-[#141518] p-3">
                                 <summary className="cursor-pointer text-sm font-semibold text-white">

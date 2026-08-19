@@ -108,6 +108,17 @@ test("connector cards reveal plain platform-specific setup steps", () => {
   assert.match(settings, /<li key=\{step\}>\{step\}<\/li>/);
 });
 
+test("workflow progress uses native evidence instead of claiming an outside connection", () => {
+  assert.match(settings, /Workflow setup progress/);
+  assert.match(settings, /Private key ready/);
+  assert.match(settings, /Boolean\(activeAutomationServiceAccount\.last_used_at\)/);
+  assert.match(settings, /Run the safe connection check/);
+  assert.match(settings, /activeAutomationServiceAccount\.command_count > 0/);
+  assert.match(settings, /Test one allowed action/);
+  assert.match(settings, /confirm only what InsightOS has received/);
+  assert.match(settings, /Turn on the external workflow yourself/);
+});
+
 test("owners can download an importable API definition without embedding the key", () => {
   assert.match(settings, /Download API file/);
   assert.match(settings, /\/automation\/command-openapi\?service_account_id=/);

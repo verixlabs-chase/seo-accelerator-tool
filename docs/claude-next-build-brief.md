@@ -5562,6 +5562,11 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   request action, private Bearer credential placement, fixed allowed-action
   body, one safe test, and the customer's explicit final activation. Settings
   keeps these details collapsed until requested so the first view stays calm.
+- AUT1J-AF adds a three-step evidence-backed progress strip for the active
+  workflow key: private key created, InsightOS contacted, and first native
+  request saved. It derives only from the service account's saved last-use and
+  command count and explicitly leaves external workflow activation to the
+  customer, so it cannot mislabel an imported or abandoned setup as connected.
 
 Planned scope (added August 17, 2026):
 
