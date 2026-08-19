@@ -341,6 +341,7 @@ def _response_schemas() -> dict[str, Any]:
                         "primary_location_id",
                         "allowed_location_ids",
                         "allowed_actions",
+                        "suggested_test_request",
                         "expires_at",
                         "truth",
                         "safety",
@@ -356,6 +357,29 @@ def _response_schemas() -> dict[str, Any]:
                             "items": {"type": "string", "format": "uuid"},
                         },
                         "allowed_actions": {"type": "array", "items": {"type": "object"}},
+                        "suggested_test_request": {
+                            "anyOf": [
+                                {
+                                    "type": "object",
+                                    "required": [
+                                        "method",
+                                        "url",
+                                        "content_type",
+                                        "body",
+                                        "truth",
+                                    ],
+                                    "properties": {
+                                        "method": {"const": "POST"},
+                                        "url": {"type": "string", "format": "uri"},
+                                        "content_type": {"const": "application/json"},
+                                        "body": {"type": "object"},
+                                        "truth": {"type": "object"},
+                                    },
+                                    "additionalProperties": False,
+                                },
+                                {"type": "null"},
+                            ]
+                        },
                         "expires_at": {"type": "string", "format": "date-time"},
                         "truth": {"type": "object", "additionalProperties": {"type": "boolean"}},
                         "safety": {"$ref": "#/components/schemas/AutomationSafety"},

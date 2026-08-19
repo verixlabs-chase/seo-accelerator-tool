@@ -923,6 +923,51 @@ def get_service_account_access_contract(
         business_location_id=account.business_location_id,
     )
     allowed = set(_allowed_commands(account))
+    suggested_test_request: dict[str, Any] | None = None
+    if COMMAND_REPORT_RETRIEVE in allowed:
+        latest_report = (
+            db.query(MonthlyReport)
+            .join(Campaign, Campaign.id == MonthlyReport.campaign_id)
+            .filter(
+                MonthlyReport.tenant_id == account.tenant_id,
+                MonthlyReport.report_status.in_(("generated", "delivered")),
+                Campaign.tenant_id == account.tenant_id,
+                Campaign.organization_id == account.organization_id,
+                Campaign.business_location_id == account.business_location_id,
+            )
+            .order_by(MonthlyReport.generated_at.desc(), MonthlyReport.id.desc())
+            .first()
+        )
+        if latest_report is not None:
+            settings = get_settings()
+            public_app_url = (
+                settings.customer_app_base_url or settings.public_base_url
+            ).strip().rstrip("/")
+            suggested_test_request = {
+                "method": "POST",
+                "url": (
+                    f"{public_app_url}{settings.api_v1_prefix.rstrip('/')}"
+                    "/automation/commands"
+                ),
+                "content_type": "application/json",
+                "body": {
+                    "schema_version": COMMAND_SCHEMA_VERSION,
+                    "command_type": COMMAND_REPORT_RETRIEVE,
+                    "organization_id": account.organization_id,
+                    "location_id": account.business_location_id,
+                    "correlation_id": f"connection-test-{latest_report.id}",
+                    "idempotency_key": f"connection-test-{latest_report.id}",
+                    "reason": "Verify read-only access to the latest saved report",
+                    "target": {"report_id": latest_report.id},
+                },
+                "truth": {
+                    "uses_latest_saved_report": True,
+                    "command_executed": False,
+                    "provider_called": False,
+                    "credits_used": False,
+                    "customer_data_changed": False,
+                },
+            }
     return {
         "connected": True,
         "schema_version": COMMAND_SCHEMA_VERSION,
@@ -934,6 +979,7 @@ def get_service_account_access_contract(
         "allowed_actions": [
             item for item in _command_catalog() if str(item["code"]) in allowed
         ],
+        "suggested_test_request": suggested_test_request,
         "expires_at": account.expires_at.isoformat(),
         "truth": {
             "credential_valid": True,
