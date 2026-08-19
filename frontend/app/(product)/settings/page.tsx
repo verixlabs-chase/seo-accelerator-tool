@@ -386,7 +386,7 @@ type AutomationServiceAccount = {
   status: "active" | "revoked";
   location_id: string;
   location_name: string;
-  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public">;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft">;
   token_hint: string;
   token_version: number;
   expires_at: string;
@@ -401,7 +401,7 @@ type AutomationServiceAccount = {
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
-  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public";
+  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft";
   idempotency_key: string;
   correlation_id: string;
   location_id: string;
@@ -3196,6 +3196,9 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("listing.check_public")
                   ? ["listing.check_public"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("content.create_working_draft")
+                  ? ["content.create_working_draft"]
+                  : []),
               ])),
             }),
           },
@@ -3246,6 +3249,9 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("listing.check_public")
                   ? ["listing.check_public"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("content.create_working_draft")
+                  ? ["content.create_working_draft"]
+                  : []),
               ],
             }),
           },
@@ -3290,6 +3296,9 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("listing.check_public")
                   ? ["listing.check_public"]
                   : []),
+                ...(currentAccount?.allowed_commands.includes("content.create_working_draft")
+                  ? ["content.create_working_draft"]
+                  : []),
               ],
             }),
           },
@@ -3332,6 +3341,7 @@ export default function SettingsPage() {
                 ...(currentAccount?.allowed_commands.includes("recommendation.request_review") ? ["recommendation.request_review"] : []),
                 ...(currentAccount?.allowed_commands.includes("connection.refresh_saved") ? ["connection.refresh_saved"] : []),
                 ...(enabled ? ["listing.check_public"] : []),
+                ...(currentAccount?.allowed_commands.includes("content.create_working_draft") ? ["content.create_working_draft"] : []),
               ],
             }),
           },
@@ -3343,6 +3353,49 @@ export default function SettingsPage() {
         await loadAutomationCommandAccess();
       } catch (error) {
         setError(error instanceof Error ? error.message : "Unable to change public listing check access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationWorkingDraftCreation = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let n8n start a private working draft only after you have accepted its saved content brief? This replaces the workflow key. It creates an empty editable outline and cannot write AI copy, approve, schedule, publish, or change your website."
+        : "Remove working-draft creation access? This replaces the workflow key; other enabled workflow actions will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-draft-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.includes("report.generate_saved") ? ["report.generate_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.retrieve") ? ["recommendation.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.request_review") ? ["recommendation.request_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("connection.refresh_saved") ? ["connection.refresh_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("listing.check_public") ? ["listing.check_public"] : []),
+                ...(enabled ? ["content.create_working_draft"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Working-draft creation is on. Copy the replacement workflow key into n8n now."
+          : "Working-draft creation is off. Copy the replacement workflow key into n8n now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change working-draft access.");
       } finally {
         setBusyAction("");
       }
@@ -8244,6 +8297,33 @@ export default function SettingsPage() {
                                     This is the first workflow action that can consume Insight Credits. InsightOS safely declines it before any outside call when the allowance, daily limit, location, provider health, or price setup is unavailable.
                                   </p>
                                 </div>
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let n8n start accepted working drafts
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        After an owner accepts a saved content brief in InsightOS, n8n can create its private editable outline. The draft starts empty and still requires owner writing and review. It cannot generate AI copy, approve, schedule, publish, or change your website.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-draft-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationWorkingDraftCreation(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-draft-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft")
+                                          ? "Turn off draft creation"
+                                          : "Allow accepted draft creation"}
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
                             ) : null}
                           </div>
@@ -8401,6 +8481,25 @@ export default function SettingsPage() {
                                   <p>Use a new stable key for each intended check. A retry with the same key returns the first run and cannot reserve credits twice.</p>
                                 </>
                               ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Start one accepted working draft</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "content.create_working_draft",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-draft-REPLACE",
+                                    idempotency_key: "n8n-draft-REPLACE",
+                                    reason: "Start the owner-accepted content brief",
+                                    target: {
+                                      campaign_id: activeAutomationCampaign?.id || "REPLACE-WITH-CAMPAIGN-ID",
+                                      brief_id: "REPLACE-WITH-ACCEPTED-BRIEF-ID",
+                                    },
+                                  }, null, 2)}</pre>
+                                  <p>A draft is created only for an already accepted brief at this location. Reusing the key returns the same private draft.</p>
+                                </>
+                              ) : null}
                             </div>
                           </details>
                         ) : null}
@@ -8425,6 +8524,8 @@ export default function SettingsPage() {
                                           ? "Connected data refresh accepted"
                                         : receipt.command_type === "listing.check_public"
                                           ? "Public listing check accepted"
+                                        : receipt.command_type === "content.create_working_draft"
+                                          ? "Private working draft created"
                                           : "Saved report returned"
                                       : "Request safely declined"}
                                   </span>

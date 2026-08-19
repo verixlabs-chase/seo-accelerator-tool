@@ -43,6 +43,7 @@ from app.services.commercial_plan_service import (
 from app.services.cost_economics_service import CostEconomicsError
 from app.services import (
     data_connections_service,
+    content_service,
     durable_job_service,
     google_business_profile_service,
     intelligence_service,
@@ -59,6 +60,7 @@ COMMAND_RECOMMENDATION_RETRIEVE = "recommendation.retrieve"
 COMMAND_RECOMMENDATION_REQUEST_REVIEW = "recommendation.request_review"
 COMMAND_CONNECTION_REFRESH_SAVED = "connection.refresh_saved"
 COMMAND_LISTING_CHECK_PUBLIC = "listing.check_public"
+COMMAND_CONTENT_CREATE_WORKING_DRAFT = "content.create_working_draft"
 ALLOWED_COMMANDS = (
     COMMAND_REPORT_RETRIEVE,
     COMMAND_REPORT_GENERATE_SAVED,
@@ -66,6 +68,7 @@ ALLOWED_COMMANDS = (
     COMMAND_RECOMMENDATION_REQUEST_REVIEW,
     COMMAND_CONNECTION_REFRESH_SAVED,
     COMMAND_LISTING_CHECK_PUBLIC,
+    COMMAND_CONTENT_CREATE_WORKING_DRAFT,
 )
 DEFAULT_COMMANDS = (COMMAND_REPORT_RETRIEVE,)
 MAX_SERVICE_ACCOUNT_DAYS = 90
@@ -711,6 +714,10 @@ def execute_automation_command(
         return execute_public_listing_check(
             db, account=account, request_payload=request_payload
         )
+    if request_payload["command_type"] == COMMAND_CONTENT_CREATE_WORKING_DRAFT:
+        return execute_content_working_draft_creation(
+            db, account=account, request_payload=request_payload
+        )
     raise AutomationCommandError(
         "This workflow command is not supported.",
         reason_code="automation_command_not_allowed",
@@ -1125,6 +1132,157 @@ def execute_public_listing_check(
         db.commit()
         db.refresh(receipt)
         return _receipt_contract(db, receipt, created=True)
+
+
+def execute_content_working_draft_creation(
+    db: Session,
+    *,
+    account: AutomationServiceAccount,
+    request_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Create one empty private draft from an owner-accepted saved brief."""
+    request_hash = _hash_payload(request_payload)
+    lock_scope = f"automation-command:{account.id}:{request_payload['idempotency_key']}"
+    with _serialized_command(lock_scope, db):
+        existing = (
+            db.query(AutomationCommandReceipt)
+            .filter(
+                AutomationCommandReceipt.service_account_id == account.id,
+                AutomationCommandReceipt.idempotency_key
+                == str(request_payload["idempotency_key"]),
+            )
+            .populate_existing()
+            .one_or_none()
+        )
+        if existing is not None:
+            if not secrets.compare_digest(existing.request_hash, request_hash):
+                raise AutomationCommandError(
+                    "This idempotency key was already used for a different command.",
+                    reason_code="automation_command_idempotency_conflict",
+                    status_code=409,
+                )
+            return _receipt_contract(db, existing, created=False)
+
+        denial_reason = _base_command_denial(db, account, request_payload)
+        brief_id = str(request_payload["target"]["brief_id"])
+        campaign_id = str(request_payload["target"]["campaign_id"])
+        campaign: Campaign | None = None
+        draft_payload: dict[str, Any] | None = None
+        if denial_reason is None:
+            campaign = (
+                db.query(Campaign)
+                .filter(
+                    Campaign.id == campaign_id,
+                    Campaign.tenant_id == account.tenant_id,
+                    Campaign.organization_id == account.organization_id,
+                    Campaign.business_location_id == account.business_location_id,
+                )
+                .one_or_none()
+            )
+            if campaign is None:
+                denial_reason = "automation_campaign_not_found"
+        if denial_reason is None and campaign is not None:
+            try:
+                draft_payload = content_service.create_content_draft(
+                    db,
+                    tenant_id=account.tenant_id,
+                    campaign_id=campaign.id,
+                    brief_id=brief_id,
+                    actor_user_id=account.created_by_user_id,
+                )
+            except HTTPException as exc:
+                denial_reason = _content_draft_denial_reason(exc)
+
+        item = draft_payload.get("item") if draft_payload is not None else None
+        result = (
+            {
+                "message": "InsightOS created a private working draft from the accepted brief.",
+                "resource": {
+                    "type": "content_working_draft",
+                    "id": str(item["id"]),
+                    "href": "/content",
+                },
+                "draft": {
+                    "id": str(item["id"]),
+                    "brief_id": brief_id,
+                    "status": "working",
+                    "title": str(item.get("title") or "Working draft"),
+                    "revision": int(item.get("revision") or 1),
+                },
+                "truth": {
+                    "created": bool(draft_payload.get("created")),
+                    "owner_review_required": True,
+                    "approved": False,
+                    "scheduled": False,
+                    "published": False,
+                },
+                "artifacts": [],
+            }
+            if denial_reason is None and isinstance(item, dict) and item.get("id")
+            else {
+                "message": _denial_message(denial_reason or "automation_command_denied"),
+                "resource": None,
+                "draft": None,
+                "artifacts": [],
+            }
+        )
+        now = datetime.now(UTC)
+        account.last_used_at = now
+        account.updated_at = now
+        status_value = "succeeded" if denial_reason is None else "denied"
+        artifact_payload = {
+            "schema_version": COMMAND_SCHEMA_VERSION,
+            "service_account_id": account.id,
+            "request_hash": request_hash,
+            "status": status_value,
+            "denial_reason_code": denial_reason,
+            "result": result,
+        }
+        receipt = AutomationCommandReceipt(
+            tenant_id=account.tenant_id,
+            organization_id=account.organization_id,
+            service_account_id=account.id,
+            business_location_id=account.business_location_id,
+            campaign_id=campaign.id if campaign is not None else None,
+            schema_version=COMMAND_SCHEMA_VERSION,
+            command_type=COMMAND_CONTENT_CREATE_WORKING_DRAFT,
+            idempotency_key=str(request_payload["idempotency_key"]),
+            correlation_id=str(request_payload["correlation_id"]),
+            reason=str(request_payload["reason"]),
+            request_hash=request_hash,
+            status=status_value,
+            denial_reason_code=denial_reason,
+            result_json=_json(result),
+            artifact_hash=_hash_payload(artifact_payload),
+            created_at=now,
+            completed_at=now,
+        )
+        db.add(receipt)
+        write_audit_log(
+            db,
+            tenant_id=account.tenant_id,
+            actor_user_id=None,
+            event_type="automation.command.decided",
+            payload={
+                "service_account_id": account.id,
+                "command_receipt_id": receipt.id,
+                "command_type": receipt.command_type,
+                "business_location_id": account.business_location_id,
+                "status": status_value,
+                "denial_reason_code": denial_reason,
+            },
+        )
+        db.commit()
+        db.refresh(receipt)
+        return _receipt_contract(db, receipt, created=True)
+
+
+def _content_draft_denial_reason(exc: HTTPException) -> str:
+    if exc.status_code == 404:
+        return "automation_content_brief_not_found"
+    if exc.status_code == 409:
+        return "automation_content_brief_not_accepted"
+    return "automation_content_draft_unavailable"
 
 
 def execute_saved_report_generation(
@@ -1768,6 +1926,15 @@ def _command_catalog() -> list[dict[str, Any]]:
             "approval_required": False,
             "publishing_allowed": False,
         },
+        {
+            "code": COMMAND_CONTENT_CREATE_WORKING_DRAFT,
+            "label": "Start an accepted working draft",
+            "summary": "Let a workflow create one private empty draft from an owner-accepted saved brief.",
+            "read_only": False,
+            "paid_provider_call": False,
+            "approval_required": True,
+            "publishing_allowed": False,
+        },
     ]
 
 
@@ -1800,6 +1967,9 @@ def _denial_message(reason_code: str) -> str:
         "daily_listing_discovery_limit_reached": "This location has reached today's public listing check limit.",
         "insufficient_credits": "This workspace does not have enough Insight Credits for this check.",
         "public_listing_check_unavailable": "The public listing check is not available right now.",
+        "automation_content_brief_not_found": "That saved content brief was not found for this location.",
+        "automation_content_brief_not_accepted": "An owner must accept that content brief before a workflow can start its draft.",
+        "automation_content_draft_unavailable": "Working drafts are not available right now.",
     }
     return messages.get(reason_code, "InsightOS safely declined this workflow command.")
 

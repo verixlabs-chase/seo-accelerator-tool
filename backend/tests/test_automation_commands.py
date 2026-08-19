@@ -19,7 +19,7 @@ from app.models.intelligence import StrategyRecommendation
 from app.models.organization_membership import OrganizationMembership
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent
 from app.enums import StrategyRecommendationStatus
-from app.services import listing_discovery_service
+from app.services import content_service, listing_discovery_service
 
 
 def _login(client, email: str, password: str) -> tuple[str, str]:
@@ -892,3 +892,93 @@ def test_explicit_key_scope_queues_one_priced_public_listing_check(
     assert repeated.json()["data"]["created"] is False
     assert db_session.query(DirectoryListingDiscoveryRun).count() == 1
     assert "dataforseo" not in json.dumps(data).lower()
+
+
+def test_workflow_creates_only_private_draft_from_accepted_brief(
+    client, db_session, monkeypatch
+) -> None:
+    owner_token, organization_id = _login(
+        client, "org-owner@example.com", "pass-org-owner"
+    )
+    scope = _seed_report_scope(
+        db_session, organization_id=organization_id, suffix="working-draft-command"
+    )
+    account, initial_secret = _create_account(
+        client, owner_token=owner_token, location_id=scope["location_id"]
+    )
+    brief_id = str(uuid.uuid4())
+    draft_id = str(uuid.uuid4())
+    calls: list[dict] = []
+
+    def _create_draft(_db, **kwargs):
+        calls.append(kwargs)
+        return {
+            "created": True,
+            "item": {
+                "id": draft_id,
+                "title": "Emergency service page",
+                "revision": 1,
+                "status": "working",
+                "sections": [{"heading": "Explain the service", "body": ""}],
+                "automatic_publishing_allowed": False,
+            },
+        }
+
+    monkeypatch.setattr(content_service, "create_content_draft", _create_draft)
+    body = {
+        "schema_version": "insightos.automation.command.v1",
+        "command_type": "content.create_working_draft",
+        "organization_id": organization_id,
+        "location_id": scope["location_id"],
+        "correlation_id": "n8n-working-draft-1",
+        "idempotency_key": "n8n-working-draft-1001",
+        "reason": "Start the owner-accepted content brief",
+        "target": {"campaign_id": scope["campaign_id"], "brief_id": brief_id},
+    }
+    denied = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(initial_secret)
+    )
+    assert denied.status_code == 200
+    assert denied.json()["data"]["receipt"]["denial_reason_code"] == "automation_command_not_allowed"
+    assert calls == []
+
+    rotated = client.post(
+        f"/api/v1/automation/service-accounts/{account['id']}/rotate",
+        headers=_headers(owner_token),
+        json={"allowed_commands": ["report.retrieve", "content.create_working_draft"]},
+    )
+    assert rotated.status_code == 200, rotated.text
+    secret = rotated.json()["data"]["token"]
+    body["idempotency_key"] = "n8n-working-draft-1002"
+    response = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["receipt"]["status"] == "succeeded"
+    assert data["receipt"]["result"]["draft"] == {
+        "id": draft_id,
+        "brief_id": brief_id,
+        "status": "working",
+        "title": "Emergency service page",
+        "revision": 1,
+    }
+    assert data["receipt"]["result"]["truth"] == {
+        "created": True,
+        "owner_review_required": True,
+        "approved": False,
+        "scheduled": False,
+        "published": False,
+    }
+    assert calls[0]["campaign_id"] == scope["campaign_id"]
+    assert calls[0]["brief_id"] == brief_id
+
+    repeated = client.post(
+        "/api/v1/automation/commands", json=body, headers=_headers(secret)
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["created"] is False
+    assert len(calls) == 1
+    serialized = json.dumps(data)
+    assert "sections" not in serialized
+    assert "automatic_publishing_allowed" not in serialized

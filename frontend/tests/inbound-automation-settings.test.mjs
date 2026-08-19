@@ -126,3 +126,13 @@ test("owners explicitly enable the first allowance-priced workflow check", () =>
   assert.match(settings, /cannot reserve credits twice/);
   assert.match(settings, /Public listing check accepted/);
 });
+
+test("owners explicitly enable private drafts from accepted briefs", () => {
+  assert.match(settings, /Let n8n start accepted working drafts/);
+  assert.match(settings, /content\.create_working_draft/);
+  assert.match(settings, /Allow accepted draft creation/);
+  assert.match(settings, /REPLACE-WITH-ACCEPTED-BRIEF-ID/);
+  assert.match(settings, /draft starts empty and still requires owner writing and review/i);
+  assert.match(settings, /cannot generate AI copy, approve, schedule, publish, or change your website/i);
+  assert.match(settings, /Private working draft created/);
+});

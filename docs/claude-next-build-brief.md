@@ -5367,10 +5367,22 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   Command and receipt polling expose only the native run status, estimated
   customer credits, result count, and safe timestamps—not supplier identity,
   raw errors, internal cost, credentials, or listing payloads.
-- AUT1J-H and later slices still own governed drafts, approval requests beyond
-  review routing, multiple-location scopes, broader action allowances, and
-  additional inbound starter workflows. No broader inbound action is implied
-  by these commands.
+- AUT1J-H adds `content.create_working_draft` as a separately granted scope.
+  The exact saved content brief and campaign must belong to the service
+  account's Business Location, and the native content service still requires
+  the owner to have accepted the frozen brief first. The command creates only
+  the existing empty, private, editable outline; it does not call AI, author
+  body copy, approve, schedule, create a WordPress draft, publish, or mutate a
+  website.
+- Its minimized receipt returns only the draft id, accepted brief id, title,
+  working revision, and explicit unapproved/unscheduled/unpublished truth. The
+  draft sections, frozen evidence, source hash, internal audit data, and any
+  later owner writing stay inside the native Content workspace. Replays return
+  the same receipt and the native one-draft-per-brief constraint remains in
+  force.
+- AUT1J-I and later slices still own approval requests beyond review routing,
+  multiple-location scopes, broader action allowances, and additional inbound
+  starter workflows. No broader inbound action is implied by these commands.
 
 Planned scope (added August 17, 2026):
 

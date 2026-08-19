@@ -46,6 +46,12 @@ PRICED_LISTING_MIGRATION = (
     / "versions"
     / "20260819_0193_priced_public_listing_check_command.py"
 )
+WORKING_DRAFT_MIGRATION = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "20260819_0194_governed_working_draft_command.py"
+)
 
 
 def test_inbound_automation_schema_matches_models(db_session) -> None:
@@ -159,4 +165,12 @@ def test_priced_public_listing_check_migration_is_bounded() -> None:
     assert 'revision = "20260819_0193"' in source
     assert 'down_revision = "20260819_0192"' in source
     assert "'listing.check_public'" in source
+    assert "Cannot downgrade" in source
+
+
+def test_governed_working_draft_migration_is_bounded() -> None:
+    source = WORKING_DRAFT_MIGRATION.read_text(encoding="utf-8")
+    assert 'revision = "20260819_0194"' in source
+    assert 'down_revision = "20260819_0193"' in source
+    assert "'content.create_working_draft'" in source
     assert "Cannot downgrade" in source
