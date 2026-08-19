@@ -298,6 +298,8 @@ def automation_command_client_kit(
             "method": "POST",
             "url": endpoint,
             "verification_url": endpoint.rsplit("/", 1)[0] + "/command-access",
+            "status_url_template": endpoint + "/{receipt_id}",
+            "artifact_url_template": endpoint + "/{receipt_id}/artifacts/{artifact_id}",
             "content_type": "application/json",
             "authentication": {
                 "type": "Bearer token",
@@ -324,6 +326,8 @@ def automation_command_client_kit(
             "Store the one-time workflow key in the tool's private credential store and use Bearer authentication.",
             "Choose only an allowed action and map its required saved-record ID into target.",
             "Use one stable idempotency key for retries of the same intended action.",
+            "For accepted or queued work, poll the receipt URL with the same private Bearer credential until it reaches a final state.",
+            "Download only artifact links returned by that exact receipt; never construct an unrelated record ID.",
             "Test once, confirm the saved result in InsightOS, then turn on the workflow.",
         ],
         "safety": {

@@ -16,8 +16,12 @@ def build_automation_command_openapi(
     """Build an importable OpenAPI document from the bounded command contract."""
     endpoint = str(client_kit["request"]["url"])
     verification_endpoint = str(client_kit["request"]["verification_url"])
+    status_endpoint = str(client_kit["request"]["status_url_template"])
+    artifact_endpoint = str(client_kit["request"]["artifact_url_template"])
     parsed = urlsplit(endpoint)
     verification = urlsplit(verification_endpoint)
+    status = urlsplit(status_endpoint)
+    artifact = urlsplit(artifact_endpoint)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc or not parsed.path:
         raise ValueError("Automation command endpoint must be an absolute HTTP URL.")
     if (
@@ -26,6 +30,13 @@ def build_automation_command_openapi(
         or not verification.path
     ):
         raise ValueError("Automation verification endpoint must use the command server.")
+    for follow_up in (status, artifact):
+        if (
+            follow_up.scheme != parsed.scheme
+            or follow_up.netloc != parsed.netloc
+            or not follow_up.path
+        ):
+            raise ValueError("Automation follow-up endpoints must use the command server.")
 
     root_schema = deepcopy(command_schema)
     definitions = root_schema.pop("$defs", {})
@@ -83,7 +94,56 @@ def build_automation_command_openapi(
                     "x-insightos-human-review-required": True,
                     "x-insightos-publishing-allowed": False,
                 }
-            }
+            },
+            status.path: {
+                "get": {
+                    "operationId": "getInsightOSAutomationCommandReceipt",
+                    "summary": "Read one durable command receipt",
+                    "security": [{"workflowKey": []}],
+                    "parameters": [
+                        {
+                            "name": "receipt_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string", "format": "uuid"},
+                        }
+                    ],
+                    "responses": {
+                        "200": {"description": "Current durable command status or result"},
+                        "401": {"description": "Workflow key invalid, expired, or revoked"},
+                        "404": {"description": "Receipt is outside this workflow key's scope"},
+                    },
+                    "x-insightos-read-only": True,
+                }
+            },
+            artifact.path: {
+                "get": {
+                    "operationId": "downloadInsightOSAutomationArtifact",
+                    "summary": "Download one ready artifact from the exact receipt",
+                    "security": [{"workflowKey": []}],
+                    "parameters": [
+                        {
+                            "name": "receipt_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string", "format": "uuid"},
+                        },
+                        {
+                            "name": "artifact_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string", "format": "uuid"},
+                        },
+                    ],
+                    "responses": {
+                        "200": {"description": "Private ready report artifact"},
+                        "401": {"description": "Workflow key invalid, expired, or revoked"},
+                        "404": {"description": "Artifact is not ready or outside this receipt"},
+                    },
+                    "x-insightos-read-only": True,
+                    "x-insightos-receipt-bound": True,
+                }
+            },
         },
         "components": {
             "securitySchemes": {

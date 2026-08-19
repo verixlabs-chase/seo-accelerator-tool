@@ -12,6 +12,8 @@ def test_openapi_builder_is_scoped_importable_and_secret_free() -> None:
         "request": {
             "url": "https://insightos.example/api/v1/automation/commands",
             "verification_url": "https://insightos.example/api/v1/automation/command-access",
+            "status_url_template": "https://insightos.example/api/v1/automation/commands/{receipt_id}",
+            "artifact_url_template": "https://insightos.example/api/v1/automation/commands/{receipt_id}/artifacts/{artifact_id}",
         },
         "scope": {
             "organization_id": "org-1",
@@ -40,6 +42,20 @@ def test_openapi_builder_is_scoped_importable_and_secret_free() -> None:
     verification = document["paths"]["/api/v1/automation/command-access"]["get"]
     assert verification["x-insightos-command-executed"] is False
     assert verification["x-insightos-provider-called"] is False
+    receipt = document["paths"][
+        "/api/v1/automation/commands/{receipt_id}"
+    ]["get"]
+    assert receipt["x-insightos-read-only"] is True
+    assert receipt["parameters"][0]["name"] == "receipt_id"
+    artifact = document["paths"][
+        "/api/v1/automation/commands/{receipt_id}/artifacts/{artifact_id}"
+    ]["get"]
+    assert artifact["x-insightos-read-only"] is True
+    assert artifact["x-insightos-receipt-bound"] is True
+    assert [item["name"] for item in artifact["parameters"]] == [
+        "receipt_id",
+        "artifact_id",
+    ]
     assert "$defs" not in document["components"]["schemas"]["AutomationCommand"]
     serialized = json.dumps(document).lower()
     assert "workflow key" in serialized
@@ -54,6 +70,8 @@ def test_openapi_builder_rejects_non_absolute_endpoint() -> None:
                 "request": {
                     "url": "/api/v1/automation/commands",
                     "verification_url": "/api/v1/automation/command-access",
+                    "status_url_template": "/api/v1/automation/commands/{receipt_id}",
+                    "artifact_url_template": "/api/v1/automation/commands/{receipt_id}/artifacts/{artifact_id}",
                 },
                 "scope": {},
                 "allowed_actions": [],

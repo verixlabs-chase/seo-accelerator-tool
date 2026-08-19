@@ -5481,6 +5481,16 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   provider, and consumes no credits. Its minimized response excludes the key,
   customer records, location name, prompts, and provider details; invalid,
   expired, revoked, plan-blocked, and unavailable-location states fail closed.
+- AUT1J-U completes the importable long-running workflow contract by documenting
+  the existing receipt-status and receipt-bound artifact operations in both the
+  universal guide and OpenAPI document. Compatible clients can submit once,
+  poll the durable receipt with the same credential, and download only a ready
+  artifact returned by that exact receipt.
+- Status reads and artifact downloads remain service-account, tenant,
+  organization, location, receipt, and artifact scoped. They cannot start a
+  second command, expose another account's result, enumerate storage, or turn a
+  queued/denied result into success; repeated command submission still relies
+  on the original stable idempotency key.
 
 Planned scope (added August 17, 2026):
 

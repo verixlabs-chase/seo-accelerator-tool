@@ -196,6 +196,12 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
     assert kit["request"]["verification_url"].endswith(
         "/api/v1/automation/command-access"
     )
+    assert kit["request"]["status_url_template"].endswith(
+        "/api/v1/automation/commands/{receipt_id}"
+    )
+    assert kit["request"]["artifact_url_template"].endswith(
+        "/api/v1/automation/commands/{receipt_id}/artifacts/{artifact_id}"
+    )
     assert kit["request"]["authentication"]["credential_included"] is False
     assert kit["scope"]["organization_id"] == organization_id
     assert kit["scope"]["primary_location_id"] == scope["location_id"]
@@ -255,6 +261,14 @@ def test_owner_downloads_one_vendor_neutral_command_guide_without_secret(
     verification = document["paths"]["/api/v1/automation/command-access"]["get"]
     assert verification["x-insightos-command-executed"] is False
     assert verification["x-insightos-provider-called"] is False
+    receipt_operation = document["paths"][
+        "/api/v1/automation/commands/{receipt_id}"
+    ]["get"]
+    assert receipt_operation["x-insightos-read-only"] is True
+    artifact_operation = document["paths"][
+        "/api/v1/automation/commands/{receipt_id}/artifacts/{artifact_id}"
+    ]["get"]
+    assert artifact_operation["x-insightos-receipt-bound"] is True
     assert document["components"]["securitySchemes"]["workflowKey"]["scheme"] == (
         "bearer"
     )
