@@ -10,7 +10,10 @@ from app.enums import StrategyRecommendationStatus
 
 class StrategyRecommendation(Base):
     __tablename__ = "strategy_recommendations"
-    __table_args__ = (UniqueConstraint("tenant_id", "campaign_id", "idempotency_key", name="uq_strategy_recommendations_idempotency"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "campaign_id", "idempotency_key", name="uq_strategy_recommendations_idempotency"),
+        UniqueConstraint("id", "tenant_id", "campaign_id", name="uq_strategy_recommendations_id_scope"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -74,5 +77,4 @@ class AnomalyEvent(Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")
     details_json: Mapped[str] = mapped_column(Text, default="{}")
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
-
 

@@ -33,6 +33,46 @@ jobs:
       - name: Run backend tests
         run: python -m pytest -q
 
+  automation-conformance:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: backend
+    env:
+      APP_ENV: test
+      DATABASE_URL: sqlite:///./automation-ci.db
+      POSTGRES_DSN: sqlite:///./automation-ci.db
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Validate automation contracts
+        run: >-
+          python -m pytest -q
+          tests/test_automation_command_migration.py
+          tests/test_automation_command_openapi.py
+          tests/test_automation_commands.py
+          tests/test_automation_conformance.py
+          tests/test_automation_export.py
+          tests/test_automation_manual_lock_enforcement.py
+          tests/test_automation_manual_lock.py
+          tests/test_automation_observability_hooks.py
+          tests/test_automation_provider_setup.py
+          tests/test_automation_recipe_catalog.py
+          tests/test_automation_timeline_api.py
+          tests/test_automation_webhook_delivery.py
+          tests/test_automation_webhook_fanout.py
+          tests/test_automation_webhook_migration.py
+          tests/test_external_automation_contract.py
+          tests/test_strategy_automation_loop.py
+
   postgres-security:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -76,6 +116,7 @@ jobs:
           tests/integration/test_usage_credit_migration.py
           tests/integration/test_billing_webhook_concurrency.py
           tests/integration/test_active_location_allowance_concurrency.py
+          tests/integration/test_governed_ai_provider_benchmark_security.py
 
   deterministic-replay-gate:
     runs-on: windows-latest

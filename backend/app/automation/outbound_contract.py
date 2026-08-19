@@ -84,6 +84,15 @@ _EVENT_DEFINITIONS: tuple[AutomationEventDefinition, ...] = (
         ),
     ),
     AutomationEventDefinition(
+        code="review.saved",
+        label="Review saved",
+        summary="A saved customer rating is ready for private workflow routing.",
+        resource_type="review",
+        allowed_data_fields=frozenset(
+            {"review_id", "rating", "response_status", "reviewed_at", "review_href"}
+        ),
+    ),
+    AutomationEventDefinition(
         code="approval.requested",
         label="Approval requested",
         summary="A governed action is waiting for an authorized person.",
@@ -132,7 +141,7 @@ class AutomationContractError(RuntimeError):
 class AutomationResourceReference(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    type: Literal["report", "recommendation", "approval", "action", "connection"]
+    type: Literal["report", "recommendation", "review", "approval", "action", "connection"]
     id: str = Field(min_length=1, max_length=80)
     href: str = Field(min_length=1, max_length=500)
 

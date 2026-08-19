@@ -20,6 +20,10 @@ from app.models.automation_webhook import (
     AutomationWebhookDelivery,
     AutomationWebhookDeliveryAttempt,
 )
+from app.models.automation_command import (
+    AutomationCommandReceipt,
+    AutomationServiceAccount,
+)
 from app.models.authority import (
     AuthorityGapResearchRun,
     AuthorityInventoryLink,
@@ -62,6 +66,30 @@ from app.models.google_business_profile import (
 from app.models.google_business_profile_campaign import (  # noqa: F401
     GoogleBusinessProfileCampaign,
     GoogleBusinessProfileCampaignVariant,
+)
+from app.models.governed_ai_provider_connection import GovernedAIProviderConnection
+from app.models.governed_ai_relay import GovernedAIRelayEnrollment
+from app.models.governed_ai_relay_packet import (
+    GovernedAIRelayDiagnosticAcknowledgement,
+    GovernedAIRelayDiagnosticPacket,
+)
+from app.models.governed_ai_relay_runtime import GovernedAIRelayRuntimeDiscovery
+from app.models.governed_ai_relay_qualification import GovernedAIRelayModelQualification
+from app.models.governed_ai_provider_benchmark import GovernedAIProviderBenchmark
+from app.models.governed_ai_provider_canary import (
+    GovernedAIProviderCanaryAttempt,
+    GovernedAIProviderCanaryEvent,
+    GovernedAIProviderCanaryHealthSnapshot,
+)
+from app.models.governed_ai_provider_capability import (
+    GovernedAIProviderCapabilityAttempt,
+    GovernedAIProviderCapabilityBenchmark,
+    GovernedAIProviderCapabilityEvent,
+)
+from app.models.governed_ai_provider_review import GovernedAIProviderReview
+from app.models.governed_ai_provider_standby_event import GovernedAIProviderStandbyEvent
+from app.models.governed_ai_provider_routing_readiness import (
+    GovernedAIProviderRoutingReadiness,
 )
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
@@ -246,6 +274,8 @@ __all__ = [
     "AutomationWebhookConnection",
     "AutomationWebhookDelivery",
     "AutomationWebhookDeliveryAttempt",
+    "AutomationServiceAccount",
+    "AutomationCommandReceipt",
     "Role",
     "UserRole",
     "SubAccount",
@@ -327,6 +357,22 @@ __all__ = [
     "OrganizationCostAllocation",
     "ProviderPriceCard",
     "GovernedAIRun",
+    "GovernedAIProviderConnection",
+    "GovernedAIRelayEnrollment",
+    "GovernedAIRelayDiagnosticAcknowledgement",
+    "GovernedAIRelayDiagnosticPacket",
+    "GovernedAIRelayRuntimeDiscovery",
+    "GovernedAIRelayModelQualification",
+    "GovernedAIProviderBenchmark",
+    "GovernedAIProviderCanaryAttempt",
+    "GovernedAIProviderCanaryEvent",
+    "GovernedAIProviderCanaryHealthSnapshot",
+    "GovernedAIProviderCapabilityAttempt",
+    "GovernedAIProviderCapabilityBenchmark",
+    "GovernedAIProviderCapabilityEvent",
+    "GovernedAIProviderReview",
+    "GovernedAIProviderStandbyEvent",
+    "GovernedAIProviderRoutingReadiness",
     "GovernedExperimentGuardrailCheck",
     "GovernedExperimentPlan",
     "GovernedExperimentProtocol",

@@ -5,6 +5,7 @@ from decimal import Decimal
 import hashlib
 import json
 import logging
+from time import perf_counter
 from typing import Any
 
 from fastapi import HTTPException
@@ -27,11 +28,19 @@ from app.intelligence.lexicon import (
 from app.models.campaign import Campaign
 from app.models.governed_ai import GovernedAIRun
 from app.models.intelligence import StrategyRecommendation
-from app.services import cost_economics_service, intelligence_service
+from app.services import (
+    cost_economics_service,
+    governed_ai_provider_canary_service,
+    intelligence_service,
+)
 from app.services.governed_ai_provider import (
     GovernedAIProvider,
     GovernedAIProviderError,
     MistralGovernedAIProvider,
+)
+from app.services.governed_ai_provider_connection_service import (
+    GovernedAIProviderConnectionError,
+    open_pinned_runtime_provider,
 )
 
 
@@ -51,6 +60,12 @@ CONCURRENCY_LIMITS = {
     "enterprise": 4,
 }
 logger = logging.getLogger(__name__)
+
+
+def _elapsed_private_ms(started_at: float | None) -> int:
+    if started_at is None:
+        return 0
+    return min(60_000, max(0, int((perf_counter() - started_at) * 1000)))
 
 
 def latest_governed_brief(
@@ -282,12 +297,36 @@ def generate_governed_brief(
             },
         )
 
+    canary_selection = (
+        governed_ai_provider_canary_service.select_canary_for_request(
+            db,
+            organization_id=organization_id,
+            feature=FEATURE,
+            request_key=idempotency_key,
+            now=occurred_at,
+        )
+        if provider is None
+        else None
+    )
+
     row = _new_run(
         campaign=campaign,
         organization_id=organization_id,
         requested_by_user_id=requested_by_user_id,
-        provider_name=provider.name if provider is not None else (backend or "deterministic"),
-        model_name=provider.model_name if provider is not None else model_name,
+        provider_name=(
+            "private_ai"
+            if canary_selection is not None
+            else provider.name
+            if provider is not None
+            else (backend or "deterministic")
+        ),
+        model_name=(
+            canary_selection.model_identifier
+            if canary_selection is not None
+            else provider.model_name
+            if provider is not None
+            else model_name
+        ),
         lexicon=lexicon,
         context_hash=context_hash,
         prompt_hash=prompt_hash,
@@ -411,13 +450,139 @@ def generate_governed_brief(
         )
         return _response(db, row, idempotent_replay=False)
 
+    managed_provider = provider
+    provider_response = None
+    prevalidated_output = None
+    private_succeeded = False
+    private_event = None
+    private_prompt_attempted = False
+    private_error_code = None
+    private_may_have_processed = False
+    private_input_tokens = 0
+    private_output_tokens = 0
+    private_duration_ms = 0
+    private_started_at: float | None = None
+    if canary_selection is not None:
+        try:
+            private_event = (
+                governed_ai_provider_canary_service.authorize_canary_dispatch(
+                    db,
+                    organization_id=organization_id,
+                    selection=canary_selection,
+                    now=occurred_at,
+                )
+            )
+            with open_pinned_runtime_provider(
+                db,
+                organization_id=organization_id,
+                connection_id=canary_selection.connection_id,
+                timeout_seconds=settings.ai_provider_timeout_seconds,
+                max_output_tokens=settings.ai_max_output_tokens,
+            ) as private_provider:
+                private_prompt_attempted = True
+                private_started_at = perf_counter()
+                provider_response = private_provider.generate(
+                    context=context,
+                    output_schema=GovernedIntelligenceBrief.model_json_schema(),
+                    prompt_template_version=PROMPT_TEMPLATE_VERSION,
+                )
+                private_input_tokens = provider_response.input_tokens
+                private_output_tokens = provider_response.output_tokens
+                private_duration_ms = _elapsed_private_ms(private_started_at)
+                prevalidated_output = _validate_brief_output(
+                    provider_response.payload,
+                    context_bundle=context_bundle,
+                )
+                provider = private_provider
+            private_succeeded = True
+            row.provider_name = provider.name
+            row.model_name = provider.model_name
+            governed_ai_provider_canary_service.record_private_success(
+                db,
+                event=private_event,
+                request_key=idempotency_key,
+                input_tokens=private_input_tokens,
+                output_tokens=private_output_tokens,
+                duration_ms=private_duration_ms,
+                now=occurred_at,
+            )
+        except GovernedAIProviderConnectionError as exc:
+            private_duration_ms = _elapsed_private_ms(private_started_at)
+            private_error_code = exc.reason_code
+            if private_event is not None:
+                governed_ai_provider_canary_service.automatic_rollback(
+                    db,
+                    event=private_event,
+                    reason_code=private_error_code,
+                    now=occurred_at,
+                )
+        except GovernedAIProviderError as exc:
+            private_duration_ms = _elapsed_private_ms(private_started_at)
+            private_error_code = exc.code
+            private_may_have_processed = exc.provider_may_have_processed
+            if private_event is not None:
+                governed_ai_provider_canary_service.automatic_rollback(
+                    db,
+                    event=private_event,
+                    reason_code=private_error_code,
+                    now=occurred_at,
+                )
+        except (TypeError, ValueError):
+            private_duration_ms = _elapsed_private_ms(private_started_at)
+            private_error_code = "ai_output_validation_failed"
+            private_may_have_processed = True
+            if private_event is not None:
+                governed_ai_provider_canary_service.automatic_rollback(
+                    db,
+                    event=private_event,
+                    reason_code=private_error_code,
+                    now=occurred_at,
+                )
+        except Exception:
+            private_duration_ms = _elapsed_private_ms(private_started_at)
+            logger.exception(
+                "Unexpected private AI canary failure",
+                extra={
+                    "organization_id": organization_id,
+                    "campaign_id": campaign.id,
+                    "connection_id": canary_selection.connection_id,
+                },
+            )
+            private_error_code = "ai_provider_unexpected_error"
+            private_may_have_processed = private_prompt_attempted
+            if private_event is not None:
+                governed_ai_provider_canary_service.automatic_rollback(
+                    db,
+                    event=private_event,
+                    reason_code=private_error_code,
+                    now=occurred_at,
+                )
+
+    if not private_succeeded:
+        provider = managed_provider
+        row.provider_name = provider.name
+        row.model_name = provider.model_name
     try:
-        provider_response = provider.generate(
-            context=context,
-            output_schema=GovernedIntelligenceBrief.model_json_schema(),
-            prompt_template_version=PROMPT_TEMPLATE_VERSION,
-        )
+        if provider_response is None or not private_succeeded:
+            provider_response = provider.generate(
+                context=context,
+                output_schema=GovernedIntelligenceBrief.model_json_schema(),
+                prompt_template_version=PROMPT_TEMPLATE_VERSION,
+            )
     except GovernedAIProviderError as exc:
+        if private_event is not None and private_prompt_attempted:
+            governed_ai_provider_canary_service.record_managed_fallback(
+                db,
+                event=private_event,
+                request_key=idempotency_key,
+                private_error_code=private_error_code or "ai_provider_unavailable",
+                provider_may_have_processed=private_may_have_processed,
+                managed_succeeded=False,
+                input_tokens=private_input_tokens,
+                output_tokens=private_output_tokens,
+                duration_ms=private_duration_ms,
+                now=occurred_at,
+            )
         if exc.provider_may_have_processed:
             terminal = cost_economics_service.reconcile_provider_cost(
                 db,
@@ -460,6 +625,18 @@ def generate_governed_brief(
         row.reconciled_cost = (
             terminal.provider_reported_cost or reservation.estimated_cost
         )
+        if private_event is not None and private_prompt_attempted:
+            governed_ai_provider_canary_service.record_managed_fallback(
+                db,
+                event=private_event,
+                request_key=idempotency_key,
+                private_error_code=private_error_code or "ai_provider_unexpected_error",
+                provider_may_have_processed=private_may_have_processed,
+                managed_succeeded=False,
+                input_tokens=private_input_tokens,
+                output_tokens=private_output_tokens,
+                now=occurred_at,
+            )
         _finalize_fallback(
             db,
             row,
@@ -471,69 +648,88 @@ def generate_governed_brief(
         )
         return _response(db, row, idempotent_replay=False)
 
-    actual_input = provider_response.input_tokens or estimated_input_tokens
-    actual_output = provider_response.output_tokens or settings.ai_max_output_tokens
-    try:
-        actual_cost = cost_economics_service.calculate_provider_cost(
+    if (
+        not private_succeeded
+        and private_event is not None
+        and private_prompt_attempted
+    ):
+        governed_ai_provider_canary_service.record_managed_fallback(
             db,
-            provider_name=provider.name,
-            capability=MISTRAL_CAPABILITY,
-            operation=MISTRAL_OPERATION,
-            quantity=1,
-            model_name=provider.model_name,
-            input_tokens=actual_input,
-            output_tokens=actual_output,
+            event=private_event,
+            request_key=idempotency_key,
+            private_error_code=private_error_code or "ai_provider_unavailable",
+            provider_may_have_processed=private_may_have_processed,
+            managed_succeeded=True,
+            input_tokens=private_input_tokens,
+            output_tokens=private_output_tokens,
             now=occurred_at,
         )
-    except cost_economics_service.CostEconomicsError as exc:
-        terminal = cost_economics_service.reconcile_provider_cost(
+
+    actual_input = provider_response.input_tokens or estimated_input_tokens
+    actual_output = provider_response.output_tokens or settings.ai_max_output_tokens
+    if private_succeeded:
+        cost_economics_service.release_provider_cost(
             db,
             reservation=reservation,
-            provider_reported_cost=reservation.estimated_cost,
             now=occurred_at,
         )
         row.input_tokens = actual_input
         row.output_tokens = actual_output
-        row.reconciled_cost = (
-            terminal.provider_reported_cost or reservation.estimated_cost
-        )
+        row.estimated_cost = Decimal("0")
+        row.reconciled_cost = Decimal("0")
+        row.price_card_version = None
         row.provider_request_id = provider_response.provider_request_id
-        _finalize_fallback(
+    else:
+        try:
+            actual_cost = cost_economics_service.calculate_provider_cost(
+                db,
+                provider_name=provider.name,
+                capability=MISTRAL_CAPABILITY,
+                operation=MISTRAL_OPERATION,
+                quantity=1,
+                model_name=provider.model_name,
+                input_tokens=actual_input,
+                output_tokens=actual_output,
+                now=occurred_at,
+            )
+        except cost_economics_service.CostEconomicsError as exc:
+            terminal = cost_economics_service.reconcile_provider_cost(
+                db,
+                reservation=reservation,
+                provider_reported_cost=reservation.estimated_cost,
+                now=occurred_at,
+            )
+            row.input_tokens = actual_input
+            row.output_tokens = actual_output
+            row.reconciled_cost = (
+                terminal.provider_reported_cost or reservation.estimated_cost
+            )
+            row.provider_request_id = provider_response.provider_request_id
+            _finalize_fallback(
+                db,
+                row,
+                output=fallback,
+                provider_state="cost_control_blocked",
+                error_code=exc.reason_code,
+                rejection_reason="The provider response could not be safely priced.",
+                now=occurred_at,
+            )
+            return _response(db, row, idempotent_replay=False)
+        terminal = cost_economics_service.reconcile_provider_cost(
             db,
-            row,
-            output=fallback,
-            provider_state="cost_control_blocked",
-            error_code=exc.reason_code,
-            rejection_reason="The provider response could not be safely priced.",
+            reservation=reservation,
+            provider_reported_cost=actual_cost,
             now=occurred_at,
         )
-        return _response(db, row, idempotent_replay=False)
-    terminal = cost_economics_service.reconcile_provider_cost(
-        db,
-        reservation=reservation,
-        provider_reported_cost=actual_cost,
-        now=occurred_at,
-    )
-    row.input_tokens = actual_input
-    row.output_tokens = actual_output
-    row.reconciled_cost = terminal.provider_reported_cost or actual_cost
-    row.provider_request_id = provider_response.provider_request_id
+        row.input_tokens = actual_input
+        row.output_tokens = actual_output
+        row.reconciled_cost = terminal.provider_reported_cost or actual_cost
+        row.provider_request_id = provider_response.provider_request_id
     row.response_hash = _hash_payload(provider_response.payload)
     try:
-        output = GovernedIntelligenceBrief.model_validate(provider_response.payload)
-        deterministic_action = context_bundle["deterministic_action"]
-        output.validate_against_context(
-            evidence_ids=set(context_bundle["evidence_ids"]),
-            deterministic_action_id=(
-                deterministic_action.get("action_id")
-                if deterministic_action is not None
-                else None
-            ),
-            deterministic_daily_action_ids=context_bundle["daily_action_ids"],
-            action_requires_approval=bool(
-                deterministic_action
-                and int(deterministic_action.get("risk_tier") or 0) >= 2
-            ),
+        output = prevalidated_output or _validate_brief_output(
+            provider_response.payload,
+            context_bundle=context_bundle,
         )
     except (TypeError, ValueError) as exc:
         row.status = "rejected"
@@ -567,6 +763,29 @@ def generate_governed_brief(
     db.commit()
     db.refresh(row)
     return _response(db, row, idempotent_replay=False)
+
+
+def _validate_brief_output(
+    payload: dict[str, Any],
+    *,
+    context_bundle: dict[str, Any],
+) -> GovernedIntelligenceBrief:
+    output = GovernedIntelligenceBrief.model_validate(payload)
+    deterministic_action = context_bundle["deterministic_action"]
+    output.validate_against_context(
+        evidence_ids=set(context_bundle["evidence_ids"]),
+        deterministic_action_id=(
+            deterministic_action.get("action_id")
+            if deterministic_action is not None
+            else None
+        ),
+        deterministic_daily_action_ids=context_bundle["daily_action_ids"],
+        action_requires_approval=bool(
+            deterministic_action
+            and int(deterministic_action.get("risk_tier") or 0) >= 2
+        ),
+    )
+    return output
 
 
 def _build_context(
@@ -1066,7 +1285,7 @@ def _run_payload(db: Session, row: GovernedAIRun) -> dict[str, Any]:
             "provider_state": row.provider_state,
             "operator_state": "operator_review_required",
             "summary": (
-                "Mistral explained the deterministic daily plan without changing its evidence, actions, risk, or approval requirements."
+                "AI explained the deterministic daily plan without changing its evidence, actions, risk, or approval requirements."
                 if row.status == "validated"
                 else "The deterministic daily plan remains available without an AI-generated explanation."
             ),

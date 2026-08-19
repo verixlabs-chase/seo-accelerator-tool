@@ -202,6 +202,12 @@ type Recommendation = {
   risk_tier?: number;
   status?: string;
   created_at?: string;
+  automation_review_request?: {
+    requested: true;
+    requested_at: string;
+    source: "connected_workflow";
+    message: string;
+  } | null;
   action_plan?: {
     action_id: string;
     category: string;
@@ -4647,6 +4653,15 @@ export default function OpportunitiesPage() {
                         <p className="mt-1">{getEffortLabel(selectedRecommendation.action_plan?.effort)}</p>
                       </div>
                     </div>
+
+                    {selectedRecommendation.automation_review_request ? (
+                      <div className="mt-4 rounded-md border border-sky-500/25 bg-sky-500/10 p-3">
+                        <p className="text-sm font-semibold text-sky-100">A connected workflow asked you to review this</p>
+                        <p className="mt-1 text-xs leading-5 text-sky-100/80">
+                          Review the saved evidence and checklist here. The workflow did not approve, schedule, or run this recommendation.
+                        </p>
+                      </div>
+                    ) : null}
 
                     {selectedRecommendation.action_plan?.work_item?.steps?.length ? (
                       <div className="mt-4 grid gap-2 lg:grid-cols-3">

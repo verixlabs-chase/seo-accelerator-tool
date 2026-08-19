@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy import inspect
 
 from app.api.response import exception_envelope
-from app.api.v1 import google_oauth, website_events
+from app.api.v1 import google_oauth, governed_ai_relays, website_events
 from app.api.v1.router import control_plane_api_router, tenant_api_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging
@@ -161,6 +161,7 @@ app.include_router(tenant_api_router, prefix=settings.api_v1_prefix)
 app.include_router(control_plane_api_router, prefix=settings.api_v1_prefix)
 app.include_router(google_oauth.public_router, prefix=settings.api_v1_prefix)
 app.include_router(website_events.public_router, prefix=settings.api_v1_prefix)
+app.include_router(governed_ai_relays.public_router, prefix=settings.api_v1_prefix)
 
 if settings.metrics_enabled:
     @app.get("/metrics", include_in_schema=False)

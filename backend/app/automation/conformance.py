@@ -12,6 +12,95 @@ from app.automation.provider_setup import automation_provider_setup_catalog
 
 
 AUTOMATION_CONFORMANCE_VERSION = "insightos.automation.conformance.v1"
+AUTOMATION_CONNECTOR_CATALOG_VERSION = "insightos.automation.connectors.v1"
+
+
+def automation_connector_catalog() -> dict[str, object]:
+    """Return public compatibility facts without implying a customer connection."""
+    shared = {
+        "authentication": "Private Bearer credential",
+        "connection_guide_available": True,
+        "openapi_import_available": True,
+        "conformance_check_available": True,
+        "customer_connection_required": True,
+        "production_connection_proven": False,
+    }
+    return {
+        "version": AUTOMATION_CONNECTOR_CATALOG_VERSION,
+        "truth": {
+            "state": "compatibility_only",
+            "summary": "These tools can use the InsightOS workflow contract. This list does not mean a customer workflow is connected or turned on.",
+        },
+        "items": [
+            {
+                "code": "zapier",
+                "name": "Zapier",
+                "setup": "Use API by Zapier with one private workflow key.",
+                "setup_steps": [
+                    "Choose API by Zapier, then create an API request.",
+                    "Copy the request URL from the connection guide.",
+                    "Save the workflow key in the app connection as a static Bearer authorization header.",
+                    "Paste one allowed action body, test it once, then turn on the Zap.",
+                ],
+                "starter_available": False,
+                **shared,
+            },
+            {
+                "code": "make",
+                "name": "Make",
+                "setup": "Use a Make HTTP request with one private workflow key.",
+                "setup_steps": [
+                    "Add the HTTP app, then Make a request.",
+                    "Copy the request URL from the connection guide.",
+                    "Add the workflow key as a Bearer authorization header.",
+                    "Paste one allowed action body, run it once, then turn on the scenario.",
+                ],
+                "starter_available": False,
+                **shared,
+            },
+            {
+                "code": "n8n",
+                "name": "n8n",
+                "setup": "Import the inactive starter or use an HTTP Request node.",
+                "setup_steps": [
+                    "Import the optional starter or add an HTTP Request node.",
+                    "Create a private Bearer Auth credential with the workflow key.",
+                    "Use the request URL and one allowed action from the guide.",
+                    "Test once, review the saved InsightOS result, then activate the workflow.",
+                ],
+                "starter_available": True,
+                **shared,
+            },
+            {
+                "code": "pipedream",
+                "name": "Pipedream",
+                "setup": "Use a Pipedream HTTP request action with one private workflow key.",
+                "setup_steps": [
+                    "Add an HTTP request action to the workflow.",
+                    "Copy the request URL from the connection guide.",
+                    "Store the workflow key as a private secret and send it as Bearer authorization.",
+                    "Paste one allowed action body, test once, then deploy the workflow.",
+                ],
+                "starter_available": False,
+                **shared,
+            },
+            {
+                "code": "https",
+                "name": "Another HTTPS tool",
+                "setup": "Follow the connection guide and fixed request contract.",
+                "setup_steps": [
+                    "Create an HTTPS POST action.",
+                    "Copy the request URL from the connection guide.",
+                    "Store the workflow key privately and send it as Bearer authorization.",
+                    "Send one allowed action body and verify the saved InsightOS result.",
+                ],
+                "starter_available": False,
+                **shared,
+            },
+        ],
+    }
+
+
 _FIXTURE_SECRET = "INSIGHTOS-CONFORMANCE-ONLY-DO-NOT-CONFIGURE-v1"
 _FIXTURE_TIME = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
 

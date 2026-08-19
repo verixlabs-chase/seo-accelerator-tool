@@ -380,6 +380,68 @@ type AutomationConnectionsPayload = {
   truth: string;
 };
 
+type AutomationServiceAccount = {
+  id: string;
+  name: string;
+  status: "active" | "revoked";
+  location_id: string;
+  location_name: string;
+  location_ids: string[];
+  location_count: number;
+  allowed_commands: Array<"report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review" | "review.retrieve" | "review.create_response_draft">;
+  token_hint: string;
+  token_version: number;
+  expires_at: string;
+  last_used_at?: string | null;
+  last_rotated_at?: string | null;
+  created_at: string;
+  revoked_at?: string | null;
+  command_count: number;
+  token_revealed: false;
+};
+
+type AutomationConnectorCatalog = {
+  version: "insightos.automation.connectors.v1";
+  truth: { state: "compatibility_only"; summary: string };
+  items: Array<{
+    code: "zapier" | "make" | "n8n" | "pipedream" | "https";
+    name: string;
+    setup: string;
+    setup_steps: [string, string, string, string];
+    authentication: "Private Bearer credential";
+    connection_guide_available: true;
+    openapi_import_available: true;
+    conformance_check_available: true;
+    customer_connection_required: true;
+    production_connection_proven: false;
+    starter_available: boolean;
+  }>;
+};
+
+function isAutomationConformanceProvider(
+  code: AutomationConnectorCatalog["items"][number]["code"],
+): code is "zapier" | "make" | "n8n" | "pipedream" {
+  return code !== "https";
+}
+
+type AutomationCommandReceipt = {
+  id: string;
+  schema_version: "insightos.automation.command.v1";
+  command_type: "report.retrieve" | "report.generate_saved" | "recommendation.retrieve" | "recommendation.request_review" | "connection.refresh_saved" | "listing.check_public" | "content.create_working_draft" | "content.request_draft_review" | "review.retrieve" | "review.create_response_draft";
+  idempotency_key: string;
+  correlation_id: string;
+  location_id: string;
+  status: "succeeded" | "denied";
+  denial_reason_code?: string | null;
+  result: {
+    message: string;
+    resource?: { type: "report" | "recommendation"; id: string; href: string } | null;
+    artifacts: Array<{ id: string; type: string; ready: boolean; download_path?: string }>;
+  };
+  created_at: string;
+  completed_at: string;
+};
+
 type AutomationConformanceKit = {
   version: "insightos.automation.conformance.v1";
   provider: "zapier" | "make" | "pipedream" | "n8n";
@@ -405,6 +467,553 @@ type AutomationConformanceKit = {
   };
 };
 
+type PrivateAIProviderConnection = {
+  id: string;
+  name: string;
+  status: "candidate";
+  endpoint_host: string;
+  model_identifier: string;
+  credential_configured: boolean;
+  billing_boundary?: {
+    cost_responsibility: "customer";
+    platform_billing_enabled: false;
+    summary: string;
+  };
+  validation_status: "not_tested" | "failed" | "passed";
+  network_validation_status: "not_tested" | "failed" | "passed";
+  last_validation_reason?: string | null;
+  last_validation_latency_ms?: number | null;
+  activation_status: "inactive";
+  automatic_activation_allowed: false;
+  capability_catalog_version?: string;
+  supported_capabilities?: Array<{
+    code: string;
+    label: string;
+    summary: string;
+    output_boundary: string;
+    fixed_canary_percentage: 5;
+    shared_workspace_prompt_limit_per_day: 1;
+    separate_qualification_required: true;
+    owner_approval_required: true;
+    managed_fallback_required: true;
+    automatic_rollback: true;
+    automatic_changes_allowed: false;
+    publishing_allowed: false;
+  }>;
+  last_validated_at?: string | null;
+  candidate_only: true;
+};
+
+type PrivateAIProviderBenchmark = {
+  id: string;
+  connection_id: string;
+  benchmark_version: string;
+  status: "passed" | "failed";
+  case_count: 3;
+  passed_case_count: number;
+  median_latency_ms: number;
+  reported_input_tokens: number;
+  reported_output_tokens: number;
+  case_results: Array<{
+    case_id: "evidence_selection" | "control_integrity" | "uncertainty_truth";
+    passed: boolean;
+    reason_code: string;
+    latency_ms: number;
+  }>;
+  created_at: string;
+  eligible_for_owner_review: boolean;
+  routing_enabled: false;
+  automatic_activation_allowed: false;
+};
+
+type PrivateAIProviderReview = {
+  id: string;
+  connection_id: string;
+  benchmark_id: string;
+  decision: "approved_for_future_activation" | "rejected";
+  reviewed_at: string;
+  immutable: true;
+  eligible_for_later_standby_activation: boolean;
+  activation_status: "inactive";
+  routing_enabled: false;
+  automatic_activation_allowed: false;
+  automatic_changes_allowed: false;
+};
+
+type PrivateAIReviewAcknowledgements = {
+  reviewed_synthetic_results: boolean;
+  understands_not_active: boolean;
+  understands_managed_fallback_required: boolean;
+  understands_no_automatic_changes: boolean;
+};
+
+type PrivateAIStandbyAcknowledgements = {
+  reviewed_standby_boundary: boolean;
+  understands_zero_customer_prompts: boolean;
+  understands_managed_route_unchanged: boolean;
+  understands_manual_disable_available: boolean;
+};
+
+type PrivateAIStandbyState = {
+  state: "inactive" | "standby" | "standby_elsewhere" | "unavailable";
+  connection_id?: string | null;
+  summary: string;
+  routing_mode?: "zero_traffic_standby" | "inactive";
+  traffic_percentage: 0;
+  customer_prompts_allowed: false;
+  automatic_changes_allowed: false;
+  managed_route_unchanged: true;
+};
+
+type PrivateAIRoutingReadiness = {
+  id: string;
+  status: "passed" | "blocked";
+  managed_route_status: "healthy" | "stale" | "unavailable" | "not_configured";
+  managed_evidence_at?: string | null;
+  standby_evidence_current: boolean;
+  rollback_ready: boolean;
+  blockers: Array<{ code: string; summary: string }>;
+  usage: {
+    window_days: 30;
+    managed_runs: number;
+    managed_successes: number;
+    managed_fallbacks: number;
+    managed_input_tokens: number;
+    managed_output_tokens: number;
+    candidate_runs: 0;
+  };
+  traffic_percentage: 0;
+  routing_enabled: false;
+  customer_prompts_allowed: false;
+  automatic_changes_allowed: false;
+  created_at: string;
+  immutable: true;
+};
+
+type PrivateAIReadinessState = {
+  latest: PrivateAIRoutingReadiness | null;
+  truth: {
+    state: "not_checked" | "ready_for_later_routing_review" | "needs_attention" | "unavailable";
+    summary: string;
+  };
+};
+
+type PrivateAICanaryAcknowledgements = {
+  reviewed_five_percent_limit: boolean;
+  understands_real_customer_prompt: boolean;
+  understands_managed_fallback_required: boolean;
+  understands_automatic_rollback: boolean;
+  understands_no_automatic_changes: boolean;
+};
+
+type PrivateAICanaryState = {
+  state: "inactive" | "canary" | "canary_elsewhere" | "needs_attention" | "unavailable";
+  routing_enabled: boolean;
+  feature: "intelligence_brief";
+  traffic_percentage: 0 | 5;
+  max_prompts_per_day: 1;
+  customer_prompts_allowed: boolean;
+  automatic_rollback_enabled: true;
+  automatic_changes_allowed: false;
+  usage: {
+    window_days: 30;
+    private_attempts: number;
+    private_successes: number;
+    managed_fallbacks: number;
+    automatic_rollbacks: number;
+    input_tokens: number;
+    output_tokens: number;
+  };
+  truth: { state: string; summary: string };
+};
+
+type PrivateAICanaryMonitoringState = {
+  state: "not_started" | "collecting" | "eligible_for_later_review" | "blocked" | "unavailable";
+  latest: {
+    id: string;
+    status: "collecting" | "eligible_for_later_review" | "blocked";
+    created_at: string;
+    immutable: true;
+  } | null;
+  evidence: {
+    window_days: 30;
+    required_success_days: 3;
+    max_latency_threshold_ms: 8000;
+    private_successes: number;
+    distinct_success_days: number;
+    successful_days_remaining: number;
+    managed_fallbacks: number;
+    automatic_rollbacks: number;
+    max_latency_ms: number;
+    blockers: Array<{ code: string; summary: string }>;
+    evidence_only: true;
+  };
+  traffic_change_allowed: false;
+  capability_change_allowed: false;
+  automatic_activation_allowed: false;
+  automatic_changes_allowed: false;
+  truth: { state: string; summary: string };
+};
+
+type PrivateAIQuestionCapabilityAcknowledgements = {
+  reviewed_question_capability_check: boolean;
+  understands_real_customer_questions: boolean;
+  understands_shared_daily_limit: boolean;
+  understands_managed_fallback_and_rollback: boolean;
+  understands_no_automatic_changes: boolean;
+};
+
+type PrivateAIQuestionCapabilityState = {
+  state: "needs_qualification" | "qualification_failed" | "eligible_for_owner_approval" | "capability_canary" | "capability_canary_elsewhere" | "needs_attention" | "unavailable";
+  capability: "intelligence_question";
+  customer_label: "Saved-evidence questions";
+  latest_benchmark: {
+    id: string;
+    status: "passed" | "failed";
+    reason_code: string;
+    latency_ms: number;
+    customer_prompt_sent: false;
+    routing_enabled: false;
+    immutable: true;
+  } | null;
+  routing_enabled: boolean;
+  traffic_percentage: 0 | 5;
+  max_prompts_per_day: 1;
+  daily_limit_shared_with_explanations: true;
+  customer_prompts_allowed: boolean;
+  automatic_rollback_enabled: true;
+  automatic_changes_allowed: false;
+  usage: {
+    private_attempts: number;
+    private_successes: number;
+    managed_fallbacks: number;
+    automatic_rollbacks: number;
+  };
+  truth: { state: string; summary: string };
+};
+
+type PrivateAIDraftCapabilityAcknowledgements = {
+  reviewed_draft_capability_check: boolean;
+  understands_real_saved_action_context: boolean;
+  understands_shared_daily_limit: boolean;
+  understands_managed_fallback_and_rollback: boolean;
+  understands_draft_only_no_publish: boolean;
+};
+
+type PrivateAIDraftCapabilityState = {
+  state: "needs_qualification" | "qualification_failed" | "eligible_for_owner_approval" | "capability_canary" | "capability_canary_elsewhere" | "needs_attention" | "unavailable";
+  capability: "intelligence_draft";
+  customer_label: "Saved-action draft wording";
+  latest_benchmark: {
+    id: string;
+    status: "passed" | "failed";
+    reason_code: string;
+    latency_ms: number;
+    customer_prompt_sent: false;
+    routing_enabled: false;
+    immutable: true;
+  } | null;
+  routing_enabled: boolean;
+  traffic_percentage: 0 | 5;
+  max_prompts_per_day: 1;
+  daily_limit_shared_with_explanations_and_questions: true;
+  customer_prompts_allowed: boolean;
+  automatic_rollback_enabled: true;
+  automatic_changes_allowed: false;
+  draft_only: true;
+  publishing_allowed: false;
+  usage: {
+    private_attempts: number;
+    private_successes: number;
+    managed_fallbacks: number;
+    automatic_rollbacks: number;
+  };
+  truth: { state: string; summary: string };
+};
+
+type PrivateAIKeywordReviewAcknowledgements = {
+  reviewed_keyword_review_check: boolean;
+  understands_real_saved_search_context: boolean;
+  understands_shared_daily_limit: boolean;
+  understands_managed_fallback_and_rollback: boolean;
+  understands_saved_search_classification_only: boolean;
+};
+
+type PrivateAIKeywordReviewQualificationState = {
+  state: "needs_qualification" | "qualification_failed" | "eligible_for_later_review" | "eligible_for_owner_approval" | "capability_canary" | "capability_canary_elsewhere" | "needs_attention" | "unavailable";
+  capability: "keyword_relevance_review";
+  customer_label: "Unclear search review";
+  latest_benchmark: {
+    id: string;
+    status: "passed" | "failed";
+    reason_code: string;
+    latency_ms: number;
+    customer_prompt_sent: false;
+    routing_enabled: false;
+    saved_searches_changed: false;
+    immutable: true;
+  } | null;
+  routing_enabled: boolean;
+  traffic_percentage: 0 | 5;
+  max_prompts_per_day: 1;
+  daily_limit_shared_with_explanations_questions_and_drafts: true;
+  customer_prompts_allowed: boolean;
+  owner_activation_available: boolean;
+  automatic_activation_allowed: false;
+  automatic_changes_allowed: false;
+  saved_searches_changed: false;
+  classification_only: true;
+  may_update_reviewed_saved_searches: boolean;
+  may_add_or_track_searches: false;
+  publishing_allowed: false;
+  automatic_rollback_enabled: true;
+  usage: {
+    private_attempts: number;
+    private_successes: number;
+    managed_fallbacks: number;
+    automatic_rollbacks: number;
+  };
+  qualification_only: boolean;
+  truth: { state: string; summary: string };
+};
+
+type PrivateAIContentDraftQualificationState = {
+  state: "needs_qualification" | "qualification_failed" | "eligible_for_later_review" | "eligible_for_owner_approval" | "capability_canary" | "capability_canary_elsewhere" | "needs_attention" | "unavailable";
+  capability: "content_draft_suggestion";
+  customer_label: "Optional website draft wording";
+  latest_benchmark: {
+    id: string;
+    status: "passed" | "failed";
+    reason_code: string;
+    latency_ms: number;
+    customer_prompt_sent: false;
+    routing_enabled: false;
+    owner_drafts_changed: false;
+    publishing_allowed: false;
+    immutable: true;
+  } | null;
+  routing_enabled: boolean;
+  traffic_percentage: 0 | 5;
+  max_prompts_per_day: 1;
+  daily_limit_shared_with_other_private_ai: true;
+  customer_prompts_allowed: boolean;
+  owner_activation_available: boolean;
+  automatic_activation_allowed: false;
+  automatic_changes_allowed: false;
+  owner_drafts_changed: false;
+  suggestion_only: true;
+  may_edit_or_publish: false;
+  publishing_allowed: false;
+  automatic_rollback_enabled: true;
+  usage: {
+    private_attempts: number;
+    private_successes: number;
+    managed_fallbacks: number;
+    automatic_rollbacks: number;
+  };
+  qualification_only: boolean;
+  truth: { state: string; summary: string };
+};
+
+type PrivateAIContentDraftAcknowledgements = {
+  reviewed_content_draft_check: boolean;
+  understands_real_saved_website_draft_context: boolean;
+  understands_shared_daily_limit: boolean;
+  understands_managed_fallback_and_rollback: boolean;
+  understands_suggestion_only_no_edit_or_publish: boolean;
+};
+
+type PrivateAIBaselineQualificationState = {
+  state: "needs_qualification" | "qualification_failed" | "eligible_for_later_review" | "eligible_for_owner_approval" | "capability_canary" | "capability_canary_elsewhere" | "needs_attention" | "unavailable";
+  capability: "onboarding_baseline_narrative";
+  customer_label: "Optional baseline explanation";
+  latest_benchmark: {
+    id: string;
+    status: "passed" | "failed";
+    reason_code: string;
+    latency_ms: number;
+    customer_prompt_sent: false;
+    routing_enabled: false;
+    explanation_only: true;
+    scores_changed: false;
+    diagnosis_changed: false;
+    fixes_changed: false;
+    website_changes_allowed: false;
+    immutable: true;
+  } | null;
+  current: {
+    id: string;
+    connection_id: string;
+    action: "enabled" | "disabled" | "automatic_rollback";
+    state: "capability_canary" | "inactive";
+    immutable: true;
+  } | null;
+  routing_enabled: boolean;
+  traffic_percentage: 0 | 5;
+  max_prompts_per_day: 1;
+  daily_limit_shared_with_other_private_ai: true;
+  customer_prompts_allowed: boolean;
+  owner_activation_available: boolean;
+  automatic_activation_allowed: false;
+  automatic_changes_allowed: false;
+  explanation_only: true;
+  scores_changed: false;
+  diagnosis_changed: false;
+  fixes_changed: false;
+  website_changes_allowed: false;
+  automatic_rollback_enabled: true;
+  usage: {
+    private_attempts: number;
+    private_successes: number;
+    managed_fallbacks: number;
+    automatic_rollbacks: number;
+  };
+  qualification_only: boolean;
+  truth: { state: string; summary: string };
+};
+
+type PrivateAIBaselineAcknowledgements = {
+  reviewed_baseline_check: boolean;
+  understands_real_saved_baseline_context: boolean;
+  understands_shared_daily_limit: boolean;
+  understands_managed_fallback_and_rollback: boolean;
+  understands_explanation_only_no_changes: boolean;
+};
+
+type PrivateAIReviewResponseQualificationState = {
+  state: "needs_qualification" | "qualification_failed" | "eligible_for_later_review" | "eligible_for_owner_approval" | "capability_canary" | "capability_canary_elsewhere" | "needs_attention" | "unavailable";
+  capability: "review_response_draft";
+  customer_label: "Optional review reply wording";
+  latest_benchmark: {
+    id: string;
+    status: "passed" | "failed";
+    reason_code: string;
+    latency_ms: number;
+    customer_prompt_sent: false;
+    routing_enabled: false;
+    draft_only: true;
+    customer_review_sent: false;
+    review_status_changed: false;
+    may_post_response: false;
+    publishing_allowed: false;
+    immutable: true;
+  } | null;
+  current?: {
+    id: string;
+    connection_id: string;
+    action: "enabled" | "disabled" | "automatic_rollback";
+    state: "capability_canary" | "inactive";
+    immutable: true;
+  } | null;
+  routing_enabled: boolean;
+  traffic_percentage: 0 | 5;
+  max_prompts_per_day?: 1;
+  daily_limit_shared_with_other_private_ai?: true;
+  customer_prompts_allowed: boolean;
+  owner_activation_available: boolean;
+  automatic_activation_allowed: false;
+  automatic_changes_allowed: false;
+  draft_only: true;
+  customer_review_sent: false;
+  review_status_changed: false;
+  may_post_response: false;
+  publishing_allowed: false;
+  automatic_rollback_enabled?: true;
+  usage?: {
+    private_attempts: number;
+    private_successes: number;
+    managed_fallbacks: number;
+    automatic_rollbacks: number;
+  };
+  qualification_only: boolean;
+  truth: { state: string; summary: string };
+};
+
+type PrivateAIReviewResponseAcknowledgements = {
+  reviewed_review_reply_check: boolean;
+  understands_real_saved_review_context: boolean;
+  understands_shared_daily_limit: boolean;
+  understands_managed_fallback_and_rollback: boolean;
+  understands_draft_only_no_posting: boolean;
+};
+
+type PrivateAIRelayEnrollment = {
+  id: string;
+  name: string;
+  protocol_version: "outbound-local-relay-v1";
+  status: "active" | "revoked";
+  connection_state: "waiting_for_first_check" | "connected" | "needs_reconnect" | "revoked";
+  token_hint: string;
+  heartbeat_count: number;
+  last_seen_at?: string | null;
+  created_at: string;
+  revoked_at?: string | null;
+  customer_prompts_allowed: false;
+  decision_packets_enabled: false;
+  database_access_allowed: false;
+  execution_allowed: false;
+  publishing_allowed: false;
+};
+
+type PrivateAIRelayAcknowledgements = {
+  understands_connection_only: boolean;
+  understands_no_customer_prompts: boolean;
+  understands_no_database_or_execution_access: boolean;
+  understands_manual_revocation: boolean;
+};
+
+type PrivateAIRelayDiagnostic = {
+  id: string;
+  protocol_version: "outbound-local-relay-packet-v1";
+  kind: "synthetic_connection_challenge";
+  state: "waiting_for_relay" | "verified" | "expired";
+  created_at: string;
+  expires_at: string;
+  acknowledged_at?: string | null;
+  synthetic_only: true;
+  customer_data_included: false;
+  model_execution_requested: false;
+  database_access_requested: false;
+  business_execution_requested: false;
+  publishing_requested: false;
+};
+
+type PrivateAIRelayRuntimeDiscovery = {
+  id: string;
+  agent_version: string;
+  runtime_kind: "not_found" | "ollama" | "lm_studio" | "multiple";
+  model_count: number;
+  ollama_detected: boolean;
+  lm_studio_detected: boolean;
+  observed_at: string;
+  received_at: string;
+  loopback_only: true;
+  customer_data_sent: false;
+  model_called: false;
+  model_identifiers_included: false;
+};
+
+type PrivateAIRelayModelQualification = {
+  id: string;
+  agent_version: string;
+  runtime_kind: "ollama" | "lm_studio";
+  prompt_version: "local-model-synthetic-v1";
+  status: "passed" | "failed";
+  latency_ms: number;
+  output_json_valid: boolean;
+  required_contract_matched: boolean;
+  observed_at: string;
+  received_at: string;
+  synthetic_input_only: true;
+  model_call_attempted: true;
+  model_response_received: boolean;
+  customer_data_sent: false;
+  raw_model_identifier_sent: false;
+  model_output_sent: false;
+  customer_work_allowed: false;
+  publishing_allowed: false;
+};
+
 type BillingCheckoutAttempt = {
   organizationId: string;
   planCode: string;
@@ -423,6 +1032,90 @@ type BillingConfirmationState =
 const BILLING_CHECKOUT_ATTEMPT_KEY = "insightos:billing-checkout-attempt:v1";
 const BILLING_CHECKOUT_ATTEMPT_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const BILLING_CONFIRMATION_DELAYS_MS = [0, 1000, 1500, 2000, 2500, 3000, 3500, 4000] as const;
+
+const EMPTY_PRIVATE_AI_ACKNOWLEDGEMENTS: PrivateAIReviewAcknowledgements = {
+  reviewed_synthetic_results: false,
+  understands_not_active: false,
+  understands_managed_fallback_required: false,
+  understands_no_automatic_changes: false,
+};
+
+const EMPTY_PRIVATE_AI_STANDBY_ACKNOWLEDGEMENTS: PrivateAIStandbyAcknowledgements = {
+  reviewed_standby_boundary: false,
+  understands_zero_customer_prompts: false,
+  understands_managed_route_unchanged: false,
+  understands_manual_disable_available: false,
+};
+
+const EMPTY_PRIVATE_AI_CANARY_ACKNOWLEDGEMENTS: PrivateAICanaryAcknowledgements = {
+  reviewed_five_percent_limit: false,
+  understands_real_customer_prompt: false,
+  understands_managed_fallback_required: false,
+  understands_automatic_rollback: false,
+  understands_no_automatic_changes: false,
+};
+
+const EMPTY_PRIVATE_AI_QUESTION_ACKNOWLEDGEMENTS: PrivateAIQuestionCapabilityAcknowledgements = {
+  reviewed_question_capability_check: false,
+  understands_real_customer_questions: false,
+  understands_shared_daily_limit: false,
+  understands_managed_fallback_and_rollback: false,
+  understands_no_automatic_changes: false,
+};
+
+const EMPTY_PRIVATE_AI_DRAFT_ACKNOWLEDGEMENTS: PrivateAIDraftCapabilityAcknowledgements = {
+  reviewed_draft_capability_check: false,
+  understands_real_saved_action_context: false,
+  understands_shared_daily_limit: false,
+  understands_managed_fallback_and_rollback: false,
+  understands_draft_only_no_publish: false,
+};
+
+const EMPTY_PRIVATE_AI_KEYWORD_REVIEW_ACKNOWLEDGEMENTS: PrivateAIKeywordReviewAcknowledgements = {
+  reviewed_keyword_review_check: false,
+  understands_real_saved_search_context: false,
+  understands_shared_daily_limit: false,
+  understands_managed_fallback_and_rollback: false,
+  understands_saved_search_classification_only: false,
+};
+
+const EMPTY_PRIVATE_AI_CONTENT_DRAFT_ACKNOWLEDGEMENTS: PrivateAIContentDraftAcknowledgements = {
+  reviewed_content_draft_check: false,
+  understands_real_saved_website_draft_context: false,
+  understands_shared_daily_limit: false,
+  understands_managed_fallback_and_rollback: false,
+  understands_suggestion_only_no_edit_or_publish: false,
+};
+
+const EMPTY_PRIVATE_AI_BASELINE_ACKNOWLEDGEMENTS: PrivateAIBaselineAcknowledgements = {
+  reviewed_baseline_check: false,
+  understands_real_saved_baseline_context: false,
+  understands_shared_daily_limit: false,
+  understands_managed_fallback_and_rollback: false,
+  understands_explanation_only_no_changes: false,
+};
+
+const EMPTY_PRIVATE_AI_REVIEW_RESPONSE_ACKNOWLEDGEMENTS: PrivateAIReviewResponseAcknowledgements = {
+  reviewed_review_reply_check: false,
+  understands_real_saved_review_context: false,
+  understands_shared_daily_limit: false,
+  understands_managed_fallback_and_rollback: false,
+  understands_draft_only_no_posting: false,
+};
+
+const EMPTY_PRIVATE_AI_RELAY_ACKNOWLEDGEMENTS: PrivateAIRelayAcknowledgements = {
+  understands_connection_only: false,
+  understands_no_customer_prompts: false,
+  understands_no_database_or_execution_access: false,
+  understands_manual_revocation: false,
+};
+
+function privateAIRequestId(prefix: string) {
+  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${suffix}`.slice(0, 64);
+}
 
 function safeSessionStorageGet(key: string) {
   try {
@@ -699,6 +1392,14 @@ function formatTimestamp(value?: string | null) {
   }).format(parsed);
 }
 
+function privateAIBenchmarkCaseLabel(caseId: PrivateAIProviderBenchmark["case_results"][number]["case_id"]) {
+  return {
+    evidence_selection: "Uses only the evidence provided",
+    control_integrity: "Keeps owner approval controls",
+    uncertainty_truth: "Does not invent missing measurements",
+  }[caseId];
+}
+
 function formatDataDate(value?: string | null) {
   if (!value) return "No usable data saved yet";
   const parsed = new Date(`${value}T12:00:00Z`);
@@ -803,6 +1504,49 @@ export default function SettingsPage() {
   const [automationDestination, setAutomationDestination] = useState("");
   const [automationSelectedEvents, setAutomationSelectedEvents] = useState<string[]>([]);
   const [automationSigningSecret, setAutomationSigningSecret] = useState("");
+  const [automationServiceAccounts, setAutomationServiceAccounts] = useState<AutomationServiceAccount[]>([]);
+  const [automationConnectorCatalog, setAutomationConnectorCatalog] = useState<AutomationConnectorCatalog | null>(null);
+  const [automationCommandHistory, setAutomationCommandHistory] = useState<AutomationCommandReceipt[]>([]);
+  const [automationCommandLoadState, setAutomationCommandLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
+  const [automationCommandName, setAutomationCommandName] = useState("Saved report workflow");
+  const [automationCommandLocationId, setAutomationCommandLocationId] = useState("");
+  const [automationCommandAdditionalLocationIds, setAutomationCommandAdditionalLocationIds] = useState<string[]>([]);
+  const [automationCommandToken, setAutomationCommandToken] = useState("");
+  const [privateAIProviders, setPrivateAIProviders] = useState<PrivateAIProviderConnection[]>([]);
+  const [privateAIProviderLoadState, setPrivateAIProviderLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
+  const [privateAIBenchmarks, setPrivateAIBenchmarks] = useState<Record<string, PrivateAIProviderBenchmark[]>>({});
+  const [privateAIReviews, setPrivateAIReviews] = useState<Record<string, PrivateAIProviderReview[]>>({});
+  const [privateAIStandby, setPrivateAIStandby] = useState<Record<string, PrivateAIStandbyState>>({});
+  const [privateAIReadiness, setPrivateAIReadiness] = useState<Record<string, PrivateAIReadinessState>>({});
+  const [privateAICanary, setPrivateAICanary] = useState<Record<string, PrivateAICanaryState>>({});
+  const [privateAICanaryMonitoring, setPrivateAICanaryMonitoring] = useState<Record<string, PrivateAICanaryMonitoringState>>({});
+  const [privateAIQuestionCapability, setPrivateAIQuestionCapability] = useState<Record<string, PrivateAIQuestionCapabilityState>>({});
+  const [privateAIDraftCapability, setPrivateAIDraftCapability] = useState<Record<string, PrivateAIDraftCapabilityState>>({});
+  const [privateAIKeywordReviewQualification, setPrivateAIKeywordReviewQualification] = useState<Record<string, PrivateAIKeywordReviewQualificationState>>({});
+  const [privateAIContentDraftQualification, setPrivateAIContentDraftQualification] = useState<Record<string, PrivateAIContentDraftQualificationState>>({});
+  const [privateAIBaselineQualification, setPrivateAIBaselineQualification] = useState<Record<string, PrivateAIBaselineQualificationState>>({});
+  const [privateAIReviewResponseQualification, setPrivateAIReviewResponseQualification] = useState<Record<string, PrivateAIReviewResponseQualificationState>>({});
+  const [privateAIName, setPrivateAIName] = useState("");
+  const [privateAIEndpoint, setPrivateAIEndpoint] = useState("");
+  const [privateAIModel, setPrivateAIModel] = useState("");
+  const [privateAIApiKey, setPrivateAIApiKey] = useState("");
+  const [privateAIReviewAcks, setPrivateAIReviewAcks] = useState<Record<string, PrivateAIReviewAcknowledgements>>({});
+  const [privateAIStandbyAcks, setPrivateAIStandbyAcks] = useState<Record<string, PrivateAIStandbyAcknowledgements>>({});
+  const [privateAICanaryAcks, setPrivateAICanaryAcks] = useState<Record<string, PrivateAICanaryAcknowledgements>>({});
+  const [privateAIQuestionAcks, setPrivateAIQuestionAcks] = useState<Record<string, PrivateAIQuestionCapabilityAcknowledgements>>({});
+  const [privateAIDraftAcks, setPrivateAIDraftAcks] = useState<Record<string, PrivateAIDraftCapabilityAcknowledgements>>({});
+  const [privateAIKeywordReviewAcks, setPrivateAIKeywordReviewAcks] = useState<Record<string, PrivateAIKeywordReviewAcknowledgements>>({});
+  const [privateAIContentDraftAcks, setPrivateAIContentDraftAcks] = useState<Record<string, PrivateAIContentDraftAcknowledgements>>({});
+  const [privateAIBaselineAcks, setPrivateAIBaselineAcks] = useState<Record<string, PrivateAIBaselineAcknowledgements>>({});
+  const [privateAIReviewResponseAcks, setPrivateAIReviewResponseAcks] = useState<Record<string, PrivateAIReviewResponseAcknowledgements>>({});
+  const [privateAIRelay, setPrivateAIRelay] = useState<PrivateAIRelayEnrollment | null>(null);
+  const [privateAIRelayLoadState, setPrivateAIRelayLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
+  const [privateAIRelayName, setPrivateAIRelayName] = useState("Office local model");
+  const [privateAIRelayToken, setPrivateAIRelayToken] = useState("");
+  const [privateAIRelayAcks, setPrivateAIRelayAcks] = useState<PrivateAIRelayAcknowledgements>(EMPTY_PRIVATE_AI_RELAY_ACKNOWLEDGEMENTS);
+  const [privateAIRelayDiagnostic, setPrivateAIRelayDiagnostic] = useState<PrivateAIRelayDiagnostic | null>(null);
+  const [privateAIRelayRuntime, setPrivateAIRelayRuntime] = useState<PrivateAIRelayRuntimeDiscovery | null>(null);
+  const [privateAIRelayQualification, setPrivateAIRelayQualification] = useState<PrivateAIRelayModelQualification | null>(null);
   const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
   const [authSessions, setAuthSessions] = useState<AuthSessionSummary[] | null>(null);
   const [billingConfirmationState, setBillingConfirmationState] =
@@ -858,6 +1602,20 @@ export default function SettingsPage() {
     () => campaigns.filter((campaign) => Boolean(campaign.business_location_id)),
     [campaigns],
   );
+  const automationCommandLocations = useMemo(
+    () => Array.from(
+      new Map(
+        manageableCampaigns.map((campaign) => [
+          campaign.business_location_id as string,
+          {
+            id: campaign.business_location_id as string,
+            label: campaign.name || campaign.domain || "Saved location",
+          },
+        ]),
+      ).values(),
+    ),
+    [manageableCampaigns],
+  );
   const connections = useMemo(() => payload?.connections || [], [payload?.connections]);
   const connectionHealth = payload?.health || null;
   const connectionItemsNeedingWork = useMemo(
@@ -903,6 +1661,15 @@ export default function SettingsPage() {
     websiteMappingsComplete,
     Boolean(payload?.google_oauth.approved_access?.business_profile) && profileMappingsComplete,
   ].filter(Boolean).length;
+
+  useEffect(() => {
+    if (
+      !automationCommandLocationId &&
+      automationCommandLocations.length > 0
+    ) {
+      setAutomationCommandLocationId(automationCommandLocations[0].id);
+    }
+  }, [automationCommandLocationId, automationCommandLocations]);
 
   function scrollToConnectionStep(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1029,13 +1796,1153 @@ export default function SettingsPage() {
     return response;
   }, []);
 
-  const downloadAutomationConformanceKit = useCallback(async () => {
-    setBusyAction(`automation-conformance-${automationProvider}`);
+  const loadAutomationCommandAccess = useCallback(async () => {
+    try {
+      const [accountResponse, historyResponse, connectorCatalog] = await Promise.all([
+        platformApi("/automation/service-accounts", { method: "GET" }) as Promise<{
+          items?: AutomationServiceAccount[];
+        }>,
+        platformApi("/automation/command-history", { method: "GET" }) as Promise<{
+          items?: Array<{ receipt: AutomationCommandReceipt }>;
+        }>,
+        (platformApi("/automation/connector-catalog", { method: "GET" }) as Promise<AutomationConnectorCatalog>)
+          .catch(() => null),
+      ]);
+      setAutomationServiceAccounts(accountResponse.items || []);
+      setAutomationCommandHistory(
+        (historyResponse.items || []).map((item) => item.receipt),
+      );
+      setAutomationConnectorCatalog(connectorCatalog);
+      setAutomationCommandLoadState("ready");
+      return accountResponse;
+    } catch (error) {
+      setAutomationCommandLoadState("unavailable");
+      throw error;
+    }
+  }, []);
+
+  const loadPrivateAIProviders = useCallback(async () => {
+    const response = (await platformApi("/ai/providers", {
+      method: "GET",
+    })) as { items?: PrivateAIProviderConnection[] };
+    const items = response.items || [];
+    const details = await Promise.all(
+      items.map(async (provider) => {
+        const [benchmarkResponse, reviewResponse, standbyResponse, readinessResponse, canaryResponse, monitoringResponse, questionCapabilityResponse, draftCapabilityResponse, keywordReviewQualificationResponse, contentDraftQualificationResponse, baselineQualificationResponse, reviewResponseQualificationResponse] = await Promise.all([
+          (platformApi(`/ai/providers/${provider.id}/benchmarks`, {
+            method: "GET",
+          }) as Promise<{ items?: PrivateAIProviderBenchmark[] }>).catch(() => ({ items: [] })),
+          (platformApi(`/ai/providers/${provider.id}/reviews`, {
+            method: "GET",
+          }) as Promise<{ items?: PrivateAIProviderReview[] }>).catch(() => ({ items: [] })),
+          (platformApi(`/ai/providers/${provider.id}/standby`, {
+            method: "GET",
+          }) as Promise<{ current?: PrivateAIStandbyState }>).catch(() => ({
+            current: {
+              state: "unavailable" as const,
+              summary: "Standby status could not be checked.",
+              traffic_percentage: 0 as const,
+              customer_prompts_allowed: false as const,
+              automatic_changes_allowed: false as const,
+              managed_route_unchanged: true as const,
+            },
+          })),
+          (platformApi(`/ai/providers/${provider.id}/routing-readiness`, {
+            method: "GET",
+          }) as Promise<{
+            latest?: PrivateAIRoutingReadiness | null;
+            truth?: PrivateAIReadinessState["truth"];
+          }>).catch(() => ({
+            latest: null,
+            truth: {
+              state: "unavailable" as const,
+              summary: "Routing safety status could not be checked.",
+            },
+          })),
+          (platformApi(`/ai/providers/${provider.id}/routing-canary`, {
+            method: "GET",
+          }) as Promise<PrivateAICanaryState>).catch(() => ({
+            state: "unavailable" as const,
+            routing_enabled: false,
+            feature: "intelligence_brief" as const,
+            traffic_percentage: 0 as const,
+            max_prompts_per_day: 1 as const,
+            customer_prompts_allowed: false,
+            automatic_rollback_enabled: true as const,
+            automatic_changes_allowed: false as const,
+            usage: {
+              window_days: 30 as const,
+              private_attempts: 0,
+              private_successes: 0,
+              managed_fallbacks: 0,
+              automatic_rollbacks: 0,
+              input_tokens: 0,
+              output_tokens: 0,
+            },
+            truth: {
+              state: "unavailable",
+              summary: "Limited routing status could not be checked.",
+            },
+          })),
+          (platformApi(`/ai/providers/${provider.id}/routing-canary-monitoring`, {
+            method: "GET",
+          }) as Promise<PrivateAICanaryMonitoringState>).catch(() => ({
+            state: "unavailable" as const,
+            latest: null,
+            evidence: {
+              window_days: 30 as const,
+              required_success_days: 3 as const,
+              max_latency_threshold_ms: 8000 as const,
+              private_successes: 0,
+              distinct_success_days: 0,
+              successful_days_remaining: 3,
+              managed_fallbacks: 0,
+              automatic_rollbacks: 0,
+              max_latency_ms: 0,
+              blockers: [],
+              evidence_only: true as const,
+            },
+            traffic_change_allowed: false as const,
+            capability_change_allowed: false as const,
+            automatic_activation_allowed: false as const,
+            automatic_changes_allowed: false as const,
+            truth: {
+              state: "unavailable",
+              summary: "Canary health history could not be checked.",
+            },
+          })),
+          (platformApi(`/ai/providers/${provider.id}/question-capability`, {
+            method: "GET",
+          }) as Promise<PrivateAIQuestionCapabilityState>).catch(() => ({
+            state: "unavailable" as const,
+            capability: "intelligence_question" as const,
+            customer_label: "Saved-evidence questions" as const,
+            latest_benchmark: null,
+            routing_enabled: false,
+            traffic_percentage: 0 as const,
+            max_prompts_per_day: 1 as const,
+            daily_limit_shared_with_explanations: true as const,
+            customer_prompts_allowed: false,
+            automatic_rollback_enabled: true as const,
+            automatic_changes_allowed: false as const,
+            usage: {
+              private_attempts: 0,
+              private_successes: 0,
+              managed_fallbacks: 0,
+              automatic_rollbacks: 0,
+            },
+            truth: {
+              state: "unavailable",
+              summary: "Saved-question private-AI status could not be checked.",
+            },
+          })),
+          (platformApi(`/ai/providers/${provider.id}/draft-capability`, {
+            method: "GET",
+          }) as Promise<PrivateAIDraftCapabilityState>).catch(() => ({
+            state: "unavailable" as const,
+            capability: "intelligence_draft" as const,
+            customer_label: "Saved-action draft wording" as const,
+            latest_benchmark: null,
+            routing_enabled: false,
+            traffic_percentage: 0 as const,
+            max_prompts_per_day: 1 as const,
+            daily_limit_shared_with_explanations_and_questions: true as const,
+            customer_prompts_allowed: false,
+            automatic_rollback_enabled: true as const,
+            automatic_changes_allowed: false as const,
+            draft_only: true as const,
+            publishing_allowed: false as const,
+            usage: {
+              private_attempts: 0,
+              private_successes: 0,
+              managed_fallbacks: 0,
+              automatic_rollbacks: 0,
+            },
+            truth: {
+              state: "unavailable",
+              summary: "Draft-wording private-AI status could not be checked.",
+            },
+          })),
+          (platformApi(`/ai/providers/${provider.id}/keyword-review-capability`, {
+            method: "GET",
+          }) as Promise<PrivateAIKeywordReviewQualificationState>).catch(() => ({
+            state: "unavailable" as const,
+            capability: "keyword_relevance_review" as const,
+            customer_label: "Unclear search review" as const,
+            latest_benchmark: null,
+            routing_enabled: false as const,
+            traffic_percentage: 0 as const,
+            max_prompts_per_day: 1 as const,
+            daily_limit_shared_with_explanations_questions_and_drafts: true as const,
+            customer_prompts_allowed: false as const,
+            owner_activation_available: false as const,
+            automatic_activation_allowed: false as const,
+            automatic_changes_allowed: false as const,
+            saved_searches_changed: false as const,
+            classification_only: true as const,
+            may_update_reviewed_saved_searches: false,
+            may_add_or_track_searches: false as const,
+            publishing_allowed: false as const,
+            automatic_rollback_enabled: true as const,
+            usage: {
+              private_attempts: 0,
+              private_successes: 0,
+              managed_fallbacks: 0,
+              automatic_rollbacks: 0,
+            },
+            qualification_only: true,
+            truth: {
+              state: "unavailable",
+              summary: "Unclear-search private-AI status could not be checked.",
+            },
+          })),
+          (platformApi(`/ai/providers/${provider.id}/content-draft-capability`, {
+            method: "GET",
+          }) as Promise<PrivateAIContentDraftQualificationState>).catch(() => ({
+            state: "unavailable" as const,
+            capability: "content_draft_suggestion" as const,
+            customer_label: "Optional website draft wording" as const,
+            latest_benchmark: null,
+            routing_enabled: false as const,
+            traffic_percentage: 0 as const,
+            max_prompts_per_day: 1 as const,
+            daily_limit_shared_with_other_private_ai: true as const,
+            customer_prompts_allowed: false as const,
+            owner_activation_available: false as const,
+            automatic_activation_allowed: false as const,
+            automatic_changes_allowed: false as const,
+            owner_drafts_changed: false as const,
+            suggestion_only: true as const,
+            may_edit_or_publish: false as const,
+            publishing_allowed: false as const,
+            automatic_rollback_enabled: true as const,
+            usage: {
+              private_attempts: 0,
+              private_successes: 0,
+              managed_fallbacks: 0,
+              automatic_rollbacks: 0,
+            },
+            qualification_only: true as const,
+            truth: {
+              state: "unavailable",
+              summary: "Website-draft private-AI status could not be checked.",
+            },
+          })),
+          (platformApi(`/ai/providers/${provider.id}/baseline-capability`, {
+            method: "GET",
+          }) as Promise<PrivateAIBaselineQualificationState>).catch(() => ({
+            state: "unavailable" as const,
+            capability: "onboarding_baseline_narrative" as const,
+            customer_label: "Optional baseline explanation" as const,
+            latest_benchmark: null,
+            current: null,
+            routing_enabled: false as const,
+            traffic_percentage: 0 as const,
+            max_prompts_per_day: 1 as const,
+            daily_limit_shared_with_other_private_ai: true as const,
+            customer_prompts_allowed: false as const,
+            owner_activation_available: false as const,
+            automatic_activation_allowed: false as const,
+            automatic_changes_allowed: false as const,
+            explanation_only: true as const,
+            scores_changed: false as const,
+            diagnosis_changed: false as const,
+            fixes_changed: false as const,
+            website_changes_allowed: false as const,
+            automatic_rollback_enabled: true as const,
+            usage: {
+              private_attempts: 0,
+              private_successes: 0,
+              managed_fallbacks: 0,
+              automatic_rollbacks: 0,
+            },
+            qualification_only: true as const,
+            truth: {
+              state: "unavailable",
+              summary: "Baseline private-AI status could not be checked.",
+            },
+          })),
+          (platformApi(`/ai/providers/${provider.id}/review-response-capability`, {
+            method: "GET",
+          }) as Promise<PrivateAIReviewResponseQualificationState>).catch(() => ({
+            state: "unavailable" as const,
+            capability: "review_response_draft" as const,
+            customer_label: "Optional review reply wording" as const,
+            latest_benchmark: null,
+            routing_enabled: false as const,
+            traffic_percentage: 0 as const,
+            customer_prompts_allowed: false as const,
+            owner_activation_available: false as const,
+            automatic_activation_allowed: false as const,
+            automatic_changes_allowed: false as const,
+            draft_only: true as const,
+            customer_review_sent: false as const,
+            review_status_changed: false as const,
+            may_post_response: false as const,
+            publishing_allowed: false as const,
+            qualification_only: true as const,
+            truth: {
+              state: "unavailable",
+              summary: "Review-reply private-AI status could not be checked.",
+            },
+          })),
+        ]);
+        return {
+          connectionId: provider.id,
+          benchmarks: benchmarkResponse.items || [],
+          reviews: reviewResponse.items || [],
+          standby: standbyResponse.current,
+          readiness: {
+            latest: readinessResponse.latest || null,
+            truth: readinessResponse.truth || {
+              state: "not_checked" as const,
+              summary: "Fallback readiness has not been checked yet.",
+            },
+          },
+          canary: canaryResponse,
+          monitoring: monitoringResponse,
+          questionCapability: questionCapabilityResponse,
+          draftCapability: draftCapabilityResponse,
+          keywordReviewQualification: keywordReviewQualificationResponse,
+          contentDraftQualification: contentDraftQualificationResponse,
+          baselineQualification: baselineQualificationResponse,
+          reviewResponseQualification: reviewResponseQualificationResponse,
+        };
+      }),
+    );
+    setPrivateAIProviders(items);
+    setPrivateAIBenchmarks(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.benchmarks])),
+    );
+    setPrivateAIReviews(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.reviews])),
+    );
+    setPrivateAIStandby(
+      Object.fromEntries(
+        details.map((item) => [
+          item.connectionId,
+          item.standby || {
+            state: "unavailable",
+            summary: "Standby status could not be checked.",
+            traffic_percentage: 0,
+            customer_prompts_allowed: false,
+            automatic_changes_allowed: false,
+            managed_route_unchanged: true,
+          },
+        ]),
+      ),
+    );
+    setPrivateAIReadiness(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.readiness])),
+    );
+    setPrivateAICanary(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.canary])),
+    );
+    setPrivateAICanaryMonitoring(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.monitoring])),
+    );
+    setPrivateAIQuestionCapability(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.questionCapability])),
+    );
+    setPrivateAIDraftCapability(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.draftCapability])),
+    );
+    setPrivateAIKeywordReviewQualification(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.keywordReviewQualification])),
+    );
+    setPrivateAIContentDraftQualification(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.contentDraftQualification])),
+    );
+    setPrivateAIBaselineQualification(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.baselineQualification])),
+    );
+    setPrivateAIReviewResponseQualification(
+      Object.fromEntries(details.map((item) => [item.connectionId, item.reviewResponseQualification])),
+    );
+    setPrivateAIProviderLoadState("ready");
+    return response;
+  }, []);
+
+  const loadPrivateAIRelay = useCallback(async () => {
+    const response = (await platformApi("/ai/relay-enrollments", {
+      method: "GET",
+    })) as {
+      current?: PrivateAIRelayEnrollment | null;
+      diagnostic?: PrivateAIRelayDiagnostic | null;
+      runtime_discovery?: PrivateAIRelayRuntimeDiscovery | null;
+      model_qualification?: PrivateAIRelayModelQualification | null;
+    };
+    setPrivateAIRelay(response.current || null);
+    setPrivateAIRelayDiagnostic(response.diagnostic || null);
+    setPrivateAIRelayRuntime(response.runtime_discovery || null);
+    setPrivateAIRelayQualification(response.model_qualification || null);
+    setPrivateAIRelayLoadState("ready");
+    return response;
+  }, []);
+
+  const createPrivateAIRelayDiagnostic = useCallback(async (enrollmentId: string) => {
+    setBusyAction("private-ai-relay-diagnostic");
     setError("");
     setNotice("");
     try {
+      const response = (await platformApi(`/ai/relay-enrollments/${enrollmentId}/diagnostic-packets`, {
+        method: "POST",
+        body: JSON.stringify({
+          client_request_id: privateAIRequestId("local-relay-diagnostic"),
+        }),
+      })) as { item?: PrivateAIRelayDiagnostic; summary?: string };
+      setPrivateAIRelayDiagnostic(response.item || null);
+      setNotice(response.summary || "A short-lived signed connection check is waiting for the relay.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to prepare the signed relay check.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadPrivateAIRelayAgent = useCallback(async () => {
+    setBusyAction("private-ai-relay-agent-download");
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile("/ai/relay-enrollments/agent/download", {
+        method: "GET",
+      });
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = "insightos-local-relay.py";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The InsightOS local relay helper was downloaded.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download the local relay helper.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const createPrivateAIRelay = useCallback(async () => {
+    setBusyAction("private-ai-relay-create");
+    setError("");
+    setNotice("");
+    try {
+      const response = (await platformApi("/ai/relay-enrollments", {
+        method: "POST",
+        body: JSON.stringify({
+          name: privateAIRelayName,
+          client_request_id: privateAIRequestId("local-relay"),
+          ...privateAIRelayAcks,
+        }),
+      })) as {
+        enrollment_token?: string | null;
+        item?: PrivateAIRelayEnrollment;
+        summary?: string;
+      };
+      setPrivateAIRelayToken(response.enrollment_token || "");
+      setPrivateAIRelay(response.item || null);
+      setPrivateAIRelayLoadState("ready");
+      setNotice(response.summary || "Local relay connection key created.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create the local relay connection key.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [privateAIRelayAcks, privateAIRelayName]);
+
+  const revokePrivateAIRelay = useCallback(async (enrollmentId: string) => {
+    setBusyAction("private-ai-relay-revoke");
+    setError("");
+    setNotice("");
+    try {
+      await platformApi(`/ai/relay-enrollments/${enrollmentId}`, { method: "DELETE" });
+      setPrivateAIRelayToken("");
+      setPrivateAIRelayAcks(EMPTY_PRIVATE_AI_RELAY_ACKNOWLEDGEMENTS);
+      setPrivateAIRelayDiagnostic(null);
+      setPrivateAIRelayRuntime(null);
+      setPrivateAIRelayQualification(null);
+      await loadPrivateAIRelay();
+      setNotice("Local relay connection revoked. Its saved key can no longer connect.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to revoke the local relay connection.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [loadPrivateAIRelay]);
+
+  const refreshPrivateAIProviders = useCallback(async () => {
+    setBusyAction("private-ai-refresh");
+    setError("");
+    try {
+      await loadPrivateAIProviders();
+    } catch (err) {
+      setPrivateAIProviderLoadState("unavailable");
+      setError(err instanceof Error ? err.message : "Unable to check private AI candidates.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [loadPrivateAIProviders]);
+
+  const createPrivateAIProvider = useCallback(async () => {
+    setBusyAction("private-ai-create");
+    setError("");
+    setNotice("");
+    try {
+      await platformApi("/ai/providers", {
+        method: "POST",
+        body: JSON.stringify({
+          name: privateAIName,
+          endpoint_url: privateAIEndpoint,
+          model_identifier: privateAIModel,
+          api_key: privateAIApiKey || null,
+        }),
+      });
+      setPrivateAIName("");
+      setPrivateAIEndpoint("");
+      setPrivateAIModel("");
+      setPrivateAIApiKey("");
+      setNotice("Private AI candidate saved. It is inactive until every later review gate passes.");
+      await loadPrivateAIProviders();
+    } catch (err) {
+      setPrivateAIApiKey("");
+      setError(err instanceof Error ? err.message : "Unable to save this private AI candidate.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [
+    loadPrivateAIProviders,
+    privateAIApiKey,
+    privateAIEndpoint,
+    privateAIModel,
+    privateAIName,
+  ]);
+
+  const preflightPrivateAIProvider = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-preflight-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(`/ai/providers/${connectionId}/preflight`, {
+          method: "POST",
+        })) as { passed: boolean; summary: string };
+        setNotice(response.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to check the provider network.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const validatePrivateAIProvider = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-validate-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(`/ai/providers/${connectionId}/validate`, {
+          method: "POST",
+        })) as { passed: boolean; summary: string };
+        setNotice(response.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to validate the provider connection.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const benchmarkPrivateAIProvider = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-benchmark-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(`/ai/providers/${connectionId}/benchmarks`, {
+          method: "POST",
+          body: JSON.stringify({
+            client_request_id: privateAIRequestId("settings-benchmark"),
+          }),
+        })) as { item: PrivateAIProviderBenchmark; truth: { summary: string } };
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to run the provider quality checks.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const reviewPrivateAIProvider = useCallback(
+    async (
+      connectionId: string,
+      benchmarkId: string,
+      decision: "approved_for_future_activation" | "rejected",
+    ) => {
+      setBusyAction(`private-ai-review-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements =
+          privateAIReviewAcks[benchmarkId] || EMPTY_PRIVATE_AI_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/benchmarks/${benchmarkId}/review`,
+          {
+            method: "PUT",
+            body: JSON.stringify({ decision, ...acknowledgements }),
+          },
+        )) as { truth: { summary: string } };
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to save the owner review.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAIReviewAcks],
+  );
+
+  const disconnectPrivateAIProvider = useCallback(
+    async (connectionId: string) => {
+      if (!window.confirm("Disconnect this private AI candidate and erase its saved endpoint credential?")) return;
+      setBusyAction(`private-ai-disconnect-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        await platformApi(`/ai/providers/${connectionId}`, { method: "DELETE" });
+        setNotice("Private AI candidate disconnected. Its endpoint credential was erased.");
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to disconnect this private AI candidate.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const updatePrivateAIStandby = useCallback(
+    async (
+      connectionId: string,
+      reviewId: string | null,
+      action: "enable" | "disable",
+    ) => {
+      setBusyAction(`private-ai-standby-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements = reviewId
+          ? privateAIStandbyAcks[reviewId] || EMPTY_PRIVATE_AI_STANDBY_ACKNOWLEDGEMENTS
+          : EMPTY_PRIVATE_AI_STANDBY_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(`/ai/providers/${connectionId}/standby`, {
+          method: "PUT",
+          body: JSON.stringify({
+            action,
+            client_request_id: privateAIRequestId(`settings-standby-${action}`),
+            review_id: reviewId,
+            ...acknowledgements,
+          }),
+        })) as { truth: { summary: string } };
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to update zero-traffic standby.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAIStandbyAcks],
+  );
+
+  const checkPrivateAIRoutingReadiness = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-readiness-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/routing-readiness`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              client_request_id: privateAIRequestId("settings-routing-readiness"),
+            }),
+          },
+        )) as { truth: { summary: string } };
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to check the managed fallback right now.",
+        );
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const updatePrivateAICanary = useCallback(
+    async (connectionId: string, action: "enable" | "disable") => {
+      setBusyAction(`private-ai-canary-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements = action === "enable"
+          ? privateAICanaryAcks[connectionId] || EMPTY_PRIVATE_AI_CANARY_ACKNOWLEDGEMENTS
+          : EMPTY_PRIVATE_AI_CANARY_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/routing-canary`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              action,
+              client_request_id: privateAIRequestId(`settings-canary-${action}`),
+              ...acknowledgements,
+            }),
+          },
+        )) as PrivateAICanaryState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to update the limited private-AI check.",
+        );
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAICanaryAcks],
+  );
+
+  const savePrivateAICanaryHealthReview = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-canary-monitoring-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/routing-canary-monitoring`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              client_request_id: privateAIRequestId("settings-canary-monitoring"),
+            }),
+          },
+        )) as PrivateAICanaryMonitoringState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to save the private-AI health review.",
+        );
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const benchmarkPrivateAIQuestionCapability = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-question-benchmark-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/question-capability/benchmark`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              client_request_id: privateAIRequestId("settings-question-check"),
+            }),
+          },
+        )) as PrivateAIQuestionCapabilityState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to check saved-question compatibility.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const updatePrivateAIQuestionCapability = useCallback(
+    async (connectionId: string, action: "enable" | "disable") => {
+      setBusyAction(`private-ai-question-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements = action === "enable"
+          ? privateAIQuestionAcks[connectionId] || EMPTY_PRIVATE_AI_QUESTION_ACKNOWLEDGEMENTS
+          : EMPTY_PRIVATE_AI_QUESTION_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/question-capability`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              action,
+              client_request_id: privateAIRequestId(`settings-question-${action}`),
+              ...acknowledgements,
+            }),
+          },
+        )) as PrivateAIQuestionCapabilityState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to update saved-question private AI.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAIQuestionAcks],
+  );
+
+  const benchmarkPrivateAIDraftCapability = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-draft-benchmark-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/draft-capability/benchmark`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              client_request_id: privateAIRequestId("settings-draft-check"),
+            }),
+          },
+        )) as PrivateAIDraftCapabilityState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to check draft-wording compatibility.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const updatePrivateAIDraftCapability = useCallback(
+    async (connectionId: string, action: "enable" | "disable") => {
+      setBusyAction(`private-ai-draft-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements = action === "enable"
+          ? privateAIDraftAcks[connectionId] || EMPTY_PRIVATE_AI_DRAFT_ACKNOWLEDGEMENTS
+          : EMPTY_PRIVATE_AI_DRAFT_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/draft-capability`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              action,
+              client_request_id: privateAIRequestId(`settings-draft-${action}`),
+              ...acknowledgements,
+            }),
+          },
+        )) as PrivateAIDraftCapabilityState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to update draft-wording private AI.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAIDraftAcks],
+  );
+
+  const benchmarkPrivateAIKeywordReviewQualification = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-keyword-review-benchmark-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/keyword-review-capability/benchmark`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              client_request_id: privateAIRequestId("settings-keyword-review-check"),
+            }),
+          },
+        )) as PrivateAIKeywordReviewQualificationState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to check unclear-search compatibility.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const updatePrivateAIKeywordReviewCapability = useCallback(
+    async (connectionId: string, action: "enable" | "disable") => {
+      setBusyAction(`private-ai-keyword-review-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements = action === "enable"
+          ? privateAIKeywordReviewAcks[connectionId]
+            || EMPTY_PRIVATE_AI_KEYWORD_REVIEW_ACKNOWLEDGEMENTS
+          : EMPTY_PRIVATE_AI_KEYWORD_REVIEW_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/keyword-review-capability`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              action,
+              client_request_id: privateAIRequestId(`settings-keyword-review-${action}`),
+              ...acknowledgements,
+            }),
+          },
+        )) as PrivateAIKeywordReviewQualificationState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to update unclear-search private AI.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAIKeywordReviewAcks],
+  );
+
+  const benchmarkPrivateAIContentDraftQualification = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-content-draft-benchmark-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/content-draft-capability/benchmark`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              client_request_id: privateAIRequestId("settings-content-draft-check"),
+            }),
+          },
+        )) as PrivateAIContentDraftQualificationState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to check website-draft compatibility.",
+        );
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const updatePrivateAIContentDraftCapability = useCallback(
+    async (connectionId: string, action: "enable" | "disable") => {
+      setBusyAction(`private-ai-content-draft-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements = action === "enable"
+          ? privateAIContentDraftAcks[connectionId]
+            || EMPTY_PRIVATE_AI_CONTENT_DRAFT_ACKNOWLEDGEMENTS
+          : EMPTY_PRIVATE_AI_CONTENT_DRAFT_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/content-draft-capability`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              action,
+              client_request_id: privateAIRequestId(`settings-content-draft-${action}`),
+              ...acknowledgements,
+            }),
+          },
+        )) as PrivateAIContentDraftQualificationState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to update website-draft private AI.",
+        );
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAIContentDraftAcks],
+  );
+
+  const benchmarkPrivateAIBaselineQualification = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-baseline-benchmark-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/baseline-capability/benchmark`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              client_request_id: privateAIRequestId("settings-baseline-check"),
+            }),
+          },
+        )) as PrivateAIBaselineQualificationState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to check baseline-explanation compatibility.",
+        );
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const benchmarkPrivateAIReviewResponseQualification = useCallback(
+    async (connectionId: string) => {
+      setBusyAction(`private-ai-review-response-benchmark-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/review-response-capability/benchmark`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              client_request_id: privateAIRequestId("settings-review-response-check"),
+            }),
+          },
+        )) as PrivateAIReviewResponseQualificationState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to check review-reply compatibility.",
+        );
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders],
+  );
+
+  const updatePrivateAIReviewResponseCapability = useCallback(
+    async (connectionId: string, action: "enable" | "disable") => {
+      setBusyAction(`private-ai-review-response-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements = action === "enable"
+          ? privateAIReviewResponseAcks[connectionId]
+            || EMPTY_PRIVATE_AI_REVIEW_RESPONSE_ACKNOWLEDGEMENTS
+          : EMPTY_PRIVATE_AI_REVIEW_RESPONSE_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/review-response-capability`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              action,
+              client_request_id: privateAIRequestId(`settings-review-response-${action}`),
+              ...acknowledgements,
+            }),
+          },
+        )) as PrivateAIReviewResponseQualificationState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to update review-reply private AI.",
+        );
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAIReviewResponseAcks],
+  );
+
+  const updatePrivateAIBaselineCapability = useCallback(
+    async (connectionId: string, action: "enable" | "disable") => {
+      setBusyAction(`private-ai-baseline-${connectionId}`);
+      setError("");
+      setNotice("");
+      try {
+        const acknowledgements = action === "enable"
+          ? privateAIBaselineAcks[connectionId]
+            || EMPTY_PRIVATE_AI_BASELINE_ACKNOWLEDGEMENTS
+          : EMPTY_PRIVATE_AI_BASELINE_ACKNOWLEDGEMENTS;
+        const response = (await platformApi(
+          `/ai/providers/${connectionId}/baseline-capability`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              action,
+              client_request_id: privateAIRequestId(`settings-baseline-${action}`),
+              ...acknowledgements,
+            }),
+          },
+        )) as PrivateAIBaselineQualificationState;
+        setNotice(response.truth.summary);
+        await loadPrivateAIProviders();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to update baseline-explanation private AI.",
+        );
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadPrivateAIProviders, privateAIBaselineAcks],
+  );
+
+  const downloadAutomationConformanceKit = useCallback(async (
+    requestedProvider?: "zapier" | "make" | "pipedream" | "n8n" | "https",
+  ) => {
+    if (requestedProvider === "https") return;
+    const provider = requestedProvider || automationProvider;
+    setBusyAction(`automation-conformance-${provider}`);
+    setError("");
+    setNotice("");
+    try {
+      const conformanceUrl = requestedProvider
+        ? `/automation/conformance/${requestedProvider}`
+        : `/automation/conformance/${automationProvider}`;
       const response = (await platformApi(
-        `/automation/conformance/${automationProvider}`,
+        conformanceUrl,
         { method: "GET" },
       )) as AutomationConformanceKit;
       const objectUrl = URL.createObjectURL(
@@ -1242,6 +3149,671 @@ export default function SettingsPage() {
     }
   }, [automationSigningSecret]);
 
+  const createAutomationCommandAccess = useCallback(async () => {
+    if (!automationCommandLocationId) return;
+    setBusyAction("automation-command-create");
+    setError("");
+    setNotice("");
+    setAutomationCommandToken("");
+    try {
+      const response = (await platformApi("/automation/service-accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          name: automationCommandName,
+          location_id: automationCommandLocationId,
+          additional_location_ids: automationCommandAdditionalLocationIds,
+          expires_in_days: 30,
+        }),
+      })) as {
+        token: string;
+        token_shown_once: true;
+        service_account: AutomationServiceAccount;
+      };
+      setAutomationCommandToken(response.token);
+      setNotice(`Report access is ready for ${response.service_account.location_count} location${response.service_account.location_count === 1 ? "" : "s"}. Copy the workflow key now; it will not be shown again.`);
+      await loadAutomationCommandAccess();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to create workflow access.");
+    } finally {
+      setBusyAction("");
+    }
+  }, [automationCommandAdditionalLocationIds, automationCommandLocationId, automationCommandName, loadAutomationCommandAccess]);
+
+  const rotateAutomationCommandAccess = useCallback(
+    async (serviceAccountId: string) => {
+      if (!window.confirm("Replace this workflow key? The old key will stop working immediately.")) return;
+      setBusyAction(`automation-command-rotate-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          { method: "POST" },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice("Workflow key replaced. Copy the new key now and update your workflow tool before testing again.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to replace the workflow key.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationCommandAccess],
+  );
+
+  const updateAutomationCommandLocations = useCallback(
+    async (serviceAccount: AutomationServiceAccount, locationIds: string[]) => {
+      const additionalLocationIds = locationIds.filter((item) => item !== serviceAccount.location_id);
+      if (!window.confirm(
+        `Replace the workflow key and allow saved-report retrieval for ${1 + additionalLocationIds.length} location${additionalLocationIds.length === 0 ? "" : "s"}? The old key will stop working immediately.`,
+      )) return;
+      setBusyAction(`automation-command-location-scope-${serviceAccount.id}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccount.id}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({ additional_location_ids: additionalLocationIds }),
+          },
+        )) as { token: string; token_shown_once: true; service_account: AutomationServiceAccount };
+        setAutomationCommandToken(response.token);
+        setNotice(`Saved-report access now covers ${response.service_account.location_count} location${response.service_account.location_count === 1 ? "" : "s"}. Copy the replacement key into your workflow tool now.`);
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change report location access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationCommandAccess],
+  );
+
+  const setAutomationReportCreation = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let this workflow tool create private reports from results InsightOS has already saved? This replaces the workflow key. It will not run new checks, email anyone, or publish changes."
+        : "Remove report-creation access? This replaces the workflow key, and saved-report retrieval will continue to work.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: Array.from(new Set([
+                "report.retrieve",
+                ...(enabled ? ["report.generate_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.retrieve")
+                  ? ["recommendation.retrieve"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.request_review")
+                  ? ["recommendation.request_review"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("connection.refresh_saved")
+                  ? ["connection.refresh_saved"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("listing.check_public")
+                  ? ["listing.check_public"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("content.create_working_draft")
+                  ? ["content.create_working_draft"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
+              ])),
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(
+          enabled
+            ? "Private report creation is on. Copy the replacement workflow key into your workflow tool now."
+            : "Report creation is off. Copy the replacement read-only key into your workflow tool now.",
+        );
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change workflow report access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationRecommendationAccess = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let this workflow tool read saved recommendations for this location? This replaces the workflow key. It cannot approve, schedule, execute, or publish the recommendation."
+        : "Remove saved recommendation access? This replaces the workflow key; report access will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-recommendation-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.includes("report.generate_saved")
+                  ? ["report.generate_saved"]
+                  : []),
+                ...(enabled ? ["recommendation.retrieve"] : []),
+                ...(enabled ? ["recommendation.request_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("connection.refresh_saved")
+                  ? ["connection.refresh_saved"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("listing.check_public")
+                  ? ["listing.check_public"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("content.create_working_draft")
+                  ? ["content.create_working_draft"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Saved recommendation access is on. Copy the replacement workflow key into your workflow tool now."
+          : "Saved recommendation access is off. Copy the replacement workflow key into your workflow tool now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change saved recommendation access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationConnectionRefresh = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let this workflow tool ask InsightOS to refresh data from sources already connected to this location? This replaces the workflow key. It cannot add an account, change settings, publish, or run an unrelated action."
+        : "Remove connected-source refresh access? This replaces the workflow key; report and recommendation access will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-refresh-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.includes("report.generate_saved") ? ["report.generate_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.retrieve") ? ["recommendation.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.request_review") ? ["recommendation.request_review"] : []),
+                ...(enabled ? ["connection.refresh_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("listing.check_public")
+                  ? ["listing.check_public"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("content.create_working_draft")
+                  ? ["content.create_working_draft"]
+                  : []),
+                ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Connected-source refresh access is on. Copy the replacement workflow key into your workflow tool now."
+          : "Connected-source refresh access is off. Copy the replacement workflow key into your workflow tool now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change connected-source refresh access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationPublicListingCheck = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let this workflow tool start public business-listing inventory checks for this location? Each accepted check can use Insight Credits and the plan's daily allowance. This replaces the workflow key. It cannot correct listings, publish, or change your business profile."
+        : "Remove public listing check access? This replaces the workflow key; other enabled workflow actions will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-listing-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.includes("report.generate_saved") ? ["report.generate_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.retrieve") ? ["recommendation.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.request_review") ? ["recommendation.request_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("connection.refresh_saved") ? ["connection.refresh_saved"] : []),
+                ...(enabled ? ["listing.check_public"] : []),
+                ...(currentAccount?.allowed_commands.includes("content.create_working_draft") ? ["content.create_working_draft"] : []),
+                ...(currentAccount?.allowed_commands.includes("content.request_draft_review") ? ["content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Public listing check access is on. Copy the replacement workflow key into your workflow tool now."
+          : "Public listing check access is off. Copy the replacement workflow key into your workflow tool now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change public listing check access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationWorkingDraftCreation = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let this workflow tool start a private working draft only after you have accepted its saved content brief? This replaces the workflow key. It creates an empty editable outline and cannot write AI copy, approve, schedule, publish, or change your website."
+        : "Remove working-draft creation access? This replaces the workflow key; other enabled workflow actions will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-draft-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.includes("report.generate_saved") ? ["report.generate_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.retrieve") ? ["recommendation.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("recommendation.request_review") ? ["recommendation.request_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("connection.refresh_saved") ? ["connection.refresh_saved"] : []),
+                ...(currentAccount?.allowed_commands.includes("listing.check_public") ? ["listing.check_public"] : []),
+                ...(enabled ? ["content.create_working_draft", "content.request_draft_review"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.retrieve") ? ["review.retrieve"] : []),
+                ...(currentAccount?.allowed_commands.includes("review.create_response_draft") ? ["review.create_response_draft"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Working-draft creation is on. Copy the replacement workflow key into your workflow tool now."
+          : "Working-draft creation is off. Copy the replacement workflow key into your workflow tool now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change working-draft access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationReviewRetrieval = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let this workflow tool route the rating, date, and reply state for one exact saved review? This replaces the workflow key. Reviewer names and comment text stay inside InsightOS, and the workflow cannot write or post a reply."
+        : "Remove saved-review routing? This replaces the workflow key; other enabled workflow actions will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-review-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.filter((command) => (
+                  command !== "report.retrieve" && command !== "review.retrieve"
+                )) ?? []),
+                ...(enabled ? ["review.retrieve"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Saved-review routing is on. Copy the replacement workflow key into your workflow tool now."
+          : "Saved-review routing is off. Copy the replacement workflow key into your workflow tool now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change saved-review routing.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const setAutomationReviewDraftCreation = useCallback(
+    async (serviceAccountId: string, enabled: boolean) => {
+      const currentAccount = automationServiceAccounts.find((item) => item.id === serviceAccountId);
+      const warning = enabled
+        ? "Let this workflow tool request a private reply draft for one exact saved review? This replaces the workflow key. Every draft stays inside InsightOS and still requires a person to review and approve it before anything can be posted."
+        : "Remove private reply-draft access? This replaces the workflow key; saved-review routing and other enabled actions will continue.";
+      if (!window.confirm(warning)) return;
+      setBusyAction(`automation-command-review-draft-scope-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      setAutomationCommandToken("");
+      try {
+        const response = (await platformApi(
+          `/automation/service-accounts/${serviceAccountId}/rotate`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              allowed_commands: [
+                "report.retrieve",
+                ...(currentAccount?.allowed_commands.filter((command) => (
+                  command !== "report.retrieve" && command !== "review.create_response_draft"
+                )) ?? []),
+                ...(enabled ? ["review.create_response_draft"] : []),
+              ],
+            }),
+          },
+        )) as { token: string; token_shown_once: true };
+        setAutomationCommandToken(response.token);
+        setNotice(enabled
+          ? "Private reply drafting is on. Copy the replacement workflow key into your workflow tool now."
+          : "Private reply drafting is off. Copy the replacement workflow key into your workflow tool now.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to change private reply-draft access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [automationServiceAccounts, loadAutomationCommandAccess],
+  );
+
+  const revokeAutomationCommandAccess = useCallback(
+    async (serviceAccountId: string) => {
+      if (!window.confirm("Turn off this report connection? The workflow tool will lose access immediately, while its activity history stays saved.")) return;
+      setBusyAction(`automation-command-revoke-${serviceAccountId}`);
+      setError("");
+      setNotice("");
+      try {
+        await platformApi(`/automation/service-accounts/${serviceAccountId}`, {
+          method: "DELETE",
+        });
+        setAutomationCommandToken("");
+        setNotice("Report access turned off. The workflow key no longer works.");
+        await loadAutomationCommandAccess();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to turn off report access.");
+      } finally {
+        setBusyAction("");
+      }
+    },
+    [loadAutomationCommandAccess],
+  );
+
+  const copyAutomationCommandToken = useCallback(async () => {
+    if (!automationCommandToken) return;
+    try {
+      await navigator.clipboard.writeText(automationCommandToken);
+      setNotice("Workflow key copied. Save it in your workflow tool before leaving this page.");
+    } catch {
+      setNotice("Select and copy the workflow key before leaving this page.");
+    }
+  }, [automationCommandToken]);
+
+  const downloadN8nReportWorkflow = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/report-ready?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-report-ready.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive n8n starter workflow was downloaded. Import it, add the workflow key, then publish it when you are ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the n8n starter workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadAutomationConnectionGuide = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-guide-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/command-client-kit?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-automation-connection-guide.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The universal connection guide was downloaded. It works with Zapier, Make, n8n, Pipedream, and custom HTTPS tools, and it does not contain your workflow key.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the automation connection guide.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadAutomationOpenApi = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-openapi-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/command-openapi?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-automation-openapi.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The OpenAPI file was downloaded. Import it into a compatible automation builder, then add the workflow key in that tool's private credential settings.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the automation API file.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadN8nMonthlyReportWorkflow = useCallback(async (
+    serviceAccountId: string,
+    campaignId: string,
+  ) => {
+    setBusyAction(`automation-command-monthly-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/saved-report-schedule?service_account_id=${encodeURIComponent(serviceAccountId)}&campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-monthly-private-report.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive monthly-report workflow was downloaded. Import it, select the current workflow key, review its timezone, and publish it only when ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the monthly-report workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadN8nRecommendationWorkflow = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-recommendation-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/recommendation-ready?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-recommendation-ready.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive saved-recommendation workflow was downloaded. Import it, select the current workflow key, and publish only when ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the saved-recommendation workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadN8nContentDraftWorkflow = useCallback(async (
+    serviceAccountId: string,
+    campaignId: string,
+  ) => {
+    setBusyAction(`automation-command-content-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/content-draft-review?service_account_id=${encodeURIComponent(serviceAccountId)}&campaign_id=${encodeURIComponent(campaignId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-private-draft-review.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive private-draft workflow was downloaded. Replace the accepted brief ID, select the current workflow key, test manually, and activate it only when ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the private-draft workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadN8nSavedReviewWorkflow = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-review-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/saved-review-routing?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-saved-review-routing.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive saved-review workflow was downloaded. Import it, select the current workflow key, connect its Production URL to Review saved updates, and publish only when ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the saved-review workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
+  const downloadN8nReviewDraftWorkflow = useCallback(async (serviceAccountId: string) => {
+    setBusyAction(`automation-command-review-draft-template-${serviceAccountId}`);
+    setError("");
+    setNotice("");
+    try {
+      const file = await platformApiFile(
+        `/automation/starter-workflows/n8n/review-response-draft?service_account_id=${encodeURIComponent(serviceAccountId)}`,
+        { method: "GET" },
+      );
+      const dispositionFilename = file.contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+      const fileUrl = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = dispositionFilename || "insightos-n8n-private-review-reply-drafts.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(fileUrl);
+      setNotice("The inactive private reply-draft workflow was downloaded. Import it, select the current workflow key, connect its Production URL to Review saved updates, test it, and publish only when ready.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to download the private reply-draft workflow.");
+    } finally {
+      setBusyAction("");
+    }
+  }, []);
+
   const loadAuthSessions = useCallback(async () => {
     const response = (await platformApi("/auth/sessions", {
       method: "GET",
@@ -1384,7 +3956,22 @@ export default function SettingsPage() {
         ]);
         setCampaigns(campaignResponse.items || []);
         setUsageAllowance(allowanceResponse);
-        await loadAutomationConnections().catch(() => undefined);
+        await Promise.all([
+          loadAutomationConnections().catch(() => undefined),
+          loadAutomationCommandAccess().catch(() => undefined),
+          currentUser.org_role === "org_owner"
+            ? loadPrivateAIProviders().catch(() => {
+                setPrivateAIProviderLoadState("unavailable");
+                return undefined;
+              })
+            : Promise.resolve(undefined),
+          currentUser.org_role === "org_owner"
+            ? loadPrivateAIRelay().catch(() => {
+                setPrivateAIRelayLoadState("unavailable");
+                return undefined;
+              })
+            : Promise.resolve(undefined),
+        ]);
         setBillingSummary(billingResponse);
         const localBillingAttempt = readBillingCheckoutAttempt(currentUser.organization_id);
         const serverBillingAttempt = billingResponse
@@ -1447,7 +4034,7 @@ export default function SettingsPage() {
       }
     }
     void loadPage();
-  }, [confirmBillingReturn, loadAnalyticsResources, loadAuthSessions, loadAutomationConnections, loadConnections, loadProfileResources, loadResources]);
+  }, [confirmBillingReturn, loadAnalyticsResources, loadAuthSessions, loadAutomationCommandAccess, loadAutomationConnections, loadConnections, loadPrivateAIProviders, loadPrivateAIRelay, loadProfileResources, loadResources]);
 
   async function startCheckout(planCode: string) {
     if (!organizationId) return;
@@ -2220,6 +4807,18 @@ export default function SettingsPage() {
   const selectedAutomationProviderSetup = automationProviderSetup.find(
     (item) => item.code === automationProvider,
   );
+  const activeAutomationServiceAccount = automationServiceAccounts.find(
+    (item) => item.status === "active",
+  );
+  const activeAutomationCampaign = activeAutomationServiceAccount
+    ? manageableCampaigns.find(
+        (campaign) => campaign.business_location_id === activeAutomationServiceAccount.location_id,
+      )
+    : undefined;
+  const privateAIProviderPlanEligible =
+    usageAllowance?.capabilities.find((item) => item.code === "private_ai_provider")
+      ?.available === true;
+  const allPrivateAIRelayAcknowledged = Object.values(privateAIRelayAcks).every(Boolean);
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       {
@@ -2268,8 +4867,8 @@ export default function SettingsPage() {
     <AppShell
       navItems={navItems}
       trustSignals={trustSignals}
-      accountLabel="Connection health"
-      dateRangeLabel="Automatic updates"
+      accountLabel="Settings"
+      dateRangeLabel="Connections and account"
       topBarActions={
         <button
           className={primaryButtonClass}
@@ -2283,15 +4882,32 @@ export default function SettingsPage() {
       <section className="space-y-6">
         <ProductPageIntro
           compact
-          eyebrow="Connection health"
-          title="Keep your business data flowing"
-          summary="See what is working, what stopped updating, and the one step needed to fix each location."
+          eyebrow="Settings"
+          title="Manage your connections and account"
+          summary="Choose what you need to set up or change. Technical details stay out of the way unless you open them."
         />
 
-        <TruthNotice title="Use this page when your data stops updating" tone="info">
-          InsightOS puts broken and unfinished connections first. Healthy connections stay out of
-          the way because there is nothing you need to do with them.
+        <TruthNotice title="Start with the task you came here to finish" tone="info">
+          Connection problems appear first when something needs attention. Everything else is grouped below so you do not have to scan one long technical page.
         </TruthNotice>
+
+        <nav aria-label="Settings tasks" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["Business data", "Connect or repair Google", "#google-search-console-connection"],
+            ["Workflow tools", "Connect Zapier, Make, or n8n", "#external-automation"],
+            ["Plan and billing", "Manage subscription and usage", "#plan-and-billing"],
+            ["Account security", "Review other signed-in browsers", "#account-security"],
+          ].map(([label, summary, href]) => (
+            <a
+              key={href}
+              href={href}
+              className="rounded-md border border-[#292a2f] bg-[#141518] px-4 py-3 transition hover:border-[#3a3b42] hover:bg-[#191a1e]"
+            >
+              <span className="block text-sm font-semibold text-white">{label}</span>
+              <span className="mt-1 block text-xs leading-5 text-zinc-400">{summary}</span>
+            </a>
+          ))}
+        </nav>
 
         {error ? (
           <div className="rounded-md border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
@@ -2619,7 +5235,25 @@ export default function SettingsPage() {
               </section>
             ) : null}
 
-            <section aria-labelledby="active-sign-ins-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
+            <details id="account-security" className="group rounded-md border border-[#292a2f] bg-[#141518]">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                    Account and security
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-white">
+                    {authSessions === null
+                      ? "Sign-in status needs attention"
+                      : `${authSessions.length} active ${authSessions.length === 1 ? "browser" : "browsers"}`}
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    Open this only when you want to review or sign out another browser.
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm font-semibold text-zinc-300 group-open:hidden">Review</span>
+                <span className="hidden shrink-0 text-sm font-semibold text-zinc-300 group-open:inline">Close</span>
+              </summary>
+              <div className="border-t border-[#292a2f] p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
@@ -2702,7 +5336,8 @@ export default function SettingsPage() {
                   ))}
                 </div>
               )}
-            </section>
+              </div>
+            </details>
 
             {usageAllowance ? (
               <section id="plan-and-billing" aria-labelledby="current-plan-heading" className="scroll-mt-24 rounded-md border border-[#292a2f] bg-[#141518] p-5">
@@ -2914,6 +5549,1476 @@ export default function SettingsPage() {
                   Eligible checks made through your own connected account use 0 Insight Credits.
                 </p>
               </details>
+            ) : null}
+
+            {me?.org_role === "org_owner" &&
+            (privateAIProviderPlanEligible || privateAIProviders.length > 0 || privateAIRelay) ? (
+              <section
+                id="private-ai-provider"
+                aria-labelledby="private-ai-provider-heading"
+                className="rounded-md border border-[#292a2f] bg-[#141518] p-5"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+                      Enterprise model control
+                    </p>
+                    <h2 id="private-ai-provider-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Private AI provider candidates
+                    </h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
+                      Save an approved OpenAI-compatible HTTPS endpoint, validate it with synthetic data,
+                      and review three fixed quality checks. Your API key is encrypted and is never shown again.
+                    </p>
+                    <p className="mt-2 max-w-3xl text-xs leading-5 text-zinc-500">
+                      Private endpoints and models running on your own computer are Enterprise-only. Growth ($699/month) keeps the standard managed-AI experience and does not include private-model deployment or support.
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
+                    Managed AI stays primary
+                  </span>
+                </div>
+
+                <div className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm leading-6 text-amber-50">
+                  Passing a check and owner approval alone do not send traffic. Only the separately approved fixed 5% checks below can use this provider. Managed AI remains required, and no private provider can publish, change a website, or change a business profile.
+                </div>
+
+                <div className="mt-5 rounded-md border border-sky-500/20 bg-sky-500/5 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h3 className="font-semibold text-white">Connect a model running on your own computer</h3>
+                      <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-300">
+                        A local relay makes an outbound connection to InsightOS, so your computer does not need an inbound public endpoint. It can receive only a signed, short-lived synthetic receipt check; it cannot receive customer prompts or run model work yet.
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-100">
+                      Connection only
+                    </span>
+                  </div>
+
+                  {privateAIRelayLoadState === "unavailable" ? (
+                    <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-50">
+                      <p>The local relay status could not be checked. No connection key will be created until current status is available.</p>
+                      <button
+                        type="button"
+                        className={`${secondaryButtonClass} mt-3`}
+                        disabled={busyAction === "private-ai-relay-refresh"}
+                        onClick={() => {
+                          setBusyAction("private-ai-relay-refresh");
+                          void loadPrivateAIRelay()
+                            .catch((err) => setError(err instanceof Error ? err.message : "Unable to check the local relay."))
+                            .finally(() => setBusyAction(""));
+                        }}
+                      >
+                        {busyAction === "private-ai-relay-refresh" ? "Checking..." : "Check local relay again"}
+                      </button>
+                    </div>
+                  ) : privateAIRelay ? (
+                    <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="font-medium text-white">{privateAIRelay.name}</p>
+                          <p className="mt-1 text-sm text-zinc-400">
+                            {privateAIRelay.connection_state === "connected"
+                              ? "Outbound connection verified"
+                              : privateAIRelay.connection_state === "needs_reconnect"
+                                ? "Connection has not checked in recently"
+                                : "Waiting for the first outbound check"}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            Key {privateAIRelay.token_hint}
+                            {privateAIRelay.last_seen_at ? ` · Last checked ${formatTimestamp(privateAIRelay.last_seen_at)}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {privateAIProviderPlanEligible ? (
+                            <button
+                              type="button"
+                              className={secondaryButtonClass}
+                              disabled={busyAction === "private-ai-relay-agent-download"}
+                              onClick={() => void downloadPrivateAIRelayAgent()}
+                            >
+                              {busyAction === "private-ai-relay-agent-download"
+                                ? "Downloading..."
+                                : "Download relay helper"}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className={secondaryButtonClass}
+                            disabled={busyAction === "private-ai-relay-refresh"}
+                            onClick={() => {
+                              setBusyAction("private-ai-relay-refresh");
+                              void loadPrivateAIRelay()
+                                .catch((err) => setError(err instanceof Error ? err.message : "Unable to check the local relay."))
+                                .finally(() => setBusyAction(""));
+                            }}
+                          >
+                            {busyAction === "private-ai-relay-refresh" ? "Checking..." : "Refresh status"}
+                          </button>
+                          <button
+                            type="button"
+                            className={secondaryButtonClass}
+                            disabled={busyAction === "private-ai-relay-revoke"}
+                            onClick={() => void revokePrivateAIRelay(privateAIRelay.id)}
+                          >
+                            {busyAction === "private-ai-relay-revoke" ? "Revoking..." : "Revoke connection"}
+                          </button>
+                        </div>
+                      </div>
+                      {!privateAIProviderPlanEligible ? (
+                        <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-sm leading-6 text-amber-50">
+                          <p className="font-semibold">Local model connection paused</p>
+                          <p className="mt-1 text-amber-100/80">
+                            This is an Enterprise-only capability. Saved connection history remains visible, and you can revoke the key, but Growth ($699/month) cannot run relay checks or local-model qualification.
+                          </p>
+                        </div>
+                      ) : null}
+                      {privateAIRelayToken ? (
+                        <div className="mt-4 rounded-md border border-amber-500/25 bg-amber-500/5 p-3">
+                          <p className="text-sm font-semibold text-amber-50">Save this one-time connection key now</p>
+                          <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                            InsightOS stores only a secure fingerprint and cannot show this key again.
+                          </p>
+                          <input
+                            className={`${selectClass} mt-2 font-mono text-xs`}
+                            readOnly
+                            aria-label="One-time local relay connection key"
+                            value={privateAIRelayToken}
+                            onFocus={(event) => event.currentTarget.select()}
+                          />
+                          <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs leading-5 text-amber-100/80">
+                            <li>Download the relay helper.</li>
+                            <li>Open a terminal in Downloads and run <code>python insightos-local-relay.py</code>.</li>
+                            <li>Paste this one-time key when the helper asks for it.</li>
+                            <li>Optional: after discovery, run <code>python insightos-local-relay.py --once --check-model</code> for one made-up compatibility check.</li>
+                          </ol>
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-xs leading-5 text-zinc-500">
+                          If the one-time key was not saved, revoke this connection and create a new one. InsightOS cannot recover the old key.
+                        </p>
+                      )}
+                      {privateAIRelayDiagnostic ? (
+                        <div className="mt-4 rounded-md border border-sky-500/20 bg-sky-500/5 p-3">
+                          <p className="text-sm font-semibold text-sky-50">
+                            {privateAIRelayDiagnostic.state === "verified"
+                              ? "Signed receipt check verified"
+                              : privateAIRelayDiagnostic.state === "expired"
+                                ? "Signed receipt check expired"
+                                : "Signed receipt check waiting for the relay"}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-sky-100/75">
+                            This check contains a random synthetic challenge only. It includes no customer data and cannot call a model or run work.
+                          </p>
+                        </div>
+                      ) : null}
+                      {privateAIRelayRuntime ? (
+                        <div className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+                          <p className="text-sm font-semibold text-emerald-50">
+                            {privateAIRelayRuntime.runtime_kind === "multiple"
+                              ? "Ollama and LM Studio found"
+                              : privateAIRelayRuntime.runtime_kind === "ollama"
+                                ? "Ollama found"
+                                : privateAIRelayRuntime.runtime_kind === "lm_studio"
+                                  ? "LM Studio found"
+                                  : "No supported local model software found yet"}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-emerald-100/75">
+                            {privateAIRelayRuntime.model_count} local {privateAIRelayRuntime.model_count === 1 ? "model" : "models"} available. Model names stayed on this computer.
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-emerald-100/75">
+                            Discovery only — no customer data was sent and no model was called.
+                          </p>
+                        </div>
+                      ) : privateAIRelay.connection_state === "connected" ? (
+                        <p className="mt-3 text-xs leading-5 text-zinc-500">
+                          Restart the downloaded helper to check this computer for Ollama or LM Studio. It checks loopback only, keeps model names local, and does not call a model.
+                        </p>
+                      ) : null}
+                      {privateAIRelayQualification ? (
+                        <div className={`mt-4 rounded-md border p-3 ${privateAIRelayQualification.status === "passed" ? "border-emerald-500/20 bg-emerald-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
+                          <p className={`text-sm font-semibold ${privateAIRelayQualification.status === "passed" ? "text-emerald-50" : "text-amber-50"}`}>
+                            {privateAIRelayQualification.status === "passed"
+                              ? "Made-up local model check passed"
+                              : "Made-up local model check needs attention"}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-300">
+                            One fixed made-up request was attempted in {privateAIRelayQualification.latency_ms.toLocaleString()} ms. The model name and any response stayed on this computer.
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-400">
+                            This result does not enable customer prompts, routing, publishing, website changes, or business-profile work.
+                          </p>
+                        </div>
+                      ) : privateAIRelayRuntime && privateAIRelayRuntime.model_count > 0 ? (
+                        <div className="mt-4 rounded-md border border-sky-500/20 bg-sky-500/5 p-3">
+                          <p className="text-sm font-semibold text-sky-50">Optional made-up compatibility check</p>
+                          <p className="mt-1 text-xs leading-5 text-sky-100/75">
+                            Run <code>python insightos-local-relay.py --once --check-model</code>. It calls one local model once with made-up data; the model name and response stay local.
+                          </p>
+                        </div>
+                      ) : null}
+                      {privateAIProviderPlanEligible &&
+                      privateAIRelay.connection_state === "connected" &&
+                      privateAIRelayDiagnostic?.state !== "waiting_for_relay" ? (
+                        <button
+                          type="button"
+                          className={`${secondaryButtonClass} mt-3`}
+                          disabled={busyAction === "private-ai-relay-diagnostic"}
+                          onClick={() => void createPrivateAIRelayDiagnostic(privateAIRelay.id)}
+                        >
+                          {busyAction === "private-ai-relay-diagnostic"
+                            ? "Preparing check..."
+                            : "Prepare signed connection check"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : privateAIProviderPlanEligible ? (
+                    <div className="mt-4">
+                      <label className="text-sm font-medium text-zinc-300">
+                        Name this computer or relay
+                        <input
+                          className={`${selectClass} mt-1.5`}
+                          value={privateAIRelayName}
+                          maxLength={120}
+                          onChange={(event) => setPrivateAIRelayName(event.target.value)}
+                        />
+                      </label>
+                      <div className="mt-3 space-y-2 text-sm leading-5 text-zinc-300">
+                        {([
+                          ["understands_connection_only", "I understand this only creates and verifies an outbound connection."],
+                          ["understands_no_customer_prompts", "I understand no customer prompts or saved evidence are available to the relay yet."],
+                          ["understands_no_database_or_execution_access", "I understand the relay cannot query the InsightOS database, publish, or execute work."],
+                          ["understands_manual_revocation", "I understand I can revoke the connection key here at any time."],
+                        ] as Array<[keyof PrivateAIRelayAcknowledgements, string]>).map(([key, label]) => (
+                          <label key={key} className="flex items-start gap-2">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={privateAIRelayAcks[key]}
+                              onChange={(event) => setPrivateAIRelayAcks((current) => ({
+                                ...current,
+                                [key]: event.target.checked,
+                              }))}
+                            />
+                            <span>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className={`${primaryButtonClass} mt-3`}
+                        disabled={!allPrivateAIRelayAcknowledged || privateAIRelayName.trim().length < 2 || busyAction === "private-ai-relay-create"}
+                        onClick={() => void createPrivateAIRelay()}
+                      >
+                        {busyAction === "private-ai-relay-create" ? "Creating key..." : "Create one-time connection key"}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-zinc-400">
+                      Local relay setup is Enterprise-only and is not included with Growth ($699/month). Any existing connection history remains visible and its key can still be revoked.
+                    </p>
+                  )}
+
+                  <p className="mt-3 text-xs leading-5 text-zinc-500">
+                    The heartbeat is empty unless the owner prepares one short-lived synthetic receipt check. It exposes no customer prompt, model call, database, website, business-profile, publishing, or execution access.
+                  </p>
+                </div>
+
+                {privateAIProviderLoadState === "unavailable" ? (
+                  <div className="mt-5 rounded-md border border-amber-500/20 bg-amber-500/5 p-4 text-sm leading-6 text-amber-50">
+                    <p className="font-semibold">Private AI candidate status is unavailable</p>
+                    <p className="mt-1 text-amber-100/80">
+                      InsightOS will not assume there are no saved candidates or start a new setup until the current status can be checked.
+                    </p>
+                    <button
+                      type="button"
+                      className={`${secondaryButtonClass} mt-3`}
+                      disabled={busyAction === "private-ai-refresh"}
+                      onClick={() => void refreshPrivateAIProviders()}
+                    >
+                      {busyAction === "private-ai-refresh" ? "Checking..." : "Check candidates again"}
+                    </button>
+                  </div>
+                ) : privateAIProviders.length > 0 ? (
+                  <div className="mt-5 space-y-4">
+                    {privateAIProviders.map((provider) => {
+                      const benchmarks = privateAIBenchmarks[provider.id] || [];
+                      const latestBenchmark = benchmarks[0];
+                      const savedReview = latestBenchmark
+                        ? (privateAIReviews[provider.id] || []).find(
+                            (item) => item.benchmark_id === latestBenchmark.id,
+                          )
+                        : undefined;
+                      const standby = privateAIStandby[provider.id];
+                      const readiness = privateAIReadiness[provider.id];
+                      const canary = privateAICanary[provider.id];
+                      const canaryMonitoring = privateAICanaryMonitoring[provider.id];
+                      const questionCapability = privateAIQuestionCapability[provider.id];
+                      const draftCapability = privateAIDraftCapability[provider.id];
+                      const keywordReviewQualification = privateAIKeywordReviewQualification[provider.id];
+                      const contentDraftQualification = privateAIContentDraftQualification[provider.id];
+                      const baselineQualification = privateAIBaselineQualification[provider.id];
+                      const reviewResponseQualification = privateAIReviewResponseQualification[provider.id];
+                      const canaryAcknowledgements = privateAICanaryAcks[provider.id]
+                        || EMPTY_PRIVATE_AI_CANARY_ACKNOWLEDGEMENTS;
+                      const allCanaryAcknowledged = Object.values(canaryAcknowledgements).every(Boolean);
+                      const questionAcknowledgements = privateAIQuestionAcks[provider.id]
+                        || EMPTY_PRIVATE_AI_QUESTION_ACKNOWLEDGEMENTS;
+                      const allQuestionAcknowledged = Object.values(questionAcknowledgements).every(Boolean);
+                      const draftAcknowledgements = privateAIDraftAcks[provider.id]
+                        || EMPTY_PRIVATE_AI_DRAFT_ACKNOWLEDGEMENTS;
+                      const allDraftAcknowledged = Object.values(draftAcknowledgements).every(Boolean);
+                      const keywordReviewAcknowledgements = privateAIKeywordReviewAcks[provider.id]
+                        || EMPTY_PRIVATE_AI_KEYWORD_REVIEW_ACKNOWLEDGEMENTS;
+                      const allKeywordReviewAcknowledged = Object.values(keywordReviewAcknowledgements).every(Boolean);
+                      const contentDraftAcknowledgements = privateAIContentDraftAcks[provider.id]
+                        || EMPTY_PRIVATE_AI_CONTENT_DRAFT_ACKNOWLEDGEMENTS;
+                      const allContentDraftAcknowledged = Object.values(contentDraftAcknowledgements).every(Boolean);
+                      const baselineAcknowledgements = privateAIBaselineAcks[provider.id]
+                        || EMPTY_PRIVATE_AI_BASELINE_ACKNOWLEDGEMENTS;
+                      const allBaselineAcknowledged = Object.values(baselineAcknowledgements).every(Boolean);
+                      const reviewResponseAcknowledgements = privateAIReviewResponseAcks[provider.id]
+                        || EMPTY_PRIVATE_AI_REVIEW_RESPONSE_ACKNOWLEDGEMENTS;
+                      const allReviewResponseAcknowledged = Object.values(reviewResponseAcknowledgements).every(Boolean);
+                      const acknowledgements = latestBenchmark
+                        ? privateAIReviewAcks[latestBenchmark.id] || EMPTY_PRIVATE_AI_ACKNOWLEDGEMENTS
+                        : EMPTY_PRIVATE_AI_ACKNOWLEDGEMENTS;
+                      const allAcknowledged = Object.values(acknowledgements).every(Boolean);
+                      const standbyAcknowledgements = savedReview
+                        ? privateAIStandbyAcks[savedReview.id] || EMPTY_PRIVATE_AI_STANDBY_ACKNOWLEDGEMENTS
+                        : EMPTY_PRIVATE_AI_STANDBY_ACKNOWLEDGEMENTS;
+                      const allStandbyAcknowledged = Object.values(standbyAcknowledgements).every(Boolean);
+                      return (
+                        <article key={provider.id} className="rounded-md border border-[#303137] bg-[#101114] p-4">
+                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="font-semibold text-white">{provider.name}</h3>
+                                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${standby?.state === "standby" ? "border-sky-500/25 bg-sky-500/10 text-sky-100" : "border-zinc-500/25 bg-zinc-500/10 text-zinc-300"}`}>
+                                  {standby?.state === "standby" ? "Zero-traffic standby" : "Inactive candidate"}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-sm text-zinc-400">
+                                {provider.endpoint_host} · {provider.model_identifier}
+                              </p>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                Credential {provider.credential_configured ? "saved securely" : "not required"}
+                                {provider.last_validated_at
+                                  ? ` · Last checked ${formatTimestamp(provider.last_validated_at)}`
+                                  : " · Not checked yet"}
+                              </p>
+                              {provider.billing_boundary ? (
+                                <p className="mt-1 text-xs text-zinc-500">
+                                  Provider charges stay with your provider account; InsightOS does not add private-model usage fees.
+                                </p>
+                              ) : null}
+                            </div>
+                            <button
+                              type="button"
+                              className={secondaryButtonClass}
+                              disabled={busyAction === `private-ai-disconnect-${provider.id}`}
+                              onClick={() => void disconnectPrivateAIProvider(provider.id)}
+                            >
+                              {busyAction === `private-ai-disconnect-${provider.id}` ? "Disconnecting..." : "Disconnect"}
+                            </button>
+                          </div>
+
+                          {provider.supported_capabilities?.length ? (
+                            <details className="mt-4 rounded-md border border-[#292a2f] bg-[#141518] px-4 py-3">
+                              <summary className="cursor-pointer text-sm font-semibold text-white">
+                                What this connection can be checked for
+                              </summary>
+                              <p className="mt-2 text-sm leading-6 text-zinc-400">
+                                Each item requires its own compatibility result and owner approval. Listing it here does not turn it on.
+                              </p>
+                              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                                {provider.supported_capabilities.map((capability) => (
+                                  <div key={capability.code} className="rounded-md border border-[#292a2f] px-3 py-2.5">
+                                    <p className="text-sm font-medium text-zinc-200">{capability.label}</p>
+                                    <p className="mt-1 text-xs leading-5 text-zinc-500">{capability.summary}</p>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                Every approved check remains fixed at 5%, shares one private prompt per day, keeps managed AI as fallback, and cannot publish or make changes.
+                              </p>
+                            </details>
+                          ) : null}
+
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="border-l-2 border-[#303137] pl-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">Network</p>
+                              <p className="mt-1 text-sm font-semibold text-white">
+                                {provider.network_validation_status === "passed" ? "Public endpoint checked" : provider.network_validation_status === "failed" ? "Needs attention" : "Not checked"}
+                              </p>
+                            </div>
+                            <div className="border-l-2 border-[#303137] pl-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">Standby</p>
+                              <p className="mt-1 text-sm font-semibold text-white">
+                                {standby?.state === "standby"
+                                  ? "Registered · 0% traffic"
+                                  : standby?.state === "standby_elsewhere"
+                                    ? "Another candidate selected"
+                                    : standby?.state === "unavailable"
+                                      ? "Status unavailable"
+                                      : "Not registered"}
+                              </p>
+                            </div>
+                            <div className="border-l-2 border-[#303137] pl-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">Connection</p>
+                              <p className="mt-1 text-sm font-semibold text-white">
+                                {provider.validation_status === "passed" ? "Structured response passed" : provider.validation_status === "failed" ? "Validation failed" : "Not validated"}
+                              </p>
+                            </div>
+                            <div className="border-l-2 border-[#303137] pl-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">Quality review</p>
+                              <p className="mt-1 text-sm font-semibold text-white">
+                                {savedReview?.decision === "approved_for_future_activation"
+                                  ? "Recorded for a later standby step"
+                                  : savedReview?.decision === "rejected"
+                                    ? "Declined"
+                                    : latestBenchmark?.status === "passed"
+                                      ? "Ready for owner review"
+                                      : latestBenchmark?.status === "failed"
+                                        ? "Checks did not pass"
+                                        : "Not run"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {provider.network_validation_status !== "passed" ? (
+                              <button
+                                type="button"
+                                className={secondaryButtonClass}
+                                disabled={busyAction === `private-ai-preflight-${provider.id}`}
+                                onClick={() => void preflightPrivateAIProvider(provider.id)}
+                              >
+                                {busyAction === `private-ai-preflight-${provider.id}` ? "Checking network..." : "Check public network"}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className={secondaryButtonClass}
+                              disabled={busyAction === `private-ai-validate-${provider.id}`}
+                              onClick={() => void validatePrivateAIProvider(provider.id)}
+                            >
+                              {busyAction === `private-ai-validate-${provider.id}`
+                                ? "Validating..."
+                                : provider.validation_status === "passed"
+                                  ? "Revalidate connection"
+                                  : "Validate connection"}
+                            </button>
+                            {provider.validation_status === "passed" ? (
+                              <button
+                                type="button"
+                                className={primaryButtonClass}
+                                disabled={busyAction === `private-ai-benchmark-${provider.id}`}
+                                onClick={() => void benchmarkPrivateAIProvider(provider.id)}
+                              >
+                                {busyAction === `private-ai-benchmark-${provider.id}`
+                                  ? "Running three checks..."
+                                  : latestBenchmark
+                                    ? "Run quality checks again"
+                                    : "Run three quality checks"}
+                              </button>
+                            ) : null}
+                          </div>
+
+                          {latestBenchmark ? (
+                            <div className="mt-4 border-t border-[#292a2f] pt-4">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-sm font-semibold text-white">Latest synthetic quality checks</p>
+                                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${latestBenchmark.status === "passed" ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-rose-500/25 bg-rose-500/10 text-rose-100"}`}>
+                                  {latestBenchmark.passed_case_count} of 3 passed
+                                </span>
+                              </div>
+                              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                                {latestBenchmark.case_results.map((result) => (
+                                  <div key={result.case_id} className="rounded-md border border-[#292a2f] px-3 py-2.5">
+                                    <p className="text-sm font-medium text-zinc-200">{privateAIBenchmarkCaseLabel(result.case_id)}</p>
+                                    <p className={`mt-1 text-xs ${result.passed ? "text-emerald-300" : "text-rose-200"}`}>
+                                      {result.passed ? "Passed" : "Did not pass"}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                Synthetic checks are limited examples, not a promise about every future answer.
+                              </p>
+                            </div>
+                          ) : null}
+
+                          {latestBenchmark?.status === "passed" && !savedReview ? (
+                            <div className="mt-4 rounded-md border border-accent-500/25 bg-accent-500/5 p-4">
+                              <h4 className="font-semibold text-white">Owner review</h4>
+                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                Approval records eligibility for a separate future standby step. It does not activate this provider.
+                              </p>
+                              <div className="mt-3 space-y-2 text-sm text-zinc-300">
+                                {([
+                                  ["reviewed_synthetic_results", "I reviewed the three synthetic results."],
+                                  ["understands_not_active", "I understand this does not activate or route to this provider."],
+                                  ["understands_managed_fallback_required", "I understand the managed provider must remain available as fallback."],
+                                  ["understands_no_automatic_changes", "I understand this does not authorize automatic website or business-profile changes."],
+                                ] as Array<[keyof PrivateAIReviewAcknowledgements, string]>).map(([key, label]) => (
+                                  <label key={key} className="flex items-start gap-2">
+                                    <input
+                                      type="checkbox"
+                                      className="mt-1"
+                                      checked={acknowledgements[key]}
+                                      onChange={(event) =>
+                                        setPrivateAIReviewAcks((current) => ({
+                                          ...current,
+                                          [latestBenchmark.id]: {
+                                            ...(current[latestBenchmark.id] || EMPTY_PRIVATE_AI_ACKNOWLEDGEMENTS),
+                                            [key]: event.target.checked,
+                                          },
+                                        }))
+                                      }
+                                    />
+                                    <span>{label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  className={primaryButtonClass}
+                                  disabled={!allAcknowledged || busyAction === `private-ai-review-${provider.id}`}
+                                  onClick={() => void reviewPrivateAIProvider(provider.id, latestBenchmark.id, "approved_for_future_activation")}
+                                >
+                                  {busyAction === `private-ai-review-${provider.id}` ? "Saving review..." : "Approve for a later standby step"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className={secondaryButtonClass}
+                                  disabled={!acknowledgements.reviewed_synthetic_results || busyAction === `private-ai-review-${provider.id}`}
+                                  onClick={() => void reviewPrivateAIProvider(provider.id, latestBenchmark.id, "rejected")}
+                                >
+                                  Decline this benchmark
+                                </button>
+                              </div>
+                            </div>
+                          ) : savedReview ? (
+                            <div className="mt-4 rounded-md border border-[#303137] bg-[#17181b] px-4 py-3 text-sm leading-6 text-zinc-300">
+                              <p className="font-semibold text-white">
+                                {savedReview.decision === "approved_for_future_activation"
+                                  ? "Owner approval recorded — still inactive"
+                                  : "Owner declined this benchmark"}
+                              </p>
+                              <p className="mt-1">
+                                This permanent review was saved {formatTimestamp(savedReview.reviewed_at)}.
+                                {savedReview.decision === "approved_for_future_activation"
+                                  ? readiness?.latest?.status === "passed"
+                                    ? " The fallback check passed, but routing remains off and still requires separate approval."
+                                    : " Zero-traffic standby and a fallback readiness check are still required before any future routing review."
+                                  : " You may run a new benchmark later without changing this record."}
+                              </p>
+                              {savedReview.decision === "approved_for_future_activation" ? (
+                                standby?.state === "unavailable" ? (
+                                  <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-amber-50">
+                                    Standby status is unavailable. InsightOS will not assume this provider is inactive or offer a state change until it can be checked.
+                                  </div>
+                                ) : standby?.state === "standby" ? (
+                                  <div className="mt-3 rounded-md border border-sky-500/20 bg-sky-500/5 p-3 text-sky-50">
+                                    <p className="font-semibold">Registered in zero-traffic standby</p>
+                                    <p className="mt-1 text-sky-100/80">
+                                      InsightOS&apos;s managed AI still handles every live request. This private provider receives 0% traffic and no customer prompts.
+                                    </p>
+                                    <div className="mt-3 rounded-md border border-[#303137] bg-[#101114] p-3 text-zinc-300">
+                                      <div className="flex flex-wrap items-start justify-between gap-2">
+                                        <div>
+                                          <p className="font-semibold text-white">Live-routing safety check</p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-400">
+                                            Confirms that the managed AI has a recent successful result and remains available as the rollback path. This check does not turn on private-model traffic.
+                                          </p>
+                                        </div>
+                                        {readiness?.latest ? (
+                                          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${readiness.latest.status === "passed" ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-amber-500/25 bg-amber-500/10 text-amber-100"}`}>
+                                            {readiness.latest.status === "passed" ? "Prerequisites passed" : "Needs attention"}
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                      <p className="mt-2 text-sm leading-6 text-zinc-400">
+                                        {readiness?.truth.summary || "Fallback readiness has not been checked yet."}
+                                      </p>
+                                      {readiness?.latest?.blockers.length ? (
+                                        <ul className="mt-2 space-y-1 text-sm text-amber-100">
+                                          {readiness.latest.blockers.map((blocker) => (
+                                            <li key={blocker.code}>• {blocker.summary}</li>
+                                          ))}
+                                        </ul>
+                                      ) : null}
+                                      {readiness?.latest ? (
+                                        <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                          Last 30 days: {readiness.latest.usage.managed_successes} managed successes, {readiness.latest.usage.managed_fallbacks} fallbacks, and {readiness.latest.usage.candidate_runs} private-provider runs.
+                                        </p>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        className={`${secondaryButtonClass} mt-3`}
+                                        disabled={busyAction === `private-ai-readiness-${provider.id}`}
+                                        onClick={() => void checkPrivateAIRoutingReadiness(provider.id)}
+                                      >
+                                        {busyAction === `private-ai-readiness-${provider.id}`
+                                          ? "Checking fallback..."
+                                          : readiness?.latest
+                                            ? "Check fallback again"
+                                            : "Check fallback readiness"}
+                                      </button>
+                                      {canary?.state === "unavailable" ? (
+                                        <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-sm text-amber-50">
+                                          Limited routing status is unavailable. InsightOS will not offer a traffic change until it can be checked.
+                                        </div>
+                                      ) : canary?.state === "canary" ? (
+                                        <div className="mt-3 rounded-md border border-violet-500/25 bg-violet-500/10 p-3 text-violet-50">
+                                          <div className="flex flex-wrap items-start justify-between gap-2">
+                                            <div>
+                                              <p className="font-semibold">Limited private-AI check is on</p>
+                                              <p className="mt-1 text-sm leading-6 text-violet-100/80">
+                                                Up to 5% of eligible daily explanations may use this provider, with a hard limit of one private prompt per day. All other AI requests stay managed by InsightOS.
+                                              </p>
+                                            </div>
+                                            <span className="rounded-full border border-violet-400/30 bg-violet-400/10 px-2.5 py-1 text-xs font-semibold">
+                                              5% maximum · 1 per day
+                                            </span>
+                                          </div>
+                                          <p className="mt-2 text-sm leading-6 text-violet-100/80">
+                                            If the private result fails its network, format, evidence, or safety check, InsightOS stops the canary and retries through managed AI. It can never change a website or business profile.
+                                          </p>
+                                          <p className="mt-2 text-xs leading-5 text-violet-100/70">
+                                            Last 30 days: {canary.usage.private_successes} private successes, {canary.usage.managed_fallbacks} managed fallbacks, and {canary.usage.automatic_rollbacks} automatic stops.
+                                          </p>
+                                          <button
+                                            type="button"
+                                            className={`${secondaryButtonClass} mt-3`}
+                                            disabled={busyAction === `private-ai-canary-${provider.id}`}
+                                            onClick={() => void updatePrivateAICanary(provider.id, "disable")}
+                                          >
+                                            {busyAction === `private-ai-canary-${provider.id}` ? "Stopping..." : "Stop limited private-AI check"}
+                                          </button>
+                                        </div>
+                                      ) : canary?.state === "needs_attention" ? (
+                                        <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-50">
+                                          <p className="font-semibold">The saved limited check is paused</p>
+                                          <p className="mt-1 leading-6 text-amber-100/80">
+                                            Its safety evidence is no longer current, so no private prompts can be sent. Stop this saved check, refresh the required evidence, and review it again before restarting.
+                                          </p>
+                                          <button
+                                            type="button"
+                                            className={`${secondaryButtonClass} mt-3`}
+                                            disabled={busyAction === `private-ai-canary-${provider.id}`}
+                                            onClick={() => void updatePrivateAICanary(provider.id, "disable")}
+                                          >
+                                            {busyAction === `private-ai-canary-${provider.id}` ? "Stopping..." : "Stop outdated private-AI check"}
+                                          </button>
+                                        </div>
+                                      ) : canary?.state === "canary_elsewhere" ? (
+                                        <p className="mt-3 text-sm text-amber-100">
+                                          Another private provider already has the workspace&apos;s limited check.
+                                        </p>
+                                      ) : readiness?.latest?.status === "passed" ? (
+                                        <div className="mt-3 rounded-md border border-violet-500/20 bg-violet-500/5 p-3">
+                                          <p className="font-semibold text-white">Try a limited private-AI check</p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-400">
+                                            This is the first step that can send a real daily-explanation prompt to your private provider. The limit is fixed at 5%, never more than one prompt per day, with managed fallback reserved first.
+                                          </p>
+                                          <div className="mt-3 space-y-2">
+                                            {([
+                                              ["reviewed_five_percent_limit", "I reviewed the fixed 5% and one-prompt-per-day limits."],
+                                              ["understands_real_customer_prompt", "I understand this can send one real customer-context prompt to my private provider."],
+                                              ["understands_managed_fallback_required", "I understand InsightOS managed AI remains required as the fallback."],
+                                              ["understands_automatic_rollback", "I understand any private-provider failure automatically stops this check."],
+                                              ["understands_no_automatic_changes", "I understand this cannot change a website, listing, or business profile."],
+                                            ] as Array<[keyof PrivateAICanaryAcknowledgements, string]>).map(([key, label]) => (
+                                              <label key={key} className="flex items-start gap-2 text-sm leading-5 text-zinc-300">
+                                                <input
+                                                  type="checkbox"
+                                                  className="mt-0.5"
+                                                  checked={canaryAcknowledgements[key]}
+                                                  onChange={(event) => {
+                                                    const checked = event.target.checked;
+                                                    setPrivateAICanaryAcks((current) => ({
+                                                      ...current,
+                                                      [provider.id]: {
+                                                        ...canaryAcknowledgements,
+                                                        [key]: checked,
+                                                      },
+                                                    }));
+                                                  }}
+                                                />
+                                                <span>{label}</span>
+                                              </label>
+                                            ))}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            className={`${primaryButtonClass} mt-3`}
+                                            disabled={!allCanaryAcknowledged || busyAction === `private-ai-canary-${provider.id}`}
+                                            onClick={() => void updatePrivateAICanary(provider.id, "enable")}
+                                          >
+                                            {busyAction === `private-ai-canary-${provider.id}` ? "Starting..." : "Start fixed 5% private-AI check"}
+                                          </button>
+                                        </div>
+                                      ) : null}
+                                      {canaryMonitoring?.state === "unavailable" ? (
+                                        <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-sm text-amber-50">
+                                          Private-AI health history is unavailable. This does not change the fixed check or managed fallback.
+                                        </div>
+                                      ) : canaryMonitoring && canaryMonitoring.state !== "not_started" ? (
+                                        <div className={`mt-3 rounded-md border p-3 ${
+                                          canaryMonitoring.state === "eligible_for_later_review"
+                                            ? "border-emerald-500/25 bg-emerald-500/5"
+                                            : canaryMonitoring.state === "blocked"
+                                              ? "border-amber-500/25 bg-amber-500/5"
+                                              : "border-sky-500/20 bg-sky-500/5"
+                                        }`}>
+                                          <p className="font-semibold text-white">
+                                            {canaryMonitoring.state === "eligible_for_later_review"
+                                              ? "Minimum health evidence collected"
+                                              : canaryMonitoring.state === "blocked"
+                                                ? "Health review has a blocker"
+                                                : "Collecting health evidence"}
+                                          </p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                            {canaryMonitoring.truth.summary}
+                                          </p>
+                                          <p className="mt-2 text-xs leading-5 text-zinc-400">
+                                            Successful days: {canaryMonitoring.evidence.distinct_success_days} of 3 · Private successes: {canaryMonitoring.evidence.private_successes} · Managed fallbacks: {canaryMonitoring.evidence.managed_fallbacks} · Automatic stops: {canaryMonitoring.evidence.automatic_rollbacks}
+                                            {canaryMonitoring.evidence.max_latency_ms > 0
+                                              ? ` · Slowest successful response: ${canaryMonitoring.evidence.max_latency_ms} ms`
+                                              : ""}
+                                          </p>
+                                          {canaryMonitoring.evidence.blockers.length > 0 ? (
+                                            <ul className="mt-2 space-y-1 text-sm leading-5 text-zinc-300">
+                                              {canaryMonitoring.evidence.blockers.map((blocker) => (
+                                                <li key={blocker.code}>• {blocker.summary}</li>
+                                              ))}
+                                            </ul>
+                                          ) : null}
+                                          <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                            This review cannot increase traffic, add prompt types, or authorize automatic changes.
+                                          </p>
+                                          <button
+                                            type="button"
+                                            className={`${secondaryButtonClass} mt-3`}
+                                            disabled={busyAction === `private-ai-canary-monitoring-${provider.id}`}
+                                            onClick={() => void savePrivateAICanaryHealthReview(provider.id)}
+                                          >
+                                            {busyAction === `private-ai-canary-monitoring-${provider.id}`
+                                              ? "Saving review..."
+                                              : canaryMonitoring.latest
+                                                ? "Save another health review"
+                                                : "Save health review"}
+                                          </button>
+                                        </div>
+                                      ) : null}
+                                      {canaryMonitoring?.state === "eligible_for_later_review" ? (
+                                        <div className="mt-3 rounded-md border border-violet-500/20 bg-violet-500/5 p-3">
+                                          <p className="font-semibold text-white">Saved-evidence questions</p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                            Check whether this provider can answer a customer&apos;s question using only InsightOS&apos;s saved evidence and saved action IDs. The compatibility check uses synthetic data and sends no customer prompt.
+                                          </p>
+                                          {questionCapability?.state === "unavailable" || !questionCapability ? (
+                                            <p className="mt-2 text-sm text-amber-100">
+                                              Saved-question status is unavailable, so InsightOS will not offer this capability.
+                                            </p>
+                                          ) : questionCapability.state === "capability_canary" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Limited saved-question check is on</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                Up to 5% of eligible saved-evidence questions may use this provider. Daily explanations and questions share one total private prompt per day. Any failure stops this capability and uses managed AI.
+                                              </p>
+                                              <p className="mt-2 text-xs text-zinc-400">
+                                                Private successes: {questionCapability.usage.private_successes} · Managed fallbacks: {questionCapability.usage.managed_fallbacks} · Automatic stops: {questionCapability.usage.automatic_rollbacks}
+                                              </p>
+                                              <button
+                                                type="button"
+                                                className={`${secondaryButtonClass} mt-3`}
+                                                disabled={busyAction === `private-ai-question-${provider.id}`}
+                                                onClick={() => void updatePrivateAIQuestionCapability(provider.id, "disable")}
+                                              >
+                                                {busyAction === `private-ai-question-${provider.id}` ? "Stopping..." : "Stop saved-question check"}
+                                              </button>
+                                            </div>
+                                          ) : questionCapability.state === "eligible_for_owner_approval" ? (
+                                            <div className="mt-3">
+                                              <p className="text-sm font-medium text-emerald-100">Synthetic compatibility check passed</p>
+                                              <div className="mt-3 space-y-2">
+                                                {([
+                                                  ["reviewed_question_capability_check", "I reviewed the saved-question compatibility result."],
+                                                  ["understands_real_customer_questions", "I understand this can send a real customer question and its saved evidence to my private provider."],
+                                                  ["understands_shared_daily_limit", "I understand questions and daily explanations share one private prompt per day."],
+                                                  ["understands_managed_fallback_and_rollback", "I understand managed AI remains reserved and any private failure stops this capability."],
+                                                  ["understands_no_automatic_changes", "I understand answers cannot change a website, listing, or business profile."],
+                                                ] as Array<[keyof PrivateAIQuestionCapabilityAcknowledgements, string]>).map(([key, label]) => (
+                                                  <label key={key} className="flex items-start gap-2 text-sm leading-5 text-zinc-300">
+                                                    <input
+                                                      type="checkbox"
+                                                      className="mt-0.5"
+                                                      checked={questionAcknowledgements[key]}
+                                                      onChange={(event) => setPrivateAIQuestionAcks((current) => ({
+                                                        ...current,
+                                                        [provider.id]: {
+                                                          ...questionAcknowledgements,
+                                                          [key]: event.target.checked,
+                                                        },
+                                                      }))}
+                                                    />
+                                                    <span>{label}</span>
+                                                  </label>
+                                                ))}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                className={`${primaryButtonClass} mt-3`}
+                                                disabled={!allQuestionAcknowledged || busyAction === `private-ai-question-${provider.id}`}
+                                                onClick={() => void updatePrivateAIQuestionCapability(provider.id, "enable")}
+                                              >
+                                                {busyAction === `private-ai-question-${provider.id}` ? "Starting..." : "Start fixed 5% saved-question check"}
+                                              </button>
+                                            </div>
+                                          ) : questionCapability.state === "capability_canary_elsewhere" ? (
+                                            <p className="mt-2 text-sm text-amber-100">Another private provider already owns this limited question capability.</p>
+                                          ) : questionCapability.state === "needs_attention" ? (
+                                            <div className="mt-2 text-sm text-amber-100">
+                                              This capability stopped because its saved evidence is no longer current. Run the compatibility check again after refreshing health evidence.
+                                            </div>
+                                          ) : (
+                                            <div className="mt-3">
+                                              {questionCapability.state === "qualification_failed" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The last synthetic compatibility check did not pass. No customer question was sent.</p>
+                                              ) : null}
+                                              <button
+                                                type="button"
+                                                className={secondaryButtonClass}
+                                                disabled={busyAction === `private-ai-question-benchmark-${provider.id}`}
+                                                onClick={() => void benchmarkPrivateAIQuestionCapability(provider.id)}
+                                              >
+                                                {busyAction === `private-ai-question-benchmark-${provider.id}` ? "Checking..." : "Check saved-question compatibility"}
+                                              </button>
+                                            </div>
+                                          )}
+                                          <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                            This capability can only explain saved evidence. It cannot create, approve, publish, or execute work.
+                                          </p>
+                                        </div>
+                                      ) : null}
+                                      {canaryMonitoring?.state === "eligible_for_later_review" ? (
+                                        <div className="mt-3 rounded-md border border-fuchsia-500/20 bg-fuchsia-500/5 p-3">
+                                          <p className="font-semibold text-white">Saved-action draft wording</p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                            Check whether this provider can prepare review-only wording for one action already saved in InsightOS. The compatibility check uses synthetic information and sends no customer data.
+                                          </p>
+                                          {draftCapability?.state === "unavailable" || !draftCapability ? (
+                                            <p className="mt-2 text-sm text-amber-100">
+                                              Draft-wording status is unavailable, so InsightOS will keep using managed AI.
+                                            </p>
+                                          ) : draftCapability.state === "capability_canary" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Limited draft-wording check is on</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                Up to 5% of eligible draft requests may use this provider. Explanations, questions, and drafts share one total private prompt per day. Every draft still requires review, and any failure stops this capability and uses managed AI.
+                                              </p>
+                                              <p className="mt-2 text-xs text-zinc-400">
+                                                Private successes: {draftCapability.usage.private_successes} · Managed fallbacks: {draftCapability.usage.managed_fallbacks} · Automatic stops: {draftCapability.usage.automatic_rollbacks}
+                                              </p>
+                                              <button
+                                                type="button"
+                                                className={`${secondaryButtonClass} mt-3`}
+                                                disabled={busyAction === `private-ai-draft-${provider.id}`}
+                                                onClick={() => void updatePrivateAIDraftCapability(provider.id, "disable")}
+                                              >
+                                                {busyAction === `private-ai-draft-${provider.id}` ? "Stopping..." : "Stop draft-wording check"}
+                                              </button>
+                                            </div>
+                                          ) : draftCapability.state === "eligible_for_owner_approval" ? (
+                                            <div className="mt-3">
+                                              <p className="text-sm font-medium text-emerald-100">Synthetic draft check passed</p>
+                                              <div className="mt-3 space-y-2">
+                                                {([
+                                                  ["reviewed_draft_capability_check", "I reviewed the draft-wording compatibility result."],
+                                                  ["understands_real_saved_action_context", "I understand this can send one saved action and its supporting information to my private provider."],
+                                                  ["understands_shared_daily_limit", "I understand explanations, questions, and drafts share one private prompt per day."],
+                                                  ["understands_managed_fallback_and_rollback", "I understand managed AI remains reserved and any private failure stops this capability."],
+                                                  ["understands_draft_only_no_publish", "I understand this can only prepare a draft for review and cannot publish or make changes."],
+                                                ] as Array<[keyof PrivateAIDraftCapabilityAcknowledgements, string]>).map(([key, label]) => (
+                                                  <label key={key} className="flex items-start gap-2 text-sm leading-5 text-zinc-300">
+                                                    <input
+                                                      type="checkbox"
+                                                      className="mt-0.5"
+                                                      checked={draftAcknowledgements[key]}
+                                                      onChange={(event) => setPrivateAIDraftAcks((current) => ({
+                                                        ...current,
+                                                        [provider.id]: {
+                                                          ...draftAcknowledgements,
+                                                          [key]: event.target.checked,
+                                                        },
+                                                      }))}
+                                                    />
+                                                    <span>{label}</span>
+                                                  </label>
+                                                ))}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                className={`${primaryButtonClass} mt-3`}
+                                                disabled={!allDraftAcknowledged || busyAction === `private-ai-draft-${provider.id}`}
+                                                onClick={() => void updatePrivateAIDraftCapability(provider.id, "enable")}
+                                              >
+                                                {busyAction === `private-ai-draft-${provider.id}` ? "Starting..." : "Start fixed 5% draft-wording check"}
+                                              </button>
+                                            </div>
+                                          ) : draftCapability.state === "capability_canary_elsewhere" ? (
+                                            <p className="mt-2 text-sm text-amber-100">Another private provider already owns this limited draft-wording capability.</p>
+                                          ) : draftCapability.state === "needs_attention" ? (
+                                            <p className="mt-2 text-sm text-amber-100">
+                                              This capability stopped because its saved evidence is no longer current. Refresh the health review before checking it again.
+                                            </p>
+                                          ) : (
+                                            <div className="mt-3">
+                                              {draftCapability.state === "qualification_failed" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The last synthetic draft check did not pass. No customer information was sent.</p>
+                                              ) : null}
+                                              <button
+                                                type="button"
+                                                className={secondaryButtonClass}
+                                                disabled={busyAction === `private-ai-draft-benchmark-${provider.id}`}
+                                                onClick={() => void benchmarkPrivateAIDraftCapability(provider.id)}
+                                              >
+                                                {busyAction === `private-ai-draft-benchmark-${provider.id}` ? "Checking..." : "Check draft-wording compatibility"}
+                                              </button>
+                                            </div>
+                                          )}
+                                          <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                            This capability can only prepare review-only wording for a saved action. It cannot approve, publish, send, or execute work.
+                                          </p>
+                                        </div>
+                                      ) : null}
+                                      {canaryMonitoring?.state === "eligible_for_later_review" ? (
+                                        <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3">
+                                          <p className="font-semibold text-white">Unclear search review</p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                            Check whether this provider can sort one made-up unclear search against a made-up service and work area. No customer searches, website information, or account data are sent.
+                                          </p>
+                                          {keywordReviewQualification?.state === "unavailable" || !keywordReviewQualification ? (
+                                            <p className="mt-2 text-sm text-amber-100">
+                                              This compatibility check is unavailable. Managed AI remains unchanged.
+                                            </p>
+                                          ) : keywordReviewQualification.state === "capability_canary" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Limited unclear-search check is on</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                Up to 5% of owner-requested unclear-search reviews may use this provider. Explanations, saved questions, drafts, and search reviews share one total private prompt per day. Any failure stops this capability and uses managed AI.
+                                              </p>
+                                              <p className="mt-2 text-xs text-zinc-400">
+                                                Private successes: {keywordReviewQualification.usage.private_successes} · Managed fallbacks: {keywordReviewQualification.usage.managed_fallbacks} · Automatic stops: {keywordReviewQualification.usage.automatic_rollbacks}
+                                              </p>
+                                              <button
+                                                type="button"
+                                                className={`${secondaryButtonClass} mt-3`}
+                                                disabled={busyAction === `private-ai-keyword-review-${provider.id}`}
+                                                onClick={() => void updatePrivateAIKeywordReviewCapability(provider.id, "disable")}
+                                              >
+                                                {busyAction === `private-ai-keyword-review-${provider.id}` ? "Stopping..." : "Stop unclear-search check"}
+                                              </button>
+                                            </div>
+                                          ) : keywordReviewQualification.state === "eligible_for_owner_approval" ? (
+                                            <div className="mt-3">
+                                              <p className="text-sm font-medium text-emerald-100">Synthetic unclear-search check passed</p>
+                                              <div className="mt-3 space-y-2">
+                                                {([
+                                                  ["reviewed_keyword_review_check", "I reviewed the unclear-search compatibility result."],
+                                                  ["understands_real_saved_search_context", "I understand this can send selected unclear searches plus confirmed services and work areas to my private provider."],
+                                                  ["understands_shared_daily_limit", "I understand explanations, questions, drafts, and search reviews share one private prompt per day."],
+                                                  ["understands_managed_fallback_and_rollback", "I understand managed AI remains reserved and any private failure stops this capability."],
+                                                  ["understands_saved_search_classification_only", "I understand a valid result may sort or hide only the unclear saved searches I asked InsightOS to review. It cannot add searches, start tracking, create work, or publish anything."],
+                                                ] as Array<[keyof PrivateAIKeywordReviewAcknowledgements, string]>).map(([key, label]) => (
+                                                  <label key={key} className="flex items-start gap-2 text-sm leading-5 text-zinc-300">
+                                                    <input
+                                                      type="checkbox"
+                                                      className="mt-0.5"
+                                                      checked={keywordReviewAcknowledgements[key]}
+                                                      onChange={(event) => setPrivateAIKeywordReviewAcks((current) => ({
+                                                        ...current,
+                                                        [provider.id]: {
+                                                          ...keywordReviewAcknowledgements,
+                                                          [key]: event.target.checked,
+                                                        },
+                                                      }))}
+                                                    />
+                                                    <span>{label}</span>
+                                                  </label>
+                                                ))}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                className={`${primaryButtonClass} mt-3`}
+                                                disabled={!allKeywordReviewAcknowledged || busyAction === `private-ai-keyword-review-${provider.id}`}
+                                                onClick={() => void updatePrivateAIKeywordReviewCapability(provider.id, "enable")}
+                                              >
+                                                {busyAction === `private-ai-keyword-review-${provider.id}` ? "Starting..." : "Start fixed 5% unclear-search check"}
+                                              </button>
+                                            </div>
+                                          ) : keywordReviewQualification.state === "eligible_for_later_review" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Synthetic unclear-search check passed</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                This only proves the provider understood the fixed example. Customer traffic remains off because this release does not include the owner approval boundary.
+                                              </p>
+                                            </div>
+                                          ) : keywordReviewQualification.state === "capability_canary_elsewhere" ? (
+                                            <p className="mt-2 text-sm text-amber-100">Another private provider already owns this limited unclear-search capability.</p>
+                                          ) : (
+                                            <div className="mt-3">
+                                              {keywordReviewQualification.state === "qualification_failed" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The last synthetic check did not pass. No customer information was sent.</p>
+                                              ) : keywordReviewQualification.state === "needs_attention" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The saved check is no longer current. Refresh health evidence, then run it again.</p>
+                                              ) : null}
+                                              <button
+                                                type="button"
+                                                className={secondaryButtonClass}
+                                                disabled={busyAction === `private-ai-keyword-review-benchmark-${provider.id}`}
+                                                onClick={() => void benchmarkPrivateAIKeywordReviewQualification(provider.id)}
+                                              >
+                                                {busyAction === `private-ai-keyword-review-benchmark-${provider.id}` ? "Checking..." : "Check unclear-search compatibility"}
+                                              </button>
+                                            </div>
+                                          )}
+                                          <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                            This capability can only classify the server-selected unclear searches in an owner-requested review. It cannot add or track searches, create work, change a website or business profile, or publish anything.
+                                          </p>
+                                        </div>
+                                      ) : null}
+                                      {canaryMonitoring?.state === "eligible_for_later_review" ? (
+                                        <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3">
+                                          <p className="font-semibold text-white">Optional website draft wording</p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                            Check whether this provider can prepare safe wording for a made-up website draft and preserve the exact section order and evidence. No customer website, draft, search, or account data is sent.
+                                          </p>
+                                          {!contentDraftQualification || contentDraftQualification.state === "unavailable" ? (
+                                            <p className="mt-2 text-sm text-amber-100">
+                                              This compatibility check is unavailable. Managed AI remains unchanged.
+                                            </p>
+                                          ) : contentDraftQualification.state === "capability_canary" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Limited website-draft check is on</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                Up to 5% of owner-requested optional website wording may use this provider. All private-AI capabilities share one total private prompt per day. Any failure stops this capability and uses managed AI.
+                                              </p>
+                                              <p className="mt-2 text-xs text-zinc-400">
+                                                Private successes: {contentDraftQualification.usage.private_successes} · Managed fallbacks: {contentDraftQualification.usage.managed_fallbacks} · Automatic stops: {contentDraftQualification.usage.automatic_rollbacks}
+                                              </p>
+                                              <button
+                                                type="button"
+                                                className={`${secondaryButtonClass} mt-3`}
+                                                disabled={busyAction === `private-ai-content-draft-${provider.id}`}
+                                                onClick={() => void updatePrivateAIContentDraftCapability(provider.id, "disable")}
+                                              >
+                                                {busyAction === `private-ai-content-draft-${provider.id}` ? "Stopping..." : "Stop website-draft check"}
+                                              </button>
+                                            </div>
+                                          ) : contentDraftQualification.state === "eligible_for_owner_approval" ? (
+                                            <div className="mt-3">
+                                              <p className="text-sm font-medium text-emerald-100">Synthetic website-draft check passed</p>
+                                              <div className="mt-3 space-y-2">
+                                                {([
+                                                  ["reviewed_content_draft_check", "I reviewed the website-draft compatibility result."],
+                                                  ["understands_real_saved_website_draft_context", "I understand this can send one selected saved website draft, accepted brief, and allowed evidence to my private provider."],
+                                                  ["understands_shared_daily_limit", "I understand every private-AI capability shares one private prompt per day."],
+                                                  ["understands_managed_fallback_and_rollback", "I understand managed AI remains reserved and any private failure stops this capability."],
+                                                  ["understands_suggestion_only_no_edit_or_publish", "I understand a valid result remains a separate suggestion. It cannot edit my draft, approve wording, publish a page, or change my website or business profile."],
+                                                ] as Array<[keyof PrivateAIContentDraftAcknowledgements, string]>).map(([key, label]) => (
+                                                  <label key={key} className="flex items-start gap-2 text-sm leading-5 text-zinc-300">
+                                                    <input
+                                                      type="checkbox"
+                                                      className="mt-0.5"
+                                                      checked={contentDraftAcknowledgements[key]}
+                                                      onChange={(event) => setPrivateAIContentDraftAcks((current) => ({
+                                                        ...current,
+                                                        [provider.id]: {
+                                                          ...contentDraftAcknowledgements,
+                                                          [key]: event.target.checked,
+                                                        },
+                                                      }))}
+                                                    />
+                                                    <span>{label}</span>
+                                                  </label>
+                                                ))}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                className={`${primaryButtonClass} mt-3`}
+                                                disabled={!allContentDraftAcknowledged || busyAction === `private-ai-content-draft-${provider.id}`}
+                                                onClick={() => void updatePrivateAIContentDraftCapability(provider.id, "enable")}
+                                              >
+                                                {busyAction === `private-ai-content-draft-${provider.id}` ? "Starting..." : "Start fixed 5% website-draft check"}
+                                              </button>
+                                            </div>
+                                          ) : contentDraftQualification.state === "eligible_for_later_review" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Synthetic website-draft check passed</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                This only proves the provider understood the fixed example. Customer traffic remains off, and there is no approval or enable control in this release.
+                                              </p>
+                                            </div>
+                                          ) : contentDraftQualification.state === "capability_canary_elsewhere" ? (
+                                            <p className="mt-2 text-sm text-amber-100">Another private provider already owns this limited website-draft capability.</p>
+                                          ) : (
+                                            <div className="mt-3">
+                                              {contentDraftQualification.state === "qualification_failed" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The last synthetic check did not pass. No customer information was sent.</p>
+                                              ) : contentDraftQualification.state === "needs_attention" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The saved check is no longer current. Refresh health evidence, then run it again.</p>
+                                              ) : null}
+                                              <button
+                                                type="button"
+                                                className={secondaryButtonClass}
+                                                disabled={busyAction === `private-ai-content-draft-benchmark-${provider.id}`}
+                                                onClick={() => void benchmarkPrivateAIContentDraftQualification(provider.id)}
+                                              >
+                                                {busyAction === `private-ai-content-draft-benchmark-${provider.id}` ? "Checking..." : "Check website-draft compatibility"}
+                                              </button>
+                                            </div>
+                                          )}
+                                          <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                            This capability can only prepare a separate review-only suggestion for the exact saved draft the owner selected. It cannot edit the owner draft, approve wording, publish a page, or change a website or business profile.
+                                          </p>
+                                        </div>
+                                      ) : null}
+                                      {canaryMonitoring?.state === "eligible_for_later_review" ? (
+                                        <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3">
+                                          <p className="font-semibold text-white">Optional baseline explanation</p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                            Check whether this provider can explain a made-up onboarding baseline without changing its saved score, diagnosis, evidence, or fixed priorities. No customer website, Google data, traffic, ranking, or account information is sent.
+                                          </p>
+                                          {!baselineQualification || baselineQualification.state === "unavailable" ? (
+                                            <p className="mt-2 text-sm text-amber-100">
+                                              This compatibility check is unavailable. Managed AI remains unchanged.
+                                            </p>
+                                          ) : baselineQualification.state === "capability_canary" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Limited baseline explanation check is on</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                Up to 5% of owner-requested baseline explanations may use this provider. Every private-AI capability shares one total private prompt per day. Any failure stops this capability and uses managed AI.
+                                              </p>
+                                              <p className="mt-2 text-xs text-zinc-400">
+                                                Private successes: {baselineQualification.usage.private_successes} · Managed fallbacks: {baselineQualification.usage.managed_fallbacks} · Automatic stops: {baselineQualification.usage.automatic_rollbacks}
+                                              </p>
+                                              <button
+                                                type="button"
+                                                className={`${secondaryButtonClass} mt-3`}
+                                                disabled={busyAction === `private-ai-baseline-${provider.id}`}
+                                                onClick={() => void updatePrivateAIBaselineCapability(provider.id, "disable")}
+                                              >
+                                                {busyAction === `private-ai-baseline-${provider.id}` ? "Stopping..." : "Stop baseline explanation check"}
+                                              </button>
+                                            </div>
+                                          ) : baselineQualification.state === "eligible_for_owner_approval" ? (
+                                            <div className="mt-3">
+                                              <p className="text-sm font-medium text-emerald-100">Made-up baseline check passed</p>
+                                              <div className="mt-3 space-y-2">
+                                                {([
+                                                  ["reviewed_baseline_check", "I reviewed the baseline compatibility result."],
+                                                  ["understands_real_saved_baseline_context", "I understand this can send one selected saved baseline's minimized evidence, deterministic scores, and fixed priority order to my private provider."],
+                                                  ["understands_shared_daily_limit", "I understand every private-AI capability shares one private prompt per day."],
+                                                  ["understands_managed_fallback_and_rollback", "I understand managed AI remains reserved and any private failure stops this capability."],
+                                                  ["understands_explanation_only_no_changes", "I understand this can only explain saved results. It cannot change scores, diagnoses, fixes, priorities, the website, the business profile, or approve or run work."],
+                                                ] as Array<[keyof PrivateAIBaselineAcknowledgements, string]>).map(([key, label]) => (
+                                                  <label key={key} className="flex items-start gap-2 text-sm leading-5 text-zinc-300">
+                                                    <input
+                                                      type="checkbox"
+                                                      className="mt-0.5"
+                                                      checked={baselineAcknowledgements[key]}
+                                                      onChange={(event) => setPrivateAIBaselineAcks((current) => ({
+                                                        ...current,
+                                                        [provider.id]: {
+                                                          ...baselineAcknowledgements,
+                                                          [key]: event.target.checked,
+                                                        },
+                                                      }))}
+                                                    />
+                                                    <span>{label}</span>
+                                                  </label>
+                                                ))}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                className={`${primaryButtonClass} mt-3`}
+                                                disabled={!allBaselineAcknowledged || busyAction === `private-ai-baseline-${provider.id}`}
+                                                onClick={() => void updatePrivateAIBaselineCapability(provider.id, "enable")}
+                                              >
+                                                {busyAction === `private-ai-baseline-${provider.id}` ? "Starting..." : "Start fixed 5% baseline explanation check"}
+                                              </button>
+                                            </div>
+                                          ) : baselineQualification.state === "eligible_for_later_review" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Made-up baseline check passed</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                This only proves the provider understood the fixed example. Real onboarding baseline data remains off, and there is no approval or enable control in this release.
+                                              </p>
+                                            </div>
+                                          ) : baselineQualification.state === "capability_canary_elsewhere" ? (
+                                            <p className="mt-2 text-sm text-amber-100">Another private provider already owns this limited baseline-explanation capability.</p>
+                                          ) : (
+                                            <div className="mt-3">
+                                              {baselineQualification.state === "qualification_failed" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The last made-up baseline check did not pass. No customer information was sent.</p>
+                                              ) : baselineQualification.state === "needs_attention" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The saved check is no longer current. Refresh health evidence, then run it again.</p>
+                                              ) : null}
+                                              <button
+                                                type="button"
+                                                className={secondaryButtonClass}
+                                                disabled={busyAction === `private-ai-baseline-benchmark-${provider.id}`}
+                                                onClick={() => void benchmarkPrivateAIBaselineQualification(provider.id)}
+                                              >
+                                                {busyAction === `private-ai-baseline-benchmark-${provider.id}` ? "Checking..." : "Check baseline compatibility"}
+                                              </button>
+                                            </div>
+                                          )}
+                                          <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                            This capability can only explain a frozen saved baseline. It cannot change the score, diagnosis, priorities, fixes, website, or business profile, and it cannot approve or run work.
+                                          </p>
+                                        </div>
+                                      ) : null}
+                                      {canaryMonitoring?.state === "eligible_for_later_review" ? (
+                                        <div className="mt-3 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3">
+                                          <p className="font-semibold text-white">Optional review reply wording</p>
+                                          <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                            Check whether this provider can draft a safe reply for a made-up review while preserving owner approval. No customer review, customer name, business account, or profile data is sent.
+                                          </p>
+                                          {!reviewResponseQualification || reviewResponseQualification.state === "unavailable" ? (
+                                            <p className="mt-2 text-sm text-amber-100">
+                                              This compatibility check is unavailable. Managed AI remains unchanged.
+                                            </p>
+                                          ) : reviewResponseQualification.state === "capability_canary" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Limited review-reply wording check is on</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                Up to 5% of owner-requested reply drafts may use this provider. Every private-AI capability shares one total private prompt per day. Any failure stops this capability and uses managed AI.
+                                              </p>
+                                              <p className="mt-2 text-xs text-zinc-400">
+                                                Private successes: {reviewResponseQualification.usage?.private_successes || 0} · Managed fallbacks: {reviewResponseQualification.usage?.managed_fallbacks || 0} · Automatic stops: {reviewResponseQualification.usage?.automatic_rollbacks || 0}
+                                              </p>
+                                              <button
+                                                type="button"
+                                                className={`${secondaryButtonClass} mt-3`}
+                                                disabled={busyAction === `private-ai-review-response-${provider.id}`}
+                                                onClick={() => void updatePrivateAIReviewResponseCapability(provider.id, "disable")}
+                                              >
+                                                {busyAction === `private-ai-review-response-${provider.id}` ? "Stopping..." : "Stop review-reply wording check"}
+                                              </button>
+                                            </div>
+                                          ) : reviewResponseQualification.state === "eligible_for_owner_approval" ? (
+                                            <div className="mt-3">
+                                              <p className="text-sm font-medium text-emerald-100">Made-up review reply check passed</p>
+                                              <div className="mt-3 space-y-2">
+                                                {([
+                                                  ["reviewed_review_reply_check", "I reviewed the made-up review-reply compatibility result."],
+                                                  ["understands_real_saved_review_context", "I understand this can send one selected saved review and the minimum confirmed business context to my private provider."],
+                                                  ["understands_shared_daily_limit", "I understand every private-AI capability shares one private prompt per day."],
+                                                  ["understands_managed_fallback_and_rollback", "I understand managed AI remains reserved and any private failure stops this capability."],
+                                                  ["understands_draft_only_no_posting", "I understand every result remains a separate draft. It cannot approve or post a reply, change review status, publish, or change the business profile."],
+                                                ] as Array<[keyof PrivateAIReviewResponseAcknowledgements, string]>).map(([key, label]) => (
+                                                  <label key={key} className="flex items-start gap-2 text-sm leading-5 text-zinc-300">
+                                                    <input
+                                                      type="checkbox"
+                                                      className="mt-0.5"
+                                                      checked={reviewResponseAcknowledgements[key]}
+                                                      onChange={(event) => setPrivateAIReviewResponseAcks((current) => ({
+                                                        ...current,
+                                                        [provider.id]: {
+                                                          ...reviewResponseAcknowledgements,
+                                                          [key]: event.target.checked,
+                                                        },
+                                                      }))}
+                                                    />
+                                                    <span>{label}</span>
+                                                  </label>
+                                                ))}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                className={`${primaryButtonClass} mt-3`}
+                                                disabled={!allReviewResponseAcknowledged || busyAction === `private-ai-review-response-${provider.id}`}
+                                                onClick={() => void updatePrivateAIReviewResponseCapability(provider.id, "enable")}
+                                              >
+                                                {busyAction === `private-ai-review-response-${provider.id}` ? "Starting..." : "Start fixed 5% review-reply wording check"}
+                                              </button>
+                                            </div>
+                                          ) : reviewResponseQualification.state === "eligible_for_later_review" ? (
+                                            <div className="mt-3 rounded-md border border-emerald-500/25 bg-emerald-500/5 p-3">
+                                              <p className="font-medium text-emerald-50">Made-up review reply check passed</p>
+                                              <p className="mt-1 text-sm leading-6 text-zinc-300">
+                                                This proves only compatibility. Customer reviews remain off, and there is no approval or enable control in this release.
+                                              </p>
+                                            </div>
+                                          ) : reviewResponseQualification.state === "capability_canary_elsewhere" ? (
+                                            <p className="mt-2 text-sm text-amber-100">Another private provider already owns this limited review-reply capability.</p>
+                                          ) : (
+                                            <div className="mt-3">
+                                              {reviewResponseQualification.state === "qualification_failed" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The last made-up review reply check did not pass. No customer information was sent.</p>
+                                              ) : reviewResponseQualification.state === "needs_attention" ? (
+                                                <p className="mb-2 text-sm text-amber-100">The saved check is no longer current. Refresh health evidence, then run it again.</p>
+                                              ) : null}
+                                              <button
+                                                type="button"
+                                                className={secondaryButtonClass}
+                                                disabled={busyAction === `private-ai-review-response-benchmark-${provider.id}`}
+                                                onClick={() => void benchmarkPrivateAIReviewResponseQualification(provider.id)}
+                                              >
+                                                {busyAction === `private-ai-review-response-benchmark-${provider.id}` ? "Checking..." : "Check review-reply compatibility"}
+                                              </button>
+                                            </div>
+                                          )}
+                                          <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                            This capability would only prepare a separate draft. It cannot approve or post a reply, change review status, publish, or change the business profile.
+                                          </p>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={`${secondaryButtonClass} mt-3`}
+                                      disabled={busyAction === `private-ai-standby-${provider.id}`}
+                                      onClick={() => void updatePrivateAIStandby(provider.id, null, "disable")}
+                                    >
+                                      {busyAction === `private-ai-standby-${provider.id}` ? "Removing..." : "Remove from standby"}
+                                    </button>
+                                  </div>
+                                ) : standby?.state === "standby_elsewhere" ? (
+                                  <p className="mt-3 text-amber-100">
+                                    Another candidate is already in standby. Remove it before selecting this one.
+                                  </p>
+                                ) : (
+                                  <div className="mt-3 rounded-md border border-sky-500/20 bg-sky-500/5 p-3">
+                                    <p className="font-semibold text-white">Register as zero-traffic standby</p>
+                                    <p className="mt-1 text-zinc-300">
+                                      This records operational readiness and a manual removal path. It does not send customer data or change the live managed route.
+                                    </p>
+                                    <div className="mt-3 space-y-2">
+                                      {([
+                                        ["reviewed_standby_boundary", "I reviewed what zero-traffic standby means."],
+                                        ["understands_zero_customer_prompts", "I understand this provider will receive no customer prompts."],
+                                        ["understands_managed_route_unchanged", "I understand InsightOS's managed AI remains the only live route."],
+                                        ["understands_manual_disable_available", "I understand I can remove this standby registration here."],
+                                      ] as Array<[keyof PrivateAIStandbyAcknowledgements, string]>).map(([key, label]) => (
+                                        <label key={key} className="flex items-start gap-2">
+                                          <input
+                                            type="checkbox"
+                                            className="mt-1"
+                                            checked={standbyAcknowledgements[key]}
+                                            onChange={(event) =>
+                                              setPrivateAIStandbyAcks((current) => ({
+                                                ...current,
+                                                [savedReview.id]: {
+                                                  ...(current[savedReview.id] || EMPTY_PRIVATE_AI_STANDBY_ACKNOWLEDGEMENTS),
+                                                  [key]: event.target.checked,
+                                                },
+                                              }))
+                                            }
+                                          />
+                                          <span>{label}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={`${primaryButtonClass} mt-3`}
+                                      disabled={!allStandbyAcknowledged || busyAction === `private-ai-standby-${provider.id}`}
+                                      onClick={() => void updatePrivateAIStandby(provider.id, savedReview.id, "enable")}
+                                    >
+                                      {busyAction === `private-ai-standby-${provider.id}` ? "Registering..." : "Register zero-traffic standby"}
+                                    </button>
+                                  </div>
+                                )
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-5 text-sm text-zinc-400">No private AI candidate has been saved.</p>
+                )}
+
+                {privateAIProviderPlanEligible && privateAIProviderLoadState === "ready" ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-5">
+                    <h3 className="font-semibold text-white">Add an inactive candidate</h3>
+                    <p className="mt-1 text-sm leading-6 text-zinc-400">
+                      Use a reachable HTTPS OpenAI-compatible endpoint. Localhost and private network addresses cannot be reached from InsightOS.
+                    </p>
+                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                      <label className="text-sm font-medium text-zinc-300">
+                        Connection name
+                        <input
+                          className={`${selectClass} mt-1.5`}
+                          value={privateAIName}
+                          maxLength={120}
+                          onChange={(event) => setPrivateAIName(event.target.value)}
+                          placeholder="Approved private model"
+                        />
+                      </label>
+                      <label className="text-sm font-medium text-zinc-300">
+                        Model identifier
+                        <input
+                          className={`${selectClass} mt-1.5`}
+                          value={privateAIModel}
+                          maxLength={200}
+                          onChange={(event) => setPrivateAIModel(event.target.value)}
+                          placeholder="organization/model-name"
+                        />
+                      </label>
+                      <label className="text-sm font-medium text-zinc-300 lg:col-span-2">
+                        HTTPS chat-completions endpoint
+                        <input
+                          className={`${selectClass} mt-1.5`}
+                          type="url"
+                          value={privateAIEndpoint}
+                          maxLength={2000}
+                          onChange={(event) => setPrivateAIEndpoint(event.target.value)}
+                          placeholder="https://models.example.com/v1/chat/completions"
+                        />
+                      </label>
+                      <label className="text-sm font-medium text-zinc-300 lg:col-span-2">
+                        API key (optional)
+                        <input
+                          className={`${selectClass} mt-1.5`}
+                          type="password"
+                          autoComplete="new-password"
+                          value={privateAIApiKey}
+                          maxLength={4096}
+                          onChange={(event) => setPrivateAIApiKey(event.target.value)}
+                          placeholder="Stored encrypted and never shown again"
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className={`${primaryButtonClass} mt-4`}
+                      disabled={
+                        !privateAIName.trim() ||
+                        !privateAIEndpoint.trim() ||
+                        !privateAIModel.trim() ||
+                        busyAction === "private-ai-create"
+                      }
+                      onClick={() => void createPrivateAIProvider()}
+                    >
+                      {busyAction === "private-ai-create" ? "Saving encrypted candidate..." : "Save inactive candidate"}
+                    </button>
+                  </div>
+                ) : !privateAIProviderPlanEligible ? (
+                  <div className="mt-5 border-t border-[#292a2f] pt-4 text-sm leading-6 text-zinc-400">
+                    Adding or approving a new private AI provider requires Enterprise. Existing candidates and permanent review history remain visible.
+                  </div>
+                ) : null}
+              </section>
             ) : null}
 
             <section id="google-search-console-connection" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">
@@ -3813,19 +7918,31 @@ export default function SettingsPage() {
                 {usageAllowance.external_automation ? (
                   <div id="external-automation" className="mt-5 border-t border-[#292a2f] pt-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
-                      External automation
+                      Workflow tools
                     </p>
                     <h3 className="mt-1 font-semibold text-white">
                       {usageAllowance.external_automation.gateway_enabled
-                        ? "Send report and action updates to your workflow tool"
-                        : `External automation requires ${usageAllowance.external_automation.required_plan}`}
+                        ? "Send useful updates to Zapier, Make, Pipedream, or n8n"
+                        : `Workflow connections require ${usageAllowance.external_automation.required_plan}`}
                     </h3>
                     <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
-                      {usageAllowance.external_automation.summary}
+                      Choose what InsightOS should notify you about, paste the receiving URL from your workflow tool, then send a test. InsightOS does not need your workflow-tool password.
                     </p>
-                    <p className="mt-2 text-xs leading-5 text-zinc-500">
-                      Available for {usageAllowance.external_automation.planned_connection_options.join(", ")}. The saved webhook URL and signing secret are encrypted, and the URL is never shown again.
-                    </p>
+                    {usageAllowance.external_automation.gateway_enabled ? (
+                      <ol className="mt-4 grid gap-2 md:grid-cols-3">
+                        {[
+                          ["1", "Create a receiving webhook", "Open your workflow tool and add its webhook trigger."],
+                          ["2", "Paste its URL here", "Use the production URL generated by that tool."],
+                          ["3", "Save and send a test", "Confirm the test arrives before relying on live updates."],
+                        ].map(([number, title, description]) => (
+                          <li key={number} className="rounded-md border border-[#303137] bg-[#101114] p-3">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-white">{number}</span>
+                            <p className="mt-2 text-sm font-semibold text-white">{title}</p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-400">{description}</p>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : null}
 
                     {automationSigningSecret ? (
                       <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
@@ -3849,7 +7966,7 @@ export default function SettingsPage() {
 
                     {usageAllowance.external_automation.gateway_enabled && me?.org_role === "org_owner" ? (
                       <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
-                        <p className="text-sm font-semibold text-white">Add a workflow endpoint</p>
+                        <p className="text-sm font-semibold text-white">Connect a workflow tool</p>
                         <div className="mt-3 grid gap-3 lg:grid-cols-3">
                           <div>
                             <label htmlFor="automation-provider" className="mb-1.5 block text-xs font-medium text-zinc-300">
@@ -3873,20 +7990,20 @@ export default function SettingsPage() {
                           </div>
                           <div>
                             <label htmlFor="automation-name" className="mb-1.5 block text-xs font-medium text-zinc-300">
-                              Connection name
+                              Name this connection
                             </label>
                             <input
                               id="automation-name"
                               className={selectClass}
                               value={automationName}
                               maxLength={120}
-                              placeholder="Owner report workflow"
+                              placeholder="Send new reports to my team"
                               onChange={(event) => setAutomationName(event.target.value)}
                             />
                           </div>
                           <div>
                             <label htmlFor="automation-destination" className="mb-1.5 block text-xs font-medium text-zinc-300">
-                              Webhook URL — kept private
+                              Paste the webhook URL from your tool
                             </label>
                             <input
                               id="automation-destination"
@@ -3894,12 +8011,12 @@ export default function SettingsPage() {
                               autoComplete="off"
                               className={selectClass}
                               value={automationDestination}
-                              placeholder="Paste the HTTPS webhook URL"
+                              placeholder="Paste the production URL"
                               onChange={(event) => setAutomationDestination(event.target.value)}
                             />
                             {automationProvider === "n8n" ? (
                               <p className="mt-1.5 text-xs leading-5 text-zinc-500">
-                                Paste the Production URL from a published n8n Cloud Webhook node. Temporary test URLs and self-hosted domains are not accepted.
+                                In n8n, publish the workflow and copy the Webhook node&apos;s Production URL. The temporary Test URL will not work here.
                               </p>
                             ) : null}
                           </div>
@@ -3911,7 +8028,7 @@ export default function SettingsPage() {
                                 Set up {selectedAutomationProviderSetup.webhook_source}
                               </p>
                               <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
-                                Connection kit ready
+                                Setup guide ready
                               </span>
                             </div>
                             <p className="mt-1 text-xs leading-5 text-sky-100/75">
@@ -3931,57 +8048,61 @@ export default function SettingsPage() {
                               target="_blank"
                               rel="noreferrer"
                             >
-                              Open official {selectedAutomationProviderSetup.label} webhook documentation
+                              Open the official {selectedAutomationProviderSetup.label} setup guide
                             </a>
-                            <div className="mt-3 flex flex-wrap items-center gap-3">
-                              <button
-                                type="button"
-                                className={secondaryButtonClass}
-                                disabled={busyAction === `automation-conformance-${automationProvider}`}
-                                onClick={() => void downloadAutomationConformanceKit()}
-                              >
-                                {busyAction === `automation-conformance-${automationProvider}` ? "Preparing test..." : "Download receiver test contract"}
-                              </button>
-                              <span className="text-xs leading-5 text-zinc-500">
-                                Synthetic only—contains no customer data or live credential.
-                              </span>
-                            </div>
-                            <div className="mt-3 border-t border-sky-500/15 pt-3">
-                              <p className="text-xs font-semibold text-zinc-200">Wire the received event</p>
-                              <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
-                                <div>
-                                  <dt className="text-zinc-500">Payload</dt>
-                                  <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.payload_path}</dd>
-                                </div>
-                                <div>
-                                  <dt className="text-zinc-500">Headers</dt>
-                                  <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.headers_path}</dd>
-                                </div>
-                                <div>
-                                  <dt className="text-zinc-500">Route on</dt>
-                                  <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.route_field}</dd>
-                                </div>
-                              </dl>
-                              <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
-                                {selectedAutomationProviderSetup.workflow_steps.map((step) => (
-                                  <li key={step}>{step}</li>
-                                ))}
-                              </ol>
-                              <div className="mt-3 overflow-hidden rounded-md border border-[#303137] bg-[#101114]">
-                                {selectedAutomationProviderSetup.field_map.map((field) => (
-                                  <div key={field.source} className="grid gap-1 border-b border-[#292a2f] px-3 py-2 last:border-b-0 sm:grid-cols-[9rem_1fr]">
-                                    <code className="text-[11px] text-orange-200">{field.source}</code>
-                                    <span className="text-xs leading-5 text-zinc-400">{field.purpose}</span>
-                                  </div>
-                                ))}
-                              </div>
-                              <p className="mt-3 text-xs leading-5 text-zinc-500">
-                                Verification contract: {selectedAutomationProviderSetup.signature_contract.algorithm} over <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.signed_input}</code>. Compare the <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.signature_header}</code> value, reject timestamps older than {selectedAutomationProviderSetup.signature_contract.replay_window_seconds / 60} minutes, and deduplicate with <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.event_id_header}</code>.
-                              </p>
-                            </div>
-                            <p className="mt-3 text-xs leading-5 text-zinc-500">
-                              The InsightOS side is wired. The customer supplies the private webhook URL and chooses the final external action. InsightOS proves delivery only after the signed test—and later a real product event—is accepted.
+                            <p className="mt-3 text-xs leading-5 text-zinc-400">
+                              After you save, send a test below. When your tool accepts it, the connection is ready.
                             </p>
+                            <details className="group mt-3 border-t border-sky-500/15 pt-3">
+                              <summary className="cursor-pointer text-xs font-semibold text-zinc-300">
+                                Technical verification details (advanced)
+                              </summary>
+                              <div className="mt-3 rounded-md border border-[#303137] bg-[#101114] p-3">
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <button
+                                    type="button"
+                                    className={secondaryButtonClass}
+                                    disabled={busyAction === `automation-conformance-${automationProvider}`}
+                                    onClick={() => void downloadAutomationConformanceKit()}
+                                  >
+                                    {busyAction === `automation-conformance-${automationProvider}` ? "Preparing test..." : "Download developer test file"}
+                                  </button>
+                                  <span className="text-xs leading-5 text-zinc-500">
+                                    Uses sample data only. It contains no customer information or live password.
+                                  </span>
+                                </div>
+                                <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                                  <div>
+                                    <dt className="text-zinc-500">Payload path</dt>
+                                    <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.payload_path}</dd>
+                                  </div>
+                                  <div>
+                                    <dt className="text-zinc-500">Header path</dt>
+                                    <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.headers_path}</dd>
+                                  </div>
+                                  <div>
+                                    <dt className="text-zinc-500">Routing field</dt>
+                                    <dd className="mt-0.5 break-all font-mono text-[11px] text-zinc-300">{selectedAutomationProviderSetup.route_field}</dd>
+                                  </div>
+                                </dl>
+                                <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
+                                  {selectedAutomationProviderSetup.workflow_steps.map((step) => (
+                                    <li key={step}>{step}</li>
+                                  ))}
+                                </ol>
+                                <div className="mt-3 overflow-hidden rounded-md border border-[#303137] bg-[#141518]">
+                                  {selectedAutomationProviderSetup.field_map.map((field) => (
+                                    <div key={field.source} className="grid gap-1 border-b border-[#292a2f] px-3 py-2 last:border-b-0 sm:grid-cols-[9rem_1fr]">
+                                      <code className="text-[11px] text-orange-200">{field.source}</code>
+                                      <span className="text-xs leading-5 text-zinc-400">{field.purpose}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="mt-3 text-xs leading-5 text-zinc-500">
+                                  Verification contract: {selectedAutomationProviderSetup.signature_contract.algorithm} over <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.signed_input}</code>. Compare the <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.signature_header}</code> value, reject timestamps older than {selectedAutomationProviderSetup.signature_contract.replay_window_seconds / 60} minutes, and deduplicate with <code className="text-zinc-300">{selectedAutomationProviderSetup.signature_contract.event_id_header}</code>.
+                                </p>
+                              </div>
+                            </details>
                           </div>
                         ) : null}
                         {automationRecipes.length > 0 ? (
@@ -4014,29 +8135,37 @@ export default function SettingsPage() {
                             </div>
                           </div>
                         ) : null}
-                        <fieldset className="mt-4">
-                          <legend className="text-xs font-medium text-zinc-300">Events this workflow can receive</legend>
-                          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                            {automationEvents.map((event) => (
-                              <label key={event.code} className="flex items-start gap-2 rounded-md border border-[#292a2f] px-3 py-2 text-xs text-zinc-300">
-                                <input
-                                  type="checkbox"
-                                  className="mt-0.5 h-4 w-4 accent-orange-500"
-                                  checked={automationSelectedEvents.includes(event.code)}
-                                  onChange={(inputEvent) => {
-                                    setAutomationSelectedRecipe("");
-                                    setAutomationSelectedEvents((current) =>
-                                      inputEvent.target.checked
-                                        ? Array.from(new Set([...current, event.code]))
-                                        : current.filter((code) => code !== event.code),
-                                    );
-                                  }}
-                                />
-                                <span>{event.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </fieldset>
+                        <details className="group mt-4 rounded-md border border-[#292a2f] bg-[#141518]">
+                          <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-medium text-zinc-300">
+                            Choose individual updates instead (optional)
+                          </summary>
+                          <fieldset className="border-t border-[#292a2f] p-3">
+                            <legend className="sr-only">Choose individual updates this workflow can receive</legend>
+                            <p className="mb-2 text-xs leading-5 text-zinc-500">
+                              Use this only if none of the simple recipes above matches what you need.
+                            </p>
+                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                              {automationEvents.map((event) => (
+                                <label key={event.code} className="flex items-start gap-2 rounded-md border border-[#292a2f] px-3 py-2 text-xs text-zinc-300">
+                                  <input
+                                    type="checkbox"
+                                    className="mt-0.5 h-4 w-4 accent-orange-500"
+                                    checked={automationSelectedEvents.includes(event.code)}
+                                    onChange={(inputEvent) => {
+                                      setAutomationSelectedRecipe("");
+                                      setAutomationSelectedEvents((current) =>
+                                        inputEvent.target.checked
+                                          ? Array.from(new Set([...current, event.code]))
+                                          : current.filter((code) => code !== event.code),
+                                      );
+                                    }}
+                                  />
+                                  <span>{event.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </fieldset>
+                        </details>
                         <button
                           type="button"
                           className={`${primaryButtonClass} mt-4`}
@@ -4058,21 +8187,22 @@ export default function SettingsPage() {
                     ) : null}
 
                     {automationMonthlyUsage && usageAllowance.external_automation.gateway_enabled ? (
-                      <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
-                              Workflow delivery this month
-                            </p>
-                            <p className="mt-1 text-xs leading-5 text-zinc-500">
-                              Distinct events are counted once. Delivery attempts include bounded retries.
-                            </p>
-                          </div>
-                          <span className="text-xs text-zinc-500">
-                            Since {formatTimestamp(automationMonthlyUsage.period_start)}
+                      <details className="group mt-4 rounded-md border border-[#303137] bg-[#101114]">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
+                          <span>
+                            <span className="block text-xs font-semibold text-zinc-200">Workflow activity this month</span>
+                            <span className="mt-1 block text-xs text-zinc-500">
+                              {automationMonthlyUsage.accepted} accepted · {automationMonthlyUsage.waiting_or_retrying + automationMonthlyUsage.needs_recovery} need attention
+                            </span>
                           </span>
-                        </div>
-                        <dl className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <span className="text-xs font-semibold text-zinc-400 group-open:hidden">View</span>
+                          <span className="hidden text-xs font-semibold text-zinc-400 group-open:inline">Close</span>
+                        </summary>
+                        <div className="border-t border-[#292a2f] p-4">
+                          <p className="text-xs leading-5 text-zinc-500">
+                            Since {formatTimestamp(automationMonthlyUsage.period_start)}. Each update is counted once; retries are shown separately.
+                          </p>
+                          <dl className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                           {[
                             ["Product updates", automationMonthlyUsage.product_events],
                             ["Connection tests", automationMonthlyUsage.test_events],
@@ -4084,11 +8214,12 @@ export default function SettingsPage() {
                               <dd className="mt-1 text-lg font-semibold text-zinc-100">{value}</dd>
                             </div>
                           ))}
-                        </dl>
-                        <p className="mt-3 text-xs leading-5 text-zinc-500">
-                          {automationMonthlyUsage.attempts} total delivery {automationMonthlyUsage.attempts === 1 ? "attempt" : "attempts"}. This is observed activity, not a plan allowance or billable-usage counter.
-                        </p>
-                      </div>
+                          </dl>
+                          <p className="mt-3 text-xs leading-5 text-zinc-500">
+                            {automationMonthlyUsage.attempts} total delivery {automationMonthlyUsage.attempts === 1 ? "attempt" : "attempts"}. This is activity history, not an extra charge.
+                          </p>
+                        </div>
+                      </details>
                     ) : null}
 
                     {automationConnections.length > 0 ? (
@@ -4101,23 +8232,30 @@ export default function SettingsPage() {
                                 <div>
                                   <p className="font-medium text-white">{connection.name}</p>
                                   <p className="mt-1 text-xs text-zinc-400">
-                                    {connection.provider_label} · {connection.endpoint_host} · {connection.status === "active" ? "Automatic delivery on" : connection.status === "unhealthy" ? "Needs attention" : connection.status === "paused" ? "Automatic delivery paused" : connection.status === "disconnected" ? "Disconnected" : "Test required"}
-                                  </p>
-                                  <p className="mt-2 text-xs leading-5 text-zinc-500">
-                                    {connection.event_types.length} live {connection.event_types.length === 1 ? "event" : "events"} subscribed. Destination URL stays private. Signing secret version {connection.signing_secret_version}.
-                                  </p>
-                                  <p className="mt-1 text-xs leading-5 text-zinc-500">
-                                    This month: {connection.monthly_delivery_usage.product_events} product {connection.monthly_delivery_usage.product_events === 1 ? "event" : "events"}, {connection.monthly_delivery_usage.test_events} {connection.monthly_delivery_usage.test_events === 1 ? "test" : "tests"}, {connection.monthly_delivery_usage.attempts} delivery {connection.monthly_delivery_usage.attempts === 1 ? "attempt" : "attempts"}.
+                                    {connection.provider_label} · {connection.status === "active" ? "Sending updates" : connection.status === "unhealthy" ? "Needs attention" : connection.status === "paused" ? "Updates paused" : connection.status === "disconnected" ? "Disconnected" : "Send a test to finish"}
                                   </p>
                                   <div className={`mt-2 rounded-md border px-3 py-2 ${connection.conformance_proof.state === "product_event_accepted" ? "border-emerald-500/20 bg-emerald-500/5" : connection.conformance_proof.state === "needs_attention" ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
                                     <p className="text-xs font-medium text-zinc-200">
-                                      Connection proof: {connection.conformance_proof.label}
+                                      Connection check: {connection.conformance_proof.label}
                                     </p>
                                     <p className="mt-1 text-xs leading-5 text-zinc-500">
                                       {connection.conformance_proof.summary}
                                       {connection.conformance_proof.evidence_at ? ` Last evidence: ${formatTimestamp(connection.conformance_proof.evidence_at)}.` : ""}
                                     </p>
                                   </div>
+                                  <details className="group mt-2 rounded-md border border-[#292a2f] bg-[#141518]">
+                                    <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-zinc-400">
+                                      Connection details (advanced)
+                                    </summary>
+                                    <div className="space-y-1 border-t border-[#292a2f] px-3 py-2 text-xs leading-5 text-zinc-500">
+                                      <p>Receiving address: {connection.endpoint_host}</p>
+                                      <p>{connection.event_types.length} selected {connection.event_types.length === 1 ? "update" : "updates"}. The full destination URL stays private.</p>
+                                      <p>Signing-secret version {connection.signing_secret_version}.</p>
+                                      <p>
+                                        This month: {connection.monthly_delivery_usage.product_events} live updates, {connection.monthly_delivery_usage.test_events} tests, and {connection.monthly_delivery_usage.attempts} delivery attempts.
+                                      </p>
+                                    </div>
+                                  </details>
                                   {connection.dead_letter_count > 0 ? (
                                     <div className="mt-2 space-y-2 rounded-md border border-rose-500/20 bg-rose-500/5 p-3">
                                       <p className="text-xs font-medium text-rose-300">
@@ -4175,30 +8313,35 @@ export default function SettingsPage() {
                                         {busyAction === `automation-retry-${delivery.id}` ? "Retrying..." : "Retry last test"}
                                       </button>
                                     ) : null}
-                                    <button
-                                      type="button"
-                                      className={secondaryButtonClass}
-                                      disabled={busyAction === `automation-${connection.status === "paused" ? "resume" : "pause"}-${connection.id}`}
-                                      onClick={() => void setAutomationConnectionPaused(connection.id, connection.status !== "paused")}
-                                    >
-                                      {connection.status === "paused" ? "Resume events" : "Pause events"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className={secondaryButtonClass}
-                                      disabled={busyAction === `automation-rotate-${connection.id}`}
-                                      onClick={() => void rotateAutomationSecret(connection.id)}
-                                    >
-                                      Replace secret
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-medium text-rose-100 disabled:opacity-50"
-                                      disabled={busyAction === `automation-disconnect-${connection.id}`}
-                                      onClick={() => void disconnectAutomationConnection(connection.id)}
-                                    >
-                                      Disconnect
-                                    </button>
+                                    <details className="group relative">
+                                      <summary className={`${secondaryButtonClass} cursor-pointer list-none`}>More options</summary>
+                                      <div className="mt-2 flex flex-col gap-2 rounded-md border border-[#303137] bg-[#141518] p-2 sm:min-w-44">
+                                        <button
+                                          type="button"
+                                          className={secondaryButtonClass}
+                                          disabled={busyAction === `automation-${connection.status === "paused" ? "resume" : "pause"}-${connection.id}`}
+                                          onClick={() => void setAutomationConnectionPaused(connection.id, connection.status !== "paused")}
+                                        >
+                                          {connection.status === "paused" ? "Resume updates" : "Pause updates"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className={secondaryButtonClass}
+                                          disabled={busyAction === `automation-rotate-${connection.id}`}
+                                          onClick={() => void rotateAutomationSecret(connection.id)}
+                                        >
+                                          Replace signing secret
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-medium text-rose-100 disabled:opacity-50"
+                                          disabled={busyAction === `automation-disconnect-${connection.id}`}
+                                          onClick={() => void disconnectAutomationConnection(connection.id)}
+                                        >
+                                          Disconnect
+                                        </button>
+                                      </div>
+                                    </details>
                                   </div>
                                 ) : null}
                               </div>
@@ -4210,24 +8353,814 @@ export default function SettingsPage() {
                       <p className="mt-4 text-xs leading-5 text-zinc-500">No workflow tools connected yet.</p>
                     ) : null}
 
-                    {usageAllowance.external_automation.outbound_contract?.supported_events.length ? (
-                      <div className="mt-3">
-                        <p className="text-xs font-medium text-zinc-300">Approved outbound event contract</p>
-                        <p className="mt-1 text-xs leading-5 text-zinc-500">
-                          Report, recommendation, and approved-action results deliver automatically after a successful test. Approval-requested remains reserved until an exact native approval event is available.
+                    {usageAllowance.external_automation.gateway_enabled ? (
+                      <div className="mt-5 rounded-md border border-sky-500/20 bg-sky-500/5 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-200/70">
+                          Let a workflow ask for a report
                         </p>
-                        <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-                          {usageAllowance.external_automation.outbound_contract?.supported_events.map((event) => (
-                            <li key={event.code} className="rounded-lg border border-[#292a2f] bg-[#101114] px-3 py-2">
-                              <p className="text-xs font-medium text-zinc-200">{event.label}</p>
-                              <p className="mt-1 text-xs leading-5 text-zinc-500">{event.summary}</p>
-                            </li>
-                          ))}
-                        </ul>
+                        <h4 className="mt-1 text-sm font-semibold text-white">
+                          {activeAutomationServiceAccount?.allowed_commands.includes("report.generate_saved")
+                            ? "Let a workflow tool retrieve and create private reports"
+                            : "Give a workflow tool read-only access to saved reports"}
+                        </h4>
+                        <p className="mt-2 max-w-3xl text-xs leading-5 text-zinc-300">
+                          Create one short-lived workflow key for Zapier, Make, n8n, Pipedream, or another HTTPS tool. It can retrieve a report InsightOS already generated; it cannot start paid checks, approve work, publish content, or change your website or business profile.
+                        </p>
+
+                        {automationConnectorCatalog ? (
+                          <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
+                            <p className="text-sm font-semibold text-white">Choose your workflow tool</p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-400">
+                              {automationConnectorCatalog.truth.summary}
+                            </p>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                              {automationConnectorCatalog.items.map((connector) => (
+                                <div key={connector.code} className="rounded-md border border-[#292a2f] bg-[#141518] p-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <p className="text-sm font-semibold text-zinc-100">{connector.name}</p>
+                                    <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-100">
+                                      Compatible
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 text-xs leading-5 text-zinc-400">{connector.setup}</p>
+                                  <details className="mt-2 rounded-md border border-[#292a2f] bg-[#101114] px-2.5 py-2">
+                                    <summary className="cursor-pointer text-xs font-medium text-zinc-300">Show setup steps</summary>
+                                    <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-4 text-zinc-400">
+                                      {connector.setup_steps.map((step) => <li key={step}>{step}</li>)}
+                                    </ol>
+                                  </details>
+                                  <p className="mt-2 text-[11px] leading-4 text-zinc-500">
+                                    {connector.starter_available
+                                      ? "Optional starter available · Your connection still needs a test"
+                                      : "Universal guide and API file · Your connection still needs a test"}
+                                  </p>
+                                  {isAutomationConformanceProvider(connector.code) ? (
+                                    <button
+                                      type="button"
+                                      className={`${secondaryButtonClass} mt-3 w-full`}
+                                      disabled={busyAction === `automation-conformance-${connector.code}`}
+                                      onClick={() => void downloadAutomationConformanceKit(connector.code)}
+                                    >
+                                      {busyAction === `automation-conformance-${connector.code}`
+                                        ? "Preparing safe test..."
+                                        : "Download safe test file"}
+                                    </button>
+                                  ) : (
+                                    <p className="mt-3 text-[11px] leading-4 text-zinc-500">
+                                      Use the universal guide to test another HTTPS client.
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {automationCommandLoadState === "unavailable" ? (
+                          <p className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-100">
+                            Report access could not be checked. Existing InsightOS work is still available, and no new workflow key was created.
+                          </p>
+                        ) : null}
+
+                        {automationCommandToken ? (
+                          <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
+                            <p className="text-sm font-semibold text-amber-100">Copy this workflow key now</p>
+                            <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                              Save it in your workflow tool as a private Bearer credential. InsightOS stores only a protected fingerprint and will not show the key again.
+                            </p>
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                              <input
+                                aria-label="workflow tool key"
+                                readOnly
+                                className="min-w-0 flex-1 rounded-md border border-amber-500/30 bg-[#101114] px-3 py-2 font-mono text-xs text-amber-50"
+                                value={automationCommandToken}
+                              />
+                              <button type="button" className={secondaryButtonClass} onClick={() => void copyAutomationCommandToken()}>
+                                Copy key
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {activeAutomationServiceAccount ? (
+                          <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-white">{activeAutomationServiceAccount.name}</p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                                  {activeAutomationServiceAccount.location_name} · {activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved")
+                                    ? "Retrieve and create private reports"
+                                    : "Saved reports only"} · Key ends in {activeAutomationServiceAccount.token_hint}
+                                </p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-500">
+                                  Expires {formatTimestamp(activeAutomationServiceAccount.expires_at)}
+                                  {activeAutomationServiceAccount.last_used_at
+                                    ? ` · Last used ${formatTimestamp(activeAutomationServiceAccount.last_used_at)}`
+                                    : " · Not used yet"}
+                                </p>
+                              </div>
+                              {me?.org_role === "org_owner" ? (
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    className={primaryButtonClass}
+                                    disabled={busyAction === `automation-command-template-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void downloadN8nReportWorkflow(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-template-${activeAutomationServiceAccount.id}` ? "Downloading..." : "Download n8n starter"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={secondaryButtonClass}
+                                    disabled={busyAction === `automation-command-guide-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void downloadAutomationConnectionGuide(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-guide-${activeAutomationServiceAccount.id}` ? "Preparing..." : "Download connection guide"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={secondaryButtonClass}
+                                    disabled={busyAction === `automation-command-openapi-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void downloadAutomationOpenApi(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-openapi-${activeAutomationServiceAccount.id}` ? "Preparing..." : "Download API file"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={secondaryButtonClass}
+                                    disabled={busyAction === `automation-command-rotate-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void rotateAutomationCommandAccess(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-rotate-${activeAutomationServiceAccount.id}` ? "Replacing..." : "Replace key"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-medium text-rose-100 disabled:opacity-50"
+                                    disabled={busyAction === `automation-command-revoke-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void revokeAutomationCommandAccess(activeAutomationServiceAccount.id)}
+                                  >
+                                    {busyAction === `automation-command-revoke-${activeAutomationServiceAccount.id}` ? "Turning off..." : "Turn off access"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="mt-4 rounded-md border border-[#292a2f] bg-[#141518] p-3">
+                              <p className="text-xs font-semibold text-zinc-200">Workflow setup progress</p>
+                              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                                {[
+                                  {
+                                    label: "Private key ready",
+                                    complete: true,
+                                    detail: "Created in InsightOS",
+                                  },
+                                  {
+                                    label: "InsightOS contacted",
+                                    complete: Boolean(activeAutomationServiceAccount.last_used_at),
+                                    detail: activeAutomationServiceAccount.last_used_at
+                                      ? `Last contact ${formatTimestamp(activeAutomationServiceAccount.last_used_at)}`
+                                      : "Run the safe connection check",
+                                  },
+                                  {
+                                    label: "First request saved",
+                                    complete: activeAutomationServiceAccount.command_count > 0,
+                                    detail: activeAutomationServiceAccount.command_count > 0
+                                      ? `${activeAutomationServiceAccount.command_count} saved request${activeAutomationServiceAccount.command_count === 1 ? "" : "s"}`
+                                      : "Test one allowed action",
+                                  },
+                                ].map((step) => (
+                                  <div key={step.label} className="rounded-md border border-[#303137] bg-[#101114] p-2.5">
+                                    <p className={`text-xs font-medium ${step.complete ? "text-emerald-100" : "text-zinc-300"}`}>
+                                      {step.complete ? "Complete" : "Next"} · {step.label}
+                                    </p>
+                                    <p className="mt-1 text-[11px] leading-4 text-zinc-500">{step.detail}</p>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-[11px] leading-4 text-zinc-500">
+                                These milestones confirm only what InsightOS has received. Turn on the external workflow yourself after its saved result looks correct.
+                              </p>
+                            </div>
+                            {me?.org_role === "org_owner" && automationCommandLocations.length > 1 ? (
+                              <details className="mt-4 rounded-md border border-[#303137] bg-[#141518] p-3">
+                                <summary className="cursor-pointer text-sm font-semibold text-white">
+                                  Saved-report locations ({activeAutomationServiceAccount.location_count})
+                                </summary>
+                                <p className="mt-2 text-xs leading-5 text-zinc-400">
+                                  The primary location is always included. Check only the other locations whose saved reports this key should read.
+                                </p>
+                                <div className="mt-3 space-y-2">
+                                  {automationCommandLocations.map((location) => {
+                                    const isPrimary = location.id === activeAutomationServiceAccount.location_id;
+                                    const isChecked = activeAutomationServiceAccount.location_ids.includes(location.id);
+                                    return (
+                                      <label key={location.id} className="flex items-start gap-2 text-xs text-zinc-300">
+                                        <input
+                                          type="checkbox"
+                                          className="mt-0.5"
+                                          checked={isChecked}
+                                          disabled={isPrimary || busyAction === `automation-command-location-scope-${activeAutomationServiceAccount.id}`}
+                                          onChange={(event) => {
+                                            const next = event.target.checked
+                                              ? [...activeAutomationServiceAccount.location_ids, location.id]
+                                              : activeAutomationServiceAccount.location_ids.filter((item) => item !== location.id);
+                                            void updateAutomationCommandLocations(activeAutomationServiceAccount, next);
+                                          }}
+                                        />
+                                        <span>{location.label}{isPrimary ? " · Primary" : ""}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                                <p className="mt-3 text-xs leading-5 text-amber-100/80">
+                                  Every change replaces the workflow key. Removing a location blocks future reads immediately but preserves its reports and prior request history.
+                                </p>
+                              </details>
+                            ) : null}
+                            {me?.org_role === "org_owner" ? (
+                              <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="text-sm font-semibold text-white">
+                                      Let a workflow tool create private reports from saved results
+                                    </p>
+                                    <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                      This can assemble a new report using data already inside InsightOS. It cannot start a crawl or paid check, send the report, publish content, or change your website or business profile.
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className={activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved") ? secondaryButtonClass : primaryButtonClass}
+                                    disabled={busyAction === `automation-command-scope-${activeAutomationServiceAccount.id}`}
+                                    onClick={() => void setAutomationReportCreation(
+                                      activeAutomationServiceAccount.id,
+                                      !activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved"),
+                                    )}
+                                  >
+                                    {busyAction === `automation-command-scope-${activeAutomationServiceAccount.id}`
+                                      ? "Updating..."
+                                      : activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved")
+                                        ? "Turn off report creation"
+                                        : "Allow private report creation"}
+                                  </button>
+                                </div>
+                                <p className="mt-2 text-xs leading-5 text-amber-100/80">
+                                  Changing this access replaces the workflow key, so the old key stops working immediately.
+                                </p>
+                                {activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved") && activeAutomationCampaign ? (
+                                  <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+                                    <p className="text-xs leading-5 text-emerald-50">
+                                      Download an inactive n8n workflow that creates this location&apos;s private report on the first day of each month. You can review its day, time, and timezone before publishing.
+                                    </p>
+                                    <button
+                                      type="button"
+                                      className={`${secondaryButtonClass} mt-3`}
+                                      disabled={busyAction === `automation-command-monthly-template-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void downloadN8nMonthlyReportWorkflow(
+                                        activeAutomationServiceAccount.id,
+                                        activeAutomationCampaign.id,
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-monthly-template-${activeAutomationServiceAccount.id}`
+                                        ? "Downloading..."
+                                        : "Download monthly report workflow"}
+                                    </button>
+                                  </div>
+                                ) : null}
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let a workflow tool route saved recommendations for owner review
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        When InsightOS finds a recommendation, your workflow can retrieve its plain-language facts and place it in the InsightOS owner-review queue before continuing to email, CRM, or a task tool. It cannot approve, schedule, execute, or publish anything.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-recommendation-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationRecommendationAccess(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-recommendation-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve")
+                                          ? "Turn off recommendation access"
+                                          : "Allow owner-review routing"}
+                                    </button>
+                                  </div>
+                                  {activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve") ? (
+                                    <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+                                      <p className="text-xs leading-5 text-emerald-50">
+                                        Download an inactive n8n workflow that listens only for this location&apos;s Recommendation ready updates and retrieves the matching saved recommendation.
+                                      </p>
+                                      <button
+                                        type="button"
+                                        className={`${secondaryButtonClass} mt-3`}
+                                        disabled={busyAction === `automation-command-recommendation-template-${activeAutomationServiceAccount.id}`}
+                                        onClick={() => void downloadN8nRecommendationWorkflow(activeAutomationServiceAccount.id)}
+                                      >
+                                        {busyAction === `automation-command-recommendation-template-${activeAutomationServiceAccount.id}`
+                                          ? "Downloading..."
+                                          : "Download recommendation workflow"}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let a workflow tool refresh connected data
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        Your workflow can request a fresh check from a Google source you already connected to this location. InsightOS keeps the request in its own job history and applies the same access and location checks as this screen. It cannot connect a new account, change settings, publish, or run an unrelated action.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-refresh-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationConnectionRefresh(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-refresh-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved")
+                                          ? "Turn off data refresh"
+                                          : "Allow connected-data refresh"}
+                                    </button>
+                                  </div>
+                                  {activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved") ? (
+                                    <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-5 text-emerald-50">
+                                      Use command <code>connection.refresh_saved</code> with the exact connected-source ID. The receipt returns a safe job ID and current queued, running, completed, or failed status for polling.
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let a workflow tool check public business listings
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        This starts one inventory check across supported public listing sources for this location. Each accepted check uses the same Insight Credit balance, daily plan limit, price setup, and connection safeguards as the Listings screen. It cannot correct a listing, publish, or change your Business Profile.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("listing.check_public") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-listing-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationPublicListingCheck(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("listing.check_public"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-listing-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("listing.check_public")
+                                          ? "Turn off listing checks"
+                                          : "Allow public listing checks"}
+                                    </button>
+                                  </div>
+                                  <p className="mt-2 text-xs leading-5 text-amber-100/80">
+                                    This is the first workflow action that can consume Insight Credits. InsightOS safely declines it before any outside call when the allowance, daily limit, location, provider health, or price setup is unavailable.
+                                  </p>
+                                </div>
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let a workflow tool start accepted working drafts and request review
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        After an owner accepts a saved content brief, your workflow can create its private editable outline and place an exact draft beside the owner for review. It cannot generate AI copy, approve, schedule, publish, or change your website.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-draft-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationWorkingDraftCreation(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-draft-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft")
+                                          ? "Turn off draft creation"
+                                          : "Allow accepted draft creation"}
+                                    </button>
+                                  </div>
+                                  {activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft")
+                                    && activeAutomationServiceAccount.allowed_commands.includes("content.request_draft_review")
+                                    && activeAutomationCampaign ? (
+                                    <button
+                                      type="button"
+                                      className={`${secondaryButtonClass} mt-3`}
+                                      disabled={busyAction === `automation-command-content-template-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void downloadN8nContentDraftWorkflow(
+                                        activeAutomationServiceAccount.id,
+                                        activeAutomationCampaign.id,
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-content-template-${activeAutomationServiceAccount.id}`
+                                        ? "Preparing download..."
+                                        : "Download private-draft workflow"}
+                                    </button>
+                                  ) : null}
+                                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                    The download starts inactive, contains no workflow key, and requires you to replace the accepted brief ID before testing.
+                                  </p>
+                                </div>
+                                <div className="mt-4 border-t border-[#292a2f] pt-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">
+                                        Let a workflow tool route saved review facts
+                                      </p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        Your workflow can read the rating, review date, reply state, and whether a comment exists for one exact saved review. Reviewer names and comment text stay in InsightOS. It cannot create, approve, or post a reply or change your Business Profile.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("review.retrieve") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-review-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationReviewRetrieval(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("review.retrieve"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-review-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("review.retrieve")
+                                          ? "Turn off review routing"
+                                          : "Allow saved-review routing"}
+                                    </button>
+                                  </div>
+                                  {activeAutomationServiceAccount.allowed_commands.includes("review.retrieve") ? (
+                                    <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-5 text-emerald-50">
+                                      <p>Use <code>review.retrieve</code> with the exact saved review ID. InsightOS returns only routing facts and never sends the reviewer&apos;s identity or comment text.</p>
+                                      <button
+                                        type="button"
+                                        className={`${secondaryButtonClass} mt-3`}
+                                        disabled={busyAction === `automation-command-review-template-${activeAutomationServiceAccount.id}`}
+                                        onClick={() => void downloadN8nSavedReviewWorkflow(activeAutomationServiceAccount.id)}
+                                      >
+                                        {busyAction === `automation-command-review-template-${activeAutomationServiceAccount.id}`
+                                          ? "Preparing download..."
+                                          : "Download saved-review workflow"}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                  <div className="mt-3 flex flex-col gap-3 rounded-md border border-[#303137] bg-[#141518] p-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-xs font-semibold text-white">Optionally prepare a private reply draft</p>
+                                      <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                                        Your workflow may request one governed draft for the exact saved review. The draft text stays in InsightOS. A person must still review and approve it, and the workflow cannot post it or change the Business Profile.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className={activeAutomationServiceAccount.allowed_commands.includes("review.create_response_draft") ? secondaryButtonClass : primaryButtonClass}
+                                      disabled={busyAction === `automation-command-review-draft-scope-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void setAutomationReviewDraftCreation(
+                                        activeAutomationServiceAccount.id,
+                                        !activeAutomationServiceAccount.allowed_commands.includes("review.create_response_draft"),
+                                      )}
+                                    >
+                                      {busyAction === `automation-command-review-draft-scope-${activeAutomationServiceAccount.id}`
+                                        ? "Updating..."
+                                        : activeAutomationServiceAccount.allowed_commands.includes("review.create_response_draft")
+                                          ? "Turn off reply drafting"
+                                          : "Allow private reply drafts"}
+                                    </button>
+                                    {activeAutomationServiceAccount.allowed_commands.includes("review.create_response_draft") ? (
+                                      <button
+                                        type="button"
+                                        className={secondaryButtonClass}
+                                        disabled={busyAction === `automation-command-review-draft-template-${activeAutomationServiceAccount.id}`}
+                                        onClick={() => void downloadN8nReviewDraftWorkflow(activeAutomationServiceAccount.id)}
+                                      >
+                                        {busyAction === `automation-command-review-draft-template-${activeAutomationServiceAccount.id}`
+                                          ? "Preparing download..."
+                                          : "Download private reply-draft workflow"}
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : me?.org_role === "org_owner" && automationCommandLoadState === "ready" ? (
+                          <div className="mt-4 grid gap-3 rounded-md border border-[#303137] bg-[#101114] p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+                            <div>
+                              <label htmlFor="automation-command-name" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                                Name this report access
+                              </label>
+                              <input
+                                id="automation-command-name"
+                                className={selectClass}
+                                value={automationCommandName}
+                                maxLength={120}
+                                onChange={(event) => setAutomationCommandName(event.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor="automation-command-location" className="mb-1.5 block text-xs font-medium text-zinc-300">
+                                Primary location for this workflow
+                              </label>
+                              <select
+                                id="automation-command-location"
+                                className={selectClass}
+                                value={automationCommandLocationId}
+                                onChange={(event) => {
+                                  setAutomationCommandLocationId(event.target.value);
+                                  setAutomationCommandAdditionalLocationIds((current) => current.filter((item) => item !== event.target.value));
+                                }}
+                              >
+                                {automationCommandLocations.map((location) => (
+                                  <option key={location.id} value={location.id}>{location.label}</option>
+                                ))}
+                              </select>
+                              {automationCommandLocations.length > 1 ? (
+                                <details className="mt-2 rounded-md border border-[#303137] bg-[#141518] p-2">
+                                  <summary className="cursor-pointer text-xs font-medium text-zinc-300">
+                                    Add report access for other locations
+                                  </summary>
+                                  <div className="mt-2 space-y-2">
+                                    {automationCommandLocations
+                                      .filter((location) => location.id !== automationCommandLocationId)
+                                      .map((location) => (
+                                        <label key={location.id} className="flex items-start gap-2 text-xs text-zinc-300">
+                                          <input
+                                            type="checkbox"
+                                            className="mt-0.5"
+                                            checked={automationCommandAdditionalLocationIds.includes(location.id)}
+                                            onChange={(event) => setAutomationCommandAdditionalLocationIds((current) => (
+                                              event.target.checked
+                                                ? [...current, location.id].slice(0, 9)
+                                                : current.filter((item) => item !== location.id)
+                                            ))}
+                                          />
+                                          <span>{location.label}</span>
+                                        </label>
+                                      ))}
+                                  </div>
+                                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                    Additional locations allow saved-report retrieval only. Paid checks, refreshes, recommendations, drafts, review requests, approvals, and publishing remain limited to the primary location.
+                                  </p>
+                                </details>
+                              ) : null}
+                            </div>
+                            <button
+                              type="button"
+                              className={primaryButtonClass}
+                              disabled={
+                                busyAction === "automation-command-create" ||
+                                automationCommandName.trim().length < 2 ||
+                                !automationCommandLocationId
+                              }
+                              onClick={() => void createAutomationCommandAccess()}
+                            >
+                              {busyAction === "automation-command-create" ? "Creating..." : "Create report access"}
+                            </button>
+                          </div>
+                        ) : automationCommandLoadState === "ready" ? (
+                          <p className="mt-3 rounded-md border border-[#303137] bg-[#101114] p-3 text-xs leading-5 text-zinc-400">
+                            Ask the workspace owner to create or replace the workflow key.
+                          </p>
+                        ) : null}
+
+                        {activeAutomationServiceAccount ? (
+                          <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4">
+                            <p className="text-sm font-semibold text-emerald-100">Connect any supported workflow tool</p>
+                            <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
+                              <li>Download the connection guide, or import the API file into a compatible builder.</li>
+                              <li>Save the one-time workflow key in the tool&apos;s private Bearer credential setting.</li>
+                              <li>Run the safe connection check before choosing an enabled action.</li>
+                              <li>Test the workflow once, then turn it on only when the saved result looks correct.</li>
+                            </ol>
+                            <p className="mt-2 text-xs leading-5 text-zinc-500">
+                              The downloads never contain your workflow key. The separate n8n starter remains available as an optional shortcut.
+                            </p>
+                          </div>
+                        ) : null}
+
+                        {activeAutomationServiceAccount ? (
+                          <details className="group mt-3 rounded-md border border-[#303137] bg-[#101114]">
+                            <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-medium text-zinc-300">
+                              Manual request examples (advanced)
+                            </summary>
+                            <div className="space-y-3 border-t border-[#292a2f] p-3 text-xs leading-5 text-zinc-400">
+                              <ol className="list-decimal space-y-1 pl-5">
+                                <li>Add an HTTP Request node and choose POST.</li>
+                                <li>Use <code className="text-zinc-200">/api/v1/automation/commands</code> on your InsightOS domain.</li>
+                                <li>Add an Authorization header with <code className="text-zinc-200">Bearer YOUR_WORKFLOW_KEY</code>.</li>
+                                <li>Send the JSON body below, replacing the report ID and the two run IDs.</li>
+                              </ol>
+                              <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                schema_version: "insightos.automation.command.v1",
+                                command_type: "report.retrieve",
+                                organization_id: organizationId,
+                                location_id: activeAutomationServiceAccount.location_id,
+                                correlation_id: "n8n-run-REPLACE",
+                                idempotency_key: "n8n-report-REPLACE",
+                                reason: "Copy a saved report into this workflow",
+                                target: { report_id: "REPLACE-WITH-REPORT-ID" },
+                              }, null, 2)}</pre>
+                              <p>
+                                Reusing the same idempotency key safely returns the first result instead of running the command twice. The workflow receives only saved report facts and ready file references.
+                              </p>
+                              {activeAutomationServiceAccount.allowed_commands.includes("report.generate_saved") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Create a private report from saved results</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "report.generate_saved",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-report-month-REPLACE",
+                                    idempotency_key: "n8n-report-month-REPLACE",
+                                    reason: "Create a private report from saved InsightOS results",
+                                    target: { campaign_id: "REPLACE-WITH-CAMPAIGN-ID" },
+                                  }, null, 2)}</pre>
+                                  <p>
+                                    Use one stable idempotency key for each reporting period. This only assembles saved evidence; it does not collect fresh data or deliver the report.
+                                  </p>
+                                </>
+                              ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("recommendation.retrieve") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Retrieve a saved recommendation for owner review</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "recommendation.retrieve",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-recommendation-REPLACE",
+                                    idempotency_key: "n8n-recommendation-REPLACE",
+                                    reason: "Copy a saved recommendation into this workflow",
+                                    target: { recommendation_id: "REPLACE-WITH-RECOMMENDATION-ID" },
+                                  }, null, 2)}</pre>
+                                  <p>This returns saved owner-facing facts only. It does not approve or execute the recommendation.</p>
+                                </>
+                              ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("connection.refresh_saved") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Refresh one connected source</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "connection.refresh_saved",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-refresh-REPLACE",
+                                    idempotency_key: "n8n-refresh-REPLACE",
+                                    reason: "Refresh data from an existing connection",
+                                    target: { connection_id: "REPLACE-WITH-CONNECTION-ID" },
+                                  }, null, 2)}</pre>
+                                  <p>This queues only the named existing connection and returns a job status. Reusing the idempotency key cannot create a second request.</p>
+                                </>
+                              ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("listing.check_public") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Run one priced public listing check</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "listing.check_public",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-listings-REPLACE",
+                                    idempotency_key: "n8n-listings-REPLACE",
+                                    reason: "Check supported public listings for this location",
+                                    target: { campaign_id: activeAutomationCampaign?.id || "REPLACE-WITH-CAMPAIGN-ID" },
+                                  }, null, 2)}</pre>
+                                  <p>Use a new stable key for each intended check. A retry with the same key returns the first run and cannot reserve credits twice.</p>
+                                </>
+                              ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("content.create_working_draft") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Start one accepted working draft</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "content.create_working_draft",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-draft-REPLACE",
+                                    idempotency_key: "n8n-draft-REPLACE",
+                                    reason: "Start the owner-accepted content brief",
+                                    target: {
+                                      campaign_id: activeAutomationCampaign?.id || "REPLACE-WITH-CAMPAIGN-ID",
+                                      brief_id: "REPLACE-WITH-ACCEPTED-BRIEF-ID",
+                                    },
+                                  }, null, 2)}</pre>
+                                  <p>A draft is created only for an already accepted brief at this location. Reusing the key returns the same private draft.</p>
+                                </>
+                              ) : null}
+                              {activeAutomationServiceAccount.allowed_commands.includes("content.request_draft_review") ? (
+                                <>
+                                  <p className="font-medium text-zinc-300">Ask the owner to review one private draft</p>
+                                  <pre className="overflow-x-auto rounded-md border border-[#292a2f] bg-[#141518] p-3 font-mono text-[11px] leading-5 text-zinc-300">{JSON.stringify({
+                                    schema_version: "insightos.automation.command.v1",
+                                    command_type: "content.request_draft_review",
+                                    organization_id: organizationId,
+                                    location_id: activeAutomationServiceAccount.location_id,
+                                    correlation_id: "n8n-draft-review-REPLACE",
+                                    idempotency_key: "n8n-draft-review-REPLACE",
+                                    reason: "Ask the owner to review the private draft",
+                                    target: {
+                                      campaign_id: activeAutomationCampaign?.id || "REPLACE-WITH-CAMPAIGN-ID",
+                                      draft_id: "REPLACE-WITH-WORKING-DRAFT-ID",
+                                    },
+                                  }, null, 2)}</pre>
+                                  <p>The request appears beside that exact private draft. It cannot approve, schedule, publish, or change the website.</p>
+                                </>
+                              ) : null}
+                            </div>
+                          </details>
+                        ) : null}
+
+                        {automationCommandHistory.length > 0 ? (
+                          <details className="group mt-3 rounded-md border border-[#303137] bg-[#101114]">
+                            <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-medium text-zinc-300">
+                              Recent workflow requests ({automationCommandHistory.length})
+                            </summary>
+                            <div className="space-y-2 border-t border-[#292a2f] p-3">
+                              {automationCommandHistory.slice(0, 10).map((receipt) => (
+                                <div key={receipt.id} className="rounded-md border border-[#292a2f] bg-[#141518] px-3 py-2 text-xs">
+                                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                    <span className={receipt.status === "succeeded" ? "text-emerald-300" : "text-amber-300"}>
+                                    {receipt.status === "succeeded"
+                                      ? receipt.command_type === "report.generate_saved"
+                                        ? "Private report created"
+                                        : receipt.command_type === "recommendation.request_review"
+                                          ? "Owner review requested"
+                                        : receipt.command_type === "recommendation.retrieve"
+                                          ? "Saved recommendation returned"
+                                        : receipt.command_type === "connection.refresh_saved"
+                                          ? "Connected data refresh accepted"
+                                        : receipt.command_type === "listing.check_public"
+                                          ? "Public listing check accepted"
+                                        : receipt.command_type === "content.create_working_draft"
+                                          ? "Private working draft created"
+                                        : receipt.command_type === "content.request_draft_review"
+                                          ? "Private draft review requested"
+                                        : receipt.command_type === "review.retrieve"
+                                          ? "Saved review facts returned"
+                                        : receipt.command_type === "review.create_response_draft"
+                                          ? "Private reply draft requested"
+                                          : "Saved report returned"
+                                      : "Request safely declined"}
+                                    </span>
+                                    <span className="text-zinc-500">{formatTimestamp(receipt.completed_at)}</span>
+                                  </div>
+                                  <p className="mt-1 leading-5 text-zinc-400">{receipt.result.message}</p>
+                                  {receipt.result.resource?.href ? (
+                                    <a className="mt-1 inline-flex text-xs font-medium text-sky-300 hover:text-sky-200" href={receipt.result.resource.href}>
+                                      Open saved result
+                                    </a>
+                                  ) : receipt.status === "denied" ? (
+                                    <p className="mt-1 text-[11px] leading-4 text-zinc-500">
+                                      Nothing was changed. Review the message above, then retry with the same request key after fixing the issue.
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
                       </div>
                     ) : null}
+
+                    {usageAllowance.external_automation.outbound_contract?.supported_events.length ? (
+                      <details className="group mt-3 rounded-md border border-[#292a2f] bg-[#101114]">
+                        <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-medium text-zinc-300">
+                          See every update InsightOS can send
+                        </summary>
+                        <div className="border-t border-[#292a2f] p-3">
+                          <p className="text-xs leading-5 text-zinc-500">
+                            Reports, recommendations, and completed approved actions can be sent after a successful test.
+                          </p>
+                          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {usageAllowance.external_automation.outbound_contract?.supported_events.map((event) => (
+                              <li key={event.code} className="rounded-lg border border-[#292a2f] bg-[#141518] px-3 py-2">
+                                <p className="text-xs font-medium text-zinc-200">{event.label}</p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-500">{event.summary}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </details>
+                    ) : null}
                     <p className="mt-4 border-t border-[#292a2f] pt-3 text-xs leading-5 text-zinc-500">
-                      Safety boundary: workflow tools receive signed notifications only. They cannot approve recommendations, publish content, edit WordPress, or change a Google Business Profile.
+                      Workflow tools can receive updates. They cannot approve recommendations, publish content, edit WordPress, or change a Google Business Profile.
                     </p>
                   </div>
                 ) : null}

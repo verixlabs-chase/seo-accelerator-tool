@@ -108,10 +108,45 @@ def test_authenticated_customer_can_download_only_supported_conformance_kit(clie
     assert data["test_only"] is True
     assert data["request"]["headers"]["X-InsightOS-Signature"].startswith("v1=")
 
-    unsupported = client.get(
-        "/api/v1/automation/conformance/generic", headers=headers
-    )
+    unsupported = client.get("/api/v1/automation/conformance/generic", headers=headers)
     assert unsupported.status_code == 404
     assert unsupported.json()["errors"][0]["details"]["reason_code"] == (
         "automation_provider_not_supported"
+    )
+
+
+def test_connector_catalog_separates_compatibility_from_customer_connection(client) -> None:
+    anonymous = client.get("/api/v1/automation/connector-catalog")
+    assert anonymous.status_code == 401
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "org-owner@example.com", "password": "pass-org-owner"},
+    )
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['data']['access_token']}"}
+    response = client.get("/api/v1/automation/connector-catalog", headers=headers)
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["version"] == "insightos.automation.connectors.v1"
+    assert data["truth"]["state"] == "compatibility_only"
+    assert [item["code"] for item in data["items"]] == [
+        "zapier",
+        "make",
+        "n8n",
+        "pipedream",
+        "https",
+    ]
+    assert all(item["production_connection_proven"] is False for item in data["items"])
+    assert all(item["customer_connection_required"] is True for item in data["items"])
+    assert all(len(item["setup_steps"]) == 4 for item in data["items"])
+    assert all(any("Bearer" in step for step in item["setup_steps"]) for item in data["items"])
+    assert "API by Zapier" in data["items"][0]["setup_steps"][0]
+    assert "app connection" in data["items"][0]["setup_steps"][2]
+    assert "Make a request" in data["items"][1]["setup_steps"][0]
+    assert (
+        next(item for item in data["items"] if item["code"] == "n8n")["starter_available"] is True
+    )
+    assert all(
+        item["starter_available"] is False for item in data["items"] if item["code"] != "n8n"
     )

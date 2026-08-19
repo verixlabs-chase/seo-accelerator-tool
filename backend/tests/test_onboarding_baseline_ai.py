@@ -190,6 +190,11 @@ def _stub_cost_controls(monkeypatch) -> None:
         "reconcile_provider_cost",
         lambda *args, **kwargs: terminal,
     )
+    monkeypatch.setattr(
+        onboarding_baseline_ai_service.cost_economics_service,
+        "release_provider_cost",
+        lambda *args, **kwargs: None,
+    )
 
 
 def test_baseline_narrative_is_validated_metered_and_idempotent(
@@ -270,6 +275,152 @@ def test_baseline_narrative_cannot_change_the_deterministic_fix_order(
     assert row.status == "rejected"
     assert row.output_payload == {}
     assert row.error_code == "ai_output_validation_failed"
+
+
+def test_baseline_private_canary_uses_real_frozen_context_and_skips_managed_call(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(onboarding_baseline_ai_service, "get_settings", _settings)
+    _stub_cost_controls(monkeypatch)
+    campaign = _campaign(db_session, create_test_org)
+    evidence, scores, diagnosis, source_states = _baseline_inputs()
+    context, evidence_ids, fix_ids = onboarding_baseline_ai_service._build_context(
+        evidence=evidence,
+        scores=scores,
+        diagnosis=diagnosis,
+        source_states=source_states,
+    )
+    private_provider = BaselineProvider()
+    private_response = private_provider.summarize_baseline(
+        context=context,
+        output_schema=GovernedBaselineNarrative.model_json_schema(),
+        prompt_template_version=onboarding_baseline_ai_service.PROMPT_TEMPLATE_VERSION,
+    )
+    private_output = GovernedBaselineNarrative.model_validate(private_response.payload)
+    private_output.validate_against_context(
+        evidence_ids=set(evidence_ids),
+        deterministic_fix_ids=fix_ids,
+    )
+    releases: list[object] = []
+    monkeypatch.setattr(
+        onboarding_baseline_ai_service.cost_economics_service,
+        "release_provider_cost",
+        lambda _db, *, reservation, now: releases.append((reservation, now)),
+    )
+    monkeypatch.setattr(
+        onboarding_baseline_ai_service,
+        "select_baseline_capability",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            event_id="event-1",
+            connection_id="connection-1",
+            model_identifier="private-model",
+        ),
+    )
+    monkeypatch.setattr(
+        onboarding_baseline_ai_service,
+        "_attempt_private_baseline",
+        lambda *_args, **_kwargs: onboarding_baseline_ai_service._PrivateBaselineResult(
+            event=SimpleNamespace(id="event-1"),
+            output=private_output,
+            provider_response=private_response,
+            provider_name="private_ai",
+            model_name="private-model",
+            prompt_attempted=True,
+            input_tokens=private_response.input_tokens,
+            output_tokens=private_response.output_tokens,
+            duration_ms=25,
+        ),
+    )
+
+    result = onboarding_baseline_ai_service.generate_baseline_narrative(
+        db_session,
+        campaign=campaign,
+        evidence=evidence,
+        scores=scores,
+        diagnosis=diagnosis,
+        source_states=source_states,
+        requested_by_user_id=None,
+        now=datetime(2026, 8, 19, 12, 0, tzinfo=UTC),
+    )
+
+    assert result["state"] == "validated"
+    assert result["narrative"]["priority_order"] == fix_ids
+    assert len(releases) == 1
+    row = db_session.get(GovernedAIRun, result["run_id"])
+    assert row is not None
+    assert row.provider_name == "private_ai"
+    assert row.model_name == "private-model"
+    assert row.estimated_cost == 0
+    assert row.reconciled_cost == 0
+    assert row.price_card_version is None
+
+
+def test_baseline_private_failure_rolls_to_managed_and_records_fallback(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(onboarding_baseline_ai_service, "get_settings", _settings)
+    _stub_cost_controls(monkeypatch)
+    campaign = _campaign(db_session, create_test_org)
+    evidence, scores, diagnosis, source_states = _baseline_inputs()
+    managed_provider = BaselineProvider()
+    fallback_calls: list[dict] = []
+    monkeypatch.setattr(
+        onboarding_baseline_ai_service,
+        "MistralGovernedAIProvider",
+        lambda **_kwargs: managed_provider,
+    )
+    monkeypatch.setattr(
+        onboarding_baseline_ai_service,
+        "select_baseline_capability",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            event_id="event-2",
+            connection_id="connection-2",
+            model_identifier="private-model",
+        ),
+    )
+    monkeypatch.setattr(
+        onboarding_baseline_ai_service,
+        "_attempt_private_baseline",
+        lambda *_args, **_kwargs: onboarding_baseline_ai_service._PrivateBaselineResult(
+            event=SimpleNamespace(id="event-2"),
+            model_name="private-model",
+            prompt_attempted=True,
+            error_code="ai_provider_timeout",
+            provider_may_have_processed=True,
+            duration_ms=400,
+        ),
+    )
+    monkeypatch.setattr(
+        onboarding_baseline_ai_service,
+        "record_baseline_fallback",
+        lambda _db, **kwargs: fallback_calls.append(kwargs),
+    )
+
+    result = onboarding_baseline_ai_service.generate_baseline_narrative(
+        db_session,
+        campaign=campaign,
+        evidence=evidence,
+        scores=scores,
+        diagnosis=diagnosis,
+        source_states=source_states,
+        requested_by_user_id=None,
+        now=datetime(2026, 8, 19, 12, 30, tzinfo=UTC),
+    )
+
+    assert result["state"] == "validated"
+    assert managed_provider.calls == 1
+    assert len(fallback_calls) == 1
+    assert fallback_calls[0]["private_error_code"] == "ai_provider_timeout"
+    assert fallback_calls[0]["managed_succeeded"] is True
+    assert fallback_calls[0]["provider_may_have_processed"] is True
+    row = db_session.get(GovernedAIRun, result["run_id"])
+    assert row is not None
+    assert row.provider_name == "mistral"
+    assert row.reconciled_cost == Decimal("0.00017400")
 
 
 def test_baseline_contract_rejects_unknown_evidence() -> None:

@@ -677,7 +677,8 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 44 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
 | 45 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
 | 46 | **AUT1 - External Automation Gateway** | Every paid tier can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, governed workflow templates, and typed actions; higher tiers add volume, collaboration, custom scopes, and service accounts without granting direct database or unrestricted execution access. |
-| 47 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
+| 47 | **AUT1J - Governed Inbound Automation Commands (n8n First)** | An n8n workflow can request a small allowlist of typed InsightOS jobs through a revocable service account, while native plan, location, allowance, evidence, approval, safety, idempotency, and audit controls remain authoritative. The same vendor-neutral contract later supports Make, Zapier, Pipedream, and approved custom clients. |
+| 48 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
 
 ### External API enablement map
 
@@ -2248,6 +2249,378 @@ Scheduling note:
 - A Vercel deployment cannot call `localhost` on a customer's computer. A local
   model must be exposed through an approved reachable HTTPS endpoint or a
   separately installed, outbound-only customer relay.
+
+Implementation status (August 18, 2026):
+
+- I1.5A's non-activating adapter foundation is implemented locally. The
+  existing governed prompts, strict JSON-schema response contract,
+  deterministic control-field restoration, token accounting, bounded retries,
+  and safe provider errors now run through a shared transport boundary without
+  changing Mistral behavior.
+- A constrained OpenAI-compatible adapter can exercise that same governed
+  contract against an already approved HTTPS endpoint. It removes
+  Mistral-specific request fields, keeps deterministic temperature and seed
+  settings, records compatible token aliases, and rejects HTTP, credentials in
+  URLs, IP literals, loopback/local names, nonstandard ports, query strings,
+  and fragments before any request is made.
+- I1.5B-A's candidate registry is now implemented locally. An authorized
+  Enterprise owner can save a named OpenAI-compatible provider candidate and
+  model through an owner-only API. The full endpoint and optional API key are
+  encrypted with the platform credential cipher; customer responses expose
+  only the endpoint host, model identifier, credential-present state, and
+  explicit inactive validation truth. Solo, Growth, and non-owner creation is
+  blocked by the canonical commercial feature gate.
+- Candidate records are tenant/organization scoped under PostgreSQL RLS,
+  cannot be deleted by the application role, and are database-constrained to
+  inactive/non-automatic state. Disconnect erases the encrypted endpoint and
+  credential even after a plan downgrade. No create, list, or disconnect path
+  can test, activate, route traffic, select the provider, or change the managed
+  Mistral fallback.
+- I1.5B-B1's DNS/IP safety preflight is implemented locally. An Enterprise owner
+  can ask the backend to decrypt a saved candidate and revalidate its exact
+  hostname. The preflight rejects an unavailable answer and rejects the entire
+  result set if any IPv4 or IPv6 address is loopback, private, link-local,
+  shared, reserved, multicast, unspecified, or otherwise non-global. It stores
+  only a deterministic hash of the sorted public addresses plus a safe reason,
+  never returns raw addresses, and deliberately makes no HTTP/model request.
+  Passing DNS therefore means only `public hostname checked`; full validation
+  and routing remain false.
+- I1.5B-B2A's bounded connection validation is implemented locally. It
+  re-resolves the saved host for each owner-triggered test, rejects the whole
+  answer set if any address is unsafe, and pins the outbound socket to that
+  approved answer while preserving the original hostname for TLS certificate
+  verification. Environment proxies, redirects, retries, non-443 destinations,
+  responses over 64 KiB, and requests over ten seconds are blocked. The only
+  payload is a synthetic structured-response marker with no customer or website
+  data. Success requires the exact OpenAI-compatible response envelope and
+  schema; safe status, bounded latency, redacted evidence hashes, and an audit
+  event are retained while the candidate remains database-constrained inactive.
+- I1.5B-B2B1's bounded synthetic quality benchmark is implemented locally.
+  Three frozen cases check evidence-bounded action choice, owner-approval
+  control integrity, and truthful handling of missing measurements. Each run is
+  bound to the exact passing connection-evidence hash and stops at the first
+  failure. A DNS-answer change invalidates the earlier connection evidence and
+  makes zero benchmark calls until the owner revalidates. Reports are
+  tenant-scoped, idempotent, append-only under PostgreSQL RLS and immutable
+  triggers, and retain only safe case labels, pass/fail reasons, bounded
+  latency, reported token counts, and artifact hashes—never prompts, answers,
+  credentials, endpoints, or resolved addresses. A passing report means only
+  `eligible for owner review`; activation and routing remain false.
+- I1.5B-B2B2A's human-review boundary is implemented locally. An Enterprise
+  owner can permanently approve the latest exact passing benchmark for a later
+  standby-activation step or reject it. Approval requires explicit confirmation
+  that the owner reviewed the synthetic results, that the provider is not
+  active, that the managed fallback remains required, and that no automatic
+  website or profile changes are authorized. Every review is bound to the exact
+  benchmark artifact and connection-evidence hashes, tenant scoped under
+  PostgreSQL RLS, and append-only under database immutability controls. A
+  conflicting second decision is rejected; an identical retry is idempotent.
+  Approval means only `eligible for later standby activation`: the candidate
+  remains inactive, routing stays false, and automatic changes stay forbidden.
+  The owner Settings surface now exposes the same staged workflow: write-only
+  encrypted credential setup, public-network check, pinned connection
+  validation, three separately labeled synthetic checks, and the four explicit
+  review acknowledgements. It never renders raw endpoints, evidence hashes,
+  resolved addresses, or an activation control, and an unavailable provider
+  list cannot be mistaken for an empty list.
+- I1.5B-B2B2B1's zero-traffic standby boundary is implemented locally. After an
+  exact owner-approved benchmark, an Enterprise owner can register one current
+  candidate as the workspace standby only while the managed Mistral route is
+  configured and all four standby acknowledgements are explicit. Enable and
+  disable actions are tenant-scoped, idempotent, append-only events bound to the
+  exact connection, benchmark, review, and evidence hashes. Database checks
+  freeze the mode to `zero_traffic_standby`, the traffic share to 0%, customer
+  prompt access to false, and automatic-change authority to false. Settings
+  exposes the same truthful state and manual removal path; an unavailable state
+  fails closed, and stale or disconnected evidence releases the current standby
+  slot without deleting its history. Mistral remains the only live route.
+- I1.5B-B2B2B2A's managed-fallback readiness evidence is implemented locally.
+  An Enterprise owner can snapshot whether the exact current zero-traffic
+  standby still has a recent successful managed-AI result and an intact rollback
+  path. The append-only, tenant-scoped proof uses saved governed-AI runs rather
+  than making another provider call, records plain blockers and a safe 30-day
+  managed usage summary, and is database-constrained to zero candidate runs,
+  zero traffic, no customer prompts, and no automatic-change authority. A pass
+  means only `ready for a later routing review`; Settings exposes no live-route
+  or traffic control.
+- I1.5B-B2B2B2B1's first nonzero canary is implemented locally. An Enterprise
+  owner with an exact current standby and passing fallback-readiness record can
+  explicitly start one fixed canary for the daily explanation only. The share
+  is database-constrained to 5%, with no configurable percentage and a second
+  hard ceiling of one private prompt per workspace per day. The owner must
+  acknowledge the real-customer-prompt boundary, managed fallback, automatic
+  rollback, and no-change authority. Immediately before dispatch the runtime
+  rechecks the owner event and readiness under the organization lock, resolves
+  and pins the exact previously approved public DNS set, blocks redirects,
+  proxies, retries, oversized responses, and requests over ten seconds, and
+  reserves the managed route first. Any private transport, structured-response,
+  evidence, or control-field failure appends an automatic rollback to 0% and
+  retries the same explanation through managed AI. Immutable attempt evidence
+  retains only safe outcome, fallback, rollback, and token-usage facts; the
+  customer owns private-provider charges and platform provider cost is fixed to
+  zero. No canary can edit a website, listing, or business profile.
+- I1.5B-B2B2B2B2A's multi-run health evidence is implemented locally. The
+  owner can freeze an append-only 30-day review of the fixed canary without
+  making another provider call. Eligibility for a separate later capability
+  review requires private successes on three distinct UTC days, no managed
+  fallback or automatic rollback in the window, an intact current canary and
+  safety boundary, and no successful response slower than eight seconds. Each
+  snapshot records only safe counts, blockers, latency, and an artifact hash
+  under tenant RLS and database immutability controls. `Collecting`, `blocked`,
+  and `eligible for later review` are evidence states only: database checks
+  forbid traffic, capability, activation, or automatic-change authority, and
+  the Settings surface exposes no expansion control.
+- I1.5B-B2B2B2B2B's first separately approved capability route is implemented
+  locally for `intelligence_question`. It is limited to questions answered from
+  the location's already-saved evidence and action IDs. The owner must first
+  save eligible multi-run health evidence, then pass one synthetic compatibility
+  check that sends no customer prompt, and then complete five explicit
+  acknowledgements. The question route is independently append-only and fixed
+  at 5%, while sharing the workspace-wide one-private-prompt-per-day ceiling
+  with daily explanations. The managed route is reserved first; any network,
+  schema, evidence, or safety failure automatically stops only this capability
+  and retries through managed AI. Private answers are deterministically checked
+  against the exact saved question, evidence IDs, and allowed action IDs. They
+  cannot create, approve, publish, or execute work, and customer-owned provider
+  cost remains zero to InsightOS.
+- I1.5B-B2B2B2B2C1's second separately approved capability route is
+  implemented locally for `intelligence_draft`. It can prepare review-only
+  wording for exactly one deterministic saved action and its allowed evidence.
+  A separate synthetic draft check must pass before an Enterprise owner can
+  complete five explicit acknowledgements and start the fixed 5% canary. Daily
+  explanations, saved-evidence questions, and draft wording share the same hard
+  ceiling of one private prompt per workspace per day. The managed route is
+  reserved first and is used after any private transport, schema, evidence, or
+  safety failure; that failure also appends an automatic capability rollback.
+  Accepted private wording must pass the existing `GovernedActionDraft`
+  evidence, action, draft-type, language, claim, and owner-review constraints.
+  It cannot approve, publish, send, or execute work, and customer-owned provider
+  cost remains zero to InsightOS.
+- I1.5B-B2B2B2B2C2A's third-capability qualification boundary is implemented
+  locally for `keyword_relevance_review`. It sends one frozen, synthetic unclear
+  search, service, and work area through the existing strict relevance-review
+  schema, then requires the exact expected classification and evidence IDs. The
+  append-only result is bound to current connection and multi-run health
+  evidence and stores only safe pass/fail, latency, token-count, and artifact
+  facts. This migration expands the benchmark constraint only: database checks
+  still forbid a keyword-review capability event or attempt, customer prompts,
+  nonzero traffic, owner activation, and changes to saved searches. Settings
+  therefore exposes a compatibility check and plain zero-traffic truth, but no
+  approval or enable control. A separate reviewed sprint must add owner
+  acknowledgements, shared daily-limit enforcement, managed fallback, automatic
+  rollback, and runtime routing before any real unclear search can be sent.
+- I1.5B-B2B2B2B2C2B's separately approved unclear-search review canary is
+  implemented locally. After the exact synthetic qualification remains current,
+  an Enterprise owner must complete five explicit acknowledgements before the
+  `keyword_relevance_review` route can enter its fixed 5% canary. It shares the
+  one-private-prompt-per-workspace-per-day ceiling with daily explanations,
+  saved-evidence questions, and draft wording. The platform-managed route is
+  reserved and authorized first; any private transport, schema, identifier,
+  evidence, or context failure appends an automatic capability rollback and
+  retries through managed AI. A valid private result can only classify every
+  server-selected unclear saved search against the exact confirmed services,
+  included areas, excluded areas, and evidence IDs already supplied by the
+  owner-requested review. It can sort or hide only those reviewed saved rows; it
+  cannot add or track searches, create a Next Step, publish, or change a website
+  or business profile. Attempt evidence is immutable and customer-owned provider
+  cost remains zero to InsightOS.
+- I1.5B-B2B2B2B2C3A's website-draft qualification boundary is implemented
+  locally for `content_draft_suggestion`. It sends one frozen synthetic accepted
+  brief and two ordered synthetic sections through the existing strict optional
+  website-wording schema. Passing requires the exact draft identifier, section
+  order, complete allowed evidence set, owner-review requirement, and a false
+  publish control. The append-only result is bound to current connection and
+  multi-run health evidence and retains only safe pass/fail, latency, token, and
+  artifact facts. No customer website, working draft, search, or account data is
+  sent. This revision expands only the benchmark constraint: customer traffic,
+  runtime attempts, owner activation, owner-draft edits, and publishing remain
+  unavailable. Settings exposes the synthetic check and zero-traffic result but
+  deliberately has no approval or enable control.
+- I1.5B-B2B2B2B2C3B's separately approved website-draft suggestion canary is
+  implemented locally. After the exact synthetic qualification remains current,
+  an Enterprise owner must complete five explicit acknowledgements before the
+  `content_draft_suggestion` route can enter its fixed 5% canary. It shares the
+  one-private-prompt-per-workspace-per-day ceiling with daily explanations,
+  saved-evidence questions, draft wording, and unclear-search review. The
+  platform-managed route is reserved and authorized first. Any private
+  transport, schema, draft-identity, section-order, evidence, or safety failure
+  appends an automatic capability rollback and retries through managed AI. A
+  valid private result must match the exact owner-selected saved draft, accepted
+  brief, ordered sections, and allowed evidence. It is stored only as a separate
+  review-only suggestion: it cannot edit the owner draft, approve wording,
+  publish a page, or change a website or business profile. Attempt evidence is
+  immutable and customer-owned provider cost remains zero to InsightOS.
+- I1.5B-B2B2B2B2C4A's onboarding-baseline explanation qualification boundary
+  is implemented locally for `onboarding_baseline_narrative`. It sends one
+  frozen, made-up 28-day baseline with a made-up website summary, Google Search
+  sample, deterministic score, and two fixed priorities through the existing
+  strict baseline-narrative schema. Passing requires the exact priority order
+  and complete allowed evidence set while preserving the explanation-only,
+  missing-is-not-zero, and no-causal-proof controls. The append-only result is
+  bound to current connection and multi-run health evidence and retains only
+  safe pass/fail, latency, token, and artifact facts. No customer website,
+  Search Console, Analytics, rank, traffic, diagnosis, or account data is sent.
+  This migration expands only the benchmark constraint: runtime traffic, owner
+  activation, score or diagnosis changes, fix changes, website changes, and
+  work execution remain unavailable. Settings therefore exposes a compatibility
+  check and zero-traffic truth, but no approval or enable control. A separate
+  reviewed sprint must add owner acknowledgements, shared daily-limit
+  enforcement, managed fallback, automatic rollback, and runtime routing before
+  any real onboarding baseline can be sent.
+- I1.5B-B2B2B2B2C4B's separately approved onboarding-baseline explanation
+  canary is implemented locally. After the made-up baseline qualification stays
+  current, an Enterprise owner must complete five explicit acknowledgements
+  before `onboarding_baseline_narrative` can enter its fixed 5% canary. It
+  shares the single private prompt per workspace per day with every other
+  private-AI capability. The managed route is reserved and authorized first.
+  Any private transport, schema, evidence, priority-order, or safety failure
+  appends an automatic capability rollback and retries the same request through
+  managed AI. The private provider receives only the existing minimized frozen
+  baseline context and its response must cite only the exact saved evidence and
+  preserve the deterministic fix order. It can explain those saved results but
+  cannot change a score, diagnosis, priority, fix, website, business profile,
+  or approval/execution state. Attempt history is immutable, the customer owns
+  the private-provider cost, and InsightOS records zero platform provider cost
+  for a private attempt.
+- I1.5B-B2B2B2B2C5A's review-reply wording qualification boundary is
+  implemented locally for `review_response_draft`. It sends one made-up
+  positive review and one made-up business through the existing strict
+  `GovernedActionDraft` contract. Passing requires the exact synthetic action,
+  `review_response` draft type, complete allowed evidence set, ready state, and
+  mandatory owner review. The append-only result is bound to the current
+  connection and multi-run health evidence and retains only safe pass/fail,
+  latency, token, and artifact facts. No customer review, customer name,
+  business account, profile, or reply is sent. This revision expands only the
+  benchmark constraint: it creates no capability event or attempt, sends zero
+  customer traffic, and exposes no owner approval or enable control. It cannot
+  approve or post a reply, change review status, publish, or change a business
+  profile. A separate reviewed sprint must add explicit owner acknowledgements,
+  the shared daily limit, managed fallback, automatic rollback, and a fixed
+  draft-only canary before any real saved review may be sent.
+- I1.5B-B2B2B2B2C5B's separately approved review-reply wording canary is
+  implemented locally. After the made-up review qualification remains current,
+  an Enterprise owner must complete five explicit acknowledgements before
+  `review_response_draft` can enter its fixed 5% canary. It shares the one
+  private prompt per workspace per day with every other private-AI capability.
+  Sensitive reviews remain human-only and never enter this route. For an
+  eligible owner-requested draft, the managed route is reserved first and the
+  private provider receives only the existing minimized review and confirmed
+  business context. Any private transport, schema, action, evidence, or safety
+  failure appends an automatic capability rollback and retries through managed
+  AI. A valid result remains a separate `GovernedActionDraft` requiring owner
+  review. It cannot approve or post a reply, change review status, publish, or
+  change a business profile. Attempt evidence is immutable, the customer owns
+  private-provider cost, and InsightOS records zero platform provider cost for
+  a private attempt.
+- I1.5B-B2B2B2B2C6's versioned private-AI capability catalog is implemented
+  locally. One backend catalog now enumerates all seven managed-AI prompt uses
+  that have a separately governed private-provider route: daily explanations,
+  saved-evidence questions, saved-action draft wording, unclear-search review,
+  website-draft suggestions, onboarding-baseline explanations, and review-reply
+  drafts. New connection records and customer serializers use that catalog;
+  legacy connection metadata is presented through the same current version so
+  the backend and Settings cannot quietly disagree. Settings shows only plain
+  labels and summaries and explains that listing a use does not turn it on.
+  Every entry retains separate qualification and owner approval, fixed 5%
+  traffic, the shared one-prompt-per-workspace daily ceiling, managed fallback,
+  automatic rollback, no publishing, and no automatic changes. This catalog
+  creates no new route or activation control.
+- I1.5B-B2B2B2B2C7's current cost-ownership boundary is implemented locally.
+  Every customer-created private-provider connection is database-constrained to
+  an organization-owned credential, customer-paid provider usage, and disabled
+  platform billing. Existing immutable private attempt rows already require
+  customer cost ownership and zero InsightOS provider cost; the connection now
+  states the same rule before any traffic is possible. Settings explains only
+  that private-provider charges stay with the customer's provider account and
+  exposes no internal price card, supplier cost, or margin data. This does not
+  add a platform-paid provider: a future supplier-paid route must introduce its
+  own approved contract, price card, reservation, reconciliation, and margin
+  proof before the database constraint can be expanded.
+- I1.5B-B2B2B2B2C8's outbound local-relay enrollment foundation is implemented
+  locally. An Enterprise owner can create one revocable, one-time relay key
+  only after acknowledging that the connection is diagnostic and cannot
+  receive customer prompts, query the InsightOS database, execute work, or
+  publish changes. InsightOS stores only a SHA-256 fingerprint and a safe key
+  hint. The customer-hosted relay initiates the connection, so no inbound port
+  or public endpoint is required on the customer's computer. Its authenticated
+  heartbeat returns an empty work list unless the later synthetic transport
+  check is explicitly queued, and always returns connection-only safety flags;
+  plan loss, organization closure, or owner revocation stops future heartbeats.
+  This slice does not ship the customer relay agent, decision packets, prompts,
+  customer evidence, or model execution.
+- I1.5B-B2B2B2B2C9's signed synthetic relay-packet contract is implemented
+  locally. An Enterprise owner can prepare at most one unexpired diagnostic
+  challenge for an active relay. The heartbeat signs its canonical packet with
+  HMAC-SHA256 using the one-time relay secret, and the relay must return the
+  exact derived receipt hash plus a signed acknowledgement within five minutes.
+  Packet and acknowledgement evidence are tenant-scoped, append-only,
+  replay-idempotent, and bound through composite foreign keys to the exact relay
+  enrollment. Database checks prohibit customer data, model calls, database
+  access, business execution, and publishing in both artifacts. Revocation,
+  plan loss, workspace closure, expiry, a changed artifact, an invalid receipt,
+  or an invalid signature fails closed. This validates transport identity only
+  and does not authorize prompts; the following slice ships only the matching
+  diagnostic helper, not a model-running relay.
+- I1.5B-B2B2B2B2C10's customer-hosted diagnostic relay helper is implemented
+  locally. An Enterprise owner can download one dependency-free Python file
+  from the authenticated Settings surface, run it from a terminal, and paste
+  the one-time relay key into a hidden prompt. The helper retains the key only
+  in process memory, opens outbound HTTPS only (with an explicit localhost
+  exception for development), refuses redirects and oversized/non-JSON
+  responses, validates packet identity, version, exact shape, signature,
+  timestamps, five-minute expiry, acknowledgement destination, and every false
+  safety flag before returning the exact signed receipt. Unknown fields,
+  customer prompts, changed instructions, model requests, database access,
+  execution, or publishing requests are rejected without action. The download
+  is no-store and includes a SHA-256 response header. This helper still does not
+  import or call a model runtime and cannot process customer work.
+- I1.5B-B2B2B2B2C11's loopback-only local runtime discovery is implemented
+  locally. On startup the dependency-free helper checks only the fixed Ollama
+  tags endpoint on `127.0.0.1:11434` and the fixed LM Studio models endpoint on
+  `127.0.0.1:1234`. It makes GET requests only, refuses non-loopback addresses,
+  redirects, unexpected paths, oversized responses, and invalid JSON, and
+  never calls a generation, completion, or chat endpoint. The helper reduces
+  the local result to runtime type and total model count; model identifiers
+  stay on the customer's computer. It signs a five-minute discovery report
+  containing explicit false flags for customer data, model calls, and model
+  identifiers. InsightOS validates the exact signature and safety shape, stores
+  only append-only minimized evidence plus hashes, and shows the owner plain
+  runtime/count truth. This is discovery only: no model has been selected,
+  qualified, prompted, or authorized to process customer work.
+- I1.5B-B2B2B2B2C12's explicit synthetic local-model qualification is
+  implemented locally. The downloaded helper calls a model only when the owner
+  runs `--once --check-model`; continuous mode cannot repeat the check. It
+  selects one locally available Ollama or LM Studio model, sends one fixed
+  made-up JSON task through the runtime's fixed loopback generation endpoint,
+  and validates the exact small response contract locally. The model name,
+  prompt response, and raw runtime error never leave the computer. InsightOS
+  receives only a relay-keyed model fingerprint, runtime type, prompt version,
+  pass/fail contract facts, whether a response was received, bounded latency,
+  and explicit false flags for
+  customer data, raw identifiers, model output, customer work, and publishing.
+  Signed evidence is fresh, tenant-scoped, replay-idempotent, append-only, and
+  customer-redacted. Passing does not enable prompts, routing, website or
+  business-profile changes, execution, or publishing; any later bounded local
+  customer workload requires a separate capability-specific qualification and
+  owner approval.
+- I1.5B-B2B2B2B2C13's commercial boundary is fixed at Enterprise. Private
+  endpoints and customer-hosted local models are not part of Growth at
+  `$699/month`: setup, helper download, signed diagnostics, runtime discovery,
+  synthetic model qualification, and any future bounded private-model workload
+  all require the Enterprise `private_ai_provider` capability. A downgrade
+  preserves redacted history and manual revocation but pauses the relay token
+  before another heartbeat, discovery, or qualification can be accepted. This
+  tier boundary reflects the deployment, security, network, qualification, and
+  support obligations of customer-controlled infrastructure; managed AI and
+  its normal product automations remain governed by their existing plan rules.
+- I1.5B-B2B2B2B2C's managed prompt-type surface is now closed. I1.5 still owns
+  production private-provider billing reconciliation where InsightOS pays the
+  supplier, plus separately governed synthetic model compatibility and
+  capability-by-capability relay qualification required before a local model
+  may process any bounded work. Those later
+  controls cannot raise any fixed capability canary
+  above 5%, remove the shared daily ceiling, or add another prompt type without
+  another reviewed migration and owner approval surface.
 
 Scope:
 
@@ -4496,7 +4869,9 @@ Acceptance criteria:
 ### Operations OPS1 - Customer Support and Launch Operations
 
 Goal: make the paid product supportable, demonstrable, and honest on launch
-day—not merely deployable.
+day—not merely deployable. This is also the final whole-product usability gate:
+the system must be understandable to a non-technical service-business owner,
+not only complete for the team that built it.
 
 Scope:
 
@@ -4515,6 +4890,88 @@ Scope:
 - Require a go/no-go scorecard covering product truth, critical journeys,
   security, recovery, provider health, data freshness, support readiness,
   pricing, and known limitations.
+- Inventory and test every customer-visible route, navigation menu, section,
+  dialog, empty state, error state, and connected-tool setup on desktop and
+  mobile. Organize each screen around the owner's job, one clear first action,
+  and a small number of familiar sections; remove duplicated panels and move
+  diagnostics, identifiers, schemas, signatures, delivery counters, and other
+  specialist details behind clearly labeled optional disclosures.
+- Run moderated first-use tests with non-technical home-service and local-
+  business owners. A participant must be able to connect Google, understand
+  connection health, add a location, read the baseline, find the next action,
+  connect Zapier/Make/n8n from a provider-generated URL, send a test, understand
+  what the workflow can and cannot do, manage billing, and sign out another
+  browser without coaching or knowledge of OAuth, GA4, webhooks, HMAC, payload
+  paths, provider ledgers, schemas, or internal SEO terminology.
+- Split Settings into a short task-based overview and properly grouped areas:
+  business data connections, workflow tools, plan and billing, account and
+  security, imports, privacy, and advanced/Enterprise controls. Long records
+  such as `Where you're signed in`, delivery attempts, healthy sources,
+  provider evidence, and technical wiring contracts stay summarized and
+  collapsed until the owner asks to inspect them.
+- Give each external automation tool an explicit numbered setup path using the
+  tool's customer-facing words: choose a tool and recipe, create its webhook
+  step, paste the production URL into InsightOS, save the one-time secret,
+  send a test, and confirm receipt. Keep signature verification and field maps
+  available for advanced users without making them prerequisites for the normal
+  Zapier, Make, Pipedream, or n8n Cloud connection path.
+- Complete a whole-product visualization audit and add decision-useful graphs
+  anywhere a trend, distribution, comparison, or relationship is materially
+  easier to understand than a number or table. Priority surfaces include
+  Search Console clicks and appearances, organic website visits and verified
+  inquiries, tracked-search movement and position buckets, local-grid coverage,
+  review volume and rating movement, referring-domain and citation changes,
+  website-health issue categories, Google Business Profile customer actions,
+  competitor gaps, and multi-location outliers. A page does not receive a chart
+  merely to look more complete; every graph must answer a named owner question
+  and lead to an evidence-backed next action or a clear no-action conclusion.
+- Treat Overview as the primary visualization surface and the fastest way to
+  understand the business's current organic performance. Above the fold, show
+  a compact current-period metric strip, one clear performance-over-time graph,
+  the comparison with the previous equal-length period, and a short written
+  takeaway that names what changed and the most useful next action. Owners must
+  be able to find visits, Search appearances and clicks, verified inquiries,
+  tracked-search movement, profile customer actions, and website-health change
+  from Overview when those sources are connected. Do not force them to visit
+  several feature pages merely to reconstruct whether performance improved.
+- Keep Overview layered rather than crowded. Its default graph shows the small
+  set of connected measurements that best answers `Are more people finding and
+  contacting this business?`; source-specific cards then link to Rankings,
+  Local Search, Website Health, Reviews, Listings, and Reports for the detailed
+  distribution, evidence table, and methodology. Owners can hide or reveal
+  series, but disconnected sources stay clearly labeled instead of silently
+  disappearing or becoming zero. The first view must remain understandable in
+  five seconds and must not resemble a dense specialist analytics console.
+- Use a shared chart contract across Dashboard, Rankings, Local Search, Website
+  Health, Listings, Reviews, Competitors, Organic Value, Reports, and portfolio
+  views. It must include an owner-readable title and takeaway, exact location
+  and date range, source and last-updated date, unit, timezone where relevant,
+  accessible legend, hover/focus values, data table or text equivalent, and an
+  optional explanation of how the measurement was calculated. Use consistent
+  colors and meanings across pages; improvement and decline cannot be conveyed
+  by color alone.
+- Keep unlike measurements separate. Do not blend Google Search appearances,
+  website visits, profile actions, estimated search volume, tracked rankings,
+  paid traffic, or AI-answer observations into one flattering score or shared
+  axis. Show `Not connected`, `Not checked`, `Unavailable`, `Partial`, and
+  `Stale` as different states; an unavailable source is never rendered as zero.
+  Estimates, imported history, synthetic fixtures, and live first-party facts
+  remain visibly labeled and cannot be drawn as one continuous measured line.
+- Enforce chart accuracy in the data contract, not only in presentation. A
+  trend requires at least two comparable saved observations with the same
+  metric definition, source, scope, and collection context. Period comparisons
+  use equal-length windows and aligned calendar/timezone boundaries. Missing
+  dates remain gaps rather than being interpolated or shifted; percentages show
+  their numerator and denominator; ranking averages do not hide unranked terms;
+  and totals are deduplicated before display. Every plotted point must resolve
+  to its saved source record or reproducible aggregate, and report exports must
+  use the same frozen values as the screen.
+- Let owners move between useful time ranges such as 28 days, 3 months, 6
+  months, 12 months, and a bounded custom comparison only when the source has
+  that coverage. Prefer a small metric strip plus one primary graph, then place
+  secondary distributions and detailed tables below it. Dense specialist views
+  may offer series toggles and export, but the default view must remain legible
+  on mobile and understandable without SEO vocabulary.
 
 Acceptance criteria:
 
@@ -4524,6 +4981,30 @@ Acceptance criteria:
   procedure, evidence timeline, and corrective-action record.
 - Demo and sales claims are generated from a maintained capability matrix and
   cannot describe synthetic, fixture-only, or disabled functionality as live.
+- Every customer menu and primary workflow passes a final copy, information-
+  architecture, responsive-layout, keyboard, screen-reader, empty/error/loading,
+  and first-use comprehension review. No primary screen is released with a
+  wall of records, unexplained technical language, or several equally prominent
+  actions when one owner decision can lead.
+- Every data-heavy customer page passes a visualization review proving that its
+  primary graph answers a real owner question, uses the authoritative scoped
+  dataset, exposes freshness and coverage, distinguishes zero from missing
+  data, has a keyboard and screen-reader equivalent, remains legible on mobile,
+  and matches the numbers in tables and exported reports. Automated contract
+  tests cover equal-period comparisons, timezone boundaries, missing dates,
+  partial sources, denominators, deduplication, stale data, and point-to-source
+  traceability; representative production-like fixtures receive a visual QA
+  review before launch.
+- Overview passes a separate first-glance test: an owner can identify the
+  selected location and period, whether meaningful organic discovery or
+  inquiry measures improved, which connected source supports that conclusion,
+  and what to do next without opening another page. The Overview totals and
+  trends must reconcile exactly with their source pages for the same scope and
+  period.
+- At least five representative non-technical participants can complete the
+  critical Solo launch journey and the supported workflow-tool connection test
+  without staff operating the product for them. Observed confusion is tracked
+  to closure in the launch scorecard rather than accepted as training debt.
 - A paid launch cannot proceed while critical TR1, billing, provider,
   WordPress, data-integrity, or support-readiness gates are red.
 
@@ -4781,6 +5262,374 @@ Implementation status (August 17, 2026):
 - Delivery bodies, destination URLs, signing secrets, provider response bodies,
   customer content, and supplier-internal identifiers are not included in the
   usage response or UI.
+
+#### AUT1J - Governed Inbound Automation Commands (n8n First)
+
+Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing (August 19, 2026):
+
+- The first inbound command is deliberately read-only: `report.retrieve` can
+  return the safe metadata and ready private artifacts for a report InsightOS
+  already generated. It cannot start a crawl or paid provider call, create or
+  approve a recommendation, submit an arbitrary prompt, publish content, edit
+  WordPress, or change a Google Business Profile.
+- An organization owner can create one short-lived service account scoped to
+  one active Business Location. Its random bearer key is returned once, stored
+  only as a SHA-256 fingerprint, expires within 90 days, records last use, and
+  can be rotated or revoked immediately. It does not reuse a human browser
+  session, Google token, outbound webhook secret, or provider credential.
+- Every request uses the fixed `insightos.automation.command.v1` schema with an
+  exact organization, location, correlation ID, reason, idempotency key, and
+  saved report ID. Unknown fields and command types are rejected. Reusing one
+  idempotency key with the same body returns the original receipt; reusing it
+  for different input fails closed.
+- The service rechecks the external-automation commercial gate, active
+  location, exact tenant/organization/location campaign scope, and credential
+  state before returning anything. A cross-tenant report looks not found and
+  never exposes its campaign, content, artifact, or provider data.
+- Succeeded and denied requests create immutable, tenant-scoped receipts with
+  minimized result data and stable artifact hashes. Audit events omit the
+  request reason and credential. Private artifact downloads require the same
+  live service account and exact receipt/report scope and use `private,
+  no-store` delivery.
+- Settings presents this as “Give n8n read-only access to saved reports,” shows
+  the credential only once, keeps the fixed HTTP contract in an advanced
+  disclosure, shows plain-language result history, and reserves lifecycle
+  controls for the workspace owner.
+- An organization owner can now download a reviewed n8n starter workflow for
+  the active service account. The generated file is inactive, contains no
+  credential, is fixed to the account's workspace and Business Location, and
+  accepts only a ready saved-report event. It derives its correlation and
+  idempotency keys from the stable outbound event identity and uses n8n's
+  Bearer credential type for the one-time InsightOS key.
+- The starter connects the existing `report.ready` delivery path to the
+  read-only `report.retrieve` command without asking an owner to copy report IDs
+  or construct JSON. It filters unrelated event, resource, truth, workspace,
+  and location values before the HTTP request and leaves the external workflow
+  inactive until the customer selects a credential, publishes it, and connects
+  its production webhook URL.
+- AUT1J-C adds the second bounded command, `report.generate_saved`. An owner
+  must explicitly expand a read-only service account and rotate its key before
+  n8n can use it. The command creates one private report from evidence already
+  saved for the credential's exact campaign and location. It starts no crawl,
+  paid check, email delivery, publication, WordPress change, or Business
+  Profile change. A PostgreSQL session fence and immutable idempotency receipt
+  ensure a repeated workflow run produces one report effect.
+- Settings explains the scope in owner language, confirms expansion or
+  removal, replaces the one-time key on either change, and distinguishes a
+  private report creation from a saved report retrieval in history. Existing
+  keys stay read-only and never gain the command silently.
+- Owners who enable private report creation can download a second reviewed n8n
+  starter. It is inactive and credential-free, fixed to the exact organization,
+  Business Location, and campaign, and defaults to the first day of each month
+  at 9:00 in the n8n workflow timezone. The owner reviews the schedule and
+  selects the current Bearer credential before publishing. A stable
+  campaign-and-month idempotency key makes manual testing and scheduled retry
+  return one report for that period instead of creating duplicates.
+- AUT1J-D adds `recommendation.retrieve` as a separate, explicit key scope.
+  It returns one tenant-, campaign-, and location-scoped saved recommendation
+  using the owner-facing action lexicon, without raw evidence, provider data,
+  internal hashes, approval, scheduling, execution, or publication. Existing
+  workflow keys never gain this access silently.
+- An owner who enables saved recommendation access can download an inactive,
+  credential-free n8n workflow. It accepts only exact `recommendation.ready`
+  events for the account's organization and location, retrieves the announced
+  recommendation idempotently, and leaves the customer to add their email,
+  CRM, or task step. Settings uses plain language and rotates the key whenever
+  this scope changes.
+- AUT1J-E adds `recommendation.request_review` as a separate permission and
+  uses the immutable command receipt as the durable review request. The n8n
+  starter retrieves the exact saved recommendation, requests owner review, and
+  can then continue to a customer-supplied email, CRM, or task step. The
+  recommendation remains generated; it is never approved, scheduled, executed,
+  or published by the workflow. Opportunities shows the request beside the
+  native checklist so the owner makes the decision inside InsightOS.
+- AUT1J-F adds `connection.refresh_saved` as another separately granted key
+  scope. It accepts only the exact ID of an active Search Console, website
+  analytics, or Business Profile connection already mapped to the service
+  account's organization and Business Location. It queues the existing native,
+  idempotent durable sync job; it cannot add an account, choose a provider URL,
+  alter connection settings, publish, or run unrelated work.
+- The immutable command receipt stores a minimized job reference. Receipt
+  polling refreshes only the safe queued/running/completed/failed state and
+  timestamps from the tenant-scoped native job; provider payloads and raw
+  errors are never returned. Settings requires an owner-confirmed key rotation
+  to enable or remove refresh access and explains the exact-target contract in
+  plain language.
+- AUT1J-G adds the first and only allowance-priced command in this slice:
+  `listing.check_public`. It targets the exact campaign already mapped to the
+  key's Business Location and reuses the native public-listing preview, plan
+  daily limit, Insight Credit reservation, price-card, credential-owner,
+  provider-health, active-location, idempotency, durable-job, and dispatch
+  safeguards. A blocked command produces no outside provider call.
+- The owner must rotate the key to grant or remove this scope. Settings clearly
+  identifies it as a credit-consuming action before confirmation and states
+  that it cannot correct listings, publish, or change a Business Profile.
+  Command and receipt polling expose only the native run status, estimated
+  customer credits, result count, and safe timestamps—not supplier identity,
+  raw errors, internal cost, credentials, or listing payloads.
+- AUT1J-H adds `content.create_working_draft` as a separately granted scope.
+  The exact saved content brief and campaign must belong to the service
+  account's Business Location, and the native content service still requires
+  the owner to have accepted the frozen brief first. The command creates only
+  the existing empty, private, editable outline; it does not call AI, author
+  body copy, approve, schedule, create a WordPress draft, publish, or mutate a
+  website.
+- Its minimized receipt returns only the draft id, accepted brief id, title,
+  working revision, and explicit unapproved/unscheduled/unpublished truth. The
+  draft sections, frozen evidence, source hash, internal audit data, and any
+  later owner writing stay inside the native Content workspace. Replays return
+  the same receipt and the native one-draft-per-brief constraint remains in
+  force.
+- AUT1J-I adds `content.request_draft_review` as a separately enforced command
+  while keeping it under the same owner-facing private-draft permission. It
+  accepts only an existing working draft in the exact campaign and Business
+  Location assigned to the key. The immutable receipt is the durable review
+  request; it cannot edit the draft, record approval, schedule, publish, create
+  a WordPress draft, or change the website.
+- The native Content workspace reads only successful tenant- and campaign-
+  scoped receipts and shows the latest request beside that exact draft with a
+  plain safety statement. The minimized command result returns the draft id,
+  brief id, title, status, and revision without draft body copy or evidence.
+- AUT1J-J packages the two private-content commands as a deterministic,
+  inactive n8n starter download for the selected location. The owner must
+  replace the accepted brief id and select the separately stored Bearer
+  credential before a manual test. The template contains no workflow key,
+  customer content, automatic trigger, AI-writing step, approval, scheduling,
+  WordPress delivery, or publishing action.
+- AUT1J-K introduces explicit multi-location read scopes for saved-report
+  retrieval only. A normalized tenant- and organization-scoped allowlist row
+  is required for every location; migration backfills every existing key with
+  exactly its former primary location, so deployment never broadens access.
+  Owners may select up to nine additional active locations when creating a key.
+- The request still names one location, the saved report must belong to that
+  exact allowed location, and the immutable receipt records it. Paid checks,
+  connected-data refreshes, recommendations, content actions, review requests,
+  approvals, scheduling, execution, and publishing continue to require the
+  original primary location. AUT1J-L and later slices own any broader action
+  allowances; none are implied by multi-location report reading.
+- AUT1J-L lets an owner replace that explicit report-only location allowlist on
+  an existing service account. The immutable primary location cannot be
+  removed. Every scope change validates each active location, atomically
+  replaces the allowlist, rotates the Bearer key, and invalidates the old key.
+  Removing a location blocks future reads while preserving saved reports,
+  receipts, and audit history.
+- AUT1J-M adds `review.retrieve` as a separately granted, primary-location-only
+  command. It returns one exact owned-profile review's rating, observation
+  date, reply state, and whether a comment exists. Reviewer identity, comment
+  text, supplier fields, external identifiers, and existing reply text remain
+  inside InsightOS.
+- This command is read-only and makes no provider call. It cannot create an AI
+  reply, approve or post a reply, sync reviews, or change a Business Profile.
+  Owners must replace the workflow key to enable or remove it, and immutable
+  receipts preserve idempotency and minimized decision history.
+- AUT1J-N packages that exact read-only command as a deterministic, inactive
+  n8n starter download. The owner replaces one saved review ID, selects the
+  separately stored Bearer credential, and tests manually before adding their
+  own notification, CRM, or task step.
+- The template contains no workflow key, reviewer identity, comment or reply
+  text, automatic trigger, provider field, AI step, approval, or posting node.
+  It is fixed to the key's primary Business Location and cannot be downloaded
+  unless the owner has explicitly enabled `review.retrieve`.
+- AUT1J-O makes the starter event-driven through a new signed `review.saved`
+  outbound notification. A new or changed owned-profile observation emits one
+  minimized event with its exact review ID, rating, date, and reply state;
+  unchanged sync retries emit no new review event.
+- The n8n starter filters schema, event, truth, resource, organization, and
+  primary location before retrieving the same minimized facts. The event and
+  starter still exclude reviewer identity, comment and reply text, provider
+  data, external IDs, AI drafting, approval, and posting.
+- AUT1J-P adds `review.create_response_draft` as a separate, owner-enabled
+  command. It can request one governed private reply draft for an exact saved
+  owned-profile review, using the same evidence, sensitive-topic, AI allowance,
+  provider-health, and idempotency controls as the native Reviews workspace.
+- The command returns only the draft ID, review ID, status, and the truth that
+  human review remains required. Review text, reviewer identity, comment text,
+  prompts, provider details, and the drafted reply stay inside InsightOS. The
+  workflow cannot approve, reject, edit, post, or otherwise change the Business
+  Profile; those actions remain explicit human work in the native product.
+- AUT1J-Q packages the command as a deterministic inactive n8n starter. It
+  accepts only signed `review.saved` events for the key's exact organization
+  and primary location, filters to unanswered reviews, and derives correlation
+  and idempotency keys from the immutable event identity.
+- The download contains no workflow credential, customer or reply text, AI
+  prompt, provider field, approval, editing, or posting node. The final step
+  sends the owner back to InsightOS to review the private draft; importing or
+  activating the workflow never grants authority to publish a response.
+- AUT1J-R adds one vendor-neutral connection guide for the active scoped
+  workflow key. Owners can download the exact HTTPS endpoint, Bearer-auth
+  placeholder, schema version, organization/location scope, enabled-action
+  catalog, body template, idempotency rules, and plain setup steps for Zapier,
+  Make, n8n, Pipedream, or any HTTPS client.
+- The guide never contains the one-time workflow key, customer evidence,
+  provider credentials, prompts, or broader authority. Supplier names describe
+  where the same contract can be configured; they do not create separate
+  supplier-specific command paths or weaken native plan, safety, approval, and
+  publishing controls.
+- AUT1J-S adds an owner-only OpenAPI 3.1 download for the same scoped command
+  account. Compatible builders can import the fixed request schema, Bearer
+  authentication method, command endpoint, enabled-action extension, response
+  states, organization/location scope, and explicit no-publishing safety facts.
+- The specification contains no workflow key or customer record. Importing it
+  cannot activate a workflow, widen the account's permissions, or turn human
+  review into approval; the owner must add the separately shown key to the
+  automation tool's private credential store.
+- AUT1J-T adds a Bearer-authenticated `command-access` verification operation
+  for connector setup. A workflow tool can confirm credential validity,
+  workspace and primary-location availability, expiration, saved location
+  scope, and the exact enabled-action catalog without executing a command.
+- Verification creates no command receipt or customer mutation, calls no paid
+  provider, and consumes no credits. Its minimized response excludes the key,
+  customer records, location name, prompts, and provider details; invalid,
+  expired, revoked, plan-blocked, and unavailable-location states fail closed.
+- AUT1J-U completes the importable long-running workflow contract by documenting
+  the existing receipt-status and receipt-bound artifact operations in both the
+  universal guide and OpenAPI document. Compatible clients can submit once,
+  poll the durable receipt with the same credential, and download only a ready
+  artifact returned by that exact receipt.
+- Status reads and artifact downloads remain service-account, tenant,
+  organization, location, receipt, and artifact scoped. They cannot start a
+  second command, expose another account's result, enumerate storage, or turn a
+  queued/denied result into success; repeated command submission still relies
+  on the original stable idempotency key.
+- AUT1J-V tightens the generated OpenAPI request schema itself to the exact
+  commands enabled on the saved workflow key. The standard `command_type` enum
+  no longer advertises every product command while relying on a custom
+  extension that some automation builders might ignore.
+- Generation fails closed if the saved permission is absent from the canonical
+  request schema or if no action is enabled. The server still rechecks the
+  credential and permission on every call, so importing an older or modified
+  file cannot widen authority.
+- AUT1J-W gives every canonical command an exact OpenAPI target contract and
+  emits only the variants enabled for the saved key. Builders now know, for
+  example, that `report.retrieve` requires exactly `report_id`, while accepted
+  draft creation requires exactly `campaign_id` plus `brief_id`.
+- Target variants reject additional identifiers and schema generation fails
+  closed if a future command is added without a fixed target mapping. Runtime
+  request validation remains independently authoritative, so a modified client
+  file cannot substitute another record type or location.
+- AUT1J-X adds machine-readable success envelopes for credential verification,
+  command submission, durable receipt polling, and binary artifact download.
+  Imported builders can map stable receipt status, denial reason, correlation
+  and idempotency IDs, minimized result facts, timestamps, and receipt-bound
+  file responses without guessing from prose or parsing internal records.
+- The formal receipt status enum remains only `succeeded|denied`; longer native
+  job state stays inside the minimized command result and is refreshed through
+  the same receipt read. Response schemas expose no token, raw provider data,
+  prompt, internal cost, customer identity, or unrelated storage path.
+- AUT1J-Y adds the customer-safe failure envelope to every documented
+  authentication, permission, validation, scope, receipt, and artifact error.
+  Compatible workflows can branch on HTTP status plus
+  `errors[0].details.reason_code` instead of parsing English messages.
+- Error schemas preserve request correlation and status while allowing bounded
+  validation detail, but exclude stack traces, credentials, provider payloads,
+  database errors, and internal cost information. A human-facing message can
+  change without breaking the stable reason-code contract.
+- AUT1J-Z makes every generated connector specification validate itself against
+  FastAPI's formal OpenAPI 3.1 model before download. Generation fails instead
+  of serving a malformed document, without adding a separate runtime package
+  or trusting only hand-written source assertions.
+- The conformance matrix generates and formally validates a singleton-scoped
+  document for every canonical command, proving its exact permission enum and
+  required target fields. This catches future schema, path, response, or
+  command additions that would make a Zapier, Make, n8n, Pipedream, or custom
+  client import ambiguous or invalid.
+- AUT1J-AA rewrites the inbound Settings entry point around a generic workflow
+  tool instead of presenting n8n as the product boundary. Owners now see one
+  plain four-step path for Zapier, Make, n8n, Pipedream, and compatible HTTPS
+  clients: download/import, save the private key, run the safe connection
+  check, test once, then turn the workflow on.
+- The n8n starter remains an explicitly optional shortcut. Permission labels,
+  confirmations, rotation notices, location copy, and advanced examples use
+  vendor-neutral language, while supplier-specific file names and instructions
+  appear only where they are genuinely needed. No UI copy implies that an
+  imported file can approve, publish, or bypass InsightOS controls.
+- AUT1J-AB adds an authenticated, versioned connector compatibility catalog
+  for Zapier, Make, n8n, Pipedream, and generic HTTPS clients. It reports the
+  available guide, OpenAPI import, conformance check, authentication method,
+  and optional starter separately. Every catalog entry explicitly remains
+  compatibility-only and unproven until the customer connects and tests their
+  own workflow; only n8n currently advertises a reviewed inactive starter.
+- AUT1J-AC renders that catalog in the plain Settings workflow setup. Each tool
+  gets a short setup path and a compatibility label, while the persistent copy
+  says the customer's own connection still needs a test. The catalog request
+  is additive during rolling deployment, so an older backend cannot hide or
+  break existing workflow-key controls.
+- AUT1J-AD gives each named Zapier, Make, n8n, and Pipedream card a direct safe
+  test-file download using the existing deterministic conformance fixture. The
+  download contains synthetic data and a test-only secret and never claims a
+  live connection; generic HTTPS clients continue through the universal guide.
+- AUT1J-AE adds four plain setup steps per connector, naming the platform's
+  request action, private Bearer credential placement, fixed allowed-action
+  body, one safe test, and the customer's explicit final activation. Settings
+  keeps these details collapsed until requested so the first view stays calm.
+- AUT1J-AF adds a three-step evidence-backed progress strip for the active
+  workflow key: private key created, InsightOS contacted, and first native
+  request saved. It derives only from the service account's saved last-use and
+  command count and explicitly leaves external workflow activation to the
+  customer, so it cannot mislabel an imported or abandoned setup as connected.
+- AUT1J-AG renames the mixed command history from report requests to workflow
+  requests and shows each native result's customer-safe message. Successful
+  items may link to the exact saved result; declined items state that nothing
+  changed and explain a same-key retry after recovery without exposing internal
+  denial codes, provider details, or request payloads.
+- AUT1J-AH adds a dedicated GitHub automation-conformance job covering the
+  command migrations, exact OpenAPI contract, scoped credentials, idempotency,
+  conformance fixtures, export redaction, manual locks, observability, provider
+  setup, recipes, timeline, signed delivery, fanout, and external contract.
+  This keeps the 102-test automation boundary visible independently of the
+  full backend suite.
+- AUT1J-AI aligns the Zapier walkthrough with its current official credential
+  model: API by Zapier stores the static Bearer header in an app connection,
+  rather than placing the workflow key directly in a Webhooks step. The other
+  connector walkthroughs retain their documented HTTP-action paths.
+
+Planned scope (added August 17, 2026):
+
+- Make n8n the first production proof client for a vendor-neutral inbound
+  command API. The contract must remain usable by Make, Zapier, Pipedream, and
+  approved custom clients without adding supplier-specific product logic.
+- Issue revocable organization-scoped service accounts instead of reusing a
+  person's browser cookie, Google token, password, or outbound webhook signing
+  secret. Each credential has an expiration, last-use record, allowed command
+  types, allowed locations, rotation path, and immediate revocation.
+- Start with a deliberately small typed allowlist: request a saved-data refresh,
+  request or schedule an allowance-priced check, generate a governed draft,
+  retrieve an already-authorized report, and request human approval for an
+  existing recommendation. There is no natural-language `run anything`
+  endpoint and no arbitrary provider, URL, prompt, SQL, queue, WordPress, or
+  Google Business Profile access.
+- Require a versioned schema, organization and location scope, correlation ID,
+  reason, and idempotency key on every request. Return a durable native job or
+  result reference; repeated requests with the same key produce one effect.
+- Reuse the same server-side plan, entitlement, credit, location, evidence,
+  freshness, policy, approval, provider-health, concurrency, and safety checks
+  as the InsightOS UI. n8n can request permitted work, but it cannot approve its
+  own request, bypass a blocked state, publish a draft, or silently turn a
+  recommendation into a live mutation.
+- Add an automation action ledger and customer-visible status history with the
+  service account, connection/workflow correlation, requested command, target,
+  decision, job, result, denial reason, and timestamps. Secrets, raw provider
+  payloads, prompts, internal cost details, and unrelated tenant data remain
+  excluded.
+- Ship an n8n starter workflow and conformance suite proving credential
+  handling, location scoping, idempotent retry, accepted-job polling, approval
+  preservation, revocation, wrong-tenant denial, exhausted-allowance denial,
+  and zero provider calls when a command is blocked. Publishing or activating
+  the external n8n workflow remains the customer's explicit action.
+
+Acceptance boundary:
+
+- A Solo owner can create one bounded service account for the starter command
+  set, run a permitted non-mutating or draft-producing command from n8n, and see
+  the durable result inside InsightOS without sharing a human password.
+- Growth adds larger allowances, multiple locations, and team approval routing;
+  Enterprise adds custom command/location-group scopes and customer-hosted
+  clients. No tier receives unrestricted write automation.
+- A command that would require a human approval remains waiting for that native
+  approval. Revocation, an expired credential, a replay outside the accepted
+  idempotency contract, a mismatched tenant/location, a missing entitlement, or
+  a safety/allowance failure produces no mutation, queued paid work, or provider
+  call.
 
 Placement and packaging:
 

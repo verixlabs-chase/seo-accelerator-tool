@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.models.business_location import BusinessLocation
+from app.intelligence.contracts.governed_ai import GovernedActionDraft
 from app.models.campaign import Campaign
 from app.models.cost_economics import CostLedgerEntry
 from app.models.governed_ai import GovernedAIRun
@@ -13,6 +14,7 @@ from app.models.user import User
 from app.services import reputation_inventory_service, reputation_response_service
 from app.services.commercial_plan_service import apply_commercial_plan
 from app.services.governed_ai_provider import GovernedAIProviderResponse
+from app.services.governed_ai_provider_capability_service import CapabilitySelection
 
 
 def _settings(*, configured: bool = True) -> SimpleNamespace:
@@ -292,3 +294,138 @@ def test_review_draft_rejects_invented_evidence(db_session, monkeypatch) -> None
     run = db_session.get(GovernedAIRun, row.governed_ai_run_id)
     assert run.status == "rejected"
     assert run.error_code == "ai_output_validation_failed"
+
+
+def test_review_draft_can_use_private_canary_without_posting_or_managed_cost(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(reputation_response_service, "get_settings", lambda: _settings())
+    user, campaign, review = _location_campaign_review(
+        db_session,
+        review_body="The crew was helpful and explained the work clearly.",
+    )
+    managed = ReviewDraftProvider()
+    monkeypatch.setattr(
+        reputation_response_service,
+        "select_review_response_capability",
+        lambda *_args, **_kwargs: CapabilitySelection(
+            event_id="private-event",
+            connection_id="private-connection",
+            model_identifier="private-review-model",
+        ),
+    )
+
+    def private_result(_db, **kwargs):
+        evidence_id = next(iter(kwargs["evidence_refs"]))
+        response = GovernedAIProviderResponse(
+            payload={
+                "action_id": kwargs["action_id"],
+                "draft_type": "review_response",
+                "draft_state": "ready",
+                "title": "Thank you for your review",
+                "body": "Thank you for sharing this. We appreciate your kind words.",
+                "evidence_used": [evidence_id],
+                "uncertainties": [],
+                "approval_required": True,
+            },
+            provider_request_id="private-review-request",
+            model_name="private-review-model",
+            input_tokens=30,
+            output_tokens=18,
+        )
+        return reputation_response_service._PrivateReviewResponseResult(
+            event=SimpleNamespace(id="private-event"),
+            output=GovernedActionDraft.model_validate(response.payload),
+            provider_response=response,
+            provider_name="private_ai",
+            model_name="private-review-model",
+            input_tokens=30,
+            output_tokens=18,
+            duration_ms=120,
+        )
+
+    monkeypatch.setattr(
+        reputation_response_service,
+        "_attempt_private_review_response",
+        private_result,
+    )
+
+    payload = reputation_response_service.generate_response_draft(
+        db_session,
+        tenant_id=user.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        review_id=review.id,
+        requested_by_user_id=user.id,
+        provider=managed,
+        now=datetime(2026, 8, 10, 13, 0, tzinfo=UTC),
+    )
+
+    assert payload["status"] == "ready_for_review"
+    assert payload["approval_required"] is True
+    assert payload["posting_enabled"] is False
+    assert managed.calls == 0
+    draft = db_session.get(ReputationResponseDraft, payload["id"])
+    assert draft is not None
+    run = db_session.get(GovernedAIRun, draft.governed_ai_run_id)
+    assert run is not None
+    assert run.provider_name == "private_ai"
+    assert run.model_name == "private-review-model"
+    assert run.estimated_cost == 0
+    assert run.reconciled_cost == 0
+
+
+def test_review_draft_private_failure_uses_managed_fallback_and_stays_draft_only(
+    db_session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(reputation_response_service, "get_settings", lambda: _settings())
+    user, campaign, review = _location_campaign_review(
+        db_session,
+        review_body="The crew was late but the work was completed.",
+    )
+    managed = ReviewDraftProvider()
+    monkeypatch.setattr(
+        reputation_response_service,
+        "select_review_response_capability",
+        lambda *_args, **_kwargs: CapabilitySelection(
+            event_id="private-event",
+            connection_id="private-connection",
+            model_identifier="private-review-model",
+        ),
+    )
+    monkeypatch.setattr(
+        reputation_response_service,
+        "_attempt_private_review_response",
+        lambda *_args, **_kwargs: reputation_response_service._PrivateReviewResponseResult(
+            event=SimpleNamespace(id="private-event"),
+            model_name="private-review-model",
+            error_code="ai_output_validation_failed",
+            provider_may_have_processed=True,
+            duration_ms=100,
+        ),
+    )
+    fallback = {}
+    monkeypatch.setattr(
+        reputation_response_service,
+        "_record_private_review_response_fallback",
+        lambda _db, **kwargs: fallback.update(kwargs),
+    )
+
+    payload = reputation_response_service.generate_response_draft(
+        db_session,
+        tenant_id=user.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        review_id=review.id,
+        requested_by_user_id=user.id,
+        provider=managed,
+        now=datetime(2026, 8, 10, 13, 15, tzinfo=UTC),
+    )
+
+    assert payload["status"] == "ready_for_review"
+    assert payload["posting_enabled"] is False
+    assert managed.calls == 1
+    assert fallback["managed_succeeded"] is True
+    assert fallback["request_key"]

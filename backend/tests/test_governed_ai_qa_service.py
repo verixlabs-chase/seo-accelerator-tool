@@ -18,6 +18,7 @@ from app.services.governed_ai_provider import (
     GovernedAIProviderResponse,
     MistralGovernedAIProvider,
 )
+from app.services.governed_ai_provider_capability_service import CapabilitySelection
 from tests.conftest import create_test_campaign
 
 
@@ -238,6 +239,90 @@ def test_verified_answer_is_metered_cited_and_idempotent(
     assert replay["idempotent_replay"] is True
     assert provider.calls == 1
     assert db_session.query(CostLedgerEntry).count() == 2
+
+
+def test_qualified_private_question_uses_saved_evidence_and_releases_managed_cost(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        governed_ai_qa_service,
+        "get_settings",
+        lambda: _settings(configured=True),
+    )
+    organization, campaign = _campaign_with_question_evidence(
+        db_session,
+        create_test_org,
+    )
+    managed_provider = EvidenceQuestionProvider()
+    monkeypatch.setattr(
+        governed_ai_qa_service,
+        "MistralGovernedAIProvider",
+        lambda **_kwargs: managed_provider,
+    )
+    monkeypatch.setattr(
+        governed_ai_qa_service,
+        "select_question_capability",
+        lambda *_args, **_kwargs: CapabilitySelection(
+            event_id="capability-event",
+            connection_id="private-connection",
+            model_identifier="private-question-model",
+        ),
+    )
+
+    def _private_result(*_args, **kwargs):
+        context = kwargs["context"]
+        recommendation = context["facts"]["recommendations"][0]
+        action_id = context["allowed_actions"][0]["action_id"]
+        payload = {
+            "question": context["customer_question"],
+            "answer": "Review the saved page-speed work first.",
+            "answer_state": "answered",
+            "evidence_used": [recommendation["evidence_id"]],
+            "related_action_ids": [action_id],
+            "uncertainties": ["A later measurement is still required."],
+        }
+        return governed_ai_qa_service._PrivateQuestionResult(
+            output=GovernedEvidenceAnswer.model_validate(payload),
+            provider_response=GovernedAIProviderResponse(
+                payload=payload,
+                provider_request_id="private-question-request",
+                model_name="private-question-model",
+                input_tokens=80,
+                output_tokens=30,
+            ),
+            provider_name="private_ai",
+            model_name="private-question-model",
+            prompt_attempted=True,
+            input_tokens=80,
+            output_tokens=30,
+            duration_ms=700,
+        )
+
+    monkeypatch.setattr(
+        governed_ai_qa_service,
+        "_attempt_private_question",
+        _private_result,
+    )
+
+    payload = governed_ai_qa_service.ask_governed_question(
+        db_session,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+        question="What should I work on next?",
+        now=datetime(2026, 8, 3, 16, 45, tzinfo=UTC),
+    )
+
+    assert payload["item"]["status"] == "validated"
+    assert payload["item"]["provider_name"] == "private_ai"
+    assert payload["item"]["model_name"] == "private-question-model"
+    assert payload["item"]["usage"]["estimated_cost"] == 0
+    assert payload["item"]["usage"]["reconciled_cost"] == 0
+    assert managed_provider.calls == 0
+    ledger = db_session.query(CostLedgerEntry).order_by(CostLedgerEntry.created_at).all()
+    assert [entry.event_type for entry in ledger] == ["reservation", "release"]
 
 
 @pytest.mark.parametrize("invalid_kind", ["evidence", "action"])

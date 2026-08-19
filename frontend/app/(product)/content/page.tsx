@@ -70,6 +70,18 @@ type WorkingContentDraft = {
   internal_link_recommendations?: ContentInternalLinkRecommendations | null;
   content_readiness?: ContentReadiness | null;
   publishing_handoff?: ContentPublishingHandoff | null;
+  automation_review_request?: {
+    requested: true;
+    requested_at: string;
+    source: "connected_workflow";
+    message: string;
+    safety: {
+      approved: false;
+      scheduled: false;
+      published: false;
+      website_changed: false;
+    };
+  } | null;
   safety: {
     ai_generated: false;
     automatic_publishing_allowed: false;
@@ -523,6 +535,15 @@ function WorkingDraftEditor({
           Not approved or published
         </span>
       </div>
+      {draft.automation_review_request?.requested ? (
+        <div className="mt-4 rounded-lg border border-sky-500/25 bg-sky-500/5 p-3" role="status">
+          <p className="font-medium text-sky-100">Review requested by a connected workflow</p>
+          <p className="mt-1 text-sm leading-6 text-zinc-300">{draft.automation_review_request.message}</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">
+            Requested {formatDate(draft.automation_review_request.requested_at)}. It did not approve, schedule, publish, or change your website.
+          </p>
+        </div>
+      ) : null}
       <label className="mt-4 block text-sm font-medium text-zinc-200">
         Page heading
         <input

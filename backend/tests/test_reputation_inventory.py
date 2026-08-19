@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
 
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.data_connection import DataConnection
 from app.models.organization_membership import OrganizationMembership
 from app.models.reputation import ReputationReviewObservation
+from app.events.outbox.event_outbox import EventOutbox
 from app.models.user import User
 from app.services import durable_job_service, reputation_inventory_service
 
@@ -107,6 +109,37 @@ def test_reputation_inventory_keeps_response_history_and_scope(db_session):
         "unanswered",
         "responded",
     ]
+    saved_events = (
+        db_session.query(EventOutbox)
+        .filter(EventOutbox.event_type == "reputation.review.saved")
+        .order_by(EventOutbox.created_at)
+        .all()
+    )
+    assert len(saved_events) == 2
+    assert all(
+        json.loads(item.payload_json)["payload"]["review_id"] == first.id
+        for item in saved_events
+    )
+    reputation_inventory_service.upsert_reviews(
+        db_session,
+        tenant_id=user.tenant_id,
+        organization_id=str(campaign.organization_id),
+        campaign_id=campaign.id,
+        records=[
+            _review(
+                response_status="responded",
+                response_text="We are sorry about the delay and appreciate the feedback.",
+                response_updated_at=first_time + timedelta(hours=2),
+            )
+        ],
+        captured_at=first_time + timedelta(days=2),
+    )
+    assert (
+        db_session.query(EventOutbox)
+        .filter(EventOutbox.event_type == "reputation.review.saved")
+        .count()
+        == 2
+    )
 
 
 def test_reputation_inventory_filters_and_summarizes(db_session):

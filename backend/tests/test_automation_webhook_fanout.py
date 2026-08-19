@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
+from datetime import UTC, datetime
 
 import pytest
 
@@ -14,10 +15,12 @@ from app.models.automation_webhook import (
     AutomationWebhookConnection,
     AutomationWebhookDelivery,
 )
+from app.models.business_location import BusinessLocation
 from app.models.intelligence import StrategyRecommendation
 from app.models.platform_job import PlatformJob
 from app.models.recommendation_execution import RecommendationExecution
 from app.models.reporting import MonthlyReport
+from app.models.reputation import ReputationReview
 from app.services import automation_webhook_service as webhook_service
 from app.services import durable_job_service, job_service
 from tests.conftest import create_test_campaign
@@ -337,6 +340,18 @@ def test_live_event_translation_covers_recommendation_and_action_results(
         tenant_id=tenant.id,
         name="Automation translation campaign",
     )
+    location = BusinessLocation(
+        organization_id=organization.id,
+        name="Automation translation location",
+        domain="automation-translation.example",
+        status="active",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(location)
+    db_session.flush()
+    campaign.business_location_id = location.id
+    db_session.flush()
     recommendation = StrategyRecommendation(
         tenant_id=tenant.id,
         campaign_id=campaign.id,
@@ -363,12 +378,40 @@ def test_live_event_translation_covers_recommendation_and_action_results(
     )
     db_session.add(execution)
     db_session.flush()
+    review = ReputationReview(
+        tenant_id=tenant.id,
+        organization_id=organization.id,
+        campaign_id=campaign.id,
+        business_location_id=campaign.business_location_id,
+        source_key="owned-profile",
+        source_name="Business Profile",
+        source_type="owned_profile",
+        provider_name="private-provider",
+        external_review_id="private-external-review-id",
+        rating=2,
+        body="private review text",
+        author_name="private reviewer",
+        author_is_anonymous=False,
+        response_status="unanswered",
+        reviewed_at=datetime.now(UTC),
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(review)
+    db_session.flush()
 
     cases = [
         (
             "recommendation.generated",
             {"campaign_id": campaign.id, "recommendation_id": recommendation.id},
             "recommendation.ready",
+        ),
+        (
+            "reputation.review.saved",
+            {"campaign_id": campaign.id, "review_id": review.id},
+            "review.saved",
         ),
         (
             "execution.completed",
@@ -397,6 +440,10 @@ def test_live_event_translation_covers_recommendation_and_action_results(
         assert translated.event_type == expected_type
         serialized = translated.model_dump_json()
         assert "private rationale" not in serialized
+        assert "private review text" not in serialized
+        assert "private reviewer" not in serialized
+        assert "private-provider" not in serialized
+        assert "private-external-review-id" not in serialized
         assert '"private"' not in serialized
 
 

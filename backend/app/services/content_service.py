@@ -17,6 +17,7 @@ from app.intelligence.recommendation_execution_engine import (
     schedule_execution,
 )
 from app.models.campaign import Campaign
+from app.models.automation_command import AutomationCommandReceipt
 from app.models.content import (
     ContentAsset,
     ContentBrief,
@@ -334,6 +335,45 @@ def get_content_workspace(
         else []
     )
     drafts_by_brief = {item.content_brief_id: item for item in drafts}
+    automation_review_requests: dict[str, dict] = {}
+    if drafts:
+        review_rows = (
+            db.query(AutomationCommandReceipt)
+            .filter(
+                AutomationCommandReceipt.tenant_id == tenant_id,
+                AutomationCommandReceipt.campaign_id == campaign_id,
+                AutomationCommandReceipt.command_type == "content.request_draft_review",
+                AutomationCommandReceipt.status == "succeeded",
+            )
+            .order_by(
+                AutomationCommandReceipt.created_at.desc(),
+                AutomationCommandReceipt.id.desc(),
+            )
+            .limit(500)
+            .all()
+        )
+        draft_ids = {item.id for item in drafts}
+        for row in review_rows:
+            try:
+                saved = json.loads(row.result_json)
+            except (TypeError, ValueError):
+                continue
+            resource = saved.get("resource") if isinstance(saved, dict) else None
+            draft_id = str(resource.get("id") or "") if isinstance(resource, dict) else ""
+            if draft_id not in draft_ids or draft_id in automation_review_requests:
+                continue
+            automation_review_requests[draft_id] = {
+                "requested": True,
+                "requested_at": row.created_at.isoformat(),
+                "source": "connected_workflow",
+                "message": "A connected workflow asked you to review this private draft.",
+                "safety": {
+                    "approved": False,
+                    "scheduled": False,
+                    "published": False,
+                    "website_changed": False,
+                },
+            }
     briefs_by_id = {item.id: item for item in briefs}
     handoffs_by_draft = {
         item.id: _serialize_publishing_handoff(
@@ -543,6 +583,11 @@ def get_content_workspace(
                 page_inventory=list(page_metadata_by_url.values()),
                 publishing_handoff=(
                     handoffs_by_draft.get(drafts_by_brief[item.id].id)
+                    if item.id in drafts_by_brief
+                    else None
+                ),
+                automation_review_request=(
+                    automation_review_requests.get(drafts_by_brief[item.id].id)
                     if item.id in drafts_by_brief
                     else None
                 ),
@@ -1079,6 +1124,7 @@ def _serialize_workspace_brief(
     page_metadata: dict | None = None,
     page_inventory: list[dict] | None = None,
     publishing_handoff: dict | None = None,
+    automation_review_request: dict | None = None,
 ) -> dict:
     return {
         "id": item.id,
@@ -1103,6 +1149,7 @@ def _serialize_workspace_brief(
                 page_metadata=page_metadata,
                 page_inventory=page_inventory,
                 publishing_handoff=publishing_handoff,
+                automation_review_request=automation_review_request,
             )
             if draft is not None
             else None
@@ -1118,6 +1165,7 @@ def _serialize_content_draft(
     page_metadata: dict | None = None,
     page_inventory: list[dict] | None = None,
     publishing_handoff: dict | None = None,
+    automation_review_request: dict | None = None,
 ) -> dict:
     ai_suggestion = None
     if suggestion is not None and isinstance(suggestion.output_payload, dict):
@@ -1171,6 +1219,7 @@ def _serialize_content_draft(
             _content_readiness(item, brief) if brief is not None else None
         ),
         "publishing_handoff": publishing_handoff,
+        "automation_review_request": automation_review_request,
         "safety": _content_draft_safety(),
     }
 

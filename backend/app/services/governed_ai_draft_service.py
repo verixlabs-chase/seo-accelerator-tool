@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import json
 import logging
+from time import perf_counter
 from typing import Any
 
 from fastapi import HTTPException
@@ -29,12 +31,39 @@ from app.services.governed_ai_provider import (
     GovernedAIProviderError,
     MistralGovernedAIProvider,
 )
+from app.services.governed_ai_provider_capability_service import CapabilitySelection
+from app.services.governed_ai_provider_connection_service import (
+    GovernedAIProviderConnectionError,
+    open_pinned_runtime_provider,
+)
+from app.services.governed_ai_provider_draft_capability_service import (
+    automatic_draft_capability_rollback,
+    authorize_draft_dispatch,
+    record_draft_capability_fallback,
+    record_draft_capability_success,
+    select_draft_capability,
+)
 
 
 FEATURE = "intelligence_draft"
 PROMPT_TEMPLATE_VERSION = "insightos-governed-action-draft-v1"
 MISTRAL_OPERATION = governed_ai_service.MISTRAL_OPERATION
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _PrivateDraftResult:
+    event: Any | None = None
+    output: GovernedActionDraft | None = None
+    provider_response: Any | None = None
+    provider_name: str = "private_ai"
+    model_name: str = ""
+    prompt_attempted: bool = False
+    error_code: str | None = None
+    provider_may_have_processed: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: int = 0
 
 DRAFT_TYPE_DETAILS: dict[str, dict[str, str]] = {
     "search_result": {
@@ -260,6 +289,16 @@ def generate_governed_draft(
                 idempotent_replay=True,
             )
 
+    capability_selection = (
+        select_draft_capability(
+            db,
+            organization_id=organization_id,
+            request_key=idempotency_key,
+            now=occurred_at,
+        )
+        if provider is None and provider_configured
+        else None
+    )
     fallback = _fallback_draft(
         action_id=selected_action_id,
         draft_type=selected_draft_type,
@@ -490,6 +529,56 @@ def generate_governed_draft(
             idempotent_replay=False,
         )
 
+    private_result = None
+    if capability_selection is not None:
+        private_result = _attempt_private_draft(
+            db,
+            organization_id=organization_id,
+            selection=capability_selection,
+            request_key=idempotency_key,
+            context=context,
+            selected_action_id=selected_action_id,
+            selected_draft_type=selected_draft_type,
+            evidence_ids=set(evidence_ids),
+            allowed_draft_types=allowed_draft_types,
+            timeout_seconds=settings.ai_provider_timeout_seconds,
+            max_output_tokens=settings.ai_max_output_tokens,
+            now=occurred_at,
+        )
+        if private_result.output is not None and private_result.provider_response is not None:
+            cost_economics_service.release_provider_cost(
+                db,
+                reservation=reservation,
+                now=occurred_at,
+            )
+            row.provider_name = private_result.provider_name
+            row.model_name = private_result.model_name
+            row.input_tokens = private_result.input_tokens
+            row.output_tokens = private_result.output_tokens
+            row.estimated_cost = Decimal("0")
+            row.reconciled_cost = Decimal("0")
+            row.price_card_version = None
+            row.provider_request_id = private_result.provider_response.provider_request_id
+            row.response_hash = governed_ai_service._hash_payload(
+                private_result.provider_response.payload
+            )
+            row.status = "validated"
+            row.provider_state = "ready"
+            row.output_payload = _output_payload(private_result.output, context=context)
+            row.selected_action_id = selected_action_id
+            row.completed_at = occurred_at
+            db.commit()
+            db.refresh(row)
+            return _response(
+                db,
+                row,
+                available_actions=list(available.values()),
+                idempotent_replay=False,
+            )
+
+    row.provider_name = provider.name
+    row.model_name = provider.model_name
+
     try:
         provider_response = provider.draft_action(
             context=context,
@@ -497,6 +586,13 @@ def generate_governed_draft(
             prompt_template_version=PROMPT_TEMPLATE_VERSION,
         )
     except GovernedAIProviderError as exc:
+        _record_private_draft_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         if exc.provider_may_have_processed:
             terminal = cost_economics_service.reconcile_provider_cost(
                 db,
@@ -529,6 +625,13 @@ def generate_governed_draft(
             idempotent_replay=False,
         )
     except Exception:
+        _record_private_draft_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         logger.exception(
             "Unexpected governed AI draft failure",
             extra={
@@ -577,6 +680,13 @@ def generate_governed_draft(
             now=occurred_at,
         )
     except cost_economics_service.CostEconomicsError as exc:
+        _record_private_draft_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         terminal = cost_economics_service.reconcile_provider_cost(
             db,
             reservation=reservation,
@@ -626,6 +736,13 @@ def generate_governed_draft(
             allowed_draft_types=allowed_draft_types,
         )
     except (TypeError, ValueError) as exc:
+        _record_private_draft_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         row.status = "rejected"
         row.provider_state = "invalid_output"
         row.output_payload = _output_payload(fallback, context=context)
@@ -641,6 +758,13 @@ def generate_governed_draft(
             idempotent_replay=False,
         )
 
+    _record_private_draft_fallback(
+        db,
+        result=private_result,
+        request_key=idempotency_key,
+        managed_succeeded=True,
+        now=occurred_at,
+    )
     row.status = "validated"
     row.provider_state = "ready"
     row.output_payload = _output_payload(output, context=context)
@@ -654,6 +778,129 @@ def generate_governed_draft(
         available_actions=list(available.values()),
         idempotent_replay=False,
     )
+
+
+def _attempt_private_draft(
+    db: Session,
+    *,
+    organization_id: str,
+    selection: CapabilitySelection,
+    request_key: str,
+    context: dict[str, Any],
+    selected_action_id: str,
+    selected_draft_type: str,
+    evidence_ids: set[str],
+    allowed_draft_types: set[str],
+    timeout_seconds: float,
+    max_output_tokens: int,
+    now: datetime,
+) -> _PrivateDraftResult:
+    result = _PrivateDraftResult(model_name=selection.model_identifier)
+    started: float | None = None
+    try:
+        result.event = authorize_draft_dispatch(
+            db,
+            organization_id=organization_id,
+            selection=selection,
+            now=now,
+        )
+        with open_pinned_runtime_provider(
+            db,
+            organization_id=organization_id,
+            connection_id=selection.connection_id,
+            timeout_seconds=timeout_seconds,
+            max_output_tokens=max_output_tokens,
+        ) as private_provider:
+            result.prompt_attempted = True
+            started = perf_counter()
+            response = private_provider.draft_action(
+                context=context,
+                output_schema=GovernedActionDraft.model_json_schema(),
+                prompt_template_version=PROMPT_TEMPLATE_VERSION,
+            )
+            result.duration_ms = _elapsed_ms(started)
+            result.provider_response = response
+            result.provider_name = private_provider.name
+            result.model_name = private_provider.model_name
+            result.input_tokens = max(0, response.input_tokens)
+            result.output_tokens = max(0, response.output_tokens)
+            result.output = GovernedActionDraft.model_validate(response.payload)
+            result.output.validate_against_context(
+                requested_action_id=selected_action_id,
+                requested_draft_type=selected_draft_type,
+                evidence_ids=evidence_ids,
+                allowed_action_ids={selected_action_id},
+                allowed_draft_types=allowed_draft_types,
+            )
+        record_draft_capability_success(
+            db,
+            event=result.event,
+            request_key=request_key,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            duration_ms=result.duration_ms,
+            now=now,
+        )
+        return result
+    except GovernedAIProviderConnectionError as exc:
+        result.error_code = exc.reason_code
+    except GovernedAIProviderError as exc:
+        result.error_code = exc.code
+        result.provider_may_have_processed = exc.provider_may_have_processed
+    except (TypeError, ValueError):
+        result.error_code = "ai_output_validation_failed"
+        result.provider_may_have_processed = True
+    except Exception:
+        logger.exception(
+            "Unexpected private AI draft capability failure",
+            extra={
+                "organization_id": organization_id,
+                "connection_id": selection.connection_id,
+            },
+        )
+        result.error_code = "ai_provider_unexpected_error"
+        result.provider_may_have_processed = result.prompt_attempted
+    result.duration_ms = _elapsed_ms(started)
+    result.output = None
+    result.provider_response = None
+    if result.event is not None:
+        automatic_draft_capability_rollback(
+            db,
+            event=result.event,
+            reason_code=result.error_code or "ai_provider_unavailable",
+            now=now,
+        )
+    return result
+
+
+def _record_private_draft_fallback(
+    db: Session,
+    *,
+    result: _PrivateDraftResult | None,
+    request_key: str,
+    managed_succeeded: bool,
+    now: datetime,
+) -> None:
+    if result is None or result.event is None or not result.prompt_attempted:
+        return
+    record_draft_capability_fallback(
+        db,
+        event=result.event,
+        request_key=request_key,
+        private_error_code=result.error_code or "ai_provider_unavailable",
+        provider_may_have_processed=result.provider_may_have_processed,
+        managed_succeeded=managed_succeeded,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        duration_ms=result.duration_ms,
+        now=now,
+    )
+
+
+def _elapsed_ms(started: float | None) -> int:
+    if started is None:
+        return 0
+    return min(60_000, max(0, int((perf_counter() - started) * 1_000)))
 
 
 def _campaign_draft_context(

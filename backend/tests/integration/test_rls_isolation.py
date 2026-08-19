@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,11 @@ from app.models.automation_webhook import (
     AutomationWebhookDelivery,
     AutomationWebhookDeliveryAttempt,
 )
+from app.models.automation_command import (
+    AutomationCommandReceipt,
+    AutomationServiceAccount,
+)
+from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
 from app.models.tier_profile import TierProfile
 from app.models.user import User
@@ -147,6 +152,140 @@ def test_platform_context_can_inspect_multiple_organizations(db_session: Session
     finally:
         platform_session.rollback()
         platform_session.close()
+
+
+def test_inbound_automation_credentials_are_scoped_and_receipts_are_immutable(
+    db_session: Session,
+) -> None:
+    user_a = db_session.query(User).filter(User.email == "a@example.com").one()
+    user_b = db_session.query(User).filter(User.email == "b@example.com").one()
+    now = datetime.now(UTC)
+    rows: list[tuple[AutomationServiceAccount, AutomationCommandReceipt]] = []
+    for index, user in enumerate((user_a, user_b), start=1):
+        location = BusinessLocation(
+            id=str(uuid.uuid4()),
+            organization_id=str(user.tenant_id),
+            name=f"Inbound automation location {index}",
+            domain=f"inbound-automation-{index}.example",
+            status="active",
+            created_at=now,
+            updated_at=now,
+        )
+        db_session.add(location)
+        db_session.flush()
+        account = AutomationServiceAccount(
+            tenant_id=str(user.tenant_id),
+            organization_id=str(user.tenant_id),
+            business_location_id=location.id,
+            name=f"n8n report helper {index}",
+            status="active",
+            token_hash=str(index) * 64,
+            token_hint=f"key{index:05d}",
+            token_version=1,
+            allowed_commands_json='["report.retrieve"]',
+            expires_at=now + timedelta(days=30),
+            created_by_user_id=user.id,
+            created_at=now,
+            updated_at=now,
+        )
+        db_session.add(account)
+        db_session.flush()
+        receipt = AutomationCommandReceipt(
+            tenant_id=str(user.tenant_id),
+            organization_id=str(user.tenant_id),
+            service_account_id=account.id,
+            business_location_id=location.id,
+            campaign_id=None,
+            report_id=str(uuid.uuid4()),
+            schema_version="insightos.automation.command.v1",
+            command_type="report.retrieve",
+            idempotency_key=f"security-inbound-report-{index}",
+            correlation_id=f"security-inbound-run-{index}",
+            reason="Security isolation fixture",
+            request_hash="a" * 64,
+            status="denied",
+            denial_reason_code="automation_report_not_found",
+            result_json='{"artifacts":[],"resource":null}',
+            artifact_hash=str(index + 2) * 64,
+            created_at=now,
+            completed_at=now,
+        )
+        db_session.add(receipt)
+        rows.append((account, receipt))
+    db_session.commit()
+
+    isolated = Session(bind=db_session.get_bind(), autoflush=False, autocommit=False)
+    try:
+        set_session_security_context(
+            isolated,
+            tenant_id=str(user_a.tenant_id),
+            organization_id=str(user_a.tenant_id),
+            user_id=user_a.id,
+            platform_access=False,
+        )
+        assert set(
+            isolated.execute(
+                select(AutomationServiceAccount.id).where(
+                    AutomationServiceAccount.id.in_([rows[0][0].id, rows[1][0].id])
+                )
+            ).scalars()
+        ) == {rows[0][0].id}
+        assert set(
+            isolated.execute(
+                select(AutomationCommandReceipt.id).where(
+                    AutomationCommandReceipt.id.in_([rows[0][1].id, rows[1][1].id])
+                )
+            ).scalars()
+        ) == {rows[0][1].id}
+        cross_update = isolated.execute(
+            update(AutomationServiceAccount)
+            .where(AutomationServiceAccount.id == rows[1][0].id)
+            .values(name="Cross-tenant key")
+        )
+        assert cross_update.rowcount == 0
+    finally:
+        isolated.rollback()
+        isolated.close()
+
+    immutable = Session(bind=db_session.get_bind(), autoflush=False, autocommit=False)
+    try:
+        set_session_security_context(
+            immutable,
+            tenant_id=str(user_a.tenant_id),
+            organization_id=str(user_a.tenant_id),
+            user_id=user_a.id,
+            platform_access=False,
+        )
+        with pytest.raises(DBAPIError):
+            immutable.execute(
+                update(AutomationCommandReceipt)
+                .where(AutomationCommandReceipt.id == rows[0][1].id)
+                .values(status="succeeded")
+            )
+            immutable.flush()
+    finally:
+        immutable.rollback()
+        immutable.close()
+
+    undeletable = Session(bind=db_session.get_bind(), autoflush=False, autocommit=False)
+    try:
+        set_session_security_context(
+            undeletable,
+            tenant_id=str(user_a.tenant_id),
+            organization_id=str(user_a.tenant_id),
+            user_id=user_a.id,
+            platform_access=False,
+        )
+        with pytest.raises(DBAPIError):
+            undeletable.execute(
+                delete(AutomationCommandReceipt).where(
+                    AutomationCommandReceipt.id == rows[0][1].id
+                )
+            )
+            undeletable.flush()
+    finally:
+        undeletable.rollback()
+        undeletable.close()
 
 
 def test_restore_verifier_rls_probe_is_non_persistent(db_session: Session) -> None:

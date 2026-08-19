@@ -17,8 +17,14 @@ from app.automation.provider_setup import (
     automation_provider_setup_catalog,
 )
 from app.automation.conformance import (
+    AUTOMATION_CONNECTOR_CATALOG_VERSION,
     AUTOMATION_CONFORMANCE_VERSION,
+    automation_connector_catalog,
     automation_provider_conformance_kit,
+)
+from app.automation.command_openapi import (
+    COMMAND_OPENAPI_VERSION,
+    build_automation_command_openapi,
 )
 
 __all__ = [
@@ -35,5 +41,9 @@ __all__ = [
     "AUTOMATION_PROVIDER_SETUP_VERSION",
     "automation_provider_setup_catalog",
     "AUTOMATION_CONFORMANCE_VERSION",
+    "AUTOMATION_CONNECTOR_CATALOG_VERSION",
+    "automation_connector_catalog",
     "automation_provider_conformance_kit",
+    "COMMAND_OPENAPI_VERSION",
+    "build_automation_command_openapi",
 ]

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from time import perf_counter
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -33,6 +35,18 @@ from app.services.governed_ai_provider import (
     GovernedAIProviderError,
     MistralGovernedAIProvider,
 )
+from app.services.governed_ai_provider_capability_service import CapabilitySelection
+from app.services.governed_ai_provider_connection_service import (
+    GovernedAIProviderConnectionError,
+    open_pinned_runtime_provider,
+)
+from app.services.governed_ai_provider_keyword_capability_service import (
+    automatic_keyword_review_rollback,
+    authorize_keyword_review_dispatch,
+    record_keyword_review_fallback,
+    record_keyword_review_success,
+    select_keyword_review_capability,
+)
 
 
 FEATURE = "keyword_relevance_review"
@@ -41,6 +55,21 @@ MISTRAL_CAPABILITY = "governed_ai"
 MISTRAL_OPERATION = "keyword_relevance_review"
 ACCEPTANCE_CONFIDENCE = 0.8
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _PrivateKeywordReviewResult:
+    event: Any | None = None
+    output: GovernedKeywordRelevanceReview | None = None
+    provider_response: Any | None = None
+    provider_name: str = "private_ai"
+    model_name: str = ""
+    prompt_attempted: bool = False
+    error_code: str | None = None
+    provider_may_have_processed: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: int = 0
 
 
 def review_uncertain(
@@ -200,6 +229,17 @@ def review_uncertain(
                 review=_review_summary(retry_existing),
                 idempotent_replay=True,
             )
+
+    capability_selection = (
+        select_keyword_review_capability(
+            db,
+            organization_id=str(campaign.organization_id),
+            request_key=idempotency_key,
+            now=occurred_at,
+        )
+        if provider is None and provider_configured
+        else None
+    )
 
     plan = cost_economics_service.resolve_plan_economics(
         governed_ai_service._organization_plan_type(db, str(campaign.organization_id))
@@ -381,6 +421,72 @@ def review_uncertain(
             now=occurred_at,
         )
 
+    private_result = None
+    if capability_selection is not None:
+        private_result = _attempt_private_keyword_review(
+            db,
+            organization_id=str(campaign.organization_id),
+            selection=capability_selection,
+            request_key=idempotency_key,
+            context=context,
+            suggestion_ids={row.id for row in candidates},
+            service_ids={row.id for row in services},
+            included_area_ids={row.id for row in included_areas},
+            excluded_area_ids={row.id for row in excluded_areas},
+            evidence_ids=set(evidence_ids),
+            timeout_seconds=settings.ai_provider_timeout_seconds,
+            max_output_tokens=settings.ai_max_output_tokens,
+            now=occurred_at,
+        )
+        if private_result.output is not None and private_result.provider_response is not None:
+            cost_economics_service.release_provider_cost(
+                db,
+                reservation=reservation,
+                now=occurred_at,
+            )
+            ai_run.provider_name = private_result.provider_name
+            ai_run.model_name = private_result.model_name
+            ai_run.input_tokens = private_result.input_tokens
+            ai_run.output_tokens = private_result.output_tokens
+            ai_run.estimated_cost = Decimal("0")
+            ai_run.reconciled_cost = Decimal("0")
+            ai_run.price_card_version = None
+            ai_run.provider_request_id = (
+                private_result.provider_response.provider_request_id
+            )
+            ai_run.response_hash = governed_ai_service._hash_payload(
+                private_result.provider_response.payload
+            )
+            counts = _apply_validated_review(
+                candidates=candidates,
+                output=private_result.output,
+                services=services,
+                included_areas=included_areas,
+                excluded_areas=excluded_areas,
+                run=ai_run,
+                now=occurred_at,
+            )
+            ai_run.status = "validated"
+            ai_run.provider_state = "ready"
+            ai_run.output_payload = {
+                **private_result.output.model_dump(mode="json"),
+                "summary": counts,
+                "message": _counts_message(counts),
+            }
+            ai_run.completed_at = occurred_at
+            db.commit()
+            db.refresh(ai_run)
+            return _response(
+                db,
+                campaign=campaign,
+                run=ai_run,
+                review=_review_summary(ai_run),
+                idempotent_replay=False,
+            )
+
+    ai_run.provider_name = provider.name
+    ai_run.model_name = provider.model_name
+
     try:
         provider_response = provider.review_keyword_relevance(
             context=context,
@@ -388,6 +494,13 @@ def review_uncertain(
             prompt_template_version=PROMPT_TEMPLATE_VERSION,
         )
     except GovernedAIProviderError as exc:
+        _record_private_keyword_review_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         if exc.provider_may_have_processed:
             terminal = cost_economics_service.reconcile_provider_cost(
                 db,
@@ -410,6 +523,13 @@ def review_uncertain(
             now=occurred_at,
         )
     except Exception:
+        _record_private_keyword_review_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         logger.exception(
             "Unexpected governed keyword relevance provider failure",
             extra={
@@ -451,6 +571,13 @@ def review_uncertain(
             now=occurred_at,
         )
     except cost_economics_service.CostEconomicsError as exc:
+        _record_private_keyword_review_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         terminal = cost_economics_service.reconcile_provider_cost(
             db,
             reservation=reservation,
@@ -492,6 +619,13 @@ def review_uncertain(
             evidence_ids=set(evidence_ids),
         )
     except (TypeError, ValueError) as exc:
+        _record_private_keyword_review_fallback(
+            db,
+            result=private_result,
+            request_key=idempotency_key,
+            managed_succeeded=False,
+            now=occurred_at,
+        )
         ai_run.status = "rejected"
         ai_run.provider_state = "invalid_output"
         ai_run.output_payload = {
@@ -511,6 +645,13 @@ def review_uncertain(
             idempotent_replay=False,
         )
 
+    _record_private_keyword_review_fallback(
+        db,
+        result=private_result,
+        request_key=idempotency_key,
+        managed_succeeded=True,
+        now=occurred_at,
+    )
     counts = _apply_validated_review(
         candidates=candidates,
         output=output,
@@ -537,6 +678,132 @@ def review_uncertain(
         review=_review_summary(ai_run),
         idempotent_replay=False,
     )
+
+
+def _attempt_private_keyword_review(
+    db: Session,
+    *,
+    organization_id: str,
+    selection: CapabilitySelection,
+    request_key: str,
+    context: dict[str, Any],
+    suggestion_ids: set[str],
+    service_ids: set[str],
+    included_area_ids: set[str],
+    excluded_area_ids: set[str],
+    evidence_ids: set[str],
+    timeout_seconds: float,
+    max_output_tokens: int,
+    now: datetime,
+) -> _PrivateKeywordReviewResult:
+    result = _PrivateKeywordReviewResult(model_name=selection.model_identifier)
+    started: float | None = None
+    try:
+        result.event = authorize_keyword_review_dispatch(
+            db,
+            organization_id=organization_id,
+            selection=selection,
+            now=now,
+        )
+        with open_pinned_runtime_provider(
+            db,
+            organization_id=organization_id,
+            connection_id=selection.connection_id,
+            timeout_seconds=timeout_seconds,
+            max_output_tokens=max_output_tokens,
+        ) as private_provider:
+            result.prompt_attempted = True
+            started = perf_counter()
+            response = private_provider.review_keyword_relevance(
+                context=context,
+                output_schema=GovernedKeywordRelevanceReview.model_json_schema(),
+                prompt_template_version=PROMPT_TEMPLATE_VERSION,
+            )
+            result.duration_ms = _elapsed_ms(started)
+            result.provider_response = response
+            result.provider_name = private_provider.name
+            result.model_name = private_provider.model_name
+            result.input_tokens = max(0, response.input_tokens)
+            result.output_tokens = max(0, response.output_tokens)
+            result.output = GovernedKeywordRelevanceReview.model_validate(
+                response.payload
+            )
+            result.output.validate_against_context(
+                suggestion_ids=suggestion_ids,
+                service_ids=service_ids,
+                included_area_ids=included_area_ids,
+                excluded_area_ids=excluded_area_ids,
+                evidence_ids=evidence_ids,
+            )
+        record_keyword_review_success(
+            db,
+            event=result.event,
+            request_key=request_key,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            duration_ms=result.duration_ms,
+            now=now,
+        )
+        return result
+    except GovernedAIProviderConnectionError as exc:
+        result.error_code = exc.reason_code
+    except GovernedAIProviderError as exc:
+        result.error_code = exc.code
+        result.provider_may_have_processed = exc.provider_may_have_processed
+    except (TypeError, ValueError):
+        result.error_code = "ai_output_validation_failed"
+        result.provider_may_have_processed = True
+    except Exception:
+        logger.exception(
+            "Unexpected private AI unclear-search capability failure",
+            extra={
+                "organization_id": organization_id,
+                "connection_id": selection.connection_id,
+            },
+        )
+        result.error_code = "ai_provider_unexpected_error"
+        result.provider_may_have_processed = result.prompt_attempted
+    result.duration_ms = _elapsed_ms(started)
+    result.output = None
+    result.provider_response = None
+    if result.event is not None:
+        automatic_keyword_review_rollback(
+            db,
+            event=result.event,
+            reason_code=result.error_code or "ai_provider_unavailable",
+            now=now,
+        )
+    return result
+
+
+def _record_private_keyword_review_fallback(
+    db: Session,
+    *,
+    result: _PrivateKeywordReviewResult | None,
+    request_key: str,
+    managed_succeeded: bool,
+    now: datetime,
+) -> None:
+    if result is None or result.event is None or not result.prompt_attempted:
+        return
+    record_keyword_review_fallback(
+        db,
+        event=result.event,
+        request_key=request_key,
+        private_error_code=result.error_code or "ai_provider_unavailable",
+        provider_may_have_processed=result.provider_may_have_processed,
+        managed_succeeded=managed_succeeded,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        duration_ms=result.duration_ms,
+        now=now,
+    )
+
+
+def _elapsed_ms(started: float | None) -> int:
+    if started is None:
+        return 0
+    return min(60_000, max(0, int((perf_counter() - started) * 1_000)))
 
 
 def _build_context(

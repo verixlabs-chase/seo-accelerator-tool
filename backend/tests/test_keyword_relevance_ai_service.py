@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -12,12 +13,14 @@ from app.models.business_service_area import BusinessServiceArea
 from app.models.campaign import Campaign
 from app.models.governed_ai import GovernedAIRun
 from app.models.keyword_research import KeywordResearchRun, KeywordResearchSuggestion
+from app.intelligence.contracts.governed_ai import GovernedKeywordRelevanceReview
 from app.schemas.keyword_research import KeywordResearchAIReviewIn
 from app.services import keyword_relevance_ai_service
 from app.services.governed_ai_provider import (
     GovernedAIProviderResponse,
     MistralGovernedAIProvider,
 )
+from app.services.governed_ai_provider_capability_service import CapabilitySelection
 
 
 class FakeRelevanceProvider:
@@ -283,6 +286,137 @@ def test_unknown_service_reference_rejects_entire_ai_batch(
     ai_run = db_session.query(GovernedAIRun).one()
     assert ai_run.status == "rejected"
     assert ai_run.error_code == "ai_output_validation_failed"
+
+
+def _private_runtime_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        ai_provider_backend="mistral",
+        mistral_model="mistral-small-2603",
+        mistral_api_key="managed-test-key",
+        mistral_api_endpoint="https://api.mistral.ai/v1/chat/completions",
+        ai_provider_timeout_seconds=5,
+        ai_provider_max_attempts=1,
+        ai_max_input_tokens=20_000,
+        ai_max_output_tokens=1_000,
+    )
+
+
+def test_private_keyword_review_success_skips_managed_provider_and_keeps_zero_cost(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    organization, campaign, _service, _area, suggestions = _setup_relevance_case(
+        db_session, create_test_org
+    )
+    managed = FakeRelevanceProvider()
+    private = FakeRelevanceProvider()
+    private.name = "private_ai"
+    private.model_name = "customer-model-v1"
+    monkeypatch.setattr(keyword_relevance_ai_service, "get_settings", _private_runtime_settings)
+    monkeypatch.setattr(
+        keyword_relevance_ai_service,
+        "MistralGovernedAIProvider",
+        lambda **_kwargs: managed,
+    )
+    monkeypatch.setattr(
+        keyword_relevance_ai_service,
+        "select_keyword_review_capability",
+        lambda *_args, **_kwargs: CapabilitySelection(
+            event_id="event-1",
+            connection_id="connection-1",
+            model_identifier=private.model_name,
+        ),
+    )
+
+    def private_attempt(_db, **kwargs):  # noqa: ANN001, ANN202
+        response = private.review_keyword_relevance(
+            context=kwargs["context"],
+            output_schema=GovernedKeywordRelevanceReview.model_json_schema(),
+            prompt_template_version="insightos-keyword-relevance-review-v1",
+        )
+        return keyword_relevance_ai_service._PrivateKeywordReviewResult(
+            output=GovernedKeywordRelevanceReview.model_validate(response.payload),
+            provider_response=response,
+            provider_name=private.name,
+            model_name=private.model_name,
+            prompt_attempted=True,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            duration_ms=500,
+        )
+
+    monkeypatch.setattr(
+        keyword_relevance_ai_service,
+        "_attempt_private_keyword_review",
+        private_attempt,
+    )
+
+    payload = keyword_relevance_ai_service.review_uncertain(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+    )
+
+    assert payload["ai_review"]["state"] == "complete"
+    assert private.calls == 1
+    assert managed.calls == 0
+    ai_run = db_session.query(GovernedAIRun).one()
+    assert ai_run.provider_name == "private_ai"
+    assert ai_run.model_name == "customer-model-v1"
+    assert ai_run.estimated_cost == 0
+    assert ai_run.reconciled_cost == 0
+    assert ai_run.price_card_version is None
+    db_session.expire_all()
+    assert db_session.get(KeywordResearchSuggestion, suggestions[0].id).relevance_status == "relevant"
+
+
+def test_private_keyword_review_failure_uses_managed_provider(
+    db_session,
+    create_test_org,
+    monkeypatch,
+) -> None:
+    organization, campaign, _service, _area, _suggestions = _setup_relevance_case(
+        db_session, create_test_org
+    )
+    managed = FakeRelevanceProvider()
+    monkeypatch.setattr(keyword_relevance_ai_service, "get_settings", _private_runtime_settings)
+    monkeypatch.setattr(
+        keyword_relevance_ai_service,
+        "MistralGovernedAIProvider",
+        lambda **_kwargs: managed,
+    )
+    monkeypatch.setattr(
+        keyword_relevance_ai_service,
+        "select_keyword_review_capability",
+        lambda *_args, **_kwargs: CapabilitySelection(
+            event_id="event-1",
+            connection_id="connection-1",
+            model_identifier="customer-model-v1",
+        ),
+    )
+    monkeypatch.setattr(
+        keyword_relevance_ai_service,
+        "_attempt_private_keyword_review",
+        lambda *_args, **_kwargs: keyword_relevance_ai_service._PrivateKeywordReviewResult(
+            error_code="ai_output_validation_failed",
+            provider_may_have_processed=True,
+        ),
+    )
+
+    payload = keyword_relevance_ai_service.review_uncertain(
+        db_session,
+        tenant_id=organization.id,
+        campaign_id=campaign.id,
+        requested_by_user_id=None,
+    )
+
+    assert payload["ai_review"]["state"] == "complete"
+    assert managed.calls == 1
+    ai_run = db_session.query(GovernedAIRun).one()
+    assert ai_run.provider_name == "mistral"
+    assert ai_run.reconciled_cost > 0
 
 
 def test_mistral_relevance_adapter_uses_strict_non_chat_schema() -> None:

@@ -41,6 +41,7 @@ from app.models.organization import Organization
 from app.models.platform_job import PlatformJob
 from app.models.recommendation_execution import RecommendationExecution
 from app.models.reporting import MonthlyReport
+from app.models.reputation import ReputationReview
 from app.services.audit_service import write_audit_log
 from app.services.commercial_plan_service import (
     FEATURE_EXTERNAL_AUTOMATION,
@@ -70,6 +71,7 @@ _PRODUCT_EVENT_TYPES = {
     "report.regenerated": "report.ready",
     "onboarding.baseline_generated": "report.ready",
     "recommendation.generated": "recommendation.ready",
+    "reputation.review.saved": "review.saved",
     "execution.completed": "action.completed",
     "execution.failed": "action.failed",
 }
@@ -850,6 +852,39 @@ def _translate_product_event(
             },
         )
 
+    if external_type == "review.saved":
+        review_id = str(payload.get("review_id") or "").strip()
+        review = db.get(ReputationReview, review_id) if review_id else None
+        campaign = db.get(Campaign, campaign_id) if campaign_id else None
+        if (
+            review is None
+            or campaign is None
+            or review.tenant_id != source.tenant_id
+            or review.organization_id != campaign.organization_id
+            or review.campaign_id != campaign.id
+            or review.business_location_id != campaign.business_location_id
+            or review.source_type != "owned_profile"
+            or campaign.tenant_id != source.tenant_id
+        ):
+            return None
+        return build_automation_event(
+            event_id=external_event_id,
+            event_type=external_type,
+            occurred_at=occurred_at,
+            organization_id=source.tenant_id,
+            location_id=campaign.business_location_id,
+            truth_state="ready",
+            resource_type="review",
+            resource_id=review.id,
+            resource_href="/reviews",
+            data={
+                "review_id": review.id,
+                "rating": review.rating,
+                "response_status": review.response_status,
+                "reviewed_at": _iso(review.reviewed_at),
+                "review_href": "/reviews",
+            },
+        )
     execution_id = str(payload.get("execution_id") or "").strip()
     execution = db.get(RecommendationExecution, execution_id) if execution_id else None
     campaign = db.get(Campaign, campaign_id) if campaign_id else None
