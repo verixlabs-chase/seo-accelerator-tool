@@ -82,6 +82,17 @@ test("owners can download one vendor-neutral inbound connection guide", () => {
   assert.match(settings, /separate n8n starter remains available as an optional shortcut/);
 });
 
+test("Settings explains connector compatibility without claiming a live connection", () => {
+  assert.match(settings, /\/automation\/connector-catalog/);
+  assert.match(settings, /Choose your workflow tool/);
+  assert.match(settings, /connector\.name/);
+  assert.match(settings, /connector\.setup/);
+  assert.match(settings, /Compatible/);
+  assert.match(settings, /Your connection still needs a test/);
+  assert.match(settings, /connector\.starter_available/);
+  assert.doesNotMatch(settings, /connector\.production_connection_proven\s*\?\s*["']Connected/);
+});
+
 test("owners can download an importable API definition without embedding the key", () => {
   assert.match(settings, /Download API file/);
   assert.match(settings, /\/automation\/command-openapi\?service_account_id=/);

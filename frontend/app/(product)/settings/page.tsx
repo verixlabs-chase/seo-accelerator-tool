@@ -400,6 +400,23 @@ type AutomationServiceAccount = {
   token_revealed: false;
 };
 
+type AutomationConnectorCatalog = {
+  version: "insightos.automation.connectors.v1";
+  truth: { state: "compatibility_only"; summary: string };
+  items: Array<{
+    code: "zapier" | "make" | "n8n" | "pipedream" | "https";
+    name: string;
+    setup: string;
+    authentication: "Private Bearer credential";
+    connection_guide_available: true;
+    openapi_import_available: true;
+    conformance_check_available: true;
+    customer_connection_required: true;
+    production_connection_proven: false;
+    starter_available: boolean;
+  }>;
+};
+
 type AutomationCommandReceipt = {
   id: string;
   schema_version: "insightos.automation.command.v1";
@@ -1481,6 +1498,7 @@ export default function SettingsPage() {
   const [automationSelectedEvents, setAutomationSelectedEvents] = useState<string[]>([]);
   const [automationSigningSecret, setAutomationSigningSecret] = useState("");
   const [automationServiceAccounts, setAutomationServiceAccounts] = useState<AutomationServiceAccount[]>([]);
+  const [automationConnectorCatalog, setAutomationConnectorCatalog] = useState<AutomationConnectorCatalog | null>(null);
   const [automationCommandHistory, setAutomationCommandHistory] = useState<AutomationCommandReceipt[]>([]);
   const [automationCommandLoadState, setAutomationCommandLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
   const [automationCommandName, setAutomationCommandName] = useState("Saved report workflow");
@@ -1773,18 +1791,21 @@ export default function SettingsPage() {
 
   const loadAutomationCommandAccess = useCallback(async () => {
     try {
-      const [accountResponse, historyResponse] = await Promise.all([
+      const [accountResponse, historyResponse, connectorCatalog] = await Promise.all([
         platformApi("/automation/service-accounts", { method: "GET" }) as Promise<{
           items?: AutomationServiceAccount[];
         }>,
         platformApi("/automation/command-history", { method: "GET" }) as Promise<{
           items?: Array<{ receipt: AutomationCommandReceipt }>;
         }>,
+        (platformApi("/automation/connector-catalog", { method: "GET" }) as Promise<AutomationConnectorCatalog>)
+          .catch(() => null),
       ]);
       setAutomationServiceAccounts(accountResponse.items || []);
       setAutomationCommandHistory(
         (historyResponse.items || []).map((item) => item.receipt),
       );
+      setAutomationConnectorCatalog(connectorCatalog);
       setAutomationCommandLoadState("ready");
       return accountResponse;
     } catch (error) {
@@ -8331,6 +8352,33 @@ export default function SettingsPage() {
                         <p className="mt-2 max-w-3xl text-xs leading-5 text-zinc-300">
                           Create one short-lived workflow key for Zapier, Make, n8n, Pipedream, or another HTTPS tool. It can retrieve a report InsightOS already generated; it cannot start paid checks, approve work, publish content, or change your website or business profile.
                         </p>
+
+                        {automationConnectorCatalog ? (
+                          <div className="mt-4 rounded-md border border-[#303137] bg-[#101114] p-4">
+                            <p className="text-sm font-semibold text-white">Choose your workflow tool</p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-400">
+                              {automationConnectorCatalog.truth.summary}
+                            </p>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                              {automationConnectorCatalog.items.map((connector) => (
+                                <div key={connector.code} className="rounded-md border border-[#292a2f] bg-[#141518] p-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <p className="text-sm font-semibold text-zinc-100">{connector.name}</p>
+                                    <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-100">
+                                      Compatible
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 text-xs leading-5 text-zinc-400">{connector.setup}</p>
+                                  <p className="mt-2 text-[11px] leading-4 text-zinc-500">
+                                    {connector.starter_available
+                                      ? "Optional starter available · Your connection still needs a test"
+                                      : "Universal guide and API file · Your connection still needs a test"}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
 
                         {automationCommandLoadState === "unavailable" ? (
                           <p className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-100">

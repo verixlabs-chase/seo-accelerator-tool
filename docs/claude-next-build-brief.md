@@ -5549,6 +5549,11 @@ Implementation status — AUT1J-A/B/C/D/E saved results and owner-review routing
   and optional starter separately. Every catalog entry explicitly remains
   compatibility-only and unproven until the customer connects and tests their
   own workflow; only n8n currently advertises a reviewed inactive starter.
+- AUT1J-AC renders that catalog in the plain Settings workflow setup. Each tool
+  gets a short setup path and a compatibility label, while the persistent copy
+  says the customer's own connection still needs a test. The catalog request
+  is additive during rolling deployment, so an older backend cannot hide or
+  break existing workflow-key controls.
 
 Planned scope (added August 17, 2026):
 
