@@ -20,6 +20,7 @@ from app.models.portfolio_targeting import (
 )
 from app.models.user import User
 from app.services.audit_service import write_audit_log
+from app.services.enterprise_branding_service import get_client_portal_identity
 from app.services.commercial_plan_service import (
     FEATURE_AUTHENTICATED_CLIENT_REPORTS,
     require_commercial_feature,
@@ -258,6 +259,7 @@ def preview_client_invitation(db: Session, *, token: str) -> dict[str, Any]:
         "email_hint": _masked_email(email),
         "location_group_name": group.name,
         "expires_at": _as_utc(row.expires_at).isoformat(),
+        "identity": get_client_portal_identity(db, organization_id=row.organization_id),
         "truth": {
             "summary": "This invitation creates read-only access to assigned saved reports.",
             "can_change_workspace": False,
@@ -308,7 +310,7 @@ def accept_client_invitation(
         db.flush()
     elif not user.is_active or not verify_password(password, user.hashed_password):
         raise EnterpriseClientInvitationError(
-            "This email already has an InsightOS sign-in. Enter its current password to continue.",
+            "This email already has a report sign-in. Enter its current password to continue.",
             reason_code="client_invitation_existing_sign_in_required",
             status_code=409,
         )

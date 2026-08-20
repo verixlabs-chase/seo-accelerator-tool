@@ -1,10 +1,14 @@
 import base64
+import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
+from io import BytesIO
 
+from PIL import Image
 from app.models.audit_log import AuditLog
 from app.models.business_location import BusinessLocation
+from app.models.enterprise_branding import OrganizationReportBrand
 from app.models.enterprise_client_invitation import EnterpriseClientInvitation
 from app.models.organization import Organization
 from app.models.organization_membership import OrganizationMembership
@@ -74,6 +78,37 @@ def _enterprise_group(db_session) -> tuple[Organization, PortfolioLocationGroup]
     return organization, group
 
 
+def _save_client_brand(db_session, *, organization: Organization) -> bytes:
+    owner = db_session.query(User).filter(User.email == "org-owner@example.com").one()
+    output = BytesIO()
+    Image.new("RGB", (96, 32), color=(47, 86, 71)).save(output, format="PNG")
+    logo = output.getvalue()
+    now = datetime.now(UTC)
+    db_session.add(
+        OrganizationReportBrand(
+            tenant_id=organization.id,
+            organization_id=organization.id,
+            brand_name="Evergreen Search Partners",
+            report_title="Evergreen client reporting",
+            footer_text="Prepared for Evergreen clients.",
+            accent_color="#2F5647",
+            logo_content=logo,
+            logo_sha256=hashlib.sha256(logo).hexdigest(),
+            logo_width=96,
+            logo_height=32,
+            logo_updated_at=now,
+            hide_platform_attribution=True,
+            enabled=True,
+            version=2,
+            updated_by_user_id=owner.id,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    db_session.commit()
+    return logo
+
+
 def test_owner_invites_client_once_and_can_remove_accepted_access(
     client,
     db_session,
@@ -81,6 +116,7 @@ def test_owner_invites_client_once_and_can_remove_accepted_access(
 ):
     monkeypatch.setenv("PLATFORM_MASTER_KEY", MASTER_KEY_B64)
     organization, group = _enterprise_group(db_session)
+    logo = _save_client_brand(db_session, organization=organization)
     _, owner_headers = _login(client, "org-owner@example.com", "pass-org-owner")
 
     created = client.post(
@@ -142,16 +178,38 @@ def test_owner_invites_client_once_and_can_remove_accepted_access(
 
     preview = client.get(f"/api/v1/client-invitations/{token}")
     assert preview.status_code == 200
+    assert preview.headers["cache-control"] == "private, no-store"
+    assert preview.headers["referrer-policy"] == "no-referrer"
+    assert preview.headers["x-content-type-options"] == "nosniff"
+    assert preview.headers["x-robots-tag"] == "noindex, nofollow"
     assert preview.json()["data"] == {
         "status": "active",
         "email_hint": "n******@example.com",
         "location_group_name": "Client locations",
         "expires_at": preview.json()["data"]["expires_at"],
+        "identity": {
+            "display_name": "Evergreen Search Partners",
+            "portal_title": "Evergreen client reporting",
+            "accent_color": "#2F5647",
+            "logo_data_url": f"data:image/png;base64,{base64.b64encode(logo).decode('ascii')}",
+            "platform_attribution_visible": False,
+        },
         "truth": {
             "summary": "This invitation creates read-only access to assigned saved reports.",
             "can_change_workspace": False,
         },
     }
+    serialized_preview = json.dumps(preview.json()["data"])
+    for private_field in (
+        "organization_id",
+        "branding_version",
+        "logo_sha256",
+        "logo_width",
+        "logo_height",
+        "storage_key",
+        "footer_text",
+    ):
+        assert private_field not in serialized_preview
 
     weak_password = client.post(
         f"/api/v1/client-invitations/{token}/accept",
@@ -168,6 +226,7 @@ def test_owner_invites_client_once_and_can_remove_accepted_access(
         },
     )
     assert accepted.status_code == 200
+    assert accepted.headers["cache-control"] == "private, no-store"
     assert accepted.json()["data"]["user"]["org_role"] == "org_client"
     assert "access_token" not in accepted.json()["data"]
     assert "refresh_token" not in accepted.json()["data"]
@@ -278,6 +337,7 @@ def test_invitation_acceptance_fails_closed_after_plan_downgrade(
 ):
     monkeypatch.setenv("PLATFORM_MASTER_KEY", MASTER_KEY_B64)
     organization, group = _enterprise_group(db_session)
+    _save_client_brand(db_session, organization=organization)
     _, owner_headers = _login(client, "org-owner@example.com", "pass-org-owner")
     created = client.post(
         "/api/v1/enterprise/client-invitations",
@@ -293,6 +353,15 @@ def test_invitation_acceptance_fails_closed_after_plan_downgrade(
 
     apply_commercial_plan(db_session, organization_id=organization.id, plan_code="solo")
     db_session.commit()
+    downgraded_preview = client.get(f"/api/v1/client-invitations/{token}")
+    assert downgraded_preview.status_code == 200
+    assert downgraded_preview.json()["data"]["identity"] == {
+        "display_name": "InsightOS",
+        "portal_title": "Your private client reports",
+        "accent_color": "#E85D19",
+        "logo_data_url": None,
+        "platform_attribution_visible": True,
+    }
     denied = client.post(
         f"/api/v1/client-invitations/{token}/accept",
         json={

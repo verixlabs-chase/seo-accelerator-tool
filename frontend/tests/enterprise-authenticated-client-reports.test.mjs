@@ -47,6 +47,7 @@ test("client report states explain saved dates and empty access plainly", () => 
 test("current customer-safe report identity brands the isolated client portal", () => {
   const page = source("../app/client-reports/page.tsx");
   const layout = source("../app/client-reports/layout.tsx");
+  const identity = source("../app/clientPortalIdentity.ts");
 
   for (const field of [
     "display_name",
@@ -55,16 +56,16 @@ test("current customer-safe report identity brands the isolated client portal", 
     "logo_data_url",
     "platform_attribution_visible",
   ]) {
-    assert.match(page, new RegExp(field));
+    assert.match(`${page}\n${identity}`, new RegExp(field));
   }
-  assert.match(page, /data:image\/png;base64,/);
+  assert.match(identity, /data:image\/png;base64,/);
   assert.match(page, /identity\.logo_data_url/);
   assert.match(page, /identity\.display_name/);
   assert.match(page, /identity\.portal_title/);
   assert.match(page, /style=\{\{ backgroundColor: identity\.accent_color \}\}/);
   assert.match(page, /identity\.platform_attribution_visible/);
   assert.match(page, /Private report access provided through InsightOS/);
-  assert.match(page, /data \? safeIdentity\(data\.identity\) : LOADING_IDENTITY/);
+  assert.match(page, /data\s*\? safeClientPortalIdentity\(data\.identity\)\s*:\s*LOADING_CLIENT_PORTAL_IDENTITY/);
   assert.doesNotMatch(page, /identity\.(organization_id|branding_version|logo_sha256|logo_width|logo_height|storage_key)/);
   assert.doesNotMatch(layout, /\| InsightOS/);
 });

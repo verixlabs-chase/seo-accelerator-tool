@@ -5869,6 +5869,17 @@ Implementation status (2026-08-20):
   and removes InsightOS from static page metadata when attribution is hidden.
   This styling is explicitly current portal chrome: every saved report keeps
   the exact branding and evidence frozen when that report was generated.
+- ENT1J's branded client activation is implemented locally. A valid one-time
+  setup link now carries the same current customer-safe Enterprise name,
+  report title, bounded accent, and verified inline logo into the public
+  activation screen. Hidden platform attribution removes InsightOS from the
+  visible setup copy and static page metadata; unbranded and ineligible
+  workspaces use the normal InsightOS identity. Loading and invalid-link states
+  stay neutral so private branding does not flash before token verification.
+  The public response still reveals no organization ID, branding record,
+  version, logo hash or dimensions, storage metadata, owner settings, or raw
+  email. Customer color remains decorative, the password action keeps a fixed
+  accessible contrast, and logos cannot contact an external origin.
 
 Acceptance criteria:
 

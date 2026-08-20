@@ -111,9 +111,11 @@ def post_client_invitation_revoke(
 def get_client_invitation_preview(
     token: str,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> dict:
     _public_security_context(db)
+    _set_private_response_headers(response)
     try:
         payload = enterprise_client_invitation_service.preview_client_invitation(db, token=token)
     except (enterprise_client_invitation_service.EnterpriseClientInvitationError, CostEconomicsError) as exc:
@@ -130,6 +132,7 @@ def post_client_invitation_accept(
     db: Session = Depends(get_db),
 ) -> dict:
     _public_security_context(db)
+    _set_private_response_headers(response)
     try:
         accepted = enterprise_client_invitation_service.accept_client_invitation(
             db,
@@ -169,6 +172,13 @@ def _public_security_context(db: Session) -> None:
         user_id="public-client-invitation",
         platform_access=True,
     )
+
+
+def _set_private_response_headers(response: Response) -> None:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
 
 
 def _raise_invitation_error(exc: Exception) -> None:

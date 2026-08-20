@@ -24,6 +24,8 @@ from app.services.cost_economics_service import resolve_plan_economics
 DEFAULT_REPORT_TITLE = "Business progress report"
 DEFAULT_FOOTER = "Created from the saved information available for this report. Open InsightOS to see newer results."
 DEFAULT_ACCENT = "#E85D19"
+DEFAULT_PORTAL_NAME = "InsightOS"
+DEFAULT_PORTAL_TITLE = "Your private client reports"
 MAX_LOGO_BYTES = 65_536
 MAX_LOGO_PIXELS = 1_000_000
 MAX_LOGO_EDGE = 1_600
@@ -145,13 +147,54 @@ def _sanitize_logo(data_base64: str) -> tuple[bytes, int, int, str]:
 
 
 def _logo_data_url(row: OrganizationReportBrand | None) -> str | None:
-    if row is None or row.logo_content is None:
+    if (
+        row is None
+        or row.logo_content is None
+        or len(row.logo_content) > MAX_LOGO_BYTES
+        or not row.logo_content.startswith(b"\x89PNG\r\n\x1a\n")
+    ):
         return None
     return f"data:image/png;base64,{base64.b64encode(row.logo_content).decode('ascii')}"
 
 
 def _plan_allows_branding(organization: Organization) -> bool:
     return resolve_plan_economics(organization.plan_type).code == "enterprise"
+
+
+def get_client_portal_identity(
+    db: Session,
+    *,
+    organization_id: str,
+) -> dict[str, Any]:
+    organization = _organization_or_error(db, organization_id)
+    row = (
+        db.query(OrganizationReportBrand)
+        .filter(
+            OrganizationReportBrand.organization_id == organization_id,
+            OrganizationReportBrand.tenant_id == organization_id,
+            OrganizationReportBrand.enabled.is_(True),
+        )
+        .one_or_none()
+    )
+    if row is None or not _plan_allows_branding(organization):
+        return {
+            "display_name": DEFAULT_PORTAL_NAME,
+            "portal_title": DEFAULT_PORTAL_TITLE,
+            "accent_color": DEFAULT_ACCENT,
+            "logo_data_url": None,
+            "platform_attribution_visible": True,
+        }
+    return {
+        "display_name": row.brand_name,
+        "portal_title": row.report_title,
+        "accent_color": (
+            row.accent_color.upper()
+            if re.fullmatch(r"#[0-9A-Fa-f]{6}", row.accent_color or "")
+            else DEFAULT_ACCENT
+        ),
+        "logo_data_url": _logo_data_url(row),
+        "platform_attribution_visible": not row.hide_platform_attribution,
+    }
 
 
 def get_report_branding(

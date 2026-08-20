@@ -49,3 +49,22 @@ test("client invitation UI keeps security and plan truth in owner language", () 
   assert.match(publicPage, /Ask the person who invited you to create a new setup link/);
   assert.doesNotMatch(`${ownerPage}\n${publicPage}`, /token hash|AES|RLS|PBKDF|service account|provider/i);
 });
+
+test("client activation carries only the safe current Enterprise identity", () => {
+  const page = source("../app/client-invite/[token]/page.tsx");
+  const layout = source("../app/client-invite/[token]/layout.tsx");
+  const identity = source("../app/clientPortalIdentity.ts");
+
+  assert.match(page, /preview\.identity/);
+  assert.match(page, /safeClientPortalIdentity/);
+  assert.match(page, /identity\.logo_data_url/);
+  assert.match(page, /identity\.display_name/);
+  assert.match(page, /identity\.portal_title/);
+  assert.match(page, /identity\.accent_color/);
+  assert.match(page, /identity\.platform_attribution_visible/);
+  assert.match(identity, /data:image\/png;base64,/);
+  assert.match(page, /current report sign-in password/);
+  assert.doesNotMatch(page, /href="\/"/);
+  assert.doesNotMatch(layout, /InsightOS/);
+  assert.doesNotMatch(page, /identity\.(organization_id|branding_version|logo_sha256|logo_width|logo_height|storage_key)/);
+});
