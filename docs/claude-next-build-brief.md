@@ -675,7 +675,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 42 | **I2 - Outcome Learning and Controlled Experiments - I2A-I2E implemented locally** | Verified action measurements and frozen forecast checks now form a minimum-sample learning record. Owners explicitly include or exclude each result, save and review a controlled-test design with mandatory stop and undo rules, run a separately authorized monitoring protocol, and compare a frozen current learning rule with a stricter proposal through deterministic replay. Human review remains separate from activation; live policy changes, publishing, assignments, and automatic execution remain disabled. |
 | 43 | **AIV1 - AI Search Visibility and Entity Intelligence - AIV1-A foundation implemented locally** | The provider-neutral slice establishes candidate-only engine/provider contracts, deterministic saved questions, dormant run/evidence storage, honest truth states, supplier redaction, a non-executing cost/allowance preview, and a location-scoped beta workspace. AIV1-B later proves the full live supplier and price contract; AIV1-C later enables governed collection and results inside that workspace. |
 | 44 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
-| 45 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 45 | **OPS1 - Customer Support and Launch Operations - OPS1A-OPS1F implemented locally** | The internal launch board separates automated facts from live proof, preserves immutable receipts, requires an append-only platform-owner decision over the exact current evidence, provides a safe customer incident/status feed, binds every commercial capability claim to current production proof or an explicit limitation, and requires a complete desktop/mobile route matrix plus five non-technical moderated sessions. Running the live proofs and recording the actual final decision remain launch closeout. |
 | 46 | **AUT1 - External Automation Gateway** | Every paid tier can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, governed workflow templates, and typed actions; higher tiers add volume, collaboration, custom scopes, and service accounts without granting direct database or unrestricted execution access. |
 | 47 | **AUT1J - Governed Inbound Automation Commands (n8n First)** | An n8n workflow can request a small allowlist of typed InsightOS jobs through a revocable service account, while native plan, location, allowance, evidence, approval, safety, idempotency, and audit controls remain authoritative. The same vendor-neutral contract later supports Make, Zapier, Pipedream, and approved custom clients. |
 | 48 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
@@ -4872,6 +4872,172 @@ Goal: make the paid product supportable, demonstrable, and honest on launch
 day—not merely deployable. This is also the final whole-product usability gate:
 the system must be understandable to a non-technical service-business owner,
 not only complete for the team that built it.
+
+#### OPS1A - Truthful Launch Readiness Evidence Board
+
+Implementation status (August 20, 2026):
+
+- Platform owners and platform administrators can open one internal readiness
+  board backed by a versioned server contract. It evaluates production runtime
+  safeguards, paid-plan configuration, durable report storage, saved production
+  provider health, customer-data freshness, and overdue support response targets.
+- Blocking, attention, needs-live-proof, and passing states stay separate. The
+  board deliberately does not calculate a percentage or weighted launch score,
+  and it does not treat absent customers, provider rows, or production receipts
+  as healthy zeroes.
+- Critical customer journeys, rollback drills, customer communications,
+  moderated non-technical first use, and sales-claim review remain explicit
+  live-proof gates. Runtime configuration and unit tests cannot silently satisfy
+  them.
+- The endpoint performs no Stripe, Google, storage, workflow-tool, or supplier
+  network request. It exposes only safe counts and configuration-presence facts,
+  never secret values, supplier credentials, customer payloads, or raw errors.
+- OPS1A is the evidence foundation, not launch approval. Durable operator proof
+  records, production smoke receipts, playbook ownership, five-participant
+  comprehension evidence, and the signed final go/no-go decision remain OPS1
+  closeout work.
+
+#### OPS1B - Immutable Production Proof Receipts
+
+Implementation status (August 20, 2026):
+
+- A platform owner can append a passed or failed receipt for the five manual
+  launch gates: paid customer journeys, recovery drills, incident communication,
+  moderated non-technical first use, and the sales-claim/limitations review.
+  Platform administrators can review the board but cannot write launch proof.
+- Each receipt binds one exact proof type, plain result summary, short internal
+  evidence reference, observed time, recheck deadline, recorder, schema version,
+  and deterministic digest. Exact retries are idempotent; newer observations
+  supersede the board decision while every prior row remains preserved.
+- Proof must be recent, expires within 45 days, and cannot contain a URL,
+  webhook address, bearer credential, common provider-secret prefix, or long
+  token-shaped value. The customer payload, response body, secret, and supplier
+  account identifier remain outside the database and API response.
+- A current passing receipt turns only its matching manual gate green. A current
+  failed receipt is a launch blocker, and an expired receipt returns to
+  `needs_live_proof`; neither a passing runtime check nor a historical success
+  can override it.
+- The global proof ledger is insert/select only for the PostgreSQL application
+  role under platform context. Row-level security hides it from tenant context,
+  UPDATE and DELETE are revoked, and a database trigger enforces append-only
+  history. The PostgreSQL security regression is wired into CI.
+- OPS1B records evidence but does not create the evidence itself. Running the
+  production journeys, moderated sessions, provider-owned tests, recovery drills,
+  and final decision meeting remains launch closeout work.
+
+#### OPS1C - Evidence-Bound Go/No-Go Decision and Closeout Runbook
+
+Implementation status (August 20, 2026):
+
+- A fully passing board now becomes `ready_for_decision`; it never labels the
+  release `go` automatically. Only a platform owner can append the final `go`
+  or `no_go` decision, rationale, internal release reference, and explicit
+  current-evidence acknowledgement. `Go` additionally requires confirmed known
+  limitations, support ownership, and rollback ownership.
+- Each decision is bound to a deterministic digest of the exact gate states,
+  safe counts, and latest proof identities shown at decision time. Any later
+  evidence change makes the decision visibly superseded and returns the board
+  to its evidence-derived no-go, hold, or ready-for-decision state.
+- Exact decision retries are idempotent. Decision history is global,
+  platform-context-only, insert/select-only for the PostgreSQL application role,
+  row-level protected, and immutable under a database trigger. A failed or
+  superseded decision is never overwritten.
+- The maintained paid-launch closeout runbook assigns release, support,
+  incident, recovery, billing, and provider roles; defines the ordered closeout
+  procedure; and maps paid journeys, recovery drills, incident communication,
+  moderated first use, and sales-claim review to the five proof gates.
+- The decision form rejects URL-, credential-, webhook-, and token-shaped
+  content. It stores only a short internal reference and plain rationale, never
+  an external receipt body or secret.
+- OPS1C supplies the controlled decision mechanism and operator procedure. It
+  does not claim that staffing assignments, live provider receipts, production
+  smoke journeys, recovery exercises, or five moderated participant sessions
+  have occurred. Those real-world actions remain required before launch.
+
+#### OPS1D - Customer Incident and Maintenance Communication
+
+Implementation status (August 20, 2026):
+
+- A platform owner can append investigating, identified, monitoring, resolved,
+  or planned-maintenance updates from the launch-readiness board. Platform
+  administrators can review the immutable history but cannot publish.
+- Signed-in customers see only current, explicitly visible notices in the
+  product shell. Each notice uses familiar affected-area labels, impact, plain
+  customer copy, update time, and an end time when one exists. A public
+  resolution removes the notice from the active banner without deleting its
+  earlier history.
+- The public response omits recorder identity, content digests, provider names,
+  raw errors, customer identifiers, and internal references. Publishing rejects
+  links, credential-shaped values, common internal-error terms, and supplier
+  names rather than relying on the frontend to hide them.
+- Exact retries are idempotent and each later update receives a monotonic number
+  within its incident. PostgreSQL grants customer contexts read access only to
+  explicitly visible global rows; inserts require platform context, UPDATE and
+  DELETE are revoked, and a database trigger preserves append-only history.
+- OPS1D provides the supported communication path but does not prove the team
+  can operate it under pressure. A current test incident, verified customer
+  receipt, named incident commander, escalation handoff, and resolution update
+  still must be recorded under the OPS1 communication proof gate before launch.
+
+#### OPS1E - Production Capability and Known-Limitations Matrix
+
+Implementation status (August 20, 2026):
+
+- The canonical commercial capability catalog now drives one internal launch
+  matrix. Plan inclusion and production availability are separate fields: a
+  capability can be included with Solo, Growth, or Enterprise while still
+  requiring live proof, carrying an explicit limitation, or being unavailable.
+- A platform owner can append a current `proven`, `limited`, or `unavailable`
+  receipt for each marketed capability. Limited and unavailable results require
+  exact customer-safe limitation copy. Platform administrators can review the
+  matrix but cannot write proof.
+- Receipts expire, exact retries are idempotent, and newer receipts supersede
+  the displayed claim without editing history. Links, supplier names, raw error
+  language, credentials, provider responses, and token-shaped values are
+  rejected from summaries, limitations, and internal references.
+- The sales-claims launch gate cannot pass until every catalog capability has a
+  current result and the manual sales-claim review was observed after the newest
+  capability receipt. A capability change alters the launch decision basis and
+  supersedes any earlier go/no-go decision.
+- The PostgreSQL ledger is platform-context-only, insert/select-only for the
+  application role, protected by row-level security, and immutable under a
+  database trigger. Its PostgreSQL security regression is wired into CI.
+- OPS1E does not create production proof. Operators still must run the exact
+  current customer journeys, record limitations honestly, update pricing/demo/
+  Help/support language, then append the final sales-claim review before launch.
+
+#### OPS1F - Whole-Product Route and Non-Technical Experience Proof
+
+Implementation status (August 20, 2026):
+
+- A separate platform experience board inventories the 19 primary customer
+  destinations from the maintained product navigation. Every destination needs
+  a current desktop review and a current mobile review; a route is not complete
+  when only one viewport passes. Each review covers normal, loading, empty,
+  error, recovery, and navigation behavior rather than only page rendering.
+- The board also requires five distinct current moderated first-use sessions.
+  Each participant completes account connection, optional-analytics
+  comprehension, baseline review, next-action selection, workflow setup,
+  billing review, and sign-out or remote-session removal without the operator
+  taking over the product.
+- Participant identity is represented only by an opaque alias. Names, email
+  addresses, recordings, links, supplier names, credentials, provider payloads,
+  and raw error messages are rejected from the ledger. The saved record contains
+  only plain findings, issue counts, blocker counts, an internal receipt, and
+  bounded observation/expiry timestamps.
+- Failed current evidence blocks the corresponding launch gate. Missing or
+  expired evidence remains `needs_live_proof`. The paid-journey and first-use
+  gates additionally require their broad operator proof to have been recorded
+  after the newest structured evidence, so an older sign-off cannot cover a
+  later route or participant result.
+- Exact retries are idempotent and every prior result remains append-only. The
+  ledger is platform-context-only, insert/select-only for the PostgreSQL
+  application role, protected by row-level security, and immutable under a
+  database trigger. Its PostgreSQL security regression is wired into CI.
+- OPS1F operationalizes the usability closeout but does not pretend the reviews
+  occurred. Operators still must perform all 38 route/viewport reviews and five
+  real moderated sessions, close every blocker, then append the two final manual
+  proofs before a platform owner can record `Go`.
 
 Scope:
 
