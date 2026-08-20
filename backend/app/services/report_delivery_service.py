@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -7,6 +8,7 @@ from hashlib import sha256
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.audit_log import AuditLog
 from app.models.reporting import ReportRecipient, ReportShareLink
 from app.services import reporting_service
 
@@ -123,6 +125,22 @@ def create_share_link(
         created_by_user_id=actor_user_id,
     )
     db.add(row)
+    db.flush()
+    db.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            event_type="report.share_link.created",
+            payload_json=json.dumps(
+                {
+                    "report_id": report.id,
+                    "share_link_id": row.id,
+                    "expires_in_hours": expires_in_hours,
+                },
+                sort_keys=True,
+            ),
+        )
+    )
     db.commit()
     db.refresh(row)
     return row, token
@@ -163,6 +181,7 @@ def revoke_share_link(
     tenant_id: str,
     organization_id: str,
     link_id: str,
+    actor_user_id: str,
     now: datetime | None = None,
 ) -> ReportShareLink:
     row = db.get(ReportShareLink, link_id)
@@ -170,6 +189,17 @@ def revoke_share_link(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report link not found")
     if row.revoked_at is None:
         row.revoked_at = _now(now)
+        db.add(
+            AuditLog(
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                event_type="report.share_link.revoked",
+                payload_json=json.dumps(
+                    {"report_id": row.report_id, "share_link_id": row.id},
+                    sort_keys=True,
+                ),
+            )
+        )
         db.commit()
         db.refresh(row)
     return row
@@ -181,7 +211,13 @@ def open_share_link(
     token: str,
     now: datetime | None = None,
 ) -> tuple[ReportShareLink, bytes]:
-    row = db.query(ReportShareLink).filter(ReportShareLink.token_hash == _token_hash(token)).first()
+    row = (
+        db.query(ReportShareLink)
+        .execution_options(populate_existing=True)
+        .filter(ReportShareLink.token_hash == _token_hash(token))
+        .with_for_update()
+        .first()
+    )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report link not found")
     link_status = share_link_status(row, now)
@@ -207,7 +243,20 @@ def open_share_link(
         organization_id=row.organization_id,
     )
     opened_at = _now(now)
+    first_open = row.open_count == 0
     row.last_opened_at = opened_at
     row.open_count += 1
+    if first_open:
+        db.add(
+            AuditLog(
+                tenant_id=row.tenant_id,
+                actor_user_id=None,
+                event_type="report.share_link.opened",
+                payload_json=json.dumps(
+                    {"report_id": row.report_id, "share_link_id": row.id},
+                    sort_keys=True,
+                ),
+            )
+        )
     db.commit()
     return row, content

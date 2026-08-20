@@ -5818,6 +5818,15 @@ Implementation status (2026-08-20):
   events are never returned. Team members without the owner role and
   organizations without Enterprise fail closed while saved audit history is
   preserved.
+- ENT1F's client-safe private report handoff is implemented locally. A new
+  time-limited report link opens on a dedicated, no-login, no-index client page
+  instead of exposing an API URL. The verified saved HTML stays inside a
+  script-disabled, origin-isolated frame; the page omits credentials, referrer
+  data, application storage, and internal failure details. Expired, revoked,
+  malformed, and unavailable links have plain recovery states. The database
+  continues to store only a hash of the one-time URL token, and link creation,
+  opening, and revocation add payload-free customer-readable entries to the
+  Enterprise owner activity view.
 
 Acceptance criteria:
 

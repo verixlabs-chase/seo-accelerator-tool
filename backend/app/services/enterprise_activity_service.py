@@ -58,6 +58,18 @@ EVENT_CATALOG: dict[str, ActivityDefinition] = {
         "client_report_package_downloaded", "reports", "Client report package downloaded",
         "A verified package of saved location reports was downloaded.", "positive",
     ),
+    "report.share_link.created": ActivityDefinition(
+        "private_report_link_created", "reports", "Private report link created",
+        "A time-limited client report link was created.",
+    ),
+    "report.share_link.opened": ActivityDefinition(
+        "private_report_link_opened", "reports", "Private report first opened",
+        "A private client report link was used for the first time.", "positive",
+    ),
+    "report.share_link.revoked": ActivityDefinition(
+        "private_report_link_revoked", "reports", "Private report link turned off",
+        "A private client report link was turned off before or after its expiration.",
+    ),
     "governance.data_export.ready": ActivityDefinition(
         "account_export_ready", "reports", "Account export prepared",
         "A portable account copy was prepared for the workspace.", "positive",

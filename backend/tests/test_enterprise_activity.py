@@ -68,6 +68,14 @@ def test_enterprise_activity_is_owner_only_tenant_safe_and_payload_free(client, 
         payload_json=json.dumps({"endpoint_host": "private.example"}),
         created_at=now - timedelta(minutes=2),
     )
+    shared_report_event = AuditLog(
+        id=str(uuid.uuid4()),
+        tenant_id=organization_id,
+        actor_user_id=None,
+        event_type="report.share_link.opened",
+        payload_json=json.dumps({"token": "private-link-token"}),
+        created_at=now - timedelta(minutes=3),
+    )
     unknown_event = AuditLog(
         id=str(uuid.uuid4()),
         tenant_id=organization_id,
@@ -85,7 +93,14 @@ def test_enterprise_activity_is_owner_only_tenant_safe_and_payload_free(client, 
         created_at=now + timedelta(minutes=2),
     )
     db_session.add_all(
-        [owner_event, team_event, system_event, unknown_event, cross_tenant_event]
+        [
+            owner_event,
+            team_event,
+            system_event,
+            shared_report_event,
+            unknown_event,
+            cross_tenant_event,
+        ]
     )
     db_session.commit()
 
@@ -145,6 +160,7 @@ def test_enterprise_activity_is_owner_only_tenant_safe_and_payload_free(client, 
     assert {item["kind"] for item in report_payload["items"]} == {
         "client_report_package_downloaded",
         "report_branding_updated",
+        "private_report_link_opened",
     }
     serialized = json.dumps(report_activity.json())
     for private_value in (
@@ -152,6 +168,7 @@ def test_enterprise_activity_is_owner_only_tenant_safe_and_payload_free(client, 
         "private-package-hash",
         "private/customer/path.zip",
         "Private Client Name",
+        "private-link-token",
         "other-customer",
         "enterprise.client_report_package.downloaded",
         "platform.internal.secret_inspected",

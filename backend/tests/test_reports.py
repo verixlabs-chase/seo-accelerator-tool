@@ -9,6 +9,7 @@ from zipfile import ZipFile
 from PIL import Image, PngImagePlugin
 from pypdf import PdfReader
 
+from app.models.audit_log import AuditLog
 from app.services import premium_report_service, report_artifact_storage_service, reporting_service
 
 
@@ -856,9 +857,11 @@ def test_reports_delivery_fails_when_artifact_is_not_ready(client, db_session):
     assert refreshed_pdf["reason"] == "missing_storage_path"
 
 
-def test_reports_persist_recipients_and_protect_shared_files(client, db_session):
+def test_reports_persist_recipients_and_protect_shared_files(client, db_session, monkeypatch):
     from urllib.parse import urlparse
+    from types import SimpleNamespace
 
+    from app.api.v1 import reports as reports_api
     from app.models.reporting import ReportShareLink
 
     token = _login(client, "a@example.com", "pass-a")
@@ -922,22 +925,64 @@ def test_reports_persist_recipients_and_protect_shared_files(client, db_session)
     assert stored_link is not None
     assert stored_link.token_hash != raw_token
     assert len(stored_link.token_hash) == 64
+    created_audit = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "report.share_link.created")
+        .order_by(AuditLog.created_at.desc())
+        .first()
+    )
+    assert created_audit is not None
+    assert raw_token not in created_audit.payload_json
 
     shared_path = urlparse(link_payload["share_url"]).path
     shared = client.get(shared_path)
     assert shared.status_code == 200
     assert shared.headers["x-robots-tag"] == "noindex, nofollow"
     assert shared.content.startswith(b"<!doctype html>")
+    assert (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "report.share_link.opened")
+        .count()
+        == 1
+    )
+    assert client.get(shared_path).status_code == 200
+    assert (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "report.share_link.opened")
+        .count()
+        == 1
+    )
 
     listed_links = client.get(f"/api/v1/reports/{report_id}/share-links", headers=headers)
     listed_payload = listed_links.json()["data"]["items"][0]
-    assert listed_payload["open_count"] == 1
+    assert listed_payload["open_count"] == 2
     assert listed_payload["share_url"] is None
 
     revoked = client.delete(f"/api/v1/reports/share-links/{link_payload['id']}", headers=headers)
     assert revoked.status_code == 200
     assert revoked.json()["data"]["status"] == "revoked"
     assert client.get(shared_path).status_code == 410
+    assert (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "report.share_link.revoked")
+        .count()
+        == 1
+    )
+
+    monkeypatch.setattr(
+        reports_api,
+        "get_settings",
+        lambda: SimpleNamespace(customer_app_base_url="https://insightos.example"),
+    )
+    client_link = client.post(
+        f"/api/v1/reports/{report_id}/share-links",
+        json={"expires_in_hours": 24},
+        headers=headers,
+    )
+    assert client_link.status_code == 200
+    assert urlparse(client_link.json()["data"]["share_url"]).path.startswith(
+        "/shared-report/"
+    )
 
 
 def test_rpt1_report_freezes_location_story_and_regenerates_same_snapshot(client, db_session):

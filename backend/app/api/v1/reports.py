@@ -587,6 +587,7 @@ def delete_report_share_link(
         tenant_id=user["tenant_id"],
         organization_id=user["organization_id"],
         link_id=link_id,
+        actor_user_id=user["id"],
     )
     return envelope(request, _share_link_payload(row))
 
@@ -691,7 +692,7 @@ def create_report_share_link(
     )
     customer_base_url = get_settings().customer_app_base_url.strip().rstrip("/")
     share_url = (
-        f"{customer_base_url}/api/v1/reports/shared/{token}"
+        f"{customer_base_url}/shared-report/{token}"
         if customer_base_url
         else str(request.url_for("open_shared_report", token=token))
     )
