@@ -5773,7 +5773,7 @@ Scope:
 - Keep dedicated capacity, custom provider contracts, SSO, and contractual SLA
   commitments quote-based rather than assumed in the base tier.
 
-Implementation status (2026-08-19):
+Implementation status (2026-08-20):
 
 - ENT1A's first Enterprise white-label reporting slice is implemented locally.
   An organization owner on Enterprise can save a plain-text report identity,
@@ -5809,6 +5809,15 @@ Implementation status (2026-08-19):
   locations and 50 MB uncompressed, uses safe generated filenames, and audits
   only the package digest and counts. It does not email recipients or claim
   external delivery.
+- ENT1E's owner-only organization activity history is implemented locally. It
+  presents a curated, customer-readable allowlist of important reporting,
+  workflow, content, connection, team, workspace, and review actions. Results
+  are tenant scoped, newest first, category-filterable, and paginated with an
+  encrypted workspace-bound cursor. Raw audit payloads, internal event names,
+  internal identifiers, private provider diagnostics, and unknown internal
+  events are never returned. Team members without the owner role and
+  organizations without Enterprise fail closed while saved audit history is
+  preserved.
 
 Acceptance criteria:
 

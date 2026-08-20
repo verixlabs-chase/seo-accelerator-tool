@@ -19,6 +19,7 @@ const productRoutes = [
   "reviews",
   "settings",
   "site-health",
+  "activity",
 ];
 
 test("every customer page renders exactly one proactive guide", () => {

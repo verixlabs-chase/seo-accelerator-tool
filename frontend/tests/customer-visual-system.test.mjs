@@ -111,6 +111,7 @@ test("every customer route has an original navigation and page-heading icon", ()
     "content",
     "listings",
     "reviews",
+    "activity",
     "help",
   ];
 

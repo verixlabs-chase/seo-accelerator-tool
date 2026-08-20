@@ -40,6 +40,8 @@ const START_HERE_BY_PATH: Record<string, string> = {
     "Start with reviews that need a reply, especially any review with 3 stars or less.",
   "/profile-campaigns":
     "Choose a saved location group, write one update, and review every location before approval.",
+  "/activity":
+    "Review the newest saved change first, then filter the list if you need a specific kind of activity.",
   "/help":
     "Search for the task or problem on your screen, then open the matching step-by-step guide.",
 };
@@ -61,6 +63,7 @@ const PAGE_ICON_BY_PATH: Record<string, ProductIconName> = {
   "/citations": "listings",
   "/reviews": "reviews",
   "/profile-campaigns": "profile-campaigns",
+  "/activity": "activity",
   "/help": "help",
 };
 
