@@ -160,5 +160,6 @@ class ReportBrandingIn(BaseModel):
     brand_name: str = Field(min_length=1, max_length=120)
     report_title: str = Field(min_length=1, max_length=120)
     footer_text: str = Field(min_length=1, max_length=240)
+    accent_color: str = Field(default="#E85D19", pattern=r"^#[0-9A-Fa-f]{6}$")
     hide_platform_attribution: bool = False
     enabled: bool = True

@@ -1537,6 +1537,9 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
         max_words=42,
         max_sentences=2,
     )
+    accent_color = str(brand.get("accent_color") or enterprise_branding_service.DEFAULT_ACCENT).upper()
+    if re.fullmatch(r"#[0-9A-F]{6}", accent_color) is None:
+        accent_color = enterprise_branding_service.DEFAULT_ACCENT
     attribution = " · Powered by InsightOS from VerixLabs" if brand.get("show_platform_attribution", True) else ""
 
     return f"""<!doctype html>
@@ -1546,9 +1549,9 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escape(str(campaign.get('location_name') or campaign.get('name') or 'Business'))} progress report</title>
   <style>
-    :root {{ color-scheme: light; --ink:#171717; --muted:#666; --line:#dedede; --accent:#e85d19; --good:#08775b; --bad:#b42318; }}
+    :root {{ color-scheme: light; --ink:#171717; --muted:#666; --line:#dedede; --brand-accent:{accent_color}; --accent:#e85d19; --good:#08775b; --bad:#b42318; }}
     * {{ box-sizing:border-box; }} body {{ margin:0; background:#f5f5f3; color:var(--ink); font:15px/1.5 Arial,sans-serif; }}
-    main {{ max-width:1040px; margin:0 auto; padding:48px 28px 72px; }} header {{ border-top:7px solid var(--accent); background:#fff; padding:34px; }}
+    main {{ max-width:1040px; margin:0 auto; padding:48px 28px 72px; }} header {{ border-top:7px solid var(--brand-accent); background:#fff; padding:34px; }}
     .eyebrow {{ color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }}
     h1 {{ max-width:760px; margin:8px 0 10px; font-size:34px; line-height:1.12; }} h2 {{ margin:0 0 14px; font-size:20px; }}
     .lede {{ max-width:760px; color:#3f3f3f; font-size:17px; }} .meta {{ color:var(--muted); font-size:13px; }}

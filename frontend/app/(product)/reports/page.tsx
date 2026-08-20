@@ -250,6 +250,7 @@ type ReportSnapshot = {
     brand_name?: string;
     report_title?: string;
     footer_text?: string;
+    accent_color?: string;
     show_platform_attribution?: boolean;
     custom_branding_applied?: boolean;
     branding_version?: number | null;
@@ -311,6 +312,7 @@ type ReportBranding = {
   brand_name: string;
   report_title: string;
   footer_text: string;
+  accent_color: string;
   hide_platform_attribution: boolean;
   enabled: boolean;
   version?: number | null;
@@ -320,6 +322,7 @@ type ReportBranding = {
     future_reports_only: boolean;
     saved_on_downgrade: boolean;
     logo_upload_available: boolean;
+    accent_color_available: boolean;
     custom_colors_available: boolean;
   };
 };
@@ -909,6 +912,7 @@ export default function ReportsPage() {
   const [brandName, setBrandName] = useState("");
   const [brandReportTitle, setBrandReportTitle] = useState("");
   const [brandFooter, setBrandFooter] = useState("");
+  const [brandAccent, setBrandAccent] = useState("#E85D19");
   const [hidePlatformAttribution, setHidePlatformAttribution] = useState(false);
   const [brandingEnabled, setBrandingEnabled] = useState(false);
 
@@ -1004,6 +1008,7 @@ export default function ReportsPage() {
     setBrandName(response.brand_name || "");
     setBrandReportTitle(response.report_title || "");
     setBrandFooter(response.footer_text || "");
+    setBrandAccent(response.accent_color || "#E85D19");
     setHidePlatformAttribution(Boolean(response.hide_platform_attribution));
     setBrandingEnabled(Boolean(response.enabled));
   }, []);
@@ -1319,6 +1324,7 @@ export default function ReportsPage() {
             brand_name: brandName,
             report_title: brandReportTitle,
             footer_text: brandFooter,
+            accent_color: brandAccent,
             hide_platform_attribution: hidePlatformAttribution,
             enabled: brandingEnabled,
           }),
@@ -2170,6 +2176,22 @@ export default function ReportsPage() {
                         className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
                       />
                     </label>
+                    <label className="text-sm text-zinc-300 lg:col-span-2">
+                      <span className="mb-1.5 block font-semibold text-white">Report accent</span>
+                      <span className="flex items-center gap-3 rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5">
+                        <input
+                          type="color"
+                          value={brandAccent}
+                          onChange={(event) => setBrandAccent(event.target.value.toUpperCase())}
+                          className="h-9 w-12 cursor-pointer rounded border-0 bg-transparent p-0"
+                          aria-label="Choose the report accent color"
+                        />
+                        <span className="text-sm font-medium text-zinc-100">{brandAccent.toUpperCase()}</span>
+                        <span className="text-xs leading-5 text-zinc-500">
+                          Used only on the top edge of new reports. Result and warning colors stay fixed so their meaning stays clear.
+                        </span>
+                      </span>
+                    </label>
                     <div className="space-y-3 rounded-md border border-[#26272c] bg-[#0b0b0c] p-4 lg:col-span-2">
                       <label className="flex items-start gap-3 text-sm text-zinc-300">
                         <input
@@ -2192,7 +2214,7 @@ export default function ReportsPage() {
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-3 lg:col-span-2">
                       <p className="text-xs leading-5 text-zinc-500">
-                        This first branding slice supports report wording. Logo uploads and custom chart colors are not available yet.
+                        Logo uploads and custom chart colors are not available yet. The accent does not change result or warning colors.
                       </p>
                       <button
                         type="button"

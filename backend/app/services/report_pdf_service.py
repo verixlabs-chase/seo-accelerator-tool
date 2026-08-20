@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 import unicodedata
 from html import escape
 from io import BytesIO
@@ -789,6 +790,13 @@ def _brand_values(brand: dict[str, Any]) -> tuple[str, str, str, str]:
     return brand_name, report_title, publisher, footer
 
 
+def _brand_accent(brand: dict[str, Any]) -> Any:
+    value = str(brand.get("accent_color") or "#E85D19").upper()
+    if re.fullmatch(r"#[0-9A-F]{6}", value) is None:
+        return ACCENT
+    return HexColor(value)
+
+
 def _portfolio_page(
     canvas: Any,
     document: SimpleDocTemplate,
@@ -804,7 +812,7 @@ def _portfolio_page(
     canvas.setSubject(_ascii(report_title))
     canvas.setKeywords(_ascii(f"{brand_name}, multi-location progress report"))
     canvas._doc.Catalog.Lang = PDFString("en-US")
-    canvas.setFillColor(ACCENT)
+    canvas.setFillColor(_brand_accent(brand))
     canvas.rect(0, PAGE_HEIGHT - 7, PAGE_WIDTH, 7, stroke=0, fill=1)
     canvas.setStrokeColor(LINE)
     canvas.line(document.leftMargin, 34, PAGE_WIDTH - document.rightMargin, 34)
@@ -823,7 +831,7 @@ def _page(canvas: Any, document: SimpleDocTemplate, *, title: str, brand: dict[s
     canvas.setSubject(_ascii(report_title))
     canvas.setKeywords(_ascii(f"{brand_name}, business progress report"))
     canvas._doc.Catalog.Lang = PDFString("en-US")
-    canvas.setFillColor(ACCENT)
+    canvas.setFillColor(_brand_accent(brand))
     canvas.rect(0, PAGE_HEIGHT - 7, PAGE_WIDTH, 7, stroke=0, fill=1)
     canvas.setStrokeColor(LINE)
     canvas.line(document.leftMargin, 34, PAGE_WIDTH - document.rightMargin, 34)

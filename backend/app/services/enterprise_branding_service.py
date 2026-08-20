@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,6 +18,7 @@ from app.services.cost_economics_service import resolve_plan_economics
 
 DEFAULT_REPORT_TITLE = "Business progress report"
 DEFAULT_FOOTER = "Created from the saved information available for this report. Open InsightOS to see newer results."
+DEFAULT_ACCENT = "#E85D19"
 
 
 class EnterpriseBrandingError(ValueError):
@@ -53,6 +55,16 @@ def _clean(value: str, *, label: str, maximum: int) -> str:
     return normalized
 
 
+def _clean_accent(value: str) -> str:
+    normalized = value.strip().upper()
+    if re.fullmatch(r"#[0-9A-F]{6}", normalized) is None:
+        raise EnterpriseBrandingError(
+            "Choose a valid six-digit report accent color.",
+            reason_code="report_branding_accent_invalid",
+        )
+    return normalized
+
+
 def _plan_allows_branding(organization: Organization) -> bool:
     return resolve_plan_economics(organization.plan_type).code == "enterprise"
 
@@ -78,6 +90,7 @@ def get_report_branding(
         "brand_name": row.brand_name if row else organization.name,
         "report_title": row.report_title if row else DEFAULT_REPORT_TITLE,
         "footer_text": row.footer_text if row else DEFAULT_FOOTER,
+        "accent_color": row.accent_color if row else DEFAULT_ACCENT,
         "hide_platform_attribution": bool(row.hide_platform_attribution) if row else False,
         "enabled": bool(row.enabled) if row else False,
         "version": row.version if row else None,
@@ -87,6 +100,7 @@ def get_report_branding(
             "future_reports_only": True,
             "saved_on_downgrade": True,
             "logo_upload_available": False,
+            "accent_color_available": True,
             "custom_colors_available": False,
         },
     }
@@ -101,6 +115,7 @@ def save_report_branding(
     brand_name: str,
     report_title: str,
     footer_text: str,
+    accent_color: str,
     hide_platform_attribution: bool,
     enabled: bool,
 ) -> dict[str, Any]:
@@ -129,6 +144,7 @@ def save_report_branding(
             brand_name=_clean(brand_name, label="Brand name", maximum=120),
             report_title=_clean(report_title, label="Report title", maximum=120),
             footer_text=_clean(footer_text, label="Footer", maximum=240),
+            accent_color=_clean_accent(accent_color),
             hide_platform_attribution=bool(hide_platform_attribution),
             enabled=bool(enabled),
             version=1,
@@ -141,6 +157,7 @@ def save_report_branding(
         row.brand_name = _clean(brand_name, label="Brand name", maximum=120)
         row.report_title = _clean(report_title, label="Report title", maximum=120)
         row.footer_text = _clean(footer_text, label="Footer", maximum=240)
+        row.accent_color = _clean_accent(accent_color)
         row.hide_platform_attribution = bool(hide_platform_attribution)
         row.enabled = bool(enabled)
         row.version += 1
@@ -157,6 +174,7 @@ def save_report_branding(
             "version": row.version,
             "enabled": row.enabled,
             "hide_platform_attribution": row.hide_platform_attribution,
+            "accent_color": row.accent_color,
         },
     )
     db.commit()
@@ -183,6 +201,7 @@ def frozen_report_brand(
             "publisher": "VerixLabs",
             "report_title": DEFAULT_REPORT_TITLE,
             "footer_text": DEFAULT_FOOTER,
+            "accent_color": DEFAULT_ACCENT,
             "prepared_for": prepared_for,
             "show_platform_attribution": True,
             "custom_branding_applied": False,
@@ -194,6 +213,7 @@ def frozen_report_brand(
         "publisher": row.brand_name,
         "report_title": row.report_title,
         "footer_text": row.footer_text,
+        "accent_color": row.accent_color,
         "prepared_for": prepared_for,
         "show_platform_attribution": not row.hide_platform_attribution,
         "custom_branding_applied": True,

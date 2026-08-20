@@ -5788,6 +5788,11 @@ Implementation status (2026-08-19):
   access, bulk export/API credentials, advanced client roles, or branded email
   delivery. Those remain explicit later ENT1 slices and must not be implied by
   the current text-identity controls.
+- ENT1B's bounded report accent is implemented locally. Enterprise owners can
+  choose one validated six-digit color for the top edge of future HTML and PDF
+  reports. The accent is frozen with the report identity. Semantic result,
+  warning, missing-data, and chart colors remain controlled by InsightOS so a
+  customer color cannot change the meaning or readability of evidence.
 
 Acceptance criteria:
 

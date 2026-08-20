@@ -13,6 +13,9 @@ test("reports exposes a plain Enterprise identity workflow", () => {
   assert.match(reportsPage, /\/reports\/branding/);
   assert.match(reportsPage, /existing reports were not changed/i);
   assert.match(reportsPage, /Logo uploads and custom chart colors are not available yet/);
+  assert.match(reportsPage, /Report accent/);
+  assert.match(reportsPage, /Used only on the top edge of new reports/);
+  assert.match(reportsPage, /accent_color: brandAccent/);
 });
 
 test("report identity is future-only and plan truthful", () => {
@@ -21,4 +24,5 @@ test("report identity is future-only and plan truthful", () => {
   assert.match(reportsPage, /Review Enterprise options/);
   assert.match(reportsPage, /Remove the InsightOS attribution from new client reports/);
   assert.doesNotMatch(reportsPage, /upload.*logo/i);
+  assert.match(reportsPage, /Result and warning colors stay fixed/);
 });

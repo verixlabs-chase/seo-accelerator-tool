@@ -333,6 +333,7 @@ def put_report_branding(
             brand_name=body.brand_name,
             report_title=body.report_title,
             footer_text=body.footer_text,
+            accent_color=body.accent_color,
             hide_platform_attribution=body.hide_platform_attribution,
             enabled=body.enabled,
         )

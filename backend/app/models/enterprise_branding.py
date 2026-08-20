@@ -13,6 +13,10 @@ class OrganizationReportBrand(Base):
         UniqueConstraint("organization_id", name="uq_org_report_brands_org"),
         CheckConstraint("tenant_id = organization_id", name="ck_org_report_brands_scope"),
         CheckConstraint("version >= 1", name="ck_org_report_brands_version"),
+        CheckConstraint(
+            "length(accent_color) = 7 AND substr(accent_color, 1, 1) = '#'",
+            name="ck_org_report_brands_accent",
+        ),
         Index("ix_org_report_brands_tenant", "tenant_id"),
         Index("ix_org_report_brands_org", "organization_id"),
     )
@@ -27,6 +31,7 @@ class OrganizationReportBrand(Base):
     brand_name: Mapped[str] = mapped_column(String(120), nullable=False)
     report_title: Mapped[str] = mapped_column(String(120), nullable=False)
     footer_text: Mapped[str] = mapped_column(String(240), nullable=False)
+    accent_color: Mapped[str] = mapped_column(String(7), nullable=False, default="#E85D19")
     hide_platform_attribution: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

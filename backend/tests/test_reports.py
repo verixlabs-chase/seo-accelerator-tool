@@ -421,6 +421,7 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
             "brand_name": "Northstar Local",
             "report_title": "Client growth report",
             "footer_text": "Prepared for private client review.",
+            "accent_color": "#336699",
             "hide_platform_attribution": True,
             "enabled": True,
         },
@@ -440,6 +441,7 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
             "brand_name": "Northstar Local",
             "report_title": "Client growth report",
             "footer_text": "Prepared for private client review.",
+            "accent_color": "#336699",
             "hide_platform_attribution": True,
             "enabled": True,
         },
@@ -470,6 +472,7 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
         "publisher": "Northstar Local",
         "report_title": "Client growth report",
         "footer_text": "Prepared for private client review.",
+        "accent_color": "#336699",
         "prepared_for": "Enterprise Client",
         "show_platform_attribution": False,
         "custom_branding_applied": True,
@@ -485,6 +488,7 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
     assert "Northstar Local" in html.text
     assert "Client growth report" in html.text
     assert "Prepared for private client review." in html.text
+    assert "--brand-accent:#336699" in html.text
     assert "Powered by InsightOS" not in html.text
 
     frozen_snapshot = detail.json()["data"]["snapshot"]
