@@ -85,3 +85,20 @@ export async function platformApiFile(path, options = {}) {
     contentDisposition: response.headers.get("Content-Disposition") || "",
   };
 }
+
+export async function platformApiText(path, options = {}) {
+  const response = await authenticatedRequest(path, {
+    ...options,
+    headers: {
+      Accept: "text/html",
+      ...(options.headers || {}),
+    },
+  });
+  if (!response.ok) {
+    await throwApiError(response);
+  }
+  return {
+    text: await response.text(),
+    contentType: response.headers.get("Content-Type") || "text/plain",
+  };
+}

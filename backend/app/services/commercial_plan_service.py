@@ -44,6 +44,7 @@ FEATURE_PRIVATE_AI_PROVIDER = "private_ai_provider"
 FEATURE_WHITE_LABEL_REPORTING = "white_label_reporting"
 FEATURE_CLIENT_REPORT_PACKAGE = "client_report_package"
 FEATURE_ORGANIZATION_ACTIVITY = "organization_activity"
+FEATURE_AUTHENTICATED_CLIENT_REPORTS = "authenticated_client_reports"
 FEATURE_PERFORMANCE_TREND = "performance_trend"
 FEATURE_CAMPAIGN_REPORT = "campaign_report"
 FEATURE_CAMPAIGN_STRATEGY = "campaign_strategy"
@@ -145,6 +146,12 @@ FEATURES: tuple[CommercialFeature, ...] = (
         code=FEATURE_ORGANIZATION_ACTIVITY,
         label="Organization activity history",
         summary="Review important team, connection, reporting, and account changes in one place.",
+        minimum_plan_code="enterprise",
+    ),
+    CommercialFeature(
+        code=FEATURE_AUTHENTICATED_CLIENT_REPORTS,
+        label="Authenticated client reports",
+        summary="Give an assigned client a private, read-only place to view verified saved reports.",
         minimum_plan_code="enterprise",
     ),
 )

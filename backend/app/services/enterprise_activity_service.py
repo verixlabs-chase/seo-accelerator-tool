@@ -70,6 +70,10 @@ EVENT_CATALOG: dict[str, ActivityDefinition] = {
         "private_report_link_revoked", "reports", "Private report link turned off",
         "A private client report link was turned off before or after its expiration.",
     ),
+    "report.client_portal.opened": ActivityDefinition(
+        "client_portal_report_opened", "reports", "Client report opened",
+        "An assigned client opened a verified saved report.", "positive",
+    ),
     "governance.data_export.ready": ActivityDefinition(
         "account_export_ready", "reports", "Account export prepared",
         "A portable account copy was prepared for the workspace.", "positive",

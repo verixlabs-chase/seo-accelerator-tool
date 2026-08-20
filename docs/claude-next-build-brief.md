@@ -5827,6 +5827,21 @@ Implementation status (2026-08-20):
   continues to store only a hash of the one-time URL token, and link creation,
   opening, and revocation add payload-free customer-readable entries to the
   Enterprise owner activity view.
+- ENT1G's first authenticated client-report role is implemented locally. An
+  `org_client` sign-in sits outside the owner/admin/member permission ladder,
+  redirects to one read-only report portal, and cannot call ordinary workspace,
+  billing, settings, automation, or mutation endpoints. The portal lists only
+  verified saved HTML reports whose business locations belong to an active
+  location group explicitly granted to that user. Report HTML is fetched through
+  the authenticated session and remains inside a script-disabled, origin-isolated
+  frame; customer responses omit campaign, artifact, storage, provider, and
+  organization identifiers. Enterprise entitlement, active grant, active group,
+  tenant, organization, campaign, and business-location scope all fail closed.
+  Each authorized report open adds a minimized event to the owner-only activity
+  history without exposing the report identity in that customer-facing history.
+  Inviting a brand-new person and an owner-facing client-access editor remain a
+  later account-management slice; ENT1G does not silently create users or send
+  invitation email.
 
 Acceptance criteria:
 

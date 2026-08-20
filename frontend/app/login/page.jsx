@@ -20,7 +20,7 @@ export default function LoginPage() {
 
   function finishSignIn(user) {
     setAuthSession({ tenantId: user.tenant_id });
-    router.replace("/dashboard");
+    router.replace(user.org_role === "org_client" ? "/client-reports" : "/dashboard");
     router.refresh();
   }
 
@@ -109,7 +109,9 @@ export default function LoginPage() {
                     {workspace.name || "Business workspace"}
                   </span>
                   <span className="mt-1 block text-xs text-zinc-500">
-                    {workspace.role === "org_owner" || workspace.role === "org_admin"
+                    {workspace.role === "org_client"
+                      ? "You can view assigned client reports"
+                      : workspace.role === "org_owner" || workspace.role === "org_admin"
                       ? "You manage this business"
                       : "You have access to this business"}
                   </span>
