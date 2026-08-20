@@ -61,6 +61,37 @@ def get_client_report_view(
     )
 
 
+@router.get("/{report_id}/download")
+def download_client_report_pdf(
+    report_id: str,
+    user: dict = Depends(client_report_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        content = enterprise_client_report_service.read_client_report_pdf(
+            db,
+            tenant_id=str(user["tenant_id"]),
+            organization_id=str(user["organization_id"]),
+            user_id=str(user["id"]),
+            report_id=report_id,
+        )
+        db.commit()
+    except (enterprise_client_report_service.EnterpriseClientReportError, CostEconomicsError) as exc:
+        db.rollback()
+        _raise_client_report_error(exc)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": 'attachment; filename="client-search-report.pdf"',
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-Robots-Tag": "noindex, nofollow",
+        },
+    )
+
+
 def _raise_client_report_error(exc: Exception) -> None:
     raise HTTPException(
         status_code=int(getattr(exc, "status_code", 400)),

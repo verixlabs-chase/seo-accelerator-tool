@@ -4896,6 +4896,13 @@ Scope:
   and a small number of familiar sections; remove duplicated panels and move
   diagnostics, identifiers, schemas, signatures, delivery counters, and other
   specialist details behind clearly labeled optional disclosures.
+- Keep every customer tool visible in the primary navigation rather than hiding
+  valid destinations behind a generic `More tools` disclosure. Order the list
+  by familiar jobs and expected frequency: most-used daily work, performance
+  measurement, visibility improvements, workspace management, then help. The
+  grouped list must remain keyboard-accessible and independently scrollable on
+  shorter desktop and mobile viewports without moving tools into an unnamed
+  catch-all bucket.
 - Run moderated first-use tests with non-technical home-service and local-
   business owners. A participant must be able to connect Google, understand
   connection health, add a location, read the baseline, find the next action,
@@ -5926,6 +5933,29 @@ Implementation status (2026-08-20):
   version, logo hash or dimensions, storage metadata, owner settings, or raw
   email. Customer color remains decorative, the password action keeps a fixed
   accessible contrast, and logos cannot contact an external origin.
+- ENT1K's authenticated client PDF download is implemented locally. A client
+  can download the verified PDF for a saved report only when the same exact
+  Enterprise entitlement, active client role, active location-group grant,
+  tenant, organization, campaign, business-location, report-status, artifact
+  readiness, checksum, MIME, size, and PDF-signature checks used by the private
+  portal all pass. HTML-only reports remain viewable and say plainly that a PDF
+  is unavailable; missing, corrupt, cross-tenant, unassigned, downgraded, and
+  owner-session requests fail closed. Downloads are private, non-cacheable,
+  no-index responses with a generated filename. A minimized owner-visible
+  activity entry records that an assigned client downloaded a verified report,
+  without exposing report, artifact, storage, provider, or organization IDs in
+  the customer activity contract. This slice does not add email delivery,
+  public links, broad API credentials, or report mutation permissions.
+- ENT1L's organized client report library is implemented locally. The private
+  portal now lets an assigned client narrow as many as 100 saved reports by a
+  plain location choice and by reports saved within the last 31 days versus
+  older saved reports. It shows the exact visible and assigned counts, clears a
+  selected report when it falls outside the new choices, and provides one
+  obvious reset when nothing matches. Filtering uses only the already
+  authorized customer-safe list in the browser; it cannot broaden the server's
+  Enterprise entitlement, tenant, group, location, report, or artifact scope,
+  and it exposes no query, campaign, provider, storage, or internal status
+  fields.
 
 Acceptance criteria:
 

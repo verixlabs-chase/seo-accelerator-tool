@@ -90,6 +90,10 @@ EVENT_CATALOG: dict[str, ActivityDefinition] = {
         "client_portal_report_opened", "reports", "Client report opened",
         "An assigned client opened a verified saved report.", "positive",
     ),
+    "report.client_portal.pdf_downloaded": ActivityDefinition(
+        "client_portal_pdf_downloaded", "reports", "Client report PDF downloaded",
+        "An assigned client downloaded a verified saved report PDF.", "positive",
+    ),
     "governance.data_export.ready": ActivityDefinition(
         "account_export_ready", "reports", "Account export prepared",
         "A portable account copy was prepared for the workspace.", "positive",

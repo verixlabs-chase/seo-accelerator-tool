@@ -11,7 +11,7 @@ test("Enterprise owners create one-time client report invitations", () => {
   const page = source("../app/(product)/client-access/page.tsx");
   const nav = source("../app/(product)/nav.config.ts");
 
-  assert.match(nav, /href: "\/client-access", label: "Client access", icon: "client-access"/);
+  assert.match(nav, /href: "\/client-access", label: "Client Access", icon: "client-access"/);
   assert.match(page, /org_role/);
   assert.match(page, /org_owner/);
   assert.match(page, /\/enterprise\/client-invitations/);

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.business_location import BusinessLocation
@@ -23,6 +24,7 @@ from app.services.commercial_plan_service import (
 
 
 READY_REPORT_STATUSES = {"generated", "delivered"}
+MAX_CLIENT_PDF_BYTES = 20 * 1024 * 1024
 
 
 class EnterpriseClientReportError(RuntimeError):
@@ -71,11 +73,12 @@ def list_client_reports(
     )
     items: list[dict[str, Any]] = []
     for report, campaign in rows:
-        if _ready_html_artifact_id(
+        if _ready_artifact_id(
             db,
             tenant_id=tenant_id,
             organization_id=organization_id,
             report_id=report.id,
+            artifact_type="html",
         ) is None:
             continue
         generated_at = _utc_datetime(report.generated_at)
@@ -87,6 +90,14 @@ def list_client_reports(
                 "status": "ready",
                 "generated_at": generated_at.isoformat(),
                 "freshness": "current" if generated_at >= datetime.now(UTC) - timedelta(days=31) else "older_saved_report",
+                "pdf_available": _ready_artifact_id(
+                    db,
+                    tenant_id=tenant_id,
+                    organization_id=organization_id,
+                    report_id=report.id,
+                    artifact_type="pdf",
+                )
+                is not None,
             }
         )
     return _list_contract(items, identity=identity)
@@ -106,38 +117,19 @@ def read_client_report_html(
         organization_id=organization_id,
         feature_code=FEATURE_AUTHENTICATED_CLIENT_REPORTS,
     )
-    location_ids = {
-        row.id
-        for row in _accessible_locations(
-            db,
-            organization_id=organization_id,
-            user_id=user_id,
-        )
-    }
-    report_row = (
-        db.query(MonthlyReport, Campaign)
-        .join(Campaign, Campaign.id == MonthlyReport.campaign_id)
-        .filter(
-            MonthlyReport.id == report_id,
-            MonthlyReport.tenant_id == tenant_id,
-            Campaign.tenant_id == tenant_id,
-            Campaign.organization_id == organization_id,
-            Campaign.business_location_id.in_(location_ids),
-            MonthlyReport.report_status.in_(READY_REPORT_STATUSES),
-        )
-        .first()
+    _assert_client_report_access(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        user_id=user_id,
+        report_id=report_id,
     )
-    if report_row is None:
-        raise EnterpriseClientReportError(
-            "That report is not available in your assigned client view.",
-            reason_code="client_report_not_found",
-            status_code=404,
-        )
-    artifact_id = _ready_html_artifact_id(
+    artifact_id = _ready_artifact_id(
         db,
         tenant_id=tenant_id,
         organization_id=organization_id,
         report_id=report_id,
+        artifact_type="html",
     )
     if artifact_id is None:
         raise EnterpriseClientReportError(
@@ -161,6 +153,112 @@ def read_client_report_html(
     )
     db.flush()
     return content
+
+
+def read_client_report_pdf(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    user_id: str,
+    report_id: str,
+) -> bytes:
+    _assert_scope(tenant_id=tenant_id, organization_id=organization_id)
+    require_commercial_feature(
+        db,
+        organization_id=organization_id,
+        feature_code=FEATURE_AUTHENTICATED_CLIENT_REPORTS,
+    )
+    _assert_client_report_access(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        user_id=user_id,
+        report_id=report_id,
+    )
+    artifact_id = _ready_artifact_id(
+        db,
+        tenant_id=tenant_id,
+        organization_id=organization_id,
+        report_id=report_id,
+        artifact_type="pdf",
+    )
+    if artifact_id is None:
+        raise EnterpriseClientReportError(
+            "This saved report does not have a verified PDF to download.",
+            reason_code="client_report_pdf_unavailable",
+            status_code=409,
+        )
+    try:
+        artifact, content = reporting_service.read_report_artifact(
+            db,
+            tenant_id,
+            report_id,
+            artifact_id,
+            organization_id,
+        )
+    except HTTPException as exc:
+        raise EnterpriseClientReportError(
+            "This saved report PDF did not pass its file check.",
+            reason_code="client_report_pdf_invalid",
+            status_code=409,
+        ) from exc
+    if (
+        artifact.content_type != "application/pdf"
+        or not content.startswith(b"%PDF-")
+        or len(content) > MAX_CLIENT_PDF_BYTES
+    ):
+        raise EnterpriseClientReportError(
+            "This saved report PDF did not pass its file check.",
+            reason_code="client_report_pdf_invalid",
+            status_code=409,
+        )
+    write_audit_log(
+        db,
+        tenant_id=organization_id,
+        actor_user_id=user_id,
+        event_type="report.client_portal.pdf_downloaded",
+        payload={"report_id": report_id},
+    )
+    db.flush()
+    return content
+
+
+def _assert_client_report_access(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    user_id: str,
+    report_id: str,
+) -> None:
+    location_ids = {
+        row.id
+        for row in _accessible_locations(
+            db,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+    }
+    report_row = (
+        db.query(MonthlyReport.id)
+        .join(Campaign, Campaign.id == MonthlyReport.campaign_id)
+        .filter(
+            MonthlyReport.id == report_id,
+            MonthlyReport.tenant_id == tenant_id,
+            Campaign.tenant_id == tenant_id,
+            Campaign.organization_id == organization_id,
+            Campaign.business_location_id.in_(location_ids),
+            MonthlyReport.report_status.in_(READY_REPORT_STATUSES),
+        )
+        .first()
+    )
+    if report_row is None:
+        raise EnterpriseClientReportError(
+            "That report is not available in your assigned client view.",
+            reason_code="client_report_not_found",
+            status_code=404,
+        )
 
 
 def _accessible_locations(
@@ -213,12 +311,13 @@ def _accessible_locations(
     )
 
 
-def _ready_html_artifact_id(
+def _ready_artifact_id(
     db: Session,
     *,
     tenant_id: str,
     organization_id: str,
     report_id: str,
+    artifact_type: str,
 ) -> str | None:
     artifacts = reporting_service.get_report_artifacts(
         db,
@@ -228,7 +327,7 @@ def _ready_html_artifact_id(
     )
     for artifact in artifacts:
         contract = reporting_service.artifact_contract(artifact)
-        if artifact.artifact_type == "html" and bool(contract["ready"]):
+        if artifact.artifact_type == artifact_type and bool(contract["ready"]):
             return artifact.id
     return None
 

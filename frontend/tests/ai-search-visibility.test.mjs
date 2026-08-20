@@ -13,7 +13,7 @@ const intro = source("../app/(product)/components/ProductPageIntro.tsx");
 const icons = source("../app/(product)/components/ProductIcon.tsx");
 
 test("AI Search beta has a dedicated location-scoped workspace", () => {
-  assert.match(nav, /href: "\/ai-visibility", label: "AI Search", icon: "ai-search", section: "more", badge: "Beta"/);
+  assert.match(nav, /href: "\/ai-visibility", label: "AI Search", icon: "ai-search", section: "performance", badge: "Beta"/);
   assert.match(intro, /"\/ai-visibility"/);
   assert.match(icons, /case "ai-search"/);
   assert.match(page, /useLocationContext/);

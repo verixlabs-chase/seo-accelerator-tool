@@ -11,7 +11,7 @@ test("Enterprise activity is a dedicated owner-facing product page", () => {
   const page = source("../app/(product)/activity/page.tsx");
   const nav = source("../app/(product)/nav.config.ts");
 
-  assert.match(nav, /href: "\/activity", label: "Team activity", icon: "activity"/);
+  assert.match(nav, /href: "\/activity", label: "Team Activity", icon: "activity"/);
   assert.match(page, /\/enterprise\/activity/);
   assert.match(page, /See who changed what/);
   assert.match(page, /Only the workspace owner can view this history/);

@@ -18,6 +18,11 @@ test("client sign-ins receive one private read-only report workspace", () => {
   assert.match(page, /\/enterprise\/client-reports/);
   assert.match(page, /assigned to you/);
   assert.match(page, /cannot change the business, billing, settings, or tracked work/);
+  assert.match(page, /Download PDF/);
+  assert.match(page, /pdf_available/);
+  assert.match(page, /\/enterprise\/client-reports\/.*\/download/);
+  assert.match(page, /platformApiFile/);
+  assert.match(page, /application\/pdf/);
   assert.doesNotMatch(page, /buildProductNav|AppShell|LocationProvider|\/billing\/|\/settings\/|method: "POST"|method: "PATCH"|method: "DELETE"/);
 });
 
@@ -40,8 +45,22 @@ test("client report states explain saved dates and empty access plainly", () => 
   assert.match(page, /No reports have been shared here yet/);
   assert.match(page, /Older saved report/);
   assert.match(page, /Saved date unavailable/);
+  assert.match(page, /PDF download not available/);
   assert.match(page, /ask the workspace owner/i);
   assert.doesNotMatch(page, /artifact|tenant|campaign_id|organization_id|provider|HTTP/i);
+});
+
+test("clients can narrow a large report library by location and saved date", () => {
+  const page = source("../app/client-reports/page.tsx");
+
+  assert.match(page, /All assigned locations/);
+  assert.match(page, /Saved in the last 31 days/);
+  assert.match(page, /Older saved reports/);
+  assert.match(page, /visibleReports\.map/);
+  assert.match(page, /Showing \{visibleReports\.length\} of \{data\.items\.length\} assigned reports/);
+  assert.match(page, /No reports match these choices/);
+  assert.match(page, /Show all assigned reports/);
+  assert.doesNotMatch(page, /query builder|database filter|artifact type|tenant scope/i);
 });
 
 test("current customer-safe report identity brands the isolated client portal", () => {

@@ -1,25 +1,29 @@
 import type { NavItem } from "./components";
 
 const PRODUCT_NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Overview", icon: "overview", section: "primary" },
-  { href: "/rankings", label: "Search Rankings", icon: "rankings", section: "primary" },
-  { href: "/keyword-research", label: "Find Searches", icon: "keyword-research", section: "primary" },
-  { href: "/local-visibility", label: "Local Search", icon: "local-search", section: "primary" },
-  { href: "/site-health", label: "Website Health", icon: "website-health", section: "primary" },
-  { href: "/opportunities", label: "Next Steps", icon: "next-steps", section: "primary" },
-  { href: "/reports", label: "Reports", icon: "reports", section: "primary" },
-  { href: "/settings", label: "Connection health", icon: "connections", section: "more" },
-  { href: "/locations", label: "Manage locations", icon: "locations", section: "more" },
-  { href: "/organic-value", label: "Search Value", icon: "search-value", section: "more" },
-  { href: "/ai-visibility", label: "AI Search", icon: "ai-search", section: "more", badge: "Beta" },
-  { href: "/competitors", label: "Competitors", icon: "competitors", section: "more" },
-  { href: "/content", label: "Content", icon: "content", section: "more" },
-  { href: "/citations", label: "Directory listings", icon: "listings", section: "more" },
-  { href: "/reviews", label: "Customer reviews", icon: "reviews", section: "more" },
-  { href: "/profile-campaigns", label: "Profile campaigns", icon: "profile-campaigns", section: "more" },
-  { href: "/client-access", label: "Client access", icon: "client-access", section: "more" },
-  { href: "/activity", label: "Team activity", icon: "activity", section: "more" },
-  { href: "/help", label: "Help Center", icon: "help", section: "more" },
+  { href: "/dashboard", label: "Overview", icon: "overview", section: "most-used" },
+  { href: "/opportunities", label: "Next Steps", icon: "next-steps", section: "most-used" },
+  { href: "/reviews", label: "Customer Reviews", icon: "reviews", section: "most-used" },
+  { href: "/reports", label: "Reports", icon: "reports", section: "most-used" },
+
+  { href: "/rankings", label: "Search Rankings", icon: "rankings", section: "performance" },
+  { href: "/local-visibility", label: "Local Search", icon: "local-search", section: "performance" },
+  { href: "/site-health", label: "Website Health", icon: "website-health", section: "performance" },
+  { href: "/organic-value", label: "Search Value", icon: "search-value", section: "performance" },
+  { href: "/ai-visibility", label: "AI Search", icon: "ai-search", section: "performance", badge: "Beta" },
+
+  { href: "/keyword-research", label: "Find Searches", icon: "keyword-research", section: "improve" },
+  { href: "/competitors", label: "Competitors", icon: "competitors", section: "improve" },
+  { href: "/content", label: "Content", icon: "content", section: "improve" },
+  { href: "/citations", label: "Directory Listings", icon: "listings", section: "improve" },
+  { href: "/profile-campaigns", label: "Profile Campaigns", icon: "profile-campaigns", section: "improve" },
+
+  { href: "/locations", label: "Locations", icon: "locations", section: "workspace" },
+  { href: "/settings", label: "Settings & Connections", icon: "connections", section: "workspace" },
+  { href: "/client-access", label: "Client Access", icon: "client-access", section: "workspace" },
+  { href: "/activity", label: "Team Activity", icon: "activity", section: "workspace" },
+
+  { href: "/help", label: "Help Center", icon: "help", section: "help" },
 ];
 
 export function buildProductNav(pathname: string): NavItem[] {
