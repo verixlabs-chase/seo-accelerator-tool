@@ -1291,6 +1291,32 @@ export default function ReportsPage() {
     );
   }
 
+  async function downloadClientReportPackage() {
+    if (!portfolioComparison?.comparison_ready) {
+      setError("Create reports with matching dates for at least two locations first.");
+      return;
+    }
+
+    await runAction(
+      "client-report-package",
+      async () => {
+        const file = await platformApiFile("/reports/portfolio-package", { method: "GET" });
+        const fileUrl = URL.createObjectURL(file.blob);
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.download = "insightos-client-report-package.zip";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(fileUrl), 60_000);
+        setNotice(
+          "The client package was downloaded with the all-location summary, each verified location PDF, and a file manifest.",
+        );
+      },
+      "We could not prepare the client package. Your saved reports are unchanged.",
+    );
+  }
+
   async function saveSchedule() {
     if (!selectedCampaignId) {
       setError("Select a business first.");
@@ -1727,6 +1753,21 @@ export default function ReportsPage() {
                     >
                       {busyAction === "portfolio-pdf" ? "Preparing PDF..." : "Download all-location PDF"}
                     </button>
+                    {reportBranding?.plan_eligible && orgRole === "org_owner" ? (
+                      <button
+                        type="button"
+                        onClick={() => void downloadClientReportPackage()}
+                        disabled={busyAction !== "" || !portfolioComparison.comparison_ready}
+                        title={
+                          portfolioComparison.comparison_ready
+                            ? "Download the verified location PDFs and manifest in one ZIP file"
+                            : "Create reports with matching dates for at least two locations first"
+                        }
+                        className="rounded-md border border-violet-400/30 bg-violet-400/10 px-4 py-2 text-sm font-semibold text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyAction === "client-report-package" ? "Preparing package..." : "Download client package"}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 

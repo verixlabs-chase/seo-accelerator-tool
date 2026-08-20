@@ -29,3 +29,11 @@ test("report identity is future-only and plan truthful", () => {
   assert.match(reportsPage, /Remove saved logo/);
   assert.match(reportsPage, /Result and warning colors stay fixed/);
 });
+
+test("Enterprise owners can download one verified client report package", () => {
+  assert.match(reportsPage, /Download client package/);
+  assert.match(reportsPage, /\/reports\/portfolio-package/);
+  assert.match(reportsPage, /insightos-client-report-package\.zip/);
+  assert.match(reportsPage, /each verified location PDF/);
+  assert.match(reportsPage, /reportBranding\?\.plan_eligible && orgRole === "org_owner"/);
+});

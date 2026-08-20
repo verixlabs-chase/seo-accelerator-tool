@@ -5800,6 +5800,15 @@ Implementation status (2026-08-19):
   report. Owners can remove the saved logo even after a downgrade while older
   reports keep their exact frozen copy. Storage paths and raw filenames never
   enter the customer contract or report snapshot.
+- ENT1D's bounded client report package is implemented locally. An Enterprise
+  organization owner can download one ZIP containing the exact current
+  all-location PDF, each verified saved location PDF, and a client-readable
+  manifest with periods and SHA-256 file checks. The server includes only
+  reports from the authenticated organization, fails the entire package when
+  any required PDF is missing or fails integrity, limits the package to 20
+  locations and 50 MB uncompressed, uses safe generated filenames, and audits
+  only the package digest and counts. It does not email recipients or claim
+  external delivery.
 
 Acceptance criteria:
 

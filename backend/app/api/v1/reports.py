@@ -23,7 +23,13 @@ from app.schemas.reporting import (
     ReportShareLinkCreateIn,
     ReportShareLinkOut,
 )
-from app.services import enterprise_branding_service, report_delivery_service, report_pdf_service, reporting_service
+from app.services import (
+    enterprise_branding_service,
+    enterprise_report_export_service,
+    report_delivery_service,
+    report_pdf_service,
+    reporting_service,
+)
 from app.services.cost_economics_service import CostEconomicsError
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
@@ -399,6 +405,36 @@ def download_portfolio_report(
             "Content-Disposition": 'attachment; filename="insightos-all-location-report.pdf"',
             "Cache-Control": "private, no-store",
             "ETag": f'"{snapshot["snapshot_hash"]}"',
+        },
+    )
+
+
+@router.get("/portfolio-package")
+def download_client_report_package(
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        package = enterprise_report_export_service.build_client_report_package(
+            db,
+            tenant_id=str(user["tenant_id"]),
+            organization_id=str(user["organization_id"]),
+            actor_user_id=str(user["id"]),
+        )
+    except (
+        enterprise_report_export_service.EnterpriseReportExportError,
+        CostEconomicsError,
+    ) as exc:
+        raise _branding_http_error(exc) from exc
+    return Response(
+        content=package["content"],
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{package["filename"]}"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-Report-Count": str(package["report_count"]),
+            "ETag": f'"{package["sha256"]}"',
         },
     )
 

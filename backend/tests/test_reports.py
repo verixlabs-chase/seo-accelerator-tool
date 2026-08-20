@@ -1,8 +1,10 @@
 import base64
 import json
 import tomllib
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 from PIL import Image, PngImagePlugin
 from pypdf import PdfReader
@@ -447,6 +449,12 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
         headers=headers,
     )
     assert blocked_logo.status_code == 403
+    blocked_package = client.get("/api/v1/reports/portfolio-package", headers=headers)
+    assert blocked_package.status_code == 403
+    assert (
+        blocked_package.json()["errors"][0]["details"]["reason_code"]
+        == "client_report_package_upgrade_required"
+    )
 
     apply_commercial_plan(
         db_session, organization_id=organization_id, plan_code="enterprise"
@@ -563,6 +571,90 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
     assert pdf_reader.metadata.author == "Northstar Local"
     assert "NORTHSTAR LOCAL" in "\n".join(page.extract_text() or "" for page in pdf_reader.pages)
 
+    second_campaign = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Enterprise Client East", "domain": "enterprise-client-east.example"},
+        headers=headers,
+    ).json()["data"]
+    second_generated = client.post(
+        "/api/v1/reports/generate",
+        json={"campaign_id": second_campaign["id"], "month_number": 7},
+        headers=headers,
+    )
+    assert second_generated.status_code == 200
+
+    package_response = client.get("/api/v1/reports/portfolio-package", headers=headers)
+    assert package_response.status_code == 200
+    assert package_response.headers["content-type"] == "application/zip"
+    assert package_response.headers["x-report-count"] == "2"
+    assert "insightos-client-report-package.zip" in package_response.headers["content-disposition"]
+    with ZipFile(BytesIO(package_response.content)) as package:
+        names = package.namelist()
+        assert names[0] == "manifest.json"
+        assert "portfolio-summary.pdf" in names
+        assert len([name for name in names if name.startswith("location-reports/")]) == 2
+        assert all(".." not in name and not name.startswith(("/", "\\")) for name in names)
+        manifest = json.loads(package.read("manifest.json"))
+        assert manifest["schema_version"] == "ent1-client-report-package-v1"
+        assert manifest["source_contract"] == "verified_saved_report_pdfs_and_frozen_snapshots"
+        assert manifest["report_count"] == 2
+        assert manifest["totals_are_combined"] is False
+        assert manifest["branding"]["brand_name"] == "Northstar Local"
+        assert manifest["branding"]["logo_sha256"] == logo_data["logo_sha256"]
+        for item in manifest["files"]:
+            content = package.read(item["file"])
+            assert len(content) == item["bytes"]
+            assert sha256(content).hexdigest() == item["file_sha256"]
+            if item["file"].endswith(".pdf"):
+                assert content.startswith(b"%PDF-")
+
+    from app.models.audit_log import AuditLog
+
+    package_audit = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "enterprise.client_report_package.downloaded")
+        .order_by(AuditLog.created_at.desc())
+        .first()
+    )
+    assert package_audit is not None
+    package_audit_payload = json.loads(package_audit.payload_json)
+    assert set(package_audit_payload) == {
+        "organization_id",
+        "package_bytes",
+        "package_sha256",
+        "portfolio_snapshot_sha256",
+        "report_count",
+    }
+    assert package_audit_payload["report_count"] == 2
+
+    from app.models.reporting import ReportArtifact
+
+    package_audit_count = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "enterprise.client_report_package.downloaded")
+        .count()
+    )
+    second_pdf = (
+        db_session.query(ReportArtifact)
+        .filter(
+            ReportArtifact.report_id == second_generated.json()["data"]["id"],
+            ReportArtifact.artifact_type == "pdf",
+        )
+        .one()
+    )
+    assert second_pdf.content_blob is not None
+    second_pdf.content_blob = bytes(second_pdf.content_blob) + b"tampered"
+    db_session.commit()
+    rejected_package = client.get("/api/v1/reports/portfolio-package", headers=headers)
+    assert rejected_package.status_code == 409
+    assert "integrity check" in rejected_package.json()["errors"][0]["message"]
+    assert (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "enterprise.client_report_package.downloaded")
+        .count()
+        == package_audit_count
+    )
+
     apply_commercial_plan(db_session, organization_id=organization_id, plan_code="solo")
     db_session.commit()
     after_downgrade = client.get("/api/v1/reports/branding", headers=headers)
@@ -570,6 +662,8 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
     assert after_downgrade.json()["data"]["saved_for_recovery"] is True
     assert after_downgrade.json()["data"]["applied_to_new_reports"] is False
     assert after_downgrade.json()["data"]["logo_configured"] is True
+    package_after_downgrade = client.get("/api/v1/reports/portfolio-package", headers=headers)
+    assert package_after_downgrade.status_code == 403
 
     removed = client.delete("/api/v1/reports/branding/logo", headers=headers)
     assert removed.status_code == 200
