@@ -5773,6 +5773,22 @@ Scope:
 - Keep dedicated capacity, custom provider contracts, SSO, and contractual SLA
   commitments quote-based rather than assumed in the base tier.
 
+Implementation status (2026-08-19):
+
+- ENT1A's first Enterprise white-label reporting slice is implemented locally.
+  An organization owner on Enterprise can save a plain-text report identity,
+  report title, footer, and optional InsightOS-attribution preference. The
+  identity is tenant scoped, audited without copying customer wording into the
+  audit event, and frozen into each newly generated location or portfolio
+  report. Later branding changes and plan downgrades do not rewrite saved
+  reports; a downgrade preserves the configuration for recovery but stops it
+  from applying to new reports. Existing InsightOS report output remains
+  unchanged for organizations without an active Enterprise configuration.
+- ENT1A does not yet provide logo uploads, custom chart colors, client portal
+  access, bulk export/API credentials, advanced client roles, or branded email
+  delivery. Those remain explicit later ENT1 slices and must not be implied by
+  the current text-identity controls.
+
 Acceptance criteria:
 
 - Enterprise customers can operate multiple teams or clients without

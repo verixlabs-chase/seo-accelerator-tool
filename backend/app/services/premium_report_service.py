@@ -22,6 +22,7 @@ from app.models.local import ReviewVelocitySnapshot
 from app.models.rank import CampaignKeyword, RankingSnapshot
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.services import intelligence_service
+from app.services import enterprise_branding_service
 from app.services.strategy_engine.thresholds import version_id as strategy_threshold_version
 
 
@@ -1208,6 +1209,11 @@ def build_report_snapshot(
             "location_name": location_name,
             "organization_id": campaign.organization_id,
         },
+        "brand": enterprise_branding_service.frozen_report_brand(
+            db,
+            organization_id=str(campaign.organization_id),
+            prepared_for=location_name,
+        ),
         "period": {
             "days": REPORT_PERIOD_DAYS,
             "start": current_start.isoformat(),
@@ -1494,6 +1500,7 @@ def _data_sources_html(metrics: list[dict[str, Any]]) -> str:
 
 def render_report_html(snapshot: dict[str, Any]) -> str:
     campaign = snapshot.get("campaign") or {}
+    brand = snapshot.get("brand") or {}
     period = snapshot.get("period") or {}
     executive = snapshot.get("executive_summary") or {}
     metrics = snapshot.get("metrics") or []
@@ -1521,6 +1528,16 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
             for item in items
         )
         return f"<section><h2>{escape(title)}</h2><ul>{rows or f'<li>{escape(empty)}</li>'}</ul></section>"
+
+    brand_name = _report_copy(brand.get("brand_name"), "InsightOS", max_words=12, max_sentences=1)
+    report_title = _report_copy(brand.get("report_title"), "Business progress report", max_words=16, max_sentences=1)
+    footer_text = _report_copy(
+        brand.get("footer_text"),
+        "Created from the saved information available for this report.",
+        max_words=42,
+        max_sentences=2,
+    )
+    attribution = " · Powered by InsightOS from VerixLabs" if brand.get("show_platform_attribution", True) else ""
 
     return f"""<!doctype html>
 <html lang="en">
@@ -1555,7 +1572,7 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
 </head>
 <body><main>
   <header>
-    <div class="eyebrow">InsightOS progress report</div>
+    <div class="eyebrow">{escape(brand_name)} · {escape(report_title)}</div>
     <h1>{escape(_report_copy(executive.get('headline'), 'Business progress report'))}</h1>
     <p class="lede">{escape(_report_copy(executive.get('summary'), 'Review what changed and what to work on next.'))}</p>
     <p class="meta">{escape(str(campaign.get('location_name') or campaign.get('name') or 'Business'))} · {escape(str(period.get('start') or ''))} to {escape(str(period.get('end') or ''))}</p>
@@ -1570,16 +1587,17 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
   </div>
   {_next_action_html(snapshot.get('next_priorities') or [])}
   {_data_sources_html(metrics)}
-  <footer>Created from the saved information available for this report. Open InsightOS to see newer results.</footer>
+  <footer>{escape(footer_text)}{escape(attribution)}</footer>
 </main></body></html>"""
 
 
 def report_pdf_lines(snapshot: dict[str, Any]) -> list[str]:
     campaign = snapshot.get("campaign") or {}
+    brand = snapshot.get("brand") or {}
     period = snapshot.get("period") or {}
     executive = snapshot.get("executive_summary") or {}
     lines = [
-        "InsightOS progress report",
+        f"{brand.get('brand_name') or 'InsightOS'} | {brand.get('report_title') or 'Business progress report'}",
         _report_copy(executive.get("headline"), str(campaign.get("location_name") or "Business report")),
         _report_copy(executive.get("summary"), "Review what changed and what to work on next."),
         f"Location: {campaign.get('location_name') or campaign.get('name') or 'Business'}",

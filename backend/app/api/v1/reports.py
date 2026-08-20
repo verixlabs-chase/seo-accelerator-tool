@@ -1,15 +1,16 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_roles
+from app.api.deps import require_org_role, require_roles
 from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db, set_session_security_context
 from app.providers import get_email_adapter
 from app.schemas.reporting import (
     ReportArtifactOut,
+    ReportBrandingIn,
     ReportDeliverIn,
     ReportDeliveryEventOut,
     ReportGenerateIn,
@@ -21,7 +22,8 @@ from app.schemas.reporting import (
     ReportShareLinkCreateIn,
     ReportShareLinkOut,
 )
-from app.services import report_delivery_service, report_pdf_service, reporting_service
+from app.services import enterprise_branding_service, report_delivery_service, report_pdf_service, reporting_service
+from app.services.cost_economics_service import CostEconomicsError
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     reporting_aggregate_kpis,
@@ -31,6 +33,16 @@ from app.tasks.tasks import (
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+def _branding_http_error(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=int(getattr(exc, "status_code", 400)),
+        detail={
+            "message": str(exc),
+            "reason_code": str(getattr(exc, "reason_code", "report_branding_failed")),
+        },
+    )
 
 
 def _report_truth(
@@ -287,6 +299,45 @@ def get_portfolio_report_comparison(
         tenant_id=user["tenant_id"],
         organization_id=user["organization_id"],
     )
+    return envelope(request, payload)
+
+
+@router.get("/branding")
+def get_report_branding(
+    request: Request,
+    user: dict = Depends(require_org_role({"org_user"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = enterprise_branding_service.get_report_branding(
+            db, organization_id=str(user["organization_id"])
+        )
+    except enterprise_branding_service.EnterpriseBrandingError as exc:
+        raise _branding_http_error(exc) from exc
+    return envelope(request, payload)
+
+
+@router.put("/branding")
+def put_report_branding(
+    request: Request,
+    body: ReportBrandingIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = enterprise_branding_service.save_report_branding(
+            db,
+            tenant_id=str(user["tenant_id"]),
+            organization_id=str(user["organization_id"]),
+            actor_user_id=str(user["id"]),
+            brand_name=body.brand_name,
+            report_title=body.report_title,
+            footer_text=body.footer_text,
+            hide_platform_attribution=body.hide_platform_attribution,
+            enabled=body.enabled,
+        )
+    except (enterprise_branding_service.EnterpriseBrandingError, CostEconomicsError) as exc:
+        raise _branding_http_error(exc) from exc
     return envelope(request, payload)
 
 

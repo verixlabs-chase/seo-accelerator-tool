@@ -123,6 +123,7 @@ from app.models.crawl import (
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
 from app.models.engagement import AchievementGrant, AchievementPreference
+from app.models.enterprise_branding import OrganizationReportBrand
 from app.models.intelligence import (
     AnomalyEvent,
     CampaignMilestone,
@@ -425,6 +426,7 @@ __all__ = [
     "FleetJob",
     "FleetJobItem",
     "Organization",
+    "OrganizationReportBrand",
     "OrganicValueBaselineSetting",
     "OrganizationOAuthClient",
     "OrganizationMembership",

@@ -41,6 +41,7 @@ FEATURE_AUTOMATIC_REVIEW_REPLIES = "automatic_review_replies"
 FEATURE_LISTING_CORRECTION_SYNC = "listing_correction_sync"
 FEATURE_EXTERNAL_AUTOMATION = "external_automation"
 FEATURE_PRIVATE_AI_PROVIDER = "private_ai_provider"
+FEATURE_WHITE_LABEL_REPORTING = "white_label_reporting"
 FEATURE_PERFORMANCE_TREND = "performance_trend"
 FEATURE_CAMPAIGN_REPORT = "campaign_report"
 FEATURE_CAMPAIGN_STRATEGY = "campaign_strategy"
@@ -124,6 +125,12 @@ FEATURES: tuple[CommercialFeature, ...] = (
         code=FEATURE_PRIVATE_AI_PROVIDER,
         label="Private or local AI provider",
         summary="Use an approved private model endpoint with organization-level controls.",
+        minimum_plan_code="enterprise",
+    ),
+    CommercialFeature(
+        code=FEATURE_WHITE_LABEL_REPORTING,
+        label="Client-ready report branding",
+        summary="Use your organization name and client-facing report language on newly generated reports.",
         minimum_plan_code="enterprise",
     ),
 )

@@ -349,8 +349,8 @@ def test_portfolio_report_comparison_keeps_location_snapshots_separate(client, d
     assert "East Service Area" in portfolio_text
     assert "Create a report for this location before comparing it" in portfolio_text
     assert "exact saved report for each location" in portfolio_text
-    assert "Custom logos, colors" in portfolio_text
-    assert "white-label removal remain separate Enterprise controls" in portfolio_text
+    assert "report identity that was active" in portfolio_text
+    assert "Later branding changes do not rewrite this saved document" in " ".join(portfolio_text.split())
     assert portfolio_reader.metadata.author == "VerixLabs"
     outline_titles = [item.title for item in portfolio_reader.outline if hasattr(item, "title")]
     assert "Portfolio summary" in outline_titles
@@ -379,6 +379,136 @@ def test_portfolio_report_comparison_keeps_location_snapshots_separate(client, d
     rejected_pdf = client.get("/api/v1/reports/portfolio-artifact", headers=headers)
     assert rejected_pdf.status_code == 409
     assert "matching reports for at least two locations" in rejected_pdf.json()["errors"][0]["message"]
+
+
+def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
+    client,
+    db_session,
+    monkeypatch,
+):
+    from app.models.organization import Organization
+    from app.models.organization_membership import OrganizationMembership
+    from app.models.user import User
+    from app.services.commercial_plan_service import apply_commercial_plan
+
+    monkeypatch.setattr(
+        report_artifact_storage_service,
+        "get_report_artifact_storage",
+        lambda: report_artifact_storage_service.DatabaseReportArtifactStorage(),
+    )
+    owner = db_session.query(User).filter(User.email == "a@example.com").one()
+    membership = (
+        db_session.query(OrganizationMembership)
+        .filter(OrganizationMembership.user_id == owner.id)
+        .one()
+    )
+    membership.role = "org_owner"
+    db_session.commit()
+
+    login = client.post(
+        "/api/v1/auth/login", json={"email": "a@example.com", "password": "pass-a"}
+    )
+    assert login.status_code == 200
+    token = login.json()["data"]["access_token"]
+    organization_id = login.json()["data"]["user"]["tenant_id"]
+    headers = {"Authorization": f"Bearer {token}"}
+    organization = db_session.get(Organization, organization_id)
+    assert organization is not None
+
+    blocked = client.put(
+        "/api/v1/reports/branding",
+        json={
+            "brand_name": "Northstar Local",
+            "report_title": "Client growth report",
+            "footer_text": "Prepared for private client review.",
+            "hide_platform_attribution": True,
+            "enabled": True,
+        },
+        headers=headers,
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["errors"][0]["details"]["reason_code"] == "white_label_reporting_upgrade_required"
+
+    apply_commercial_plan(
+        db_session, organization_id=organization_id, plan_code="enterprise"
+    )
+    db_session.commit()
+
+    saved = client.put(
+        "/api/v1/reports/branding",
+        json={
+            "brand_name": "Northstar Local",
+            "report_title": "Client growth report",
+            "footer_text": "Prepared for private client review.",
+            "hide_platform_attribution": True,
+            "enabled": True,
+        },
+        headers=headers,
+    )
+    assert saved.status_code == 200
+    assert saved.json()["data"]["applied_to_new_reports"] is True
+    assert saved.json()["data"]["truth"]["existing_reports_unchanged"] is True
+
+    campaign = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Enterprise Client", "domain": "enterprise-client.example"},
+        headers=headers,
+    ).json()["data"]
+    generated = client.post(
+        "/api/v1/reports/generate",
+        json={"campaign_id": campaign["id"], "month_number": 7},
+        headers=headers,
+    )
+    assert generated.status_code == 200
+    report_id = generated.json()["data"]["id"]
+    detail = client.get(f"/api/v1/reports/{report_id}", headers=headers)
+    assert detail.status_code == 200
+    brand = detail.json()["data"]["snapshot"]["brand"]
+    assert brand == {
+        "brand_name": "Northstar Local",
+        "product_name": "Northstar Local",
+        "publisher": "Northstar Local",
+        "report_title": "Client growth report",
+        "footer_text": "Prepared for private client review.",
+        "prepared_for": "Enterprise Client",
+        "show_platform_attribution": False,
+        "custom_branding_applied": True,
+        "branding_version": 1,
+    }
+    html_artifact = next(
+        item for item in detail.json()["data"]["artifacts"] if item["artifact_type"] == "html"
+    )
+    html = client.get(
+        f"/api/v1/reports/{report_id}/artifacts/{html_artifact['id']}", headers=headers
+    )
+    assert html.status_code == 200
+    assert "Northstar Local" in html.text
+    assert "Client growth report" in html.text
+    assert "Prepared for private client review." in html.text
+    assert "Powered by InsightOS" not in html.text
+
+    frozen_snapshot = detail.json()["data"]["snapshot"]
+    pdf_reader = PdfReader(BytesIO(reporting_service.read_report_artifact(
+        db_session,
+        tenant_id=organization_id,
+        report_id=report_id,
+        artifact_id=next(
+            item["id"] for item in detail.json()["data"]["artifacts"] if item["artifact_type"] == "pdf"
+        ),
+        organization_id=organization_id,
+    )[1]))
+    assert pdf_reader.metadata.author == "Northstar Local"
+    assert "NORTHSTAR LOCAL" in "\n".join(page.extract_text() or "" for page in pdf_reader.pages)
+
+    apply_commercial_plan(db_session, organization_id=organization_id, plan_code="solo")
+    db_session.commit()
+    after_downgrade = client.get("/api/v1/reports/branding", headers=headers)
+    assert after_downgrade.status_code == 200
+    assert after_downgrade.json()["data"]["saved_for_recovery"] is True
+    assert after_downgrade.json()["data"]["applied_to_new_reports"] is False
+
+    still_frozen = client.get(f"/api/v1/reports/{report_id}", headers=headers)
+    assert still_frozen.json()["data"]["snapshot"] == frozen_snapshot
 
 
 def test_report_prefers_direct_search_console_facts_and_explains_readiness(client, db_session):

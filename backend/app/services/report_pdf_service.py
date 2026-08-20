@@ -777,12 +777,32 @@ def _portfolio_story_items(
     return blocks
 
 
-def _portfolio_page(canvas: Any, document: SimpleDocTemplate, *, title: str, prepared_for: str) -> None:
+def _brand_values(brand: dict[str, Any]) -> tuple[str, str, str, str]:
+    brand_name = str(brand.get("brand_name") or brand.get("product_name") or "InsightOS")
+    report_title = str(brand.get("report_title") or "Business progress report")
+    publisher = str(brand.get("publisher") or brand_name)
+    if not brand.get("custom_branding_applied"):
+        return brand_name, report_title, publisher, "InsightOS by VerixLabs | Private progress report"
+    footer = str(brand.get("footer_text") or f"{brand_name} | Private progress report")
+    if brand.get("show_platform_attribution", True) and "InsightOS" not in footer:
+        footer = f"{footer} | Powered by InsightOS from VerixLabs"
+    return brand_name, report_title, publisher, footer
+
+
+def _portfolio_page(
+    canvas: Any,
+    document: SimpleDocTemplate,
+    *,
+    title: str,
+    prepared_for: str,
+    brand: dict[str, Any],
+) -> None:
+    brand_name, report_title, publisher, footer = _brand_values(brand)
     canvas.saveState()
     canvas.setTitle(_ascii(title))
-    canvas.setAuthor("VerixLabs")
-    canvas.setSubject("InsightOS multi-location business progress report")
-    canvas.setKeywords("InsightOS, VerixLabs, multi-location progress report")
+    canvas.setAuthor(_ascii(publisher))
+    canvas.setSubject(_ascii(report_title))
+    canvas.setKeywords(_ascii(f"{brand_name}, multi-location progress report"))
     canvas._doc.Catalog.Lang = PDFString("en-US")
     canvas.setFillColor(ACCENT)
     canvas.rect(0, PAGE_HEIGHT - 7, PAGE_WIDTH, 7, stroke=0, fill=1)
@@ -790,17 +810,18 @@ def _portfolio_page(canvas: Any, document: SimpleDocTemplate, *, title: str, pre
     canvas.line(document.leftMargin, 34, PAGE_WIDTH - document.rightMargin, 34)
     canvas.setFillColor(MUTED)
     canvas.setFont("Helvetica", 7)
-    canvas.drawString(document.leftMargin, 22, _ascii(f"Prepared for {prepared_for} | InsightOS by VerixLabs"))
+    canvas.drawString(document.leftMargin, 22, _ascii(f"Prepared for {prepared_for} | {footer[:96]}"))
     canvas.drawRightString(PAGE_WIDTH - document.rightMargin, 22, f"Page {document.page}")
     canvas.restoreState()
 
 
-def _page(canvas: Any, document: SimpleDocTemplate, *, title: str) -> None:
+def _page(canvas: Any, document: SimpleDocTemplate, *, title: str, brand: dict[str, Any]) -> None:
+    brand_name, report_title, publisher, footer = _brand_values(brand)
     canvas.saveState()
     canvas.setTitle(_ascii(title))
-    canvas.setAuthor("VerixLabs")
-    canvas.setSubject("InsightOS business progress report")
-    canvas.setKeywords("InsightOS, VerixLabs, SEO progress report")
+    canvas.setAuthor(_ascii(publisher))
+    canvas.setSubject(_ascii(report_title))
+    canvas.setKeywords(_ascii(f"{brand_name}, business progress report"))
     canvas._doc.Catalog.Lang = PDFString("en-US")
     canvas.setFillColor(ACCENT)
     canvas.rect(0, PAGE_HEIGHT - 7, PAGE_WIDTH, 7, stroke=0, fill=1)
@@ -808,7 +829,7 @@ def _page(canvas: Any, document: SimpleDocTemplate, *, title: str) -> None:
     canvas.line(document.leftMargin, 34, PAGE_WIDTH - document.rightMargin, 34)
     canvas.setFillColor(MUTED)
     canvas.setFont("Helvetica", 7)
-    canvas.drawString(document.leftMargin, 22, "InsightOS by VerixLabs | Private progress report")
+    canvas.drawString(document.leftMargin, 22, _ascii(footer[:112]))
     canvas.drawRightString(PAGE_WIDTH - document.rightMargin, 22, f"Page {document.page}")
     canvas.restoreState()
 
@@ -816,11 +837,17 @@ def _page(canvas: Any, document: SimpleDocTemplate, *, title: str) -> None:
 def build_report_pdf(snapshot: dict[str, Any]) -> bytes:
     styles = _styles()
     campaign = snapshot.get("campaign") or {}
+    brand = snapshot.get("brand") or {}
     period = snapshot.get("period") or {}
     executive = snapshot.get("executive_summary") or {}
     metrics = list(snapshot.get("metrics") or [])
     location_name = campaign.get("location_name") or campaign.get("name") or "Business"
-    title = f"{location_name} progress report"
+    brand_name, report_title, publisher, _footer = _brand_values(brand)
+    title = (
+        f"{location_name} {report_title.lower()}"
+        if brand.get("custom_branding_applied")
+        else f"{location_name} progress report"
+    )
 
     buffer = BytesIO()
     document = SimpleDocTemplate(
@@ -831,14 +858,21 @@ def build_report_pdf(snapshot: dict[str, Any]) -> bytes:
         topMargin=0.55 * inch,
         bottomMargin=0.62 * inch,
         title=_ascii(title),
-        author="VerixLabs",
-        subject="InsightOS business progress report",
+        author=_ascii(publisher),
+        subject=_ascii(report_title),
         pageCompression=1,
     )
     usable_width = PAGE_WIDTH - document.leftMargin - document.rightMargin
     story: list[Any] = [
         SectionBookmark("Report summary", "report-summary"),
-        Paragraph("INSIGHTOS PROGRESS REPORT", styles["eyebrow"]),
+        Paragraph(
+            _safe(
+                f"{brand_name.upper()} · {report_title.upper()}"
+                if brand.get("custom_branding_applied")
+                else "INSIGHTOS PROGRESS REPORT"
+            ),
+            styles["eyebrow"],
+        ),
         Paragraph(_safe(executive.get("headline") or title), styles["title"]),
         Paragraph(_safe(executive.get("summary") or ""), styles["lede"]),
         Paragraph(
@@ -949,8 +983,8 @@ def build_report_pdf(snapshot: dict[str, Any]) -> bytes:
 
     document.build(
         story,
-        onFirstPage=lambda canvas, doc: _page(canvas, doc, title=title),
-        onLaterPages=lambda canvas, doc: _page(canvas, doc, title=title),
+        onFirstPage=lambda canvas, doc: _page(canvas, doc, title=title, brand=brand),
+        onLaterPages=lambda canvas, doc: _page(canvas, doc, title=title, brand=brand),
     )
     return buffer.getvalue()
 
@@ -964,7 +998,8 @@ def build_portfolio_report_pdf(snapshot: dict[str, Any]) -> bytes:
     excluded_locations = list(snapshot.get("excluded_locations") or [])
     organization_location_count = int(snapshot.get("organization_location_count") or len(locations))
     prepared_for = str(brand.get("prepared_for") or organization.get("name") or "Organization")
-    title = f"{prepared_for} all-location progress report"
+    brand_name, report_title, publisher, _footer = _brand_values(brand)
+    title = f"{prepared_for} all-location {report_title.lower()}"
     focus = snapshot.get("focus") or {}
 
     buffer = BytesIO()
@@ -976,8 +1011,8 @@ def build_portfolio_report_pdf(snapshot: dict[str, Any]) -> bytes:
         topMargin=0.55 * inch,
         bottomMargin=0.62 * inch,
         title=_ascii(title),
-        author="VerixLabs",
-        subject="InsightOS multi-location business progress report",
+        author=_ascii(publisher),
+        subject=_ascii(report_title),
         pageCompression=1,
     )
     usable_width = PAGE_WIDTH - document.leftMargin - document.rightMargin
@@ -1033,7 +1068,14 @@ def build_portfolio_report_pdf(snapshot: dict[str, Any]) -> bytes:
 
     story: list[Any] = [
         SectionBookmark("Portfolio summary", "portfolio-summary"),
-        Paragraph("INSIGHTOS ALL-LOCATION REPORT", styles["eyebrow"]),
+        Paragraph(
+            _safe(
+                f"{brand_name.upper()} · ALL-LOCATION {report_title.upper()}"
+                if brand.get("custom_branding_applied")
+                else "INSIGHTOS ALL-LOCATION REPORT"
+            ),
+            styles["eyebrow"],
+        ),
         Paragraph(_safe(f"A clear progress view for {prepared_for}"), styles["title"]),
         Paragraph(
             "Compare locations, see where attention is needed, and open the saved work plan without combining business results into a misleading total.",
@@ -1349,7 +1391,10 @@ def build_portfolio_report_pdf(snapshot: dict[str, Any]) -> bytes:
             Paragraph(_safe(portfolio_hash), styles["small"]),
             Spacer(1, 10),
             Paragraph(
-                "Branding in this report identifies InsightOS, VerixLabs, and the organization it was prepared for. Custom logos, colors, and white-label removal remain separate Enterprise controls.",
+                _safe(
+                    "This report freezes the report identity that was active when the document was assembled. "
+                    "Later branding changes do not rewrite this saved document."
+                ),
                 styles["body"],
             ),
         ]
@@ -1362,12 +1407,14 @@ def build_portfolio_report_pdf(snapshot: dict[str, Any]) -> bytes:
             doc,
             title=title,
             prepared_for=prepared_for,
+            brand=brand,
         ),
         onLaterPages=lambda canvas, doc: _portfolio_page(
             canvas,
             doc,
             title=title,
             prepared_for=prepared_for,
+            brand=brand,
         ),
     )
     return buffer.getvalue()
