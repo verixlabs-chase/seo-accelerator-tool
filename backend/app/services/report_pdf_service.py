@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import math
 import re
 import unicodedata
+from hashlib import sha256
 from html import escape
 from io import BytesIO
 from typing import Any
@@ -18,6 +21,7 @@ from reportlab.platypus import (
     CondPageBreak,
     Flowable,
     KeepTogether,
+    Image as ReportLabImage,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -797,6 +801,29 @@ def _brand_accent(brand: dict[str, Any]) -> Any:
     return HexColor(value)
 
 
+def _brand_logo(brand: dict[str, Any]) -> Any | None:
+    data_url = str(brand.get("logo_data_url") or "")
+    digest = str(brand.get("logo_sha256") or "")
+    if not data_url or not digest:
+        return None
+    if not data_url.startswith("data:image/png;base64,"):
+        raise ValueError("Saved report logo failed integrity verification.")
+    try:
+        content = base64.b64decode(data_url.split(",", 1)[1], validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Saved report logo failed integrity verification.") from exc
+    if sha256(content).hexdigest() != digest:
+        raise ValueError("Saved report logo failed integrity verification.")
+    width = int(brand.get("logo_width") or 0)
+    height = int(brand.get("logo_height") or 0)
+    if width <= 0 or height <= 0:
+        raise ValueError("Saved report logo dimensions are unavailable.")
+    scale = min((1.8 * inch) / width, (0.65 * inch) / height)
+    image = ReportLabImage(BytesIO(content), width=width * scale, height=height * scale)
+    image.hAlign = "LEFT"
+    return image
+
+
 def _portfolio_page(
     canvas: Any,
     document: SimpleDocTemplate,
@@ -851,6 +878,7 @@ def build_report_pdf(snapshot: dict[str, Any]) -> bytes:
     metrics = list(snapshot.get("metrics") or [])
     location_name = campaign.get("location_name") or campaign.get("name") or "Business"
     brand_name, report_title, publisher, _footer = _brand_values(brand)
+    brand_logo = _brand_logo(brand)
     title = (
         f"{location_name} {report_title.lower()}"
         if brand.get("custom_branding_applied")
@@ -872,6 +900,7 @@ def build_report_pdf(snapshot: dict[str, Any]) -> bytes:
     )
     usable_width = PAGE_WIDTH - document.leftMargin - document.rightMargin
     story: list[Any] = [
+        *([brand_logo, Spacer(1, 10)] if brand_logo is not None else []),
         SectionBookmark("Report summary", "report-summary"),
         Paragraph(
             _safe(
@@ -1007,6 +1036,7 @@ def build_portfolio_report_pdf(snapshot: dict[str, Any]) -> bytes:
     organization_location_count = int(snapshot.get("organization_location_count") or len(locations))
     prepared_for = str(brand.get("prepared_for") or organization.get("name") or "Organization")
     brand_name, report_title, publisher, _footer = _brand_values(brand)
+    brand_logo = _brand_logo(brand)
     title = f"{prepared_for} all-location {report_title.lower()}"
     focus = snapshot.get("focus") or {}
 
@@ -1075,6 +1105,7 @@ def build_portfolio_report_pdf(snapshot: dict[str, Any]) -> bytes:
     )
 
     story: list[Any] = [
+        *([brand_logo, Spacer(1, 10)] if brand_logo is not None else []),
         SectionBookmark("Portfolio summary", "portfolio-summary"),
         Paragraph(
             _safe(

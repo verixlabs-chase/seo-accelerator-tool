@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from datetime import UTC, datetime
+from hashlib import sha256
+from io import BytesIO
 from typing import Any
 
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app.models.enterprise_branding import OrganizationReportBrand
@@ -19,6 +24,10 @@ from app.services.cost_economics_service import resolve_plan_economics
 DEFAULT_REPORT_TITLE = "Business progress report"
 DEFAULT_FOOTER = "Created from the saved information available for this report. Open InsightOS to see newer results."
 DEFAULT_ACCENT = "#E85D19"
+MAX_LOGO_BYTES = 65_536
+MAX_LOGO_PIXELS = 1_000_000
+MAX_LOGO_EDGE = 1_600
+MIN_LOGO_EDGE = 16
 
 
 class EnterpriseBrandingError(ValueError):
@@ -30,6 +39,20 @@ class EnterpriseBrandingError(ValueError):
 
 def _organization_or_error(db: Session, organization_id: str) -> Organization:
     organization = db.get(Organization, organization_id)
+    if organization is None:
+        raise EnterpriseBrandingError(
+            "Organization not found.", reason_code="organization_not_found", status_code=404
+        )
+    return organization
+
+
+def _organization_for_update(db: Session, organization_id: str) -> Organization:
+    organization = (
+        db.query(Organization)
+        .filter(Organization.id == organization_id)
+        .with_for_update()
+        .one_or_none()
+    )
     if organization is None:
         raise EnterpriseBrandingError(
             "Organization not found.", reason_code="organization_not_found", status_code=404
@@ -65,6 +88,68 @@ def _clean_accent(value: str) -> str:
     return normalized
 
 
+def _sanitize_logo(data_base64: str) -> tuple[bytes, int, int, str]:
+    try:
+        raw = base64.b64decode(data_base64.strip(), validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise EnterpriseBrandingError(
+            "The report logo could not be read. Choose a PNG file and try again.",
+            reason_code="report_logo_invalid_base64",
+        ) from exc
+    if not raw or len(raw) > MAX_LOGO_BYTES:
+        raise EnterpriseBrandingError(
+            "The report logo must be a PNG no larger than 64 KB.",
+            reason_code="report_logo_too_large",
+        )
+    try:
+        with Image.open(BytesIO(raw)) as opened:
+            if opened.format != "PNG" or int(getattr(opened, "n_frames", 1)) != 1:
+                raise EnterpriseBrandingError(
+                    "The report logo must be one still PNG image.",
+                    reason_code="report_logo_format_not_allowed",
+                )
+            width, height = opened.size
+            if (
+                width < MIN_LOGO_EDGE
+                or height < MIN_LOGO_EDGE
+                or width > MAX_LOGO_EDGE
+                or height > MAX_LOGO_EDGE
+                or width * height > MAX_LOGO_PIXELS
+                or width / height > 12
+                or height / width > 12
+            ):
+                raise EnterpriseBrandingError(
+                    "Choose a PNG logo between 16 and 1,600 pixels with a standard logo shape.",
+                    reason_code="report_logo_dimensions_invalid",
+                )
+            opened.load()
+            sanitized_image = opened.copy()
+    except EnterpriseBrandingError:
+        raise
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as exc:
+        raise EnterpriseBrandingError(
+            "The report logo could not be verified as a safe PNG image.",
+            reason_code="report_logo_invalid_image",
+        ) from exc
+
+    output = BytesIO()
+    sanitized_image.info.clear()
+    sanitized_image.save(output, format="PNG", optimize=True)
+    sanitized = output.getvalue()
+    if len(sanitized) > MAX_LOGO_BYTES:
+        raise EnterpriseBrandingError(
+            "The verified report logo is still larger than 64 KB. Choose a simpler PNG.",
+            reason_code="report_logo_too_large",
+        )
+    return sanitized, width, height, sha256(sanitized).hexdigest()
+
+
+def _logo_data_url(row: OrganizationReportBrand | None) -> str | None:
+    if row is None or row.logo_content is None:
+        return None
+    return f"data:image/png;base64,{base64.b64encode(row.logo_content).decode('ascii')}"
+
+
 def _plan_allows_branding(organization: Organization) -> bool:
     return resolve_plan_economics(organization.plan_type).code == "enterprise"
 
@@ -91,6 +176,11 @@ def get_report_branding(
         "report_title": row.report_title if row else DEFAULT_REPORT_TITLE,
         "footer_text": row.footer_text if row else DEFAULT_FOOTER,
         "accent_color": row.accent_color if row else DEFAULT_ACCENT,
+        "logo_configured": bool(row and row.logo_content),
+        "logo_data_url": _logo_data_url(row),
+        "logo_sha256": row.logo_sha256 if row else None,
+        "logo_width": row.logo_width if row else None,
+        "logo_height": row.logo_height if row else None,
         "hide_platform_attribution": bool(row.hide_platform_attribution) if row else False,
         "enabled": bool(row.enabled) if row else False,
         "version": row.version if row else None,
@@ -99,7 +189,7 @@ def get_report_branding(
             "existing_reports_unchanged": True,
             "future_reports_only": True,
             "saved_on_downgrade": True,
-            "logo_upload_available": False,
+            "logo_upload_available": True,
             "accent_color_available": True,
             "custom_colors_available": False,
         },
@@ -125,6 +215,7 @@ def save_report_branding(
             reason_code="organization_scope_mismatch",
             status_code=404,
         )
+    _organization_for_update(db, organization_id)
     require_commercial_feature(
         db,
         organization_id=organization_id,
@@ -181,6 +272,126 @@ def save_report_branding(
     return get_report_branding(db, organization_id=organization_id)
 
 
+def save_report_logo(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    actor_user_id: str,
+    data_base64: str,
+) -> dict[str, Any]:
+    if tenant_id != organization_id:
+        raise EnterpriseBrandingError(
+            "Organization context does not match this request.",
+            reason_code="organization_scope_mismatch",
+            status_code=404,
+        )
+    organization = _organization_for_update(db, organization_id)
+    require_commercial_feature(
+        db,
+        organization_id=organization_id,
+        feature_code=FEATURE_WHITE_LABEL_REPORTING,
+    )
+    content, width, height, digest = _sanitize_logo(data_base64)
+    now = datetime.now(UTC)
+    row = (
+        db.query(OrganizationReportBrand)
+        .filter(OrganizationReportBrand.organization_id == organization_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if row is None:
+        row = OrganizationReportBrand(
+            tenant_id=tenant_id,
+            organization_id=organization_id,
+            brand_name=organization.name,
+            report_title=DEFAULT_REPORT_TITLE,
+            footer_text=DEFAULT_FOOTER,
+            accent_color=DEFAULT_ACCENT,
+            hide_platform_attribution=False,
+            enabled=False,
+            version=1,
+            updated_by_user_id=actor_user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(row)
+    else:
+        row.version += 1
+        row.updated_by_user_id = actor_user_id
+        row.updated_at = now
+    row.logo_content = content
+    row.logo_sha256 = digest
+    row.logo_width = width
+    row.logo_height = height
+    row.logo_updated_at = now
+    db.flush()
+    write_audit_log(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        event_type="enterprise.report_branding.logo_updated",
+        payload={
+            "organization_id": organization_id,
+            "version": row.version,
+            "logo_sha256": digest,
+            "content_bytes": len(content),
+            "width": width,
+            "height": height,
+        },
+    )
+    db.commit()
+    return get_report_branding(db, organization_id=organization_id)
+
+
+def remove_report_logo(
+    db: Session,
+    *,
+    tenant_id: str,
+    organization_id: str,
+    actor_user_id: str,
+) -> dict[str, Any]:
+    if tenant_id != organization_id:
+        raise EnterpriseBrandingError(
+            "Organization context does not match this request.",
+            reason_code="organization_scope_mismatch",
+            status_code=404,
+        )
+    _organization_for_update(db, organization_id)
+    row = (
+        db.query(OrganizationReportBrand)
+        .filter(OrganizationReportBrand.organization_id == organization_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if row is None or row.logo_content is None:
+        return get_report_branding(db, organization_id=organization_id)
+    now = datetime.now(UTC)
+    previous_digest = row.logo_sha256
+    row.logo_content = None
+    row.logo_sha256 = None
+    row.logo_width = None
+    row.logo_height = None
+    row.logo_updated_at = None
+    row.version += 1
+    row.updated_by_user_id = actor_user_id
+    row.updated_at = now
+    db.flush()
+    write_audit_log(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        event_type="enterprise.report_branding.logo_removed",
+        payload={
+            "organization_id": organization_id,
+            "version": row.version,
+            "previous_logo_sha256": previous_digest,
+        },
+    )
+    db.commit()
+    return get_report_branding(db, organization_id=organization_id)
+
+
 def frozen_report_brand(
     db: Session,
     *,
@@ -202,6 +413,10 @@ def frozen_report_brand(
             "report_title": DEFAULT_REPORT_TITLE,
             "footer_text": DEFAULT_FOOTER,
             "accent_color": DEFAULT_ACCENT,
+            "logo_data_url": None,
+            "logo_sha256": None,
+            "logo_width": None,
+            "logo_height": None,
             "prepared_for": prepared_for,
             "show_platform_attribution": True,
             "custom_branding_applied": False,
@@ -214,6 +429,10 @@ def frozen_report_brand(
         "report_title": row.report_title,
         "footer_text": row.footer_text,
         "accent_color": row.accent_color,
+        "logo_data_url": _logo_data_url(row),
+        "logo_sha256": row.logo_sha256,
+        "logo_width": row.logo_width,
+        "logo_height": row.logo_height,
         "prepared_for": prepared_for,
         "show_platform_attribution": not row.hide_platform_attribution,
         "custom_branding_applied": True,

@@ -1,11 +1,22 @@
+import base64
 import json
 import tomllib
 from io import BytesIO
 from pathlib import Path
 
+from PIL import Image, PngImagePlugin
 from pypdf import PdfReader
 
 from app.services import premium_report_service, report_artifact_storage_service, reporting_service
+
+
+def _report_logo_base64(*, width: int = 96, height: int = 32) -> str:
+    image = Image.new("RGB", (width, height), color=(51, 102, 153))
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text("private_note", "This metadata must not be retained")
+    output = BytesIO()
+    image.save(output, format="PNG", pnginfo=metadata)
+    return base64.b64encode(output.getvalue()).decode("ascii")
 
 
 def test_report_files_sanitize_saved_system_wording() -> None:
@@ -414,6 +425,7 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
     headers = {"Authorization": f"Bearer {token}"}
     organization = db_session.get(Organization, organization_id)
     assert organization is not None
+    logo_base64 = _report_logo_base64()
 
     blocked = client.put(
         "/api/v1/reports/branding",
@@ -429,11 +441,39 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
     )
     assert blocked.status_code == 403
     assert blocked.json()["errors"][0]["details"]["reason_code"] == "white_label_reporting_upgrade_required"
+    blocked_logo = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": logo_base64},
+        headers=headers,
+    )
+    assert blocked_logo.status_code == 403
 
     apply_commercial_plan(
         db_session, organization_id=organization_id, plan_code="enterprise"
     )
     db_session.commit()
+
+    invalid_logo = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": base64.b64encode(b"not an image").decode("ascii")},
+        headers=headers,
+    )
+    assert invalid_logo.status_code == 400
+    assert invalid_logo.json()["errors"][0]["details"]["reason_code"] == "report_logo_invalid_image"
+    tiny_logo = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": _report_logo_base64(width=1, height=1)},
+        headers=headers,
+    )
+    assert tiny_logo.status_code == 400
+    assert tiny_logo.json()["errors"][0]["details"]["reason_code"] == "report_logo_dimensions_invalid"
+    oversized_logo = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": base64.b64encode(b"x" * 65_537).decode("ascii")},
+        headers=headers,
+    )
+    assert oversized_logo.status_code == 400
+    assert oversized_logo.json()["errors"][0]["details"]["reason_code"] == "report_logo_too_large"
 
     saved = client.put(
         "/api/v1/reports/branding",
@@ -450,6 +490,20 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
     assert saved.status_code == 200
     assert saved.json()["data"]["applied_to_new_reports"] is True
     assert saved.json()["data"]["truth"]["existing_reports_unchanged"] is True
+
+    logo_saved = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": logo_base64},
+        headers=headers,
+    )
+    assert logo_saved.status_code == 200
+    logo_data = logo_saved.json()["data"]
+    assert logo_data["logo_configured"] is True
+    assert logo_data["logo_width"] == 96
+    assert logo_data["logo_height"] == 32
+    sanitized_logo = base64.b64decode(logo_data["logo_data_url"].split(",", 1)[1])
+    with Image.open(BytesIO(sanitized_logo)) as verified_logo:
+        assert "private_note" not in verified_logo.info
 
     campaign = client.post(
         "/api/v1/campaigns",
@@ -473,10 +527,14 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
         "report_title": "Client growth report",
         "footer_text": "Prepared for private client review.",
         "accent_color": "#336699",
+        "logo_data_url": logo_data["logo_data_url"],
+        "logo_sha256": logo_data["logo_sha256"],
+        "logo_width": 96,
+        "logo_height": 32,
         "prepared_for": "Enterprise Client",
         "show_platform_attribution": False,
         "custom_branding_applied": True,
-        "branding_version": 1,
+        "branding_version": 2,
     }
     html_artifact = next(
         item for item in detail.json()["data"]["artifacts"] if item["artifact_type"] == "html"
@@ -489,6 +547,7 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
     assert "Client growth report" in html.text
     assert "Prepared for private client review." in html.text
     assert "--brand-accent:#336699" in html.text
+    assert '<img class="brand-logo"' in html.text
     assert "Powered by InsightOS" not in html.text
 
     frozen_snapshot = detail.json()["data"]["snapshot"]
@@ -510,6 +569,11 @@ def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
     assert after_downgrade.status_code == 200
     assert after_downgrade.json()["data"]["saved_for_recovery"] is True
     assert after_downgrade.json()["data"]["applied_to_new_reports"] is False
+    assert after_downgrade.json()["data"]["logo_configured"] is True
+
+    removed = client.delete("/api/v1/reports/branding/logo", headers=headers)
+    assert removed.status_code == 200
+    assert removed.json()["data"]["logo_configured"] is False
 
     still_frozen = client.get(f"/api/v1/reports/{report_id}", headers=headers)
     assert still_frozen.json()["data"]["snapshot"] == frozen_snapshot

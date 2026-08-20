@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 from datetime import UTC, date, datetime, timedelta
@@ -1540,6 +1542,18 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
     accent_color = str(brand.get("accent_color") or enterprise_branding_service.DEFAULT_ACCENT).upper()
     if re.fullmatch(r"#[0-9A-F]{6}", accent_color) is None:
         accent_color = enterprise_branding_service.DEFAULT_ACCENT
+    logo_html = ""
+    logo_data_url = str(brand.get("logo_data_url") or "")
+    logo_digest = str(brand.get("logo_sha256") or "")
+    if logo_data_url.startswith("data:image/png;base64,") and logo_digest:
+        try:
+            logo_bytes = base64.b64decode(logo_data_url.split(",", 1)[1], validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("Saved report logo failed integrity verification.") from exc
+        if sha256(logo_bytes).hexdigest() != logo_digest:
+            raise ValueError("Saved report logo failed integrity verification.")
+        safe_logo = f"data:image/png;base64,{base64.b64encode(logo_bytes).decode('ascii')}"
+        logo_html = f'<img class="brand-logo" src="{safe_logo}" alt="{escape(brand_name)} logo" />'
     attribution = " · Powered by InsightOS from VerixLabs" if brand.get("show_platform_attribution", True) else ""
 
     return f"""<!doctype html>
@@ -1552,6 +1566,7 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
     :root {{ color-scheme: light; --ink:#171717; --muted:#666; --line:#dedede; --brand-accent:{accent_color}; --accent:#e85d19; --good:#08775b; --bad:#b42318; }}
     * {{ box-sizing:border-box; }} body {{ margin:0; background:#f5f5f3; color:var(--ink); font:15px/1.5 Arial,sans-serif; }}
     main {{ max-width:1040px; margin:0 auto; padding:48px 28px 72px; }} header {{ border-top:7px solid var(--brand-accent); background:#fff; padding:34px; }}
+    .brand-logo {{ display:block; max-width:220px; max-height:72px; width:auto; height:auto; margin:0 0 18px; object-fit:contain; }}
     .eyebrow {{ color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }}
     h1 {{ max-width:760px; margin:8px 0 10px; font-size:34px; line-height:1.12; }} h2 {{ margin:0 0 14px; font-size:20px; }}
     .lede {{ max-width:760px; color:#3f3f3f; font-size:17px; }} .meta {{ color:var(--muted); font-size:13px; }}
@@ -1575,6 +1590,7 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
 </head>
 <body><main>
   <header>
+    {logo_html}
     <div class="eyebrow">{escape(brand_name)} · {escape(report_title)}</div>
     <h1>{escape(_report_copy(executive.get('headline'), 'Business progress report'))}</h1>
     <p class="lede">{escape(_report_copy(executive.get('summary'), 'Review what changed and what to work on next.'))}</p>

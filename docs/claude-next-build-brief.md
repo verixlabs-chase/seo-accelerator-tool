@@ -5793,6 +5793,13 @@ Implementation status (2026-08-19):
   reports. The accent is frozen with the report identity. Semantic result,
   warning, missing-data, and chart colors remain controlled by InsightOS so a
   customer color cannot change the meaning or readability of evidence.
+- ENT1C's secure report logo is implemented locally. Enterprise owners can add
+  one still PNG up to 64 KB. The server validates its format, dimensions, pixel
+  count and shape, removes embedded metadata, stores it inside the tenant
+  boundary, and freezes the verified bytes and digest into each new HTML or PDF
+  report. Owners can remove the saved logo even after a downgrade while older
+  reports keep their exact frozen copy. Storage paths and raw filenames never
+  enter the customer contract or report snapshot.
 
 Acceptance criteria:
 

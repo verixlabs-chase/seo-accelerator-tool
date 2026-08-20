@@ -14,6 +14,7 @@ from app.schemas.reporting import (
     ReportDeliverIn,
     ReportDeliveryEventOut,
     ReportGenerateIn,
+    ReportLogoIn,
     ReportOut,
     ReportRecipientOut,
     ReportRecipientUpsertIn,
@@ -338,6 +339,44 @@ def put_report_branding(
             enabled=body.enabled,
         )
     except (enterprise_branding_service.EnterpriseBrandingError, CostEconomicsError) as exc:
+        raise _branding_http_error(exc) from exc
+    return envelope(request, payload)
+
+
+@router.put("/branding/logo")
+def put_report_branding_logo(
+    request: Request,
+    body: ReportLogoIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = enterprise_branding_service.save_report_logo(
+            db,
+            tenant_id=str(user["tenant_id"]),
+            organization_id=str(user["organization_id"]),
+            actor_user_id=str(user["id"]),
+            data_base64=body.data_base64,
+        )
+    except (enterprise_branding_service.EnterpriseBrandingError, CostEconomicsError) as exc:
+        raise _branding_http_error(exc) from exc
+    return envelope(request, payload)
+
+
+@router.delete("/branding/logo")
+def delete_report_branding_logo(
+    request: Request,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = enterprise_branding_service.remove_report_logo(
+            db,
+            tenant_id=str(user["tenant_id"]),
+            organization_id=str(user["organization_id"]),
+            actor_user_id=str(user["id"]),
+        )
+    except enterprise_branding_service.EnterpriseBrandingError as exc:
         raise _branding_http_error(exc) from exc
     return envelope(request, payload)
 

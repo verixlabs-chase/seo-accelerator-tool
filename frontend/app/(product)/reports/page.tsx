@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 
 import {
@@ -313,6 +314,11 @@ type ReportBranding = {
   report_title: string;
   footer_text: string;
   accent_color: string;
+  logo_configured: boolean;
+  logo_data_url?: string | null;
+  logo_sha256?: string | null;
+  logo_width?: number | null;
+  logo_height?: number | null;
   hide_platform_attribution: boolean;
   enabled: boolean;
   version?: number | null;
@@ -913,6 +919,7 @@ export default function ReportsPage() {
   const [brandReportTitle, setBrandReportTitle] = useState("");
   const [brandFooter, setBrandFooter] = useState("");
   const [brandAccent, setBrandAccent] = useState("#E85D19");
+  const [pendingLogo, setPendingLogo] = useState<File | null>(null);
   const [hidePlatformAttribution, setHidePlatformAttribution] = useState(false);
   const [brandingEnabled, setBrandingEnabled] = useState(false);
 
@@ -1337,6 +1344,62 @@ export default function ReportsPage() {
         );
       },
       "We could not save the report identity. Existing reports were not changed.",
+    );
+  }
+
+  async function uploadReportLogo() {
+    if (!pendingLogo) {
+      setError("Choose a PNG logo first.");
+      return;
+    }
+    if (pendingLogo.type !== "image/png") {
+      setError("Choose a PNG logo. Other image formats are not accepted.");
+      return;
+    }
+    if (pendingLogo.size > 65_536) {
+      setError("Choose a PNG logo no larger than 64 KB.");
+      return;
+    }
+    await runAction(
+      "upload-report-logo",
+      async () => {
+        const dataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("The selected logo could not be read."));
+          reader.onload = () => {
+            const result = String(reader.result || "");
+            resolve(result.includes(",") ? result.split(",", 2)[1] : result);
+          };
+          reader.readAsDataURL(pendingLogo);
+        });
+        const response = (await platformApi("/reports/branding/logo", {
+          method: "PUT",
+          body: JSON.stringify({ data_base64: dataBase64 }),
+        })) as ReportBranding;
+        setReportBranding(response);
+        setPendingLogo(null);
+        setNotice(
+          response.applied_to_new_reports
+            ? "Logo saved. It will appear only on reports created from now on."
+            : "Logo saved with the report identity. Turn the identity on when it is ready for new reports.",
+        );
+      },
+      "We could not save that logo. Existing reports were not changed.",
+    );
+  }
+
+  async function removeReportLogo() {
+    await runAction(
+      "remove-report-logo",
+      async () => {
+        const response = (await platformApi("/reports/branding/logo", {
+          method: "DELETE",
+        })) as ReportBranding;
+        setReportBranding(response);
+        setPendingLogo(null);
+        setNotice("Logo removed from future reports. Saved reports were not changed.");
+      },
+      "We could not remove the logo. Existing reports were not changed.",
     );
   }
 
@@ -2142,6 +2205,19 @@ export default function ReportsPage() {
                     >
                       Review Enterprise options →
                     </button>
+                    {reportBranding.logo_configured && orgRole === "org_owner" ? (
+                      <div className="mt-4 border-t border-white/10 pt-4">
+                        <p className="text-sm text-zinc-300">Your saved logo remains private and stored for recovery.</p>
+                        <button
+                          type="button"
+                          onClick={() => void removeReportLogo()}
+                          disabled={busyAction !== ""}
+                          className="mt-2 text-sm font-semibold text-rose-200 hover:text-rose-100 disabled:opacity-50"
+                        >
+                          {busyAction === "remove-report-logo" ? "Removing..." : "Remove saved logo"}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ) : orgRole !== "org_owner" ? (
                   <div className="mt-4 rounded-md border border-white/10 bg-black/20 p-4 text-sm leading-6 text-zinc-300">
@@ -2192,6 +2268,51 @@ export default function ReportsPage() {
                         </span>
                       </span>
                     </label>
+                    <div className="rounded-md border border-[#26272c] bg-[#0b0b0c] p-4 lg:col-span-2">
+                      <p className="text-sm font-semibold text-white">Client report logo</p>
+                      <p className="mt-1 text-xs leading-5 text-zinc-400">
+                        Use one still PNG up to 64 KB. InsightOS verifies the image, removes embedded metadata, and freezes the exact logo into each new report.
+                      </p>
+                      {reportBranding.logo_data_url ? (
+                        <div className="mt-3 rounded-md bg-white p-3">
+                          <Image
+                            src={reportBranding.logo_data_url}
+                            alt={`${brandName || "Organization"} report logo`}
+                            width={reportBranding.logo_width || 220}
+                            height={reportBranding.logo_height || 64}
+                            unoptimized
+                            className="max-h-16 max-w-[220px] object-contain"
+                          />
+                        </div>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <input
+                          type="file"
+                          accept="image/png"
+                          onChange={(event) => setPendingLogo(event.target.files?.[0] || null)}
+                          className="max-w-full text-sm text-zinc-300 file:mr-3 file:rounded-md file:border file:border-[#35363c] file:bg-[#16171a] file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
+                          aria-label="Choose a PNG report logo"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void uploadReportLogo()}
+                          disabled={busyAction !== "" || !pendingLogo}
+                          className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-semibold text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "upload-report-logo" ? "Verifying..." : "Save logo"}
+                        </button>
+                        {reportBranding.logo_configured ? (
+                          <button
+                            type="button"
+                            onClick={() => void removeReportLogo()}
+                            disabled={busyAction !== ""}
+                            className="px-2 py-2 text-sm font-semibold text-rose-200 hover:text-rose-100 disabled:opacity-50"
+                          >
+                            {busyAction === "remove-report-logo" ? "Removing..." : "Remove logo"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
                     <div className="space-y-3 rounded-md border border-[#26272c] bg-[#0b0b0c] p-4 lg:col-span-2">
                       <label className="flex items-start gap-3 text-sm text-zinc-300">
                         <input
@@ -2214,7 +2335,7 @@ export default function ReportsPage() {
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-3 lg:col-span-2">
                       <p className="text-xs leading-5 text-zinc-500">
-                        Logo uploads and custom chart colors are not available yet. The accent does not change result or warning colors.
+                        Custom chart colors are not available. The report accent and logo never change result or warning colors.
                       </p>
                       <button
                         type="button"
