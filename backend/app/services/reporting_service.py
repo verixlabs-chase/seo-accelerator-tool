@@ -20,6 +20,7 @@ from app.models.rank import RankingSnapshot
 from app.models.reporting import MonthlyReport, ReportArtifact, ReportDeliveryEvent, ReportSchedule
 from app.providers import get_email_adapter
 from app.services import analytics_service
+from app.services import enterprise_branding_service
 from app.services import premium_report_service
 from app.services import report_artifact_storage_service
 from app.services import report_pdf_service
@@ -651,11 +652,11 @@ def build_portfolio_report_snapshot(
             "id": organization.id,
             "name": organization.name,
         },
-        "brand": {
-            "product_name": "InsightOS",
-            "publisher": "VerixLabs",
-            "prepared_for": organization.name,
-        },
+        "brand": enterprise_branding_service.frozen_report_brand(
+            db,
+            organization_id=organization.id,
+            prepared_for=organization.name,
+        ),
         "period": comparison["common_period"],
         "focus": comparison["focus"],
         "location_count": len(locations),

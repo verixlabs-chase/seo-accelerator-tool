@@ -675,7 +675,7 @@ remain stable even if a release needs to split one scope into smaller tickets.
 | 42 | **I2 - Outcome Learning and Controlled Experiments - I2A-I2E implemented locally** | Verified action measurements and frozen forecast checks now form a minimum-sample learning record. Owners explicitly include or exclude each result, save and review a controlled-test design with mandatory stop and undo rules, run a separately authorized monitoring protocol, and compare a frozen current learning rule with a stricter proposal through deterministic replay. Human review remains separate from activation; live policy changes, publishing, assignments, and automatic execution remain disabled. |
 | 43 | **AIV1 - AI Search Visibility and Entity Intelligence - AIV1-A foundation implemented locally** | The provider-neutral slice establishes candidate-only engine/provider contracts, deterministic saved questions, dormant run/evidence storage, honest truth states, supplier redaction, a non-executing cost/allowance preview, and a location-scoped beta workspace. AIV1-B later proves the full live supplier and price contract; AIV1-C later enables governed collection and results inside that workspace. |
 | 44 | **COM1 full release - Billing, Entitlements, and Self-Service Accounts** | The commercial plans, roles, active-location allowances, and subscription lifecycle become fully self-service. |
-| 45 | **OPS1 - Customer Support and Launch Operations** | Support, demos, status communication, escalation, onboarding playbooks, and release evidence are ready for a paid launch. |
+| 45 | **OPS1 - Customer Support and Launch Operations - OPS1A-OPS1F implemented locally** | The internal launch board separates automated facts from live proof, preserves immutable receipts, requires an append-only platform-owner decision over the exact current evidence, provides a safe customer incident/status feed, binds every commercial capability claim to current production proof or an explicit limitation, and requires a complete desktop/mobile route matrix plus five non-technical moderated sessions. Running the live proofs and recording the actual final decision remain launch closeout. |
 | 46 | **AUT1 - External Automation Gateway** | Every paid tier can connect approved automation systems such as n8n, Make, Zapier, Pipedream, or a generic webhook client through signed events, governed workflow templates, and typed actions; higher tiers add volume, collaboration, custom scopes, and service accounts without granting direct database or unrestricted execution access. |
 | 47 | **AUT1J - Governed Inbound Automation Commands (n8n First)** | An n8n workflow can request a small allowlist of typed InsightOS jobs through a revocable service account, while native plan, location, allowance, evidence, approval, safety, idempotency, and audit controls remain authoritative. The same vendor-neutral contract later supports Make, Zapier, Pipedream, and approved custom clients. |
 | 48 | **I1.5 and ENT1 - Enterprise Model Gateway, API, White Label, and Reporting** | Enterprise customers receive customer-owned/local-model connectivity, advanced roles, API/export, white label, custom limits, and durable reporting. |
@@ -4873,6 +4873,172 @@ day—not merely deployable. This is also the final whole-product usability gate
 the system must be understandable to a non-technical service-business owner,
 not only complete for the team that built it.
 
+#### OPS1A - Truthful Launch Readiness Evidence Board
+
+Implementation status (August 20, 2026):
+
+- Platform owners and platform administrators can open one internal readiness
+  board backed by a versioned server contract. It evaluates production runtime
+  safeguards, paid-plan configuration, durable report storage, saved production
+  provider health, customer-data freshness, and overdue support response targets.
+- Blocking, attention, needs-live-proof, and passing states stay separate. The
+  board deliberately does not calculate a percentage or weighted launch score,
+  and it does not treat absent customers, provider rows, or production receipts
+  as healthy zeroes.
+- Critical customer journeys, rollback drills, customer communications,
+  moderated non-technical first use, and sales-claim review remain explicit
+  live-proof gates. Runtime configuration and unit tests cannot silently satisfy
+  them.
+- The endpoint performs no Stripe, Google, storage, workflow-tool, or supplier
+  network request. It exposes only safe counts and configuration-presence facts,
+  never secret values, supplier credentials, customer payloads, or raw errors.
+- OPS1A is the evidence foundation, not launch approval. Durable operator proof
+  records, production smoke receipts, playbook ownership, five-participant
+  comprehension evidence, and the signed final go/no-go decision remain OPS1
+  closeout work.
+
+#### OPS1B - Immutable Production Proof Receipts
+
+Implementation status (August 20, 2026):
+
+- A platform owner can append a passed or failed receipt for the five manual
+  launch gates: paid customer journeys, recovery drills, incident communication,
+  moderated non-technical first use, and the sales-claim/limitations review.
+  Platform administrators can review the board but cannot write launch proof.
+- Each receipt binds one exact proof type, plain result summary, short internal
+  evidence reference, observed time, recheck deadline, recorder, schema version,
+  and deterministic digest. Exact retries are idempotent; newer observations
+  supersede the board decision while every prior row remains preserved.
+- Proof must be recent, expires within 45 days, and cannot contain a URL,
+  webhook address, bearer credential, common provider-secret prefix, or long
+  token-shaped value. The customer payload, response body, secret, and supplier
+  account identifier remain outside the database and API response.
+- A current passing receipt turns only its matching manual gate green. A current
+  failed receipt is a launch blocker, and an expired receipt returns to
+  `needs_live_proof`; neither a passing runtime check nor a historical success
+  can override it.
+- The global proof ledger is insert/select only for the PostgreSQL application
+  role under platform context. Row-level security hides it from tenant context,
+  UPDATE and DELETE are revoked, and a database trigger enforces append-only
+  history. The PostgreSQL security regression is wired into CI.
+- OPS1B records evidence but does not create the evidence itself. Running the
+  production journeys, moderated sessions, provider-owned tests, recovery drills,
+  and final decision meeting remains launch closeout work.
+
+#### OPS1C - Evidence-Bound Go/No-Go Decision and Closeout Runbook
+
+Implementation status (August 20, 2026):
+
+- A fully passing board now becomes `ready_for_decision`; it never labels the
+  release `go` automatically. Only a platform owner can append the final `go`
+  or `no_go` decision, rationale, internal release reference, and explicit
+  current-evidence acknowledgement. `Go` additionally requires confirmed known
+  limitations, support ownership, and rollback ownership.
+- Each decision is bound to a deterministic digest of the exact gate states,
+  safe counts, and latest proof identities shown at decision time. Any later
+  evidence change makes the decision visibly superseded and returns the board
+  to its evidence-derived no-go, hold, or ready-for-decision state.
+- Exact decision retries are idempotent. Decision history is global,
+  platform-context-only, insert/select-only for the PostgreSQL application role,
+  row-level protected, and immutable under a database trigger. A failed or
+  superseded decision is never overwritten.
+- The maintained paid-launch closeout runbook assigns release, support,
+  incident, recovery, billing, and provider roles; defines the ordered closeout
+  procedure; and maps paid journeys, recovery drills, incident communication,
+  moderated first use, and sales-claim review to the five proof gates.
+- The decision form rejects URL-, credential-, webhook-, and token-shaped
+  content. It stores only a short internal reference and plain rationale, never
+  an external receipt body or secret.
+- OPS1C supplies the controlled decision mechanism and operator procedure. It
+  does not claim that staffing assignments, live provider receipts, production
+  smoke journeys, recovery exercises, or five moderated participant sessions
+  have occurred. Those real-world actions remain required before launch.
+
+#### OPS1D - Customer Incident and Maintenance Communication
+
+Implementation status (August 20, 2026):
+
+- A platform owner can append investigating, identified, monitoring, resolved,
+  or planned-maintenance updates from the launch-readiness board. Platform
+  administrators can review the immutable history but cannot publish.
+- Signed-in customers see only current, explicitly visible notices in the
+  product shell. Each notice uses familiar affected-area labels, impact, plain
+  customer copy, update time, and an end time when one exists. A public
+  resolution removes the notice from the active banner without deleting its
+  earlier history.
+- The public response omits recorder identity, content digests, provider names,
+  raw errors, customer identifiers, and internal references. Publishing rejects
+  links, credential-shaped values, common internal-error terms, and supplier
+  names rather than relying on the frontend to hide them.
+- Exact retries are idempotent and each later update receives a monotonic number
+  within its incident. PostgreSQL grants customer contexts read access only to
+  explicitly visible global rows; inserts require platform context, UPDATE and
+  DELETE are revoked, and a database trigger preserves append-only history.
+- OPS1D provides the supported communication path but does not prove the team
+  can operate it under pressure. A current test incident, verified customer
+  receipt, named incident commander, escalation handoff, and resolution update
+  still must be recorded under the OPS1 communication proof gate before launch.
+
+#### OPS1E - Production Capability and Known-Limitations Matrix
+
+Implementation status (August 20, 2026):
+
+- The canonical commercial capability catalog now drives one internal launch
+  matrix. Plan inclusion and production availability are separate fields: a
+  capability can be included with Solo, Growth, or Enterprise while still
+  requiring live proof, carrying an explicit limitation, or being unavailable.
+- A platform owner can append a current `proven`, `limited`, or `unavailable`
+  receipt for each marketed capability. Limited and unavailable results require
+  exact customer-safe limitation copy. Platform administrators can review the
+  matrix but cannot write proof.
+- Receipts expire, exact retries are idempotent, and newer receipts supersede
+  the displayed claim without editing history. Links, supplier names, raw error
+  language, credentials, provider responses, and token-shaped values are
+  rejected from summaries, limitations, and internal references.
+- The sales-claims launch gate cannot pass until every catalog capability has a
+  current result and the manual sales-claim review was observed after the newest
+  capability receipt. A capability change alters the launch decision basis and
+  supersedes any earlier go/no-go decision.
+- The PostgreSQL ledger is platform-context-only, insert/select-only for the
+  application role, protected by row-level security, and immutable under a
+  database trigger. Its PostgreSQL security regression is wired into CI.
+- OPS1E does not create production proof. Operators still must run the exact
+  current customer journeys, record limitations honestly, update pricing/demo/
+  Help/support language, then append the final sales-claim review before launch.
+
+#### OPS1F - Whole-Product Route and Non-Technical Experience Proof
+
+Implementation status (August 20, 2026):
+
+- A separate platform experience board inventories the 19 primary customer
+  destinations from the maintained product navigation. Every destination needs
+  a current desktop review and a current mobile review; a route is not complete
+  when only one viewport passes. Each review covers normal, loading, empty,
+  error, recovery, and navigation behavior rather than only page rendering.
+- The board also requires five distinct current moderated first-use sessions.
+  Each participant completes account connection, optional-analytics
+  comprehension, baseline review, next-action selection, workflow setup,
+  billing review, and sign-out or remote-session removal without the operator
+  taking over the product.
+- Participant identity is represented only by an opaque alias. Names, email
+  addresses, recordings, links, supplier names, credentials, provider payloads,
+  and raw error messages are rejected from the ledger. The saved record contains
+  only plain findings, issue counts, blocker counts, an internal receipt, and
+  bounded observation/expiry timestamps.
+- Failed current evidence blocks the corresponding launch gate. Missing or
+  expired evidence remains `needs_live_proof`. The paid-journey and first-use
+  gates additionally require their broad operator proof to have been recorded
+  after the newest structured evidence, so an older sign-off cannot cover a
+  later route or participant result.
+- Exact retries are idempotent and every prior result remains append-only. The
+  ledger is platform-context-only, insert/select-only for the PostgreSQL
+  application role, protected by row-level security, and immutable under a
+  database trigger. Its PostgreSQL security regression is wired into CI.
+- OPS1F operationalizes the usability closeout but does not pretend the reviews
+  occurred. Operators still must perform all 38 route/viewport reviews and five
+  real moderated sessions, close every blocker, then append the two final manual
+  proofs before a platform owner can record `Go`.
+
 Scope:
 
 - Define support channels, ownership, hours, response targets, severity,
@@ -4896,6 +5062,13 @@ Scope:
   and a small number of familiar sections; remove duplicated panels and move
   diagnostics, identifiers, schemas, signatures, delivery counters, and other
   specialist details behind clearly labeled optional disclosures.
+- Keep every customer tool visible in the primary navigation rather than hiding
+  valid destinations behind a generic `More tools` disclosure. Order the list
+  by familiar jobs and expected frequency: most-used daily work, performance
+  measurement, visibility improvements, workspace management, then help. The
+  grouped list must remain keyboard-accessible and independently scrollable on
+  shorter desktop and mobile viewports without moving tools into an unnamed
+  catch-all bucket.
 - Run moderated first-use tests with non-technical home-service and local-
   business owners. A participant must be able to connect Google, understand
   connection health, add a location, read the baseline, find the next action,
@@ -4915,6 +5088,17 @@ Scope:
   send a test, and confirm receipt. Keep signature verification and field maps
   available for advanced users without making them prerequisites for the normal
   Zapier, Make, Pipedream, or n8n Cloud connection path.
+- Never equate a saved webhook address with a working connection. Show three
+  plain, evidence-backed checkpoints for every tool: receiving address saved,
+  signed test accepted, and first real selected update accepted. Each checkpoint
+  names its saved evidence time and one recovery action; only the last state may
+  be described as production-proven.
+- Treat provider connection proof as release evidence, not a one-time demo.
+  Zapier, Make, Pipedream, and n8n Cloud must each pass the same automated signed-
+  delivery, retry, secret-rotation, redaction, and disconnect conformance suite.
+  Launch closeout also records one current provider-owned signed test receipt
+  and one later real-event receipt per advertised tool without storing webhook
+  paths, signing secrets, response bodies, or supplier account identifiers.
 - Complete a whole-product visualization audit and add decision-useful graphs
   anywhere a trend, distribution, comparison, or relationship is materially
   easier to understand than a number or table. Priority surfaces include
@@ -5005,6 +5189,12 @@ Acceptance criteria:
   critical Solo launch journey and the supported workflow-tool connection test
   without staff operating the product for them. Observed confusion is tracked
   to closure in the launch scorecard rather than accepted as training debt.
+- A workflow tool cannot receive a green connected label merely because its URL
+  was saved. The owner can see whether the destination is saved, the current
+  signed test was accepted, and a real selected update was accepted, with exact
+  safe timestamps and a retry/recovery action. Automated tests exercise that
+  sequence for Zapier, Make, Pipedream, and n8n Cloud; provider-owned release
+  evidence is refreshed before launch and after a material contract change.
 - A paid launch cannot proceed while critical TR1, billing, provider,
   WordPress, data-integrity, or support-readiness gates are red.
 
@@ -5189,12 +5379,41 @@ Implementation status (August 17, 2026):
   evidence remain deployment closeout work. This slice still adds no inbound
   credential, command, approval, publishing, WordPress, or Business Profile
   execution path.
+- The OPS1 usability pass on August 20 advances the additive setup contract to
+  version 3. Each provider now uses its current customer-facing trigger words,
+  tells the owner exactly where the safe test should appear, and provides one
+  provider-specific recovery step when it does not. Settings calls the webhook
+  a receiving address in the normal path, moves signature and field-path terms
+  behind Advanced, and places a direct safe-test action beside the one-time
+  workflow security key.
+- Incoming setup now shows one customer-selected workflow tool instead of a
+  wall of provider cards. The selected path gives one next action, keeps the n8n
+  starter distinct from the vendor-neutral guide, and labels the downloadable
+  sample honestly: it checks field mapping but does not prove that the outside
+  tool contacted InsightOS. Native contact time and the first saved allowed
+  request remain the two connection milestones.
+- The basic saved-report connection and its three proof milestones remain in
+  the normal reading path. All additional workflow abilities are collapsed
+  behind one owner-controlled section that shows how many extras are enabled;
+  report creation, recommendation routing, connected-data refresh, credit-using
+  listing checks, drafts, and review routing no longer appear as one long setup
+  form before the first connection works.
+- Secondary connection maintenance is also progressive: starter and API-file
+  downloads, key replacement, and access removal sit under `Manage connection`.
+  The selected provider's immediate setup action and evidence milestones remain
+  visible, so destructive and developer-oriented controls no longer compete
+  with the next customer task.
+- Settings now treats outgoing notifications and incoming requests as two
+  mutually exclusive customer tasks. The owner chooses one direction and sees
+  only that setup journey; both full configuration systems no longer render in
+  one continuous page. The task switch is keyboard-operable and exposes its
+  selected state without changing the underlying authorization boundaries.
 
 #### AUT1G - Provider Wiring Kits
 
 Implementation status (August 17, 2026):
 
-- The provider setup contract is now version 2 and includes a complete wiring
+- The provider setup contract is now version 3 and includes a complete wiring
   kit for Zapier, Make, Pipedream, and n8n Cloud. Each kit links to the
   provider's official webhook documentation and identifies the exact trigger,
   payload location, request-header location, and event field used for routing.
@@ -5772,6 +5991,137 @@ Scope:
   enterprise onboarding runbooks.
 - Keep dedicated capacity, custom provider contracts, SSO, and contractual SLA
   commitments quote-based rather than assumed in the base tier.
+
+Implementation status (2026-08-20):
+
+- ENT1A's first Enterprise white-label reporting slice is implemented locally.
+  An organization owner on Enterprise can save a plain-text report identity,
+  report title, footer, and optional InsightOS-attribution preference. The
+  identity is tenant scoped, audited without copying customer wording into the
+  audit event, and frozen into each newly generated location or portfolio
+  report. Later branding changes and plan downgrades do not rewrite saved
+  reports; a downgrade preserves the configuration for recovery but stops it
+  from applying to new reports. Existing InsightOS report output remains
+  unchanged for organizations without an active Enterprise configuration.
+- ENT1A does not yet provide logo uploads, custom chart colors, client portal
+  access, bulk export/API credentials, advanced client roles, or branded email
+  delivery. Those remain explicit later ENT1 slices and must not be implied by
+  the current text-identity controls.
+- ENT1B's bounded report accent is implemented locally. Enterprise owners can
+  choose one validated six-digit color for the top edge of future HTML and PDF
+  reports. The accent is frozen with the report identity. Semantic result,
+  warning, missing-data, and chart colors remain controlled by InsightOS so a
+  customer color cannot change the meaning or readability of evidence.
+- ENT1C's secure report logo is implemented locally. Enterprise owners can add
+  one still PNG up to 64 KB. The server validates its format, dimensions, pixel
+  count and shape, removes embedded metadata, stores it inside the tenant
+  boundary, and freezes the verified bytes and digest into each new HTML or PDF
+  report. Owners can remove the saved logo even after a downgrade while older
+  reports keep their exact frozen copy. Storage paths and raw filenames never
+  enter the customer contract or report snapshot.
+- ENT1D's bounded client report package is implemented locally. An Enterprise
+  organization owner can download one ZIP containing the exact current
+  all-location PDF, each verified saved location PDF, and a client-readable
+  manifest with periods and SHA-256 file checks. The server includes only
+  reports from the authenticated organization, fails the entire package when
+  any required PDF is missing or fails integrity, limits the package to 20
+  locations and 50 MB uncompressed, uses safe generated filenames, and audits
+  only the package digest and counts. It does not email recipients or claim
+  external delivery.
+- ENT1E's owner-only organization activity history is implemented locally. It
+  presents a curated, customer-readable allowlist of important reporting,
+  workflow, content, connection, team, workspace, and review actions. Results
+  are tenant scoped, newest first, category-filterable, and paginated with an
+  encrypted workspace-bound cursor. Raw audit payloads, internal event names,
+  internal identifiers, private provider diagnostics, and unknown internal
+  events are never returned. Team members without the owner role and
+  organizations without Enterprise fail closed while saved audit history is
+  preserved.
+- ENT1F's client-safe private report handoff is implemented locally. A new
+  time-limited report link opens on a dedicated, no-login, no-index client page
+  instead of exposing an API URL. The verified saved HTML stays inside a
+  script-disabled, origin-isolated frame; the page omits credentials, referrer
+  data, application storage, and internal failure details. Expired, revoked,
+  malformed, and unavailable links have plain recovery states. The database
+  continues to store only a hash of the one-time URL token, and link creation,
+  opening, and revocation add payload-free customer-readable entries to the
+  Enterprise owner activity view.
+- ENT1G's first authenticated client-report role is implemented locally. An
+  `org_client` sign-in sits outside the owner/admin/member permission ladder,
+  redirects to one read-only report portal, and cannot call ordinary workspace,
+  billing, settings, automation, or mutation endpoints. The portal lists only
+  verified saved HTML reports whose business locations belong to an active
+  location group explicitly granted to that user. Report HTML is fetched through
+  the authenticated session and remains inside a script-disabled, origin-isolated
+  frame; customer responses omit campaign, artifact, storage, provider, and
+  organization identifiers. Enterprise entitlement, active grant, active group,
+  tenant, organization, campaign, and business-location scope all fail closed.
+  Each authorized report open adds a minimized event to the owner-only activity
+  history without exposing the report identity in that customer-facing history.
+  Inviting a brand-new person and an owner-facing client-access editor remain a
+  later account-management slice; ENT1G does not silently create users or send
+  invitation email.
+- ENT1H's owner-managed client activation is implemented locally. An Enterprise
+  owner chooses one active, nonempty saved location group and creates a
+  time-limited setup link for a client email. The email is envelope-encrypted,
+  searchable only by its SHA-256 digest, and never copied into an audit event;
+  only the setup-token digest is stored, while the raw link is returned once.
+  Public preview reveals only a masked email, the assigned group name, expiry,
+  and read-only purpose. Acceptance is single-use under a row lock. A new user
+  chooses a password that meets the current minimum; an existing InsightOS user
+  must prove their current password and is never silently reset. Acceptance
+  creates only the exact `org_client` membership and viewer grant for that
+  group, then opens the isolated client-report portal. Enterprise entitlement,
+  active group membership, token state, organization scope, password proof,
+  and replay all fail closed. The owner can replace an unused link, revoke it,
+  or remove an accepted client's report grant without deleting reports or the
+  client's account. InsightOS does not email a password or claim message
+  delivery; the owner sends the one-time link through a trusted channel.
+- ENT1I's branded authenticated client portal is implemented locally. The
+  Enterprise owner's current enabled report identity, title, bounded accent,
+  and verified still-PNG logo now carry into the read-only client sign-in. The
+  customer response exposes only those display values and whether platform
+  attribution remains visible; organization IDs, branding record IDs,
+  versions, hashes, dimensions, storage details, and owner controls stay
+  private. The portal validates the display contract again, never loads a logo
+  from an external origin, keeps customer colors out of semantic result states,
+  and removes InsightOS from static page metadata when attribution is hidden.
+  This styling is explicitly current portal chrome: every saved report keeps
+  the exact branding and evidence frozen when that report was generated.
+- ENT1J's branded client activation is implemented locally. A valid one-time
+  setup link now carries the same current customer-safe Enterprise name,
+  report title, bounded accent, and verified inline logo into the public
+  activation screen. Hidden platform attribution removes InsightOS from the
+  visible setup copy and static page metadata; unbranded and ineligible
+  workspaces use the normal InsightOS identity. Loading and invalid-link states
+  stay neutral so private branding does not flash before token verification.
+  The public response still reveals no organization ID, branding record,
+  version, logo hash or dimensions, storage metadata, owner settings, or raw
+  email. Customer color remains decorative, the password action keeps a fixed
+  accessible contrast, and logos cannot contact an external origin.
+- ENT1K's authenticated client PDF download is implemented locally. A client
+  can download the verified PDF for a saved report only when the same exact
+  Enterprise entitlement, active client role, active location-group grant,
+  tenant, organization, campaign, business-location, report-status, artifact
+  readiness, checksum, MIME, size, and PDF-signature checks used by the private
+  portal all pass. HTML-only reports remain viewable and say plainly that a PDF
+  is unavailable; missing, corrupt, cross-tenant, unassigned, downgraded, and
+  owner-session requests fail closed. Downloads are private, non-cacheable,
+  no-index responses with a generated filename. A minimized owner-visible
+  activity entry records that an assigned client downloaded a verified report,
+  without exposing report, artifact, storage, provider, or organization IDs in
+  the customer activity contract. This slice does not add email delivery,
+  public links, broad API credentials, or report mutation permissions.
+- ENT1L's organized client report library is implemented locally. The private
+  portal now lets an assigned client narrow as many as 100 saved reports by a
+  plain location choice and by reports saved within the last 31 days versus
+  older saved reports. It shows the exact visible and assigned counts, clears a
+  selected report when it falls outside the new choices, and provides one
+  obvious reset when nothing matches. Filtering uses only the already
+  authorized customer-safe list in the browser; it cannot broaden the server's
+  Enterprise entitlement, tenant, group, location, report, or artifact scope,
+  and it exposes no query, campaign, provider, storage, or internal status
+  fields.
 
 Acceptance criteria:
 

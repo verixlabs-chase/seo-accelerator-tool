@@ -94,6 +94,7 @@ from app.models.governed_ai_provider_routing_readiness import (
 from app.models.campaign_daily_metric import CampaignDailyMetric
 from app.models.competitor import Competitor, CompetitorPage, CompetitorRanking, CompetitorSignal
 from app.models.commercial_feature_activation import CommercialFeatureActivation
+from app.models.customer_status import CustomerStatusUpdate
 from app.models.content import (
     ContentAsset,
     ContentBrief,
@@ -123,6 +124,8 @@ from app.models.crawl import (
 from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
 from app.models.engagement import AchievementGrant, AchievementPreference
+from app.models.enterprise_branding import OrganizationReportBrand
+from app.models.enterprise_client_invitation import EnterpriseClientInvitation
 from app.models.intelligence import (
     AnomalyEvent,
     CampaignMilestone,
@@ -180,6 +183,9 @@ from app.models.portfolio_fleet_run import PortfolioFleetRun, PortfolioFleetRunI
 from app.models.portfolio_usage_daily import PortfolioUsageDaily
 from app.models.portfolio_policy import PortfolioPolicy
 from app.models.provider_health import ProviderHealthState
+from app.models.launch_readiness import LaunchReadinessDecision, LaunchReadinessProof
+from app.models.launch_experience import LaunchExperienceReview
+from app.models.production_capability import ProductionCapabilityProof
 from app.models.provider_metric import ProviderExecutionMetric
 from app.models.provider_metric_contract import ProviderMetricContractVersion
 from app.models.standards_replay import StandardsReplayReport
@@ -396,6 +402,11 @@ __all__ = [
     "LocalRankGridRun",
     "LocalRankGridPoint",
     "LocalRankGridCompetitorPoint",
+    "LaunchReadinessProof",
+    "LaunchReadinessDecision",
+    "LaunchExperienceReview",
+    "CustomerStatusUpdate",
+    "ProductionCapabilityProof",
     "OnboardingState",
     "OnboardingSession",
     "OutcomeLearningReview",
@@ -425,6 +436,8 @@ __all__ = [
     "FleetJob",
     "FleetJobItem",
     "Organization",
+    "OrganizationReportBrand",
+    "EnterpriseClientInvitation",
     "OrganicValueBaselineSetting",
     "OrganizationOAuthClient",
     "OrganizationMembership",

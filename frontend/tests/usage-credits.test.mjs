@@ -39,13 +39,13 @@ test("settings provides outbound-only signed workflow connections", () => {
   assert.match(settings, /usageAllowance\.external_automation \? \(/);
   assert.match(settings, /usageAllowance\.external_automation\.gateway_enabled/);
   assert.match(settings, /Workflow connections require/);
-  assert.match(settings, /Send useful updates to Zapier, Make, Pipedream, or n8n/);
+  assert.match(settings, /Connect Zapier, Make, Pipedream, or n8n/);
   assert.match(settings, /\/automation\/connections/);
   assert.match(settings, /\/automation\/deliveries\/\$\{deliveryId\}\/retry/);
   assert.match(settings, /\/automation\/deliveries\/\$\{deliveryId\}\/recover/);
   assert.match(settings, /\/automation\/connections\/\$\{connectionId\}\/\$\{action\}/);
-  assert.match(settings, /Copy this signing secret now/);
-  assert.match(settings, /Paste the webhook URL from your tool/);
+  assert.match(settings, /Keep this workflow security key private/);
+  assert.match(settings, /Paste the receiving address from/);
   assert.match(settings, /n8n Cloud/);
   assert.match(settings, /copy the Webhook node&apos;s Production URL/);
   assert.match(settings, /temporary Test URL will not work here/);
@@ -74,7 +74,8 @@ test("settings provides outbound-only signed workflow connections", () => {
   assert.match(settings, /Uses sample data only/);
   assert.match(settings, /receiver-conformance-v1\.json/);
   assert.match(settings, /URL\.revokeObjectURL/);
-  assert.match(settings, /When your tool accepts it, the connection is ready/);
+  assert.match(settings, /How to know the test arrived/);
+  assert.match(settings, /If the test does not arrive/);
   assert.match(settings, /Connection check:/);
   assert.match(settings, /product_event_accepted/);
   assert.match(settings, /monthly_delivery_usage/);
@@ -84,7 +85,8 @@ test("settings provides outbound-only signed workflow connections", () => {
   assert.match(settings, /connection\.monthly_delivery_usage\.product_events/);
   assert.match(settings, /Send test/);
   assert.match(settings, /Retry last test/);
-  assert.match(settings, /Sending updates/);
+  assert.match(settings, /Test received — ready for automatic updates/);
+  assert.match(settings, /Connected and proven with a real update/);
   assert.match(settings, /Updates paused/);
   assert.match(settings, /Attempts exhausted/);
   assert.match(settings, /Recover event/);

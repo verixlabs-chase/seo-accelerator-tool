@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 
 import {
@@ -246,6 +247,15 @@ type ReportSnapshot = {
   schema_version?: string;
   snapshot_hash?: string;
   audience?: string;
+  brand?: {
+    brand_name?: string;
+    report_title?: string;
+    footer_text?: string;
+    accent_color?: string;
+    show_platform_attribution?: boolean;
+    custom_branding_applied?: boolean;
+    branding_version?: number | null;
+  };
   campaign?: {
     location_name?: string;
     name?: string;
@@ -292,6 +302,35 @@ type ReportSchedule = {
   retry_count: number;
   last_status: string;
   truth?: RuntimeTruth;
+};
+
+type ReportBranding = {
+  plan_eligible: boolean;
+  required_plan: string;
+  configured: boolean;
+  applied_to_new_reports: boolean;
+  saved_for_recovery: boolean;
+  brand_name: string;
+  report_title: string;
+  footer_text: string;
+  accent_color: string;
+  logo_configured: boolean;
+  logo_data_url?: string | null;
+  logo_sha256?: string | null;
+  logo_width?: number | null;
+  logo_height?: number | null;
+  hide_platform_attribution: boolean;
+  enabled: boolean;
+  version?: number | null;
+  updated_at?: string | null;
+  truth: {
+    existing_reports_unchanged: boolean;
+    future_reports_only: boolean;
+    saved_on_downgrade: boolean;
+    logo_upload_available: boolean;
+    accent_color_available: boolean;
+    custom_colors_available: boolean;
+  };
 };
 
 function coerceNumber(value: number | string | undefined, fallback = 0) {
@@ -874,6 +913,15 @@ export default function ReportsPage() {
   const [scheduleTimezone, setScheduleTimezone] = useState("America/New_York");
   const [scheduleNextRun, setScheduleNextRun] = useState("");
   const [scheduleEnabled, setScheduleEnabled] = useState(true);
+  const [orgRole, setOrgRole] = useState("");
+  const [reportBranding, setReportBranding] = useState<ReportBranding | null>(null);
+  const [brandName, setBrandName] = useState("");
+  const [brandReportTitle, setBrandReportTitle] = useState("");
+  const [brandFooter, setBrandFooter] = useState("");
+  const [brandAccent, setBrandAccent] = useState("#E85D19");
+  const [pendingLogo, setPendingLogo] = useState<File | null>(null);
+  const [hidePlatformAttribution, setHidePlatformAttribution] = useState(false);
+  const [brandingEnabled, setBrandingEnabled] = useState(false);
 
   const loadCampaigns = useCallback(async () => {
     const response = await platformApi("/campaigns", { method: "GET" });
@@ -959,6 +1007,17 @@ export default function ReportsPage() {
       { method: "GET" },
     )) as PortfolioReportComparison;
     setPortfolioComparison(response);
+  }, []);
+
+  const loadReportBranding = useCallback(async () => {
+    const response = (await platformApi("/reports/branding", { method: "GET" })) as ReportBranding;
+    setReportBranding(response);
+    setBrandName(response.brand_name || "");
+    setBrandReportTitle(response.report_title || "");
+    setBrandFooter(response.footer_text || "");
+    setBrandAccent(response.accent_color || "#E85D19");
+    setHidePlatformAttribution(Boolean(response.hide_platform_attribution));
+    setBrandingEnabled(Boolean(response.enabled));
   }, []);
 
   const loadSchedule = useCallback(async (campaignId: string) => {
@@ -1232,6 +1291,32 @@ export default function ReportsPage() {
     );
   }
 
+  async function downloadClientReportPackage() {
+    if (!portfolioComparison?.comparison_ready) {
+      setError("Create reports with matching dates for at least two locations first.");
+      return;
+    }
+
+    await runAction(
+      "client-report-package",
+      async () => {
+        const file = await platformApiFile("/reports/portfolio-package", { method: "GET" });
+        const fileUrl = URL.createObjectURL(file.blob);
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.download = "insightos-client-report-package.zip";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(fileUrl), 60_000);
+        setNotice(
+          "The client package was downloaded with the all-location summary, each verified location PDF, and a file manifest.",
+        );
+      },
+      "We could not prepare the client package. Your saved reports are unchanged.",
+    );
+  }
+
   async function saveSchedule() {
     if (!selectedCampaignId) {
       setError("Select a business first.");
@@ -1262,13 +1347,96 @@ export default function ReportsPage() {
     });
   }
 
+  async function saveReportBranding() {
+    await runAction(
+      "save-report-branding",
+      async () => {
+        const response = (await platformApi("/reports/branding", {
+          method: "PUT",
+          body: JSON.stringify({
+            brand_name: brandName,
+            report_title: brandReportTitle,
+            footer_text: brandFooter,
+            accent_color: brandAccent,
+            hide_platform_attribution: hidePlatformAttribution,
+            enabled: brandingEnabled,
+          }),
+        })) as ReportBranding;
+        setReportBranding(response);
+        setNotice(
+          response.applied_to_new_reports
+            ? "Report identity saved. It will appear only on reports created from now on."
+            : "Report identity saved but paused. Existing reports were not changed.",
+        );
+      },
+      "We could not save the report identity. Existing reports were not changed.",
+    );
+  }
+
+  async function uploadReportLogo() {
+    if (!pendingLogo) {
+      setError("Choose a PNG logo first.");
+      return;
+    }
+    if (pendingLogo.type !== "image/png") {
+      setError("Choose a PNG logo. Other image formats are not accepted.");
+      return;
+    }
+    if (pendingLogo.size > 65_536) {
+      setError("Choose a PNG logo no larger than 64 KB.");
+      return;
+    }
+    await runAction(
+      "upload-report-logo",
+      async () => {
+        const dataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("The selected logo could not be read."));
+          reader.onload = () => {
+            const result = String(reader.result || "");
+            resolve(result.includes(",") ? result.split(",", 2)[1] : result);
+          };
+          reader.readAsDataURL(pendingLogo);
+        });
+        const response = (await platformApi("/reports/branding/logo", {
+          method: "PUT",
+          body: JSON.stringify({ data_base64: dataBase64 }),
+        })) as ReportBranding;
+        setReportBranding(response);
+        setPendingLogo(null);
+        setNotice(
+          response.applied_to_new_reports
+            ? "Logo saved. It will appear only on reports created from now on."
+            : "Logo saved with the report identity. Turn the identity on when it is ready for new reports.",
+        );
+      },
+      "We could not save that logo. Existing reports were not changed.",
+    );
+  }
+
+  async function removeReportLogo() {
+    await runAction(
+      "remove-report-logo",
+      async () => {
+        const response = (await platformApi("/reports/branding/logo", {
+          method: "DELETE",
+        })) as ReportBranding;
+        setReportBranding(response);
+        setPendingLogo(null);
+        setNotice("Logo removed from future reports. Saved reports were not changed.");
+      },
+      "We could not remove the logo. Existing reports were not changed.",
+    );
+  }
+
   useEffect(() => {
     async function loadPage() {
       setLoading(true);
       setError("");
 
       try {
-        await platformApi("/auth/me", { method: "GET" });
+        const auth = await platformApi("/auth/me", { method: "GET" });
+        setOrgRole(String(auth?.org_role || ""));
         const items = await loadCampaigns();
         if (items[0]?.id) {
           const [reportResult] = await Promise.allSettled([
@@ -1277,6 +1445,7 @@ export default function ReportsPage() {
             loadRecipients(items[0].id),
             loadReportReadiness(items[0].id),
             loadPortfolioComparison(),
+            loadReportBranding(),
           ]);
           if (reportResult.status === "rejected") {
             throw reportResult.reason;
@@ -1295,7 +1464,7 @@ export default function ReportsPage() {
     }
 
     void loadPage();
-  }, [loadCampaigns, loadPortfolioComparison, loadRecipients, loadReportReadiness, loadReports, loadSchedule]);
+  }, [loadCampaigns, loadPortfolioComparison, loadRecipients, loadReportBranding, loadReportReadiness, loadReports, loadSchedule]);
 
   useEffect(() => {
     if (!selectedCampaignId || loading) {
@@ -1584,6 +1753,21 @@ export default function ReportsPage() {
                     >
                       {busyAction === "portfolio-pdf" ? "Preparing PDF..." : "Download all-location PDF"}
                     </button>
+                    {reportBranding?.plan_eligible && orgRole === "org_owner" ? (
+                      <button
+                        type="button"
+                        onClick={() => void downloadClientReportPackage()}
+                        disabled={busyAction !== "" || !portfolioComparison.comparison_ready}
+                        title={
+                          portfolioComparison.comparison_ready
+                            ? "Download the verified location PDFs and manifest in one ZIP file"
+                            : "Create reports with matching dates for at least two locations first"
+                        }
+                        className="rounded-md border border-violet-400/30 bg-violet-400/10 px-4 py-2 text-sm font-semibold text-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyAction === "client-report-package" ? "Preparing package..." : "Download client package"}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -2017,6 +2201,196 @@ export default function ReportsPage() {
                 sections={previewSections}
               />
             </div>
+
+            {reportBranding ? (
+              <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Enterprise report identity
+                    </p>
+                    <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                      Put your organization&apos;s name on client reports
+                    </h2>
+                    <p className="mt-1.5 max-w-3xl text-sm leading-6 text-zinc-300">
+                      Save one clear name, report title, and footer. The identity is frozen when a new report is created, so an older report never changes afterward.
+                    </p>
+                  </div>
+                  <span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${
+                    reportBranding.applied_to_new_reports
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                      : reportBranding.plan_eligible
+                        ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                        : "border-white/10 bg-black/20 text-zinc-300"
+                  }`}>
+                    {reportBranding.applied_to_new_reports
+                      ? "Applied to new reports"
+                      : reportBranding.saved_for_recovery
+                        ? "Saved, but paused"
+                        : reportBranding.plan_eligible
+                          ? "Not turned on"
+                          : "Enterprise"}
+                  </span>
+                </div>
+
+                {!reportBranding.plan_eligible ? (
+                  <div className="mt-4 rounded-md border border-white/10 bg-black/20 p-4">
+                    <p className="text-sm font-semibold text-white">This is an Enterprise report control.</p>
+                    <p className="mt-1 text-sm leading-6 text-zinc-300">
+                      Your current reports keep InsightOS identification. Any branding saved before a downgrade remains stored for recovery, but it is not applied to new reports until Enterprise access returns.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/settings#plan-and-billing")}
+                      className="mt-3 text-sm font-semibold text-accent-300 hover:text-accent-200"
+                    >
+                      Review Enterprise options →
+                    </button>
+                    {reportBranding.logo_configured && orgRole === "org_owner" ? (
+                      <div className="mt-4 border-t border-white/10 pt-4">
+                        <p className="text-sm text-zinc-300">Your saved logo remains private and stored for recovery.</p>
+                        <button
+                          type="button"
+                          onClick={() => void removeReportLogo()}
+                          disabled={busyAction !== ""}
+                          className="mt-2 text-sm font-semibold text-rose-200 hover:text-rose-100 disabled:opacity-50"
+                        >
+                          {busyAction === "remove-report-logo" ? "Removing..." : "Remove saved logo"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : orgRole !== "org_owner" ? (
+                  <div className="mt-4 rounded-md border border-white/10 bg-black/20 p-4 text-sm leading-6 text-zinc-300">
+                    The workspace owner manages report identity. You can keep creating and sharing reports with the saved setup.
+                  </div>
+                ) : (
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    <label className="text-sm text-zinc-300">
+                      <span className="mb-1.5 block font-semibold text-white">Name shown on the report</span>
+                      <input
+                        value={brandName}
+                        maxLength={120}
+                        onChange={(event) => setBrandName(event.target.value)}
+                        className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
+                      />
+                    </label>
+                    <label className="text-sm text-zinc-300">
+                      <span className="mb-1.5 block font-semibold text-white">Report title</span>
+                      <input
+                        value={brandReportTitle}
+                        maxLength={120}
+                        onChange={(event) => setBrandReportTitle(event.target.value)}
+                        className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
+                      />
+                    </label>
+                    <label className="text-sm text-zinc-300 lg:col-span-2">
+                      <span className="mb-1.5 block font-semibold text-white">Footer</span>
+                      <input
+                        value={brandFooter}
+                        maxLength={240}
+                        onChange={(event) => setBrandFooter(event.target.value)}
+                        className="w-full rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5 text-sm text-zinc-100 outline-none"
+                      />
+                    </label>
+                    <label className="text-sm text-zinc-300 lg:col-span-2">
+                      <span className="mb-1.5 block font-semibold text-white">Report accent</span>
+                      <span className="flex items-center gap-3 rounded-md border border-[#26272c] bg-[#0b0b0c] px-3 py-2.5">
+                        <input
+                          type="color"
+                          value={brandAccent}
+                          onChange={(event) => setBrandAccent(event.target.value.toUpperCase())}
+                          className="h-9 w-12 cursor-pointer rounded border-0 bg-transparent p-0"
+                          aria-label="Choose the report accent color"
+                        />
+                        <span className="text-sm font-medium text-zinc-100">{brandAccent.toUpperCase()}</span>
+                        <span className="text-xs leading-5 text-zinc-500">
+                          Used only on the top edge of new reports. Result and warning colors stay fixed so their meaning stays clear.
+                        </span>
+                      </span>
+                    </label>
+                    <div className="rounded-md border border-[#26272c] bg-[#0b0b0c] p-4 lg:col-span-2">
+                      <p className="text-sm font-semibold text-white">Client report logo</p>
+                      <p className="mt-1 text-xs leading-5 text-zinc-400">
+                        Use one still PNG up to 64 KB. InsightOS verifies the image, removes embedded metadata, and freezes the exact logo into each new report.
+                      </p>
+                      {reportBranding.logo_data_url ? (
+                        <div className="mt-3 rounded-md bg-white p-3">
+                          <Image
+                            src={reportBranding.logo_data_url}
+                            alt={`${brandName || "Organization"} report logo`}
+                            width={reportBranding.logo_width || 220}
+                            height={reportBranding.logo_height || 64}
+                            unoptimized
+                            className="max-h-16 max-w-[220px] object-contain"
+                          />
+                        </div>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <input
+                          type="file"
+                          accept="image/png"
+                          onChange={(event) => setPendingLogo(event.target.files?.[0] || null)}
+                          className="max-w-full text-sm text-zinc-300 file:mr-3 file:rounded-md file:border file:border-[#35363c] file:bg-[#16171a] file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
+                          aria-label="Choose a PNG report logo"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void uploadReportLogo()}
+                          disabled={busyAction !== "" || !pendingLogo}
+                          className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-semibold text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "upload-report-logo" ? "Verifying..." : "Save logo"}
+                        </button>
+                        {reportBranding.logo_configured ? (
+                          <button
+                            type="button"
+                            onClick={() => void removeReportLogo()}
+                            disabled={busyAction !== ""}
+                            className="px-2 py-2 text-sm font-semibold text-rose-200 hover:text-rose-100 disabled:opacity-50"
+                          >
+                            {busyAction === "remove-report-logo" ? "Removing..." : "Remove logo"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="space-y-3 rounded-md border border-[#26272c] bg-[#0b0b0c] p-4 lg:col-span-2">
+                      <label className="flex items-start gap-3 text-sm text-zinc-300">
+                        <input
+                          type="checkbox"
+                          checked={brandingEnabled}
+                          onChange={(event) => setBrandingEnabled(event.target.checked)}
+                          className="mt-1"
+                        />
+                        <span><strong className="text-white">Use this identity on new reports.</strong> Turning it off does not erase the setup or rewrite saved reports.</span>
+                      </label>
+                      <label className="flex items-start gap-3 text-sm text-zinc-300">
+                        <input
+                          type="checkbox"
+                          checked={hidePlatformAttribution}
+                          onChange={(event) => setHidePlatformAttribution(event.target.checked)}
+                          className="mt-1"
+                        />
+                        <span><strong className="text-white">Remove the InsightOS attribution from new client reports.</strong> Source labels and evidence dates remain unchanged.</span>
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 lg:col-span-2">
+                      <p className="text-xs leading-5 text-zinc-500">
+                        Custom chart colors are not available. The report accent and logo never change result or warning colors.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void saveReportBranding()}
+                        disabled={busyAction !== "" || !brandName.trim() || !brandReportTitle.trim() || !brandFooter.trim()}
+                        className="rounded-md border border-accent-500/30 bg-accent-500/10 px-4 py-2 text-sm font-semibold text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyAction === "save-report-branding" ? "Saving..." : "Save report identity"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            ) : null}
 
             <section className="rounded-md border border-[#26272c] bg-[#141518] p-4 shadow-[0_0_30px_rgba(0,0,0,0.4)]">
               <div className="mb-4">

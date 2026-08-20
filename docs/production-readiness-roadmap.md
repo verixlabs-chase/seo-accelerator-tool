@@ -19,6 +19,16 @@ current source of truth.
 
 ## Current capability matrix
 
+The live commercial-claim source of truth is now the append-only matrix at
+`/platform/capabilities`. It is generated from the canonical commercial catalog
+and current production receipts. Plan inclusion never means production-proven;
+limited, unavailable, expired, and missing-proof states remain explicit. The
+table below is an architectural roadmap snapshot and must not be copied into
+pricing, demos, Help, or sales language without checking the live matrix first.
+The corresponding whole-product route and moderated-usability evidence lives at
+`/platform/experience`; automated suite results are not a substitute for its
+desktop, mobile, and five-participant launch receipts.
+
 | Capability | Current production state | Next gate |
 | --- | --- | --- |
 | Authentication | Working with HttpOnly access and refresh cookies | invitations, password recovery, session revocation, organization switcher |

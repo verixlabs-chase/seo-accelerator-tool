@@ -162,6 +162,21 @@ def require_org_role(required: set[str]) -> Callable:
     return _enforcer
 
 
+def require_exact_org_role(required: set[str]) -> Callable:
+    """Require an explicitly named role without inheriting the workspace role ladder."""
+    resolved_required = {_LEGACY_TO_ORG_ROLE.get(item, item) for item in required}
+
+    def _enforcer(user: dict = Depends(get_current_user)) -> dict:
+        if user.get("organization_id") is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization context required")
+        role = user.get("org_role")
+        if not isinstance(role, str) or role not in resolved_required:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This sign-in cannot open client reports")
+        return user
+
+    return _enforcer
+
+
 def require_roles(required: set[str]) -> Callable:
     required_org = {_LEGACY_TO_ORG_ROLE.get(item, item) for item in required if item in _ORG_ROLE_ORDER or item in _LEGACY_TO_ORG_ROLE}
     required_platform = {item for item in required if item in _PLATFORM_ROLE_ORDER}

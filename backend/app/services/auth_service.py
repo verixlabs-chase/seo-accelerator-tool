@@ -18,7 +18,7 @@ from app.services import commercial_plan_service, provisioning_service
 
 
 VALID_PLATFORM_ROLES = {"platform_owner", "platform_admin"}
-VALID_ORG_ROLES = {"org_owner", "org_admin", "org_user"}
+VALID_ORG_ROLES = {"org_owner", "org_admin", "org_user", "org_client"}
 AUTH_SESSION_ACTIVE = "active"
 AUTH_SESSION_REVOKED = "revoked"
 

@@ -43,6 +43,8 @@ const PRODUCT_PAGES = [
   "citations",
   "reviews",
   "profile-campaigns",
+  "client-access",
+  "activity",
   "help",
 ];
 

@@ -1,11 +1,25 @@
+import base64
 import json
 import tomllib
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
+from PIL import Image, PngImagePlugin
 from pypdf import PdfReader
 
+from app.models.audit_log import AuditLog
 from app.services import premium_report_service, report_artifact_storage_service, reporting_service
+
+
+def _report_logo_base64(*, width: int = 96, height: int = 32) -> str:
+    image = Image.new("RGB", (width, height), color=(51, 102, 153))
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text("private_note", "This metadata must not be retained")
+    output = BytesIO()
+    image.save(output, format="PNG", pnginfo=metadata)
+    return base64.b64encode(output.getvalue()).decode("ascii")
 
 
 def test_report_files_sanitize_saved_system_wording() -> None:
@@ -349,8 +363,8 @@ def test_portfolio_report_comparison_keeps_location_snapshots_separate(client, d
     assert "East Service Area" in portfolio_text
     assert "Create a report for this location before comparing it" in portfolio_text
     assert "exact saved report for each location" in portfolio_text
-    assert "Custom logos, colors" in portfolio_text
-    assert "white-label removal remain separate Enterprise controls" in portfolio_text
+    assert "report identity that was active" in portfolio_text
+    assert "Later branding changes do not rewrite this saved document" in " ".join(portfolio_text.split())
     assert portfolio_reader.metadata.author == "VerixLabs"
     outline_titles = [item.title for item in portfolio_reader.outline if hasattr(item, "title")]
     assert "Portfolio summary" in outline_titles
@@ -379,6 +393,285 @@ def test_portfolio_report_comparison_keeps_location_snapshots_separate(client, d
     rejected_pdf = client.get("/api/v1/reports/portfolio-artifact", headers=headers)
     assert rejected_pdf.status_code == 409
     assert "matching reports for at least two locations" in rejected_pdf.json()["errors"][0]["message"]
+
+
+def test_enterprise_report_identity_is_future_only_and_survives_downgrade(
+    client,
+    db_session,
+    monkeypatch,
+):
+    from app.models.organization import Organization
+    from app.models.organization_membership import OrganizationMembership
+    from app.models.user import User
+    from app.services.commercial_plan_service import apply_commercial_plan
+
+    monkeypatch.setattr(
+        report_artifact_storage_service,
+        "get_report_artifact_storage",
+        lambda: report_artifact_storage_service.DatabaseReportArtifactStorage(),
+    )
+    owner = db_session.query(User).filter(User.email == "a@example.com").one()
+    membership = (
+        db_session.query(OrganizationMembership)
+        .filter(OrganizationMembership.user_id == owner.id)
+        .one()
+    )
+    membership.role = "org_owner"
+    db_session.commit()
+
+    login = client.post(
+        "/api/v1/auth/login", json={"email": "a@example.com", "password": "pass-a"}
+    )
+    assert login.status_code == 200
+    token = login.json()["data"]["access_token"]
+    organization_id = login.json()["data"]["user"]["tenant_id"]
+    headers = {"Authorization": f"Bearer {token}"}
+    organization = db_session.get(Organization, organization_id)
+    assert organization is not None
+    logo_base64 = _report_logo_base64()
+
+    blocked = client.put(
+        "/api/v1/reports/branding",
+        json={
+            "brand_name": "Northstar Local",
+            "report_title": "Client growth report",
+            "footer_text": "Prepared for private client review.",
+            "accent_color": "#336699",
+            "hide_platform_attribution": True,
+            "enabled": True,
+        },
+        headers=headers,
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["errors"][0]["details"]["reason_code"] == "white_label_reporting_upgrade_required"
+    blocked_logo = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": logo_base64},
+        headers=headers,
+    )
+    assert blocked_logo.status_code == 403
+    blocked_package = client.get("/api/v1/reports/portfolio-package", headers=headers)
+    assert blocked_package.status_code == 403
+    assert (
+        blocked_package.json()["errors"][0]["details"]["reason_code"]
+        == "client_report_package_upgrade_required"
+    )
+
+    apply_commercial_plan(
+        db_session, organization_id=organization_id, plan_code="enterprise"
+    )
+    db_session.commit()
+
+    invalid_logo = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": base64.b64encode(b"not an image").decode("ascii")},
+        headers=headers,
+    )
+    assert invalid_logo.status_code == 400
+    assert invalid_logo.json()["errors"][0]["details"]["reason_code"] == "report_logo_invalid_image"
+    tiny_logo = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": _report_logo_base64(width=1, height=1)},
+        headers=headers,
+    )
+    assert tiny_logo.status_code == 400
+    assert tiny_logo.json()["errors"][0]["details"]["reason_code"] == "report_logo_dimensions_invalid"
+    oversized_logo = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": base64.b64encode(b"x" * 65_537).decode("ascii")},
+        headers=headers,
+    )
+    assert oversized_logo.status_code == 400
+    assert oversized_logo.json()["errors"][0]["details"]["reason_code"] == "report_logo_too_large"
+
+    saved = client.put(
+        "/api/v1/reports/branding",
+        json={
+            "brand_name": "Northstar Local",
+            "report_title": "Client growth report",
+            "footer_text": "Prepared for private client review.",
+            "accent_color": "#336699",
+            "hide_platform_attribution": True,
+            "enabled": True,
+        },
+        headers=headers,
+    )
+    assert saved.status_code == 200
+    assert saved.json()["data"]["applied_to_new_reports"] is True
+    assert saved.json()["data"]["truth"]["existing_reports_unchanged"] is True
+
+    logo_saved = client.put(
+        "/api/v1/reports/branding/logo",
+        json={"data_base64": logo_base64},
+        headers=headers,
+    )
+    assert logo_saved.status_code == 200
+    logo_data = logo_saved.json()["data"]
+    assert logo_data["logo_configured"] is True
+    assert logo_data["logo_width"] == 96
+    assert logo_data["logo_height"] == 32
+    sanitized_logo = base64.b64decode(logo_data["logo_data_url"].split(",", 1)[1])
+    with Image.open(BytesIO(sanitized_logo)) as verified_logo:
+        assert "private_note" not in verified_logo.info
+
+    campaign = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Enterprise Client", "domain": "enterprise-client.example"},
+        headers=headers,
+    ).json()["data"]
+    generated = client.post(
+        "/api/v1/reports/generate",
+        json={"campaign_id": campaign["id"], "month_number": 7},
+        headers=headers,
+    )
+    assert generated.status_code == 200
+    report_id = generated.json()["data"]["id"]
+    detail = client.get(f"/api/v1/reports/{report_id}", headers=headers)
+    assert detail.status_code == 200
+    brand = detail.json()["data"]["snapshot"]["brand"]
+    assert brand == {
+        "brand_name": "Northstar Local",
+        "product_name": "Northstar Local",
+        "publisher": "Northstar Local",
+        "report_title": "Client growth report",
+        "footer_text": "Prepared for private client review.",
+        "accent_color": "#336699",
+        "logo_data_url": logo_data["logo_data_url"],
+        "logo_sha256": logo_data["logo_sha256"],
+        "logo_width": 96,
+        "logo_height": 32,
+        "prepared_for": "Enterprise Client",
+        "show_platform_attribution": False,
+        "custom_branding_applied": True,
+        "branding_version": 2,
+    }
+    html_artifact = next(
+        item for item in detail.json()["data"]["artifacts"] if item["artifact_type"] == "html"
+    )
+    html = client.get(
+        f"/api/v1/reports/{report_id}/artifacts/{html_artifact['id']}", headers=headers
+    )
+    assert html.status_code == 200
+    assert "Northstar Local" in html.text
+    assert "Client growth report" in html.text
+    assert "Prepared for private client review." in html.text
+    assert "--brand-accent:#336699" in html.text
+    assert '<img class="brand-logo"' in html.text
+    assert "Powered by InsightOS" not in html.text
+
+    frozen_snapshot = detail.json()["data"]["snapshot"]
+    pdf_reader = PdfReader(BytesIO(reporting_service.read_report_artifact(
+        db_session,
+        tenant_id=organization_id,
+        report_id=report_id,
+        artifact_id=next(
+            item["id"] for item in detail.json()["data"]["artifacts"] if item["artifact_type"] == "pdf"
+        ),
+        organization_id=organization_id,
+    )[1]))
+    assert pdf_reader.metadata.author == "Northstar Local"
+    assert "NORTHSTAR LOCAL" in "\n".join(page.extract_text() or "" for page in pdf_reader.pages)
+
+    second_campaign = client.post(
+        "/api/v1/campaigns",
+        json={"name": "Enterprise Client East", "domain": "enterprise-client-east.example"},
+        headers=headers,
+    ).json()["data"]
+    second_generated = client.post(
+        "/api/v1/reports/generate",
+        json={"campaign_id": second_campaign["id"], "month_number": 7},
+        headers=headers,
+    )
+    assert second_generated.status_code == 200
+
+    package_response = client.get("/api/v1/reports/portfolio-package", headers=headers)
+    assert package_response.status_code == 200
+    assert package_response.headers["content-type"] == "application/zip"
+    assert package_response.headers["x-report-count"] == "2"
+    assert "insightos-client-report-package.zip" in package_response.headers["content-disposition"]
+    with ZipFile(BytesIO(package_response.content)) as package:
+        names = package.namelist()
+        assert names[0] == "manifest.json"
+        assert "portfolio-summary.pdf" in names
+        assert len([name for name in names if name.startswith("location-reports/")]) == 2
+        assert all(".." not in name and not name.startswith(("/", "\\")) for name in names)
+        manifest = json.loads(package.read("manifest.json"))
+        assert manifest["schema_version"] == "ent1-client-report-package-v1"
+        assert manifest["source_contract"] == "verified_saved_report_pdfs_and_frozen_snapshots"
+        assert manifest["report_count"] == 2
+        assert manifest["totals_are_combined"] is False
+        assert manifest["branding"]["brand_name"] == "Northstar Local"
+        assert manifest["branding"]["logo_sha256"] == logo_data["logo_sha256"]
+        for item in manifest["files"]:
+            content = package.read(item["file"])
+            assert len(content) == item["bytes"]
+            assert sha256(content).hexdigest() == item["file_sha256"]
+            if item["file"].endswith(".pdf"):
+                assert content.startswith(b"%PDF-")
+
+    from app.models.audit_log import AuditLog
+
+    package_audit = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "enterprise.client_report_package.downloaded")
+        .order_by(AuditLog.created_at.desc())
+        .first()
+    )
+    assert package_audit is not None
+    package_audit_payload = json.loads(package_audit.payload_json)
+    assert set(package_audit_payload) == {
+        "organization_id",
+        "package_bytes",
+        "package_sha256",
+        "portfolio_snapshot_sha256",
+        "report_count",
+    }
+    assert package_audit_payload["report_count"] == 2
+
+    from app.models.reporting import ReportArtifact
+
+    package_audit_count = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "enterprise.client_report_package.downloaded")
+        .count()
+    )
+    second_pdf = (
+        db_session.query(ReportArtifact)
+        .filter(
+            ReportArtifact.report_id == second_generated.json()["data"]["id"],
+            ReportArtifact.artifact_type == "pdf",
+        )
+        .one()
+    )
+    assert second_pdf.content_blob is not None
+    second_pdf.content_blob = bytes(second_pdf.content_blob) + b"tampered"
+    db_session.commit()
+    rejected_package = client.get("/api/v1/reports/portfolio-package", headers=headers)
+    assert rejected_package.status_code == 409
+    assert "integrity check" in rejected_package.json()["errors"][0]["message"]
+    assert (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "enterprise.client_report_package.downloaded")
+        .count()
+        == package_audit_count
+    )
+
+    apply_commercial_plan(db_session, organization_id=organization_id, plan_code="solo")
+    db_session.commit()
+    after_downgrade = client.get("/api/v1/reports/branding", headers=headers)
+    assert after_downgrade.status_code == 200
+    assert after_downgrade.json()["data"]["saved_for_recovery"] is True
+    assert after_downgrade.json()["data"]["applied_to_new_reports"] is False
+    assert after_downgrade.json()["data"]["logo_configured"] is True
+    package_after_downgrade = client.get("/api/v1/reports/portfolio-package", headers=headers)
+    assert package_after_downgrade.status_code == 403
+
+    removed = client.delete("/api/v1/reports/branding/logo", headers=headers)
+    assert removed.status_code == 200
+    assert removed.json()["data"]["logo_configured"] is False
+
+    still_frozen = client.get(f"/api/v1/reports/{report_id}", headers=headers)
+    assert still_frozen.json()["data"]["snapshot"] == frozen_snapshot
 
 
 def test_report_prefers_direct_search_console_facts_and_explains_readiness(client, db_session):
@@ -564,9 +857,11 @@ def test_reports_delivery_fails_when_artifact_is_not_ready(client, db_session):
     assert refreshed_pdf["reason"] == "missing_storage_path"
 
 
-def test_reports_persist_recipients_and_protect_shared_files(client, db_session):
+def test_reports_persist_recipients_and_protect_shared_files(client, db_session, monkeypatch):
     from urllib.parse import urlparse
+    from types import SimpleNamespace
 
+    from app.api.v1 import reports as reports_api
     from app.models.reporting import ReportShareLink
 
     token = _login(client, "a@example.com", "pass-a")
@@ -630,22 +925,64 @@ def test_reports_persist_recipients_and_protect_shared_files(client, db_session)
     assert stored_link is not None
     assert stored_link.token_hash != raw_token
     assert len(stored_link.token_hash) == 64
+    created_audit = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "report.share_link.created")
+        .order_by(AuditLog.created_at.desc())
+        .first()
+    )
+    assert created_audit is not None
+    assert raw_token not in created_audit.payload_json
 
     shared_path = urlparse(link_payload["share_url"]).path
     shared = client.get(shared_path)
     assert shared.status_code == 200
     assert shared.headers["x-robots-tag"] == "noindex, nofollow"
     assert shared.content.startswith(b"<!doctype html>")
+    assert (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "report.share_link.opened")
+        .count()
+        == 1
+    )
+    assert client.get(shared_path).status_code == 200
+    assert (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "report.share_link.opened")
+        .count()
+        == 1
+    )
 
     listed_links = client.get(f"/api/v1/reports/{report_id}/share-links", headers=headers)
     listed_payload = listed_links.json()["data"]["items"][0]
-    assert listed_payload["open_count"] == 1
+    assert listed_payload["open_count"] == 2
     assert listed_payload["share_url"] is None
 
     revoked = client.delete(f"/api/v1/reports/share-links/{link_payload['id']}", headers=headers)
     assert revoked.status_code == 200
     assert revoked.json()["data"]["status"] == "revoked"
     assert client.get(shared_path).status_code == 410
+    assert (
+        db_session.query(AuditLog)
+        .filter(AuditLog.event_type == "report.share_link.revoked")
+        .count()
+        == 1
+    )
+
+    monkeypatch.setattr(
+        reports_api,
+        "get_settings",
+        lambda: SimpleNamespace(customer_app_base_url="https://insightos.example"),
+    )
+    client_link = client.post(
+        f"/api/v1/reports/{report_id}/share-links",
+        json={"expires_in_hours": 24},
+        headers=headers,
+    )
+    assert client_link.status_code == 200
+    assert urlparse(client_link.json()["data"]["share_url"]).path.startswith(
+        "/shared-report/"
+    )
 
 
 def test_rpt1_report_freezes_location_story_and_regenerates_same_snapshot(client, db_session):

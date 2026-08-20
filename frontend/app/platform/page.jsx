@@ -21,6 +21,15 @@ export default function PlatformHomePage() {
         <li>
           <Link href="/platform/value">Activation &amp; Customer Value</Link>
         </li>
+        <li>
+          <Link href="/platform/readiness">Paid Launch Readiness</Link>
+        </li>
+        <li>
+          <Link href="/platform/capabilities">Production Capabilities &amp; Limitations</Link>
+        </li>
+        <li>
+          <Link href="/platform/experience">Whole-product Experience Proof</Link>
+        </li>
       </ul>
     </main>
   );

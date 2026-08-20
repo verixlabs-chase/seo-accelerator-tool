@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
+import { CustomerStatusBanner } from "./CustomerStatusBanner";
 import { MobileNav } from "./MobileNav";
 import { LocationSelector } from "./LocationContext";
 import { SidebarNav } from "./SidebarNav";
@@ -53,6 +54,7 @@ export function AppShell({
                 onMenuOpen={() => setMobileNavOpen(true)}
               />
             </div>
+            <CustomerStatusBanner />
             {hasActionableTrustSignal ? (
               <div className="border-b border-[#26272c] bg-[#111214]">
                 <TrustStatusBar signals={trustSignals} />

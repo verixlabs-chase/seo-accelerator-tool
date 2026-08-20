@@ -10,15 +10,20 @@ type SidebarNavProps = {
   subtitle?: string;
 };
 
+const NAV_SECTIONS = [
+  { id: "most-used", label: "Most used" },
+  { id: "performance", label: "Measure performance" },
+  { id: "improve", label: "Improve visibility" },
+  { id: "workspace", label: "Manage workspace" },
+  { id: "help", label: "Help" },
+] as const;
+
 export function SidebarNav({
   items,
   title = "Local growth workspace",
   subtitle = "InsightOS",
 }: SidebarNavProps) {
   const visibleItems = items.filter((item) => !item.hidden);
-  const primaryItems = visibleItems.filter((item) => item.section !== "more");
-  const moreItems = visibleItems.filter((item) => item.section === "more");
-  const moreIsActive = moreItems.some((item) => item.active);
 
   function NavLinks({ links }: { links: NavItem[] }) {
     return links.map((item) => (
@@ -69,7 +74,7 @@ export function SidebarNav({
   }
 
   return (
-    <aside className="flex h-full w-full flex-col gap-6 px-4 py-4">
+    <aside className="flex h-full min-h-0 w-full flex-col gap-4 px-4 py-4">
       <div className="border-b border-[#26272c] pb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/92">
           {subtitle}
@@ -79,24 +84,24 @@ export function SidebarNav({
         </p>
       </div>
 
-      <nav className="space-y-1.5">
-        <NavLinks links={primaryItems} />
-        {moreItems.length > 0 ? (
-          <details
-            open={moreIsActive ? true : undefined}
-            className="group/more border-t border-[#26272c] pt-3"
-          >
-            <summary className="flex cursor-pointer list-none items-center justify-between rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500 transition hover:bg-white/[0.02] hover:text-zinc-300">
-              More tools
-              <span aria-hidden="true" className="text-base transition group-open/more:rotate-45">
-                +
-              </span>
-            </summary>
-            <div className="mt-1 space-y-1">
-              <NavLinks links={moreItems} />
-            </div>
-          </details>
-        ) : null}
+      <nav aria-label="Product navigation" className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+        {NAV_SECTIONS.map((section) => {
+          const sectionItems = visibleItems.filter((item) => item.section === section.id);
+          if (sectionItems.length === 0) return null;
+          return (
+            <section key={section.id} aria-labelledby={`navigation-${section.id}`}>
+              <h2
+                id={`navigation-${section.id}`}
+                className="px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500"
+              >
+                {section.label}
+              </h2>
+              <div className="mt-1 space-y-1">
+                <NavLinks links={sectionItems} />
+              </div>
+            </section>
+          );
+        })}
       </nav>
 
       <p className="mt-auto border-t border-[#26272c] px-3 pt-4 text-xs leading-5 text-zinc-500">

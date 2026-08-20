@@ -8,5 +8,6 @@ test("multi-workspace sign-in requires a business choice before opening the dash
   assert.match(loginSource, /requires_org_selection/);
   assert.match(loginSource, /Choose the business you want to open/);
   assert.match(loginSource, /auth\/select-org/);
-  assert.match(loginSource, /router\.replace\("\/dashboard"\)/);
+  assert.match(loginSource, /user\.org_role === "org_client" \? "\/client-reports" : "\/dashboard"/);
+  assert.match(loginSource, /You can view assigned client reports/);
 });

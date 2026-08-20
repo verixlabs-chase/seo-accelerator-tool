@@ -1,18 +1,20 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_roles
+from app.api.deps import require_org_role, require_roles
 from app.api.response import envelope
 from app.core.config import get_settings
 from app.db.session import get_db, set_session_security_context
 from app.providers import get_email_adapter
 from app.schemas.reporting import (
     ReportArtifactOut,
+    ReportBrandingIn,
     ReportDeliverIn,
     ReportDeliveryEventOut,
     ReportGenerateIn,
+    ReportLogoIn,
     ReportOut,
     ReportRecipientOut,
     ReportRecipientUpsertIn,
@@ -21,7 +23,14 @@ from app.schemas.reporting import (
     ReportShareLinkCreateIn,
     ReportShareLinkOut,
 )
-from app.services import report_delivery_service, report_pdf_service, reporting_service
+from app.services import (
+    enterprise_branding_service,
+    enterprise_report_export_service,
+    report_delivery_service,
+    report_pdf_service,
+    reporting_service,
+)
+from app.services.cost_economics_service import CostEconomicsError
 from app.services.runtime_truth_service import build_truth, freshness_state_from_timestamp
 from app.tasks.tasks import (
     reporting_aggregate_kpis,
@@ -31,6 +40,16 @@ from app.tasks.tasks import (
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+def _branding_http_error(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=int(getattr(exc, "status_code", 400)),
+        detail={
+            "message": str(exc),
+            "reason_code": str(getattr(exc, "reason_code", "report_branding_failed")),
+        },
+    )
 
 
 def _report_truth(
@@ -290,6 +309,84 @@ def get_portfolio_report_comparison(
     return envelope(request, payload)
 
 
+@router.get("/branding")
+def get_report_branding(
+    request: Request,
+    user: dict = Depends(require_org_role({"org_user"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = enterprise_branding_service.get_report_branding(
+            db, organization_id=str(user["organization_id"])
+        )
+    except enterprise_branding_service.EnterpriseBrandingError as exc:
+        raise _branding_http_error(exc) from exc
+    return envelope(request, payload)
+
+
+@router.put("/branding")
+def put_report_branding(
+    request: Request,
+    body: ReportBrandingIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = enterprise_branding_service.save_report_branding(
+            db,
+            tenant_id=str(user["tenant_id"]),
+            organization_id=str(user["organization_id"]),
+            actor_user_id=str(user["id"]),
+            brand_name=body.brand_name,
+            report_title=body.report_title,
+            footer_text=body.footer_text,
+            accent_color=body.accent_color,
+            hide_platform_attribution=body.hide_platform_attribution,
+            enabled=body.enabled,
+        )
+    except (enterprise_branding_service.EnterpriseBrandingError, CostEconomicsError) as exc:
+        raise _branding_http_error(exc) from exc
+    return envelope(request, payload)
+
+
+@router.put("/branding/logo")
+def put_report_branding_logo(
+    request: Request,
+    body: ReportLogoIn,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = enterprise_branding_service.save_report_logo(
+            db,
+            tenant_id=str(user["tenant_id"]),
+            organization_id=str(user["organization_id"]),
+            actor_user_id=str(user["id"]),
+            data_base64=body.data_base64,
+        )
+    except (enterprise_branding_service.EnterpriseBrandingError, CostEconomicsError) as exc:
+        raise _branding_http_error(exc) from exc
+    return envelope(request, payload)
+
+
+@router.delete("/branding/logo")
+def delete_report_branding_logo(
+    request: Request,
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        payload = enterprise_branding_service.remove_report_logo(
+            db,
+            tenant_id=str(user["tenant_id"]),
+            organization_id=str(user["organization_id"]),
+            actor_user_id=str(user["id"]),
+        )
+    except enterprise_branding_service.EnterpriseBrandingError as exc:
+        raise _branding_http_error(exc) from exc
+    return envelope(request, payload)
+
+
 @router.get("/portfolio-artifact")
 def download_portfolio_report(
     user: dict = Depends(require_roles({"tenant_admin"})),
@@ -308,6 +405,36 @@ def download_portfolio_report(
             "Content-Disposition": 'attachment; filename="insightos-all-location-report.pdf"',
             "Cache-Control": "private, no-store",
             "ETag": f'"{snapshot["snapshot_hash"]}"',
+        },
+    )
+
+
+@router.get("/portfolio-package")
+def download_client_report_package(
+    user: dict = Depends(require_org_role({"org_owner"})),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        package = enterprise_report_export_service.build_client_report_package(
+            db,
+            tenant_id=str(user["tenant_id"]),
+            organization_id=str(user["organization_id"]),
+            actor_user_id=str(user["id"]),
+        )
+    except (
+        enterprise_report_export_service.EnterpriseReportExportError,
+        CostEconomicsError,
+    ) as exc:
+        raise _branding_http_error(exc) from exc
+    return Response(
+        content=package["content"],
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{package["filename"]}"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-Report-Count": str(package["report_count"]),
+            "ETag": f'"{package["sha256"]}"',
         },
     )
 
@@ -460,6 +587,7 @@ def delete_report_share_link(
         tenant_id=user["tenant_id"],
         organization_id=user["organization_id"],
         link_id=link_id,
+        actor_user_id=user["id"],
     )
     return envelope(request, _share_link_payload(row))
 
@@ -564,7 +692,7 @@ def create_report_share_link(
     )
     customer_base_url = get_settings().customer_app_base_url.strip().rstrip("/")
     share_url = (
-        f"{customer_base_url}/api/v1/reports/shared/{token}"
+        f"{customer_base_url}/shared-report/{token}"
         if customer_base_url
         else str(request.url_for("open_shared_report", token=token))
     )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 from datetime import UTC, date, datetime, timedelta
@@ -22,6 +24,7 @@ from app.models.local import ReviewVelocitySnapshot
 from app.models.rank import CampaignKeyword, RankingSnapshot
 from app.models.search_console_daily_metric import SearchConsoleDailyMetric
 from app.services import intelligence_service
+from app.services import enterprise_branding_service
 from app.services.strategy_engine.thresholds import version_id as strategy_threshold_version
 
 
@@ -1208,6 +1211,11 @@ def build_report_snapshot(
             "location_name": location_name,
             "organization_id": campaign.organization_id,
         },
+        "brand": enterprise_branding_service.frozen_report_brand(
+            db,
+            organization_id=str(campaign.organization_id),
+            prepared_for=location_name,
+        ),
         "period": {
             "days": REPORT_PERIOD_DAYS,
             "start": current_start.isoformat(),
@@ -1494,6 +1502,7 @@ def _data_sources_html(metrics: list[dict[str, Any]]) -> str:
 
 def render_report_html(snapshot: dict[str, Any]) -> str:
     campaign = snapshot.get("campaign") or {}
+    brand = snapshot.get("brand") or {}
     period = snapshot.get("period") or {}
     executive = snapshot.get("executive_summary") or {}
     metrics = snapshot.get("metrics") or []
@@ -1522,6 +1531,31 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
         )
         return f"<section><h2>{escape(title)}</h2><ul>{rows or f'<li>{escape(empty)}</li>'}</ul></section>"
 
+    brand_name = _report_copy(brand.get("brand_name"), "InsightOS", max_words=12, max_sentences=1)
+    report_title = _report_copy(brand.get("report_title"), "Business progress report", max_words=16, max_sentences=1)
+    footer_text = _report_copy(
+        brand.get("footer_text"),
+        "Created from the saved information available for this report.",
+        max_words=42,
+        max_sentences=2,
+    )
+    accent_color = str(brand.get("accent_color") or enterprise_branding_service.DEFAULT_ACCENT).upper()
+    if re.fullmatch(r"#[0-9A-F]{6}", accent_color) is None:
+        accent_color = enterprise_branding_service.DEFAULT_ACCENT
+    logo_html = ""
+    logo_data_url = str(brand.get("logo_data_url") or "")
+    logo_digest = str(brand.get("logo_sha256") or "")
+    if logo_data_url.startswith("data:image/png;base64,") and logo_digest:
+        try:
+            logo_bytes = base64.b64decode(logo_data_url.split(",", 1)[1], validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("Saved report logo failed integrity verification.") from exc
+        if sha256(logo_bytes).hexdigest() != logo_digest:
+            raise ValueError("Saved report logo failed integrity verification.")
+        safe_logo = f"data:image/png;base64,{base64.b64encode(logo_bytes).decode('ascii')}"
+        logo_html = f'<img class="brand-logo" src="{safe_logo}" alt="{escape(brand_name)} logo" />'
+    attribution = " · Powered by InsightOS from VerixLabs" if brand.get("show_platform_attribution", True) else ""
+
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1529,9 +1563,10 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escape(str(campaign.get('location_name') or campaign.get('name') or 'Business'))} progress report</title>
   <style>
-    :root {{ color-scheme: light; --ink:#171717; --muted:#666; --line:#dedede; --accent:#e85d19; --good:#08775b; --bad:#b42318; }}
+    :root {{ color-scheme: light; --ink:#171717; --muted:#666; --line:#dedede; --brand-accent:{accent_color}; --accent:#e85d19; --good:#08775b; --bad:#b42318; }}
     * {{ box-sizing:border-box; }} body {{ margin:0; background:#f5f5f3; color:var(--ink); font:15px/1.5 Arial,sans-serif; }}
-    main {{ max-width:1040px; margin:0 auto; padding:48px 28px 72px; }} header {{ border-top:7px solid var(--accent); background:#fff; padding:34px; }}
+    main {{ max-width:1040px; margin:0 auto; padding:48px 28px 72px; }} header {{ border-top:7px solid var(--brand-accent); background:#fff; padding:34px; }}
+    .brand-logo {{ display:block; max-width:220px; max-height:72px; width:auto; height:auto; margin:0 0 18px; object-fit:contain; }}
     .eyebrow {{ color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }}
     h1 {{ max-width:760px; margin:8px 0 10px; font-size:34px; line-height:1.12; }} h2 {{ margin:0 0 14px; font-size:20px; }}
     .lede {{ max-width:760px; color:#3f3f3f; font-size:17px; }} .meta {{ color:var(--muted); font-size:13px; }}
@@ -1555,7 +1590,8 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
 </head>
 <body><main>
   <header>
-    <div class="eyebrow">InsightOS progress report</div>
+    {logo_html}
+    <div class="eyebrow">{escape(brand_name)} · {escape(report_title)}</div>
     <h1>{escape(_report_copy(executive.get('headline'), 'Business progress report'))}</h1>
     <p class="lede">{escape(_report_copy(executive.get('summary'), 'Review what changed and what to work on next.'))}</p>
     <p class="meta">{escape(str(campaign.get('location_name') or campaign.get('name') or 'Business'))} · {escape(str(period.get('start') or ''))} to {escape(str(period.get('end') or ''))}</p>
@@ -1570,16 +1606,17 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
   </div>
   {_next_action_html(snapshot.get('next_priorities') or [])}
   {_data_sources_html(metrics)}
-  <footer>Created from the saved information available for this report. Open InsightOS to see newer results.</footer>
+  <footer>{escape(footer_text)}{escape(attribution)}</footer>
 </main></body></html>"""
 
 
 def report_pdf_lines(snapshot: dict[str, Any]) -> list[str]:
     campaign = snapshot.get("campaign") or {}
+    brand = snapshot.get("brand") or {}
     period = snapshot.get("period") or {}
     executive = snapshot.get("executive_summary") or {}
     lines = [
-        "InsightOS progress report",
+        f"{brand.get('brand_name') or 'InsightOS'} | {brand.get('report_title') or 'Business progress report'}",
         _report_copy(executive.get("headline"), str(campaign.get("location_name") or "Business report")),
         _report_copy(executive.get("summary"), "Review what changed and what to work on next."),
         f"Location: {campaign.get('location_name') or campaign.get('name') or 'Business'}",

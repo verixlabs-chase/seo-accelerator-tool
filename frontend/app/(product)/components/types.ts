@@ -8,7 +8,7 @@ export type NavItem = {
   active?: boolean;
   disabled?: boolean;
   hidden?: boolean;
-  section?: "primary" | "more";
+  section?: "most-used" | "performance" | "improve" | "workspace" | "help";
   icon: ProductIconName;
 };
 

@@ -14,12 +14,16 @@ from app.api.v1 import (
     competitors,
     content,
     crawl,
+    customer_status,
     data_connections,
     data_governance,
     debug_live_validation,
     dashboard,
     entity,
     engagement,
+    enterprise_activity,
+    enterprise_client_reports,
+    enterprise_client_invitations,
     executions,
     google_oauth,
     google_business_profile_campaigns,
@@ -32,6 +36,7 @@ from app.api.v1 import (
     intelligence_simulations,
     internal_jobs,
     keyword_research,
+    launch_experience,
     local,
     locations,
     migration_imports,
@@ -39,6 +44,7 @@ from app.api.v1 import (
     platform_control,
     portfolio_targeting,
     product_analytics,
+    production_capabilities,
     provider_credentials,
     provider_health,
     provider_metrics,
@@ -67,12 +73,16 @@ tenant_api_router.include_router(billing.router)
 tenant_api_router.include_router(automation.router)
 tenant_api_router.include_router(campaigns.router)
 tenant_api_router.include_router(crawl.router)
+tenant_api_router.include_router(customer_status.tenant_router)
 tenant_api_router.include_router(data_connections.router)
 tenant_api_router.include_router(data_governance.router)
 if settings.app_env.lower() != 'production':
     tenant_api_router.include_router(debug_live_validation.router)
 tenant_api_router.include_router(entity.router)
 tenant_api_router.include_router(engagement.router)
+tenant_api_router.include_router(enterprise_activity.router)
+tenant_api_router.include_router(enterprise_client_reports.router)
+tenant_api_router.include_router(enterprise_client_invitations.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
 tenant_api_router.include_router(google_business_profile_campaigns.router)
 tenant_api_router.include_router(governed_ai_providers.router)
@@ -120,6 +130,9 @@ control_plane_api_router.include_router(internal_jobs.router)
 control_plane_api_router.include_router(provider_credentials.control_plane_router)
 control_plane_api_router.include_router(platform_control.router)
 control_plane_api_router.include_router(system_operational.router)
+control_plane_api_router.include_router(launch_experience.router)
+control_plane_api_router.include_router(customer_status.control_plane_router)
 control_plane_api_router.include_router(usage_economics.control_plane_router)
 control_plane_api_router.include_router(product_analytics.control_plane_router)
+control_plane_api_router.include_router(production_capabilities.router)
 control_plane_api_router.include_router(support.control_plane_router)
