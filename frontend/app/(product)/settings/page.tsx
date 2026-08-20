@@ -3930,7 +3930,14 @@ export default function SettingsPage() {
         setMe(currentUser);
         const [campaignResponse, connectionResponse, allowanceResponse, billingResponse, migrationResponse, dataExportResponse, disconnectPreviewResponse, disconnectHistoryResponse, closurePreviewResponse, closureHistoryResponse, authSessionResponse] = await Promise.all([
           platformApi("/campaigns", { method: "GET" }) as Promise<{ items?: Campaign[] }>,
-          loadConnections(currentUser.organization_id),
+          loadConnections(currentUser.organization_id).catch((err) => {
+            setError(
+              err instanceof Error && err.message !== "Failed to fetch"
+                ? err.message
+                : "Google data connections could not be refreshed. Billing and automation settings are still available.",
+            );
+            return null;
+          }),
           platformApi("/usage/credits", { method: "GET" }) as Promise<UsageAllowance>,
           (platformApi("/billing/summary", { method: "GET" }) as Promise<BillingSummary>)
             .catch(() => null),

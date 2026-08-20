@@ -36,6 +36,9 @@ test("settings explains the current plan and the practical reason to upgrade", (
 test("settings provides outbound-only signed workflow connections", () => {
   const settings = source("../app/(product)/settings/page.tsx");
 
+  assert.match(settings, /loadConnections\(currentUser\.organization_id\)\.catch/);
+  assert.match(settings, /Billing and automation settings are still available/);
+  assert.match(settings, /err\.message !== "Failed to fetch"/);
   assert.match(settings, /usageAllowance\.external_automation \? \(/);
   assert.match(settings, /usageAllowance\.external_automation\.gateway_enabled/);
   assert.match(settings, /Workflow connections require/);
