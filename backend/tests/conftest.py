@@ -61,6 +61,7 @@ from app.models.organization import Organization  # noqa: F401
 from app.models.industry_intelligence import IndustryIntelligenceModel  # noqa: F401
 from app.models.intelligence_model_registry import IntelligenceModelRegistryState  # noqa: F401
 from app.models.organization_membership import OrganizationMembership  # noqa: F401
+from app.models.enterprise_client_invitation import EnterpriseClientInvitation  # noqa: F401
 from app.models.organization_provider_credential import OrganizationProviderCredential  # noqa: F401
 from app.models.outcome_learning import OutcomeLearningReview  # noqa: F401
 from app.models.data_connection import DataConnection  # noqa: F401
@@ -231,6 +232,7 @@ def _verify_required_tables(database_url: str) -> None:
             "automation_webhook_delivery_attempts",
             "automation_service_accounts",
             "automation_command_receipts",
+            "enterprise_client_invitations",
             "governed_ai_provider_benchmarks",
             "governed_ai_provider_canary_attempts",
             "governed_ai_provider_canary_events",

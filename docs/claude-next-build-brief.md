@@ -5842,6 +5842,22 @@ Implementation status (2026-08-20):
   Inviting a brand-new person and an owner-facing client-access editor remain a
   later account-management slice; ENT1G does not silently create users or send
   invitation email.
+- ENT1H's owner-managed client activation is implemented locally. An Enterprise
+  owner chooses one active, nonempty saved location group and creates a
+  time-limited setup link for a client email. The email is envelope-encrypted,
+  searchable only by its SHA-256 digest, and never copied into an audit event;
+  only the setup-token digest is stored, while the raw link is returned once.
+  Public preview reveals only a masked email, the assigned group name, expiry,
+  and read-only purpose. Acceptance is single-use under a row lock. A new user
+  chooses a password that meets the current minimum; an existing InsightOS user
+  must prove their current password and is never silently reset. Acceptance
+  creates only the exact `org_client` membership and viewer grant for that
+  group, then opens the isolated client-report portal. Enterprise entitlement,
+  active group membership, token state, organization scope, password proof,
+  and replay all fail closed. The owner can replace an unused link, revoke it,
+  or remove an accepted client's report grant without deleting reports or the
+  client's account. InsightOS does not email a password or claim message
+  delivery; the owner sends the one-time link through a trusted channel.
 
 Acceptance criteria:
 

@@ -58,6 +58,22 @@ EVENT_CATALOG: dict[str, ActivityDefinition] = {
         "client_report_package_downloaded", "reports", "Client report package downloaded",
         "A verified package of saved location reports was downloaded.", "positive",
     ),
+    "enterprise.client_invitation.created": ActivityDefinition(
+        "client_invitation_created", "team", "Client invitation created",
+        "A read-only client report invitation was created.",
+    ),
+    "enterprise.client_invitation.replaced": ActivityDefinition(
+        "client_invitation_replaced", "team", "Client invitation link replaced",
+        "A read-only client invitation received a new setup link.",
+    ),
+    "enterprise.client_invitation.revoked": ActivityDefinition(
+        "client_invitation_revoked", "team", "Client invitation revoked",
+        "A read-only client invitation was turned off.",
+    ),
+    "enterprise.client_invitation.accepted": ActivityDefinition(
+        "client_invitation_accepted", "team", "Client report access activated",
+        "A client activated read-only access to assigned saved reports.", "positive",
+    ),
     "report.share_link.created": ActivityDefinition(
         "private_report_link_created", "reports", "Private report link created",
         "A time-limited client report link was created.",

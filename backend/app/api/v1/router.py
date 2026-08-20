@@ -22,6 +22,7 @@ from app.api.v1 import (
     engagement,
     enterprise_activity,
     enterprise_client_reports,
+    enterprise_client_invitations,
     executions,
     google_oauth,
     google_business_profile_campaigns,
@@ -77,6 +78,7 @@ tenant_api_router.include_router(entity.router)
 tenant_api_router.include_router(engagement.router)
 tenant_api_router.include_router(enterprise_activity.router)
 tenant_api_router.include_router(enterprise_client_reports.router)
+tenant_api_router.include_router(enterprise_client_invitations.router)
 tenant_api_router.include_router(google_oauth.tenant_router)
 tenant_api_router.include_router(google_business_profile_campaigns.router)
 tenant_api_router.include_router(governed_ai_providers.router)

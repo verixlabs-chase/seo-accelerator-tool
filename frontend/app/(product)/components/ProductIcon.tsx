@@ -17,6 +17,7 @@ export type ProductIconName =
   | "listings"
   | "reviews"
   | "profile-campaigns"
+  | "client-access"
   | "activity"
   | "help"
   | "chart"
@@ -167,6 +168,14 @@ function iconPaths(name: ProductIconName): ReactNode {
           <path d="M4 13V9l10-4v12L4 13Z" {...commonPathProps} />
           <path d="M14 8.5h2.5a3.5 3.5 0 0 1 0 7H14M6 13l1 7h3l-1-6" {...commonPathProps} />
           <path d="M19 5.5 21 4M19.5 19l2 1.5" {...commonPathProps} />
+        </>
+      );
+    case "client-access":
+      return (
+        <>
+          <rect x="3" y="4" width="18" height="16" rx="2" {...commonPathProps} />
+          <circle cx="9" cy="10" r="2.4" {...commonPathProps} />
+          <path d="M5.5 17a3.5 3.5 0 0 1 7 0M15 9h3M15 13h3" {...commonPathProps} />
         </>
       );
     case "activity":

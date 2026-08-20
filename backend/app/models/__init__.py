@@ -124,6 +124,7 @@ from app.models.entity import CompetitorEntity, EntityAnalysisRun, PageEntity
 from app.models.entitlement import Entitlement
 from app.models.engagement import AchievementGrant, AchievementPreference
 from app.models.enterprise_branding import OrganizationReportBrand
+from app.models.enterprise_client_invitation import EnterpriseClientInvitation
 from app.models.intelligence import (
     AnomalyEvent,
     CampaignMilestone,
@@ -427,6 +428,7 @@ __all__ = [
     "FleetJobItem",
     "Organization",
     "OrganizationReportBrand",
+    "EnterpriseClientInvitation",
     "OrganicValueBaselineSetting",
     "OrganizationOAuthClient",
     "OrganizationMembership",
