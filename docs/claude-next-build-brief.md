@@ -4915,6 +4915,17 @@ Scope:
   send a test, and confirm receipt. Keep signature verification and field maps
   available for advanced users without making them prerequisites for the normal
   Zapier, Make, Pipedream, or n8n Cloud connection path.
+- Never equate a saved webhook address with a working connection. Show three
+  plain, evidence-backed checkpoints for every tool: receiving address saved,
+  signed test accepted, and first real selected update accepted. Each checkpoint
+  names its saved evidence time and one recovery action; only the last state may
+  be described as production-proven.
+- Treat provider connection proof as release evidence, not a one-time demo.
+  Zapier, Make, Pipedream, and n8n Cloud must each pass the same automated signed-
+  delivery, retry, secret-rotation, redaction, and disconnect conformance suite.
+  Launch closeout also records one current provider-owned signed test receipt
+  and one later real-event receipt per advertised tool without storing webhook
+  paths, signing secrets, response bodies, or supplier account identifiers.
 - Complete a whole-product visualization audit and add decision-useful graphs
   anywhere a trend, distribution, comparison, or relationship is materially
   easier to understand than a number or table. Priority surfaces include
@@ -5005,6 +5016,12 @@ Acceptance criteria:
   critical Solo launch journey and the supported workflow-tool connection test
   without staff operating the product for them. Observed confusion is tracked
   to closure in the launch scorecard rather than accepted as training debt.
+- A workflow tool cannot receive a green connected label merely because its URL
+  was saved. The owner can see whether the destination is saved, the current
+  signed test was accepted, and a real selected update was accepted, with exact
+  safe timestamps and a retry/recovery action. Automated tests exercise that
+  sequence for Zapier, Make, Pipedream, and n8n Cloud; provider-owned release
+  evidence is refreshed before launch and after a material contract change.
 - A paid launch cannot proceed while critical TR1, billing, provider,
   WordPress, data-integrity, or support-readiness gates are red.
 
@@ -5189,12 +5206,41 @@ Implementation status (August 17, 2026):
   evidence remain deployment closeout work. This slice still adds no inbound
   credential, command, approval, publishing, WordPress, or Business Profile
   execution path.
+- The OPS1 usability pass on August 20 advances the additive setup contract to
+  version 3. Each provider now uses its current customer-facing trigger words,
+  tells the owner exactly where the safe test should appear, and provides one
+  provider-specific recovery step when it does not. Settings calls the webhook
+  a receiving address in the normal path, moves signature and field-path terms
+  behind Advanced, and places a direct safe-test action beside the one-time
+  workflow security key.
+- Incoming setup now shows one customer-selected workflow tool instead of a
+  wall of provider cards. The selected path gives one next action, keeps the n8n
+  starter distinct from the vendor-neutral guide, and labels the downloadable
+  sample honestly: it checks field mapping but does not prove that the outside
+  tool contacted InsightOS. Native contact time and the first saved allowed
+  request remain the two connection milestones.
+- The basic saved-report connection and its three proof milestones remain in
+  the normal reading path. All additional workflow abilities are collapsed
+  behind one owner-controlled section that shows how many extras are enabled;
+  report creation, recommendation routing, connected-data refresh, credit-using
+  listing checks, drafts, and review routing no longer appear as one long setup
+  form before the first connection works.
+- Secondary connection maintenance is also progressive: starter and API-file
+  downloads, key replacement, and access removal sit under `Manage connection`.
+  The selected provider's immediate setup action and evidence milestones remain
+  visible, so destructive and developer-oriented controls no longer compete
+  with the next customer task.
+- Settings now treats outgoing notifications and incoming requests as two
+  mutually exclusive customer tasks. The owner chooses one direction and sees
+  only that setup journey; both full configuration systems no longer render in
+  one continuous page. The task switch is keyboard-operable and exposes its
+  selected state without changing the underlying authorization boundaries.
 
 #### AUT1G - Provider Wiring Kits
 
 Implementation status (August 17, 2026):
 
-- The provider setup contract is now version 2 and includes a complete wiring
+- The provider setup contract is now version 3 and includes a complete wiring
   kit for Zapier, Make, Pipedream, and n8n Cloud. Each kit links to the
   provider's official webhook documentation and identifies the exact trigger,
   payload location, request-header location, and event field used for routing.

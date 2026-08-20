@@ -25,6 +25,8 @@ def test_provider_setup_catalog_is_complete_truthful_and_outbound_only() -> None
         assert item["inbound_actions_enabled"] is False
         assert len(item["setup_steps"]) == 4
         assert len(item["workflow_steps"]) == 4
+        assert item["test_confirmation"]
+        assert item["recovery_note"]
         assert {field["source"] for field in item["field_map"]} == {
             "event_id",
             "event_type",
@@ -44,6 +46,8 @@ def test_provider_setup_catalog_is_complete_truthful_and_outbound_only() -> None
     n8n = next(item for item in items if item["code"] == "n8n")
     assert "Production URL" in n8n["webhook_source"]
     assert "temporary test URL" in n8n["production_url_note"]
+    assert "Executions" in n8n["test_confirmation"]
+    assert "Production URL" in n8n["recovery_note"]
     assert n8n["payload_path"] == "$json.body"
 
     pipedream = next(item for item in items if item["code"] == "pipedream")

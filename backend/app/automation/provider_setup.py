@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-AUTOMATION_PROVIDER_SETUP_VERSION = "insightos.automation.provider-setup.v2"
+AUTOMATION_PROVIDER_SETUP_VERSION = "insightos.automation.provider-setup.v3"
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,8 @@ class AutomationProviderSetup:
     setup_steps: tuple[str, ...]
     official_docs_url: str
     account_note: str
+    test_confirmation: str
+    recovery_note: str
     payload_path: str
     headers_path: str
     route_field: str
@@ -28,16 +30,24 @@ _PROVIDER_SETUPS: tuple[AutomationProviderSetup, ...] = (
         webhook_source="Webhooks by Zapier — Catch Hook",
         production_url_note="Use the complete Catch Hook URL from the live Zap.",
         setup_steps=(
-            "Create a Catch Hook trigger in the Zap. Use Catch Raw Hook when the workflow will verify the signature itself.",
-            "Copy its complete HTTPS URL into InsightOS.",
-            "Save the one-time InsightOS signing secret in a private Zap field or secret store.",
-            "Send an InsightOS test and confirm the Zap received the event before turning on later steps.",
+            "Create a Zap and choose Webhooks by Zapier as the trigger.",
+            "Choose Catch Hook, continue to the Test tab, and copy the complete address Zapier shows.",
+            "Paste that address into InsightOS, choose the updates you want, and save the connection.",
+            "Send an InsightOS test, load the newest sample in Zapier, then turn on the Zap.",
         ),
         official_docs_url=(
             "https://help.zapier.com/hc/en-us/articles/"
             "8496083355661-How-to-get-started-with-Webhooks-by-Zapier"
         ),
         account_note="The customer supplies a Zapier account with Webhooks by Zapier available.",
+        test_confirmation=(
+            "In the Zap trigger's Test tab, the newest sample should show "
+            "connection.health_changed."
+        ),
+        recovery_note=(
+            "If no sample appears, confirm the Zap still uses the same Catch Hook address, "
+            "then send the InsightOS test again."
+        ),
         payload_path="Catch Hook trigger payload",
         headers_path="Catch Raw Hook request headers",
         route_field="event_type",
@@ -54,13 +64,21 @@ _PROVIDER_SETUPS: tuple[AutomationProviderSetup, ...] = (
         webhook_source="Webhooks — Custom webhook",
         production_url_note="Use the complete Custom webhook URL from the active scenario.",
         setup_steps=(
-            "Add a Custom webhook trigger to the scenario.",
-            "Copy its complete HTTPS URL into InsightOS.",
-            "Store the one-time InsightOS signing secret privately for request verification.",
-            "Send an InsightOS test and confirm the scenario received it before enabling later modules.",
+            "Create a scenario and add Webhooks, then choose Custom webhook as the first module.",
+            "Create or select the webhook and copy the complete address Make shows.",
+            "Paste that address into InsightOS, choose the updates you want, and save the connection.",
+            "Choose Run once in Make, send an InsightOS test, then turn on the scenario after the sample arrives.",
         ),
         official_docs_url="https://help.make.com/webhooks",
         account_note="The customer supplies a Make account; Free-plan usage limits may apply.",
+        test_confirmation=(
+            "Make should show a successful sample at the Custom webhook module while the "
+            "scenario is listening."
+        ),
+        recovery_note=(
+            "If nothing arrives, choose Run once again, confirm the Custom webhook is active, "
+            "and retry the InsightOS test."
+        ),
         payload_path="Custom webhook bundle",
         headers_path="Webhook request headers",
         route_field="event_type",
@@ -77,15 +95,22 @@ _PROVIDER_SETUPS: tuple[AutomationProviderSetup, ...] = (
         webhook_source="HTTP / Webhook trigger",
         production_url_note="Use the complete production endpoint from the deployed workflow.",
         setup_steps=(
-            "Create an HTTP / Webhook trigger in the workflow.",
-            "Copy its complete HTTPS endpoint into InsightOS.",
-            "Store the one-time InsightOS signing secret as a private environment secret.",
-            "Send an InsightOS test and confirm the deployed workflow accepted it before adding later steps.",
+            "Create a workflow and choose New HTTP / Webhook Requests as its trigger.",
+            "Save the trigger and copy the complete address Pipedream creates.",
+            "Paste that address into InsightOS, choose the updates you want, and save the connection.",
+            "Send an InsightOS test, confirm the event appears, then deploy the workflow.",
         ),
         official_docs_url=(
             "https://pipedream.com/docs/workflows/building-workflows/triggers"
         ),
         account_note="The customer supplies a Pipedream account; Free-plan limits may apply.",
+        test_confirmation=(
+            "The HTTP trigger's event list should show a new connection.health_changed sample."
+        ),
+        recovery_note=(
+            "If no event appears, confirm the HTTP trigger address belongs to this workflow "
+            "and that the workflow is deployed before retrying."
+        ),
         payload_path="steps.trigger.event.body",
         headers_path="steps.trigger.event.headers",
         route_field="steps.trigger.event.body.event_type",
@@ -102,16 +127,23 @@ _PROVIDER_SETUPS: tuple[AutomationProviderSetup, ...] = (
         webhook_source="Published Webhook node — Production URL",
         production_url_note="Publish the workflow and use its Production URL, not the temporary test URL.",
         setup_steps=(
-            "Add a Webhook node and publish the n8n Cloud workflow.",
-            "Copy the node's Production URL into InsightOS.",
-            "Store the one-time InsightOS signing secret as a private workflow credential or variable.",
-            "Send an InsightOS test and confirm the published workflow accepted it before adding later nodes.",
+            "Create a workflow, add a Webhook node, and publish the workflow.",
+            "Open the Webhook node and copy its Production URL, not its temporary Test URL.",
+            "Paste the Production URL into InsightOS, choose the updates you want, and save the connection.",
+            "Send an InsightOS test and confirm a successful execution appears before adding later nodes.",
         ),
         official_docs_url=(
             "https://docs.n8n.io/integrations/builtin/core-nodes/"
             "n8n-nodes-base.webhook/"
         ),
         account_note="The customer supplies an n8n Cloud account or trial and publishes the workflow.",
+        test_confirmation=(
+            "Open Executions in n8n and confirm the published workflow shows a successful new run."
+        ),
+        recovery_note=(
+            "If no execution appears, publish the workflow again, recopy the Production URL, "
+            "and replace any temporary Test URL in InsightOS."
+        ),
         payload_path="$json.body",
         headers_path="$json.headers",
         route_field="$json.body.event_type",
@@ -141,6 +173,8 @@ def automation_provider_setup_catalog(
             "setup_steps": list(item.setup_steps),
             "official_docs_url": item.official_docs_url,
             "account_note": item.account_note,
+            "test_confirmation": item.test_confirmation,
+            "recovery_note": item.recovery_note,
             "payload_path": item.payload_path,
             "headers_path": item.headers_path,
             "route_field": item.route_field,

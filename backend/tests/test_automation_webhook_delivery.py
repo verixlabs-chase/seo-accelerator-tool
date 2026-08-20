@@ -177,7 +177,7 @@ def test_owner_creates_encrypted_connection_and_secret_is_returned_once(
     assert all(item["human_approval_preserved"] is True for item in recipes)
     assert all(item["automatic_actions_enabled"] is False for item in recipes)
     assert listed.json()["data"]["provider_setup_version"] == (
-        "insightos.automation.provider-setup.v2"
+        "insightos.automation.provider-setup.v3"
     )
     provider_setup = listed.json()["data"]["provider_setup"]
     assert {item["code"] for item in provider_setup} == {
@@ -317,13 +317,26 @@ def test_only_owner_can_create_test_pause_resume_recover_rotate_or_disconnect(cl
     )
 
 
+@pytest.mark.parametrize(
+    ("provider", "destination_url"),
+    [
+        ("zapier", _zapier_test_url("hooks/catch/test-account/test-hook/")),
+        ("make", "https://hook.us1.make.com/abcdef"),
+        ("pipedream", "https://abcde.m.pipedream.net/event"),
+        (
+            "n8n",
+            "https://verixlabs.app.n8n.cloud/webhook/"
+            "00000000-0000-4000-8000-000000000000",
+        ),
+    ],
+)
 def test_signed_test_delivery_records_receipt_without_exposing_destination(
-    client, db_session, monkeypatch
+    client, db_session, monkeypatch, provider: str, destination_url: str
 ) -> None:
     token, _ = _login(client, "org-owner@example.com", "pass-org-owner")
     created = client.post(
         "/api/v1/automation/connections",
-        json=_connection_body(),
+        json=_connection_body(provider=provider, destination_url=destination_url),
         headers=_headers(token),
     ).json()["data"]
     connection_id = created["connection"]["id"]
@@ -342,6 +355,7 @@ def test_signed_test_delivery_records_receipt_without_exposing_destination(
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["received_by_destination"] is True
+    assert data["connection"]["provider"] == provider
     assert data["connection"]["status"] == "active"
     assert data["connection"]["verification_status"] == "verified"
     assert data["delivery"]["status"] == "delivered"

@@ -20,7 +20,7 @@ from app.models.portfolio_targeting import (
 )
 from app.models.user import User
 from app.services import enterprise_client_invitation_service
-from app.services.commercial_plan_service import apply_commercial_plan
+from tests.helpers.economic_setup import provision_test_organization
 
 
 pytestmark = pytest.mark.postgres_required
@@ -44,7 +44,7 @@ def test_postgres_client_invitation_accept_has_one_winner(
     )
     organization = db_session.get(Organization, owner_membership.organization_id)
     assert organization is not None
-    apply_commercial_plan(db_session, organization_id=organization.id, plan_code="enterprise")
+    provision_test_organization(db_session, organization, plan_code="enterprise")
     now = datetime.now(UTC)
     location = BusinessLocation(
         id=str(uuid.uuid4()),

@@ -338,13 +338,15 @@ type AutomationStarterRecipe = {
 
 type AutomationProviderSetup = {
   code: "zapier" | "make" | "pipedream" | "n8n";
-  version: "insightos.automation.provider-setup.v2";
+  version: "insightos.automation.provider-setup.v3";
   label: string;
   webhook_source: string;
   production_url_note: string;
   setup_steps: string[];
   official_docs_url: string;
   account_note: string;
+  test_confirmation: string;
+  recovery_note: string;
   payload_path: string;
   headers_path: string;
   route_field: string;
@@ -374,7 +376,7 @@ type AutomationConnectionsPayload = {
   live_event_types: string[];
   recipe_catalog_version: "insightos.automation.recipes.v1";
   starter_recipes: AutomationStarterRecipe[];
-  provider_setup_version: "insightos.automation.provider-setup.v2";
+  provider_setup_version: "insightos.automation.provider-setup.v3";
   provider_setup: AutomationProviderSetup[];
   automatic_actions_enabled: false;
   truth: string;
@@ -1498,14 +1500,19 @@ export default function SettingsPage() {
   const [automationEvents, setAutomationEvents] = useState<AutomationConnectionsPayload["supported_events"]>([]);
   const [automationRecipes, setAutomationRecipes] = useState<AutomationStarterRecipe[]>([]);
   const [automationProviderSetup, setAutomationProviderSetup] = useState<AutomationProviderSetup[]>([]);
+  const [automationWorkflowDirection, setAutomationWorkflowDirection] =
+    useState<"outgoing" | "incoming">("outgoing");
   const [automationSelectedRecipe, setAutomationSelectedRecipe] = useState("");
   const [automationName, setAutomationName] = useState("");
   const [automationProvider, setAutomationProvider] = useState<"zapier" | "make" | "pipedream" | "n8n">("zapier");
   const [automationDestination, setAutomationDestination] = useState("");
   const [automationSelectedEvents, setAutomationSelectedEvents] = useState<string[]>([]);
   const [automationSigningSecret, setAutomationSigningSecret] = useState("");
+  const [automationConnectionReadyToTest, setAutomationConnectionReadyToTest] = useState("");
   const [automationServiceAccounts, setAutomationServiceAccounts] = useState<AutomationServiceAccount[]>([]);
   const [automationConnectorCatalog, setAutomationConnectorCatalog] = useState<AutomationConnectorCatalog | null>(null);
+  const [automationCommandProvider, setAutomationCommandProvider] =
+    useState<AutomationConnectorCatalog["items"][number]["code"]>("zapier");
   const [automationCommandHistory, setAutomationCommandHistory] = useState<AutomationCommandReceipt[]>([]);
   const [automationCommandLoadState, setAutomationCommandLoadState] = useState<"idle" | "ready" | "unavailable">("idle");
   const [automationCommandName, setAutomationCommandName] = useState("Saved report workflow");
@@ -2985,6 +2992,7 @@ export default function SettingsPage() {
         secret_shown_once: true;
       };
       setAutomationSigningSecret(response.signing_secret);
+      setAutomationConnectionReadyToTest(response.connection.id);
       setAutomationName("");
       setAutomationDestination("");
       setAutomationSelectedRecipe("");
@@ -3059,11 +3067,13 @@ export default function SettingsPage() {
       setError("");
       setNotice("");
       setAutomationSigningSecret("");
+      setAutomationConnectionReadyToTest("");
       try {
         const response = (await platformApi(`/automation/connections/${connectionId}/rotate-secret`, {
           method: "POST",
         })) as { signing_secret: string };
         setAutomationSigningSecret(response.signing_secret);
+        setAutomationConnectionReadyToTest(connectionId);
         setNotice("Signing secret replaced. Copy the new secret now and update the workflow before testing.");
         await loadAutomationConnections();
       } catch (err) {
@@ -3143,9 +3153,9 @@ export default function SettingsPage() {
     if (!automationSigningSecret) return;
     try {
       await navigator.clipboard.writeText(automationSigningSecret);
-      setNotice("Signing secret copied. It will not be shown again after you leave this page.");
+      setNotice("Workflow security key copied. It will not be shown again after you leave this page.");
     } catch {
-      setNotice("Select and copy the signing secret before leaving this page.");
+      setNotice("Select and copy the workflow security key before leaving this page.");
     }
   }, [automationSigningSecret]);
 
@@ -4807,18 +4817,74 @@ export default function SettingsPage() {
   const selectedAutomationProviderSetup = automationProviderSetup.find(
     (item) => item.code === automationProvider,
   );
+  const selectedAutomationCommandConnector = automationConnectorCatalog?.items.find(
+    (item) => item.code === automationCommandProvider,
+  );
   const activeAutomationServiceAccount = automationServiceAccounts.find(
     (item) => item.status === "active",
   );
+  const automationExtraAbilityCount = activeAutomationServiceAccount
+    ? [
+        "report.generate_saved",
+        "recommendation.retrieve",
+        "connection.refresh_saved",
+        "listing.check_public",
+        "content.create_working_draft",
+        "review.retrieve",
+        "review.create_response_draft",
+      ].filter((command) => activeAutomationServiceAccount.allowed_commands.includes(
+        command as AutomationServiceAccount["allowed_commands"][number],
+      )).length
+    : 0;
   const activeAutomationCampaign = activeAutomationServiceAccount
     ? manageableCampaigns.find(
         (campaign) => campaign.business_location_id === activeAutomationServiceAccount.location_id,
       )
     : undefined;
+  const currentAuthSession = authSessions?.find((session) => session.current) || null;
+  const otherAuthSessions = authSessions?.filter((session) => !session.current) || [];
+  const visibleAuthSessions = currentAuthSession
+    ? [currentAuthSession, ...otherAuthSessions.slice(0, 2)]
+    : otherAuthSessions.slice(0, 3);
+  const additionalAuthSessions = currentAuthSession
+    ? otherAuthSessions.slice(2)
+    : otherAuthSessions.slice(3);
   const privateAIProviderPlanEligible =
     usageAllowance?.capabilities.find((item) => item.code === "private_ai_provider")
       ?.available === true;
   const allPrivateAIRelayAcknowledged = Object.values(privateAIRelayAcks).every(Boolean);
+
+  const renderAuthSession = (session: AuthSessionSummary) => (
+    <article key={session.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold text-white">
+            {session.current ? "This browser" : "Another signed-in browser"}
+          </h3>
+          {session.current ? (
+            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-100">
+              Current
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 text-xs leading-5 text-zinc-500">
+          Signed in {formatTimestamp(session.created_at)} · Last active {formatTimestamp(session.last_seen_at)}
+        </p>
+      </div>
+      {!session.current ? (
+        <button
+          type="button"
+          className={secondaryButtonClass}
+          disabled={busyAction === `auth-session-${session.id}`}
+          onClick={() => void revokeAuthSession(session.id)}
+        >
+          {busyAction === `auth-session-${session.id}` ? "Signing out..." : "Sign out this browser"}
+        </button>
+      ) : (
+        <span className="text-xs text-zinc-500">Use the main Sign out action to end this session.</span>
+      )}
+    </article>
+  );
   const trustSignals = useMemo<TrustSignal[]>(
     () => [
       {
@@ -5302,38 +5368,24 @@ export default function SettingsPage() {
                   No active sign-in records were returned. Your current browser was not signed out.
                 </p>
               ) : (
-                <div className="mt-5 divide-y divide-[#292a2f] border-y border-[#292a2f]">
-                  {authSessions.map((session) => (
-                    <article key={session.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm font-semibold text-white">
-                            {session.current ? "This browser" : "Another signed-in browser"}
-                          </h3>
-                          {session.current ? (
-                            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-100">
-                              Current
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-zinc-500">
-                          Signed in {formatTimestamp(session.created_at)} · Last active {formatTimestamp(session.last_seen_at)}
-                        </p>
+                <div className="mt-5 border-y border-[#292a2f]">
+                  <div className="divide-y divide-[#292a2f]">
+                    {visibleAuthSessions.map(renderAuthSession)}
+                  </div>
+                  {additionalAuthSessions.length > 0 ? (
+                    <details className="group border-t border-[#292a2f]">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 text-sm font-semibold text-zinc-300">
+                        <span>
+                          Show {additionalAuthSessions.length} older signed-in {additionalAuthSessions.length === 1 ? "browser" : "browsers"}
+                        </span>
+                        <span className="text-xs text-zinc-500 group-open:hidden">Show</span>
+                        <span className="hidden text-xs text-zinc-500 group-open:inline">Hide</span>
+                      </summary>
+                      <div className="divide-y divide-[#292a2f] border-t border-[#292a2f]">
+                        {additionalAuthSessions.map(renderAuthSession)}
                       </div>
-                      {!session.current ? (
-                        <button
-                          type="button"
-                          className={secondaryButtonClass}
-                          disabled={busyAction === `auth-session-${session.id}`}
-                          onClick={() => void revokeAuthSession(session.id)}
-                        >
-                          {busyAction === `auth-session-${session.id}` ? "Signing out..." : "Sign out this browser"}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-zinc-500">Use the main Sign out action to end this session.</span>
-                      )}
-                    </article>
-                  ))}
+                    </details>
+                  ) : null}
                 </div>
               )}
               </div>
@@ -7915,18 +7967,55 @@ export default function SettingsPage() {
                     A previous closure request was canceled. Its audit history remains, while revoked public links and canceled jobs stay closed for safety.
                   </p>
                 ) : null}
-                {usageAllowance.external_automation ? (
-                  <div id="external-automation" className="mt-5 border-t border-[#292a2f] pt-4">
+              </section>
+            ) : null}
+
+            {usageAllowance.external_automation ? (
+                  <section id="external-automation" aria-labelledby="workflow-tools-heading" className="scroll-mt-24 rounded-md border border-[#292a2f] bg-[#141518] p-5">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
                       Workflow tools
                     </p>
-                    <h3 className="mt-1 font-semibold text-white">
+                    <h2 id="workflow-tools-heading" className="mt-1 text-xl font-semibold tracking-[-0.03em] text-white">
                       {usageAllowance.external_automation.gateway_enabled
-                        ? "Send useful updates to Zapier, Make, Pipedream, or n8n"
+                        ? "Connect Zapier, Make, Pipedream, or n8n"
                         : `Workflow connections require ${usageAllowance.external_automation.required_plan}`}
-                    </h3>
+                    </h2>
                     <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-300">
-                      Choose what InsightOS should notify you about, paste the receiving URL from your workflow tool, then send a test. InsightOS does not need your workflow-tool password.
+                      Start with the result you want: send InsightOS updates to another tool, or let a workflow request only the saved work you explicitly allow. InsightOS never needs your workflow-tool password.
+                    </p>
+                    {usageAllowance.external_automation.gateway_enabled ? (
+                      <div className="mt-4 grid gap-3 md:grid-cols-2" aria-label="Choose a workflow direction">
+                        <button
+                          type="button"
+                          aria-pressed={automationWorkflowDirection === "outgoing"}
+                          className={`rounded-md border p-4 text-left transition ${automationWorkflowDirection === "outgoing" ? "border-sky-500/40 bg-sky-500/10" : "border-[#303137] bg-[#101114] hover:border-[#414249]"}`}
+                          onClick={() => setAutomationWorkflowDirection("outgoing")}
+                        >
+                          <p className="text-sm font-semibold text-white">Send updates to another tool</p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-400">Notify a workflow when a report, recommendation, or approved result is ready.</p>
+                          <span className="mt-3 inline-flex text-xs font-semibold text-sky-300">
+                            {automationWorkflowDirection === "outgoing" ? "Selected" : "Choose outgoing updates"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={automationWorkflowDirection === "incoming"}
+                          className={`rounded-md border p-4 text-left transition ${automationWorkflowDirection === "incoming" ? "border-sky-500/40 bg-sky-500/10" : "border-[#303137] bg-[#101114] hover:border-[#414249]"}`}
+                          onClick={() => setAutomationWorkflowDirection("incoming")}
+                        >
+                          <p className="text-sm font-semibold text-white">Let a workflow request saved work</p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-400">Create a private key with exact location and action permissions.</p>
+                          <span className="mt-3 inline-flex text-xs font-semibold text-sky-300">
+                            {automationWorkflowDirection === "incoming" ? "Selected" : "Choose incoming requests"}
+                          </span>
+                        </button>
+                      </div>
+                    ) : null}
+                    {automationWorkflowDirection === "outgoing" ? (
+                    <div id="workflow-updates" className="scroll-mt-24">
+                    <h3 className="mt-5 text-sm font-semibold text-white">Send updates to another tool</h3>
+                    <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+                      Choose what InsightOS should notify you about, paste the receiving URL from your workflow tool, then send a test.
                     </p>
                     {usageAllowance.external_automation.gateway_enabled ? (
                       <ol className="mt-4 grid gap-2 md:grid-cols-3">
@@ -7946,20 +8035,32 @@ export default function SettingsPage() {
 
                     {automationSigningSecret ? (
                       <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
-                        <p className="text-sm font-semibold text-amber-100">Copy this signing secret now</p>
+                        <p className="text-sm font-semibold text-amber-100">Keep this workflow security key private</p>
                         <p className="mt-1 text-xs leading-5 text-amber-100/80">
-                          It verifies that events came from InsightOS. It will not be shown again after you leave this page.
+                          Advanced workflows use this one-time key to confirm that updates came from InsightOS. Save it in your workflow tool&apos;s private credential area. It will not be shown again after you leave this page.
                         </p>
                         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                           <input
-                            aria-label="Automation signing secret"
+                            aria-label="Workflow security key"
                             readOnly
                             className="min-w-0 flex-1 rounded-md border border-amber-500/30 bg-[#101114] px-3 py-2 font-mono text-xs text-amber-50"
                             value={automationSigningSecret}
                           />
                           <button type="button" className={secondaryButtonClass} onClick={() => void copyAutomationSecret()}>
-                            Copy secret
+                            Copy security key
                           </button>
+                          {automationConnectionReadyToTest ? (
+                            <button
+                              type="button"
+                              className={primaryButtonClass}
+                              disabled={busyAction === `automation-test-${automationConnectionReadyToTest}`}
+                              onClick={() => void testAutomationConnection(automationConnectionReadyToTest)}
+                            >
+                              {busyAction === `automation-test-${automationConnectionReadyToTest}`
+                                ? "Sending safe test..."
+                                : "I saved it — send safe test"}
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     ) : null}
@@ -8003,7 +8104,7 @@ export default function SettingsPage() {
                           </div>
                           <div>
                             <label htmlFor="automation-destination" className="mb-1.5 block text-xs font-medium text-zinc-300">
-                              Paste the webhook URL from your tool
+                              Paste the receiving address from {selectedAutomationProviderSetup?.label || "your tool"}
                             </label>
                             <input
                               id="automation-destination"
@@ -8011,7 +8112,7 @@ export default function SettingsPage() {
                               autoComplete="off"
                               className={selectClass}
                               value={automationDestination}
-                              placeholder="Paste the production URL"
+                              placeholder="Paste the complete HTTPS address"
                               onChange={(event) => setAutomationDestination(event.target.value)}
                             />
                             {automationProvider === "n8n" ? (
@@ -8042,6 +8143,20 @@ export default function SettingsPage() {
                                 <li key={step}>{step}</li>
                               ))}
                             </ol>
+                            <div className="mt-3 grid gap-2 md:grid-cols-2">
+                              <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+                                <p className="text-xs font-semibold text-emerald-200">How to know the test arrived</p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-300">
+                                  {selectedAutomationProviderSetup.test_confirmation}
+                                </p>
+                              </div>
+                              <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3">
+                                <p className="text-xs font-semibold text-amber-200">If the test does not arrive</p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-300">
+                                  {selectedAutomationProviderSetup.recovery_note}
+                                </p>
+                              </div>
+                            </div>
                             <a
                               className="mt-2 inline-flex text-xs font-medium text-sky-300 underline decoration-sky-300/40 underline-offset-4 hover:text-sky-200"
                               href={selectedAutomationProviderSetup.official_docs_url}
@@ -8051,7 +8166,7 @@ export default function SettingsPage() {
                               Open the official {selectedAutomationProviderSetup.label} setup guide
                             </a>
                             <p className="mt-3 text-xs leading-5 text-zinc-400">
-                              After you save, send a test below. When your tool accepts it, the connection is ready.
+                              After you save, keep the one-time security key private and use the button beside it to send a safe test.
                             </p>
                             <details className="group mt-3 border-t border-sky-500/15 pt-3">
                               <summary className="cursor-pointer text-xs font-semibold text-zinc-300">
@@ -8226,14 +8341,74 @@ export default function SettingsPage() {
                       <div className="mt-4 space-y-3">
                         {automationConnections.map((connection) => {
                           const delivery = connection.last_delivery;
+                          const destinationSaved = connection.destination_url_saved;
+                          const signedTestAccepted = connection.verification_status === "verified";
+                          const realUpdateAccepted = connection.conformance_proof.production_proven;
+                          const connectionStatusLabel =
+                            connection.status === "disconnected"
+                              ? "Disconnected"
+                              : connection.status === "paused"
+                                ? "Updates paused"
+                                : connection.status === "unhealthy"
+                                  ? "Needs attention"
+                                  : realUpdateAccepted
+                                    ? "Connected and proven with a real update"
+                                    : signedTestAccepted
+                                      ? "Test received — ready for automatic updates"
+                                      : "Not connected yet — send a test";
+                          const setupProgress = [
+                            {
+                              label: "Receiving address saved",
+                              complete: destinationSaved,
+                              needsAttention: false,
+                              detail: destinationSaved
+                                ? "The private destination is stored securely."
+                                : "Paste and save the production webhook URL from your workflow tool.",
+                            },
+                            {
+                              label: "Signed test received",
+                              complete: signedTestAccepted,
+                              needsAttention: connection.verification_status === "failed",
+                              detail: signedTestAccepted
+                                ? `Accepted${connection.last_tested_at ? ` ${formatTimestamp(connection.last_tested_at)}` : ""}.`
+                                : connection.verification_status === "failed"
+                                  ? "The last test was not accepted. Use Retry last test after checking the workflow."
+                                  : "Send one safe test and confirm it appears in your workflow tool.",
+                            },
+                            {
+                              label: "First real update received",
+                              complete: realUpdateAccepted,
+                              needsAttention: false,
+                              detail: realUpdateAccepted
+                                ? "A real InsightOS update was accepted after the current test."
+                                : "This completes automatically after the first selected InsightOS update is accepted.",
+                            },
+                          ];
                           return (
-                            <div key={connection.id} className="rounded-md border border-[#303137] bg-[#101114] p-4">
+                            <div id={`automation-connection-${connection.id}`} key={connection.id} className="scroll-mt-24 rounded-md border border-[#303137] bg-[#101114] p-4">
                               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                 <div>
                                   <p className="font-medium text-white">{connection.name}</p>
                                   <p className="mt-1 text-xs text-zinc-400">
-                                    {connection.provider_label} · {connection.status === "active" ? "Sending updates" : connection.status === "unhealthy" ? "Needs attention" : connection.status === "paused" ? "Updates paused" : connection.status === "disconnected" ? "Disconnected" : "Send a test to finish"}
+                                    {connection.provider_label} · {connectionStatusLabel}
                                   </p>
+                                  <ol
+                                    className="mt-3 grid gap-2 md:grid-cols-3"
+                                    aria-label={`${connection.provider_label} connection progress`}
+                                  >
+                                    {setupProgress.map((step) => (
+                                      <li
+                                        key={step.label}
+                                        className={`rounded-md border p-3 ${step.complete ? "border-emerald-500/20 bg-emerald-500/5" : step.needsAttention ? "border-rose-500/20 bg-rose-500/5" : "border-[#303137] bg-[#141518]"}`}
+                                      >
+                                        <p className="text-xs font-semibold text-zinc-100">{step.label}</p>
+                                        <p className={`mt-1 text-[11px] font-semibold ${step.complete ? "text-emerald-300" : step.needsAttention ? "text-rose-300" : "text-amber-300"}`}>
+                                          {step.complete ? "Complete" : step.needsAttention ? "Needs attention" : "Waiting"}
+                                        </p>
+                                        <p className="mt-1 text-[11px] leading-4 text-zinc-500">{step.detail}</p>
+                                      </li>
+                                    ))}
+                                  </ol>
                                   <div className={`mt-2 rounded-md border px-3 py-2 ${connection.conformance_proof.state === "product_event_accepted" ? "border-emerald-500/20 bg-emerald-500/5" : connection.conformance_proof.state === "needs_attention" ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5"}`}>
                                     <p className="text-xs font-medium text-zinc-200">
                                       Connection check: {connection.conformance_proof.label}
@@ -8352,11 +8527,16 @@ export default function SettingsPage() {
                     ) : usageAllowance.external_automation.gateway_enabled ? (
                       <p className="mt-4 text-xs leading-5 text-zinc-500">No workflow tools connected yet.</p>
                     ) : null}
+                    <p className="mt-3 text-xs leading-5 text-zinc-500">
+                      A saved address alone is not connected. InsightOS shows a connection as ready only after the workflow tool accepts a signed test, and shows production proof only after it accepts a real selected update.
+                    </p>
+                    </div>
+                    ) : null}
 
-                    {usageAllowance.external_automation.gateway_enabled ? (
-                      <div className="mt-5 rounded-md border border-sky-500/20 bg-sky-500/5 p-4">
+                    {usageAllowance.external_automation.gateway_enabled && automationWorkflowDirection === "incoming" ? (
+                      <div id="workflow-requests" className="mt-5 scroll-mt-24 rounded-md border border-sky-500/20 bg-sky-500/5 p-4">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-200/70">
-                          Let a workflow ask for a report
+                          Let a workflow request saved work
                         </p>
                         <h4 className="mt-1 text-sm font-semibold text-white">
                           {activeAutomationServiceAccount?.allowed_commands.includes("report.generate_saved")
@@ -8373,46 +8553,90 @@ export default function SettingsPage() {
                             <p className="mt-1 text-xs leading-5 text-zinc-400">
                               {automationConnectorCatalog.truth.summary}
                             </p>
-                            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                            <label htmlFor="automation-command-provider" className="mt-3 block text-xs font-medium text-zinc-300">
+                              Workflow tool
+                            </label>
+                            <select
+                              id="automation-command-provider"
+                              className={`${selectClass} mt-1.5 max-w-sm`}
+                              value={automationCommandProvider}
+                              onChange={(event) => setAutomationCommandProvider(
+                                event.target.value as AutomationConnectorCatalog["items"][number]["code"],
+                              )}
+                            >
                               {automationConnectorCatalog.items.map((connector) => (
-                                <div key={connector.code} className="rounded-md border border-[#292a2f] bg-[#141518] p-3">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <p className="text-sm font-semibold text-zinc-100">{connector.name}</p>
-                                    <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-100">
-                                      Compatible
-                                    </span>
-                                  </div>
-                                  <p className="mt-1 text-xs leading-5 text-zinc-400">{connector.setup}</p>
-                                  <details className="mt-2 rounded-md border border-[#292a2f] bg-[#101114] px-2.5 py-2">
-                                    <summary className="cursor-pointer text-xs font-medium text-zinc-300">Show setup steps</summary>
-                                    <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-4 text-zinc-400">
-                                      {connector.setup_steps.map((step) => <li key={step}>{step}</li>)}
-                                    </ol>
-                                  </details>
-                                  <p className="mt-2 text-[11px] leading-4 text-zinc-500">
-                                    {connector.starter_available
-                                      ? "Optional starter available · Your connection still needs a test"
-                                      : "Universal guide and API file · Your connection still needs a test"}
-                                  </p>
-                                  {isAutomationConformanceProvider(connector.code) ? (
-                                    <button
-                                      type="button"
-                                      className={`${secondaryButtonClass} mt-3 w-full`}
-                                      disabled={busyAction === `automation-conformance-${connector.code}`}
-                                      onClick={() => void downloadAutomationConformanceKit(connector.code)}
-                                    >
-                                      {busyAction === `automation-conformance-${connector.code}`
-                                        ? "Preparing safe test..."
-                                        : "Download safe test file"}
-                                    </button>
-                                  ) : (
-                                    <p className="mt-3 text-[11px] leading-4 text-zinc-500">
-                                      Use the universal guide to test another HTTPS client.
-                                    </p>
-                                  )}
-                                </div>
+                                <option key={connector.code} value={connector.code}>{connector.name}</option>
                               ))}
-                            </div>
+                            </select>
+                            {selectedAutomationCommandConnector ? (
+                              <div className="mt-3 rounded-md border border-[#292a2f] bg-[#141518] p-3">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div>
+                                    <p className="text-sm font-semibold text-zinc-100">
+                                      Set up {selectedAutomationCommandConnector.name}
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-zinc-400">
+                                      {selectedAutomationCommandConnector.setup}
+                                    </p>
+                                  </div>
+                                  <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-100">
+                                    Setup guide available
+                                  </span>
+                                </div>
+                                <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs leading-5 text-zinc-300">
+                                  {selectedAutomationCommandConnector.setup_steps.map((step) => <li key={step}>{step}</li>)}
+                                </ol>
+                                {activeAutomationServiceAccount ? (
+                                  <div className="mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+                                    <p className="text-xs font-semibold text-emerald-100">Your next step</p>
+                                    <p className="mt-1 text-xs leading-5 text-zinc-300">
+                                      {selectedAutomationCommandConnector.code === "n8n"
+                                        ? "Download the inactive starter, add the private workflow key, run it once, and confirm InsightOS shows a contact time."
+                                        : "Download the connection guide, add the private workflow key in this tool, run one request, and confirm InsightOS shows a contact time."}
+                                    </p>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        className={primaryButtonClass}
+                                        disabled={busyAction === (
+                                          selectedAutomationCommandConnector.code === "n8n"
+                                            ? `automation-command-template-${activeAutomationServiceAccount.id}`
+                                            : `automation-command-guide-${activeAutomationServiceAccount.id}`
+                                        )}
+                                        onClick={() => void (
+                                          selectedAutomationCommandConnector.code === "n8n"
+                                            ? downloadN8nReportWorkflow(activeAutomationServiceAccount.id)
+                                            : downloadAutomationConnectionGuide(activeAutomationServiceAccount.id)
+                                        )}
+                                      >
+                                        {selectedAutomationCommandConnector.code === "n8n"
+                                          ? "Download n8n starter"
+                                          : `Download ${selectedAutomationCommandConnector.name} guide`}
+                                      </button>
+                                      {isAutomationConformanceProvider(selectedAutomationCommandConnector.code) ? (
+                                        <button
+                                          type="button"
+                                          className={secondaryButtonClass}
+                                          disabled={busyAction === `automation-conformance-${selectedAutomationCommandConnector.code}`}
+                                          onClick={() => void downloadAutomationConformanceKit(selectedAutomationCommandConnector.code)}
+                                        >
+                                          {busyAction === `automation-conformance-${selectedAutomationCommandConnector.code}`
+                                            ? "Preparing sample..."
+                                            : "Download sample request"}
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                    <p className="mt-2 text-[11px] leading-4 text-zinc-500">
+                                      The sample checks field mapping only. The connection is proven only after this tool contacts InsightOS and a first allowed request is saved.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <p className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-100">
+                                    First create report access below. InsightOS will then show the private key and the next setup action for {selectedAutomationCommandConnector.name}.
+                                  </p>
+                                )}
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
 
@@ -8460,48 +8684,51 @@ export default function SettingsPage() {
                                 </p>
                               </div>
                               {me?.org_role === "org_owner" ? (
-                                <div className="flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    className={primaryButtonClass}
-                                    disabled={busyAction === `automation-command-template-${activeAutomationServiceAccount.id}`}
-                                    onClick={() => void downloadN8nReportWorkflow(activeAutomationServiceAccount.id)}
-                                  >
-                                    {busyAction === `automation-command-template-${activeAutomationServiceAccount.id}` ? "Downloading..." : "Download n8n starter"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={secondaryButtonClass}
-                                    disabled={busyAction === `automation-command-guide-${activeAutomationServiceAccount.id}`}
-                                    onClick={() => void downloadAutomationConnectionGuide(activeAutomationServiceAccount.id)}
-                                  >
-                                    {busyAction === `automation-command-guide-${activeAutomationServiceAccount.id}` ? "Preparing..." : "Download connection guide"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={secondaryButtonClass}
-                                    disabled={busyAction === `automation-command-openapi-${activeAutomationServiceAccount.id}`}
-                                    onClick={() => void downloadAutomationOpenApi(activeAutomationServiceAccount.id)}
-                                  >
-                                    {busyAction === `automation-command-openapi-${activeAutomationServiceAccount.id}` ? "Preparing..." : "Download API file"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={secondaryButtonClass}
-                                    disabled={busyAction === `automation-command-rotate-${activeAutomationServiceAccount.id}`}
-                                    onClick={() => void rotateAutomationCommandAccess(activeAutomationServiceAccount.id)}
-                                  >
-                                    {busyAction === `automation-command-rotate-${activeAutomationServiceAccount.id}` ? "Replacing..." : "Replace key"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-medium text-rose-100 disabled:opacity-50"
-                                    disabled={busyAction === `automation-command-revoke-${activeAutomationServiceAccount.id}`}
-                                    onClick={() => void revokeAutomationCommandAccess(activeAutomationServiceAccount.id)}
-                                  >
-                                    {busyAction === `automation-command-revoke-${activeAutomationServiceAccount.id}` ? "Turning off..." : "Turn off access"}
-                                  </button>
-                                </div>
+                                <details className="group relative">
+                                  <summary className={`${secondaryButtonClass} cursor-pointer list-none`}>Manage connection</summary>
+                                  <div className="mt-2 flex flex-col gap-2 rounded-md border border-[#303137] bg-[#141518] p-2 sm:min-w-52">
+                                    <button
+                                      type="button"
+                                      className={secondaryButtonClass}
+                                      disabled={busyAction === `automation-command-template-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void downloadN8nReportWorkflow(activeAutomationServiceAccount.id)}
+                                    >
+                                      {busyAction === `automation-command-template-${activeAutomationServiceAccount.id}` ? "Downloading..." : "Download n8n starter"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={secondaryButtonClass}
+                                      disabled={busyAction === `automation-command-guide-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void downloadAutomationConnectionGuide(activeAutomationServiceAccount.id)}
+                                    >
+                                      {busyAction === `automation-command-guide-${activeAutomationServiceAccount.id}` ? "Preparing..." : "Download connection guide"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={secondaryButtonClass}
+                                      disabled={busyAction === `automation-command-openapi-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void downloadAutomationOpenApi(activeAutomationServiceAccount.id)}
+                                    >
+                                      {busyAction === `automation-command-openapi-${activeAutomationServiceAccount.id}` ? "Preparing..." : "Download API file"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={secondaryButtonClass}
+                                      disabled={busyAction === `automation-command-rotate-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void rotateAutomationCommandAccess(activeAutomationServiceAccount.id)}
+                                    >
+                                      {busyAction === `automation-command-rotate-${activeAutomationServiceAccount.id}` ? "Replacing..." : "Replace key"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-sm font-medium text-rose-100 disabled:opacity-50"
+                                      disabled={busyAction === `automation-command-revoke-${activeAutomationServiceAccount.id}`}
+                                      onClick={() => void revokeAutomationCommandAccess(activeAutomationServiceAccount.id)}
+                                    >
+                                      {busyAction === `automation-command-revoke-${activeAutomationServiceAccount.id}` ? "Turning off..." : "Turn off access"}
+                                    </button>
+                                  </div>
+                                </details>
                               ) : null}
                             </div>
                             <div className="mt-4 rounded-md border border-[#292a2f] bg-[#141518] p-3">
@@ -8577,7 +8804,25 @@ export default function SettingsPage() {
                               </details>
                             ) : null}
                             {me?.org_role === "org_owner" ? (
-                              <div className="mt-4 border-t border-[#292a2f] pt-4">
+                              <details className="group mt-4 rounded-md border border-[#303137] bg-[#141518]">
+                                <summary className="cursor-pointer list-none p-4">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                      <p className="text-sm font-semibold text-white">Add more things this workflow may do</p>
+                                      <p className="mt-1 text-xs leading-5 text-zinc-400">
+                                        Keep the basic saved-report connection, or deliberately add reports, recommendations, refreshes, listing checks, drafts, or review routing.
+                                      </p>
+                                    </div>
+                                    <span className="rounded-full border border-[#3a3b41] bg-[#101114] px-2.5 py-1 text-xs font-semibold text-zinc-300">
+                                      {automationExtraAbilityCount === 0
+                                        ? "No extras enabled"
+                                        : `${automationExtraAbilityCount} ${automationExtraAbilityCount === 1 ? "extra" : "extras"} enabled`}
+                                    </span>
+                                  </div>
+                                  <p className="mt-2 text-xs font-semibold text-sky-300 group-open:hidden">Review optional abilities</p>
+                                  <p className="mt-2 hidden text-xs font-semibold text-zinc-400 group-open:block">Close optional abilities</p>
+                                </summary>
+                                <div className="border-t border-[#292a2f] p-4">
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                   <div>
                                     <p className="text-sm font-semibold text-white">
@@ -8856,7 +9101,8 @@ export default function SettingsPage() {
                                     ) : null}
                                   </div>
                                 </div>
-                              </div>
+                                </div>
+                              </details>
                             ) : null}
                           </div>
                         ) : me?.org_role === "org_owner" && automationCommandLoadState === "ready" ? (
@@ -9139,7 +9385,7 @@ export default function SettingsPage() {
                       </div>
                     ) : null}
 
-                    {usageAllowance.external_automation.outbound_contract?.supported_events.length ? (
+                    {automationWorkflowDirection === "outgoing" && usageAllowance.external_automation.outbound_contract?.supported_events.length ? (
                       <details className="group mt-3 rounded-md border border-[#292a2f] bg-[#101114]">
                         <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-medium text-zinc-300">
                           See every update InsightOS can send
@@ -9162,9 +9408,7 @@ export default function SettingsPage() {
                     <p className="mt-4 border-t border-[#292a2f] pt-3 text-xs leading-5 text-zinc-500">
                       Workflow tools can receive updates. They cannot approve recommendations, publish content, edit WordPress, or change a Google Business Profile.
                     </p>
-                  </div>
-                ) : null}
-              </section>
+                  </section>
             ) : null}
 
             <section aria-labelledby="migration-heading" className="rounded-md border border-[#292a2f] bg-[#141518] p-5">

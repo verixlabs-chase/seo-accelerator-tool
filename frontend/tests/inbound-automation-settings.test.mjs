@@ -85,27 +85,29 @@ test("owners can download one vendor-neutral inbound connection guide", () => {
 test("Settings explains connector compatibility without claiming a live connection", () => {
   assert.match(settings, /\/automation\/connector-catalog/);
   assert.match(settings, /Choose your workflow tool/);
-  assert.match(settings, /connector\.name/);
-  assert.match(settings, /connector\.setup/);
-  assert.match(settings, /Compatible/);
-  assert.match(settings, /Your connection still needs a test/);
-  assert.match(settings, /connector\.starter_available/);
+  assert.match(settings, /automation-command-provider/);
+  assert.match(settings, /selectedAutomationCommandConnector\.name/);
+  assert.match(settings, /selectedAutomationCommandConnector\.setup/);
+  assert.match(settings, /Setup guide available/);
+  assert.match(settings, /The connection is proven only after this tool contacts InsightOS/);
   assert.doesNotMatch(settings, /connector\.production_connection_proven\s*\?\s*["']Connected/);
 });
 
 test("each named connector offers a synthetic safe test instead of live proof", () => {
-  assert.match(settings, /downloadAutomationConformanceKit\(connector\.code\)/);
-  assert.match(settings, /Download safe test file/);
-  assert.match(settings, /Preparing safe test/);
-  assert.match(settings, /isAutomationConformanceProvider\(connector\.code\)/);
-  assert.match(settings, /Use the universal guide to test another HTTPS client/);
+  assert.match(settings, /downloadAutomationConformanceKit\(selectedAutomationCommandConnector\.code\)/);
+  assert.match(settings, /Download sample request/);
+  assert.match(settings, /Preparing sample/);
+  assert.match(settings, /isAutomationConformanceProvider\(selectedAutomationCommandConnector\.code\)/);
+  assert.match(settings, /The sample checks field mapping only/);
   assert.match(settings, /contains synthetic data and a test-only secret/);
 });
 
-test("connector cards reveal plain platform-specific setup steps", () => {
-  assert.match(settings, /Show setup steps/);
-  assert.match(settings, /connector\.setup_steps\.map/);
+test("one selected connector reveals plain platform-specific setup steps and one next action", () => {
+  assert.match(settings, /selectedAutomationCommandConnector\.setup_steps\.map/);
   assert.match(settings, /<li key=\{step\}>\{step\}<\/li>/);
+  assert.match(settings, /Your next step/);
+  assert.match(settings, /Download \$\{selectedAutomationCommandConnector\.name\} guide/);
+  assert.match(settings, /First create report access below/);
 });
 
 test("workflow progress uses native evidence instead of claiming an outside connection", () => {
