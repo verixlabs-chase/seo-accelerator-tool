@@ -1,11 +1,16 @@
+import base64
 import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
+from io import BytesIO
+
+from PIL import Image
 
 from app.models.business_location import BusinessLocation
 from app.models.audit_log import AuditLog
 from app.models.campaign import Campaign
+from app.models.enterprise_branding import OrganizationReportBrand
 from app.models.organization import Organization
 from app.models.organization_membership import OrganizationMembership
 from app.models.portfolio_targeting import (
@@ -23,6 +28,12 @@ def _login(client, email: str, password: str) -> tuple[dict, dict]:
     assert response.status_code == 200
     payload = response.json()["data"]
     return payload["user"], {"Authorization": f"Bearer {payload['access_token']}"}
+
+
+def _portal_logo() -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (96, 32), color=(38, 94, 130)).save(output, format="PNG")
+    return output.getvalue()
 
 
 def _saved_html_report(db_session, *, organization_id: str, name: str) -> dict[str, str]:
@@ -133,7 +144,27 @@ def test_client_report_role_is_exact_read_only_and_location_scoped(client, db_se
         created_at=now,
         updated_at=now,
     )
-    db_session.add_all([group, member, grant])
+    logo = _portal_logo()
+    brand = OrganizationReportBrand(
+        tenant_id=organization.id,
+        organization_id=organization.id,
+        brand_name="Northstar Local Partners",
+        report_title="Northstar search progress",
+        footer_text="Prepared for Northstar clients.",
+        accent_color="#265E82",
+        logo_content=logo,
+        logo_sha256=hashlib.sha256(logo).hexdigest(),
+        logo_width=96,
+        logo_height=32,
+        logo_updated_at=now,
+        hide_platform_attribution=True,
+        enabled=True,
+        version=4,
+        updated_by_user_id=client_user.id,
+        created_at=now,
+        updated_at=now,
+    )
+    db_session.add_all([group, member, grant, brand])
     db_session.commit()
 
     auth_user, headers = _login(client, "a@example.com", "pass-a")
@@ -153,6 +184,14 @@ def test_client_report_role_is_exact_read_only_and_location_scoped(client, db_se
             "freshness": "current",
         }
     ]
+    assert payload["identity"] == {
+        "display_name": "Northstar Local Partners",
+        "portal_title": "Northstar search progress",
+        "accent_color": "#265E82",
+        "logo_data_url": f"data:image/png;base64,{base64.b64encode(logo).decode('ascii')}",
+        "platform_attribution_visible": False,
+    }
+    assert payload["truth"]["identity_scope"] == "current_portal_only"
     serialized = json.dumps(payload)
     for private_value in (
         unassigned["report_id"],
@@ -162,6 +201,10 @@ def test_client_report_role_is_exact_read_only_and_location_scoped(client, db_se
         "organization_id",
         "artifact_id",
         "storage_key",
+        "logo_sha256",
+        "logo_width",
+        "branding_version",
+        "footer_text",
     ):
         assert private_value not in serialized
 
@@ -238,5 +281,13 @@ def test_client_reports_fail_closed_by_plan_and_empty_assignment(client, db_sess
     db_session.commit()
     empty = client.get("/api/v1/enterprise/client-reports", headers=headers)
     assert empty.status_code == 200
-    assert empty.json()["data"]["items"] == []
-    assert empty.json()["data"]["truth"]["scope"] == "assigned_locations_only"
+    empty_data = empty.json()["data"]
+    assert empty_data["items"] == []
+    assert empty_data["identity"] == {
+        "display_name": "InsightOS",
+        "portal_title": "Your private client reports",
+        "accent_color": "#E85D19",
+        "logo_data_url": None,
+        "platform_attribution_visible": True,
+    }
+    assert empty_data["truth"]["scope"] == "assigned_locations_only"

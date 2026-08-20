@@ -5858,6 +5858,17 @@ Implementation status (2026-08-20):
   or remove an accepted client's report grant without deleting reports or the
   client's account. InsightOS does not email a password or claim message
   delivery; the owner sends the one-time link through a trusted channel.
+- ENT1I's branded authenticated client portal is implemented locally. The
+  Enterprise owner's current enabled report identity, title, bounded accent,
+  and verified still-PNG logo now carry into the read-only client sign-in. The
+  customer response exposes only those display values and whether platform
+  attribution remains visible; organization IDs, branding record IDs,
+  versions, hashes, dimensions, storage details, and owner controls stay
+  private. The portal validates the display contract again, never loads a logo
+  from an external origin, keeps customer colors out of semantic result states,
+  and removes InsightOS from static page metadata when attribution is hidden.
+  This styling is explicitly current portal chrome: every saved report keeps
+  the exact branding and evidence frozen when that report was generated.
 
 Acceptance criteria:
 

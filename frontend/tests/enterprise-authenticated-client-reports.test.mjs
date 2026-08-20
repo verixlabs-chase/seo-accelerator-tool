@@ -43,3 +43,28 @@ test("client report states explain saved dates and empty access plainly", () => 
   assert.match(page, /ask the workspace owner/i);
   assert.doesNotMatch(page, /artifact|tenant|campaign_id|organization_id|provider|HTTP/i);
 });
+
+test("current customer-safe report identity brands the isolated client portal", () => {
+  const page = source("../app/client-reports/page.tsx");
+  const layout = source("../app/client-reports/layout.tsx");
+
+  for (const field of [
+    "display_name",
+    "portal_title",
+    "accent_color",
+    "logo_data_url",
+    "platform_attribution_visible",
+  ]) {
+    assert.match(page, new RegExp(field));
+  }
+  assert.match(page, /data:image\/png;base64,/);
+  assert.match(page, /identity\.logo_data_url/);
+  assert.match(page, /identity\.display_name/);
+  assert.match(page, /identity\.portal_title/);
+  assert.match(page, /style=\{\{ backgroundColor: identity\.accent_color \}\}/);
+  assert.match(page, /identity\.platform_attribution_visible/);
+  assert.match(page, /Private report access provided through InsightOS/);
+  assert.match(page, /data \? safeIdentity\(data\.identity\) : LOADING_IDENTITY/);
+  assert.doesNotMatch(page, /identity\.(organization_id|branding_version|logo_sha256|logo_width|logo_height|storage_key)/);
+  assert.doesNotMatch(layout, /\| InsightOS/);
+});

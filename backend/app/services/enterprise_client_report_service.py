@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -7,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.business_location import BusinessLocation
 from app.models.campaign import Campaign
+from app.models.enterprise_branding import OrganizationReportBrand
 from app.models.portfolio_targeting import (
     PortfolioLocationAccessGrant,
     PortfolioLocationGroup,
@@ -22,6 +25,11 @@ from app.services.commercial_plan_service import (
 
 
 READY_REPORT_STATUSES = {"generated", "delivered"}
+DEFAULT_PORTAL_ACCENT = "#E85D19"
+DEFAULT_PORTAL_NAME = "InsightOS"
+DEFAULT_PORTAL_TITLE = "Your private client reports"
+MAX_PORTAL_LOGO_BYTES = 65_536
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 class EnterpriseClientReportError(RuntimeError):
@@ -44,13 +52,14 @@ def list_client_reports(
         organization_id=organization_id,
         feature_code=FEATURE_AUTHENTICATED_CLIENT_REPORTS,
     )
+    identity = _client_portal_identity(db, organization_id=organization_id)
     locations = _accessible_locations(
         db,
         organization_id=organization_id,
         user_id=user_id,
     )
     if not locations:
-        return _list_contract([])
+        return _list_contract([], identity=identity)
 
     location_names = {row.id: row.name for row in locations}
     rows = (
@@ -87,7 +96,7 @@ def list_client_reports(
                 "freshness": "current" if generated_at >= datetime.now(UTC) - timedelta(days=31) else "older_saved_report",
             }
         )
-    return _list_contract(items)
+    return _list_contract(items, identity=identity)
 
 
 def read_client_report_html(
@@ -250,12 +259,59 @@ def _utc_datetime(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _list_contract(items: list[dict[str, Any]]) -> dict[str, Any]:
+def _client_portal_identity(db: Session, *, organization_id: str) -> dict[str, Any]:
+    row = (
+        db.query(OrganizationReportBrand)
+        .filter(
+            OrganizationReportBrand.organization_id == organization_id,
+            OrganizationReportBrand.tenant_id == organization_id,
+            OrganizationReportBrand.enabled.is_(True),
+        )
+        .one_or_none()
+    )
+    if row is None:
+        return {
+            "display_name": DEFAULT_PORTAL_NAME,
+            "portal_title": DEFAULT_PORTAL_TITLE,
+            "accent_color": DEFAULT_PORTAL_ACCENT,
+            "logo_data_url": None,
+            "platform_attribution_visible": True,
+        }
+
+    accent_color = (
+        row.accent_color.upper()
+        if re.fullmatch(r"#[0-9A-Fa-f]{6}", row.accent_color or "")
+        else DEFAULT_PORTAL_ACCENT
+    )
+    logo_data_url = None
+    if (
+        row.logo_content is not None
+        and len(row.logo_content) <= MAX_PORTAL_LOGO_BYTES
+        and row.logo_content.startswith(PNG_SIGNATURE)
+    ):
+        encoded_logo = base64.b64encode(row.logo_content).decode("ascii")
+        logo_data_url = f"data:image/png;base64,{encoded_logo}"
+    return {
+        "display_name": row.brand_name,
+        "portal_title": row.report_title,
+        "accent_color": accent_color,
+        "logo_data_url": logo_data_url,
+        "platform_attribution_visible": not row.hide_platform_attribution,
+    }
+
+
+def _list_contract(
+    items: list[dict[str, Any]],
+    *,
+    identity: dict[str, Any],
+) -> dict[str, Any]:
     return {
         "items": items,
         "count": len(items),
+        "identity": identity,
         "truth": {
             "scope": "assigned_locations_only",
+            "identity_scope": "current_portal_only",
             "summary": (
                 "These are verified saved reports for the locations assigned to this client sign-in."
                 if items
@@ -264,6 +320,7 @@ def _list_contract(items: list[dict[str, Any]]) -> dict[str, Any]:
             "limitations": [
                 "Reports reflect saved evidence as of their displayed date.",
                 "This client view cannot change workspace data or settings.",
+                "Portal styling may change; each saved report keeps its original identity and evidence.",
             ],
         },
     }
