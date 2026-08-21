@@ -8,9 +8,9 @@ The current platform scales horizontally, but not uniformly. Different subsystem
 
 The FastAPI process can be scaled horizontally behind a load balancer if:
 
-- all nodes share the same PostgreSQL and Redis
+- all nodes share the same PostgreSQL and, when workers are persistent, Redis
 - no correctness depends on in-process mutable state
-- rate limiting and coordination remain Redis-backed
+- rate limiting remains on a shared Redis or PostgreSQL backend
 
 `main.py` already warns about selected module-level mutable structures when multi-worker deployment is detected.
 
@@ -52,7 +52,15 @@ Primary bottleneck for:
 - Celery broker throughput
 - Redis Streams event fan-out
 - heartbeat and queue inspection
-- any Redis-backed rate limiting
+- Redis-backed rate limiting in persistent deployments
+
+The hosted Vercel profile instead places API quota counters in PostgreSQL. That
+adds one short, bounded transaction per protected request and makes hot shared
+client networks a database-lock consideration; the edge WAF remains the first
+line of volumetric protection. The application ceiling is deliberately a coarse
+600-request-per-minute network guard rather than a billable or authenticated
+customer allowance; service-account entitlements and action-specific usage
+controls protect workflow work independently.
 
 ### Process-local controls
 

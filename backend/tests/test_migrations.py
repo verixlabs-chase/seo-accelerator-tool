@@ -222,6 +222,24 @@ def test_migration_upgrade_and_downgrade():
         assert "customer_status_updates" in inspector.get_table_names()
         assert "production_capability_proofs" in inspector.get_table_names()
         assert "launch_experience_reviews" in inspector.get_table_names()
+        assert "request_rate_limit_counters" in inspector.get_table_names()
+        rate_limit_columns = {
+            column["name"] for column in inspector.get_columns("request_rate_limit_counters")
+        }
+        assert rate_limit_columns == {
+            "scope_hash",
+            "policy_key",
+            "window_started_at",
+            "request_count",
+            "last_seen_at",
+        }
+        assert inspector.get_pk_constraint("request_rate_limit_counters")[
+            "constrained_columns"
+        ] == ["scope_hash", "policy_key"]
+        rate_limit_indexes = {
+            index["name"] for index in inspector.get_indexes("request_rate_limit_counters")
+        }
+        assert "ix_request_rate_limit_counters_last_seen_at" in rate_limit_indexes
         assert "data_export_requests" in inspector.get_table_names()
         assert "provider_disconnect_requests" in inspector.get_table_names()
         assert "organization_closure_requests" in inspector.get_table_names()

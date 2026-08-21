@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     public_base_url: str = 'http://localhost'
     local_admin_bootstrap_enabled: bool = False
     hosted_serverless: bool = False
+    vercel: bool = False
     startup_invariants_enabled: bool = True
     cron_secret: str = ""
     durable_job_batch_size: int = 5
@@ -134,8 +135,13 @@ class Settings(BaseSettings):
     metrics_require_auth: bool = False
     metrics_allowed_ips: str = ""
     max_request_body_bytes: int = 2_000_000
-    rate_limit_requests_per_minute: int = 60
+    # This is a coarse network-identity abuse ceiling, not a customer plan quota.
+    # Keep enough headroom for shared office and automation-provider egress IPs.
+    rate_limit_requests_per_minute: int = 600
     rate_limit_enabled: bool = False
+    rate_limit_backend: str = "redis"
+    rate_limit_identity_source: str = "peer"
+    rate_limit_hmac_secret: str = ""
     max_concurrent_requests: int = 2000
     max_requests_per_tenant: int = 200
     max_queue_depth: int = 10000
@@ -190,6 +196,22 @@ class Settings(BaseSettings):
         "local-dev-master-key",
         "replace-me",
     }
+    _WEAK_RATE_LIMIT_SECRET_VALUES = {
+        "",
+        "change-me",
+        "dev-secret",
+        "local-dev-secret",
+        "replace-me",
+        "replace-with-at-least-32-random-characters",
+    }
+    _WEAK_CRON_SECRET_VALUES = {
+        "",
+        "change-me",
+        "dev-secret",
+        "local-dev-secret",
+        "replace-me",
+        "test-cron-secret",
+    }
 
     @staticmethod
     def _rotation_secret_list(raw_value: str, *, setting_name: str) -> list[str]:
@@ -241,6 +263,67 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_guardrails(self) -> "Settings":
+        rate_limit_backend = self.rate_limit_backend.strip().lower()
+        if rate_limit_backend not in {"redis", "postgres"}:
+            raise ValueError("RATE_LIMIT_BACKEND must be redis or postgres.")
+        self.rate_limit_backend = rate_limit_backend
+
+        identity_source = self.rate_limit_identity_source.strip().lower()
+        if identity_source not in {"peer", "vercel"}:
+            raise ValueError("RATE_LIMIT_IDENTITY_SOURCE must be peer or vercel.")
+        self.rate_limit_identity_source = identity_source
+        if not 1 <= self.rate_limit_requests_per_minute <= 1_000_000:
+            raise ValueError(
+                "RATE_LIMIT_REQUESTS_PER_MINUTE must be between 1 and 1000000."
+            )
+        if self.rate_limit_enabled and self.app_env.lower() != "test":
+            if (
+                self.rate_limit_hmac_secret.strip() in self._WEAK_RATE_LIMIT_SECRET_VALUES
+                or len(self.rate_limit_hmac_secret.strip()) < 32
+            ):
+                raise ValueError(
+                    "Enabled rate limiting requires RATE_LIMIT_HMAC_SECRET with at least "
+                    "32 characters and forbids placeholder values."
+                )
+            if (
+                self.app_env.lower() == "production"
+                and self.hosted_serverless
+                and rate_limit_backend != "postgres"
+            ):
+                raise ValueError(
+                    "Hosted-serverless production requires RATE_LIMIT_BACKEND=postgres "
+                    "when rate limiting is enabled."
+                )
+            if (
+                self.app_env.lower() == "production"
+                and self.hosted_serverless
+                and (
+                    self.cron_secret.strip() in self._WEAK_CRON_SECRET_VALUES
+                    or len(self.cron_secret.strip()) < 32
+                )
+            ):
+                raise ValueError(
+                    "Hosted-serverless production with rate limiting requires "
+                    "CRON_SECRET with at least 32 characters and forbids placeholder "
+                    "values so protected cleanup can run."
+                )
+            if identity_source == "vercel" and not (
+                self.hosted_serverless and self.vercel
+            ):
+                raise ValueError(
+                    "RATE_LIMIT_IDENTITY_SOURCE=vercel is allowed only in a detected "
+                    "Vercel hosted-serverless runtime."
+                )
+            if (
+                self.app_env.lower() == "production"
+                and self.hosted_serverless
+                and self.vercel
+                and identity_source != "vercel"
+            ):
+                raise ValueError(
+                    "Vercel hosted-serverless production requires "
+                    "RATE_LIMIT_IDENTITY_SOURCE=vercel when rate limiting is enabled."
+                )
         intelligence_mode = self.intelligence_activation_mode.strip().lower()
         if intelligence_mode not in {"recommendation_only", "autonomous"}:
             raise ValueError(

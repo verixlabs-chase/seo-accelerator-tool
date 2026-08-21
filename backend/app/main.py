@@ -137,21 +137,25 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 if settings.app_env.lower() != "test":
-    app.add_middleware(CorrelationIdMiddleware)
-    app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(
+        RateLimitMiddleware,
+        enabled=settings.rate_limit_enabled,
+        requests_per_minute=settings.rate_limit_requests_per_minute,
+        backend=settings.rate_limit_backend,
+        identity_source=settings.rate_limit_identity_source,
+        hmac_secret=settings.rate_limit_hmac_secret,
+        redis_url=settings.redis_url,
+        cron_secret=settings.cron_secret,
+    )
+    app.add_middleware(RequestSizeLimitMiddleware, max_request_body_bytes=settings.max_request_body_bytes)
     app.add_middleware(
         RequestThrottleMiddleware,
         max_concurrent_requests=settings.max_concurrent_requests,
         max_requests_per_tenant=settings.max_requests_per_tenant,
     )
-    app.add_middleware(RequestSizeLimitMiddleware, max_request_body_bytes=settings.max_request_body_bytes)
-    app.add_middleware(
-        RateLimitMiddleware,
-        enabled=settings.rate_limit_enabled,
-        requests_per_minute=settings.rate_limit_requests_per_minute,
-        redis_url=settings.redis_url,
-    )
     app.add_middleware(MetricsMiddleware)
+    app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(SecurityHeadersMiddleware, app_env=settings.app_env)
 app.add_middleware(
     CORSMiddleware,

@@ -86,6 +86,13 @@ They expose:
 ## Runtime characteristics
 
 - The API process is designed to be mostly stateless.
-- Redis-backed rate limiting is optional and controlled through settings.
+- Distributed rate limiting is controlled through settings. Persistent
+  deployments can use Redis; hosted Vercel uses the PostgreSQL function-only
+  fixed-window backend and fails closed if it cannot make a quota decision.
+  This layer is a coarse per-network-IP abuse guard (600 requests per minute by
+  default), not a customer plan quota. Authenticated entitlements and
+  action-specific allowances remain separate, which avoids penalizing unrelated
+  customers sharing office or automation-provider egress addresses.
 - Metrics and tracing are environment-driven and can be disabled without changing code paths.
-- In production-like deployments, Redis is a startup dependency, not an optional enhancement.
+- Redis is a startup dependency for persistent worker deployments. Hosted
+  serverless uses eager and durable database jobs and does not require Redis.

@@ -26,10 +26,12 @@ The API plane is created in `backend/app/main.py`. Startup does the following:
 - initializes Redis Streams with `initialize_event_stream`
 - registers event subscribers with `register_default_subscribers`
 - initializes model defaults with `initialize_default_models`
-- verifies Redis connectivity in non-test environments
+- verifies Redis connectivity in non-test persistent-worker environments
 - seeds a local admin user when the user table exists
 
-Middleware provides request logging, throttling, request-size limits, optional Redis-backed rate limiting, metrics, security headers, CORS, and correlation IDs.
+Middleware provides request logging, throttling, request-size limits,
+distributed Redis or PostgreSQL rate limiting, metrics, security headers, CORS,
+and correlation IDs.
 
 ### 2. Work execution plane
 
