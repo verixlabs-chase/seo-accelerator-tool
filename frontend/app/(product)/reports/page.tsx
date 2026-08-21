@@ -233,6 +233,7 @@ type ReportStoryItem = {
   detail?: string;
   result?: string;
   status?: string;
+  result_state?: string;
   completed_at?: string | null;
   canonical_action_id?: string;
   why_it_matters?: string;
@@ -543,6 +544,54 @@ function storyList(items: ReportStoryItem[], empty: string) {
   );
 }
 
+function completedWorkList(items: ReportStoryItem[]) {
+  const uniqueItems = uniqueStories(items);
+  if (!uniqueItems.length) {
+    return <p className="text-sm leading-6 text-zinc-400">No completed action was recorded in this report period.</p>;
+  }
+  return (
+    <div className="space-y-3">
+      {uniqueItems.map((item, index) => (
+        <article key={item.id || canonicalStoryKey(item)} className="rounded-md border border-[#26272c] bg-[#0f1012] p-4">
+          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-500">
+            Item {index + 1} · Recorded {formatRelativeTime(item.completed_at || undefined)} · {toTitleCase(item.result_state || item.status || "completed")}
+          </p>
+          <h5 className="mt-2 font-semibold text-white">
+            {reportCopy(item.title, "Completed work")}
+          </h5>
+          <p className="mt-1.5 text-sm leading-6 text-zinc-300">
+            <span className="font-semibold text-zinc-200">Why this mattered:</span>{" "}
+            {reportCopy(
+              item.why_it_matters || item.detail,
+              "This work responded to saved information for this location.",
+            )}
+          </p>
+          {item.steps?.length ? (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-zinc-300">Work recorded</p>
+              <ol className="mt-1.5 list-decimal space-y-1 pl-5 text-sm leading-6 text-zinc-300">
+                {item.steps.map((step) => (
+                  <li key={step}>{reportCopy(step, "Completed work item.")}</li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+          {item.evidence?.length ? (
+            <details className="mt-3 text-xs leading-5 text-zinc-400">
+              <summary className="cursor-pointer font-medium text-zinc-300">Information checked</summary>
+              <ul className="mt-1.5 list-disc space-y-1 pl-5">
+                {item.evidence.map((value) => (
+                  <li key={value}>{reportCopy(value, "Saved information supported this work.")}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function canonicalStoryKey(item: ReportStoryItem) {
   return (item.canonical_action_id || item.title || item.id || "")
     .toLowerCase()
@@ -765,12 +814,18 @@ function buildReportSections(report?: ReportItem, providedSnapshot?: ReportSnaps
         visual: storyList(summary.risks || [], "No measured risk was found in the available information."),
       },
       {
-        title: "Work completed and results",
-        summary: "Completed work stays separate from measured results, so the report never claims that an action helped before the follow-up data exists.",
+        title: "Work completed this month",
+        summary: "This shows only work recorded during this report period, with the reason, practical steps, and supporting information when available.",
         metric: `${summary.completed_actions?.length || 0} completed`,
+        visual: completedWorkList(summary.completed_actions || []),
+      },
+      {
+        title: "Measured results",
+        summary: "Follow-up outcomes remain separate, so completed activity is never presented as proof that the numbers improved.",
+        metric: `${summary.measured_outcomes?.length || 0} measured`,
         visual: storyList(
-          summary.measured_outcomes?.length ? summary.measured_outcomes : summary.completed_actions || [],
-          "No completed action or measured result was recorded for this period.",
+          summary.measured_outcomes || [],
+          "Completed work is still waiting for enough follow-up information.",
         ),
       },
       {

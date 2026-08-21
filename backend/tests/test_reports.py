@@ -1147,6 +1147,41 @@ def test_report_next_actions_are_unique_detailed_and_measurable(client, db_sessi
             deterministic_hash="d" * 64,
         )
     )
+    completed_recommendation = StrategyRecommendation(
+        tenant_id=campaign.tenant_id,
+        campaign_id=campaign.id,
+        recommendation_type="reputation.launch_review_request_workflow",
+        rationale="The saved review pace needs attention.",
+        confidence=0.84,
+        confidence_score=0.84,
+        evidence_json='{"evidence":["The recent review pace is below the saved goal."]}',
+        risk_tier=2,
+        rollback_plan_json='{"steps":[]}',
+        status="GENERATED",
+        idempotency_key="report-completed-rec",
+    )
+    db_session.add(completed_recommendation)
+    db_session.flush()
+    db_session.add(
+        ActionPlanOccurrence(
+            tenant_id=campaign.tenant_id,
+            organization_id=campaign.organization_id,
+            campaign_id=campaign.id,
+            business_location_id=campaign.business_location_id,
+            recommendation_id=completed_recommendation.id,
+            action_id="reputation.launch_review_request_workflow",
+            cadence="weekly",
+            period_key="2026-W31",
+            timezone="UTC",
+            due_at=datetime(2026, 8, 4, 12, 0, tzinfo=UTC),
+            status="waiting_for_results",
+            completed_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC),
+            lexicon_id="seo-intelligence-core",
+            lexicon_version="1.0.0",
+            content_hash="c" * 64,
+            idempotency_key="report-completed-occurrence",
+        )
+    )
     action_ids = [
         "reputation.launch_review_request_workflow",
         "reputation.launch_review_request_workflow",
@@ -1204,6 +1239,16 @@ def test_report_next_actions_are_unique_detailed_and_measurable(client, db_sessi
     ).json()["data"]
     snapshot = detail_payload["snapshot"]
 
+    completed = snapshot["completed_actions"]
+    assert len(completed) == 1
+    assert completed[0]["why_it_matters"]
+    assert completed[0]["steps"]
+    assert completed[0]["evidence"] == [
+        "The recent review pace is below the saved goal."
+    ]
+    assert completed[0]["completed_at"].startswith("2026-08-05")
+    assert completed[0]["result_state"] == "waiting_for_measurement"
+
     priorities = snapshot["next_priorities"]
     assert len(priorities) == 1
     assert len({item["measurement"]["metric_id"] for item in priorities}) == 1
@@ -1221,8 +1266,18 @@ def test_report_next_actions_are_unique_detailed_and_measurable(client, db_sessi
     html = html_response.text
     assert "Performance over time" in html
     assert "Where the numbers came from" in html
+    assert "Work completed this month" in html
+    assert "Why this mattered" in html
+    assert "Work recorded" in html
+    assert "August 5, 2026" in html
+    assert "2026-08-05T12:00:00" not in html
+    assert "The recent review pace is below the saved goal." in html
     assert "How results will be checked" in html
-    assert html.count("Ask recent customers for reviews consistently</h3>") == 1
+    next_actions_html = html.split("<section><h2>What to do next", 1)[1].split(
+        "<section><h2>Where the numbers came from",
+        1,
+    )[0]
+    assert next_actions_html.count("Ask recent customers for reviews consistently</h3>") == 1
 
     pdf_artifact = next(item for item in detail_payload["artifacts"] if item["artifact_type"] == "pdf")
     pdf_response = client.get(
@@ -1242,7 +1297,17 @@ def test_report_next_actions_are_unique_detailed_and_measurable(client, db_sessi
     assert "Your results at a glance" in pdf_text
     assert "Performance over time" in pdf_text
     assert "What to do next" in pdf_text
+    assert "Work completed this month" in pdf_text
+    assert "Why this mattered" in pdf_text
+    assert "Work recorded" in pdf_text
+    assert "August 5, 2026" in pdf_text
+    assert "2026-08-05T12:00:00" not in pdf_text
+    assert "The recent review pace is below the saved goal." in pdf_text
     assert "How results will be checked" in pdf_text
     assert "Where the numbers came from" in pdf_text
     assert "InsightOS by VerixLabs" in pdf_text
-    assert pdf_text.count("Ask completed customers for reviews consistently") == 1
+    next_actions_pdf = pdf_text.split("What to do next", 1)[1].split(
+        "REPORT DETAILS",
+        1,
+    )[0]
+    assert next_actions_pdf.count("Ask completed customers for reviews consistently") == 1

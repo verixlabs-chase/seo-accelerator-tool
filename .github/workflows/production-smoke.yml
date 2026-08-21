@@ -1,0 +1,47 @@
+name: Production browser smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-browser-smoke
+  cancel-in-progress: false
+
+jobs:
+  critical-journey:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      CI: "true"
+      E2E_BASE_URL: https://insightos.verixlabs.com
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify the critical customer journey
+        env:
+          E2E_EMAIL: ${{ secrets.E2E_SMOKE_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_SMOKE_PASSWORD }}
+          E2E_WORKSPACE_NAME: ${{ vars.E2E_SMOKE_WORKSPACE }}
+        shell: bash
+        run: |
+          if [[ -z "$E2E_EMAIL" || -z "$E2E_PASSWORD" ]]; then
+            echo "Configure E2E_SMOKE_EMAIL and E2E_SMOKE_PASSWORD in the production environment." >&2
+            exit 1
+          fi
+          npm run test:e2e -- --project=chromium

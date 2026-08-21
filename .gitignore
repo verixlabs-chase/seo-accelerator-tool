@@ -20,6 +20,8 @@ frontend/.vercel/
 frontend/.next/
 frontend/.npm-cache/
 frontend/node_modules/
+frontend/test-results/
+frontend/playwright-report/
 node_modules/
 build/
 dist/

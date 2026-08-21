@@ -2689,6 +2689,12 @@ Implementation status (2026-08-11):
   that same stored snapshot. Positive and negative changes use consistent
   visual direction, completed work remains separate from verified outcomes,
   and the report can rebuild its files without silently changing its facts.
+- Each monthly report stands on its own rather than repeating the full campaign
+  history. Work recorded during that exact period can include its plain-language
+  reason, practical steps, completion state, and supporting saved evidence;
+  measured results remain a separate section until follow-up facts exist. The
+  longer campaign timeline stays available in product history instead of
+  padding every monthly artifact.
 - Existing legacy report summaries remain readable, but they are identified as
   legacy and cannot claim RPT1 snapshot reproducibility.
 - RPT1B's secure-delivery foundation is implemented locally. Reports can use
@@ -2744,6 +2750,11 @@ Scope:
   templates with executive summary, wins, losses, local visibility, rankings,
   website health, actions completed, measured outcomes, risks, and next
   priorities.
+- Make each monthly artifact detailed enough to explain `what it is`, `why it
+  matters`, `what was found or fixed`, the exact work recorded, and how the
+  result will be checked. Include URL- or evidence-level detail only when the
+  saved tenant-scoped facts support it; keep prior months in the separate
+  campaign timeline rather than copying cumulative work into every report.
 - Use consistent visual definitions and the same source, freshness, location,
   date range, and lexicon version as the product screens.
 - Add durable artifact storage, scheduled generation, recipient management,
@@ -4881,6 +4892,12 @@ Implementation status (August 20, 2026):
   board backed by a versioned server contract. It evaluates production runtime
   safeguards, paid-plan configuration, durable report storage, saved production
   provider health, customer-data freshness, and overdue support response targets.
+- The production-safety gate now requires the rate-limit switch, a successful
+  bounded connection to its live Redis store, and current background-worker and
+  scheduler heartbeats. A configured flag cannot make this gate pass while the
+  protection or asynchronous execution would fail open because its backing
+  service is unavailable; the customer contract exposes only safe booleans and
+  never an infrastructure address or credential.
 - Blocking, attention, needs-live-proof, and passing states stay separate. The
   board deliberately does not calculate a percentage or weighted launch score,
   and it does not treat absent customers, provider rows, or production receipts
@@ -4889,9 +4906,11 @@ Implementation status (August 20, 2026):
   moderated non-technical first use, and sales-claim review remain explicit
   live-proof gates. Runtime configuration and unit tests cannot silently satisfy
   them.
-- The endpoint performs no Stripe, Google, storage, workflow-tool, or supplier
-  network request. It exposes only safe counts and configuration-presence facts,
-  never secret values, supplier credentials, customer payloads, or raw errors.
+- Apart from bounded internal rate-limit-store and worker-heartbeat probes, the endpoint
+  performs no Stripe, Google, object-storage, workflow-tool, or supplier network
+  request. It exposes only safe counts, connection booleans, and
+  configuration-presence facts—never secret values, infrastructure addresses,
+  supplier credentials, customer payloads, or raw errors.
 - OPS1A is the evidence foundation, not launch approval. Durable operator proof
   records, production smoke receipts, playbook ownership, five-participant
   comprehension evidence, and the signed final go/no-go decision remain OPS1
@@ -5038,6 +5057,18 @@ Implementation status (August 20, 2026):
   occurred. Operators still must perform all 38 route/viewport reviews and five
   real moderated sessions, close every blocker, then append the two final manual
   proofs before a platform owner can record `Go`.
+- A first non-mutating Playwright launch journey is implemented locally. It
+  verifies accessible sign-in, owner authentication, active-location context,
+  Overview and Reports at desktop width, and the full categorized navigation at
+  mobile width. A protected manual GitHub workflow is pinned to the production
+  hostname and refuses to run without `E2E_SMOKE_EMAIL` and
+  `E2E_SMOKE_PASSWORD`.
+- Manual production proof on August 21 confirmed authenticated Overview,
+  selectable location context, Reports, all five desktop/mobile navigation
+  groups, no collapsed `More tools` group, and zero captured console warnings
+  or errors without creating or changing customer data. This is a bounded
+  smoke result, not completion of the 38 route/viewport reviews, five moderated
+  sessions, or the still-pending automated GitHub workflow receipt.
 
 Scope:
 

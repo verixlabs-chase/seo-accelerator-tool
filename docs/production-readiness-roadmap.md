@@ -34,7 +34,7 @@ desktop, mobile, and five-participant launch receipts.
 | Authentication | Working with HttpOnly access and refresh cookies | invitations, password recovery, session revocation, organization switcher |
 | Tenant authorization | Enforced in API dependencies and service queries | explicit PostgreSQL RLS and least-privileged runtime database role |
 | Database migrations | Windows GitHub Actions workflow applies Alembic migrations to Supabase | add a disposable PostgreSQL validation environment before production migration |
-| Product frontend | Dashboard plus nine dedicated product routes are implemented | component and browser tests, followed by final UI/UX redesign |
+| Product frontend | The customer workspace, organized navigation, shared visual system, and primary product routes are implemented; a read-only browser launch journey passed against production on 2026-08-21 for authenticated Overview, Reports, location context, and desktop/mobile navigation | configure the protected GitHub smoke account, capture the automated workflow receipt, then complete the full OPS1F route matrix and moderated usability sessions |
 | Multi-location hierarchy | Account groups, physical locations, hidden execution scopes, location campaigns, nested hierarchy API, and customer workspace are implemented | location KPI rollups, delegated location access, bulk actions, and legacy-record assignment |
 | Interactive report generation | Works, but generated artifacts are local and non-durable on Vercel | upload artifacts to durable object storage |
 | Scheduled report generation | First durable database-backed job type implemented | deploy migration `20260310_0071`, set `CRON_SECRET`, then expand queue coverage |
@@ -51,7 +51,7 @@ desktop, mobile, and five-participant launch receipts.
 | Usage economics | Provider calls and entitlement consumption are counted, but currency cost and margin are not reconciled | add platform-vs-organization credential attribution, cost reservations, reconciliation, and hard monthly spend stops |
 | Commerce | Tier and entitlement foundations exist, but customer billing is not implemented | implement COM1 checkout, subscription lifecycle, enforced allowances, account recovery, and plan-change workflows |
 | External automation | Signed, encrypted, outbound-only delivery for Zapier, Make, Pipedream, and published n8n Cloud workflows is implemented locally with durable retry, dead-letter recovery, a versioned starter recipe catalog, provider-specific wiring kits, deterministic receiver conformance fixtures, monthly delivery visibility, official documentation handoffs, and receipt-backed connection proof; no connected tool can run an InsightOS action | capture live provider-by-provider production proof and publish reviewed external-platform templates, then add scoped credentials, replay-protected typed commands, action allowances, and audit proof before enabling inbound automation or generic/customer-hosted endpoints |
-| Frontend testing | 30 truth-state tests | component tests and Playwright production-journey coverage |
+| Frontend testing | 311 deterministic frontend contract tests, a local Playwright public sign-in pass, and a non-mutating authenticated production browser pass with zero captured console warnings or errors; a protected manual GitHub workflow is fixed to the production hostname | configure `E2E_SMOKE_EMAIL` and `E2E_SMOKE_PASSWORD`, capture the first automated run, then expand evidence across every OPS1F route and viewport |
 | Backend testing | Large SQLite suite and migration validation | PostgreSQL API, concurrency, lease, and RLS integration lanes |
 
 ## Durable-job architecture
@@ -220,6 +220,29 @@ Then complete or deliberately hide Settings, Locations, Content, Authority,
 and agency portfolio features based on launch scope.
 
 ### PR5: release hardening
+
+Implementation status (2026-08-21):
+
+- The first browser-driven launch smoke is implemented. It validates the public
+  sign-in form, performs a non-mutating owner sign-in, confirms active-location
+  context, opens Overview and Reports, and checks the complete categorized
+  navigation at desktop and mobile widths.
+- The manual GitHub workflow installs isolated Chromium, requires protected
+  production-environment credentials, is fixed to the InsightOS production
+  hostname and `main` branch, exposes credentials only to the test step, revokes
+  its sign-in afterward, and never retains production screenshots, traces, or
+  video or raw console text. The production environment must still be restricted
+  to `main` with an independent reviewer, and the credentials must belong only
+  to a least-privileged synthetic tenant before its first automated run.
+  That tenant must contain two locations, comparable saved reports, and bounded
+  synthetic Overview metrics so the smoke proves live API-backed content.
+  Local public-path proof passes. A manual authenticated production check on
+  2026-08-21 also confirmed Overview, the active-location control, Reports,
+  all five navigation groups, the absence of a collapsed `More tools` group,
+  mobile navigation at 390×844, and zero captured console warnings or errors.
+  The check performed no customer-data mutation and restored the normal
+  viewport afterward. The automated GitHub receipt remains pending until the
+  smoke account secrets are configured and the workflow runs.
 
 - PostgreSQL integration CI
 - eliminate SQLite cross-session write-lock stalls in campaign-cycle tests

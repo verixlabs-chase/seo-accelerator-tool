@@ -14,7 +14,7 @@ from app.models.campaign import Campaign
 from app.models.launch_readiness import LaunchReadinessDecision, LaunchReadinessProof
 from app.models.provider_health import ProviderHealthState
 from app.models.support import SupportRequest
-from app.services import freshness_monitor_service
+from app.services import freshness_monitor_service, infra_service
 from app.services.launch_experience_service import build_launch_experience_readiness
 from app.services.production_capability_service import build_production_capability_matrix
 
@@ -107,12 +107,42 @@ def _item(
 def _runtime_gate() -> dict[str, Any]:
     settings = get_settings()
     missing: list[str] = []
-    if settings.app_env.strip().lower() != "production":
+    production_runtime = settings.app_env.strip().lower() == "production"
+    tenant_isolation_enabled = bool(settings.database_rls_enabled)
+    rate_limiting_enabled = bool(settings.rate_limit_enabled)
+    rate_limit_store_connected = (
+        infra_service.redis_connected() if rate_limiting_enabled else False
+    )
+    async_checks_performed = rate_limit_store_connected
+    background_worker_active = (
+        infra_service.worker_active() if async_checks_performed else False
+    )
+    scheduler_active = (
+        infra_service.scheduler_active() if async_checks_performed else False
+    )
+
+    if not production_runtime:
         missing.append("production runtime")
-    if not settings.database_rls_enabled:
+    if not tenant_isolation_enabled:
         missing.append("database tenant isolation")
-    if not settings.rate_limit_enabled:
+    if not rate_limiting_enabled:
         missing.append("request rate limiting")
+    elif not rate_limit_store_connected:
+        missing.append("request rate-limit storage")
+    if async_checks_performed and not background_worker_active:
+        missing.append("background worker heartbeat")
+    if async_checks_performed and not scheduler_active:
+        missing.append("scheduler heartbeat")
+
+    facts = {
+        "production_runtime": production_runtime,
+        "database_tenant_isolation": tenant_isolation_enabled,
+        "request_rate_limiting": rate_limiting_enabled,
+        "rate_limit_store_connected": rate_limit_store_connected,
+        "async_checks_performed": async_checks_performed,
+        "background_worker_active": background_worker_active,
+        "scheduler_active": scheduler_active,
+    }
 
     if missing:
         return _item(
@@ -121,18 +151,28 @@ def _runtime_gate() -> dict[str, Any]:
             title="Production safety configuration",
             state=BLOCKER,
             summary="Required production safeguards are not all active in this runtime.",
-            evidence="Saved runtime configuration was checked without exposing secret values.",
+            evidence=(
+                "Saved runtime configuration, the live rate-limit storage connection, "
+                "and available worker heartbeats were checked without exposing secret values."
+            ),
             next_action=f"Enable and verify: {', '.join(missing)}.",
-            facts={"missing_count": len(missing)},
+            facts={**facts, "missing_count": len(missing)},
         )
     return _item(
         code="production_runtime",
         category="security",
         title="Production safety configuration",
         state=PASS,
-        summary="The runtime identifies as production with tenant isolation and rate limiting enabled.",
-        evidence="Saved runtime configuration was checked without exposing secret values.",
+        summary=(
+            "The production runtime, tenant isolation, rate limiting, background worker, "
+            "and scheduler are active."
+        ),
+        evidence=(
+            "Saved runtime configuration, the live rate-limit storage connection, "
+            "and worker heartbeats were checked without exposing secret values."
+        ),
         next_action="Retain the deployment preflight and production smoke evidence for this release.",
+        facts=facts,
     )
 
 
