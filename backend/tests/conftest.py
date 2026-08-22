@@ -289,6 +289,7 @@ def _verify_required_tables(database_url: str) -> None:
             "knowledge_edges",
             "reputation_provider_capabilities",
             "reputation_response_executions",
+            "request_rate_limit_counters",
             "portfolio_location_groups",
             "portfolio_location_group_members",
             "portfolio_target_snapshots",

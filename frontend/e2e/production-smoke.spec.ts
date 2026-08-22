@@ -9,6 +9,16 @@ async function closeTourIfShown(page: Page) {
 }
 
 
+function requiredNonnegativeIntegerHeader(
+  headers: Record<string, string>,
+  name: string,
+) {
+  const value = headers[name.toLowerCase()];
+  expect(value, `${name} must be present and numeric`).toMatch(/^\d+$/);
+  return Number(value);
+}
+
+
 async function signInAsSmokeOwner(page: Page) {
   const email = process.env.E2E_EMAIL;
   const password = process.env.E2E_PASSWORD;
@@ -55,6 +65,61 @@ async function signInAsSmokeOwner(page: Page) {
   ).toBeVisible();
   await closeTourIfShown(page);
 }
+
+
+test("same-origin health proves PostgreSQL request protection without changing customer data", async ({ request }) => {
+  const liveness = await request.get("/api/v1/health", {
+    failOnStatusCode: false,
+  });
+  expect(liveness.status()).toBe(200);
+  const livenessPayload = await liveness.json();
+  expect(livenessPayload?.data).toMatchObject({
+    status: "ok",
+    rate_limit: {
+      enabled: true,
+      backend: "postgres",
+    },
+  });
+  const livenessHeaders = liveness.headers();
+  // Exact liveness is intentionally exempt and must not consume a quota.
+  expect(livenessHeaders["x-ratelimit-limit"]).toBeUndefined();
+  expect(livenessHeaders["x-ratelimit-remaining"]).toBeUndefined();
+  expect(livenessHeaders["x-ratelimit-reset"]).toBeUndefined();
+
+  const readiness = await request.get("/api/v1/health/readiness", {
+    failOnStatusCode: false,
+  });
+  expect(readiness.status()).toBe(200);
+  const readinessPayload = await readiness.json();
+  expect(readinessPayload?.data).toMatchObject({
+    status: "ready",
+    dependencies: {
+      database: true,
+      rate_limit_enabled: true,
+      rate_limit_backend: "postgres",
+      rate_limit_store: true,
+    },
+  });
+
+  const readinessHeaders = readiness.headers();
+  const limit = requiredNonnegativeIntegerHeader(
+    readinessHeaders,
+    "X-RateLimit-Limit",
+  );
+  const remaining = requiredNonnegativeIntegerHeader(
+    readinessHeaders,
+    "X-RateLimit-Remaining",
+  );
+  const reset = requiredNonnegativeIntegerHeader(
+    readinessHeaders,
+    "X-RateLimit-Reset",
+  );
+  expect(limit).toBeGreaterThan(0);
+  expect(remaining).toBeLessThanOrEqual(limit);
+  expect(reset).toBeGreaterThan(0);
+  expect(readinessHeaders["cache-control"]).toContain("private");
+  expect(readinessHeaders["cache-control"]).toContain("no-store");
+});
 
 
 test("public sign-in remains understandable and accessible", async ({ page }) => {

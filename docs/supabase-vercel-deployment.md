@@ -78,6 +78,32 @@ https://your-api-project.vercel.app/api/v1/health
 `STARTUP_INVARIANTS_ENABLED=false` avoids a large cold-start validation sweep.
 Migrations remain the deployment gate.
 
+The hosted API uses the PostgreSQL rate-limit backend because this deployment
+does not include Redis. Apply migration `20260821_0208` before enabling the
+limiter, then configure these server-only variables:
+
+```text
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_BACKEND=postgres
+RATE_LIMIT_IDENTITY_SOURCE=vercel
+# Coarse per-network-IP abuse ceiling; customer plan quotas remain separate.
+RATE_LIMIT_REQUESTS_PER_MINUTE=600
+RATE_LIMIT_HMAC_SECRET=<independent random secret of at least 32 characters>
+CRON_SECRET=<independent random secret of at least 32 characters>
+```
+
+The database stores only a keyed HMAC of the normalized client network, never a
+raw IP address. Vercel-managed forwarding headers are trusted only when the
+runtime also reports `VERCEL=1`; missing or malformed identity and unavailable
+storage fail closed. After deployment, smoke-test both the backend URL and the
+same-origin frontend proxy and confirm distinct test clients do not collapse to
+one proxy identity. Keep Vercel Firewall/WAF protections enabled: the database
+limiter is an application safeguard, not volumetric DDoS protection. See
+[Vercel's request-header contract](https://examples.vercel.com/docs/headers/request-headers).
+Hosted production startup rejects a missing, weak, or placeholder `CRON_SECRET`
+while this limiter is enabled because the authenticated daily drain performs
+bounded stale-counter cleanup.
+
 ## 4. Deploy the frontend to Vercel
 
 Import the same repository as a second Vercel project and set:
@@ -136,6 +162,9 @@ Generate secrets locally:
 
 # PLATFORM_MASTER_KEY
 [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+
+# RATE_LIMIT_HMAC_SECRET
+[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 
 # CRON_SECRET
 [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
@@ -200,6 +229,8 @@ The no-Docker deployment is an intentionally constrained hosted mode:
 - database connection pooling is delegated to Supabase
 - each Vercel invocation opens no persistent SQLAlchemy pool
 - Redis-backed event streams become process-local
+- API request quotas use a PostgreSQL fixed-minute counter with function-only
+  access; stale identity counters are pruned in bounded batches
 - task calls execute eagerly and must finish before the function timeout
 - Celery Beat schedules do not run
 - scheduled reports, recommendation-only intelligence cycles, and Search

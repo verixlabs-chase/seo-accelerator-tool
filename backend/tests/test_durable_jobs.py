@@ -8,6 +8,7 @@ from app.models.platform_job import PlatformJob
 from app.models.reporting import MonthlyReport, ReportSchedule
 from app.services import durable_job_service
 from app.services import job_service
+from app.services.rate_limit_store import RateLimitStoreUnavailable
 from tests.conftest import create_test_campaign
 
 
@@ -31,6 +32,196 @@ def test_internal_job_drain_requires_configured_matching_secret(client, monkeypa
         headers={"Authorization": "Bearer wrong"},
     )
     assert unauthorized.status_code == 401
+
+
+def test_internal_job_drain_runs_one_bounded_postgres_limiter_cleanup(
+    client,
+    monkeypatch,
+) -> None:
+    cleanup_calls: list[dict[str, int]] = []
+    store_init_calls: list[dict[str, int]] = []
+    drain_calls: list[dict[str, object]] = []
+
+    class _Store:
+        def prune_expired(self, *, retention_seconds: int, batch_size: int) -> int:
+            cleanup_calls.append(
+                {
+                    "retention_seconds": retention_seconds,
+                    "batch_size": batch_size,
+                }
+            )
+            return 12
+
+    def _store_factory(**kwargs: int) -> _Store:
+        store_init_calls.append(kwargs)
+        return _Store()
+
+    def _drain(*_args, **kwargs) -> dict[str, int]:  # noqa: ANN003
+        drain_calls.append(kwargs)
+        return {"claimed": 0, "processed": 0}
+
+    monkeypatch.setattr(
+        internal_jobs,
+        "get_settings",
+        lambda: SimpleNamespace(
+            cron_secret="test-cron-secret",
+            rate_limit_enabled=True,
+            rate_limit_backend="postgres",
+        ),
+    )
+    monkeypatch.setattr(
+        internal_jobs.durable_job_service,
+        "drain_platform_jobs",
+        _drain,
+    )
+    monkeypatch.setattr(
+        internal_jobs,
+        "PostgresFixedWindowRateLimitStore",
+        _store_factory,
+    )
+
+    response = client.get(
+        "/api/v1/internal/jobs/drain",
+        headers={"Authorization": "Bearer test-cron-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["rate_limit_cleanup"] == {
+        "attempted": True,
+        "deleted": 12,
+        "batches": 1,
+        "status": "completed",
+    }
+    assert cleanup_calls == [
+        {"retention_seconds": 172_800, "batch_size": 1_000}
+    ]
+    assert store_init_calls == [
+        {"statement_timeout_ms": 2_000, "lock_timeout_ms": 500}
+    ]
+    assert len(drain_calls) == 1
+    assert drain_calls[0]["time_budget_seconds"] == 40
+
+
+def test_internal_job_drain_caps_limiter_cleanup_at_one_full_batch(
+    client,
+    monkeypatch,
+) -> None:
+    cleanup_calls: list[dict[str, int]] = []
+    store_init_calls: list[dict[str, int]] = []
+
+    class _Store:
+        def prune_expired(self, *, retention_seconds: int, batch_size: int) -> int:
+            cleanup_calls.append(
+                {
+                    "retention_seconds": retention_seconds,
+                    "batch_size": batch_size,
+                }
+            )
+            return batch_size
+
+    def _store_factory(**kwargs: int) -> _Store:
+        store_init_calls.append(kwargs)
+        return _Store()
+
+    monkeypatch.setattr(
+        internal_jobs,
+        "get_settings",
+        lambda: SimpleNamespace(
+            cron_secret="test-cron-secret",
+            rate_limit_enabled=True,
+            rate_limit_backend="postgres",
+        ),
+    )
+    monkeypatch.setattr(
+        internal_jobs.durable_job_service,
+        "drain_platform_jobs",
+        lambda *_args, **_kwargs: {"claimed": 0, "processed": 0},
+    )
+    monkeypatch.setattr(
+        internal_jobs,
+        "PostgresFixedWindowRateLimitStore",
+        _store_factory,
+    )
+
+    response = client.get(
+        "/api/v1/internal/jobs/drain",
+        headers={"Authorization": "Bearer test-cron-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["rate_limit_cleanup"] == {
+        "attempted": True,
+        "deleted": 1_000,
+        "batches": 1,
+        "status": "batch_limit_reached",
+    }
+    assert cleanup_calls == [
+        {"retention_seconds": 172_800, "batch_size": 1_000}
+    ]
+    assert store_init_calls == [
+        {"statement_timeout_ms": 2_000, "lock_timeout_ms": 500}
+    ]
+
+
+def test_internal_job_drain_reports_limiter_cleanup_unavailable_without_failing(
+    client,
+    monkeypatch,
+) -> None:
+    drain_calls: list[dict[str, object]] = []
+    store_init_calls: list[dict[str, int]] = []
+
+    class _Store:
+        def prune_expired(self, *, retention_seconds: int, batch_size: int) -> int:
+            del retention_seconds, batch_size
+            raise RateLimitStoreUnavailable("cleanup unavailable")
+
+    def _drain(*_args, **kwargs) -> dict[str, int]:  # noqa: ANN003
+        drain_calls.append(kwargs)
+        return {"claimed": 3, "processed": 3}
+
+    def _store_factory(**kwargs: int) -> _Store:
+        store_init_calls.append(kwargs)
+        return _Store()
+
+    monkeypatch.setattr(
+        internal_jobs,
+        "get_settings",
+        lambda: SimpleNamespace(
+            cron_secret="test-cron-secret",
+            rate_limit_enabled=True,
+            rate_limit_backend="postgres",
+        ),
+    )
+    monkeypatch.setattr(
+        internal_jobs.durable_job_service,
+        "drain_platform_jobs",
+        _drain,
+    )
+    monkeypatch.setattr(
+        internal_jobs,
+        "PostgresFixedWindowRateLimitStore",
+        _store_factory,
+    )
+
+    response = client.get(
+        "/api/v1/internal/jobs/drain",
+        headers={"Authorization": "Bearer test-cron-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["claimed"] == 3
+    assert response.json()["data"]["processed"] == 3
+    assert response.json()["data"]["rate_limit_cleanup"] == {
+        "attempted": True,
+        "deleted": 0,
+        "batches": 0,
+        "status": "unavailable",
+    }
+    assert len(drain_calls) == 1
+    assert drain_calls[0]["time_budget_seconds"] == 40
+    assert store_init_calls == [
+        {"statement_timeout_ms": 2_000, "lock_timeout_ms": 500}
+    ]
 
 
 def test_internal_job_drain_processes_due_report_schedule(

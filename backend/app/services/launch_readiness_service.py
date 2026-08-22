@@ -111,14 +111,23 @@ def _runtime_gate() -> dict[str, Any]:
     tenant_isolation_enabled = bool(settings.database_rls_enabled)
     rate_limiting_enabled = bool(settings.rate_limit_enabled)
     rate_limit_store_connected = (
-        infra_service.redis_connected() if rate_limiting_enabled else False
+        infra_service.rate_limit_store_connected() if rate_limiting_enabled else False
     )
-    async_checks_performed = rate_limit_store_connected
+    rate_limit_backend = settings.rate_limit_backend
+    hosted_serverless = bool(settings.hosted_serverless)
+    async_checks_performed = not hosted_serverless
+    async_store_connected = (
+        infra_service.redis_connected() if async_checks_performed else False
+    )
     background_worker_active = (
-        infra_service.worker_active() if async_checks_performed else False
+        infra_service.worker_active()
+        if async_checks_performed and async_store_connected
+        else False
     )
     scheduler_active = (
-        infra_service.scheduler_active() if async_checks_performed else False
+        infra_service.scheduler_active()
+        if async_checks_performed and async_store_connected
+        else False
     )
 
     if not production_runtime:
@@ -129,17 +138,23 @@ def _runtime_gate() -> dict[str, Any]:
         missing.append("request rate limiting")
     elif not rate_limit_store_connected:
         missing.append("request rate-limit storage")
-    if async_checks_performed and not background_worker_active:
-        missing.append("background worker heartbeat")
-    if async_checks_performed and not scheduler_active:
-        missing.append("scheduler heartbeat")
+    if async_checks_performed:
+        if not async_store_connected:
+            missing.append("Redis async runtime")
+        if not background_worker_active:
+            missing.append("background worker heartbeat")
+        if not scheduler_active:
+            missing.append("scheduler heartbeat")
 
     facts = {
         "production_runtime": production_runtime,
         "database_tenant_isolation": tenant_isolation_enabled,
         "request_rate_limiting": rate_limiting_enabled,
+        "rate_limit_backend": rate_limit_backend,
         "rate_limit_store_connected": rate_limit_store_connected,
+        "hosted_serverless": hosted_serverless,
         "async_checks_performed": async_checks_performed,
+        "async_store_connected": async_store_connected,
         "background_worker_active": background_worker_active,
         "scheduler_active": scheduler_active,
     }
@@ -164,8 +179,8 @@ def _runtime_gate() -> dict[str, Any]:
         title="Production safety configuration",
         state=PASS,
         summary=(
-            "The production runtime, tenant isolation, rate limiting, background worker, "
-            "and scheduler are active."
+            "The production runtime, tenant isolation, and rate-limit store are active; "
+            "required asynchronous runtime checks also passed."
         ),
         evidence=(
             "Saved runtime configuration, the live rate-limit storage connection, "

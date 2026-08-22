@@ -22,6 +22,10 @@ const workflowSource = readFileSync(
   new URL("../../.github/workflows/production-smoke.yml", import.meta.url),
   "utf8",
 );
+const deploymentRunbookSource = readFileSync(
+  new URL("../../docs/platform/runbooks/deployment_runbook.md", import.meta.url),
+  "utf8",
+);
 
 
 test("production browser smoke is an explicit Playwright contract", () => {
@@ -37,6 +41,49 @@ test("production browser smoke is an explicit Playwright contract", () => {
   assert.match(smokeSource, /session_revoked/);
   assert.match(smokeSource, /did not provide a revocable session endpoint/);
   assert.doesNotMatch(smokeSource, /message\.text\(\)|error\.message/);
+});
+
+
+test("production smoke proves the same-origin limiter without flooding production", () => {
+  assert.match(
+    smokeSource,
+    /same-origin health proves PostgreSQL request protection without changing customer data/,
+  );
+  assert.match(smokeSource, /request\.get\("\/api\/v1\/health"/);
+  assert.match(smokeSource, /request\.get\("\/api\/v1\/health\/readiness"/);
+  assert.match(smokeSource, /enabled: true/);
+  assert.match(smokeSource, /backend: "postgres"/);
+  assert.match(smokeSource, /rate_limit_store: true/);
+  assert.match(smokeSource, /"X-RateLimit-Limit"/);
+  assert.match(smokeSource, /"X-RateLimit-Remaining"/);
+  assert.match(smokeSource, /"X-RateLimit-Reset"/);
+  assert.match(smokeSource, /readinessHeaders\["cache-control"\]/);
+  assert.match(smokeSource, /toContain\("no-store"\)/);
+  assert.match(
+    smokeSource,
+    /livenessHeaders\["x-ratelimit-limit"\]\)\.toBeUndefined\(\)/,
+  );
+  assert.equal(
+    smokeSource.match(/await request\.get\(/g)?.length,
+    2,
+    "the production proof must make exactly one liveness and one readiness request",
+  );
+  assert.doesNotMatch(
+    smokeSource,
+    /RATE_LIMIT_REQUESTS_PER_MINUTE|internal\/jobs\/drain|rate_limit_exceeded/,
+  );
+});
+
+
+test("limiter promotion proof remains isolated, bounded, and reversible", () => {
+  assert.match(deploymentRunbookSource, /Direct-versus-proxy identity proof/);
+  assert.match(deploymentRunbookSource, /Controlled 429 proof/);
+  assert.match(deploymentRunbookSource, /Fail-closed 503 proof/);
+  assert.match(deploymentRunbookSource, /Cron cleanup proof/);
+  assert.match(deploymentRunbookSource, /Never perform these checks against production/);
+  assert.match(deploymentRunbookSource, /exactly three sequential/);
+  assert.match(deploymentRunbookSource, /rate_limit_cleanup\.attempted=true/);
+  assert.match(deploymentRunbookSource, /RATE_LIMIT_ENABLED=false/);
 });
 
 

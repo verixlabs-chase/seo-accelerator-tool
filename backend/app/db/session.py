@@ -34,6 +34,12 @@ def get_engine() -> Engine:
         if settings.hosted_serverless and not is_sqlite:
             # Supabase transaction mode does not support prepared statements.
             connect_args['prepare_threshold'] = None
+            # Serverless request protection and readiness probes must fail
+            # within the invocation budget when the pooler cannot be reached.
+            connect_args['connect_timeout'] = max(
+                1,
+                min(10, int(settings.db_pool_timeout_seconds)),
+            )
         engine_kwargs: dict = {'pool_pre_ping': True, 'connect_args': connect_args}
         if settings.hosted_serverless and not is_sqlite:
             # Supabase's transaction pooler owns connection pooling. Keeping a

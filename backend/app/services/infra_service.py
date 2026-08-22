@@ -13,6 +13,7 @@ from app.core.metrics import active_workers, queue_depth
 from app.db.session import SessionLocal
 from app.infra.contracts import SCHEDULER_HEARTBEAT_KEY, WORKER_HEARTBEAT_KEY, inspect_active_queues
 from app.services.operational_telemetry_service import record_queue_depth_snapshot
+from app.services.rate_limit_store import PostgresFixedWindowRateLimitStore
 
 REDIS_HEALTHCHECK_TIMEOUT_SECONDS = 0.2
 _REDIS_PROBE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="infra-redis-probe")
@@ -66,6 +67,28 @@ def db_connected() -> bool:
         return False
     finally:
         db.close()
+
+
+def rate_limit_store_connected() -> bool:
+    """Probe the configured limiter through the same least-privilege path as requests."""
+    settings = get_settings()
+    if settings.rate_limit_backend == "redis":
+        return redis_connected()
+
+    try:
+        decision = PostgresFixedWindowRateLimitStore().consume(
+            scope_hash="0" * 64,
+            policy_key="readiness_probe_v1",
+            limit=int(settings.rate_limit_requests_per_minute),
+        )
+        return (
+            decision.limit == int(settings.rate_limit_requests_per_minute)
+            and 1 <= decision.count <= decision.limit + 1
+            and decision.remaining >= 0
+            and decision.reset_at_epoch > 0
+        )
+    except Exception:
+        return False
 
 
 def redis_connected() -> bool:
