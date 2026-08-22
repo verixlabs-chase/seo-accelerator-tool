@@ -53,8 +53,12 @@ test("premium reports deduplicate and fully explain next actions", () => {
 });
 
 test("premium reports keep completed work separate from measured results", () => {
-  assert.match(reportsPage, /Work completed and results/);
-  assert.match(reportsPage, /never claims? that an action helped before the follow-up data exists/);
+  assert.match(reportsPage, /Work completed this month/);
+  assert.match(reportsPage, /Measured results/);
+  assert.match(reportsPage, /completedWorkList/);
+  assert.match(reportsPage, /Why this mattered/);
+  assert.match(reportsPage, /Work recorded/);
+  assert.match(reportsPage, /never presented as proof that the numbers improved/);
   assert.match(reportsPage, /measured_outcomes/);
   assert.match(reportsPage, /completed_actions/);
 });

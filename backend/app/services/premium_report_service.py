@@ -63,6 +63,20 @@ def _iso(value: date | datetime | None) -> str | None:
     return value.isoformat()
 
 
+def _friendly_date(value: Any) -> str | None:
+    if not value:
+        return None
+    parsed: date | datetime
+    if isinstance(value, (date, datetime)):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return str(value)
+    return f"{parsed.strftime('%B')} {parsed.day}, {parsed.year}"
+
+
 def _round(value: float | int | None, digits: int = 1) -> float | int | None:
     if value is None:
         return None
@@ -951,16 +965,40 @@ def build_report_snapshot(
         .limit(12)
         .all()
     )
-    completed_actions = _dedupe_story_items([
-        {
+
+    def completed_action_item(row: ActionPlanOccurrence) -> dict[str, Any]:
+        plan = plans.get(row.recommendation_id) or {}
+        recommendation = recommendations_by_id.get(row.recommendation_id)
+        rationale = str(
+            plan.get("why_it_matters")
+            or (recommendation.rationale if recommendation else "")
+            or "This work was tied to the saved evidence for this location."
+        )
+        return {
             "id": row.id,
             "canonical_action_id": row.action_id,
-            "title": _action_label(row.recommendation_id, row.action_id, plans, recommendations_by_id),
+            "title": _action_label(
+                row.recommendation_id,
+                row.action_id,
+                plans,
+                recommendations_by_id,
+            ),
+            "detail": rationale,
+            "why_it_matters": rationale,
+            "steps": [str(step) for step in list(plan.get("steps") or [])[:5]],
+            "evidence": _recommendation_evidence(recommendation),
             "completed_at": _iso(row.completed_at),
-            "result_state": "waiting_for_measurement" if row.status == "waiting_for_results" else "completed",
+            "result_state": (
+                "waiting_for_measurement"
+                if row.status == "waiting_for_results"
+                else "completed"
+            ),
         }
-        for row in completed_rows
-    ], limit=12)
+
+    completed_actions = _dedupe_story_items(
+        [completed_action_item(row) for row in completed_rows],
+        limit=12,
+    )
 
     measured_rows = (
         db.query(ActionPlanMeasurement)
@@ -1481,6 +1519,50 @@ def _next_action_html(items: list[dict[str, Any]]) -> str:
     return "<section><h2>What to do next</h2><p>Each action appears once, is tied to this location, and names the measurement used to check the result.</p><div class='action-list'>" + "".join(cards) + "</div></section>"
 
 
+def _completed_work_html(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return (
+            "<section class='completed-work'><h2>Work completed this month</h2>"
+            "<p>No completed action was recorded in this report period.</p></section>"
+        )
+    cards: list[str] = []
+    for index, item in enumerate(items, start=1):
+        steps = "".join(
+            f"<li>{escape(_report_copy(step, 'Completed work item.'))}</li>"
+            for step in item.get("steps") or []
+        )
+        evidence = "".join(
+            f"<li>{escape(_report_copy(value, 'Saved information supported this work.'))}</li>"
+            for value in item.get("evidence") or []
+        )
+        completion_state = (
+            str(item.get("result_state") or "completed").replace("_", " ").capitalize()
+        )
+        completed_at = _friendly_date(item.get("completed_at"))
+        cards.append(
+            f"<article class='work-card'><p class='work-meta'>Item {index} · "
+            f"{escape(completed_at or 'Completion date unavailable')} · "
+            f"{escape(completion_state)}</p>"
+            f"<h3>{escape(_report_copy(item.get('title'), 'Completed work'))}</h3>"
+            f"<p><strong>Why this mattered:</strong> {escape(_report_copy(item.get('why_it_matters') or item.get('detail'), 'This work responded to saved information for this location.'))}</p>"
+            + (f"<h4>Work recorded</h4><ol>{steps}</ol>" if steps else "")
+            + (
+                f"<details><summary>Information checked</summary><ul>{evidence}</ul></details>"
+                if evidence
+                else ""
+            )
+            + "</article>"
+        )
+    return (
+        "<section class='completed-work'><h2>Work completed this month</h2>"
+        "<p>This section includes only work recorded inside this report period. "
+        "Measured results remain separate until follow-up evidence is available.</p>"
+        "<div class='work-list'>"
+        + "".join(cards)
+        + "</div></section>"
+    )
+
+
 def _data_sources_html(metrics: list[dict[str, Any]]) -> str:
     rows: list[str] = []
     for item in metrics:
@@ -1582,6 +1664,8 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
     .action-list {{ display:grid; gap:12px; margin-top:16px; }} .action-card {{ display:grid; grid-template-columns:38px 1fr; gap:14px; border:1px solid var(--line); border-radius:8px; padding:18px; }}
     .action-number {{ display:flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:var(--accent); color:#fff; font-weight:700; }}
     .action-card h3 {{ margin:2px 0 8px; }} .action-card p {{ margin:8px 0; }} .measurement {{ border-left:3px solid var(--good); padding:9px 12px; background:#f1f8f5; }}
+    .completed-work {{ margin-top:16px; }} .work-list {{ display:grid; gap:12px; margin-top:16px; }} .work-card {{ border:1px solid var(--line); border-radius:8px; padding:18px; }}
+    .work-card h3 {{ margin:4px 0 8px; }} .work-card h4 {{ margin:14px 0 6px; font-size:14px; }} .work-meta {{ color:var(--muted); font-size:12px; text-transform:capitalize; }}
     details {{ color:var(--muted); }} table {{ width:100%; border-collapse:collapse; margin-top:12px; }} th,td {{ border-bottom:1px solid var(--line); padding:9px; text-align:left; vertical-align:top; }} th {{ color:var(--muted); font-size:12px; }} .table-wrap {{ overflow-x:auto; }}
     footer {{ margin-top:20px; color:var(--muted); font-size:12px; }} @media(max-width:760px) {{ .metrics,.grid {{ grid-template-columns:1fr; }} }}
     @media(max-width:760px) {{ .charts {{ grid-template-columns:1fr; }} }}
@@ -1601,9 +1685,9 @@ def render_report_html(snapshot: dict[str, Any]) -> str:
   <div class="grid">
     {list_section('What improved', snapshot.get('wins') or [], 'No clear improvement was measured yet.')}
     {list_section('What needs attention', snapshot.get('risks') or [], 'No measured risk was found in the available information.')}
-    {list_section('Work completed', snapshot.get('completed_actions') or [], 'No completed action was recorded in this period.', 'completed_at')}
     {list_section('Measured results', snapshot.get('measured_outcomes') or [], 'Completed work is still waiting for enough follow-up information.', 'result')}
   </div>
+  {_completed_work_html(snapshot.get('completed_actions') or [])}
   {_next_action_html(snapshot.get('next_priorities') or [])}
   {_data_sources_html(metrics)}
   <footer>{escape(footer_text)}{escape(attribution)}</footer>

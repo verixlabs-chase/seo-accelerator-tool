@@ -5,6 +5,7 @@ import binascii
 import math
 import re
 import unicodedata
+from datetime import date, datetime
 from hashlib import sha256
 from html import escape
 from io import BytesIO
@@ -69,6 +70,20 @@ def _ascii(value: Any) -> str:
 
 def _safe(value: Any) -> str:
     return escape(_ascii(value))
+
+
+def _friendly_date(value: Any) -> str | None:
+    if not value:
+        return None
+    parsed: date | datetime
+    if isinstance(value, (date, datetime)):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return _ascii(value)
+    return f"{parsed.strftime('%B')} {parsed.day}, {parsed.year}"
 
 
 def _display_value(metric: dict[str, Any]) -> str:
@@ -507,6 +522,76 @@ def _story_list(
                 ]
             )
         )
+    return flowables
+
+
+def _completed_work_blocks(
+    items: list[dict[str, Any]],
+    styles: dict[str, ParagraphStyle],
+) -> list[Any]:
+    section_intro: list[Any] = [
+        Paragraph("Work completed this month", styles["h2"]),
+        Paragraph(
+            "Only work recorded inside this report period appears here. Measured results stay separate until follow-up evidence is available.",
+            styles["body"],
+        ),
+    ]
+    if not items:
+        return [
+            KeepTogether(
+                section_intro
+                + [
+                    Paragraph(
+                        "No completed action was recorded in this report period.",
+                        styles["small"],
+                    )
+                ]
+            )
+        ]
+    flowables: list[Any] = []
+    for index, item in enumerate(items, start=1):
+        completion_state = (
+            str(item.get("result_state") or "completed").replace("_", " ").capitalize()
+        )
+        completed_at = _friendly_date(item.get("completed_at"))
+        body: list[Any] = [
+            Paragraph(
+                f"<b>{index}. {_safe(item.get('title') or 'Completed work')}</b>",
+                styles["body"],
+            ),
+            Paragraph(
+                _safe(
+                    f"Recorded {completed_at or 'without a completion date'} | "
+                    f"{completion_state}"
+                ),
+                styles["small"],
+            ),
+            Paragraph(
+                f"<b>Why this mattered:</b> {_safe(item.get('why_it_matters') or item.get('detail') or 'This work responded to saved information for this location.')}",
+                styles["body"],
+            ),
+        ]
+        steps = list(item.get("steps") or [])
+        if steps:
+            body.append(Paragraph("<b>Work recorded</b>", styles["small"]))
+            for step_index, step in enumerate(steps, start=1):
+                body.append(
+                    Paragraph(f"{step_index}. {_safe(step)}", styles["small"])
+                )
+        evidence = list(item.get("evidence") or [])
+        if evidence:
+            body.append(
+                Paragraph(
+                    "<b>Information checked:</b> "
+                    + "; ".join(_safe(value) for value in evidence),
+                    styles["small"],
+                )
+            )
+        body.append(Spacer(1, 5))
+        if index == 1:
+            flowables.append(KeepTogether(section_intro + body))
+        else:
+            flowables.append(KeepTogether(body))
     return flowables
 
 
@@ -953,12 +1038,9 @@ def build_report_pdf(snapshot: dict[str, Any]) -> bytes:
         )
     )
     story.extend(
-        _story_list(
-            "Work completed",
+        _completed_work_blocks(
             list(snapshot.get("completed_actions") or []),
-            "No completed action was recorded in this period.",
             styles,
-            detail_key="completed_at",
         )
     )
     story.extend(

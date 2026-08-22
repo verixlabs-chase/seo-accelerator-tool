@@ -67,6 +67,38 @@ Start both applications in separate PowerShell windows:
 .\scripts\reset_dev_env.ps1
 ```
 
+## Browser launch smoke
+
+The frontend includes a Playwright smoke suite for the real customer-facing
+browser path. The public sign-in check runs locally without credentials:
+
+```powershell
+Set-Location frontend
+npx playwright install chromium
+npm run build
+npm run start
+# In a second PowerShell window:
+npm run test:e2e -- --project=chromium
+```
+
+The authenticated test is deliberately read-only: it signs in, confirms the
+active location, opens Overview and Reports, and checks the categorized mobile
+navigation without creating or changing customer data. Configure
+`E2E_SMOKE_EMAIL` and `E2E_SMOKE_PASSWORD` as protected secrets in the GitHub
+`production` environment. If that account can open more than one workspace,
+set the environment variable `E2E_SMOKE_WORKSPACE` to the exact dedicated smoke
+workspace name. The account must be limited to a synthetic tenant with no real
+customer records and use only the minimum role needed to read this journey. Seed
+that tenant with at least two locations, one comparable saved report for each,
+and the normal Overview metrics; these are deliberate fixture requirements so a
+green run proves real APIs and portfolio reporting loaded instead of only static
+page copy.
+Restrict the environment to the `main` deployment branch and require an
+independent reviewer, then manually run the `Production browser smoke`
+workflow. The workflow is fixed to `https://insightos.verixlabs.com`, exposes
+credentials only to the test step, verifies that its server session was revoked,
+and does not retain production screenshots, traces, video, or raw console text.
+
 ## Hosting
 
 The repository deploys as two Vercel projects:
