@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from collections.abc import Callable
@@ -7,11 +8,14 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
+from app.core.middleware.rate_limit import RateLimitMiddleware
 from app.services import rate_limit_store
 from app.services.rate_limit_store import PostgresFixedWindowRateLimitStore
 
@@ -20,6 +24,7 @@ pytestmark = pytest.mark.postgres_required
 TABLE = "request_rate_limit_counters"
 CONSUME_SIGNATURE = "public.consume_request_rate_limit(text,text,integer)"
 PRUNE_SIGNATURE = "public.prune_request_rate_limit_counters(integer,integer)"
+HMAC_SECRET = "postgres-middleware-composition-secret-at-least-32-characters"
 
 
 def _session_factory(apply_migrations) -> tuple[object, Callable[[], Session]]:
@@ -36,6 +41,123 @@ def _avoid_calendar_window_boundary(engine) -> None:  # noqa: ANN001
         )
     if second >= 57.0:
         time.sleep((60.0 - second) + 0.5)
+
+
+@pytest.mark.parametrize(
+    ("identity_source", "request_identities", "raw_identity"),
+    [
+        pytest.param(
+            "peer",
+            [
+                ("203.0.113.140", {"X-Forwarded-For": "198.51.100.1"}),
+                ("203.0.113.140", {"X-Forwarded-For": "198.51.100.2"}),
+                ("203.0.113.140", {"X-Forwarded-For": "198.51.100.3"}),
+            ],
+            "203.0.113.140",
+            id="peer",
+        ),
+        pytest.param(
+            "vercel",
+            [
+                ("192.0.2.140", {"X-Vercel-Forwarded-For": "203.0.113.141"}),
+                ("192.0.2.141", {"X-Vercel-Forwarded-For": "203.0.113.141"}),
+                ("192.0.2.140", {"X-Vercel-Forwarded-For": "203.0.113.141"}),
+            ],
+            "203.0.113.141",
+            id="vercel-across-proxy-peers",
+        ),
+    ],
+)
+def test_postgres_middleware_composes_identity_with_one_atomic_saturated_bucket(
+    apply_migrations,
+    db_session,
+    identity_source: str,
+    request_identities: list[tuple[str, dict[str, str]]],
+    raw_identity: str,
+) -> None:
+    del db_session
+    engine, session_factory = _session_factory(apply_migrations)
+    _avoid_calendar_window_boundary(engine)
+    store = PostgresFixedWindowRateLimitStore(session_factory=session_factory)
+    app = FastAPI()
+    app.add_middleware(
+        RateLimitMiddleware,
+        enabled=True,
+        requests_per_minute=2,
+        backend="postgres",
+        identity_source=identity_source,
+        hmac_secret=HMAC_SECRET,
+        redis_url="redis://unused.invalid:6379/0",
+        store=store,
+    )
+
+    @app.get("/probe")
+    async def probe() -> dict[str, str]:
+        return {"status": "ok"}
+
+    async def exercise() -> list:
+        responses = []
+        for peer, headers in request_identities:
+            transport = ASGITransport(app=app, client=(peer, 12345))
+            async with AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                responses.append(await client.get("/probe", headers=headers))
+        return responses
+
+    try:
+        responses = asyncio.run(exercise())
+        observed_resets = {
+            response.headers.get("X-RateLimit-Reset") for response in responses
+        }
+        if len(observed_resets) > 1:
+            # A calendar-minute rollover between sequential requests is not a
+            # limiter failure. Clear that partial proof and retry immediately
+            # inside the fresh minute rather than relying on wall-clock luck.
+            with engine.begin() as connection:
+                connection.execute(text(f"DELETE FROM public.{TABLE}"))
+            responses = asyncio.run(exercise())
+
+        assert [response.status_code for response in responses] == [200, 200, 429]
+        assert [response.headers["X-RateLimit-Limit"] for response in responses] == [
+            "2",
+            "2",
+            "2",
+        ]
+        assert [
+            response.headers["X-RateLimit-Remaining"] for response in responses
+        ] == ["1", "0", "0"]
+        reset_headers = [
+            response.headers["X-RateLimit-Reset"] for response in responses
+        ]
+        assert len(set(reset_headers)) == 1
+        assert int(reset_headers[0]) > int(time.time())
+        assert "Retry-After" not in responses[0].headers
+        assert "Retry-After" not in responses[1].headers
+        assert 1 <= int(responses[2].headers["Retry-After"]) <= 60
+        assert responses[2].headers["Cache-Control"] == "private, no-store"
+        assert responses[2].json() == {
+            "message": "Rate limit exceeded",
+            "reason_code": "rate_limit_exceeded",
+        }
+        denied_output = f"{responses[2].text} {dict(responses[2].headers)!r}"
+        assert raw_identity not in denied_output
+
+        with engine.connect() as connection:
+            persisted = connection.execute(
+                text(
+                    f"SELECT scope_hash, policy_key, request_count "
+                    f"FROM public.{TABLE}"
+                )
+            ).mappings().all()
+        assert len(persisted) == 1
+        assert persisted[0]["policy_key"] == "coarse_network_ip_v1"
+        assert int(persisted[0]["request_count"]) == 3
+        assert len(str(persisted[0]["scope_hash"])) == 64
+        assert raw_identity not in str(persisted[0]["scope_hash"])
+    finally:
+        engine.dispose()
 
 
 def test_postgres_consume_function_has_exact_winners_under_concurrency(

@@ -57,8 +57,34 @@ class _FakeStore:
         return self._decisions[index]
 
 
+class _StatefulFakeStore:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self._counts: dict[tuple[str, str], int] = {}
+
+    def consume(self, *, scope_hash: str, policy_key: str, limit: int) -> RateLimitDecision:
+        self.calls.append(
+            {
+                "scope_hash": scope_hash,
+                "policy_key": policy_key,
+                "limit": limit,
+            }
+        )
+        bucket = (scope_hash, policy_key)
+        count = min(self._counts.get(bucket, 0) + 1, limit + 1)
+        self._counts[bucket] = count
+        return _decision(
+            allowed=count <= limit,
+            limit=limit,
+            count=count,
+            remaining=max(0, limit - count),
+            reset_at_epoch=2_000_000_000,
+            retry_after_seconds=19,
+        )
+
+
 def _app(
-    store: _FakeStore,
+    store: _FakeStore | _StatefulFakeStore,
     *,
     enabled: bool = True,
     backend: str = "postgres",
@@ -115,7 +141,7 @@ async def _request(
     *,
     method: str = "GET",
     peer: str = "203.0.113.10",
-    headers: dict[str, str] | None = None,
+    headers: dict[str, str] | list[tuple[str, str]] | None = None,
     raise_app_exceptions: bool = True,
 ):
     transport = ASGITransport(
@@ -125,6 +151,35 @@ async def _request(
     )
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         return await client.request(method, path, headers=headers)
+
+
+def _assert_quota_headers(
+    response,
+    *,
+    limit: int,
+    remaining: int,
+    reset_at_epoch: int,
+) -> None:
+    assert response.headers["X-RateLimit-Limit"] == str(limit)
+    assert response.headers["X-RateLimit-Remaining"] == str(remaining)
+    assert response.headers["X-RateLimit-Reset"] == str(reset_at_epoch)
+
+
+def _assert_no_quota_headers(response) -> None:
+    assert "X-RateLimit-Limit" not in response.headers
+    assert "X-RateLimit-Remaining" not in response.headers
+    assert "X-RateLimit-Reset" not in response.headers
+
+
+def _assert_unavailable_response(response) -> None:
+    assert response.status_code == 503
+    assert response.json() == {
+        "message": "Request protection is temporarily unavailable",
+        "reason_code": "rate_limit_unavailable",
+    }
+    assert response.headers["Retry-After"] == "5"
+    assert response.headers["Cache-Control"] == "private, no-store"
+    _assert_no_quota_headers(response)
 
 
 @pytest.mark.anyio
@@ -161,48 +216,73 @@ async def test_limit_exceeded_uses_database_retry_metadata_and_never_exposes_ide
     )
 
     assert allowed.status_code == 200
+    _assert_quota_headers(
+        allowed,
+        limit=1,
+        remaining=0,
+        reset_at_epoch=2_000_000_000,
+    )
     assert denied.status_code == 429
     assert denied.json() == {
         "message": "Rate limit exceeded",
         "reason_code": "rate_limit_exceeded",
     }
     assert denied.headers["Retry-After"] == "17"
-    assert "no-store" in denied.headers["Cache-Control"]
-    assert denied.headers.get("X-RateLimit-Reset") in {None, "123"}
+    assert denied.headers["Cache-Control"] == "private, no-store"
+    _assert_quota_headers(
+        denied,
+        limit=1,
+        remaining=0,
+        reset_at_epoch=123,
+    )
     serialized = f"{store.calls!r} {denied.text}"
     assert "203.0.113.10" not in serialized
     assert "198.51.100.99" not in serialized
     assert len(str(store.calls[0]["scope_hash"])) == 64
     assert store.calls[0]["scope_hash"] == store.calls[1]["scope_hash"]
     assert store.calls[0]["policy_key"] == store.calls[1]["policy_key"]
+    denied_output = f"{denied.text} {dict(denied.headers)!r}"
+    assert str(store.calls[1]["scope_hash"]) not in denied_output
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("identity_source", "peer", "headers", "raw_identity"),
+    [
+        ("peer", "203.0.113.44", {"Authorization": "Bearer must-not-leak"}, "203.0.113.44"),
+        (
+            "vercel",
+            "192.0.2.10",
+            {
+                "Authorization": "Bearer must-not-leak",
+                "X-Vercel-Forwarded-For": "198.51.100.44",
+            },
+            "198.51.100.44",
+        ),
+    ],
+)
 async def test_store_outage_fails_closed_as_503_without_quota_or_identity_leak(
     caplog: pytest.LogCaptureFixture,
+    identity_source: str,
+    peer: str,
+    headers: dict[str, str],
+    raw_identity: str,
 ) -> None:
     store = _FakeStore(error=RateLimitStoreUnavailable("database unavailable"))
 
     response = await _request(
-        _app(store),
+        _app(store, identity_source=identity_source),
         "/probe",
-        peer="203.0.113.44",
-        headers={"Authorization": "Bearer must-not-leak"},
+        peer=peer,
+        headers=headers,
     )
 
-    assert response.status_code == 503
-    assert response.json() == {
-        "message": "Request protection is temporarily unavailable",
-        "reason_code": "rate_limit_unavailable",
-    }
-    assert response.headers["Retry-After"] == "5"
-    assert response.headers["Cache-Control"] == "private, no-store"
-    assert "X-RateLimit-Limit" not in response.headers
-    assert "X-RateLimit-Remaining" not in response.headers
-    assert "X-RateLimit-Reset" not in response.headers
-    captured = f"{response.text} {caplog.text}"
-    assert "203.0.113.44" not in captured
+    _assert_unavailable_response(response)
+    assert len(store.calls) == 1
+    captured = f"{response.text} {dict(response.headers)!r} {caplog.text}"
+    assert raw_identity not in captured
     assert "must-not-leak" not in captured
+    assert str(store.calls[0]["scope_hash"]) not in captured
 
 
 @pytest.mark.anyio
@@ -216,17 +296,24 @@ async def test_liveness_and_options_exemptions_are_exact_and_readiness_is_limite
     app = _app(store)
 
     health = await _request(app, "/api/v1/health")
+    health_head = await _request(app, "/api/v1/health", method="HEAD")
+    health_trailing_slash = await _request(app, "/api/v1/health/")
     readiness = await _request(app, "/api/v1/health/readiness")
     options = await _request(app, "/probe", method="OPTIONS")
     near_match = await _request(app, "/api/v1/health/readiness-extra")
     unknown = await _request(app, "/not-a-real-route")
 
     assert health.status_code == 200
+    assert health_head.status_code == 405
+    assert health_trailing_slash.status_code == 429
     assert readiness.status_code == 429
     assert options.status_code == 204
     assert near_match.status_code == 429
     assert unknown.status_code == 429
-    assert len(store.calls) == 3
+    _assert_no_quota_headers(health)
+    _assert_no_quota_headers(health_head)
+    _assert_no_quota_headers(options)
+    assert len(store.calls) == 4
 
 
 @pytest.mark.anyio
@@ -297,7 +384,101 @@ async def test_peer_identity_ignores_forwarded_headers_and_canonicalizes_ip_addr
 
 
 @pytest.mark.anyio
-async def test_vercel_identity_requires_one_valid_exact_forwarded_address() -> None:
+async def test_peer_identity_cannot_reset_its_bucket_with_forwarding_headers() -> None:
+    store = _StatefulFakeStore()
+    app = _app(store, identity_source="peer")
+
+    allowed = await _request(
+        app,
+        "/probe",
+        peer="203.0.113.90",
+        headers={
+            "X-Forwarded-For": "198.51.100.10",
+            "X-Real-IP": "198.51.100.11",
+            "CF-Connecting-IP": "198.51.100.12",
+        },
+    )
+    denied = await _request(
+        app,
+        "/probe",
+        peer="203.0.113.90",
+        headers={
+            "X-Forwarded-For": "192.0.2.10",
+            "X-Real-IP": "192.0.2.11",
+            "CF-Connecting-IP": "192.0.2.12",
+        },
+    )
+
+    assert allowed.status_code == 200
+    assert denied.status_code == 429
+    _assert_quota_headers(
+        allowed,
+        limit=1,
+        remaining=0,
+        reset_at_epoch=2_000_000_000,
+    )
+    _assert_quota_headers(
+        denied,
+        limit=1,
+        remaining=0,
+        reset_at_epoch=2_000_000_000,
+    )
+    assert store.calls[0]["scope_hash"] == store.calls[1]["scope_hash"]
+
+
+@pytest.mark.anyio
+async def test_vercel_identity_shares_a_bucket_across_proxy_peers_and_isolates_clients() -> None:
+    store = _StatefulFakeStore()
+    app = _app(store, identity_source="vercel")
+
+    first = await _request(
+        app,
+        "/probe",
+        peer="192.0.2.20",
+        headers={"X-Vercel-Forwarded-For": "203.0.113.91"},
+    )
+    same_client_new_proxy = await _request(
+        app,
+        "/probe",
+        peer="192.0.2.21",
+        headers={"X-Vercel-Forwarded-For": "203.0.113.91"},
+    )
+    different_client_same_proxy = await _request(
+        app,
+        "/probe",
+        peer="192.0.2.21",
+        headers={"X-Vercel-Forwarded-For": "203.0.113.92"},
+    )
+
+    assert first.status_code == 200
+    assert same_client_new_proxy.status_code == 429
+    assert different_client_same_proxy.status_code == 200
+    assert same_client_new_proxy.headers["Retry-After"] == "19"
+    assert same_client_new_proxy.headers["Cache-Control"] == "private, no-store"
+    _assert_quota_headers(
+        same_client_new_proxy,
+        limit=1,
+        remaining=0,
+        reset_at_epoch=2_000_000_000,
+    )
+    assert store.calls[0]["scope_hash"] == store.calls[1]["scope_hash"]
+    assert store.calls[0]["scope_hash"] != store.calls[2]["scope_hash"]
+    denied_output = (
+        f"{same_client_new_proxy.text} "
+        f"{dict(same_client_new_proxy.headers)!r}"
+    )
+    for sensitive_value in (
+        "203.0.113.91",
+        "192.0.2.21",
+        str(store.calls[1]["scope_hash"]),
+    ):
+        assert sensitive_value not in denied_output
+
+
+@pytest.mark.anyio
+async def test_vercel_identity_requires_one_valid_exact_forwarded_address(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     store = _FakeStore([_decision()])
     app = _app(store, identity_source="vercel")
 
@@ -331,14 +512,34 @@ async def test_vercel_identity_requires_one_valid_exact_forwarded_address() -> N
     assert mapped.status_code == 200
     assert valid_hash == mapped_hash
     for response in (missing, comma_list, malformed):
-        assert response.status_code == 503
-        assert response.json() == {
-            "message": "Request protection is temporarily unavailable",
-            "reason_code": "rate_limit_unavailable",
-        }
-        assert response.headers["Retry-After"] == "5"
-        assert response.headers["Cache-Control"] == "private, no-store"
+        _assert_unavailable_response(response)
+    unavailable_output = " ".join(
+        [
+            *(f"{response.text} {dict(response.headers)!r}" for response in (missing, comma_list, malformed)),
+            caplog.text,
+        ]
+    )
+    assert "203.0.113.80, 198.51.100.1" not in unavailable_output
+    assert "not-an-ip" not in unavailable_output
     assert len(store.calls) == calls_after_valid
+
+
+@pytest.mark.anyio
+async def test_duplicate_vercel_forwarded_for_headers_fail_closed_without_store_call() -> None:
+    store = _FakeStore([_decision()])
+    app = _app(store, identity_source="vercel")
+
+    response = await _request(
+        app,
+        "/probe",
+        headers=[
+            ("X-Vercel-Forwarded-For", "203.0.113.93"),
+            ("X-Vercel-Forwarded-For", "198.51.100.93"),
+        ],
+    )
+
+    _assert_unavailable_response(response)
+    assert store.calls == []
 
 
 @pytest.mark.anyio

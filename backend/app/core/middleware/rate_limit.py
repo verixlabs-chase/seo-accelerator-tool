@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+from functools import partial
 import hashlib
 import hmac
 import ipaddress
 import logging
+import math
 from typing import Protocol
 
+from anyio import to_thread
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.services.rate_limit_store import (
@@ -22,6 +25,7 @@ from app.services.rate_limit_store import (
 _POLICY_KEY = "coarse_network_ip_v1"
 _LIVENESS_PATH = "/api/v1/health"
 _CRON_DRAIN_PATH = "/api/v1/internal/jobs/drain"
+_DEFAULT_ADMISSION_TIMEOUT_SECONDS = 5.0
 logger = logging.getLogger("lsos.api.rate_limit")
 
 
@@ -58,7 +62,12 @@ def _canonical_ip(raw_value: str) -> str:
 
 def _request_identity(request: Request, *, identity_source: str) -> str:
     if identity_source == "vercel":
-        return _canonical_ip(request.headers.get("x-vercel-forwarded-for", ""))
+        forwarded_values = request.headers.getlist("x-vercel-forwarded-for")
+        if len(forwarded_values) != 1:
+            raise _IdentityUnavailable(
+                "request identity is missing or has duplicate forwarding fields"
+            )
+        return _canonical_ip(forwarded_values[0])
     peer = request.client.host if request.client is not None else ""
     return _canonical_ip(peer or "")
 
@@ -92,6 +101,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         hmac_secret: str,
         redis_url: str,
         cron_secret: str = "",
+        admission_timeout_seconds: float = _DEFAULT_ADMISSION_TIMEOUT_SECONDS,
         store: _RateLimitStore | None = None,
     ) -> None:
         super().__init__(app)
@@ -100,6 +110,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._identity_source = identity_source.strip().lower()
         self._hmac_secret = hmac_secret
         self._cron_secret = cron_secret.strip()
+        normalized_admission_timeout = float(admission_timeout_seconds)
+        if (
+            not math.isfinite(normalized_admission_timeout)
+            or not 0.05 <= normalized_admission_timeout <= 30.0
+        ):
+            raise ValueError(
+                "admission_timeout_seconds must be between 0.05 and 30 seconds"
+            )
+        self._admission_timeout_seconds = normalized_admission_timeout
         self._store: _RateLimitStore | None = store
         if self._enabled and self._store is None:
             normalized_backend = backend.strip().lower()
@@ -154,12 +173,27 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         try:
             if self._store is None:
                 raise RateLimitStoreUnavailable("rate-limit store is not configured")
-            decision = await run_in_threadpool(
+            consume = partial(
                 self._store.consume,
                 scope_hash=hashed_identity,
                 policy_key=_POLICY_KEY,
                 limit=self._requests_per_minute,
             )
+            decision = await asyncio.wait_for(
+                to_thread.run_sync(consume, abandon_on_cancel=True),
+                timeout=self._admission_timeout_seconds,
+            )
+        except TimeoutError:
+            logger.warning(
+                "rate_limit_store_timeout",
+                extra={
+                    "event": "rate_limit_store_timeout",
+                    "identity_source": self._identity_source,
+                    "timeout_seconds": self._admission_timeout_seconds,
+                    "correlation_id": getattr(request.state, "correlation_id", None),
+                },
+            )
+            return self._unavailable_response()
         except Exception as exc:
             logger.warning(
                 "rate_limit_store_unavailable",
