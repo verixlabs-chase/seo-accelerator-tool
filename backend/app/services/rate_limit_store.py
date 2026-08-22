@@ -4,12 +4,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 import re
+import time
 from typing import Protocol
 
 import redis
 from redis.exceptions import RedisError
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -18,8 +20,10 @@ from app.db.session import _normalize_postgres_dsn
 
 
 _MAX_REQUEST_LIMIT = 1_000_000
-_DEFAULT_STATEMENT_TIMEOUT_MS = 750
-_DEFAULT_LOCK_TIMEOUT_MS = 250
+_DEFAULT_STATEMENT_TIMEOUT_MS = 2_000
+_DEFAULT_LOCK_TIMEOUT_MS = 750
+_POSTGRES_TRANSACTION_RETRY_BACKOFF_SECONDS = (0.025, 0.05)
+_RETRYABLE_POSTGRES_SQLSTATES = frozenset({"40001", "40P01", "55P03"})
 _SCOPE_HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _POLICY_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,63}$")
 
@@ -161,59 +165,75 @@ class PostgresFixedWindowRateLimitStore:
             policy_key=policy_key,
             limit=limit,
         )
-        session: Session | None = None
-        try:
-            session = self._session_factory()
-            with session.begin():
-                self._restrict_transaction(session)
-                row = (
-                    session.execute(
-                        _CONSUME_SQL,
-                        {
-                            "scope_hash": scope_hash,
-                            "policy_key": policy_key,
-                            "request_limit": limit,
-                        },
+        attempt_count = len(_POSTGRES_TRANSACTION_RETRY_BACKOFF_SECONDS) + 1
+        for attempt in range(attempt_count):
+            session: Session | None = None
+            retry_transaction = False
+            try:
+                session = self._session_factory()
+                with session.begin():
+                    self._restrict_transaction(session)
+                    row = (
+                        session.execute(
+                            _CONSUME_SQL,
+                            {
+                                "scope_hash": scope_hash,
+                                "policy_key": policy_key,
+                                "request_limit": limit,
+                            },
+                        )
+                        .mappings()
+                        .one()
                     )
-                    .mappings()
-                    .one()
+                count = int(row["request_count"])
+                remaining = int(row["remaining"])
+                reset_at = row["reset_at"]
+                if reset_at is None or not hasattr(reset_at, "timestamp"):
+                    raise RateLimitStoreUnavailable(
+                        "PostgreSQL rate-limit store returned an invalid reset time"
+                    )
+                allowed = row["allowed"]
+                retry_after_seconds = int(row["retry_after_seconds"])
+                if (
+                    not isinstance(allowed, bool)
+                    or not 1 <= count <= int(limit) + 1
+                    or remaining != max(0, int(limit) - count)
+                    or allowed != (count <= int(limit))
+                    or retry_after_seconds < 1
+                ):
+                    raise RateLimitStoreUnavailable(
+                        "PostgreSQL rate-limit store returned an invalid decision"
+                    )
+                return RateLimitDecision(
+                    allowed=allowed,
+                    limit=int(limit),
+                    count=count,
+                    remaining=remaining,
+                    reset_at_epoch=int(reset_at.timestamp()),
+                    retry_after_seconds=retry_after_seconds,
                 )
-            count = int(row["request_count"])
-            remaining = int(row["remaining"])
-            reset_at = row["reset_at"]
-            if reset_at is None or not hasattr(reset_at, "timestamp"):
-                raise RateLimitStoreUnavailable(
-                    "PostgreSQL rate-limit store returned an invalid reset time"
+            except RateLimitStoreUnavailable:
+                raise
+            except Exception as exc:
+                retry_transaction = (
+                    attempt < attempt_count - 1
+                    and _is_retryable_postgres_transaction_error(exc)
                 )
-            allowed = row["allowed"]
-            retry_after_seconds = int(row["retry_after_seconds"])
-            if (
-                not isinstance(allowed, bool)
-                or not 1 <= count <= int(limit) + 1
-                or remaining != max(0, int(limit) - count)
-                or allowed != (count <= int(limit))
-                or retry_after_seconds < 1
-            ):
-                raise RateLimitStoreUnavailable(
-                    "PostgreSQL rate-limit store returned an invalid decision"
-                )
-            return RateLimitDecision(
-                allowed=allowed,
-                limit=int(limit),
-                count=count,
-                remaining=remaining,
-                reset_at_epoch=int(reset_at.timestamp()),
-                retry_after_seconds=retry_after_seconds,
-            )
-        except RateLimitStoreUnavailable:
-            raise
-        except Exception as exc:
-            raise RateLimitStoreUnavailable(
-                "PostgreSQL rate-limit store is unavailable"
-            ) from exc
-        finally:
-            if session is not None:
-                session.close()
+                if not retry_transaction:
+                    raise RateLimitStoreUnavailable(
+                        "PostgreSQL rate-limit store is unavailable"
+                    ) from exc
+            finally:
+                if session is not None:
+                    session.close()
+
+            if retry_transaction:
+                # The failed PostgreSQL transaction is known to have rolled
+                # back, so retrying cannot double count the request. Never
+                # retry ambiguous connection failures or invalid decisions.
+                time.sleep(_POSTGRES_TRANSACTION_RETRY_BACKOFF_SECONDS[attempt])
+
+        raise RateLimitStoreUnavailable("PostgreSQL rate-limit store is unavailable")
 
     def prune_expired(
         self,
@@ -407,6 +427,14 @@ def _validate_consume_input(
         raise ValueError("policy_key contains unsupported characters")
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= _MAX_REQUEST_LIMIT:
         raise ValueError("limit must be between 1 and 1000000")
+
+
+def _is_retryable_postgres_transaction_error(exc: BaseException) -> bool:
+    if not isinstance(exc, DBAPIError):
+        return False
+    original = exc.orig
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    return isinstance(sqlstate, str) and sqlstate in _RETRYABLE_POSTGRES_SQLSTATES
 
 
 __all__ = [

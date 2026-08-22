@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from redis.exceptions import RedisError
+from sqlalchemy.exc import OperationalError
 
 from app.services import rate_limit_store
 from app.services.rate_limit_store import (
+    PostgresFixedWindowRateLimitStore,
     RateLimitStoreUnavailable,
     RedisFixedWindowRateLimitStore,
 )
@@ -229,3 +232,130 @@ def test_hosted_postgres_factory_uses_null_pool_without_startup_options(
         },
     }
     assert "options" not in engine_kwargs["connect_args"]
+
+
+class _TransactionContext:
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, *args: object) -> bool:
+        return False
+
+
+class _PostgresResult:
+    def __init__(self, row: dict[str, object] | None = None) -> None:
+        self._row = row
+
+    def mappings(self) -> _PostgresResult:
+        return self
+
+    def one(self) -> dict[str, object]:
+        assert self._row is not None
+        return self._row
+
+
+class _PostgresSession:
+    def __init__(
+        self,
+        *,
+        consume_error: BaseException | None = None,
+        row: dict[str, object] | None = None,
+    ) -> None:
+        self.consume_error = consume_error
+        self.row = row
+        self.closed = False
+        self.executed: list[object] = []
+
+    def begin(self) -> _TransactionContext:
+        return _TransactionContext()
+
+    def execute(self, statement: object, _params: object = None) -> _PostgresResult:
+        self.executed.append(statement)
+        if statement is rate_limit_store._CONSUME_SQL:
+            if self.consume_error is not None:
+                raise self.consume_error
+            return _PostgresResult(self.row)
+        return _PostgresResult()
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _PostgresDriverError(Exception):
+    def __init__(self, sqlstate: str) -> None:
+        super().__init__(sqlstate)
+        self.sqlstate = sqlstate
+
+
+def _operational_error(sqlstate: str) -> OperationalError:
+    return OperationalError(
+        "SELECT public.consume_request_rate_limit(...) ",
+        {},
+        _PostgresDriverError(sqlstate),
+    )
+
+
+@pytest.mark.parametrize("sqlstate", ["40001", "40P01", "55P03"])
+def test_postgres_store_retries_only_rolled_back_transaction_contention(
+    monkeypatch: pytest.MonkeyPatch,
+    sqlstate: str,
+) -> None:
+    reset_at = datetime.now(UTC) + timedelta(seconds=30)
+    first = _PostgresSession(consume_error=_operational_error(sqlstate))
+    second = _PostgresSession(
+        row={
+            "allowed": True,
+            "request_count": 1,
+            "remaining": 2,
+            "window_started_at": reset_at - timedelta(minutes=1),
+            "reset_at": reset_at,
+            "retry_after_seconds": 30,
+        }
+    )
+    sessions = iter([first, second])
+    sleeps: list[float] = []
+    monkeypatch.setattr(rate_limit_store.time, "sleep", sleeps.append)
+    store = PostgresFixedWindowRateLimitStore(session_factory=lambda: next(sessions))
+
+    decision = store.consume(
+        scope_hash="a" * 64,
+        policy_key="global-per-minute",
+        limit=3,
+    )
+
+    assert decision.allowed is True
+    assert decision.count == 1
+    assert decision.remaining == 2
+    assert first.closed is True
+    assert second.closed is True
+    assert sleeps == [0.025]
+
+
+def test_postgres_store_does_not_retry_ambiguous_connection_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _PostgresSession(consume_error=_operational_error("08006"))
+    factory_calls = 0
+
+    def session_factory() -> _PostgresSession:
+        nonlocal factory_calls
+        factory_calls += 1
+        return session
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(rate_limit_store.time, "sleep", sleeps.append)
+    store = PostgresFixedWindowRateLimitStore(session_factory=session_factory)
+
+    with pytest.raises(
+        RateLimitStoreUnavailable,
+        match="PostgreSQL rate-limit store is unavailable",
+    ):
+        store.consume(
+            scope_hash="b" * 64,
+            policy_key="global-per-minute",
+            limit=3,
+        )
+
+    assert factory_calls == 1
+    assert session.closed is True
+    assert sleeps == []
