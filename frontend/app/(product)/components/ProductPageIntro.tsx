@@ -44,6 +44,8 @@ const START_HERE_BY_PATH: Record<string, string> = {
     "Choose a saved location group, enter the client email, then send the one-time setup link yourself.",
   "/activity":
     "Review the newest saved change first, then filter the list if you need a specific kind of activity.",
+  "/notifications":
+    "Open unread notices first. Complete the requested action, then mark or dismiss the notice.",
   "/help":
     "Search for the task or problem on your screen, then open the matching step-by-step guide.",
 };
@@ -67,6 +69,7 @@ const PAGE_ICON_BY_PATH: Record<string, ProductIconName> = {
   "/profile-campaigns": "profile-campaigns",
   "/client-access": "client-access",
   "/activity": "activity",
+  "/notifications": "notifications",
   "/help": "help",
 };
 

@@ -19,6 +19,7 @@ export type ProductIconName =
   | "profile-campaigns"
   | "client-access"
   | "activity"
+  | "notifications"
   | "help"
   | "chart"
   | "calendar"
@@ -186,6 +187,14 @@ function iconPaths(name: ProductIconName): ReactNode {
           <circle cx="6" cy="13" r="2" fill="#0f1012" stroke="currentColor" strokeWidth="1.7" />
           <circle cx="6" cy="19" r="2" fill="#0f1012" stroke="currentColor" strokeWidth="1.7" />
           <path d="M10 7h9M10 13h6M10 19h8" {...commonPathProps} />
+        </>
+      );
+    case "notifications":
+      return (
+        <>
+          <path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 6 2.5 6.5 2.5 6.5H4s2.5-.5 2.5-6.5Z" {...commonPathProps} />
+          <path d="M9.5 19a2.7 2.7 0 0 0 5 0" {...commonPathProps} />
+          <path d="M12 2v2" {...commonPathProps} />
         </>
       );
     case "help":

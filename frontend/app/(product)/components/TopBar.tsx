@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { NotificationAction } from "./NotificationAction";
 import { cn } from "./utils";
 
 type TopBarProps = {
@@ -40,7 +41,8 @@ export function TopBar({
         </div>
       </div>
 
-      <div className={cn("flex items-center gap-2", actions ? "" : "text-zinc-300")}>
+      <div className={cn("flex flex-wrap items-center gap-2", actions ? "" : "text-zinc-300")}>
+        <NotificationAction />
         {actions ?? (
           <div
             aria-label="Account menu"

@@ -2796,6 +2796,21 @@ reliably and report whether it arrived or failed. It is not a customer-facing
 SEO feature, and customers will not need to create, select, or manage that
 service.
 
+Implementation status (2026-08-22):
+
+- The first in-product ALT1 slice is implemented. Durable report-ready and
+  approved-action-failed events create immutable, organization-scoped
+  notifications with per-member read and dismissal state.
+- Exact event replay cannot create a duplicate. Related events share a true
+  rolling six-hour semantic cooldown, including concurrent PostgreSQL workers.
+- The shared product header shows an unread count and opens a responsive
+  notification center. Every notice names the affected organization/location,
+  source, freshness, meaning, and one plain-language action when an action is
+  available.
+- Email delivery, weekly digests, category preferences, snooze, and resolution
+  workflows remain later ALT1 slices. They are intentionally not represented
+  as available in the current customer experience.
+
 Scope:
 
 - Add an in-product notification center first. Configurable email delivery and

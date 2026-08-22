@@ -267,6 +267,7 @@ from app.models.migration_import import (
     MigrationUploadChunk,
     MigrationUploadSession,
 )
+from app.models.notification import Notification, NotificationUserState
 
 __all__ = [
     "AISearchCollectionRun",
@@ -508,4 +509,6 @@ __all__ = [
     "MigrationImportRecord",
     "MigrationUploadChunk",
     "MigrationUploadSession",
+    "Notification",
+    "NotificationUserState",
 ]
