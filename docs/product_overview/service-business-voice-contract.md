@@ -73,8 +73,10 @@ The shared browser and generated-copy contracts reject language such as:
 - Next Steps keeps the issue, reason, and first action visible. Supporting
   information, source, status, and timing sit under optional detail so they do
   not compete with the checklist.
-- There is no shipped customer notification center yet. ALT1 owns alerts and
-  digests and must use this contract when that surface is built.
+- The first ALT1 in-product notification center is implemented for report-ready
+  and approved-action-failed events. It uses this contract for scope, source,
+  freshness, meaning, and the next action. Email, digests, and notification
+  preferences remain later ALT1 work and are not presented as available.
 - The coded route audit is complete. Representative service-business owners
   must still pass the five-second and read-aloud checks before UX13 is complete.
 - Keyword Research now uses customer-purpose labels such as `estimated monthly

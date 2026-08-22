@@ -290,6 +290,8 @@ def _verify_required_tables(database_url: str) -> None:
             "reputation_provider_capabilities",
             "reputation_response_executions",
             "request_rate_limit_counters",
+            "notifications",
+            "notification_user_states",
             "portfolio_location_groups",
             "portfolio_location_group_members",
             "portfolio_target_snapshots",
